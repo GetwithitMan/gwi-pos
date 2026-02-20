@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { toast } from '@/stores/toast-store'
@@ -29,8 +30,8 @@ interface TipEligiblePayment {
 
 export default function TipAdjustmentReportPage() {
   const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const employee = useAuthStore(s => s.employee)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/tip-adjustments' })
 
   const [payments, setPayments] = useState<TipEligiblePayment[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -64,14 +65,10 @@ export default function TipAdjustmentReportPage() {
   }, [locationId, startDate, endDate])
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/tip-adjustments')
-      return
-    }
     if (locationId) {
       loadPayments()
     }
-  }, [isAuthenticated, router, locationId, loadPayments])
+  }, [locationId, loadPayments])
 
   const handleAdjustTip = async (payment: TipEligiblePayment) => {
     const newTipStr = newTipAmounts[payment.id]
@@ -184,7 +181,7 @@ export default function TipAdjustmentReportPage() {
   const totalTips = payments.reduce((sum, p) => sum + p.tipAmount, 0)
   const totalSales = payments.reduce((sum, p) => sum + p.amount, 0)
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

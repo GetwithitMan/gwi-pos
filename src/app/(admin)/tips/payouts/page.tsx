@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -38,9 +38,8 @@ interface PayoutHistoryEntry {
 // ────────────────────────────────────────────
 
 export default function TipPayoutsPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard()
   const locationId = employee?.location?.id
 
   // ──── State ────
@@ -74,13 +73,6 @@ export default function TipPayoutsPage() {
   } | null>(null)
 
   const HISTORY_LIMIT = 50
-
-  // ──── Auth redirect ────
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login')
-    }
-  }, [isAuthenticated, router])
 
   // ──── Load payable balances ────
   const loadBalances = useCallback(async () => {
@@ -267,6 +259,9 @@ export default function TipPayoutsPage() {
       default: return type
     }
   }
+
+  // ──── Guard ────
+  if (!hydrated) return null
 
   // ──── Loading state ────
   if (isLoading) {

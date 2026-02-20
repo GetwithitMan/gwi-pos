@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
@@ -83,8 +84,8 @@ function TimedRentalsContent() {
   const searchParams = useSearchParams()
   const itemIdFromUrl = searchParams.get('item')
 
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/timed-rentals' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
   const { isConnected, subscribe } = useEvents({ locationId })
   const [sessions, setSessions] = useState<TimedSession[]>([])
@@ -109,12 +110,8 @@ function TimedRentalsContent() {
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/timed-rentals')
-      return
-    }
     loadData()
-  }, [isAuthenticated, router])
+  }, [])
 
   // Socket-driven updates for entertainment status changes
   useEffect(() => {
@@ -355,7 +352,7 @@ function TimedRentalsContent() {
     { value: 'shuffleboard', label: 'Shuffle', icon: '🪑' },
   ]
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="p-6 max-w-7xl mx-auto">

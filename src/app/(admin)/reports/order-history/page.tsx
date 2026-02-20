@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
 import { ReceiptModal } from '@/components/receipt'
 import { AdjustTipModal } from '@/components/orders/AdjustTipModal'
@@ -73,9 +73,8 @@ interface PaymentBreakdown {
 }
 
 export default function OrderHistoryPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/order-history' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const { retentionDays, venueSlug } = useDataRetention()
   const [orders, setOrders] = useState<Order[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -109,12 +108,8 @@ export default function OrderHistoryPage() {
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/order-history')
-      return
-    }
     loadOrders()
-  }, [isAuthenticated, router, page, startDate, endDate, status, orderType])
+  }, [page, startDate, endDate, status, orderType])
 
   const loadOrders = async () => {
     if (!employee?.location?.id) return
@@ -175,7 +170,7 @@ export default function OrderHistoryPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

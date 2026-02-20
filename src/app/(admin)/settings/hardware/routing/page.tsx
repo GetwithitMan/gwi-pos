@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 
 interface Category {
@@ -47,7 +48,7 @@ interface PrintDestination {
 
 export default function RoutingPage() {
   const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/settings/hardware/routing' })
   const [isLoading, setIsLoading] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
   const [printers, setPrinters] = useState<Printer[]>([])
@@ -57,12 +58,8 @@ export default function RoutingPage() {
   const [editingItem, setEditingItem] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/settings/hardware/routing')
-      return
-    }
     loadData()
-  }, [isAuthenticated, router])
+  }, [])
 
   const loadData = async () => {
     setIsLoading(true)
@@ -201,6 +198,8 @@ export default function RoutingPage() {
     ...printers.map(p => ({ id: p.id, name: p.name, type: 'printer' as const, role: p.printerRole })),
     ...kdsScreens.filter(k => k.isActive).map(k => ({ id: k.id, name: k.name, type: 'kds' as const, role: k.screenType }))
   ]
+
+  if (!hydrated) return null
 
   if (isLoading) {
     return (

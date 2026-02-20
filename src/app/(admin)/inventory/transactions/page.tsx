@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -58,9 +58,8 @@ const TRANSACTION_TYPES = [
 ]
 
 export default function TransactionsPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/transactions' })
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [pagination, setPagination] = useState<Pagination | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -82,12 +81,8 @@ export default function TransactionsPage() {
   const limit = 50
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/transactions')
-      return
-    }
     loadTransactions()
-  }, [isAuthenticated, router])
+  }, [])
 
   // Reload when filters change
   useEffect(() => {
@@ -159,7 +154,7 @@ export default function TransactionsPage() {
     return TYPE_COLORS[transactionType] || TYPE_COLORS.adjustment
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

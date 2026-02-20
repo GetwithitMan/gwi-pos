@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
 
@@ -50,9 +50,8 @@ const STOCK_COLORS: Record<StockLevel, { bg: string; text: string; border: strin
 }
 
 export default function QuickStockAdjustPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/quick-adjust' })
   const [items, setItems] = useState<StockItem[]>([])
   const [byCategory, setByCategory] = useState<Record<string, StockItem[]>>({})
   const [isLoading, setIsLoading] = useState(true)
@@ -99,12 +98,8 @@ export default function QuickStockAdjustPage() {
   }, [locationId])
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/quick-adjust')
-      return
-    }
     loadData()
-  }, [isAuthenticated, router, loadData])
+  }, [loadData])
 
   // Get current stock (local override or original)
   const getCurrentStock = (item: StockItem): number => {
@@ -292,7 +287,7 @@ export default function QuickStockAdjustPage() {
     })
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   const pendingCount = pendingChanges.size
 

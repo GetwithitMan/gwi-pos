@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { SPIRIT_TIERS, BOTTLE_SIZES, LIQUOR_DEFAULTS } from '@/lib/constants'
@@ -22,8 +23,8 @@ type TabType = 'bottles' | 'drinks' | 'modifiers'
 function LiquorBuilderContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/liquor-builder' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [activeTab, setActiveTab] = useState<TabType>('bottles')
   const [isLoading, setIsLoading] = useState(true)
   const [pendingItemId, setPendingItemId] = useState<string | null>(null)
@@ -60,12 +61,8 @@ function LiquorBuilderContent() {
   const socketRef = useRef<any>(null)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/liquor-builder')
-      return
-    }
     loadData()
-  }, [isAuthenticated, router])
+  }, [])
 
   // Socket connection for real-time updates (shared socket)
   useEffect(() => {
@@ -247,7 +244,7 @@ function LiquorBuilderContent() {
     loadBottles()
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   // Check if this is a fresh setup (no data)
   const isEmptySetup = categories.length === 0 && bottles.length === 0 && menuCategories.length === 0

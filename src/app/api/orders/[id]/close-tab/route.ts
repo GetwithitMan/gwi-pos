@@ -74,7 +74,29 @@ export const POST = withVenue(async function POST(
 
     // Calculate purchase amount from order total
     const purchaseAmount = Number(order.total) - Number(order.tipTotal)
-    const gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
+    let gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
+
+    // Bottle service auto-gratuity: apply if no explicit tip was provided
+    if (
+      order.isBottleService &&
+      order.bottleServiceTierId &&
+      gratuityAmount == null &&
+      tipMode !== 'device'
+    ) {
+      const tier = await db.bottleServiceTier.findUnique({
+        where: { id: order.bottleServiceTierId },
+        select: { autoGratuityPercent: true, minimumSpend: true },
+      })
+
+      if (tier && tier.autoGratuityPercent != null) {
+        const autoGratPct = Number(tier.autoGratuityPercent)
+        const minSpend = Number(tier.minimumSpend) || 0
+
+        if (autoGratPct > 0 && (minSpend <= 0 || purchaseAmount >= minSpend)) {
+          gratuityAmount = Math.round(purchaseAmount * (autoGratPct / 100) * 100) / 100
+        }
+      }
+    }
 
     // If a specific card was requested, filter to just that card
     let cardsToTry = order.cards

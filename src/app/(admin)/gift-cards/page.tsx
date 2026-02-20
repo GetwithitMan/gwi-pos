@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface GiftCard {
@@ -51,9 +51,8 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
 }
 
 export default function GiftCardsPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/gift-cards' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
 
   const crud = useAdminCRUD<GiftCard>({
@@ -91,12 +90,6 @@ export default function GiftCardsPage() {
 
   // Reload form
   const [reloadAmount, setReloadAmount] = useState('')
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/gift-cards')
-    }
-  }, [isAuthenticated, router])
 
   // Custom load — useAdminCRUD's loadItems doesn't support status/search filters
   const loadGiftCards = useCallback(async () => {
@@ -214,6 +207,8 @@ export default function GiftCardsPage() {
     setPurchaserName('')
     setMessage('')
   }
+
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

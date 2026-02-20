@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -26,8 +25,7 @@ interface LocationData {
 }
 
 export default function VenueSettingsPage() {
-  const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard()
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -43,12 +41,6 @@ export default function VenueSettingsPage() {
   const [regStatus, setRegStatus] = useState<'none' | 'active' | 'expired' | 'used' | 'revoked'>('none')
   const [regExpiresAt, setRegExpiresAt] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login')
-    }
-  }, [isAuthenticated, router])
 
   const loadRegCode = useCallback(async () => {
     try {
@@ -168,6 +160,8 @@ export default function VenueSettingsPage() {
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
     return `${hours}h ${minutes}m`
   }
+
+  if (!hydrated) return null
 
   if (isLoading) {
     return (

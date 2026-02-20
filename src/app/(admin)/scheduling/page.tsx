@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { toast } from '@/stores/toast-store'
 
@@ -49,8 +49,7 @@ const TIME_SLOTS = [
 ]
 
 export default function SchedulingPage() {
-  const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/scheduling' })
   const employee = useAuthStore(s => s.employee)
   const [schedules, setSchedules] = useState<Schedule[]>([])
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
@@ -75,15 +74,11 @@ export default function SchedulingPage() {
   })
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/scheduling')
-      return
-    }
     if (employee?.location?.id) {
       loadSchedules()
       loadEmployees()
     }
-  }, [isAuthenticated, router, employee?.location?.id, currentWeekStart])
+  }, [employee?.location?.id, currentWeekStart])
 
   const loadSchedules = async () => {
     if (!employee?.location?.id) return
@@ -248,7 +243,7 @@ export default function SchedulingPage() {
     )
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   const weekDates = getWeekDates()
 

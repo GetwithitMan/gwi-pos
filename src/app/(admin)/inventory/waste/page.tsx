@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -44,9 +44,8 @@ const WASTE_REASONS = [
 const STORAGE_UNITS = ['oz', 'lb', 'g', 'kg', 'ml', 'L', 'each', 'slice', 'portion', 'cup', 'tbsp', 'tsp', 'fl oz']
 
 export default function WastePage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/waste' })
 
   // useAdminCRUD for modal state; custom load due to date-range query params
   const crud = useAdminCRUD<WasteEntry>({
@@ -79,12 +78,8 @@ export default function WastePage() {
   })
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/waste')
-      return
-    }
     loadWaste()
-  }, [isAuthenticated, router])
+  }, [])
 
   // Reload when filters change
   useEffect(() => {
@@ -161,7 +156,7 @@ export default function WastePage() {
     return r?.label || reasonValue
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

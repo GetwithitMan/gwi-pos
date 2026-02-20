@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
@@ -195,8 +196,8 @@ function normalizePourSizes(data: Record<string, number | { label: string; multi
 
 export default function MenuManagementPage() {
   const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/menu' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [categories, setCategories] = useState<Category[]>([])
   const [items, setItems] = useState<MenuItem[]>([])
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
@@ -314,12 +315,8 @@ export default function MenuManagementPage() {
 
   // Initial load
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/menu')
-      return
-    }
     loadMenuRef.current()
-  }, [isAuthenticated, router])
+  }, [])
 
   // Refresh menu when switching categories (especially for entertainment status updates)
   useEffect(() => {
@@ -560,7 +557,7 @@ export default function MenuManagementPage() {
   })
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">

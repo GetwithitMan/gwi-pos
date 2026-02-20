@@ -79,7 +79,7 @@ export function getModifierMultiplier(
       const lite = settings?.multiplierLite
       return (lite !== null && lite !== undefined && !isNaN(Number(lite)))
         ? Number(lite)
-        : DEFAULT_MULTIPLIERS.multiplierLite
+        : Number(DEFAULT_MULTIPLIERS.multiplierLite)
     }
 
     case 'EXTRA':
@@ -88,7 +88,7 @@ export function getModifierMultiplier(
       const extra = settings?.multiplierExtra
       return (extra !== null && extra !== undefined && !isNaN(Number(extra)))
         ? Number(extra)
-        : DEFAULT_MULTIPLIERS.multiplierExtra
+        : Number(DEFAULT_MULTIPLIERS.multiplierExtra)
     }
 
     case 'TRIPLE':
@@ -96,7 +96,7 @@ export function getModifierMultiplier(
       const triple = settings?.multiplierTriple
       return (triple !== null && triple !== undefined && !isNaN(Number(triple)))
         ? Number(triple)
-        : DEFAULT_MULTIPLIERS.multiplierTriple
+        : Number(DEFAULT_MULTIPLIERS.multiplierTriple)
     }
 
     case 'ADD':

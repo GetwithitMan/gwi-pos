@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import { GroupedVirtuoso } from 'react-virtuoso'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -69,9 +69,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 }
 
 export default function CountsPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/counts' })
 
   const crud = useAdminCRUD<InventoryCount>({
     apiBase: '/api/inventory/counts',
@@ -106,13 +105,6 @@ export default function CountsPage() {
     if (!statusFilter) return allCounts
     return allCounts.filter(c => c.status === statusFilter)
   }, [allCounts, statusFilter])
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/counts')
-      return
-    }
-  }, [isAuthenticated, router])
 
   // Load counts + storage locations
   useEffect(() => {
@@ -289,7 +281,7 @@ export default function CountsPage() {
     return { counted, total, percent: total > 0 ? Math.round((counted / total) * 100) : 0 }
   }, [countDetail])
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

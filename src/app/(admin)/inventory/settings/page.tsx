@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 
@@ -45,21 +45,16 @@ const DAYS_OF_WEEK = [
 ]
 
 export default function InventorySettingsPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/settings' })
   const [settings, setSettings] = useState<InventorySettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/settings')
-      return
-    }
     loadSettings()
-  }, [isAuthenticated, router])
+  }, [])
 
   const loadSettings = async () => {
     if (!employee?.location?.id) return
@@ -112,7 +107,7 @@ export default function InventorySettingsPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

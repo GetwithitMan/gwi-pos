@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
@@ -110,7 +111,7 @@ const TIER_BAR_COLORS: Record<string, string> = {
 
 export default function LiquorReportPage() {
   const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/liquor' })
   const employee = useAuthStore(s => s.employee)
   const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<LiquorReport | null>(null)
@@ -126,14 +127,10 @@ export default function LiquorReportPage() {
   })
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/liquor')
-      return
-    }
     if (employee?.location?.id) {
       loadReport()
     }
-  }, [isAuthenticated, router, employee?.location?.id])
+  }, [employee?.location?.id])
 
   const loadReport = async () => {
     if (!employee?.location?.id) return
@@ -158,7 +155,7 @@ export default function LiquorReportPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   const tabs: { id: TabType; label: string }[] = [
     { id: 'overview', label: 'Overview' },

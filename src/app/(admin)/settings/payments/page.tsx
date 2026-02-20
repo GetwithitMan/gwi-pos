@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settings'
@@ -27,6 +27,21 @@ export default function PaymentSettingsPage() {
   const [tipDollarStr, setTipDollarStr] = useState('')
   const [tipPercentStr, setTipPercentStr] = useState('')
   const [showTokenKey, setShowTokenKey] = useState(false)
+
+  // Batch management state
+  const [batchInfo, setBatchInfo] = useState<{
+    batchNo?: string
+    transactionCount?: string
+    safCount: number
+    safAmount: number
+    hasSAFPending: boolean
+  } | null>(null)
+  const [batchLoading, setBatchLoading] = useState(false)
+  const [batchClosing, setBatchClosing] = useState(false)
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false)
+  const [lastBatchClose, setLastBatchClose] = useState<string | null>(null)
+  const [activeReaderId, setActiveReaderId] = useState<string | null>(null)
+  const batchLoadedRef = useRef(false)
 
   useUnsavedWarning(isDirty)
 
@@ -55,6 +70,71 @@ export default function PaymentSettingsPage() {
     const cleanup = loadSettings()
     return cleanup
   }, [loadSettings])
+
+  const locationId = employee?.location?.id
+
+  // Load active reader + batch info when processor is datacap
+  const loadBatchInfo = useCallback(async (readerId: string) => {
+    if (!locationId) return
+    setBatchLoading(true)
+    try {
+      const res = await fetch(`/api/datacap/batch?locationId=${locationId}&readerId=${readerId}`)
+      if (res.ok) {
+        const { data } = await res.json()
+        setBatchInfo(data)
+      }
+    } catch {
+      // Batch status not critical — fail silently
+    } finally {
+      setBatchLoading(false)
+    }
+  }, [locationId])
+
+  useEffect(() => {
+    if (!locationId || form?.processor !== 'datacap' || batchLoadedRef.current) return
+    batchLoadedRef.current = true
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/hardware/payment-readers?locationId=${locationId}`)
+        if (res.ok) {
+          const { data } = await res.json()
+          const readers = data.readers || []
+          const active = readers.find((r: { isActive: boolean }) => r.isActive) || readers[0]
+          if (active) {
+            setActiveReaderId(active.id)
+            loadBatchInfo(active.id)
+          }
+        }
+      } catch {
+        // Reader fetch not critical
+      }
+    })()
+  }, [locationId, form?.processor, loadBatchInfo])
+
+  const handleCloseBatch = async () => {
+    if (!locationId || !activeReaderId) return
+    setBatchClosing(true)
+    setBatchConfirmOpen(false)
+    try {
+      const res = await fetch('/api/datacap/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId, readerId: activeReaderId }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `Batch close failed (HTTP ${res.status})`)
+      }
+      setLastBatchClose(new Date().toISOString())
+      toast.success('Batch closed successfully')
+      // Refresh batch summary
+      loadBatchInfo(activeReaderId)
+    } catch (err) {
+      toast.error(`Failed to close batch: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setBatchClosing(false)
+    }
+  }
 
   const handleSave = async () => {
     if (!form) return
@@ -652,6 +732,91 @@ export default function PaymentSettingsPage() {
             </>
           )}
         </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 9: Batch Management (Datacap only)
+            ═══════════════════════════════════════════ */}
+        {form.processor === 'datacap' && (
+          <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Batch Management</h2>
+            <p className="text-sm text-gray-500 mb-5">View current batch status and close the batch to settle pending transactions.</p>
+
+            {/* Batch summary */}
+            {batchLoading ? (
+              <div className="text-sm text-gray-400 py-4">Loading batch status...</div>
+            ) : batchInfo ? (
+              <div className="space-y-3 mb-5">
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-600">Current Batch</span>
+                  <span className="text-sm font-medium text-gray-900">#{batchInfo.batchNo || '—'}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-600">Transactions</span>
+                  <span className="text-sm font-medium text-gray-900">{batchInfo.transactionCount ?? '—'}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                  <span className="text-sm text-gray-600">SAF Queue</span>
+                  <span className={`text-sm font-medium ${batchInfo.hasSAFPending ? 'text-amber-600' : 'text-gray-900'}`}>
+                    {batchInfo.hasSAFPending
+                      ? `${batchInfo.safCount} pending ($${batchInfo.safAmount.toFixed(2)})`
+                      : 'Clear'}
+                  </span>
+                </div>
+                {lastBatchClose && (
+                  <div className="flex items-center justify-between py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-600">Last Closed</span>
+                    <span className="text-sm font-medium text-gray-900">
+                      {new Date(lastBatchClose).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : !activeReaderId ? (
+              <div className="text-sm text-gray-400 py-4">No payment reader configured. Add a reader in Hardware Settings.</div>
+            ) : (
+              <div className="text-sm text-gray-400 py-4">Unable to load batch status.</div>
+            )}
+
+            {/* Close Batch button */}
+            {activeReaderId && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setBatchConfirmOpen(true)}
+                  disabled={batchClosing || batchLoading}
+                  className="px-5 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {batchClosing ? 'Closing Batch...' : 'Close Batch'}
+                </button>
+
+                {/* Confirmation dialog */}
+                {batchConfirmOpen && (
+                  <div className="mt-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+                    <p className="text-sm text-red-800 font-medium mb-3">
+                      Are you sure? This closes the current batch and settles all pending transactions.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCloseBatch}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700"
+                      >
+                        Yes, Close Batch
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBatchConfirmOpen(false)}
+                        className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Sticky save bar */}
         <SettingsSaveBar isDirty={isDirty} isSaving={isSaving} onSave={handleSave} />

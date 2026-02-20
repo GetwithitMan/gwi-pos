@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
@@ -58,9 +58,8 @@ interface Summary {
 }
 
 export default function CouponReportsPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/coupons' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const { retentionDays, venueSlug } = useDataRetention()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [coupons, setCoupons] = useState<CouponStat[]>([])
@@ -79,12 +78,8 @@ export default function CouponReportsPage() {
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/coupons')
-      return
-    }
     loadReport()
-  }, [isAuthenticated, router, startDate, endDate])
+  }, [startDate, endDate])
 
   const loadReport = async () => {
     if (!employee?.location?.id) return
@@ -122,7 +117,7 @@ export default function CouponReportsPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

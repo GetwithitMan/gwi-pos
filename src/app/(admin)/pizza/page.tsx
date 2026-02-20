@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import {
@@ -34,8 +33,7 @@ import {
 type TabType = 'config' | 'sizes' | 'crusts' | 'sauces' | 'cheeses' | 'toppings'
 
 export default function PizzaAdminPage() {
-  const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/pizza' })
   const [activeTab, setActiveTab] = useState<TabType>('sizes')
   const [isLoading, setIsLoading] = useState(true)
   const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
@@ -65,12 +63,8 @@ export default function PizzaAdminPage() {
   const [editingTopping, setEditingTopping] = useState<PizzaTopping | null>(null)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/pizza')
-      return
-    }
     loadAllData()
-  }, [isAuthenticated, router])
+  }, [])
 
   const loadAllData = async () => {
     setIsLoading(true)
@@ -279,6 +273,8 @@ export default function PizzaAdminPage() {
       console.error('Failed to delete topping:', error)
     }
   }
+
+  if (!hydrated) return null
 
   if (isLoading) {
     return (

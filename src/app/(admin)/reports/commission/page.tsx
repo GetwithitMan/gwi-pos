@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
@@ -41,8 +41,7 @@ interface CommissionReport {
 }
 
 export default function CommissionReportPage() {
-  const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/commission' })
   const employee = useAuthStore(s => s.employee)
   const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<CommissionReport | null>(null)
@@ -58,14 +57,10 @@ export default function CommissionReportPage() {
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/commission')
-      return
-    }
     if (employee?.location?.id) {
       loadReport()
     }
-  }, [isAuthenticated, router, employee?.location?.id])
+  }, [employee?.location?.id])
 
   const loadReport = async () => {
     if (!employee?.location?.id) return
@@ -99,7 +94,7 @@ export default function CommissionReportPage() {
     })
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

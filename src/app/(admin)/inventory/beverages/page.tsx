@@ -1,24 +1,16 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { BeverageInventoryView } from '@/components/inventory/BeverageInventoryView'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 
 export default function BeverageInventoryPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/beverages' })
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/beverages')
-    }
-  }, [isAuthenticated, router])
-
-  if (!isAuthenticated || !employee?.location?.id) {
+  if (!hydrated || !employee?.location?.id) {
     return null
   }
 

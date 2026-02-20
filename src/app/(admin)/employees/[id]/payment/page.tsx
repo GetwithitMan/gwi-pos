@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 
 interface EmployeePaymentInfo {
@@ -53,7 +53,7 @@ type PageParams = {
 export default function EmployeePaymentPage({ params }: { params: Promise<PageParams> }) {
   const { id: employeeId } = use(params)
   const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/employees' })
   const [employee, setEmployee] = useState<EmployeePaymentInfo | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -87,12 +87,8 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
   })
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/employees')
-      return
-    }
     loadEmployee()
-  }, [isAuthenticated, employeeId, router])
+  }, [employeeId])
 
   const loadEmployee = async () => {
     try {
@@ -189,7 +185,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   if (isLoading) {
     return (

@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 
@@ -76,9 +76,8 @@ interface Category {
 }
 
 export default function CombosPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/combos' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [combos, setCombos] = useState<Combo[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
@@ -100,12 +99,8 @@ export default function CombosPage() {
   })
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/combos')
-      return
-    }
     loadData()
-  }, [isAuthenticated, router])
+  }, [])
 
   const loadData = async () => {
     if (!employee?.location?.id) return
@@ -332,7 +327,7 @@ export default function CombosPage() {
     }
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 
 interface ProductMixItem {
   menuItemId: string
@@ -71,9 +71,8 @@ interface ReportData {
 }
 
 export default function ProductMixReportPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/product-mix' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const { retentionDays, venueSlug } = useDataRetention()
   const locationId = employee?.location?.id
 
@@ -86,12 +85,6 @@ export default function ProductMixReportPage() {
   })
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
   const [view, setView] = useState<'items' | 'categories' | 'hourly' | 'pairings'>('items')
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/product-mix')
-    }
-  }, [isAuthenticated, router])
 
   useEffect(() => {
     if (locationId) {
@@ -114,6 +107,8 @@ export default function ProductMixReportPage() {
       setLoading(false)
     }
   }
+
+  if (!hydrated) return null
 
   if (loading) {
     return (

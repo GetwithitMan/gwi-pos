@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface PrepStation {
@@ -49,8 +50,8 @@ const COLORS = [
 
 export default function PrepStationsPage() {
   const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/prep-stations' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<PrepStation>({
     apiBase: '/api/prep-stations',
@@ -88,13 +89,6 @@ export default function PrepStationsPage() {
   const [formType, setFormType] = useState('kitchen')
   const [formShowAllItems, setFormShowAllItems] = useState(false)
   const [formAutoComplete, setFormAutoComplete] = useState<number | ''>('')
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/prep-stations')
-      return
-    }
-  }, [isAuthenticated, router])
 
   const loadMenuData = useCallback(async () => {
     if (!employee?.location?.id) return
@@ -222,7 +216,7 @@ export default function PrepStationsPage() {
     )
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   const getTypeStyle = (type: string) => {
     return STATION_TYPES.find(t => t.value === type)?.color || 'bg-gray-100 text-gray-700'

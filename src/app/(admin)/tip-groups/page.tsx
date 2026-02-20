@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -61,10 +61,9 @@ function splitModeLabel(mode: string): string {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function TipGroupsPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/tip-groups' })
   const employee = useAuthStore(s => s.employee)
   const locationId = useAuthStore(s => s.locationId)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const [groups, setGroups] = useState<TipGroup[]>([])
   const [total, setTotal] = useState(0)
@@ -75,14 +74,6 @@ export default function TipGroupsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-
-  // ── Auth guard ──────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/tip-groups')
-    }
-  }, [isAuthenticated, router])
 
   // ── Fetch data ──────────────────────────────────────────────────────────
 
@@ -137,7 +128,7 @@ export default function TipGroupsPage() {
 
   // ── Render guards ───────────────────────────────────────────────────────
 
-  if (!isAuthenticated || !employee) {
+  if (!hydrated || !employee) {
     return null
   }
 

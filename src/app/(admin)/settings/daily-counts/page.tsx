@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast-store'
@@ -41,9 +41,8 @@ interface PrepItem {
 }
 
 export default function DailyCountsSettingsPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/settings/daily-counts' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [prepItems, setPrepItems] = useState<PrepItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
@@ -54,13 +53,6 @@ export default function DailyCountsSettingsPage() {
   const [addingTrayFor, setAddingTrayFor] = useState<string | null>(null)
 
   const locationId = employee?.location?.id
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/settings/daily-counts')
-    }
-  }, [isAuthenticated, router])
 
   const loadPrepItems = useCallback(async () => {
     if (!locationId) {
@@ -190,6 +182,8 @@ export default function DailyCountsSettingsPage() {
 
   const dailyCountItems = prepItems.filter(i => i.isDailyCountItem)
   const otherItems = prepItems.filter(i => !i.isDailyCountItem)
+
+  if (!hydrated) return null
 
   // Wait for auth to load
   if (!locationId || isLoading) {

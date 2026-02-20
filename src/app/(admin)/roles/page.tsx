@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { PERMISSION_GROUPS, DEFAULT_ROLES, hasPermission } from '@/lib/auth-utils'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -25,9 +25,8 @@ interface Role {
 }
 
 export default function RolesPage() {
-  const router = useRouter()
   const currentEmployee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/roles' })
 
   const crud = useAdminCRUD<Role>({
     apiBase: '/api/roles',
@@ -45,12 +44,6 @@ export default function RolesPage() {
   const [trackLaborCost, setTrackLaborCost] = useState(true)
   const [isTipped, setIsTipped] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<string[]>(Object.keys(PERMISSION_GROUPS))
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/roles')
-    }
-  }, [isAuthenticated, router])
 
   useEffect(() => {
     if (currentEmployee?.location?.id) {
@@ -176,7 +169,7 @@ export default function RolesPage() {
     return permissions.length > 0 ? `${permissions.length} permissions (${summary})` : 'No permissions'
   }
 
-  if (!isAuthenticated || !currentEmployee) {
+  if (!hydrated || !currentEmployee) {
     return null
   }
 

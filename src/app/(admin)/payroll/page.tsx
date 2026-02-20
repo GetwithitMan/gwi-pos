@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -58,8 +58,7 @@ interface PayStub {
 }
 
 export default function PayrollPage() {
-  const router = useRouter()
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/payroll' })
   const employee = useAuthStore(s => s.employee)
   const [periods, setPeriods] = useState<PayrollPeriod[]>([])
   const [selectedPeriod, setSelectedPeriod] = useState<PayrollPeriod | null>(null)
@@ -71,14 +70,10 @@ export default function PayrollPage() {
   const [newPeriodEnd, setNewPeriodEnd] = useState('')
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/payroll')
-      return
-    }
     if (employee?.location?.id) {
       loadPeriods()
     }
-  }, [isAuthenticated, router, employee?.location?.id])
+  }, [employee?.location?.id])
 
   const loadPeriods = async () => {
     if (!employee?.location?.id) return
@@ -218,7 +213,7 @@ export default function PayrollPage() {
     )
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

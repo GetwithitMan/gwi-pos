@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 
@@ -117,9 +117,8 @@ function DatacapReturnBadge({ code, text }: { code: string | null; text: string 
 }
 
 export default function DatacapTransactionReportPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/datacap' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const [localPayments, setLocalPayments] = useState<LocalPayment[]>([])
   const [datacapTransactions, setDatacapTransactions] = useState<DatacapTransaction[]>([])
@@ -135,12 +134,6 @@ export default function DatacapTransactionReportPage() {
 
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/datacap')
-    }
-  }, [isAuthenticated, router])
 
   useEffect(() => {
     if (employee?.location?.id) {
@@ -213,7 +206,7 @@ export default function DatacapTransactionReportPage() {
     return true
   })
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

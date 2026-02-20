@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface HouseAccount {
@@ -61,9 +61,8 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
 }
 
 export default function HouseAccountsPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/house-accounts' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<HouseAccount>({
     apiBase: '/api/house-accounts',
@@ -113,13 +112,6 @@ export default function HouseAccountsPage() {
   const [formBillingCycle, setFormBillingCycle] = useState('monthly')
   const [formTaxExempt, setFormTaxExempt] = useState(false)
   const [formTaxId, setFormTaxId] = useState('')
-
-  // Auth guard
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/house-accounts')
-    }
-  }, [isAuthenticated, router])
 
   // Load on mount
   useEffect(() => {
@@ -280,6 +272,8 @@ export default function HouseAccountsPage() {
   const totalOwed = accounts
     .filter(a => a.status === 'active')
     .reduce((sum, a) => sum + a.currentBalance, 0)
+
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

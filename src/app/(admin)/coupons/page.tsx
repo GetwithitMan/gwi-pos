@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface Coupon {
@@ -30,9 +30,8 @@ interface Coupon {
 }
 
 export default function CouponsPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/coupons' })
 
   const crud = useAdminCRUD<Coupon>({
     apiBase: '/api/coupons',
@@ -57,12 +56,6 @@ export default function CouponsPage() {
   } = crud
 
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all')
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/coupons')
-    }
-  }, [isAuthenticated, router])
 
   useEffect(() => {
     if (employee?.location?.id) {
@@ -118,6 +111,8 @@ export default function CouponsPage() {
     }
     return <span className="px-2 py-1 text-xs rounded bg-green-900 text-green-300">Active</span>
   }
+
+  if (!hydrated) return null
 
   if (isLoading) {
     return (

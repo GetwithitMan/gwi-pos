@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
@@ -32,9 +32,8 @@ const PAYMENT_TERMS = [
 ]
 
 export default function VendorsPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/vendors' })
 
   // Search/filter state (kept separate from CRUD hook)
   const [search, setSearch] = useState('')
@@ -91,13 +90,6 @@ export default function VendorsPage() {
     handleDelete,
   } = crud
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/vendors')
-      return
-    }
-  }, [isAuthenticated, router])
-
   // Load vendors on mount and when showInactive changes
   useEffect(() => {
     if (!locationId) return
@@ -118,7 +110,7 @@ export default function VendorsPage() {
     )
   }, [vendors, search])
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

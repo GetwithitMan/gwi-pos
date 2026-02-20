@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
@@ -46,9 +46,8 @@ interface Employee {
 }
 
 export default function VoidReportsPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/voids' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const { retentionDays, venueSlug } = useDataRetention()
   const [logs, setLogs] = useState<VoidLog[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
@@ -66,12 +65,6 @@ export default function VoidReportsPage() {
   })
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('')
   const [viewMode, setViewMode] = useState<'logs' | 'byEmployee' | 'byReason'>('logs')
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/voids')
-    }
-  }, [isAuthenticated, router])
 
   useEffect(() => {
     if (employee?.location?.id) {
@@ -136,6 +129,8 @@ export default function VoidReportsPage() {
       minute: '2-digit',
     })
   }
+
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

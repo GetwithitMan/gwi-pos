@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
@@ -35,8 +36,8 @@ type TabType = 'summary' | 'daily' | 'hourly' | 'categories' | 'items' | 'employ
 
 export default function SalesReportPage() {
   const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/sales' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<SalesReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -51,14 +52,10 @@ export default function SalesReportPage() {
   })
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports/sales')
-      return
-    }
     if (employee?.location?.id) {
       loadReport()
     }
-  }, [isAuthenticated, router, employee?.location?.id])
+  }, [employee?.location?.id])
 
   const loadReport = async () => {
     if (!employee?.location?.id) return
@@ -91,7 +88,7 @@ export default function SalesReportPage() {
     })
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   const tabs: { id: TabType; label: string }[] = [
     { id: 'summary', label: 'Summary' },

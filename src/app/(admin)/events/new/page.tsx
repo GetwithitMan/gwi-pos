@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 
 interface PricingTierInput {
   name: string
@@ -42,17 +43,11 @@ const TICKETING_MODES = [
 export default function CreateEventPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/events/new' })
   const locationId = employee?.location?.id
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/events/new')
-    }
-  }, [isAuthenticated, router])
 
   const [form, setForm] = useState({
     name: '',
@@ -128,6 +123,8 @@ export default function CreateEventPage() {
       setSaving(false)
     }
   }
+
+  if (!hydrated) return null
 
   return (
     <div className="p-6 max-w-4xl mx-auto">

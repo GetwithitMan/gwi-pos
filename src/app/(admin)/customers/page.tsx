@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
@@ -55,9 +55,8 @@ interface CustomerDetail extends Customer {
 }
 
 export default function CustomersPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/customers' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [searchTerm, setSearchTerm] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
@@ -125,12 +124,6 @@ export default function CustomersPage() {
     marketingOptIn: true,
     birthday: '',
   })
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/customers')
-    }
-  }, [isAuthenticated, router])
 
   useEffect(() => {
     if (employee?.location?.id) {
@@ -240,7 +233,7 @@ export default function CustomersPage() {
     return colors[tag] || 'bg-gray-100 text-gray-700'
   }
 
-  if (!isAuthenticated || !employee) {
+  if (!hydrated || !employee) {
     return null
   }
 

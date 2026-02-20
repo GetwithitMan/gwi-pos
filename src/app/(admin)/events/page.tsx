@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 
 interface PricingTier {
@@ -52,20 +53,13 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 }
 
 export default function EventsPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/events' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
 
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>('upcoming')
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/events')
-    }
-  }, [isAuthenticated, router])
 
   useEffect(() => {
     if (locationId) {
@@ -100,6 +94,8 @@ export default function EventsPage() {
     totalTickets: events.reduce((sum, e) => sum + e.soldCount, 0),
     totalCapacity: events.reduce((sum, e) => sum + e.totalCapacity, 0),
   }
+
+  if (!hydrated) return null
 
   if (loading) {
     return (

@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import { Virtuoso } from 'react-virtuoso'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -63,9 +63,8 @@ interface Pagination {
 }
 
 export default function InventoryItemsPage() {
-  const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/items' })
   const [items, setItems] = useState<InventoryItem[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -90,12 +89,8 @@ export default function InventoryItemsPage() {
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/items')
-      return
-    }
     loadData()
-  }, [isAuthenticated, router])
+  }, [])
 
   // Reset and reload when filters change (except search which is debounced)
   useEffect(() => {
@@ -214,7 +209,7 @@ export default function InventoryItemsPage() {
     })
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">

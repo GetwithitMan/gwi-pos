@@ -1,28 +1,20 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import type { OrderTypeConfig, FieldDefinition, WorkflowRules, KDSConfig } from '@/types/order-types'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 
 export default function OrderTypesPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [orderTypes, setOrderTypes] = useState<OrderTypeConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingType, setEditingType] = useState<OrderTypeConfig | null>(null)
   const [showModal, setShowModal] = useState(false)
-
-  // Auth check
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login')
-    }
-  }, [isAuthenticated, router])
 
   // Load order types
   const loadOrderTypes = async (locationId: string) => {
@@ -154,6 +146,8 @@ export default function OrderTypesPage() {
       console.error('Failed to delete order type:', error)
     }
   }
+
+  if (!hydrated) return null
 
   if (isLoading) {
     return (

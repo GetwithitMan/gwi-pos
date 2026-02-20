@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast-store'
@@ -49,9 +49,8 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function ReservationsPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reservations' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
 
   // useAdminCRUD for modal state and list state management
@@ -79,13 +78,6 @@ export default function ReservationsPage() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
-
-  // Auth guard
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reservations')
-    }
-  }, [isAuthenticated, router])
 
   // Custom fetch with date param (hook's loadItems doesn't support extra query params)
   const fetchReservations = useCallback(async () => {
@@ -171,6 +163,8 @@ export default function ReservationsPage() {
       r.status !== 'cancelled' && r.status !== 'no_show' ? sum + r.partySize : sum, 0
     ),
   }
+
+  if (!hydrated) return null
 
   if (isLoading) {
     return (

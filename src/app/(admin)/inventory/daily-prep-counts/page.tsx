@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Modal } from '@/components/ui/modal'
@@ -66,7 +67,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 export default function DailyPrepCountsPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/inventory/daily-prep-counts' })
   const [prepItems, setPrepItems] = useState<PrepItem[]>([])
   const [counts, setCounts] = useState<DailyPrepCount[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -119,12 +120,8 @@ export default function DailyPrepCountsPage() {
   }, [locationId])
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/inventory/daily-prep-counts')
-      return
-    }
     loadData()
-  }, [isAuthenticated, router, loadData])
+  }, [loadData])
 
   // Initialize entries when active count changes
   useEffect(() => {
@@ -387,7 +384,7 @@ export default function DailyPrepCountsPage() {
     })
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   if (isLoading) {
     return (

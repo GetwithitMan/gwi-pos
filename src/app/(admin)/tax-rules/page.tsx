@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface TaxRule {
@@ -28,9 +28,8 @@ interface Category {
 }
 
 export default function TaxRulesPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/tax-rules' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<TaxRule>({
     apiBase: '/api/tax-rules',
@@ -77,12 +76,6 @@ export default function TaxRulesPage() {
       console.error('Failed to load categories:', error)
     }
   }, [employee?.location?.id])
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/tax-rules')
-    }
-  }, [isAuthenticated, router])
 
   useEffect(() => {
     if (employee?.location?.id) {
@@ -147,7 +140,7 @@ export default function TaxRulesPage() {
     })
   }
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
