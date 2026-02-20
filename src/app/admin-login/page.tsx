@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -18,7 +18,7 @@ type Mode = 'login' | 'picking' | 'forgot' | 'verify'
  *
  * No Mission Control redirect — fully self-contained per venue.
  */
-export default function AdminLoginPage() {
+function AdminLoginContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -413,5 +413,13 @@ export default function AdminLoginPage() {
         </button>
       </div>
     </PageWrapper>
+  )
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense>
+      <AdminLoginContent />
+    </Suspense>
   )
 }
