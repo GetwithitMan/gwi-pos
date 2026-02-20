@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Void an unclosed tab (releases all card holds)
@@ -88,6 +88,10 @@ export const POST = withVenue(async function POST(
         orderId,
         tableId: order.tableId || undefined,
       }, { async: true }).catch(() => {})
+      void dispatchTabUpdated(locationId, {
+        orderId,
+        status: 'voided',
+      }).catch(() => {})
       if (order.tableId) {
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
       }

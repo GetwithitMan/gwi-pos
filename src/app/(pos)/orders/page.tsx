@@ -2611,35 +2611,44 @@ export default function OrdersPage() {
               const cardRequired = (barTabOT?.workflowRules as WorkflowRules)?.requireCardOnFile ?? requireCardForTab
 
               if (cardRequired) {
-                // Card required → create lightweight draft shell, then show card modal instantly
-                try {
-                  let orderId = existingOrderId
-                  if (!orderId) {
-                    const shellRes = await fetch('/api/orders', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        employeeId: employee?.id,
-                        locationId: employee?.location?.id,
-                        orderType: 'bar_tab',
-                        items: [],
-                      }),
-                    })
-                    if (!shellRes.ok) {
-                      toast.error('Failed to create order')
-                      return
-                    }
-                    const shellRaw = await shellRes.json()
-                    const shell = shellRaw.data ?? shellRaw
-                    orderId = shell.id
-                    const store2 = useOrderStore.getState()
-                    store2.updateOrderId(shell.id, shell.orderNumber)
-                    setSavedOrderId(shell.id)
-                  }
-                  setCardTabOrderId(orderId)
+                if (existingOrderId) {
+                  // Existing order — show reader modal immediately
+                  setCardTabOrderId(existingOrderId)
                   setShowCardTabFlow(true)
-                } catch {
-                  toast.error('Failed to save order — please try again')
+                } else {
+                  // New tab — open modal instantly (shows "Preparing…" state)
+                  // then create the order shell in the background
+                  setCardTabOrderId(null)
+                  setShowCardTabFlow(true)
+
+                  void (async () => {
+                    try {
+                      const shellRes = await fetch('/api/orders', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          employeeId: employee?.id,
+                          locationId: employee?.location?.id,
+                          orderType: 'bar_tab',
+                          items: [],
+                        }),
+                      })
+                      if (!shellRes.ok) {
+                        toast.error('Failed to create order')
+                        setShowCardTabFlow(false)
+                        return
+                      }
+                      const shellRaw = await shellRes.json()
+                      const shell = shellRaw.data ?? shellRaw
+                      const store2 = useOrderStore.getState()
+                      store2.updateOrderId(shell.id, shell.orderNumber)
+                      setSavedOrderId(shell.id)
+                      setCardTabOrderId(shell.id)   // triggers CardFirstTabFlow to auto-start
+                    } catch {
+                      toast.error('Failed to save order — please try again')
+                      setShowCardTabFlow(false)
+                    }
+                  })()
                 }
               } else {
                 // Card NOT required → show tab name prompt with keyboard
@@ -3239,6 +3248,42 @@ export default function OrdersPage() {
           cardTabOrderId={cardTabOrderId}
           onCardTabComplete={async (result) => {
             setShowCardTabFlow(false)
+
+            // Existing tab found — cancel shell order and navigate to existing tab
+            if (result.tabStatus === 'existing_tab_found' && result.existingTab) {
+              // Cancel the empty shell order we created in the background
+              if (cardTabOrderId) {
+                fetch(`/api/orders/${cardTabOrderId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'cancelled' }),
+                }).catch(() => {})
+              }
+              // Clear card-tab flow state
+              useOrderStore.getState().clearOrder()
+              setSavedOrderId(null)
+              setOrderSent(false)
+              setSelectedOrderType(null)
+              setOrderCustomFields({})
+              setCardTabOrderId(null)
+
+              // Navigate to the existing tab (same pattern as TabsPanel onSelectOpenOrder)
+              setOrderToLoad({
+                id: result.existingTab.orderId,
+                orderNumber: result.existingTab.tabNumber,
+                tabName: result.existingTab.tabName,
+                orderType: 'bar_tab',
+              })
+              setTabCardInfo({
+                cardholderName: undefined,
+                cardLast4: result.existingTab.last4,
+                cardType: result.existingTab.brand,
+              })
+              setSavedOrderId(result.existingTab.orderId)
+              toast.success(`Opened existing tab — ${result.existingTab.tabName}`)
+              return
+            }
+
             if (result.approved) {
               const store = useOrderStore.getState()
               const allItems = store.currentOrder?.items || []

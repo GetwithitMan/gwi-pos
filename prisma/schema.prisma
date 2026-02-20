@@ -6034,6 +6034,7 @@ model OrderCard {
   @@index([orderId])
   @@index([locationId])
   @@index([status])
+  @@index([recordNo])
 }
 
 // ============================================

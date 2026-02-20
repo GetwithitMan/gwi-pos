@@ -95,6 +95,39 @@ export const POST = withVenue(async function POST(
         cardholderName = collectResponse.cardholderName || undefined
         cardType = collectResponse.cardType || undefined
         cardLast4 = collectResponse.cardLast4 || undefined
+
+        // Stage 1: Check if this card is already vaulted and has an open tab
+        const collectRecordNo = collectResponse.recordNo || null
+        if (collectRecordNo) {
+          const existing = await db.orderCard.findFirst({
+            where: {
+              recordNo: collectRecordNo,
+              deletedAt: null,
+              order: { status: 'open', orderType: 'bar_tab', locationId },
+            },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              order: { select: { id: true, tabName: true, orderNumber: true } },
+            },
+          })
+          if (existing) {
+            // Reset order status (don't leave it as pending_auth)
+            void db.order.update({ where: { id: orderId }, data: { tabStatus: 'open' } }).catch(() => {})
+            return NextResponse.json({
+              data: {
+                tabStatus: 'existing_tab_found',
+                existingTab: {
+                  orderId: existing.order.id,
+                  tabName: existing.order.tabName ?? `Tab #${existing.order.orderNumber}`,
+                  tabNumber: existing.order.orderNumber,
+                  authAmount: Number(existing.authAmount),
+                  brand: existing.cardType,
+                  last4: existing.cardLast4,
+                },
+              },
+            })
+          }
+        }
       }
     } catch (err) {
       console.warn('[Tab Open] CollectCardData failed, continuing with PreAuth:', err)
@@ -156,6 +189,39 @@ export const POST = withVenue(async function POST(
     if (!recordNo) {
       console.error('[Tab Open] PreAuth approved but no RecordNo returned')
       return NextResponse.json({ error: 'Pre-auth approved but no RecordNo token received' }, { status: 500 })
+    }
+
+    // Stage 2 safety net: check by preAuth RecordNo (handles first-time vault entries)
+    const existingByRecordNo = await db.orderCard.findFirst({
+      where: {
+        recordNo,
+        deletedAt: null,
+        order: { status: 'open', orderType: 'bar_tab', locationId },
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        order: { select: { id: true, tabName: true, orderNumber: true } },
+      },
+    })
+    if (existingByRecordNo) {
+      // Void the new hold — RecordNo-based, no card present needed
+      void client.voidSale(resolvedReaderId, { recordNo }).catch(err =>
+        console.error('[Tab Open] Failed to void duplicate hold:', err)
+      )
+      void db.order.update({ where: { id: orderId }, data: { tabStatus: 'open' } }).catch(() => {})
+      return NextResponse.json({
+        data: {
+          tabStatus: 'existing_tab_found',
+          existingTab: {
+            orderId: existingByRecordNo.order.id,
+            tabName: existingByRecordNo.order.tabName ?? `Tab #${existingByRecordNo.order.orderNumber}`,
+            tabNumber: existingByRecordNo.order.orderNumber,
+            authAmount: Number(existingByRecordNo.authAmount),
+            brand: existingByRecordNo.cardType,
+            last4: existingByRecordNo.cardLast4,
+          },
+        },
+      })
     }
 
     // Create OrderCard + update Order in a transaction

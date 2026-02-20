@@ -587,9 +587,9 @@ export function OrderPageModals(props: OrderPageModalsProps) {
       </Suspense>
 
       {/* Card-First Tab Flow Modal */}
-      {showCardTabFlow && cardTabOrderId && employee && (
+      {showCardTabFlow && employee && (
         <Suspense fallback={null}>
-          <Modal isOpen={showCardTabFlow && !!cardTabOrderId && !!employee} onClose={() => setShowCardTabFlow(false)} size="md">
+          <Modal isOpen={showCardTabFlow && !!employee} onClose={() => setShowCardTabFlow(false)} size="md">
             <div className="rounded-2xl shadow-2xl w-full overflow-hidden -m-5" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <CardFirstTabFlow
                 orderId={cardTabOrderId}

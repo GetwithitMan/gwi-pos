@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
@@ -9,6 +9,7 @@ import { PendingTabAnimation } from './PendingTabAnimation'
 import { AuthStatusBadge } from './AuthStatusBadge'
 import { MultiCardBadges } from './MultiCardBadges'
 import BottleServiceBanner from './BottleServiceBanner'
+import { useEvents } from '@/lib/events/use-events'
 
 interface TabCard {
   id: string
@@ -63,11 +64,7 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'mine'>('all')
 
-  useEffect(() => {
-    loadTabs()
-  }, [refreshTrigger])
-
-  const loadTabs = async () => {
+  const loadTabs = useCallback(async () => {
     try {
       const params = new URLSearchParams({ status: 'open' })
       const response = await fetch(`/api/tabs?${params}`)
@@ -81,7 +78,22 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadTabs()
+  }, [refreshTrigger, loadTabs])
+
+  const { subscribe, isConnected } = useEvents()
+
+  useEffect(() => {
+    if (!isConnected) return
+    const unsubs = [
+      subscribe('tab:updated', () => loadTabs()),
+      subscribe('orders:list-changed', () => loadTabs()),
+    ]
+    return () => unsubs.forEach(u => u())
+  }, [isConnected, subscribe, loadTabs])
 
   const filteredTabs = filter === 'mine' && employeeId
     ? tabs.filter(t => t.employee.id === employeeId)
