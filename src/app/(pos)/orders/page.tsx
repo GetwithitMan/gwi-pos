@@ -2493,6 +2493,8 @@ export default function OrdersPage() {
                           cardholderName: activeCard.cardholderName || undefined,
                           cardLast4: activeCard.cardLast4,
                           cardType: activeCard.cardType,
+                          recordNo: activeCard.recordNo || undefined,
+                          authAmount: activeCard.authAmount != null ? Number(activeCard.authAmount) : undefined,
                         })
                       }
                     }
@@ -3287,6 +3289,8 @@ export default function OrdersPage() {
                 cardholderName: result.cardholderName,
                 cardLast4: result.cardLast4,
                 cardType: result.cardType,
+                recordNo: result.recordNo || undefined,
+                authAmount: result.authAmount != null ? Number(result.authAmount) : undefined,
               })
               toast.success(`Tab opened — •••${result.cardLast4}`)
               useOrderStore.getState().clearOrder()

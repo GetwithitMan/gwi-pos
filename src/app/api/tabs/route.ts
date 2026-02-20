@@ -33,6 +33,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
         },
         payments: true,
+        cards: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            cardType: true,
+            cardLast4: true,
+            cardholderName: true,
+            isDefault: true,
+            status: true,
+            authAmount: true,
+            recordNo: true,
+          },
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        },
       },
       orderBy: { openedAt: 'desc' },
       skip: offset,
@@ -40,60 +54,89 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     return NextResponse.json({ data: {
-      tabs: tabs.map(tab => ({
-        id: tab.id,
-        tabName: tab.tabName, // Return actual value (null if no custom name)
-        orderNumber: tab.orderNumber,
-        status: tab.status,
-        employee: {
-          id: tab.employee.id,
-          name: tab.employee.displayName || `${tab.employee.firstName} ${tab.employee.lastName}`,
-        },
-        itemCount: tab.items.reduce((sum, item) => sum + item.quantity, 0),
-        items: tab.items
-          .filter(item => !item.deletedAt)
-          .map(item => ({
-            id: item.id,
-            menuItemId: item.menuItemId,
-            name: item.name,
-            price: Number(item.price),
-            quantity: item.quantity,
-            sentToKitchen: item.kitchenStatus !== 'pending',
-            specialNotes: item.specialNotes,
-            isHeld: item.isHeld,
-            isCompleted: item.isCompleted,
-            seatNumber: item.seatNumber,
-            courseNumber: item.courseNumber,
-            courseStatus: item.courseStatus,
-            resendCount: item.resendCount,
-            createdAt: item.createdAt?.toISOString(),
-            modifiers: item.modifiers
-              .filter((m: { deletedAt: Date | null }) => !m.deletedAt)
-              .map((m: { id: string; name: string; price: unknown; preModifier: string | null; depth: number | null }) => ({
-                id: m.id,
-                name: m.name,
-                price: Number(m.price),
-                preModifier: m.preModifier,
-                depth: m.depth || 0,
-              })),
+      tabs: tabs.map(tab => {
+        const tabAny = tab as typeof tab & {
+          tabStatus?: string | null
+          tabNickname?: string | null
+          isBottleService?: boolean
+          bottleServiceTierName?: string | null
+          bottleServiceTierColor?: string | null
+        }
+        return {
+          id: tab.id,
+          tabName: tab.tabName,
+          tabNickname: tabAny.tabNickname ?? null,
+          tabStatus: tabAny.tabStatus ?? null,
+          orderNumber: tab.orderNumber,
+          status: tab.status,
+          isBottleService: tabAny.isBottleService ?? false,
+          bottleServiceTierName: tabAny.bottleServiceTierName ?? null,
+          bottleServiceTierColor: tabAny.bottleServiceTierColor ?? null,
+          employee: {
+            id: tab.employee.id,
+            name: tab.employee.displayName || `${tab.employee.firstName} ${tab.employee.lastName}`,
+          },
+          itemCount: tab.items.reduce((sum, item) => sum + item.quantity, 0),
+          items: tab.items
+            .filter(item => !item.deletedAt)
+            .map(item => ({
+              id: item.id,
+              menuItemId: item.menuItemId,
+              name: item.name,
+              price: Number(item.price),
+              quantity: item.quantity,
+              sentToKitchen: item.kitchenStatus !== 'pending',
+              specialNotes: item.specialNotes,
+              isHeld: item.isHeld,
+              isCompleted: item.isCompleted,
+              seatNumber: item.seatNumber,
+              courseNumber: item.courseNumber,
+              courseStatus: item.courseStatus,
+              resendCount: item.resendCount,
+              createdAt: item.createdAt?.toISOString(),
+              modifiers: item.modifiers
+                .filter((m: { deletedAt: Date | null }) => !m.deletedAt)
+                .map((m: { id: string; name: string; price: unknown; preModifier: string | null; depth: number | null }) => ({
+                  id: m.id,
+                  name: m.name,
+                  price: Number(m.price),
+                  preModifier: m.preModifier,
+                  depth: m.depth || 0,
+                })),
+            })),
+          subtotal: Number(tab.subtotal),
+          taxTotal: Number(tab.taxTotal),
+          total: Number(tab.total),
+          // OrderCard records (source of truth for Datacap pre-auths)
+          cards: tab.cards.map(c => ({
+            id: c.id,
+            cardType: c.cardType,
+            cardLast4: c.cardLast4,
+            cardholderName: c.cardholderName,
+            isDefault: c.isDefault,
+            status: c.status,
+            authAmount: Number(c.authAmount),
+            recordNo: c.recordNo,
           })),
-        subtotal: Number(tab.subtotal),
-        taxTotal: Number(tab.taxTotal),
-        total: Number(tab.total),
-        // Pre-auth info
-        hasPreAuth: !!tab.preAuthId,
-        preAuth: tab.preAuthId ? {
-          cardBrand: tab.preAuthCardBrand,
-          last4: tab.preAuthLast4,
-          amount: tab.preAuthAmount ? Number(tab.preAuthAmount) : null,
-          expiresAt: tab.preAuthExpiresAt?.toISOString(),
-        } : null,
-        openedAt: tab.openedAt.toISOString(),
-        // Payment status
-        paidAmount: tab.payments
-          .filter(p => p.status === 'completed')
-          .reduce((sum, p) => sum + Number(p.totalAmount), 0),
-      })),
+          // Legacy pre-auth info kept for backward compat
+          hasPreAuth: tab.cards.length > 0 || !!tab.preAuthId,
+          preAuth: tab.cards.length > 0 ? {
+            cardBrand: tab.cards[0].cardType,
+            last4: tab.cards[0].cardLast4,
+            amount: Number(tab.cards[0].authAmount),
+            expiresAt: null,
+          } : tab.preAuthId ? {
+            cardBrand: tab.preAuthCardBrand,
+            last4: tab.preAuthLast4,
+            amount: tab.preAuthAmount ? Number(tab.preAuthAmount) : null,
+            expiresAt: tab.preAuthExpiresAt?.toISOString(),
+          } : null,
+          openedAt: tab.openedAt.toISOString(),
+          paidAmount: tab.payments
+            .filter(p => p.status === 'completed')
+            .reduce((sum, p) => sum + Number(p.totalAmount), 0),
+        }
+      }),
     } })
   } catch (error) {
     console.error('Failed to fetch tabs:', error)

@@ -18,6 +18,7 @@ interface TabCard {
   isDefault: boolean
   status: string
   authAmount: number
+  recordNo?: string | null
 }
 
 interface Tab {
@@ -220,10 +221,19 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
                   </div>
                 )}
 
-                {/* Multi-card badges */}
+                {/* Card pills */}
                 {tab.cards && tab.cards.length > 0 ? (
-                  <div className="mb-2 ml-7">
+                  <div className="mb-2 ml-7 space-y-0.5">
                     <MultiCardBadges cards={tab.cards} compact />
+                    {/* Show cardholder name under single-card tabs */}
+                    {tab.cards.length === 1 && tab.cards[0].cardholderName && (
+                      <p className="text-[11px] text-gray-400 font-medium pl-0.5">
+                        {tab.cards[0].cardholderName.includes('/')
+                          ? (() => { const [l, f] = tab.cards[0].cardholderName!.split('/'); return `${f?.trim()} ${l?.trim()}` })()
+                          : tab.cards[0].cardholderName}
+                        {' '}· ${tab.cards[0].authAmount.toFixed(0)} hold
+                      </p>
+                    )}
                   </div>
                 ) : tab.hasPreAuth && tab.preAuth && !isPending && (
                   <div className="flex items-center gap-1 text-xs text-blue-600 mb-2 ml-7">

@@ -8,7 +8,13 @@ interface TabNamePromptModalProps {
   isOpen: boolean
   onClose: () => void
   onSubmit: (name: string) => void
-  cardInfo?: { cardholderName?: string; cardLast4?: string; cardType?: string } | null
+  cardInfo?: {
+    cardholderName?: string
+    cardLast4?: string
+    cardType?: string
+    recordNo?: string
+    authAmount?: number
+  } | null
 }
 
 export function TabNamePromptModal({ isOpen, onClose, onSubmit, cardInfo }: TabNamePromptModalProps) {
@@ -48,13 +54,32 @@ export function TabNamePromptModal({ isOpen, onClose, onSubmit, cardInfo }: TabN
         {cardInfo?.cardLast4 ? (
           <>
             <h3 className="text-lg font-bold text-white mb-2">Tab Started</h3>
-            <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-              <span className="text-green-400 text-sm">{'\u2713'}</span>
-              <span className="text-green-300 text-sm font-medium">
-                {cardInfo.cardType} {'\u2022\u2022\u2022'}{cardInfo.cardLast4}
-              </span>
+            <div className="mb-3 px-3 py-2.5 rounded-xl" style={{ background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.35)' }}>
+              <div className="flex items-center gap-2">
+                <span className="text-green-400 text-base">✓</span>
+                <span className="text-green-200 text-sm font-bold uppercase tracking-wide">
+                  {cardInfo.cardType}
+                </span>
+                <span className="text-green-300 text-sm font-mono">
+                  •••• {cardInfo.cardLast4}
+                </span>
+                {cardInfo.authAmount != null && (
+                  <span className="ml-auto text-green-400 text-sm font-semibold">
+                    ${cardInfo.authAmount.toFixed(2)} hold
+                  </span>
+                )}
+              </div>
               {cardInfo.cardholderName && (
-                <span className="text-green-300 text-sm ml-auto font-medium">{cardInfo.cardholderName}</span>
+                <p className="text-green-300 text-sm font-medium mt-1 ml-6">
+                  {cardInfo.cardholderName}
+                </p>
+              )}
+              {cardInfo.recordNo && (
+                <p className="mt-1 ml-6 font-mono text-[10px] text-green-600 opacity-70 select-all">
+                  {cardInfo.recordNo.startsWith('DC4:')
+                    ? `${cardInfo.recordNo.slice(0, 12)}…`
+                    : `DC4:${cardInfo.recordNo.slice(0, 8)}…`}
+                </p>
               )}
             </div>
             <p className="text-sm text-gray-400 mb-3">Add a nickname? (shown above cardholder name)</p>
