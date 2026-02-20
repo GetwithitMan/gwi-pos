@@ -101,7 +101,9 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith('/api/auth/venue-login') ||
       pathname.startsWith('/api/auth/venue-setup') ||
       pathname === '/auth/owner' ||
-      pathname.startsWith('/api/auth/owner-session')
+      pathname.startsWith('/api/auth/owner-session') ||
+      pathname.startsWith('/api/auth/forgot-password') ||
+      pathname.startsWith('/api/auth/reset-password')
     ) {
       const headers = new Headers(request.headers)
       headers.set('x-venue-slug', venueSlug)
