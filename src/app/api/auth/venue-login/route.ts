@@ -5,15 +5,68 @@ import { verifyPassword } from '@/lib/auth'
 import { signVenueToken } from '@/lib/cloud-auth'
 
 /**
+ * Derive the Clerk Frontend API URL from the publishable key.
+ * pk_test_Y2hhb... → base64 → "champion-mackerel-95.clerk.accounts.dev$"
+ * → FAPI URL: https://champion-mackerel-95.clerk.accounts.dev
+ */
+function getClerkFapiUrl(): string {
+  const pk = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || ''
+  if (!pk) return ''
+  try {
+    const base64 = pk.replace(/^pk_(test|live)_/, '')
+    const decoded = Buffer.from(base64, 'base64').toString('utf8').replace(/\$$/, '')
+    return `https://${decoded}`
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Verify email + password against the Clerk tenant server-to-server.
+ * Uses Clerk's Frontend API (FAPI) which accepts plain HTTP requests.
+ * Returns true if the credentials are valid in Clerk.
+ */
+async function verifyWithClerk(email: string, password: string): Promise<boolean> {
+  const fapiUrl = getClerkFapiUrl()
+  if (!fapiUrl) return false
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 5000)
+
+  try {
+    const res = await fetch(`${fapiUrl}/v1/client/sign_ins`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        identifier: email,
+        strategy: 'password',
+        password,
+      }).toString(),
+      signal: controller.signal,
+    })
+    clearTimeout(timeout)
+
+    if (!res.ok && res.status !== 422) return false
+
+    const data = await res.json()
+    // Successful sign-in: response.status === 'complete'
+    return data.response?.status === 'complete'
+  } catch {
+    clearTimeout(timeout)
+    return false
+  }
+}
+
+/**
  * POST /api/auth/venue-login
  *
- * Venue-local admin login. Validates email + password against the
- * Employee table in this venue's Neon database. On success, issues
- * the same pos-cloud-session cookie that Mission Control would issue,
- * so the rest of the auth middleware works identically.
+ * Venue admin login. Verifies email + password against the GWI Clerk
+ * tenant first (same credentials as Mission Control). If the owner
+ * doesn't have a Clerk account yet, falls back to a locally-stored
+ * bcrypt password (set during provisioning via /api/auth/venue-setup).
  *
- * This completely decouples venue admin access from Mission Control /
- * Clerk — no cloud redirect needed.
+ * On success, issues the same pos-cloud-session cookie that Mission
+ * Control would issue — no redirect to MC needed.
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
@@ -36,16 +89,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
   const normalizedEmail = email.trim().toLowerCase()
 
-  // Look up the venue location first, then find employee by email within it
+  // Look up venue location
   const location = await db.location.findFirst({
     orderBy: { createdAt: 'asc' },
     select: { id: true, name: true },
   })
-
   if (!location) {
     return NextResponse.json({ error: 'Venue not configured' }, { status: 404 })
   }
 
+  // Find employee by email in this venue's database
   const employee = await db.employee.findFirst({
     where: {
       locationId: location.id,
@@ -57,19 +110,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   })
 
   if (!employee) {
-    // Use same error message for both "not found" and "wrong password" to avoid user enumeration
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
 
-  if (!employee.password) {
-    return NextResponse.json(
-      { error: 'Admin password not set up yet. Contact your GWI admin to set up your login.', needsSetup: true },
-      { status: 403 }
-    )
+  // 1. Try Clerk first — same email+password as Mission Control login
+  const clerkValid = await verifyWithClerk(normalizedEmail, password)
+
+  // 2. Fallback: local bcrypt password (set during provisioning or via venue-setup)
+  let authenticated = clerkValid
+  if (!authenticated && employee.password) {
+    authenticated = await verifyPassword(password, employee.password)
   }
 
-  const valid = await verifyPassword(password, employee.password)
-  if (!valid) {
+  if (!authenticated) {
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
 
