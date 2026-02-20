@@ -1,5 +1,24 @@
 # Payments Domain Changelog
 
+## 2026-02-20 (PM4) — Forensic Audit Fixes (Commit 894e5fe)
+
+### Bug Fixes
+
+- **Simulator field passthrough**: `send()` now extracts `purchase`, `gratuity`, `customerCode`, `recordNo`, `invoiceNo` from the emitted XML and passes them to `simulateResponse()`. Previously the simulator received empty fields, making amount-based responses (partial approval amounts, Level II status) incorrect.
+- **`PartialAuthApprovalCode`**: Changed from echoing the auth code value to the correct protocol value `'P'`. Parser was already checking for `'Y'` or `'P'` but this was never set correctly.
+- **`forceOffline` → `storedOffline` in simulator**: When `<ForceOffline>Yes</ForceOffline>` is in the XML, simulator now returns `<StoredOffline>Yes</StoredOffline>` + `STORED OFFLINE` textResponse (required for SAF cert test 18.1 verification).
+- **EMVSale partial approval**: Added `options.partial` path to EMVSale/PreAuth simulator case — returns 50% approval with `DSIXReturnCode: 000001` and `PartialAuthApprovalCode: P`.
+- **`storedOffline` detection hardened**: Parser now checks explicit `<StoredOffline>Yes</StoredOffline>` tag first, falls back to `'STORED OFFLINE'` exact phrase in textResponse (not just `'STORED'` which was too broad).
+- **`datacapErrorResponse` handles `DatacapError`**: Was only checking `instanceof Error`; `DatacapError` objects have `.text` not `.message`. Now correctly extracts the message from either type.
+- **Discover route NaN guard**: `?timeoutMs=abc` → `parseInt` returns `NaN` → `setTimeout(NaN)` fires immediately. Added `isNaN(raw) ? 5000 : raw` guard.
+- **`sale-by-record` response**: Added `storedOffline` field to route response body.
+
+### Commit
+
+`894e5fe` — fix(datacap): forensic audit fixes — simulator accuracy, error handling, edge cases
+
+---
+
 ## 2026-02-20 (PM) — Datacap Certification: Token Transactions + Simulator Scenarios (Skills 385–388)
 
 ### New Features

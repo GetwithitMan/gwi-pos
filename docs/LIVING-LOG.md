@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-02-20 (PM4) — Datacap Forensic Audit + Fixes (Commit 894e5fe)
+
+### Session Summary
+Ran a full 3-lens forensic audit of the entire Datacap integration (data flow, cross-system connections, commit history). Found and fixed 8 issues ranging from simulator inaccuracies to error handling gaps and an edge-case NaN in discovery timeout. Zero TypeScript errors, all 6 files patched in a single commit.
+
+### Commits (POS — `gwi-pos`)
+
+| Commit | Description |
+|--------|-------------|
+| `894e5fe` | fix(datacap): forensic audit fixes — simulator accuracy, error handling, edge cases |
+
+### Deployments
+
+| App | URL | Status |
+|-----|-----|--------|
+| POS | barpos.restaurant | Auto-deployed via Vercel (commit 894e5fe) |
+
+### Bug Fixes
+
+| # | Bug | Fix |
+|---|-----|-----|
+| 1 | Simulator `PartialAuthApprovalCode` was echoing auth code value instead of protocol `'P'` — `isPartialApproval` detection relied on DSIXReturnCode fallback only | Changed to `'P'` |
+| 2 | Simulator `forceOffline` flag had no effect — cert test 18.1 would never see `StoredOffline` response | Added `forceOffline` to `SimOptions`; returns `<StoredOffline>Yes</StoredOffline>` + `STORED OFFLINE` textResponse |
+| 3 | Simulator `send()` passed empty fields `{ merchantId:'', operatorId:'', tranCode }` — amounts, customerCode, recordNo, invoiceNo were always undefined in simulator | Extract all needed fields from the XML string before calling `simulateResponse()` |
+| 4 | `storedOffline` detection too broad — `textResponse.includes('STORED')` could false-positive | Changed to `extractTag(...,'StoredOffline')==='Yes'` (primary) + `'STORED OFFLINE'` phrase check (fallback) |
+| 5 | `discoverAllDevices` NaN: `?timeoutMs=abc` → `parseInt` returns `NaN` → `Math.min(NaN,15000)=NaN` → `setTimeout(fn, NaN)` fires immediately | Added `isNaN(raw) ? 5000 : raw` guard before `Math.min` cap |
+| 6 | `datacapErrorResponse` only handled `Error` instances; `DatacapError` plain objects (with `.code`/`.text`) fell through to generic "Internal server error" | Check for `.text` property before falling back to generic message |
+| 7 | `sale-by-record` route response missing `storedOffline` field | Added `storedOffline: response.storedOffline` to response body |
+| 8 | Partial approval scenario only existed in `SaleByRecordNo` simulator case; `EMVSale` had no partial path | Added `options.partial` handling to EMVSale/EMVPreAuth case block |
+
+---
+
 ## 2026-02-20 (PM3) — Datacap Certification: GetDevicesInfo + Level II (Skills 390–391)
 
 ### Session Summary
