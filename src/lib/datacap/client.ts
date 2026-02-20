@@ -18,6 +18,10 @@ import type {
   ReturnParams,
   DevicePromptParams,
   CollectCardParams,
+  PartialReversalParams,
+  SaleByRecordParams,
+  PreAuthByRecordParams,
+  AuthOnlyParams,
   TranCode,
 } from './types'
 import { validateDatacapConfig } from './types'
@@ -280,10 +284,16 @@ export class DatacapClient {
 
     // Simulated mode — no network calls
     if (mode === 'simulated') {
-      // Extract tranCode from XML for simulator
+      // Extract tranCode and simScenario from XML for simulator
       const tranCodeMatch = xml.match(/<TranCode>([^<]+)<\/TranCode>/)
       const tranCode = (tranCodeMatch?.[1] || 'EMVPadReset') as TranCode
-      const simXml = simulateResponse(tranCode, { merchantId: '', operatorId: '', tranCode })
+      const scenarioMatch = xml.match(/<SimScenario>([^<]+)<\/SimScenario>/)
+      const simScenario = scenarioMatch?.[1] as 'decline' | 'error' | 'partial' | undefined
+      const simXml = simulateResponse(tranCode, { merchantId: '', operatorId: '', tranCode }, {
+        decline: simScenario === 'decline',
+        error: simScenario === 'error',
+        partial: simScenario === 'partial',
+      })
       return parseResponse(simXml)
     }
 
@@ -642,6 +652,121 @@ export class DatacapClient {
         operatorId: base.operatorId!,
         tranCode: TRAN_CODES.COLLECT_CARD,
         amounts: { purchase: params?.placeholderAmount || 0.01 },
+        cardHolderId: 'Allow_V2',
+      }
+
+      const xml = buildRequest(fields)
+      const response = await this.send(reader, xml)
+      return this.handleResponse(readerId, response)
+    })
+  }
+
+  /**
+   * Partially reverse a pre-auth hold (reduce hold amount)
+   * Datacap test case 7.7 — PartialReversalByRecordNo
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Reversal parameters (recordNo, reversalAmount)
+   * @returns Datacap response confirming reduced hold
+   */
+  async partialReversal(readerId: string, params: PartialReversalParams): Promise<DatacapResponse> {
+    return this.withPadReset(readerId, async (reader, seqNo) => {
+      const base = this.buildBaseFields(reader, seqNo)
+      const fields: DatacapRequestFields = {
+        ...base,
+        merchantId: base.merchantId!,
+        operatorId: base.operatorId!,
+        tranCode: TRAN_CODES.PARTIAL_REVERSAL,
+        recordNo: params.recordNo,
+        amounts: { purchase: params.reversalAmount },
+      }
+
+      const xml = buildRequest(fields)
+      const response = await this.send(reader, xml)
+      return this.handleResponse(readerId, response)
+    })
+  }
+
+  /**
+   * Process a sale using a stored Datacap vault token (card not present)
+   * Datacap test case 8.1 — SaleByRecordNo
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Sale parameters (recordNo, invoiceNo, amount, optional gratuity)
+   * @returns Datacap response with authorization
+   */
+  async saleByRecordNo(readerId: string, params: SaleByRecordParams): Promise<DatacapResponse> {
+    return this.withPadReset(readerId, async (reader, seqNo) => {
+      const base = this.buildBaseFields(reader, seqNo)
+      const fields: DatacapRequestFields = {
+        ...base,
+        merchantId: base.merchantId!,
+        operatorId: base.operatorId!,
+        tranCode: TRAN_CODES.SALE_BY_RECORD,
+        invoiceNo: params.invoiceNo,
+        refNo: params.invoiceNo,
+        recordNo: params.recordNo,
+        amounts: {
+          purchase: params.amount,
+          gratuity: params.gratuityAmount,
+        },
+      }
+
+      const xml = buildRequest(fields)
+      const response = await this.send(reader, xml)
+      return this.handleResponse(readerId, response)
+    })
+  }
+
+  /**
+   * Pre-authorize using a stored Datacap vault token (card not present)
+   * Datacap test case 8.3 — PreAuthByRecordNo
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Pre-auth parameters (recordNo, invoiceNo, amount)
+   * @returns Datacap response with new auth hold
+   */
+  async preAuthByRecordNo(readerId: string, params: PreAuthByRecordParams): Promise<DatacapResponse> {
+    return this.withPadReset(readerId, async (reader, seqNo) => {
+      const base = this.buildBaseFields(reader, seqNo)
+      const fields: DatacapRequestFields = {
+        ...base,
+        merchantId: base.merchantId!,
+        operatorId: base.operatorId!,
+        tranCode: TRAN_CODES.PRE_AUTH_BY_RECORD,
+        invoiceNo: params.invoiceNo,
+        refNo: params.invoiceNo,
+        recordNo: params.recordNo,
+        amounts: { purchase: params.amount },
+      }
+
+      const xml = buildRequest(fields)
+      const response = await this.send(reader, xml)
+      return this.handleResponse(readerId, response)
+    })
+  }
+
+  /**
+   * Zero-dollar authorization — validates a card without charging it
+   * Datacap test case 17.0 — EMVAuthOnly
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Auth-only parameters (invoiceNo for tracking)
+   * @returns Datacap response confirming card is valid
+   */
+  async authOnly(readerId: string, params: AuthOnlyParams): Promise<DatacapResponse> {
+    return this.withPadReset(readerId, async (reader, seqNo) => {
+      const base = this.buildBaseFields(reader, seqNo)
+      const fields: DatacapRequestFields = {
+        ...base,
+        merchantId: base.merchantId!,
+        operatorId: base.operatorId!,
+        tranCode: TRAN_CODES.AUTH_ONLY,
+        invoiceNo: params.invoiceNo,
+        refNo: params.invoiceNo,
+        amounts: { purchase: 0.00 },
+        recordNumberRequested: true,
+        frequency: 'OneTime',
         cardHolderId: 'Allow_V2',
       }
 

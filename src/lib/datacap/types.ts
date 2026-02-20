@@ -29,6 +29,13 @@ export type TranCode =
   | 'BatchClose'
   // Card data collection (no charge)
   | 'CollectCardData'
+  // New for certification
+  | 'PartialReversalByRecordNo'
+  | 'SaleByRecordNo'
+  | 'PreAuthByRecordNo'
+  | 'EMVAuthOnly'
+  | 'SAF_Statistics'
+  | 'SAF_ForwardAll'
 
 export type CmdStatus = 'Approved' | 'Declined' | 'Error' | 'Success'
 
@@ -111,6 +118,8 @@ export interface DatacapRequestFields {
   cardHolderId?: 'Allow_V2'
   // Collect card data (no charge)
   collectData?: boolean
+  // Simulator-only: override response scenario (dev/testing)
+  simScenario?: 'decline' | 'error' | 'partial'
 }
 
 // ─── Response ────────────────────────────────────────────────────────────────
@@ -219,6 +228,29 @@ export interface DevicePromptParams {
 
 export interface CollectCardParams {
   placeholderAmount?: number  // Small amount for card read (default $0.01)
+}
+
+export interface PartialReversalParams {
+  recordNo: string
+  reversalAmount: number   // Amount to reduce the hold by
+}
+
+export interface SaleByRecordParams {
+  recordNo: string
+  invoiceNo: string
+  amount: number
+  gratuityAmount?: number
+}
+
+export interface PreAuthByRecordParams {
+  recordNo: string
+  invoiceNo: string
+  amount: number
+}
+
+export interface AuthOnlyParams {
+  invoiceNo: string
+  // Zero-dollar auth — validates card without a charge
 }
 
 // ─── Discovery ───────────────────────────────────────────────────────────────

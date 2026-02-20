@@ -191,6 +191,9 @@ export function buildRequest(fields: DatacapRequestFields): string {
   // Duplicate override
   if (fields.duplicate) parts.push(tag('Duplicate', fields.duplicate))
 
+  // Simulator scenario tag (dev only — read back by send() for simulator routing)
+  if (fields.simScenario) parts.push(`<SimScenario>${fields.simScenario}</SimScenario>`)
+
   // Filter out empty strings
   const content = parts.filter(Boolean).join('')
 

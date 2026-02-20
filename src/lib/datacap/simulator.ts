@@ -39,6 +39,8 @@ function wrapResponse(content: string): string {
 interface SimOptions {
   sequenceNo?: string
   decline?: boolean
+  error?: boolean    // Simulate a device/communication error
+  partial?: boolean  // Simulate partial approval (approves 50% of requested amount)
 }
 
 /**
@@ -57,7 +59,19 @@ export function simulateResponse(
   const recordNo = `DC4:${randomAlphaNum(30)}`
   const refNo = fields.refNo || fields.invoiceNo || randomDigits(6)
 
-  // Check for forced decline
+  // Simulate error (device/communication failure)
+  if (options.error) {
+    return wrapResponse(`
+      <CmdStatus>Error</CmdStatus>
+      <DSIXReturnCode>200003</DSIXReturnCode>
+      <ResponseOrigin>Client</ResponseOrigin>
+      <TextResponse>Device Error</TextResponse>
+      <SequenceNo>${seqOut}</SequenceNo>
+      <TranCode>${tranCode}</TranCode>
+    `)
+  }
+
+  // Simulate decline
   if (options.decline) {
     return wrapResponse(`
       <CmdStatus>Declined</CmdStatus>
@@ -284,6 +298,121 @@ export function simulateResponse(
         <SequenceNo>${seqOut}</SequenceNo>
         <TranCode>BatchClose</TranCode>
         <BatchNo>${randomDigits(6)}</BatchNo>
+      `)
+    }
+
+    case 'PartialReversalByRecordNo': {
+      const amount = fields.amounts?.purchase?.toFixed(2) || '0.00'
+      return wrapResponse(`
+        <CmdStatus>Approved</CmdStatus>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <TextResponse>REVERSAL APPROVED</TextResponse>
+        <SequenceNo>${seqOut}</SequenceNo>
+        <TranCode>PartialReversalByRecordNo</TranCode>
+        <Authorize>${amount}</Authorize>
+        <AuthCode>${authCode}</AuthCode>
+        <RefNo>${refNo}</RefNo>
+        <RecordNo>${fields.recordNo || recordNo}</RecordNo>
+      `)
+    }
+
+    case 'SaleByRecordNo': {
+      const amount = fields.amounts?.purchase?.toFixed(2) || '0.00'
+      const gratuity = fields.amounts?.gratuity?.toFixed(2)
+      const total = gratuity
+        ? (parseFloat(amount) + parseFloat(gratuity)).toFixed(2)
+        : amount
+      // Partial approval simulation: approve only 50% of requested
+      if (options.partial) {
+        const partialAmount = (parseFloat(amount) / 2).toFixed(2)
+        return wrapResponse(`
+          <CmdStatus>Approved</CmdStatus>
+          <DSIXReturnCode>000001</DSIXReturnCode>
+          <ResponseOrigin>Processor</ResponseOrigin>
+          <TextResponse>PARTIAL APPROVAL</TextResponse>
+          <SequenceNo>${seqOut}</SequenceNo>
+          <TranCode>SaleByRecordNo</TranCode>
+          <Authorize>${partialAmount}</Authorize>
+          <AuthCode>${authCode}</AuthCode>
+          <RefNo>${refNo}</RefNo>
+          <RecordNo>${fields.recordNo || recordNo}</RecordNo>
+          <PartialAuthApprovalCode>${authCode}</PartialAuthApprovalCode>
+        `)
+      }
+      return wrapResponse(`
+        <CmdStatus>Approved</CmdStatus>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>${seqOut}</SequenceNo>
+        <TranCode>SaleByRecordNo</TranCode>
+        <Authorize>${total}</Authorize>
+        <AuthCode>${authCode}</AuthCode>
+        <RefNo>${refNo}</RefNo>
+        <RecordNo>${fields.recordNo || recordNo}</RecordNo>
+      `)
+    }
+
+    case 'PreAuthByRecordNo': {
+      const amount = fields.amounts?.purchase?.toFixed(2) || '0.00'
+      return wrapResponse(`
+        <CmdStatus>Approved</CmdStatus>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <TextResponse>PRE-AUTH APPROVED</TextResponse>
+        <SequenceNo>${seqOut}</SequenceNo>
+        <TranCode>PreAuthByRecordNo</TranCode>
+        <Authorize>${amount}</Authorize>
+        <AuthCode>${authCode}</AuthCode>
+        <RefNo>${refNo}</RefNo>
+        <RecordNo>${fields.recordNo || recordNo}</RecordNo>
+      `)
+    }
+
+    case 'EMVAuthOnly': {
+      return wrapResponse(`
+        <CmdStatus>Approved</CmdStatus>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>${seqOut}</SequenceNo>
+        <TranCode>EMVAuthOnly</TranCode>
+        <Authorize>0.00</Authorize>
+        <AuthCode>${authCode}</AuthCode>
+        <RefNo>${refNo}</RefNo>
+        <RecordNo>${recordNo}</RecordNo>
+        <AcctNo>***${card.last4}</AcctNo>
+        <CardType>${card.type}</CardType>
+        <CardholderName>${card.name}</CardholderName>
+        <EntryMethod>CONTACTLESS</EntryMethod>
+        <AID>A0000000031010</AID>
+        <CVM>NO_CVM</CVM>
+      `)
+    }
+
+    case 'SAF_Statistics': {
+      return wrapResponse(`
+        <CmdStatus>Success</CmdStatus>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <ResponseOrigin>Client</ResponseOrigin>
+        <TextResponse>SAF Statistics</TextResponse>
+        <SequenceNo>${seqOut}</SequenceNo>
+        <TranCode>SAF_Statistics</TranCode>
+        <SAFCount>0</SAFCount>
+        <SAFAmount>0.00</SAFAmount>
+      `)
+    }
+
+    case 'SAF_ForwardAll': {
+      return wrapResponse(`
+        <CmdStatus>Success</CmdStatus>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <TextResponse>SAF Forward Complete</TextResponse>
+        <SequenceNo>${seqOut}</SequenceNo>
+        <TranCode>SAF_ForwardAll</TranCode>
+        <SAFForwarded>0</SAFForwarded>
       `)
     }
 

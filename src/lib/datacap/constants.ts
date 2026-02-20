@@ -31,6 +31,14 @@ export const TRAN_CODES: Record<string, TranCode> = {
   BATCH_CLOSE: 'BatchClose',
   // Card data
   COLLECT_CARD: 'CollectCardData',
+  // Certification additions
+  PARTIAL_REVERSAL: 'PartialReversalByRecordNo',
+  SALE_BY_RECORD: 'SaleByRecordNo',
+  PRE_AUTH_BY_RECORD: 'PreAuthByRecordNo',
+  AUTH_ONLY: 'EMVAuthOnly',
+  // Store-and-Forward (SAF)
+  SAF_STATISTICS: 'SAF_Statistics',
+  SAF_FORWARD_ALL: 'SAF_ForwardAll',
 } as const
 
 // ─── Monetary TranCodes (require pad reset after) ────────────────────────────
@@ -48,6 +56,10 @@ export const MONETARY_TRAN_CODES: Set<TranCode> = new Set([
   'VoidReturnByRecordNo',
   'ReturnByRecordNo',
   'CollectCardData',
+  'PartialReversalByRecordNo',
+  'SaleByRecordNo',
+  'PreAuthByRecordNo',
+  'EMVAuthOnly',
 ])
 
 // ─── Error Codes ─────────────────────────────────────────────────────────────
