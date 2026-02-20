@@ -17,7 +17,7 @@
 
 import type { RoutingResult } from '@/types/routing'
 import { emitToLocation, emitToTags } from '@/lib/socket-server'
-import { CFD_EVENTS } from '@/types/multi-surface'
+import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 
 interface DispatchOptions {
   /** Don't await the dispatch (fire and forget) */
@@ -730,6 +730,21 @@ export async function dispatchTabUpdated(
     console.error('[SocketDispatch] Failed to dispatch tab:updated:', error)
     return false
   }
+}
+
+// Mobile: notify phone that tab was successfully closed
+export function dispatchTabClosed(locationId: string, data: { orderId: string; total: number; tipAmount: number }): void {
+  void emitToLocation(locationId, MOBILE_EVENTS.TAB_CLOSED, data).catch(console.error)
+}
+
+// Mobile: update phone with current tab status
+export function dispatchTabStatusUpdate(locationId: string, data: { orderId: string; status: string }): void {
+  void emitToLocation(locationId, MOBILE_EVENTS.TAB_STATUS_UPDATE, data).catch(console.error)
+}
+
+// Mobile: notify phone that tab items were updated
+export function dispatchTabItemsUpdated(locationId: string, data: { orderId: string; itemCount: number }): void {
+  void emitToLocation(locationId, MOBILE_EVENTS.TAB_ITEMS_UPDATED, data).catch(console.error)
 }
 
 /**

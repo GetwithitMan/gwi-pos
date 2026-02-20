@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabClosed } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -283,6 +283,13 @@ export const POST = withVenue(async function POST(
 
     // Dispatch tab:updated for tab close (fire-and-forget)
     void dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(() => {})
+
+    // Dispatch mobile tab:closed for phone sync (fire-and-forget)
+    dispatchTabClosed(locationId, {
+      orderId,
+      total: purchaseAmount + (captureResult.tipAmount || 0),
+      tipAmount: captureResult.tipAmount || 0,
+    })
 
     // Dispatch open orders changed so all terminals refresh (fire-and-forget)
     dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId, tableId: order.tableId || undefined }, { async: true }).catch(() => {})

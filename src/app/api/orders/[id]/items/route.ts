@@ -5,7 +5,7 @@ import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isIt
 import { calculateCardPrice } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded, dispatchTabItemsUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 
@@ -416,6 +416,14 @@ export const POST = withVenue(async function POST(
     dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'created', orderId: result.updatedOrder.id, tableId: result.updatedOrder.tableId || undefined }, { async: true }).catch(() => {})
     if (result.updatedOrder.tableId) {
       dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(() => {})
+    }
+
+    // If this is a bar tab, notify phone that items updated
+    if (result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.status === 'open') {
+      const updatedItemCount = await db.orderItem.count({
+        where: { orderId, deletedAt: null, status: 'active' },
+      })
+      dispatchTabItemsUpdated(result.updatedOrder.locationId, { orderId, itemCount: updatedItemCount })
     }
 
     return NextResponse.json({ data: {

@@ -18,6 +18,7 @@
 
 import type { Server as HTTPServer } from 'http'
 import type { Server as SocketServer, Socket } from 'socket.io'
+import { MOBILE_EVENTS } from '@/types/multi-surface'
 
 // Dynamic import for socket.io (optional dependency)
 let io: typeof import('socket.io').Server | null = null
@@ -194,6 +195,26 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           terminalId: data.terminalId,
         })
       }
+    })
+
+    // ==================== Mobile Tab Relay ====================
+
+    // Phone → relay tab close request to all terminals in location
+    socket.on(MOBILE_EVENTS.TAB_CLOSE_REQUEST, (data: { orderId: string; locationId: string; employeeId: string; tipMode: string }) => {
+      if (typeof data.locationId !== 'string') return
+      socketServer.to(`location:${data.locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_CLOSE_REQUEST, data)
+    })
+
+    // Phone → relay transfer request to all terminals in location
+    socket.on(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, (data: { orderId: string; locationId: string; employeeId: string }) => {
+      if (typeof data.locationId !== 'string') return
+      socketServer.to(`location:${data.locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, data)
+    })
+
+    // Phone → relay manager alert to all terminals in location (fire-and-forget, no response needed)
+    socket.on(MOBILE_EVENTS.TAB_ALERT_MANAGER, (data: { orderId: string; locationId: string; employeeId: string }) => {
+      if (typeof data.locationId !== 'string') return
+      socketServer.to(`location:${data.locationId}`).emit(MOBILE_EVENTS.TAB_ALERT_MANAGER, data)
     })
 
     // ==================== Direct Terminal Messages ====================

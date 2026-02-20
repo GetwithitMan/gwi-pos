@@ -153,10 +153,17 @@ export interface TabStatusUpdateEvent {
   total?: number
 }
 
+/** Server → Phone: Tab items updated */
+export interface TabItemsUpdatedEvent {
+  orderId: string
+  itemCount: number
+}
+
 export const MOBILE_EVENTS = {
   TAB_CLOSE_REQUEST: 'tab:close-request',
   TAB_CLOSED: 'tab:closed',
   TAB_STATUS_UPDATE: 'tab:status-update',
   TAB_TRANSFER_REQUEST: 'tab:transfer-request',
   TAB_ALERT_MANAGER: 'tab:alert-manager',
+  TAB_ITEMS_UPDATED: 'tab:items-updated',
 } as const
