@@ -1172,6 +1172,7 @@ These skills emerged during development and are now part of the system:
 | 394 | Datacap XML & Route Safety | DONE | Payments | 392, 393 | `validateCustomerCode()` upstream export, button labels capped at 4, `extractPrintData` bounded (36 lines/500 chars), walkout-retry JSON hardened → 400, `!amount` → `=== undefined \|\| null` in 5 routes. |
 | 395 | VENUE-LOCAL-ADMIN-LOGIN | DONE | Auth / Cloud | - | Venue-local admin login at {slug}.ordercontrolcenter.com/admin-login; Clerk FAPI primary + bcrypt fallback; pos-cloud-session JWT via Web Crypto |
 | 396 | MULTI-VENUE-OWNER-ROUTING | DONE | Auth / Cloud / Multi-Tenancy | - | Multi-venue owner detection after Clerk auth; venue picker UI; cross-domain owner token (10min HMAC JWT); /auth/owner landing + /api/auth/owner-session; MC /api/owner/venues endpoint |
+| 397 | PASSWORD-RESET-SYSTEM | DONE | Auth / Cloud | - | Venue self-service forgot-password (Clerk FAPI email_code, stays on {slug}.occ.com); MC admin trigger with copyable deep-link; 4 new routes + OwnerResetCard |
 
 ---
 

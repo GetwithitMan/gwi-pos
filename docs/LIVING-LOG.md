@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-02-20 — Password Reset System
+
+**Session Summary:** Built end-to-end password reset flow keeping merchants entirely on {slug}.ordercontrolcenter.com. Venue login page gains forgot/verify modes via Clerk FAPI. MC location detail gains an Owner Access card so GWI admins can trigger resets and share deep-links with merchants.
+
+### Commits
+
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | fdd4bd9 | feat(auth): forgot-password + reset-password flow on venue login page |
+| gwi-mission-control | 82624df | feat(owner): send password reset from MC location detail page |
+
+### Deployments
+- gwi-pos → `*.ordercontrolcenter.com` (Vercel auto-deploy)
+- gwi-mission-control → `app.thepasspos.com` (Vercel auto-deploy)
+
+### Features Delivered
+- **"Forgot your password?"** link on venue admin-login page
+- **Self-service reset flow** — enter email → 6-digit code from Clerk email → new password, all on venue subdomain
+- **`?reset_sid=` deep-link** — URL param drops merchant directly into code-entry step
+- **Owner Access card** in MC location detail Overview tab
+- **"Send Reset" button** per owner in MC — triggers Clerk reset email, shows copyable deep-link
+- **4 new API routes**: `/api/auth/forgot-password`, `/api/auth/reset-password` (POS); `/api/admin/locations/[id]/owners`, `/api/admin/locations/[id]/send-owner-reset` (MC)
+- **`OwnerResetCard`** component in MC matching VenueUrlCard dark card styling
+
+### Design Constraint Met
+Merchants **never see** `app.thepasspos.com`. Clerk FAPI handles reset server-side (email_code strategy = 6-digit code, no redirect link). Entire flow stays on `{slug}.ordercontrolcenter.com`.
+
+### Skills
+- **397** — Password Reset System (`docs/skills/397-PASSWORD-RESET-SYSTEM.md`)
+
+---
+
 ## 2026-02-20 — Venue-Local Login + Multi-Venue Owner Routing
 
 **Session Summary:** Built venue-local admin login system to replace broken MC redirect flow, added Clerk credential passthrough (same email+password as Mission Control), and wired in multi-venue owner routing with venue picker UI and cross-domain owner token.
