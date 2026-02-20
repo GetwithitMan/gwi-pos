@@ -5,6 +5,70 @@
 
 ---
 
+## 2026-02-20 — P2 Feature Sprint (Multi-Agent Team)
+
+**Session theme:** P2 features — closed orders UI, AR aging report, hourly sales, refund vs void
+
+**Summary:** Multi-agent sprint delivering 5 P2 features. P2-R01 (Closed Orders UI) and P1-03 (House Accounts AR Report) fully built. P2-R03 (Hourly Sales) added with CSS-only bar chart. P2-P02 (Refund vs Void) delivered in 3 phases: schema migration, two new routes, and VoidPaymentModal UI overhaul. All previously-built APIs reused — zero duplicate work.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `2fab494` | feat(orders): P2-R01 — Closed Orders Management UI |
+| `d515a88` | docs: update MASTER-TODO — sprint completions 2026-02-20 |
+| `b0b9678` | docs: update living log for 2026-02-20 sprint session |
+| `dc95f38` | Fix deployment: Decimal→number type error + auth guard + P2-B01 auto-grat |
+| `78e0859` | feat(reports): P1-03 — House Accounts Aging Report + Record Payment endpoint |
+| `2f81fde` | chore: regenerate schema.sql |
+| `0cf6786` | feat(reports): P2-R03 — Hourly Sales Breakdown report |
+| `54ccb3e` | feat(schema): P2-P02 Phase 1 — add Payment.settledAt + RefundLog model |
+| `4b62e9e` | feat(payments): P2-P02 Phase 2 — Datacap refund route + refund-payment route |
+| `b8644a1` | feat(payments): P2-P02 Phase 3 — Refund vs Void distinction in VoidPaymentModal |
+
+### Deployments
+- gwi-pos → pushed to `origin/main` (Vercel auto-deploy on each commit)
+
+### Features Delivered
+
+**P2-R01 — Closed Orders Management UI** (`2fab494`)
+- New page at `/settings/orders/closed`
+- Filter bar: date range (today default), server, order type, tip status, text search
+- Summary stats: order count, total revenue, needs-tip count
+- Orders table with cursor-based pagination, amber "Needs Tip" badges
+- Row actions: Reopen (ReopenOrderModal + manager PIN), Adjust Tip (AdjustTipModal + PIN), Reprint Receipt (browser print)
+- All 3 modals (ManagerPinModal, ReopenOrderModal, AdjustTipModal) already existed — reused
+
+**P1-03 — House Accounts Aging Report + Record Payment** (`78e0859`)
+- New `POST /api/house-accounts/[id]/payments` — records cash/check/ACH payment atomically (updates balance + creates HouseAccountTransaction)
+- New `GET /api/reports/house-accounts` — AR aging with 30/60/90/over-90 day buckets from oldest unpaid charge
+- New `/reports/house-accounts` page: 6 summary cards (Total Outstanding, Current, 30/60/90 day buckets), accounts table with aging badges, inline Record Payment form, CSV export
+- Added "Accounts Receivable" tile to reports hub Operations section
+
+**P2-R03 — Hourly Sales Breakdown** (`0cf6786`)
+- New `GET /api/reports/hourly` — 24-hour breakdown for a business day, optional compareDate overlay, 4 AM rollover support
+- New `/reports/hourly` page: CSS-only bar chart (no chart library), data table toggle, peak hour highlighted purple, compare date overlay in orange
+- 4 summary cards: Total Revenue, Total Orders, Peak Hour, Avg Order Value
+- Added "Hourly Sales" tile to reports hub Sales & Revenue section
+
+**P2-P02 — Refund vs Void UX Distinction** (3 commits: `54ccb3e`, `4b62e9e`, `b8644a1`)
+- Phase 1 (Schema): Added `Payment.settledAt DateTime?` + new `RefundLog` model (refundAmount, originalAmount, refundReason, Datacap refs, approval chain, receipt tracking). Back-relations on Order, Employee, Location. db:push clean — zero data loss.
+- Phase 2 (Routes): `POST /api/datacap/refund` (calls DatacapClient.emvReturn with ReturnByRecordNo for card-not-present). `POST /api/orders/[id]/refund-payment` (validates manager permission, Datacap call for cards, atomic db.$transaction: update Payment + create RefundLog + AuditLog).
+- Phase 3 (UI): Updated `VoidPaymentModal.tsx` — detects `payment.settledAt` to show Refund vs Void path. Amber "Refund $X.XX" button with partial refund input, reader dropdown for card payments. All existing void functionality preserved.
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Vercel deploy failure (TS2322) | GL-08 fix returned Prisma `Decimal` object where `number` expected | Wrapped `DEFAULT_MULTIPLIERS` fallbacks in `Number()` in helpers.ts — commit `dc95f38` |
+
+### Known Issues / Next Up
+- P2-D04 (Discount on receipt) — audit in progress
+- P2-H03 (CFD socket events) — audit in progress
+- P2-D01 (Item-level discounts) — needs schema + API + UI, queued
+
+---
+
 ## 2026-02-20 — Go-Live Blocker Sprint + P1 Critical Fixes + P2 Features (Multi-Agent Team)
 
 **Session theme:** Full-team audit and fix sprint — go-live blockers, P1 payment bugs, EOD cron, auth hardening, new report pages, bottle service auto-grat
