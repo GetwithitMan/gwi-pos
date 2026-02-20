@@ -1,5 +1,32 @@
 # Payments Domain Changelog
 
+## 2026-02-20 (PM) — Datacap Certification: Token Transactions + Simulator Scenarios (Skills 385–388)
+
+### New Features
+
+- **PartialReversalByRecordNo** (`/api/datacap/partial-reversal`): Reduces a pre-auth hold by a partial amount using RecordNo. No card present needed. See Skill 385.
+- **SaleByRecordNo** (`/api/datacap/sale-by-record`): Charges a stored vault token without card present. Supports gratuity and partial approval. See Skill 386.
+- **PreAuthByRecordNo** (`/api/datacap/preauth-by-record`): Places a new pre-auth hold on a stored card token. See Skill 387.
+- **EMVAuthOnly** (`/api/datacap/auth-only`): Zero-dollar card validation — vaults card without charging. Returns RecordNo for future SaleByRecordNo use. See Skill 388.
+
+### Simulator Enhancements
+
+- New `error` scenario: `simScenario: 'error'` → returns `CmdStatus: Error` / `DSIXReturnCode: 200003`
+- New `partial` scenario: `simScenario: 'partial'` on SaleByRecordNo → returns 50% of requested amount with `DSIXReturnCode: 000001`
+- `<SimScenario>` tag in XML: `buildRequest()` emits tag when `fields.simScenario` is set; `send()` extracts and routes to simulator
+- SAF_Statistics and SAF_ForwardAll simulator cases scaffolded (logic TBD)
+
+### Certification Progress
+
+Covers Datacap cert tests 7.7, 8.1, 8.3, 17.0 + simulator scenarios 3.2, 3.3, 3.4.
+Updated pass rate: **~74% (20/27)** — up from 48%.
+
+### Commit
+
+`cd96121` — feat(datacap): add certification TranCodes — PartialReversal, SaleByRecord, PreAuthByRecord, AuthOnly
+
+---
+
 ## 2026-02-20 — Datacap Card Re-Entry + Token Display
 
 ### New Features

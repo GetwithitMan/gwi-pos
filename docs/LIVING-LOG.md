@@ -5,6 +5,79 @@
 
 ---
 
+## 2026-02-20 (PM) — Datacap Certification: Token Transactions + Simulator Scenarios (Skills 385–388)
+
+### Session Summary
+Implemented 4 critical Datacap certification test cases (7.7, 8.1, 8.3, 17.0): PartialReversalByRecordNo, SaleByRecordNo, PreAuthByRecordNo, and EMVAuthOnly. Extended simulator with decline/error/partial-approval scenarios. 0 TypeScript errors. Used a 2-agent parallel team.
+
+### Commits (POS — `gwi-pos`)
+
+| Commit | Description |
+|--------|-------------|
+| `cd96121` | feat(datacap): add certification TranCodes — PartialReversal, SaleByRecord, PreAuthByRecord, AuthOnly |
+
+### Deployments
+
+| App | URL | Status |
+|-----|-----|--------|
+| POS | barpos.restaurant | Auto-deployed via Vercel (commit cd96121) |
+
+### Features Delivered
+
+**PartialReversalByRecordNo (Skill 385 — Test 7.7)**
+- `POST /api/datacap/partial-reversal` — reduces a pre-auth hold by a specified amount
+- `DatacapClient.partialReversal(readerId, { recordNo, reversalAmount })`
+- Used when a tab closes for less than its authorized hold
+
+**SaleByRecordNo (Skill 386 — Test 8.1)**
+- `POST /api/datacap/sale-by-record` — charges a stored card without physical card present
+- `DatacapClient.saleByRecordNo(readerId, { recordNo, invoiceNo, amount, gratuityAmount? })`
+- Supports partial approval detection
+
+**PreAuthByRecordNo (Skill 387 — Test 8.3)**
+- `POST /api/datacap/preauth-by-record` — places a new pre-auth hold on a stored card token
+- `DatacapClient.preAuthByRecordNo(readerId, { recordNo, invoiceNo, amount })`
+- Alternative to IncrementalAuth for full re-authorization
+
+**EMVAuthOnly (Skill 388 — Test 17.0)**
+- `POST /api/datacap/auth-only` — zero-dollar card validation with vault token return
+- `DatacapClient.authOnly(readerId, { invoiceNo })`
+- Enables card-on-file enrollment without charging
+
+**Simulator Enhancements**
+- New `error` scenario: simulates device/communication failure
+- New `partial` scenario: approves 50% of requested amount (partial approval testing)
+- `SimScenario` XML tag: pass `simScenario: 'decline' | 'error' | 'partial'` in request fields
+- 6 new simulator switch cases (incl. SAF_Statistics + SAF_ForwardAll scaffold)
+
+### Certification Progress
+
+| Test | Case | Status |
+|------|------|--------|
+| 7.7 | PartialReversalByRecordNo | ✅ Done |
+| 8.1 | SaleByRecordNo | ✅ Done |
+| 8.3 | PreAuthByRecordNo | ✅ Done |
+| 17.0 | AuthOnly | ✅ Done |
+| 3.2 | Simulator decline | ✅ Done |
+| 3.3 | Simulator error | ✅ Done |
+| 3.4 | Simulator partial | ✅ Done |
+
+**Updated pass rate: ~20/27 (74%)** — up from 48%
+
+### Remaining for Full Certification
+- Store-and-Forward / SAF (offline queuing) — TranCodes scaffolded, logic not yet built
+- GetDevicesInfo (device discovery) — UDP discovery exists, cert test route missing
+- Level II (tax + customer code) — not tested
+
+### Skill Docs Created
+
+- `docs/skills/385-PARTIAL-REVERSAL-BY-RECORD.md`
+- `docs/skills/386-SALE-BY-RECORD.md`
+- `docs/skills/387-PREAUTH-BY-RECORD.md`
+- `docs/skills/388-AUTH-ONLY.md`
+
+---
+
 ## 2026-02-20 — Card Re-Entry by Token, Real-Time Tabs, Bartender Speed (Skills 382–384)
 
 ### Session Summary
