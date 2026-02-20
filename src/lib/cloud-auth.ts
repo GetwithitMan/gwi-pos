@@ -141,6 +141,56 @@ function base64urlDecode(str: string): Uint8Array {
   return bytes
 }
 
+export interface OwnerTokenPayload {
+  sub: 'owner-verified'
+  email: string
+  venues: string[] // venue slugs this owner is verified for
+  iat: number
+  exp: number
+}
+
+/** Sign a short-lived owner identity token (10 min). Used for venue picker flow. */
+export async function signOwnerToken(
+  email: string,
+  venues: string[],
+  secret: string
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const payload: OwnerTokenPayload = {
+    sub: 'owner-verified',
+    email,
+    venues,
+    iat: now,
+    exp: now + 600, // 10 minutes
+  }
+  const encoder = new TextEncoder()
+  const headerB64 = base64urlEncodeBytes(encoder.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })))
+  const payloadB64 = base64urlEncodeBytes(encoder.encode(JSON.stringify(payload)))
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(`${headerB64}.${payloadB64}`))
+  return `${headerB64}.${payloadB64}.${base64urlEncodeBytes(new Uint8Array(signatureBuffer))}`
+}
+
+/** Verify an owner identity token. Returns payload or null. */
+export async function verifyOwnerToken(token: string, secret: string): Promise<OwnerTokenPayload | null> {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const [headerB64, payloadB64, signatureB64] = parts
+    const encoder = new TextEncoder()
+    const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify'])
+    const signature = base64urlDecode(signatureB64)
+    const valid = await crypto.subtle.verify('HMAC', key, signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength) as ArrayBuffer, encoder.encode(`${headerB64}.${payloadB64}`))
+    if (!valid) return null
+    const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(payloadB64))) as OwnerTokenPayload
+    if (payload.exp < Math.floor(Date.now() / 1000)) return null
+    if (payload.sub !== 'owner-verified' || !payload.email || !Array.isArray(payload.venues)) return null
+    return payload
+  } catch {
+    return null
+  }
+}
+
 /** Routes blocked in cloud mode (POS front-of-house only) */
 const CLOUD_BLOCKED_PATHS = [
   '/login',

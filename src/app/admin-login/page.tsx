@@ -11,12 +11,19 @@ import { useAuthStore } from '@/stores/auth-store'
  * Uses email + password stored in the venue's own Neon database.
  *
  * No Mission Control redirect — fully self-contained per venue.
+ *
+ * Multi-venue owners: If the Clerk-verified owner has access to multiple venues,
+ * the API returns a venue picker instead of a session. The user then picks
+ * which venue to enter and is redirected to that venue's domain.
  */
 export default function AdminLoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [mode, setMode] = useState<'login' | 'picking'>('login')
+  const [venues, setVenues] = useState<Array<{ slug: string; name: string; domain: string }>>([])
+  const [ownerToken, setOwnerToken] = useState('')
   const router = useRouter()
   const login = useAuthStore((s) => s.login)
 
@@ -43,6 +50,14 @@ export default function AdminLoginPage() {
         return
       }
 
+      // Multi-venue owner — show venue picker
+      if (data.data.multiVenue) {
+        setVenues(data.data.venues)
+        setOwnerToken(data.data.ownerToken)
+        setMode('picking')
+        return
+      }
+
       // Populate the client-side auth store
       login(data.data.employee)
 
@@ -53,6 +68,67 @@ export default function AdminLoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (mode === 'picking') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          {/* Logo / branding */}
+          <div className="text-center mb-8">
+            <div className="w-14 h-14 bg-blue-600/20 border border-blue-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <svg
+                className="w-7 h-7 text-blue-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.5}
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+                />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-white">Select Venue</h1>
+            <p className="text-gray-400 text-sm mt-1">Choose which venue to manage</p>
+          </div>
+
+          {/* Venue list */}
+          <div className="space-y-3">
+            {venues.map((venue) => (
+              <a
+                key={venue.slug}
+                href={`https://${venue.domain}/auth/owner?token=${ownerToken}`}
+                className="block bg-gray-800/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-5 hover:border-blue-500/50 hover:bg-gray-800/70 transition-all group"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">{venue.name}</h2>
+                    <p className="text-gray-500 text-sm mt-0.5">{venue.domain}</p>
+                  </div>
+                  <span className="text-gray-500 group-hover:text-blue-400 transition-colors text-sm font-medium">
+                    Open &rarr;
+                  </span>
+                </div>
+              </a>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setMode('login')}
+            className="mt-6 w-full text-center text-gray-500 hover:text-gray-300 text-sm transition-colors"
+          >
+            &larr; Back to login
+          </button>
+
+          <p className="text-center text-gray-600 text-xs mt-6">
+            Powered by GWI Point of Sale
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (

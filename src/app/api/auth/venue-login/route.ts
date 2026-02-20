@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { verifyPassword } from '@/lib/auth'
-import { signVenueToken } from '@/lib/cloud-auth'
+import { signVenueToken, signOwnerToken } from '@/lib/cloud-auth'
 
 /**
  * Derive the Clerk Frontend API URL from the publishable key.
@@ -126,6 +126,39 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
 
+  // If authenticated via Clerk, check if owner has multiple venues
+  if (clerkValid) {
+    const mcUrl = process.env.MISSION_CONTROL_URL || 'https://app.thepasspos.com'
+    const provisionKey = process.env.PROVISION_API_KEY || ''
+    try {
+      const venueRes = await fetch(
+        `${mcUrl}/api/owner/venues?email=${encodeURIComponent(normalizedEmail)}`,
+        {
+          headers: { Authorization: `Bearer ${provisionKey}` },
+          signal: AbortSignal.timeout(4000),
+        }
+      )
+      if (venueRes.ok) {
+        const venueData = await venueRes.json()
+        const venues: Array<{ slug: string; name: string; domain: string }> = venueData.data?.venues ?? []
+        if (venues.length > 1) {
+          // Multi-venue owner — return venue picker data instead of a session
+          const ownerToken = await signOwnerToken(normalizedEmail, venues.map(v => v.slug), secret)
+          return NextResponse.json({
+            data: {
+              multiVenue: true,
+              venues,
+              ownerToken,
+            },
+          })
+        }
+      }
+    } catch {
+      // MC unreachable — fall through to single-venue session (safe fallback)
+    }
+  }
+
+  // Single venue (or MC unavailable) — issue session as normal
   // Generate a cloud-session-compatible JWT signed with PROVISION_API_KEY
   const token = await signVenueToken(
     {
