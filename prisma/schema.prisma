@@ -1562,6 +1562,9 @@ model Order {
   // Status
   status String @default("open") // open, sent, paid, closed, voided, merged
 
+  // Concurrency control (optimistic locking for multi-terminal conflict detection)
+  version Int @default(1)
+
   // Timing
   openedAt DateTime  @default(now())
   sentAt   DateTime?

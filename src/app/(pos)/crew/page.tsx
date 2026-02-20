@@ -67,6 +67,9 @@ export default function CrewHubPage() {
 
   const performClockIn = async (workingRoleId?: string, selectedTipGroupTemplateId?: string | null) => {
     if (!employee) return
+    // Optimistic: flip UI to clocked-in immediately
+    setClockStatus({ clockedIn: true, entryId: null, clockInTime: new Date().toISOString() })
+    useAuthStore.getState().clockIn()
     setClockLoading(true)
     try {
       const res = await fetch('/api/time-clock', {
@@ -80,11 +83,17 @@ export default function CrewHubPage() {
         }),
       })
       if (res.ok) {
-        useAuthStore.getState().clockIn()
-        await fetchClockStatus()
+        // Background sync to get the real entryId
+        void fetchClockStatus()
+      } else {
+        // Revert optimistic update on failure
+        setClockStatus({ clockedIn: false, entryId: null, clockInTime: null })
+        useAuthStore.getState().clockOut()
       }
     } catch {
-      // Silently fail
+      // Revert optimistic update on failure
+      setClockStatus({ clockedIn: false, entryId: null, clockInTime: null })
+      useAuthStore.getState().clockOut()
     } finally {
       setClockLoading(false)
     }
@@ -154,19 +163,26 @@ export default function CrewHubPage() {
   const handleConfirmClockOut = async () => {
     if (!employee) return
     setShowClockOutConfirm(false)
+    // Optimistic: flip UI to clocked-out immediately
+    const previousStatus = { ...clockStatus }
+    setClockStatus({ clockedIn: false, entryId: null, clockInTime: null })
+    useAuthStore.getState().clockOut()
     setClockLoading(true)
     try {
       const res = await fetch('/api/time-clock', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entryId: clockStatus.entryId, action: 'clockOut' }),
+        body: JSON.stringify({ entryId: previousStatus.entryId, action: 'clockOut' }),
       })
-      if (res.ok) {
-        useAuthStore.getState().clockOut()
-        await fetchClockStatus()
+      if (!res.ok) {
+        // Revert on failure
+        setClockStatus(previousStatus)
+        useAuthStore.getState().clockIn()
       }
     } catch {
-      // Silently fail
+      // Revert on failure
+      setClockStatus(previousStatus)
+      useAuthStore.getState().clockIn()
     } finally {
       setClockLoading(false)
     }

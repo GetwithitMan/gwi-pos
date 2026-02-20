@@ -464,6 +464,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       }
 
       // Append unsaved items via atomic POST /api/orders/{id}/items
+      // Snapshot before network call so we can revert on failure
+      store.saveSnapshot()
       try {
         const res = await fetch(`/api/orders/${order.id}/items`, {
           method: 'POST',
@@ -475,7 +477,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
         if (!res.ok) {
           const error = await res.json()
-          toast.error(error.error || 'Failed to add items')
+          store.revertLastChange(error.error || 'Failed to add items')
           return null
         }
 
@@ -505,7 +507,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         return order.id!
       } catch (error) {
         console.error('[useActiveOrder] ensureOrderInDB append failed:', error)
-        toast.error('Failed to save items')
+        store.revertLastChange('Failed to save items. Please try again.')
         return null
       }
     }
@@ -591,8 +593,23 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       }
 
       // Update store
-      useOrderStore.getState().removeItem(itemId)
+      const store = useOrderStore.getState()
+      store.removeItem(itemId)
       toast.success('Item removed')
+
+      // If that was the last item on an unsent order, clear it entirely
+      const remaining = useOrderStore.getState().currentOrder
+      if (remaining && remaining.items.length === 0 && !remaining.items.some(i => i.sentToKitchen)) {
+        // Cancel DB draft if one exists
+        if (remaining.id && !isTempId(remaining.id)) {
+          fetch(`/api/orders/${remaining.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'cancelled' }),
+          }).catch(() => {})
+        }
+        store.clearOrder()
+      }
     } catch (error) {
       console.error('[useActiveOrder] Failed to remove item:', error)
       toast.error('Failed to remove item')
@@ -974,18 +991,25 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         const freshOrder = store.currentOrder
         if (!freshOrder) { sendInProgressRef.current = false; return }
 
-        // Get DB order ID (from draft shell created on table tap)
+        // Get DB order ID — create in DB now (this is the first time we persist the order)
+        // Orders are local-only until Send is pressed; ensureOrderInDB creates the DB record
+        // and assigns the orderNumber here, then appends all unsaved items atomically
         let resolvedOrderId = freshOrder.id && !isTempId(freshOrder.id) ? freshOrder.id : null
+        const orderJustCreated = !resolvedOrderId  // true when ensureOrderInDB will be called
         if (!resolvedOrderId) {
-          // Rare fallback: draft didn't complete. Block on full persist.
           resolvedOrderId = await ensureOrderInDB(employeeId)
           if (!resolvedOrderId) { sendInProgressRef.current = false; return }
         }
 
-        const pendingItems = freshOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
+        // Re-read from store after ensureOrderInDB — item IDs may have been mapped (temp → real)
+        // Using freshOrder snapshot here would double-append items that ensureOrderInDB already saved
+        const latestOrder = useOrderStore.getState().currentOrder || freshOrder
+        const pendingItems = latestOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
         const delayedItems = pendingItems.filter(i => i.delayMinutes && i.delayMinutes > 0 && !i.delayStartedAt)
         const immediateItems = pendingItems.filter(i => !i.delayMinutes || i.delayMinutes <= 0)
-        const unsavedItems = freshOrder.items.filter(item => isTempId(item.id))
+        // If the order was just created (ensureOrderInDB ran), all items are already in the DB
+        // — set unsavedItems to [] so bgChain skips the append step (avoids duplicate POSTs)
+        const unsavedItems = orderJustCreated ? [] : latestOrder.items.filter(item => isTempId(item.id))
 
         if (immediateItems.length > 0 || delayedItems.length > 0) {
           // Optimistically mark immediate items as sent — UI clears instantly

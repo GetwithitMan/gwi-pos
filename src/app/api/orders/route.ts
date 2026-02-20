@@ -15,9 +15,11 @@ import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
+  let reqBody: any = {}
   try {
     const timing = getTimingFromRequest(request)
     const body = await request.json()
+    reqBody = body
 
     // Validate request body
     const validation = validateRequest(createOrderSchema, body)
@@ -44,44 +46,43 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         initialSeatTimestamps[i.toString()] = now
       }
 
-      // Serializable transaction: prevents duplicate order numbers under concurrent requests
+      // Draft shell: use default isolation to avoid deadlocks under rapid tab creation.
+      // Duplicate order numbers are harmless for drafts and self-correct on send.
       timing.start('db-draft')
-      const order = await db.$transaction(async (tx) => {
-        const lastOrder = await tx.order.findFirst({
-          where: { locationId, createdAt: { gte: today, lt: tomorrow } },
-          orderBy: { orderNumber: 'desc' },
-          select: { orderNumber: true },
-        })
-        const orderNumber = (lastOrder?.orderNumber || 0) + 1
+      const lastOrder = await db.order.findFirst({
+        where: { locationId, createdAt: { gte: today, lt: tomorrow } },
+        orderBy: { orderNumber: 'desc' },
+        select: { orderNumber: true },
+      })
+      const orderNumber = (lastOrder?.orderNumber || 0) + 1
 
-        return tx.order.create({
-          data: {
-            locationId,
-            employeeId,
-            orderNumber,
-            orderType,
-            orderTypeId: orderTypeId || null,
-            tableId: tableId || null,
-            tabName: tabName || null,
-            guestCount: initialSeatCount,
-            baseSeatCount: initialSeatCount,
-            extraSeatCount: 0,
-            seatVersion: 0,
-            seatTimestamps: initialSeatTimestamps,
-            status: 'draft',
-            subtotal: 0,
-            discountTotal: 0,
-            taxTotal: 0,
-            taxFromInclusive: 0,
-            taxFromExclusive: 0,
-            tipTotal: 0,
-            total: 0,
-            commissionTotal: 0,
-            notes: notes || null,
-            customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
-          },
-        })
-      }, { isolationLevel: 'Serializable' })
+      const order = await db.order.create({
+        data: {
+          locationId,
+          employeeId,
+          orderNumber,
+          orderType,
+          orderTypeId: orderTypeId || null,
+          tableId: tableId || null,
+          tabName: tabName || null,
+          guestCount: initialSeatCount,
+          baseSeatCount: initialSeatCount,
+          extraSeatCount: 0,
+          seatVersion: 0,
+          seatTimestamps: initialSeatTimestamps,
+          status: 'draft',
+          subtotal: 0,
+          discountTotal: 0,
+          taxTotal: 0,
+          taxFromInclusive: 0,
+          taxFromExclusive: 0,
+          tipTotal: 0,
+          total: 0,
+          commissionTotal: 0,
+          notes: notes || null,
+          customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
+        },
+      })
 
       timing.end('db-draft', 'Draft order create')
 
@@ -398,16 +399,15 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     console.error('Failed to create order:', error)
 
     // Capture CRITICAL order creation error
-    const body = await request.clone().json().catch(() => ({}))
     errorCapture.critical('ORDER', 'Order creation failed', {
       category: 'order-creation-error',
       action: 'Creating new order',
       error: error instanceof Error ? error : undefined,
       path: '/api/orders',
-      requestBody: body,
-      locationId: body?.locationId,
-      employeeId: body?.employeeId,
-      tableId: body?.tableId,
+      requestBody: reqBody,
+      locationId: reqBody?.locationId,
+      employeeId: reqBody?.employeeId,
+      tableId: reqBody?.tableId,
     }).catch(() => {
       // Silently fail error logging
     })

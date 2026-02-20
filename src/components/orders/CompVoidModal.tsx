@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
@@ -77,6 +77,7 @@ export function CompVoidModal({
   const [error, setError] = useState<string | null>(null)
   const [showRemoteApproval, setShowRemoteApproval] = useState(false)
   const [remoteApprovalCode, setRemoteApprovalCode] = useState<string | null>(null)
+  const submitLockRef = useRef(false)
 
   const modifiersTotal = item.modifiers.reduce((sum, m) => sum + m.price, 0)
   const itemTotal = (item.price + modifiersTotal) * item.quantity
@@ -84,21 +85,27 @@ export function CompVoidModal({
   const isCompedOrVoided = item.status === 'comped' || item.status === 'voided'
 
   const handleSubmit = async () => {
+    // Ref guard: catches rapid double-taps before React state update
+    if (submitLockRef.current) return
+    submitLockRef.current = true
     const finalReason = reason === 'custom' ? customReason : reason
 
     if (!finalReason.trim()) {
       setError('Please select or enter a reason')
+      submitLockRef.current = false
       return
     }
 
     if (!action) {
       setError('Please select an action')
+      submitLockRef.current = false
       return
     }
 
     // For voids, require "was it made?" answer
     if (action === 'void' && wasMade === null) {
       setError('Please indicate if the item was already made')
+      submitLockRef.current = false
       return
     }
 
@@ -136,6 +143,7 @@ export function CompVoidModal({
       setError(err instanceof Error ? err.message : 'Failed to process')
     } finally {
       setIsProcessing(false)
+      submitLockRef.current = false
     }
   }
 

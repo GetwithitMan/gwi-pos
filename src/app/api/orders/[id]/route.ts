@@ -110,6 +110,7 @@ export const GET = withVenue(async function GET(
     return NextResponse.json({ data: {
       ...response,
       paidAmount,
+      version: order.version,
     } })
   } catch (error) {
     console.error('Failed to fetch order:', error)
@@ -152,6 +153,7 @@ export const PUT = withVenue(async function PUT(
       customerId,
       status,
       employeeId,
+      version,
     } = body as {
       tabName?: string
       guestCount?: number
@@ -162,6 +164,7 @@ export const PUT = withVenue(async function PUT(
       customerId?: string
       status?: string
       employeeId?: string
+      version?: number
     }
 
     // Get existing order
@@ -175,6 +178,15 @@ export const PUT = withVenue(async function PUT(
 
     if (!existingOrder) {
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    }
+
+    // Concurrency check: if client sent a version, verify it matches
+    if (version != null && existingOrder.version !== version) {
+      return NextResponse.json({
+        error: 'Order was modified on another terminal',
+        conflict: true,
+        currentVersion: existingOrder.version,
+      }, { status: 409 })
     }
 
     if (!['open', 'draft', 'sent', 'in_progress', 'split'].includes(existingOrder.status)) {
@@ -211,7 +223,7 @@ export const PUT = withVenue(async function PUT(
 
     const updatedOrder = await db.order.update({
       where: { id },
-      data: updateData,
+      data: { ...updateData, version: { increment: 1 } },
       include: {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
@@ -226,7 +238,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     // Use mapper for complete response with all modifier fields
-    const response = mapOrderForResponse(updatedOrder)
+    const response = { ...mapOrderForResponse(updatedOrder), version: updatedOrder.version }
 
     // Dispatch order:updated for metadata changes (fire-and-forget)
     void dispatchOrderUpdated(updatedOrder.locationId, { orderId: id, changes: Object.keys(updateData) }).catch(() => {})

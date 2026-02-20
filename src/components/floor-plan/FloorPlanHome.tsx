@@ -36,6 +36,7 @@ import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hook
 import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
 import { isTempId, fetchAndMergeOrder } from '@/lib/order-utils'
 import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
+import { useOrderEditing } from '@/hooks/useOrderEditing'
 import './styles/floor-plan.css'
 
 interface Category {
@@ -330,6 +331,9 @@ export function FloorPlanHome({
     employeeId,
   })
 
+  // === Multi-terminal editing awareness ===
+  useOrderEditing(activeOrderId, locationId)
+
   // === Clear order panel helper (consolidates 5+ repeated state-clearing sequences) ===
   const clearOrderPanel = useCallback(() => {
     setActiveOrderId(null)
@@ -622,6 +626,8 @@ export function FloorPlanHome({
   // FIX: Ref to always access latest tables data (avoids stale closure issues)
   const tablesRef = useRef(tables)
   tablesRef.current = tables
+  // Optimistic grace period: timestamp until which socket-triggered full refreshes are deferred
+  const optimisticGraceRef = useRef<number>(0)
 
   // Ref for fixtures/elements data (for collision detection)
   const fixturesRef = useRef(elements)
@@ -772,14 +778,20 @@ export function FloorPlanHome({
   useEffect(() => {
     if (!isConnected) return
 
-    // Debounced refreshAll: multiple socket events within 300ms trigger only one snapshot fetch
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    // Optimistic grace period: after an optimistic update, defer socket-triggered
+    // full refreshes for 3s to prevent "table disappears then reappears" flicker.
+    // The grace period is set by addTableOrder/removeTableOrder callers.
     const refreshAll = () => {
       if (debounceTimer) clearTimeout(debounceTimer)
+      // If within optimistic grace period, extend debounce to let it expire first
+      const now = Date.now()
+      const graceRemaining = optimisticGraceRef.current ? optimisticGraceRef.current - now : 0
+      const delay = Math.max(300, graceRemaining)
       debounceTimer = setTimeout(() => {
         loadFloorPlanData(false) // snapshot includes count
-      }, 300)
+      }, delay)
     }
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
     const unsubs = [
       // Floor plan layout changes from another terminal (structure change — full reload)
@@ -1242,9 +1254,9 @@ export function FloorPlanHome({
         setActiveOrderId(null)
         setActiveOrderNumber(null)
         activeOrder.clearOrder()
-        // Use hook's startOrder to trigger background draft POST
-        // Draft shell created in DB immediately — ensureOrderInDB later only appends items
-        activeOrder.startOrder('dine_in', {
+        // Use raw store's startOrder — local only, no DB draft, no orderNumber
+        // DB order + orderNumber assigned only when user taps Send
+        store.startOrder('dine_in', {
           locationId,
           tableId: primaryTable.id,
           guestCount: totalSeats,
@@ -1266,9 +1278,10 @@ export function FloorPlanHome({
       store.updateOrderType(orderType)
     } else {
       // No items yet — start fresh with the new type
-      // Use hook's startOrder to trigger background draft POST
+      // Use raw store's startOrder — local only, no DB draft, no orderNumber
+      // DB order + orderNumber assigned only when user taps Send
       activeOrder.clearOrder()
-      activeOrder.startOrder(orderType)
+      store.startOrder(orderType, { locationId })
     }
 
     // Clear table context for non-table order types
@@ -1564,6 +1577,8 @@ export function FloorPlanHome({
       // Optimistic: update table status to 'occupied' immediately so the
       // floor plan tile turns blue the instant we close the panel, instead of
       // waiting 1-5s for the full snapshot to return.
+      // Set grace period to defer socket-triggered refreshes for 3s (prevents flicker)
+      optimisticGraceRef.current = Date.now() + 3000
       const sentOrderId = store.currentOrder?.id
       const sentOrderNumber = store.currentOrder?.orderNumber
       if (activeTableId && sentOrderId) {
@@ -2573,27 +2588,31 @@ export function FloorPlanHome({
 
               // Immediately update the voided/comped item status in the store
               // This ensures totals recalculate without waiting for API refresh
+              const store = useOrderStore.getState()
               if (voidedItemId) {
-                useOrderStore.getState().updateItem(voidedItemId, {
+                store.updateItem(voidedItemId, {
                   status: result.action === 'restore' ? 'active' as const : result.action as 'voided' | 'comped',
                 })
               }
-
-              // Also refresh from server for full data consistency
-              if (activeOrderId) {
-                try {
-                  const response = await fetch(`/api/orders/${activeOrderId}`)
-                  if (response.ok) {
-                    const orderData = await response.json()
-                    // Reload full order via store.loadOrder — one path, no duplication
-                    const store = useOrderStore.getState()
-                    store.loadOrder(orderData.data || orderData)
-                  }
-                } catch (error) {
-                  console.error('Failed to refresh order:', error)
-                }
+              // Sync server-calculated totals immediately (returned from comp-void API)
+              if (result.orderTotals) {
+                store.syncServerTotals({
+                  subtotal: result.orderTotals.subtotal,
+                  discountTotal: result.orderTotals.discountTotal,
+                  taxTotal: result.orderTotals.taxTotal,
+                  total: result.orderTotals.total,
+                })
               }
-              toast.success('Item comped/voided successfully')
+
+              toast.success(result.action === 'restore' ? 'Item restored' : 'Item comped/voided successfully')
+
+              // Background refresh for full data consistency (fire-and-forget)
+              if (activeOrderId) {
+                void fetch(`/api/orders/${activeOrderId}`)
+                  .then(r => r.ok ? r.json() : null)
+                  .then(d => { if (d) useOrderStore.getState().loadOrder(d.data || d) })
+                  .catch(() => {})
+              }
             }}
           />
         </Suspense>

@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
 import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
+import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
 import { toast } from '@/stores/toast-store'
 
 interface OpenOrder {
@@ -260,6 +261,10 @@ export function OpenOrdersPanel({
   const ordersRef = useRef(orders)
   ordersRef.current = orders
 
+  // Debounce timer for socket-triggered full refreshes (prevents burst reloads)
+  const socketRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => { if (socketRefreshTimerRef.current) clearTimeout(socketRefreshTimerRef.current) }, [])
+
   // Socket-based real-time open orders updates (replaces 3s polling)
   // Delta updates: "paid"/"voided" remove from list locally; others trigger full refresh
   const handleSocketOrdersChanged = useCallback((data: { locationId: string; trigger: string; orderId?: string }) => {
@@ -274,6 +279,10 @@ export function OpenOrdersPanel({
         // Delta: remove closed/voided order from local state (no fetch)
         setOrders(prev => prev.filter(o => o.id !== orderId))
       }
+    } else if (trigger === 'sent' && orderId) {
+      // Sent trigger: order already in open list — no-op unless new
+      const exists = ordersRef.current.some(o => o.id === orderId)
+      if (!exists) loadOrders()
     } else {
       // Created/transferred/reopened — need full data
       loadOrders()
@@ -517,9 +526,9 @@ export function OpenOrdersPanel({
                 <> • •••{order.preAuth.last4}{order.preAuth.amount != null && ` ${formatCurrency(order.preAuth.amount)}`}</>
               )}
             </span>
-            {order.tabStatus === 'pending_auth' && (
-              <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold animate-pulse ${dark ? 'bg-amber-600/30 text-amber-300' : 'bg-amber-100 text-amber-700'}`}>
-                Authorizing...
+            {order.tabStatus && order.tabStatus !== 'closed' && (
+              <span className="inline-block mt-0.5">
+                <AuthStatusBadge tabStatus={order.tabStatus as any} dark={dark} />
               </span>
             )}
             {order.reopenedAt && (
@@ -726,9 +735,10 @@ export function OpenOrdersPanel({
             )}
           </div>
         )}
-        {order.tabStatus === 'pending_auth' && (
-          <div className={`flex items-center gap-1 text-xs font-bold mb-2 animate-pulse ${dark ? 'text-amber-400' : 'text-amber-600'}`}>
-            <span>Authorizing card...</span>
+        {/* Auth status badge — shown for all tab states except closed */}
+        {order.tabStatus && order.tabStatus !== 'closed' && (
+          <div className="mb-2">
+            <AuthStatusBadge tabStatus={order.tabStatus as any} dark={dark} />
           </div>
         )}
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { UiModifier } from '@/types/orders'
 import { generateTempItemId } from '@/lib/order-utils'
+import { toast } from '@/stores/toast-store'
 
 interface OrderItemModifier extends UiModifier {
   // Additional fields specific to order store
@@ -214,6 +215,8 @@ interface LoadedOrderData {
 
 interface OrderState {
   currentOrder: Order | null
+  // Optimistic rollback: snapshot of order state before the last optimistic mutation
+  _previousOrder: Order | null
 
   // Actions
   startOrder: (orderType: Order['orderType'], options?: { locationId?: string; tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
@@ -233,6 +236,9 @@ interface OrderState {
   updateOrderId: (id: string, orderNumber?: number) => void
   updateItemId: (tempId: string, realId: string) => void
   syncServerTotals: (totals: { subtotal: number; discountTotal: number; taxTotal: number; tipTotal?: number; total: number; commissionTotal?: number }) => void
+  // Optimistic rollback
+  saveSnapshot: () => void
+  revertLastChange: (errorMessage: string) => void
   // Coursing
   setCoursingEnabled: (enabled: boolean) => void
   setCourseDelay: (courseNumber: number, delayMinutes: number) => void
@@ -292,6 +298,7 @@ function computeTotals(order: Order): { subtotal: number; taxTotal: number; tota
 
 export const useOrderStore = create<OrderState>((set, get) => ({
   currentOrder: null,
+  _previousOrder: null,
 
   startOrder: (orderType, options = {}) => {
     set({
@@ -726,6 +733,23 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         ),
       },
     })
+  },
+
+  // Optimistic rollback: save a snapshot of the current order before a mutation
+  saveSnapshot: () => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    // Deep copy items array so mutations don't affect the snapshot
+    set({ _previousOrder: { ...currentOrder, items: [...currentOrder.items] } })
+  },
+
+  // Optimistic rollback: restore the previous snapshot and show an error toast
+  revertLastChange: (errorMessage) => {
+    const { _previousOrder } = get()
+    if (_previousOrder) {
+      set({ currentOrder: { ..._previousOrder, items: [..._previousOrder.items] }, _previousOrder: null })
+      toast.error(errorMessage)
+    }
   },
 
   // Set estimated tax rate from location settings (for client-side UX before server sync)

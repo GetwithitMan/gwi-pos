@@ -152,6 +152,12 @@ export const POST = withVenue(async function POST(
         // Increment failed — log warning but don't block
         console.warn(`[Tab Auto-Increment] DECLINED Order=${orderId} Card=...${defaultCard.cardLast4} +$${dynamicIncrement} Error=${error?.text || 'Unknown'}`)
 
+        // Fire-and-forget: notify terminals of increment failure (triggers red badge)
+        void dispatchTabUpdated(locationId, {
+          orderId,
+          status: 'increment_failed',
+        }).catch(() => {})
+
         return NextResponse.json({
           data: {
             action: 'increment_failed',

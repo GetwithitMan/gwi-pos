@@ -22,6 +22,7 @@ export const POST = withVenue(async function POST(
       tipMode = 'receipt', // 'device' | 'receipt' | 'included'
       tipAmount,           // Pre-set tip amount (for 'included' mode)
       orderCardId,         // Optional: charge a specific card (when multiple cards on tab)
+      version,             // Optimistic concurrency control
     } = body
 
     if (!employeeId) {
@@ -44,6 +45,15 @@ export const POST = withVenue(async function POST(
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // Concurrency check: if client sent a version, verify it matches
+    if (version != null && order.version !== version) {
+      return NextResponse.json({
+        error: 'Tab was modified on another terminal',
+        conflict: true,
+        currentVersion: order.version,
+      }, { status: 409 })
     }
 
     if (order.cards.length === 0) {
@@ -230,6 +240,7 @@ export const POST = withVenue(async function POST(
           closedAt: now,
           tipTotal: captureResult.tipAmount || Number(order.tipTotal),
           total: purchaseAmount + (captureResult.tipAmount || 0),
+          version: { increment: 1 },
         },
       }),
       // Void any remaining authorized cards

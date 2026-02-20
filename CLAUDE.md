@@ -6,6 +6,87 @@ This file provides context for Claude Code when working on this project.
 
 GWI POS is a modern point-of-sale system built for bars and restaurants. It emphasizes a "fewest clicks" philosophy for fast service.
 
+## Task Execution Protocol (MANDATORY)
+
+**Before doing ANY work, follow this decision order every turn:**
+
+### Step 1: Assess (every turn, no exceptions)
+Before touching code, files, or tools — pause and think:
+- What is the user actually asking for?
+- How many files/domains does this touch?
+- Is there research needed before implementation?
+- Can parts of this work run in parallel?
+
+### Step 2: Decide Solo vs Team
+
+| Condition | Action |
+|-----------|--------|
+| Single-file edit, < 20 lines changed | Solo — just do it |
+| Bug fix in one known location | Solo — just do it |
+| Answering a question about the codebase | Solo or Explore agent |
+| **2+ files across different domains** | **Use a team** |
+| **Research + implementation needed** | **Use a team** (Explore agent researches while you plan) |
+| **Schema change + API + UI updates** | **Use a team** (parallelize the layers) |
+| **Any task touching 3+ files** | **Use a team** |
+| **User says "PM Mode" or "use a team"** | **Use a team** (always) |
+| **New feature (not a patch)** | **Use a team** |
+| **Multi-step task with dependencies** | **Use a team** (TodoWrite + parallel agents) |
+
+### Step 3: Team Composition (when teaming)
+Spawn the right agents for the job:
+
+| Agent Type | Use For |
+|------------|---------|
+| `Explore` | Codebase research, finding files, understanding patterns — always spawn first |
+| `general-purpose` | Writing code, editing files, full implementation |
+| `Bash` | Running builds, tests, git operations |
+| `Plan` | Designing approach for complex features before coding |
+
+**Preferred pattern for most tasks:**
+1. Spawn an **Explore** agent to research the current state (runs in background)
+2. While it researches, use **TodoWrite** to break down the task
+3. Spawn **general-purpose** agents for each independent workstream
+4. Validate with a **Bash** agent (build, lint, type-check)
+
+### Step 4: Always Use TodoWrite for Multi-Step Work
+If the task has 3+ steps, create a todo list. This gives the user visibility into progress and keeps work organized.
+
+### Step 5: Forensic Research Protocol (for bugs, issues, and "something's wrong")
+
+When investigating a bug, unexpected behavior, or anything where the root cause is unclear — **do NOT do a surface-level search and start fixing**. Deploy a forensic team:
+
+**Spawn 3 parallel Explore agents, each with a different lens:**
+
+| Agent | Lens | What It Investigates |
+|-------|------|---------------------|
+| **Forensic-Data** | Data flow | Trace the data from DB schema → Prisma query → API route → client fetch → Zustand store → rendered component. Find where the value changes, gets lost, or arrives wrong. Read the actual code in each file, don't just search for names. |
+| **Forensic-Integration** | Connections & side effects | Find every file that imports, calls, or listens to the affected code. Check socket events, cache invalidation, fire-and-forget side effects, and other modules that might interfere. Search for the function/event/model name across the entire codebase. |
+| **Forensic-History** | Recent changes & context | Check `git log` for recent commits touching the affected files. Read the skill docs and changelogs for the relevant domain. Look at the Living Log for related work. Check if a recent change broke an assumption. |
+
+**Each forensic agent MUST:**
+- Actually **read the full file contents** of every relevant file (not just search for a string and stop)
+- Follow imports and function calls at least **2 levels deep** (if `A` calls `B` which calls `C`, read all three)
+- Report what they found AND what they ruled out
+- Flag anything suspicious even if they're not sure it's the cause
+
+**After all 3 agents report back:**
+1. Cross-reference their findings — the bug usually lives where two lenses overlap
+2. Form a hypothesis and verify it against the code before writing any fix
+3. Only then create the implementation plan
+
+**When to trigger forensic research:**
+- User reports something "doesn't work" or "broke"
+- A fix you applied didn't solve the problem
+- The bug involves data appearing wrong, missing, or stale
+- Behavior differs between terminals/sessions
+- Something "used to work" but stopped
+- You're about to change code you haven't fully traced
+
+**The rule: Never fix what you don't fully understand.** A shallow grep that finds one file is not research. Following the full data path through every layer IS research.
+
+### The Bias: When in Doubt, Team It
+If you're unsure whether something needs a team — **use a team**. The cost of spawning an extra agent is low. The cost of a single agent losing context halfway through a complex task is high.
+
 ## System Architecture
 
 GWI POS is a **hybrid SaaS** system with local servers at each location for speed and offline capability.

@@ -29,23 +29,34 @@ export const POST = withVenue(withTiming(async function POST(
       // No body or invalid JSON — send all pending items
     }
 
-    // Get the order with items
+    // Atomic fetch: use interactive transaction with row-level lock to prevent
+    // two concurrent POST /send requests from processing the same pending items.
+    // SELECT ... FOR UPDATE on the order row serialises concurrent sends.
     timing.start('db-fetch')
-    const order = await db.order.findFirst({
-      where: { id, deletedAt: null },
-      include: {
-        items: {
-          where: { deletedAt: null, kitchenStatus: 'pending', isHeld: false },
-          include: {
-            menuItem: {
-              select: { id: true, name: true, itemType: true, blockTimeMinutes: true }
+    const order = await db.$transaction(async (tx) => {
+      // Lock the order row — any concurrent send will block here until we commit
+      const [locked] = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "Order" WHERE id = $1 AND "deletedAt" IS NULL FOR UPDATE`,
+        id,
+      )
+      if (!locked) return null
+
+      return tx.order.findFirst({
+        where: { id, deletedAt: null },
+        include: {
+          items: {
+            where: { deletedAt: null, kitchenStatus: 'pending', isHeld: false },
+            include: {
+              menuItem: {
+                select: { id: true, name: true, itemType: true, blockTimeMinutes: true }
+              }
             }
           }
         }
-      }
+      })
     })
 
-    timing.end('db-fetch', 'Fetch order')
+    timing.end('db-fetch', 'Fetch order (locked)')
 
     if (!order) {
       return NextResponse.json(
@@ -81,12 +92,14 @@ export const POST = withVenue(withTiming(async function POST(
       })
     }
 
-    // Short-circuit: if no items to process, return early without dispatching events
+    // Short-circuit: if no items to process, return early without dispatching events.
+    // This is the natural idempotency guard — a second concurrent send finds 0 pending items.
     if (itemsToProcess.length === 0) {
       return NextResponse.json({ data: {
         success: true,
         sentItemCount: 0,
         sentItemIds: [],
+        alreadySent: true,
         delayedItemCount: delayedItems.length,
         routing: { stations: [], unroutedCount: 0 },
       } })

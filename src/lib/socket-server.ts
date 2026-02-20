@@ -170,6 +170,32 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       // Socket.io automatically cleans up room memberships on disconnect
     })
 
+    // ==================== Order Editing Awareness ====================
+
+    /**
+     * Relay order editing events to the location room.
+     * When a terminal opens an order, it emits `order:editing` — we broadcast
+     * to the location room so other terminals can show a conflict banner.
+     */
+    socket.on('order:editing', (data: { orderId: string; terminalId: string; terminalName: string; locationId: string }) => {
+      if (typeof data.locationId === 'string' && typeof data.orderId === 'string') {
+        socketServer.to(`location:${data.locationId}`).except(socket.id).emit('order:editing', {
+          orderId: data.orderId,
+          terminalId: data.terminalId,
+          terminalName: data.terminalName,
+        })
+      }
+    })
+
+    socket.on('order:editing-released', (data: { orderId: string; terminalId: string; locationId: string }) => {
+      if (typeof data.locationId === 'string' && typeof data.orderId === 'string') {
+        socketServer.to(`location:${data.locationId}`).except(socket.id).emit('order:editing-released', {
+          orderId: data.orderId,
+          terminalId: data.terminalId,
+        })
+      }
+    })
+
     // ==================== Direct Terminal Messages ====================
 
     /**

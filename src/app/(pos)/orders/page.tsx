@@ -832,17 +832,6 @@ export default function OrdersPage() {
     }
   }, [employee?.location?.id, tabsRefreshTrigger, loadOpenOrdersCount])
 
-  useEffect(() => {
-    // Don't auto-create when on floor-plan — after send, clearOrder() sets currentOrder=null
-    // but we don't want to start a new order until user taps a table
-    if (!currentOrder && viewMode !== 'floor-plan') {
-      if (viewMode === 'bartender') {
-        startOrder('bar_tab')
-      } else {
-        startOrder('dine_in', { guestCount: 1 })
-      }
-    }
-  }, [currentOrder, startOrder, viewMode])
 
   // Load quick bar items when quickBar changes (T035)
   useEffect(() => {
@@ -2483,8 +2472,9 @@ export default function OrdersPage() {
               const items = store.currentOrder?.items
               if (!items?.length) return
 
-              // Get existing order ID from Zustand (always current) or React state
-              const existingOrderId = store.currentOrder?.id || savedOrderId
+              // Use store's current order ID (always fresh) — savedOrderId may be stale
+              // after hiding a tab (React state update hasn't flushed yet)
+              const existingOrderId = store.currentOrder?.id || null
 
               // ── Existing tab with saved order → check for card & re-auth ──
               if (existingOrderId) {
@@ -2676,7 +2666,8 @@ export default function OrdersPage() {
                       toast.error('Failed to create order')
                       return
                     }
-                    const shell = await shellRes.json()
+                    const shellRaw = await shellRes.json()
+                    const shell = shellRaw.data ?? shellRaw
                     orderId = shell.id
                     const store2 = useOrderStore.getState()
                     store2.updateOrderId(shell.id, shell.orderNumber)
@@ -2696,7 +2687,7 @@ export default function OrdersPage() {
                   const tabName = store.currentOrder?.tabName
                   if (!tabName) return
 
-                  // Capture items before clearing
+                  // Capture order state before clearing
                   const capturedOrder = store.currentOrder
                   if (!capturedOrder || capturedOrder.items.length === 0) return
                   const capturedItems = [...capturedOrder.items]
@@ -2710,7 +2701,6 @@ export default function OrdersPage() {
                   setOrderSent(false)
                   setSelectedOrderType(null)
                   setOrderCustomFields({})
-                  startOrder('bar_tab')
 
                   // Fire-and-forget: create order + send to kitchen in background
                   void (async () => {
@@ -2928,11 +2918,22 @@ export default function OrdersPage() {
             if (mode === 'bartender') {
               setMode('bar')
               setViewMode('bartender')
-              // Ensure order type is bar_tab when switching to bartender view
-              if (order && order.orderType !== 'bar_tab') {
-                updateOrderType('bar_tab')
-              } else if (!order) {
-                startOrder('bar_tab')
+              // Clear seat filter — seat context is table-specific, not relevant in bar view
+              useFloorPlanStore.getState().clearSelectedSeat()
+              // Always clear any existing order when switching to bar view
+              // Bar view starts clean — no order number until Send/Start Tab
+              if (order) {
+                const hasSentItems = order.items.some(i => i.sentToKitchen)
+                if (order.id && !hasSentItems) {
+                  // Cancel unsent draft in DB
+                  fetch(`/api/orders/${order.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'cancelled' }),
+                  }).catch(() => {})
+                }
+                clearOrder()
+                setSavedOrderId(null)
               }
             } else {
               if (order?.id && order.tableId) {
@@ -3034,7 +3035,28 @@ export default function OrdersPage() {
             employeeId={employee.id}
             employeePermissions={permissionsArray}
             dualPricing={dualPricing}
-            onRegisterDeselectTab={(fn) => { bartenderDeselectTabRef.current = fn }}
+            onRegisterDeselectTab={(fn) => {
+              bartenderDeselectTabRef.current = () => {
+                // Cancel empty draft in DB before clearing local state
+                const store = useOrderStore.getState()
+                const order = store.currentOrder
+                if (order?.id && !isTempId(order.id)) {
+                  const hasSentItems = order.items.some(i => i.sentToKitchen)
+                  if (!hasSentItems) {
+                    fetch(`/api/orders/${order.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ status: 'cancelled' }),
+                    }).catch(() => {})
+                  }
+                }
+                fn()
+                // Clear stale tab card info so hasActiveTab resets and button shows "Start Tab"
+                setTabCardInfo({ cardLast4: '', cardType: '', cardholderName: '' })
+                setIsSendingOrder(false) // Reset stuck sending state
+                setSavedOrderId(null)
+              }
+            }}
             onOpenCompVoid={(item) => {
               const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId
               if (!orderId) {
@@ -3273,7 +3295,6 @@ export default function OrdersPage() {
               setSelectedOrderType(null)
               setOrderCustomFields({})
               setCardTabOrderId(null)
-              startOrder('bar_tab')
 
               void (async () => {
                 try {
@@ -3332,11 +3353,27 @@ export default function OrdersPage() {
                 }
               })()
             } else {
+              // Card declined — cancel the empty draft so it doesn't linger as a $0.00 tab
+              if (cardTabOrderId) {
+                fetch(`/api/orders/${cardTabOrderId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'cancelled' }),
+                }).catch(() => {})
+              }
               setCardTabOrderId(null)
             }
           }}
           onCardTabCancel={() => {
             setShowCardTabFlow(false)
+            // Cancel the empty draft order in the DB so it doesn't linger as a $0.00 tab
+            if (cardTabOrderId) {
+              fetch(`/api/orders/${cardTabOrderId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'cancelled' }),
+              }).catch(() => {})
+            }
             setCardTabOrderId(null)
           }}
           showDiscountModal={showDiscountModal}

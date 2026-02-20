@@ -7,6 +7,7 @@ import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } fr
 import { calculateItemTotal } from '@/lib/order-calculations'
 import { formatCurrency } from '@/lib/utils'
 import { OrderDelayBanner } from './OrderDelayBanner'
+import { ConflictBanner } from './ConflictBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
@@ -1271,6 +1272,13 @@ export const OrderPanel = memo(function OrderPanel({
             </div>
           </div>
         )
+      )}
+
+      {/* Multi-terminal conflict banner */}
+      {orderId && (
+        <div style={{ padding: '0 20px' }}>
+          <ConflictBanner orderId={orderId} />
+        </div>
       )}
 
       {/* Split Chips (visible in OrderPanel header when order has splits) */}

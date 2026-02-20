@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
 import { PendingTabAnimation } from './PendingTabAnimation'
+import { AuthStatusBadge } from './AuthStatusBadge'
 import { MultiCardBadges } from './MultiCardBadges'
 import BottleServiceBanner from './BottleServiceBanner'
 
@@ -85,11 +86,13 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
     ? tabs.filter(t => t.employee.id === employeeId)
     : tabs
 
-  // Sort: pending_auth tabs float to top
+  // Sort: auth_failed first (needs attention), then pending_auth, then rest
   const sortedTabs = [...filteredTabs].sort((a, b) => {
-    const aPending = a.tabStatus === 'pending_auth' ? 0 : 1
-    const bPending = b.tabStatus === 'pending_auth' ? 0 : 1
-    if (aPending !== bPending) return aPending - bPending
+    const priority = (s: string | null | undefined) =>
+      s === 'auth_failed' ? 0 : s === 'pending_auth' ? 1 : 2
+    const aPri = priority(a.tabStatus)
+    const bPri = priority(b.tabStatus)
+    if (aPri !== bPri) return aPri - bPri
     return new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()
   })
 
@@ -106,7 +109,7 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
 
   const getTabAnimationStatus = (tab: Tab): 'pending_auth' | 'approved' | 'declined' => {
     if (tab.tabStatus === 'pending_auth') return 'pending_auth'
-    if (tab.tabStatus === 'no_card') return 'declined'
+    if (tab.tabStatus === 'no_card' || tab.tabStatus === 'auth_failed') return 'declined'
     return 'approved'
   }
 
@@ -153,17 +156,19 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
           sortedTabs.map(tab => {
             const isPending = tab.tabStatus === 'pending_auth'
             const hasNoCard = tab.tabStatus === 'no_card'
+            const isAuthFailed = tab.tabStatus === 'auth_failed'
 
-            const isBottle = tab.isBottleService && !isPending && !hasNoCard
+            const isBottle = tab.isBottleService && !isPending && !hasNoCard && !isAuthFailed
 
             return (
               <Card
                 key={tab.id}
                 className={`p-3 cursor-pointer transition-colors relative overflow-hidden
-                  ${isPending ? 'border-blue-200 bg-blue-50/30' : ''}
-                  ${hasNoCard ? 'border-red-200 bg-red-50/30' : ''}
+                  ${isPending ? 'border-amber-200 bg-amber-50/30' : ''}
+                  ${isAuthFailed ? 'border-red-300 bg-red-50/30' : ''}
+                  ${hasNoCard ? 'border-gray-200 bg-gray-50/30' : ''}
                   ${isBottle ? 'bg-amber-50/20' : ''}
-                  ${!isPending && !hasNoCard && !isBottle ? 'hover:bg-gray-50' : ''}
+                  ${!isPending && !hasNoCard && !isAuthFailed && !isBottle ? 'hover:bg-gray-50' : ''}
                 `}
                 style={isBottle ? { borderColor: tab.bottleServiceTierColor || '#D4AF37' } : undefined}
                 onClick={() => onSelectTab(tab.id)}
@@ -173,6 +178,9 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
                     <h4 className="font-medium flex items-center gap-2">
                       <span>{tab.isBottleService ? '🍾' : '🍺'}</span>
                       <span className="truncate">{getDisplayName(tab)}</span>
+                      {tab.tabStatus && tab.tabStatus !== 'closed' && (
+                        <AuthStatusBadge tabStatus={tab.tabStatus as any} compact />
+                      )}
                     </h4>
                     {/* Show cardholder name as subtitle if nickname is set */}
                     {tab.tabNickname && tab.tabName && (
@@ -188,7 +196,7 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
                 </div>
 
                 {/* Pending/Declined animation */}
-                {(isPending || hasNoCard) && (
+                {(isPending || hasNoCard || isAuthFailed) && (
                   <div className="mb-2 ml-7">
                     <PendingTabAnimation
                       variant={pendingTabAnimation}

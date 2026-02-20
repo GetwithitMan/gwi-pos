@@ -769,6 +769,71 @@ export async function dispatchOrderItemAdded(
   }
 }
 
+/**
+ * Dispatch order editing awareness event
+ *
+ * Called when a terminal opens an order for editing.
+ * Notifies other terminals that this order is being edited elsewhere.
+ */
+export async function dispatchOrderEditing(
+  locationId: string,
+  payload: {
+    orderId: string
+    terminalId: string
+    terminalName: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:editing', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch order:editing:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async order:editing dispatch failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch order editing released event
+ *
+ * Called when a terminal stops editing an order (navigates away or closes it).
+ * Clears the "editing on another terminal" banner on other terminals.
+ */
+export async function dispatchOrderEditingReleased(
+  locationId: string,
+  payload: {
+    orderId: string
+    terminalId: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:editing-released', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch order:editing-released:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async order:editing-released dispatch failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
 export async function dispatchTipGroupUpdate(
   locationId: string,
   payload: {

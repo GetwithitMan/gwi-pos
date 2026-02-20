@@ -1,5 +1,7 @@
 'use client'
 
+import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
+
 interface MobileTabCardProps {
   tab: {
     id: string
@@ -27,6 +29,7 @@ interface MobileTabCardProps {
 export default function MobileTabCard({ tab, onTap }: MobileTabCardProps) {
   const isPending = tab.tabStatus === 'pending_auth'
   const hasNoCard = tab.tabStatus === 'no_card'
+  const isAuthFailed = tab.tabStatus === 'auth_failed'
   const timeOpen = new Date(tab.openedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 
   // Calculate time elapsed
@@ -39,10 +42,11 @@ export default function MobileTabCard({ tab, onTap }: MobileTabCardProps) {
     <button
       onClick={onTap}
       className={`w-full text-left p-4 rounded-xl transition-colors active:scale-[0.98]
-        ${isPending ? 'bg-blue-500/10 border border-blue-500/30 animate-pulse' : ''}
-        ${hasNoCard ? 'bg-red-500/10 border border-red-500/30' : ''}
-        ${tab.isBottleService && !isPending ? 'bg-amber-500/5 border border-amber-500/20' : ''}
-        ${!isPending && !hasNoCard && !tab.isBottleService ? 'bg-white/5 border border-white/10 hover:bg-white/10' : ''}
+        ${isPending ? 'bg-amber-500/10 border border-amber-500/30 animate-pulse' : ''}
+        ${isAuthFailed ? 'bg-red-500/10 border border-red-500/30' : ''}
+        ${hasNoCard ? 'bg-gray-500/10 border border-gray-500/30' : ''}
+        ${tab.isBottleService && !isPending && !isAuthFailed ? 'bg-amber-500/5 border border-amber-500/20' : ''}
+        ${!isPending && !hasNoCard && !isAuthFailed && !tab.isBottleService ? 'bg-white/5 border border-white/10 hover:bg-white/10' : ''}
       `}
     >
       <div className="flex items-center justify-between mb-1">
@@ -60,12 +64,9 @@ export default function MobileTabCard({ tab, onTap }: MobileTabCardProps) {
           <span>{tab.itemCount} items</span>
         </div>
 
-        {/* Status badges */}
-        {isPending && (
-          <span className="text-xs text-blue-400 font-medium">Authorizing...</span>
-        )}
-        {hasNoCard && (
-          <span className="text-xs text-red-400 font-medium">No Card</span>
+        {/* Auth status badge */}
+        {tab.tabStatus && tab.tabStatus !== 'closed' && (
+          <AuthStatusBadge tabStatus={tab.tabStatus as any} dark />
         )}
       </div>
 

@@ -17,6 +17,7 @@ interface CompVoidRequest {
   wasMade?: boolean  // Was the item already made? Determines waste tracking
   approvedById?: string  // Manager ID if approval required
   remoteApprovalCode?: string  // 6-digit code from remote manager approval (Skill 121)
+  version?: number  // Optimistic concurrency control
 }
 
 // POST - Comp or void an item
@@ -28,7 +29,7 @@ export const POST = withVenue(async function POST(
     const { id: orderId } = await params
     const body = await request.json() as CompVoidRequest
 
-    const { action, itemId, reason, employeeId, wasMade, approvedById, remoteApprovalCode } = body
+    const { action, itemId, reason, employeeId, wasMade, approvedById, remoteApprovalCode, version } = body
 
     if (!action || !itemId || !reason || !employeeId) {
       return NextResponse.json(
@@ -87,6 +88,15 @@ export const POST = withVenue(async function POST(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Concurrency check: if client sent a version, verify it matches
+    if (version != null && order.version !== version) {
+      return NextResponse.json({
+        error: 'Order was modified on another terminal',
+        conflict: true,
+        currentVersion: order.version,
+      }, { status: 409 })
     }
 
     // Server-side permission check: requesting employee needs basic POS access
@@ -208,12 +218,13 @@ export const POST = withVenue(async function POST(
       // If all items are voided/comped (total is $0 with no active items), auto-close the order
       const txShouldAutoClose = txActiveItems.length === 0
 
-      // 5. Update order with recalculated totals
+      // 5. Update order with recalculated totals + increment version
       await tx.order.update({
         where: { id: orderId },
         data: {
           ...txTotals,
           ...(txShouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
+          version: { increment: 1 },
         },
       })
 

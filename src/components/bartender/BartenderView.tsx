@@ -11,6 +11,7 @@ import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
 import { useLongPress } from '@/hooks/useLongPress'
+import { useOrderEditing } from '@/hooks/useOrderEditing'
 import { useTabCreation } from '@/hooks/useTabCreation'
 import ModeSelector from '@/components/orders/ModeSelector'
 import { OpenOrdersPanel } from '@/components/orders/OpenOrdersPanel'
@@ -158,6 +159,9 @@ export function BartenderView({
 
   // Tabs
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null)
+
+  // Multi-terminal editing awareness
+  useOrderEditing(selectedTabId, locationId)
 
   // Tab panel expansion
   const [isTabPanelExpanded, setIsTabPanelExpanded] = useState(false)
@@ -840,9 +844,24 @@ export function BartenderView({
     setSelectedSpiritTier(null)
   }, [])
 
+  // Ref guard: prevents double-tap from firing two concurrent send chains
+  const sendInProgressRef = useRef(false)
+
   const sendItemsToTab = useCallback(async (orderId: string) => {
-    const unsavedItems = orderItems.filter(i => !i.sentToKitchen)
-    if (unsavedItems.length === 0) return
+    if (sendInProgressRef.current) {
+      toast.warning('Already sending')
+      return
+    }
+    sendInProgressRef.current = true
+
+    // Read items fresh from the store at call time to avoid stale closure
+    // (e.g., item deleted after useCallback was last created)
+    const freshItems = useOrderStore.getState().currentOrder?.items || []
+    const unsavedItems = freshItems.filter(i => !i.sentToKitchen)
+    if (unsavedItems.length === 0) {
+      sendInProgressRef.current = false
+      return
+    }
 
     const itemsPayload = unsavedItems.map(item => ({
       menuItemId: item.menuItemId,
@@ -884,10 +903,12 @@ export function BartenderView({
         console.error('[BartenderView] Background send failed:', error)
         toast.error('Send failed — items may not have reached kitchen')
       } finally {
+        sendInProgressRef.current = false
         setTabRefreshTrigger(t => t + 1)
       }
     })()
-  }, [orderItems])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // --- Tab creation hook (replaces handleCreateTab + handleQuickTab) ---
   const {
@@ -928,7 +949,9 @@ export function BartenderView({
   })
 
   const handleSend = useCallback(async () => {
-    const unsavedItems = orderItems.filter(i => !i.sentToKitchen)
+    // Read fresh from store to avoid stale closure
+    const freshItems = useOrderStore.getState().currentOrder?.items || []
+    const unsavedItems = freshItems.filter(i => !i.sentToKitchen)
     if (unsavedItems.length === 0) return
 
     // If no tab selected, prompt for tab name first
@@ -939,7 +962,7 @@ export function BartenderView({
 
     // sendItemsToTab clears UI instantly and sends in background
     await sendItemsToTab(selectedTabId)
-  }, [orderItems, selectedTabId, sendItemsToTab, openNewTabModal])
+  }, [selectedTabId, sendItemsToTab, openNewTabModal])
 
   const handlePay = useCallback(() => {
     if (selectedTabId && onOpenPayment) {

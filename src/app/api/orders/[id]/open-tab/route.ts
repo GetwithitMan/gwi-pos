@@ -111,20 +111,31 @@ export const POST = withVenue(async function POST(
     const approved = preAuthResponse.cmdStatus === 'Approved'
 
     if (!approved) {
-      // Decline — update tab status, don't create OrderCard
+      // Decline — update tab status to auth_failed, don't create OrderCard
       const declineFirstName = normalizeCardholderName(cardholderName)
       await db.order.update({
         where: { id: orderId },
         data: {
-          tabStatus: 'no_card',
+          tabStatus: 'auth_failed',
           tabName: declineFirstName || order.tabName,
         },
       })
 
+      // Fire-and-forget: notify all terminals of auth failure
+      void dispatchTabUpdated(locationId, {
+        orderId,
+        status: 'auth_failed',
+      }).catch(() => {})
+      void dispatchOpenOrdersChanged(locationId, {
+        trigger: 'created',
+        orderId,
+        tableId: order.tableId || undefined,
+      }).catch(() => {})
+
       return NextResponse.json({
         data: {
           approved: false,
-          tabStatus: 'no_card',
+          tabStatus: 'auth_failed',
           cardholderName: declineFirstName,
           cardType: cardType || preAuthResponse.cardType,
           cardLast4: cardLast4 || preAuthResponse.cardLast4,
