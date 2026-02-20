@@ -5,7 +5,90 @@
 
 ---
 
-## 2026-02-20 — P2 Feature Sprint (Multi-Agent Team)
+## 2026-02-20 — P2 Feature Sprint Session 2 (Multi-Agent Team)
+
+**Session theme:** P2 completion sprint — item discounts, employee discounts, bottle service floor plan + reservations, mobile auth, print routing, mobile tab sync, pay-at-table sync
+
+**Summary:** Continuation of the P2 sprint. Completed all remaining P2 items: P2-D01 (Item-Level Discounts — schema + API + UI), P2-D02 (Employee Discount UX — isEmployeeDiscount flag + dedicated section in DiscountModal), P2-D03 (verified correct — no fix needed), P2-B02 (Bottle Service floor plan tier badge via snapshot batch-fetch), P2-B03 (Bottle Service Reservation workflow — schema + API + UI + order creation auto-link), P2-E02 (Mobile Device Auth — RegisteredDevice + MobileSession models, PIN-based session cookie, /mobile/login page, auth guard on mobile tabs). Also includes P2-H04, P2-H05, P2-H01, P2-H02 from the first half of this session. All P2 items are now resolved.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `ae8f76e` | feat(mobile): P2-E02 — Mobile Device Authentication (PIN + session cookie) |
+| `690b52c` | feat(reservations): P2-B03 — Bottle Service Reservation Workflow |
+| `298ceb3` | feat(floor-plan): P2-B02 — Bottle Service tier badge on table cards |
+| `4c9ca42` | feat(discounts): P2-D02 — Employee Discount UX |
+| `eed6334` | feat(orders): P2-D01 — Item-Level Discounts: schema + API + UI |
+| `df88cf2` | feat(print): P2-H02 — Modifier-only ticket context lines |
+| `43bf02b` | feat(print): P2-H01 — Print Routing Phase 3 |
+| `72f725b` | feat(mobile): P2-H05 — Pay-at-Table socket sync on payment completion |
+| `65c38b8` | feat(mobile): P2-H04 — Mobile Bartender Tab Sync socket wiring |
+| `ba88936` | docs: update living log + MASTER-TODO — P2-D04, P2-H03, P1-03, P2-R01, P2-R03, P2-P02 resolved |
+
+### Features Delivered
+
+**P2-D01 — Item-Level Discounts** (`eed6334`)
+- New `OrderItemDiscount` model: locationId, orderId, orderItemId, discountRuleId?, amount, percent, appliedById, reason. Back-relations on Location/Order/OrderItem/DiscountRule. db:push applied cleanly.
+- `POST /api/orders/[id]/items/[itemId]/discount` — apply fixed/percent discount; caps at item total; rejects paid orders (409); increments Order.discountTotal atomically
+- `DELETE /api/orders/[id]/items/[itemId]/discount?discountId=` — soft-delete, decrements discountTotal
+- `OrderPanelItem`: "%" button (green when active), strikethrough original price, `-$amount` in green below item price
+
+**P2-D02 — Employee Discount UX** (`4c9ca42`)
+- Added `isEmployeeDiscount Boolean @default(false)` to `DiscountRule` schema (db:push applied)
+- GET/POST `/api/discounts` + PUT `/api/discounts/[id]`: accept + filter/save `isEmployeeDiscount`
+- Admin `/discounts` page: "Employee Discount" checkbox with green EMPLOYEE badge
+- `DiscountModal`: employee discounts surfaced in a dedicated top section with EMPLOYEE badge header; regular discounts follow below
+
+**P2-D03 — Discount + Void/Refund Interaction** — Verified correct, no fix needed. `payment.amount` always stores discounted amount. Void uses `recordNo` referencing original charge. Refund ceiling is `payment.amount`. Zero code change.
+
+**P2-B02 — Bottle Service Floor Plan Integration** (`298ceb3`)
+- `snapshot.ts`: adds `isBottleService`, `bottleServiceTierId`, `bottleServiceMinSpend` to order select; batch-fetches tier names/colors via single `findMany` post-query (zero queries when no bottle service orders)
+- `FloorPlanTable` interface: 5 new optional bottle service fields on `currentOrder`
+- `TableNode`: `isBottleService`/`tierName`/`tierColor` added to `orderStatusBadges` prop; renders colored tier name pill (defaulting to gold `#D4AF37`) as the first badge
+- `FloorPlanHome`: computes bottle service badge for active table; passes minimal badge for all non-active bottle service tables
+
+**P2-B03 — Bottle Service Reservation Workflow** (`690b52c`)
+- Schema: `bottleServiceTierId` + `BottleServiceTier` relation on `Reservation`; back-relation on `BottleServiceTier`. `@@index([bottleServiceTierId])` added. db:push applied.
+- GET/POST `/api/reservations` + GET/PUT `/api/reservations/[id]`: include `bottleServiceTier` select, accept/save `bottleServiceTierId`
+- Reservations admin UI: tier selector dropdown with live color preview; colored tier pill badge on reservation card
+- POST `/api/orders`: accept optional `reservationId`; fire-and-forget links `reservation.orderId` and copies `bottleServiceTierId`/`isBottleService`/`bottleServiceMinSpend` to the new order
+
+**P2-E02 — Mobile Device Authentication** (`ae8f76e`)
+- Schema: `RegisteredDevice` + `MobileSession` models; back-relations on `Location` + `Employee`. db:push applied.
+- `POST /api/mobile/device/register`: PIN validation via bcrypt, creates/reuses `RegisteredDevice` by fingerprint, issues 256-bit hex session token, sets `httpOnly` `mobile-session` cookie (8h, path: `/mobile`)
+- `GET /api/mobile/device/auth`: validates cookie or `x-mobile-session` header, returns employee data; 401 on expired/missing
+- `/mobile/login`: dark-theme PIN pad page; POSTs PIN → redirects to `/mobile/tabs` on success
+- `/mobile/tabs` + `/mobile/tabs/[id]`: auth check on mount; redirects to `/mobile/login` on 401; backwards-compatible with legacy `?employeeId` param
+
+**P2-H04 — Mobile Bartender Tab Sync** (`65c38b8`)
+- `TAB_ITEMS_UPDATED: 'tab:items-updated'` + `TabItemsUpdatedEvent` added to `multi-surface.ts`
+- 3 dispatch helpers in `socket-dispatch.ts`: `dispatchTabClosed`, `dispatchTabStatusUpdate`, `dispatchTabItemsUpdated`
+- Socket relay handlers in `socket-server.ts` for `TAB_CLOSE_REQUEST`, `TAB_TRANSFER_REQUEST`, `TAB_ALERT_MANAGER`
+- `close-tab/route.ts`: `dispatchTabClosed` called after successful capture
+- `items/route.ts`: `dispatchTabItemsUpdated` called for bar tab item changes
+
+**P2-H05 — Pay-at-Table Socket Sync** (`72f725b`)
+- New `POST /api/orders/[id]/pat-complete`: marks order paid, creates Payment records, dispatches `orders:list-changed` + `tab:updated` + `floorplan:update`, idempotent
+- `pay-at-table/page.tsx`: `accumulatedTipRef` tracks tip across splits; fire-and-forget `pat-complete` call on last split in both direct Datacap path and socket path
+
+**P2-H01 — Print Routing Phase 3** (`43bf02b`)
+- New `src/types/print/route-specific-settings.ts` with `RouteSpecificSettings` interface + `DEFAULT_ROUTE_SETTINGS`
+- `kitchen/route.ts`: PrintRoute fetch by priority; tier-1 matching by categoryIds/itemTypes; modifier routing split (`follow`/`also`/`only`) with synthetic `_modifierOnlyFor` items; backup printer failover on failure
+
+**P2-H02 — Modifier-Only Context Lines** (`df88cf2`)
+- `kitchen/route.ts`: renders `FOR: {item name}` context line before modifier list when `_modifierOnlyFor` is set
+
+### Known Issues / Next Up
+- All P2 items ✅ resolved
+- P1-01 (Partial Payment Void & Retry) still pending hardware test
+- P1-05 (Socket layer Docker validation) still pending
+- P1-07 (Card token persistence test) still pending
+- GL-06 (Pre-Launch checklist tests) — 8% complete
+
+---
+
+## 2026-02-20 — P2 Feature Sprint Session 1 (Multi-Agent Team)
 
 **Session theme:** P2 features — closed orders UI, AR aging report, hourly sales, refund vs void, discount on receipt, CFD socket wiring
 

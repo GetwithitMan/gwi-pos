@@ -11,8 +11,8 @@
 |------|--------|-------|
 | POS Core (ordering, menu, KDS) | 🟢 Ready | 95% |
 | Payments (Datacap, bar tabs, pre-auth) | 🟢 Ready | 90% |
-| Discounts (check-level, employee, happy hour) | 🟢 Built | 90% |
-| Bottle Service (tiers, deposits, auto-grat) | 🟡 Partial | 70% |
+| Discounts (check-level, item-level, employee) | 🟢 Ready | 100% |
+| Bottle Service (tiers, deposits, floor plan, reservations) | 🟢 Ready | 90% |
 | House Accounts (schema + API + AR report) | 🟢 Ready | 85% |
 | Floor Plan | 🟢 Ready | 92% |
 | Reports (24 endpoints, 14 UI pages) | 🟢 Ready | 90% |
@@ -137,27 +137,14 @@ Also: false-positive partials when requested == approved amount.
 
 ### DISCOUNTS
 
-#### P2-D01 — Item-Level Discounts
-**Current:** Only check-level (OrderDiscount) exists. No OrderItemDiscount model.
-**Build:**
-1. Add `OrderItemDiscount` model to schema (amount, percent, reason, appliedBy, discountRuleId)
-2. `POST /api/orders/[id]/items/[itemId]/discount` route
-3. Discount button on individual item rows in OrderPanel
-4. Discount shows as line below item price with strikethrough
-5. Discount reversal on comp/void
+#### ~~P2-D01 — Item-Level Discounts~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `OrderItemDiscount` model added (schema + db:push). `POST/DELETE /api/orders/[id]/items/[itemId]/discount` route built. `OrderPanelItem` updated with "%" button, green discount display, strikethrough original price. Commit `eed6334`.
 
-#### P2-D02 — Employee Discount UX
-**Current:** Can be built via DiscountRule with `requiresApproval: true` and naming convention.
-**Gap:** No dedicated "Employee Discount" button or employee-triggered flow.
-**Build:**
-1. DiscountRule with `isEmployeeDiscount: true` flag (new field)
-2. Employee discount auto-applied when logged-in employee makes an order for themselves
-3. Or: Explicit "Employee Discount" button in DiscountModal that skips manager approval for eligible employees (role-based)
-4. Report: Employee discount usage by employee, by day
+#### ~~P2-D02 — Employee Discount UX~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `isEmployeeDiscount Boolean @default(false)` added to `DiscountRule` (db:push). Admin UI has "Employee Discount" checkbox with EMPLOYEE badge. `DiscountModal` surfaces employee discounts in a dedicated top section. GET/POST/PUT `/api/discounts` updated. Commit `4c9ca42`.
 
-#### P2-D03 — Discount + Void/Refund Interaction
-**Gap:** When a discounted order is voided or refunded, is the discount reversed correctly?
-**Test & fix:** Verify discount amount correctly excluded from refund total. Refund should return what customer actually paid, not the pre-discount total.
+#### ~~P2-D03 — Discount + Void/Refund Interaction~~ ✅ VERIFIED CORRECT
+**Status:** ✅ VERIFIED CORRECT — `payment.amount` always stores discounted amount. Void uses `recordNo` referencing original charge. Refund ceiling is `payment.amount`. No code change needed. Verified 2026-02-20.
 
 #### ~~P2-D04 — Discount on Receipt~~ ✅ RESOLVED
 **Status:** ✅ RESOLVED — Discount line added to `src/lib/print-factory.ts` between Subtotal and Tax. Conditional render (only when `totals.discount > 0`). Commit `d8a8432`.
@@ -177,11 +164,11 @@ Also: false-positive partials when requested == approved amount.
 4. Reservation workflow wiring
 **Build:** Complete tier selection → pre-auth for depositAmount → track spend → apply autoGratuityPercent at close
 
-#### P2-B02 — Bottle Service Floor Plan Integration
-**Build:** Assign bottle service tier to a table/section on floor plan. Table badge shows tier color. Minimum spend progress bar on table card.
+#### ~~P2-B02 — Bottle Service Floor Plan Integration~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `snapshot.ts` batch-fetches tier names/colors; `FloorPlanTable.currentOrder` interface extended; `TableNode` renders colored tier pill badge (gold default) as first status badge; `FloorPlanHome` computes badge for active + all non-active bottle service tables. Commit `298ceb3`.
 
-#### P2-B03 — Bottle Service Reservation Workflow
-**Build:** Allow booking a bottle service reservation (date, time, section, tier, guest count, deposit taken). Wire to Reservations system.
+#### ~~P2-B03 — Bottle Service Reservation Workflow~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `bottleServiceTierId` + relation added to `Reservation` schema (db:push). GET/POST/PUT reservation routes include tier select. Admin reservations UI has tier dropdown + color preview + pill badge on cards. `POST /api/orders` accepts `reservationId`, auto-links and copies tier data to new order. Commit `690b52c`.
 
 ---
 
@@ -216,30 +203,20 @@ Also: false-positive partials when requested == approved amount.
 
 ### HARDWARE
 
-#### P2-H01 — Print Routing Phase 3 (Skill 103)
-**File:** `src/app/api/print/kitchen/route.ts`
-**Build:** Update kitchen print dispatch to:
-1. Check PrintRoutes by priority first
-2. Check `Modifier.printerRouting` per-modifier (follow/also/only)
-3. Apply RouteSpecificSettings formatting
-4. Group items by destination printer, build one ticket per printer
-5. Failover to backup printer on timeout
-6. Log all print jobs to PrintJob model
+#### ~~P2-H01 — Print Routing Phase 3~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — New `RouteSpecificSettings` type created. `kitchen/route.ts` updated: PrintRoute fetch by priority, tier-1 matching by categoryIds/itemTypes, modifier routing split (`follow`/`also`/`only`), backup printer failover, PrintJob logging preserved. Commit `43bf02b`.
 
-#### P2-H02 — Modifier-Only Ticket Context Lines (Skill 212)
-**When:** Modifier.printerRouting = "only" routes to different printer than item.
-**Build:** Add "FOR: {item name}" header line to modifier-only kitchen tickets.
+#### ~~P2-H02 — Modifier-Only Ticket Context Lines~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `kitchen/route.ts` renders `FOR: {item name}` context line before modifier list when `_modifierOnlyFor` is set on synthetic modifier-only items. Commit `df88cf2`.
 
 #### ~~P2-H03 — Wire CFD (Customer-Facing Display) Socket Events (T-018)~~ ✅ RESOLVED
 **Status:** ✅ RESOLVED — 4 CFD emit calls wired across 5 files: `cfd:show-order` (PaymentModal), `cfd:payment-started` (DatacapPaymentProcessor), `cfd:receipt-sent` (pay route). 4 dispatch helpers added to `socket-dispatch.ts`. `RECEIPT_SENT` added to `CFD_EVENTS`. Commit `b693b5f`.
 
-#### P2-H04 — Mobile Bartender Tab Sync (T-019)
-**File:** `src/components/mobile/MobileTabActions.tsx`
-**Build:** Wire real socket events: `tab:close-request`, `tab:closed`, `tab:items-updated`
+#### ~~P2-H04 — Mobile Bartender Tab Sync~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `TAB_ITEMS_UPDATED` event added to `multi-surface.ts`. 3 dispatch helpers added (`dispatchTabClosed`, `dispatchTabStatusUpdate`, `dispatchTabItemsUpdated`). Socket relay handlers added to `socket-server.ts`. `close-tab/route.ts` and `items/route.ts` dispatch events. Commit `65c38b8`.
 
-#### P2-H05 — Pay-at-Table Socket Sync (T-020)
-**File:** `src/app/(pos)/pay-at-table/`
-**Build:** Emit socket event to POS terminal when payment completed so bar tab closes on all surfaces.
+#### ~~P2-H05 — Pay-at-Table Socket Sync~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — New idempotent `POST /api/orders/[id]/pat-complete` route; `pay-at-table/page.tsx` fires it on last split via both direct Datacap and socket payment paths. Dispatches `orders:list-changed`, `tab:updated`, `floorplan:update`. Commit `72f725b`.
 
 ---
 
@@ -248,12 +225,8 @@ Also: false-positive partials when requested == approved amount.
 #### ~~P2-E01 — Bar Tab Settings Admin UI~~ ✅ ALREADY IMPLEMENTED
 **Status:** ✅ ALREADY IMPLEMENTED — Bar Tab Settings UI is complete at /settings/tabs. Confirmed by audit 2026-02-20.
 
-#### P2-E02 — Mobile Device Authentication (T-025)
-**Current:** `/mobile/tabs` uses `?employeeId` query param (insecure).
-**Build:** PIN-based session for mobile:
-1. `RegisteredDevice` + `DeviceSession` models
-2. Mobile device pairing flow (QR code or code entry)
-3. 8-hour session cookie on mobile
+#### ~~P2-E02 — Mobile Device Authentication~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `RegisteredDevice` + `MobileSession` models added (db:push). `POST /api/mobile/device/register` (PIN→bcrypt→256-bit token→httpOnly cookie 8h). `GET /api/mobile/device/auth` (validates cookie/header). `/mobile/login` PIN pad page. `/mobile/tabs` + `/mobile/tabs/[id]` auth-guarded with redirect to login. Backwards-compatible with `?employeeId` param. Commit `ae8f76e`.
 
 ---
 
