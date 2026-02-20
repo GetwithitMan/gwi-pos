@@ -1,5 +1,25 @@
 # Payments Domain Changelog
 
+## 2026-02-20 — DC Direct Architecture + Credential Flow (Skill 407)
+
+### Architecture Clarification
+- **DC Direct is firmware on payment terminals** (PAX A920, Ingenico AXIUM) — NOT software on the NUC
+- POS sends HTTP POST to `http://{terminal-ip}:8080/ProcessEMVTransaction` on local network
+- USB sled (VP3350) requires PamiPOP or Windows middleware — not standalone DC Direct compatible on Ubuntu
+
+### Changes
+- **MID credential flow hardened**: `merchantId` removed from all client POST/PUT bodies; server reads from `location.settings.payments.datacapMerchantId` (Mission Control managed)
+- **`communicationMode: 'simulated'`** now detected by hook in addition to `paymentProvider === 'SIMULATED'` — readers marked simulated at the reader level route correctly to `/api/simulated-reader/*`
+- **Cloud proxy routes added**: `/api/hardware/payment-readers/[id]/cloud/{device/info,process,cancel}` for future TranCloud/cloud mode
+- **USB communicationMode default**: changed from `'cloud'` to `'local'` (DC Direct is always local HTTP)
+- **Schema**: added `connectionType` field (USB/IP/WIFI/BLUETOOTH), ipAddress default `127.0.0.1`, removed broken `@@unique([locationId, ipAddress])` (USB readers all share 127.0.0.1)
+- **Terminal API**: now exposes `communicationMode` on paymentReader so hook can route
+
+### Commit
+`e2d1d58` — feat(payments): DC Direct payment reader architecture + credential flow
+
+---
+
 ## 2026-02-20 — Batch Monitoring Endpoint (Skill 400)
 
 ### New Features

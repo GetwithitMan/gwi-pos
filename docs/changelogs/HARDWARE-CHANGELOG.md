@@ -1,5 +1,38 @@
 # Hardware Domain Changelog
 
+## 2026-02-20 — DC Direct Payment Reader Architecture (Skill 407)
+
+### DC Direct Architecture Established
+DC Direct is **firmware on the payment terminal** (PAX A920, Ingenico AXIUM, PamiPOP), not software installed on the NUC. The Ubuntu NUC installer requires no payment-specific installation. POS communicates to the terminal over local network via HTTP on port 8080 (PAX) or 80 (Ingenico).
+
+### PaymentReader Schema Changes
+| Change | Why |
+|--------|-----|
+| Added `connectionType` (`USB\|IP\|WIFI\|BLUETOOTH`) | Drives UI rules and IP validation |
+| `ipAddress` default `127.0.0.1` | USB/BT always use localhost; network readers use terminal IP |
+| Removed `@@unique([locationId, ipAddress])` | USB readers all share 127.0.0.1 — unique constraint was broken |
+| Added `@@index([connectionType])` | Faster filtering by type |
+
+### Payment Readers Admin Page
+- Scan-and-assign UX: detects locally connected USB devices, pre-fills serial/model
+- Bolt ⚡ button: initialize reader (padReset → EMVParamDownload) from the reader card
+- Removed hardcoded `DATACAP_TEST_MID` — MID flows from Mission Control location settings
+- USB info message corrected: no longer says "cloud mode"; references DC Direct on terminal
+
+### Hardware Buying Guide (DC Direct Compatible)
+| Device | Form factor | Port |
+|--------|-------------|------|
+| PAX A920 Pro | Handheld | 8080 |
+| PAX A920 Max | Handheld (large) | 8080 |
+| PAX IM30 | Countertop | 8080 |
+| Ingenico DX8000 | Countertop | 80 |
+| PamiPOP + VP3350 | Counter display | 8080 |
+
+### Commit
+`e2d1d58` — feat(payments): DC Direct payment reader architecture + credential flow
+
+---
+
 ## Cross-Domain Update: Feb 6, 2026 — Per-Modifier Print Routing (from Menu Domain)
 
 ### What Happened

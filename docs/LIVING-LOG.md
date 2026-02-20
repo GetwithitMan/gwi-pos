@@ -5,6 +5,54 @@
 
 ---
 
+## 2026-02-20 — DC Direct Payment Reader Architecture (Skill 407)
+
+**Session theme:** Establish correct DC Direct payment terminal architecture and fix simulated routing
+
+**Summary:** Discovered VP3350 USB cannot work standalone with DC Direct (DC Direct is firmware on networked terminals like PAX A920/Ingenico, not NUC middleware). Hardened MID credential flow (server-reads from location settings, never from client). Fixed useDatacap hook to detect simulated mode via `communicationMode === 'simulated'` in addition to `paymentProvider === 'SIMULATED'`. User will procure PAX/Ingenico terminals per station. Current dev setup routes through simulated readers.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `e2d1d58` | feat(payments): DC Direct payment reader architecture + credential flow |
+
+### Deployments
+- gwi-pos → pushed to `origin/main`
+
+### Architecture Decision
+- **DC Direct is firmware on the payment terminal** (PAX A920 Pro, PAX A920 Max, PAX IM30, Ingenico DX8000, PamiPOP+VP3350). Nothing is installed on the Ubuntu NUC for payment hardware.
+- POS sends `POST http://{terminal-ip}:8080/ProcessEMVTransaction` on local network
+- VP3350 USB sled alone cannot work with DC Direct on Ubuntu — it requires PamiPOP (Android display) or a Windows PC with dsiEMVUS
+- Each POS station will pair with a networked PAX/Ingenico terminal
+
+### Features Delivered
+- `connectionType` field on PaymentReader (`USB | IP | BLUETOOTH | WIFI`)
+- `ipAddress` defaults to `127.0.0.1` for USB/BT readers
+- MID credential never accepted from client — always read from location settings
+- `communicationMode` exposed on terminal config endpoint
+- Bolt ⚡ button on reader cards for EMVParamDownload (first-time init)
+- Cloud proxy routes for future TranCloud mode (`/api/hardware/payment-readers/[id]/cloud/`)
+- useDatacap hook detects simulated via reader's communicationMode, not just terminal's paymentProvider
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| VP3350 using simulated flow despite DATACAP_DIRECT terminal | Hook only checked `paymentProvider === 'SIMULATED'`; DATACAP_DIRECT + USB reader tried `http://127.0.0.1:8080` (nothing there) | Added `|| reader.communicationMode === 'simulated'` to simulated detection |
+| Hardcoded MID in payment readers page | `DATACAP_TEST_MID = 'SSBLGFRUI0GP'` baked into page.tsx | Removed — MID reads from `location.settings.payments.datacapMerchantId` server-side |
+| USB readers defaulted to cloud communicationMode | `rawMode ?? 'cloud'` for non-network types | Changed default to `'local'` for all connection types |
+
+### DB State (dev)
+- VP Reader 1 (USB/127.0.0.1): `communicationMode: 'simulated'`, `isActive: true`
+- Simulated Card Reader: `communicationMode: 'simulated'`, `isActive: true`
+- Main Terminal → assigned to VP Reader 1 (routes to simulated)
+
+### Skills
+- Skill 407: DC Direct Payment Reader Architecture
+
+---
+
 ## 2026-02-20 — Admin Venue Access Fix
 
 **Session theme:** Fix GWI admin one-click access to venue POS admin panels

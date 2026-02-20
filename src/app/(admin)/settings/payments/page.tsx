@@ -26,6 +26,7 @@ export default function PaymentSettingsPage() {
   // Array fields stored as comma-separated strings for editing
   const [tipDollarStr, setTipDollarStr] = useState('')
   const [tipPercentStr, setTipPercentStr] = useState('')
+  const [showTokenKey, setShowTokenKey] = useState(false)
 
   useUnsavedWarning(isDirty)
 
@@ -57,6 +58,15 @@ export default function PaymentSettingsPage() {
 
   const handleSave = async () => {
     if (!form) return
+
+    // Validate Datacap credentials when processor is datacap
+    if (form.processor === 'datacap') {
+      if (!form.datacapMerchantId?.trim() || !form.datacapTokenKey?.trim()) {
+        toast.error('Merchant ID and Token Key are required for Datacap processing')
+        return
+      }
+    }
+
     try {
       setIsSaving(true)
 
@@ -68,6 +78,9 @@ export default function PaymentSettingsPage() {
         ...form,
         tipDollarSuggestions: parseDollar.length > 0 ? parseDollar : [1, 2, 3],
         tipPercentSuggestions: parsePercent.length > 0 ? parsePercent : [18, 20, 25],
+        datacapMerchantId: form.datacapMerchantId?.trim(),
+        datacapTokenKey: form.datacapTokenKey?.trim(),
+        datacapEnvironment: form.datacapEnvironment || 'cert',
       }
 
       const data = await saveSettingsApi({ payments: payload }, employee?.id)
@@ -234,6 +247,117 @@ export default function PaymentSettingsPage() {
             />
           </div>
         </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 2b: Datacap Credentials
+            ═══════════════════════════════════════════ */}
+        {form.processor === 'datacap' && (
+          <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h2 className="text-lg font-semibold text-gray-900">Datacap Credentials</h2>
+              {/* Status badge */}
+              {!form.datacapMerchantId?.trim() ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                  Not configured — payments will fail at this venue
+                </span>
+              ) : form.datacapEnvironment === 'production' ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                  Configured (Production)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                  Configured (Certification)
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mb-5">Enter the Datacap credentials provided for this venue.</p>
+
+            <div className="space-y-4">
+              {/* Merchant ID */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Merchant ID (MID)</label>
+                <input
+                  type="text"
+                  value={form.datacapMerchantId || ''}
+                  onChange={e => update('datacapMerchantId', e.target.value)}
+                  placeholder="Provided by Datacap"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Token Key */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Token Key</label>
+                <div className="relative">
+                  <input
+                    type={showTokenKey ? 'text' : 'password'}
+                    value={form.datacapTokenKey || ''}
+                    onChange={e => update('datacapTokenKey', e.target.value)}
+                    placeholder="32-character hex key"
+                    className="w-full px-3 py-2 pr-10 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTokenKey(v => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                    aria-label={showTokenKey ? 'Hide token key' : 'Show token key'}
+                  >
+                    {showTokenKey ? (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Environment */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Environment</label>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => update('datacapEnvironment', 'cert')}
+                    className={`flex-1 text-left p-3 rounded-xl border transition-all ${
+                      (form.datacapEnvironment || 'cert') === 'cert'
+                        ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                        : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className={`text-sm font-medium ${(form.datacapEnvironment || 'cert') === 'cert' ? 'text-indigo-600' : 'text-gray-700'}`}>
+                      Certification (Testing)
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">Transactions processed in test mode</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => update('datacapEnvironment', 'production')}
+                    className={`flex-1 text-left p-3 rounded-xl border transition-all ${
+                      form.datacapEnvironment === 'production'
+                        ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                        : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                    }`}
+                  >
+                    <div className={`text-sm font-medium ${form.datacapEnvironment === 'production' ? 'text-indigo-600' : 'text-gray-700'}`}>
+                      Production (Live)
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">Real card charges</div>
+                  </button>
+                </div>
+                {form.datacapEnvironment === 'production' && (
+                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
+                    Production mode charges real cards.
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ═══════════════════════════════════════════
             Card 3: Quick Pay & Tips

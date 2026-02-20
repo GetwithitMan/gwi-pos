@@ -127,7 +127,7 @@ export function FloorPlanEditor({
         }
       }
     } catch (error) {
-      console.error('Failed to fetch sections:', error);
+      logger.error('Failed to fetch sections:', error);
     }
   }, [useDatabase, locationId, selectedRoomId]);
 
@@ -149,7 +149,7 @@ export function FloorPlanEditor({
         setDbElements(data.elements || []);
       }
     } catch (error) {
-      console.error('Failed to fetch floor plan elements:', error);
+      logger.error('Failed to fetch floor plan elements:', error);
     }
   }, [useDatabase, selectedRoomId, locationId]);
 
@@ -189,7 +189,7 @@ export function FloorPlanEditor({
         setDbTables(editorTables);
       }
     } catch (error) {
-      console.error('Failed to fetch tables:', error);
+      logger.error('Failed to fetch tables:', error);
     }
   }, [useDatabase, selectedRoomId, locationId]);
 
@@ -280,7 +280,7 @@ export function FloorPlanEditor({
             setRefreshKey((prev) => prev + 1);
           }
         } catch (error) {
-          console.error('Failed to create element:', error);
+          logger.error('Failed to create element:', error);
           toast.error('Failed to create element');
         }
       } else {
@@ -548,7 +548,7 @@ export function FloorPlanEditor({
         setRefreshKey((prev) => prev + 1);
       }
     } catch (error) {
-      console.error('Failed to add entertainment:', error);
+      logger.error('Failed to add entertainment:', error);
       toast.error('Failed to add entertainment element');
     }
   }, [locationId, selectedRoomId]);
@@ -608,11 +608,11 @@ export function FloorPlanEditor({
 
           // Other error
           const errData = await response.json().catch(() => ({}));
-          console.error('Failed to create table:', errData.error || response.statusText);
+          logger.error('Failed to create table:', errData.error || response.statusText);
           toast.error(`Failed to create table: ${errData.error || response.statusText}`);
           return;
         } catch (error) {
-          console.error('Failed to create table:', error);
+          logger.error('Failed to create table:', error);
           toast.error('Failed to create table');
           return;
         }
@@ -777,11 +777,11 @@ export function FloorPlanEditor({
             setRefreshKey((prev) => prev + 1);
           }, 50);
         } else {
-          console.error('Failed to regenerate seats:', data);
+          logger.error('Failed to regenerate seats:', data);
           toast.error('Failed to regenerate seats: ' + (data.error || 'Unknown error'));
         }
       } catch (error) {
-        console.error('Failed to regenerate seats:', error);
+        logger.error('Failed to regenerate seats:', error);
         toast.error('Failed to regenerate seats');
       }
     },
@@ -1156,7 +1156,7 @@ export function FloorPlanEditor({
                         fetchSections();
                       }
                     } catch (e) {
-                      console.error('Failed to create section:', e);
+                      logger.error('Failed to create section:', e);
                     }
                   }
                 }}
@@ -1206,7 +1206,7 @@ export function FloorPlanEditor({
                         fetchSections();
                       }
                     } catch (e) {
-                      console.error('Failed to create section:', e);
+                      logger.error('Failed to create section:', e);
                     }
                   }
                 }}

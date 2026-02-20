@@ -23,6 +23,7 @@ function dispatchFloorPlanUpdate(locationId: string, _options?: { async?: boolea
   }).catch(() => { /* fire-and-forget */ })
 }
 import { toast } from '@/stores/toast-store';
+import { logger } from '@/lib/logger';
 
 // =============================================================================
 // TYPES
@@ -112,7 +113,7 @@ export function FloorPlanEditorDB({
           setSelectedSectionId(initialId);
         }
       } catch (error) {
-        console.error('[FloorPlanEditorDB] Load sections error:', error);
+        logger.error('[FloorPlanEditorDB] Load sections error:', error);
       } finally {
         setIsLoading(false);
       }
@@ -131,7 +132,7 @@ export function FloorPlanEditorDB({
         const data = await res.json();
         setElements(data.elements || []);
       } catch (error) {
-        console.error('[FloorPlanEditorDB] Load elements error:', error);
+        logger.error('[FloorPlanEditorDB] Load elements error:', error);
       }
     }
     loadElements();
@@ -182,7 +183,7 @@ export function FloorPlanEditorDB({
 
         if (!res.ok) {
           const error = await res.json();
-          console.error('[FloorPlanEditorDB] Create error:', error);
+          logger.error('[FloorPlanEditorDB] Create error:', error);
           toast.error('Failed to create element');
           return;
         }
@@ -193,7 +194,7 @@ export function FloorPlanEditorDB({
         // Dispatch socket event for real-time sync
         dispatchFloorPlanUpdate(locationId, { async: true });
       } catch (error) {
-        console.error('[FloorPlanEditorDB] Create error:', error);
+        logger.error('[FloorPlanEditorDB] Create error:', error);
         toast.error('Failed to create element');
       }
     },
@@ -220,7 +221,7 @@ export function FloorPlanEditorDB({
 
         if (!res.ok) {
           const error = await res.json();
-          console.error('[FloorPlanEditorDB] Update error:', error);
+          logger.error('[FloorPlanEditorDB] Update error:', error);
           throw new Error(error.error || 'Failed to update element');
         }
 
@@ -258,7 +259,7 @@ export function FloorPlanEditorDB({
 
         if (!res.ok) {
           const error = await res.json();
-          console.error('[FloorPlanEditorDB] Delete error:', error);
+          logger.error('[FloorPlanEditorDB] Delete error:', error);
           throw new Error(error.error || 'Failed to delete element');
         }
 
@@ -301,7 +302,7 @@ export function FloorPlanEditorDB({
       setSections((prev) => [...prev, data.section]);
       setSelectedSectionId(data.section.id);
     } catch (error) {
-      console.error('[FloorPlanEditorDB] Add section error:', error);
+      logger.error('[FloorPlanEditorDB] Add section error:', error);
       toast.error('Failed to create room');
     }
   }, [locationId]);
@@ -332,7 +333,7 @@ export function FloorPlanEditorDB({
       // Dispatch socket event for real-time sync
       dispatchFloorPlanUpdate(locationId, { async: true });
     } catch (error) {
-      console.error('[FloorPlanEditorDB] Reset error:', error);
+      logger.error('[FloorPlanEditorDB] Reset error:', error);
     }
   }, [elements, locationId]);
 
