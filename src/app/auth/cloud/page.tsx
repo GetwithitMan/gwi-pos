@@ -35,7 +35,8 @@ function CloudAuthContent() {
         }
 
         // Populate client-side auth store
-        login(data.employee)
+        // API returns { data: { employee } } — unwrap the data envelope
+        login(data.data?.employee)
         setStatus('success')
 
         // Navigate to settings (admin home for cloud users)
