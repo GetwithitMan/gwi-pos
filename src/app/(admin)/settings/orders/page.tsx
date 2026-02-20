@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ToggleSwitch, SettingsSaveBar } from '@/components/admin/settings'
@@ -279,7 +280,25 @@ export default function OrderSettingsPage() {
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 3: Coming Soon
+            Card 3: Closed Orders
+            ═══════════════════════════════════════════ */}
+        <Link
+          href="/settings/orders/closed"
+          className="block bg-white border border-gray-200 rounded-2xl shadow-sm p-6 hover:border-indigo-300 hover:shadow-md transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-1">Closed Orders</h2>
+              <p className="text-sm text-gray-500">Search, review, reopen, adjust tips, and reprint receipts for closed orders</p>
+            </div>
+            <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </Link>
+
+        {/* ═══════════════════════════════════════════
+            Card 4: Coming Soon
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 opacity-60">
           <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
