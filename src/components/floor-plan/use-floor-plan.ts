@@ -36,6 +36,11 @@ export interface FloorPlanTable {
     openedAt: string
     server: string
     status?: string
+    isBottleService?: boolean
+    bottleServiceTierId?: string | null
+    bottleServiceMinSpend?: number | null
+    bottleServiceTierName?: string | null
+    bottleServiceTierColor?: string | null
     splitOrders?: Array<{
       id: string
       splitIndex: number | null

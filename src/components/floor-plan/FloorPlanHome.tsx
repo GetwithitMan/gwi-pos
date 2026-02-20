@@ -401,17 +401,6 @@ export function FloorPlanHome({
     return set
   }, [inlineOrderItems])
 
-  // Memoized order status badges for the active table's TableNode (avoids inline object in render loop)
-  const activeOrderStatusBadges = useMemo(() => {
-    if (!activeTableId) return undefined
-    return {
-      hasDelay: !!(activeOrder.pendingDelay && activeOrder.pendingDelay > 0),
-      hasHeld: inlineOrderItems.some(i => !i.sentToKitchen && i.isHeld),
-      hasCourses: activeOrder.coursingEnabled,
-      delayMinutes: activeOrder.pendingDelay ?? undefined,
-    }
-  }, [activeTableId, activeOrder.pendingDelay, activeOrder.coursingEnabled, inlineOrderItems])
-
   // REMOVED: loadItemsIntoStore — all order loading now goes through store.loadOrder()
   // which is the SINGLE source of truth for mapping API items into the store format
 
@@ -477,6 +466,21 @@ export function FloorPlanHome({
   const isLoading = useFloorPlanStore(s => s.isLoading)
   const selectedSeat = useFloorPlanStore(s => s.selectedSeat)
   const flashingTables = useFloorPlanStore(s => s.flashingTables)
+
+  // Memoized order status badges for the active table's TableNode (avoids inline object in render loop)
+  const activeOrderStatusBadges = useMemo(() => {
+    if (!activeTableId) return undefined
+    const activeTable = tables.find(t => t.id === activeTableId)
+    return {
+      hasDelay: !!(activeOrder.pendingDelay && activeOrder.pendingDelay > 0),
+      hasHeld: inlineOrderItems.some(i => !i.sentToKitchen && i.isHeld),
+      hasCourses: activeOrder.coursingEnabled,
+      delayMinutes: activeOrder.pendingDelay ?? undefined,
+      isBottleService: !!(activeTable?.currentOrder?.isBottleService),
+      bottleServiceTierName: activeTable?.currentOrder?.bottleServiceTierName ?? null,
+      bottleServiceTierColor: activeTable?.currentOrder?.bottleServiceTierColor ?? null,
+    }
+  }, [activeTableId, activeOrder.pendingDelay, activeOrder.coursingEnabled, inlineOrderItems, tables])
 
   // Sync selectedSeat from store → activeSeatNumber for item assignment
   // This ensures tapping a seat header in OrderPanel also sets the active seat
@@ -1973,7 +1977,13 @@ export function FloorPlanHome({
                           showSeats={table.id === activeTableId}
                           selectedSeat={selectedSeat}
                           flashMessage={flashMessage}
-                          orderStatusBadges={table.currentOrder && table.id === activeTableId ? activeOrderStatusBadges : undefined}
+                          orderStatusBadges={table.currentOrder ? (
+                            table.id === activeTableId
+                              ? activeOrderStatusBadges
+                              : table.currentOrder.isBottleService
+                                ? { isBottleService: true, bottleServiceTierName: table.currentOrder.bottleServiceTierName ?? null, bottleServiceTierColor: table.currentOrder.bottleServiceTierColor ?? null }
+                                : undefined
+                          ) : undefined}
                           seatsWithItems={table.id === activeTableId ? seatsWithItems : undefined}
                           splitCount={table.currentOrder?.splitOrders?.length}
                           onTap={handleTableTapById}

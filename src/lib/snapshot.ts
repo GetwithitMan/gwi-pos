@@ -43,6 +43,11 @@ export interface SnapshotTable {
     openedAt: string
     server: string
     status: string
+    isBottleService: boolean
+    bottleServiceTierId: string | null
+    bottleServiceMinSpend: number | null
+    bottleServiceTierName: string | null
+    bottleServiceTierColor: string | null
     splitOrders: {
       id: string
       splitIndex: number
@@ -125,7 +130,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
   const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
   const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
-  const [tables, sections, elements, openOrdersCount] = await Promise.all([
+  const [rawTables, sections, elements, openOrdersCount] = await Promise.all([
     // Tables with seats + current order summary (no items/modifiers)
     db.table.findMany({
       where: { locationId, isActive: true, deletedAt: null },
@@ -144,7 +149,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
           where: { status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null },
           select: {
             id: true, orderNumber: true, guestCount: true, total: true, createdAt: true,
-            status: true,
+            status: true, isBottleService: true, bottleServiceTierId: true, bottleServiceMinSpend: true,
             employee: { select: { displayName: true, firstName: true, lastName: true } },
             splitOrders: {
               where: { deletedAt: null },
@@ -210,6 +215,23 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
     }),
   ])
 
+  // Collect unique bottle service tier IDs from open orders so we can look up name/color in one query
+  const tierIds = new Set<string>()
+  for (const t of rawTables) {
+    const tierId = t.orders[0]?.bottleServiceTierId
+    if (tierId) tierIds.add(tierId)
+  }
+  const tierMap = new Map<string, { name: string; color: string }>()
+  if (tierIds.size > 0) {
+    const tiers = await db.bottleServiceTier.findMany({
+      where: { id: { in: Array.from(tierIds) } },
+      select: { id: true, name: true, color: true },
+    })
+    for (const tier of tiers) tierMap.set(tier.id, { name: tier.name, color: tier.color })
+  }
+
+  const tables = rawTables
+
   return {
     tables: tables.map(t => ({
       id: t.id,
@@ -238,6 +260,11 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
         server: t.orders[0].employee?.displayName ||
           `${t.orders[0].employee?.firstName || ''} ${t.orders[0].employee?.lastName || ''}`.trim(),
         status: t.orders[0].status,
+        isBottleService: t.orders[0].isBottleService,
+        bottleServiceTierId: t.orders[0].bottleServiceTierId ?? null,
+        bottleServiceMinSpend: t.orders[0].bottleServiceMinSpend !== undefined && t.orders[0].bottleServiceMinSpend !== null ? Number(t.orders[0].bottleServiceMinSpend) : null,
+        bottleServiceTierName: t.orders[0].bottleServiceTierId ? (tierMap.get(t.orders[0].bottleServiceTierId)?.name ?? null) : null,
+        bottleServiceTierColor: t.orders[0].bottleServiceTierId ? (tierMap.get(t.orders[0].bottleServiceTierId)?.color ?? null) : null,
         splitOrders: (t.orders[0].splitOrders || []).map((s: any) => ({
           id: s.id,
           splitIndex: s.splitIndex,

@@ -22,6 +22,9 @@ interface TableNodeProps {
     hasHeld?: boolean      // ⏸ items held
     hasCourses?: boolean   // 🔢 coursing enabled
     delayMinutes?: number  // e.g., 5 or 10
+    isBottleService?: boolean
+    bottleServiceTierName?: string | null
+    bottleServiceTierColor?: string | null
   }
   seatsWithItems?: Set<number>
   onTap: (tableId: string) => void
@@ -536,8 +539,8 @@ export const TableNode = memo(function TableNode({
                   : table.currentOrder.total
                 ).toFixed(2)}
               </div>
-              {/* Order status badges (delay, held, coursed) */}
-              {orderStatusBadges && (orderStatusBadges.hasDelay || orderStatusBadges.hasHeld || orderStatusBadges.hasCourses) && (
+              {/* Order status badges (bottle service, delay, held, coursed) */}
+              {orderStatusBadges && (orderStatusBadges.isBottleService || orderStatusBadges.hasDelay || orderStatusBadges.hasHeld || orderStatusBadges.hasCourses) && (
                 <div style={{
                   display: 'flex',
                   gap: '3px',
@@ -545,6 +548,19 @@ export const TableNode = memo(function TableNode({
                   justifyContent: 'center',
                   flexWrap: 'wrap',
                 }}>
+                  {orderStatusBadges.isBottleService && (
+                    <span style={{
+                      fontSize: '8px',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      background: orderStatusBadges.bottleServiceTierColor ?? '#D4AF37',
+                      color: 'white',
+                      fontWeight: 700,
+                      lineHeight: 1.3,
+                    }}>
+                      {orderStatusBadges.bottleServiceTierName ?? 'BTL'}
+                    </span>
+                  )}
                   {orderStatusBadges.hasDelay && (
                     <span style={{
                       fontSize: '8px',
