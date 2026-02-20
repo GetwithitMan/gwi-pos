@@ -536,6 +536,25 @@ model DeviceSession {
 
 ---
 
+## GWI Admin Access to Venue POS
+
+Authenticated GWI admins (super_admin, sub_admin) can access any venue's POS admin panel directly from Mission Control without a PIN:
+
+1. MC Location Detail → "Open Admin (authenticated)" button → `/pos-access/{slug}`
+2. `getVenueAdminContext()` validates Clerk auth + role-based venue access
+3. `generatePosAccessToken()` issues a signed HS256 JWT (8h, `PROVISION_API_KEY`)
+4. Redirect → `https://{slug}.ordercontrolcenter.com/auth/cloud?token={JWT}`
+5. POS validates JWT, sets `pos-cloud-session` httpOnly cookie, populates auth store
+6. Admin lands in `/settings` — full admin permissions, no PIN required
+
+**Session:** `pos-cloud-session` httpOnly cookie, 8 hours, venue-scoped (exact hostname)
+**Token secret:** `PROVISION_API_KEY` (shared between MC and POS)
+**Client auth:** Zustand `auth-store` (`gwi-pos-auth` in localStorage)
+
+See: Skill 405 (Cloud Auth Client Fix), Skill 406 (MC Admin Venue Access)
+
+---
+
 ## Audit Trail
 
 Every action is logged with full context:

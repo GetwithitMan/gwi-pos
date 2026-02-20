@@ -1196,6 +1196,13 @@ These skills emerged during development and are now part of the system:
 | 403 | Previous Day Open Orders Panel | 2026-02-20 | Previous Day filter fetches prior-day orders from API; date badge on stale cards; count on chip |
 | 404 | Business Day Date on Orders | 2026-02-20 | businessDayDate field promotes on item-add/pay so revenue reports on payment day not open day |
 
+### Auth / Admin Access
+
+| # | Name | Date | Summary |
+|---|------|------|---------|
+| 405 | Cloud Auth Client Fix | 2026-02-20 | Fixed login(data.employee) → login(data.data?.employee) — client auth store was getting undefined, bouncing admins back to /admin-login after every MC handoff |
+| 406 | MC Admin Venue Access | 2026-02-20 | Added Open Admin button to VenueUrlCard routing through /pos-access/{slug}; documented full JWT handoff architecture |
+
 ---
 
 ## Next Session Priority (2026-02-11+)

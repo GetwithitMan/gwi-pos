@@ -5,6 +5,40 @@
 
 ---
 
+## 2026-02-20 — Admin Venue Access Fix
+
+**Session theme:** Fix GWI admin one-click access to venue POS admin panels
+
+**Summary:** Diagnosed and fixed two bugs causing GWI admins to be redirected to /admin-login on every MC → venue access attempt. The cloud auth client was calling login(undefined) due to a data envelope mismatch. Also added a prominent "Open Admin (authenticated)" button to the VenueUrlCard in Mission Control so the JWT handoff flow is easily discoverable from the main location detail page.
+
+### Commits
+
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | `460da99` | Fix cloud auth client — unwrap { data: { employee } } envelope |
+| gwi-mission-control | `5e449ec` | Add Open Admin button to VenueUrlCard → /pos-access/{slug} |
+
+### Deployments
+- gwi-pos → Vercel (barpos.restaurant / *.ordercontrolcenter.com)
+- gwi-mission-control → Vercel (app.thepasspos.com)
+
+### Features Delivered
+- GWI admins can now click "Open Admin (authenticated)" on any location in MC and land directly in the venue admin panel with no login prompt
+- 8-hour session — no re-login required during a working session
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Bounced to /admin-login after MC handoff | `login(data.employee)` — API returns `{ data: { employee } }`, so `data.employee` was `undefined`; Zustand store empty despite valid cookie | Changed to `login(data.data?.employee)` in `/auth/cloud/page.tsx` |
+| VenueUrlCard "Open" sent to plain URL | `href={venueUrl}` opened `https://{slug}.ordercontrolcenter.com` — no auth token → middleware redirect to admin-login | Added "Open Admin (authenticated)" button `href="/pos-access/{slug}"` |
+
+### Skills
+- Skill 405: Cloud Auth Client Fix
+- Skill 406: MC Admin Venue Access
+
+---
+
 ## 2026-02-20 — Business Day Tracking + Previous Day Orders UX
 
 **Session theme:** Accurate business-day attribution for orders + previous-day stale tab improvements
