@@ -10,6 +10,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const activeOnly = searchParams.get('activeOnly') === 'true'
     const manualOnly = searchParams.get('manualOnly') === 'true'
+    const employeeOnly = searchParams.get('employeeOnly') === 'true'
 
     if (!locationId) {
       return NextResponse.json(
@@ -22,6 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       locationId: string
       isActive?: boolean
       isAutomatic?: boolean
+      isEmployeeDiscount?: boolean
     } = { locationId }
 
     if (activeOnly) {
@@ -30,6 +32,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     if (manualOnly) {
       where.isAutomatic = false
+    }
+
+    if (employeeOnly) {
+      where.isEmployeeDiscount = true
     }
 
     const discounts = await db.discountRule.findMany({
@@ -56,6 +62,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         maxPerOrder: d.maxPerOrder,
         isActive: d.isActive,
         isAutomatic: d.isAutomatic,
+        isEmployeeDiscount: d.isEmployeeDiscount,
       })),
     } })
   } catch (error) {
@@ -86,6 +93,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       maxPerOrder,
       isActive,
       isAutomatic,
+      isEmployeeDiscount,
     } = body as {
       locationId: string
       name: string
@@ -105,6 +113,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       maxPerOrder?: number
       isActive?: boolean
       isAutomatic?: boolean
+      isEmployeeDiscount?: boolean
     }
 
     if (!locationId || !name || !displayText || !discountType || !discountConfig) {
@@ -130,6 +139,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         maxPerOrder: maxPerOrder || null,
         isActive: isActive ?? true,
         isAutomatic: isAutomatic ?? false,
+        isEmployeeDiscount: isEmployeeDiscount ?? false,
       },
     })
 

@@ -2148,8 +2148,9 @@ model DiscountRule {
   requiresApproval Boolean @default(false)
   maxPerOrder      Int?
 
-  isActive    Boolean @default(true)
-  isAutomatic Boolean @default(false) // Auto-apply vs manual
+  isActive            Boolean @default(true)
+  isAutomatic         Boolean @default(false) // Auto-apply vs manual
+  isEmployeeDiscount  Boolean @default(false) // Surfaces prominently in DiscountModal
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

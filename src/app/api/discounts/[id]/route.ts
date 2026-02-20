@@ -73,6 +73,7 @@ export const PUT = withVenue(async function PUT(
       maxPerOrder,
       isActive,
       isAutomatic,
+      isEmployeeDiscount,
     } = body
 
     // Check discount exists
@@ -103,6 +104,7 @@ export const PUT = withVenue(async function PUT(
         ...(maxPerOrder !== undefined && { maxPerOrder }),
         ...(isActive !== undefined && { isActive }),
         ...(isAutomatic !== undefined && { isAutomatic }),
+        ...(isEmployeeDiscount !== undefined && { isEmployeeDiscount }),
       },
     })
 

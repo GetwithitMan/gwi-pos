@@ -29,6 +29,7 @@ interface DiscountRule {
   maxPerOrder?: number
   isActive: boolean
   isAutomatic: boolean
+  isEmployeeDiscount: boolean
 }
 
 export default function DiscountsPage() {
@@ -73,6 +74,7 @@ export default function DiscountsPage() {
     maxPerOrder: '',
     isActive: true,
     isAutomatic: false,
+    isEmployeeDiscount: false,
   })
 
   useEffect(() => {
@@ -98,6 +100,7 @@ export default function DiscountsPage() {
       maxPerOrder: '',
       isActive: true,
       isAutomatic: false,
+      isEmployeeDiscount: false,
     })
   }
 
@@ -116,6 +119,7 @@ export default function DiscountsPage() {
       maxPerOrder: discount.maxPerOrder?.toString() || '',
       isActive: discount.isActive,
       isAutomatic: discount.isAutomatic,
+      isEmployeeDiscount: discount.isEmployeeDiscount,
     })
     openEditModal(discount)
   }
@@ -141,6 +145,7 @@ export default function DiscountsPage() {
       maxPerOrder: formData.maxPerOrder ? parseInt(formData.maxPerOrder) : null,
       isActive: formData.isActive,
       isAutomatic: formData.isAutomatic,
+      isEmployeeDiscount: formData.isEmployeeDiscount,
     }
 
     const ok = await handleSave(payload)
@@ -447,6 +452,21 @@ export default function DiscountsPage() {
                   className="w-4 h-4"
                 />
                 <span className="text-sm">Active</span>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.isEmployeeDiscount}
+                  onChange={(e) =>
+                    setFormData({ ...formData, isEmployeeDiscount: e.target.checked })
+                  }
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Employee Discount</span>
+                <span className="ml-1 px-1.5 py-0.5 text-xs font-semibold bg-green-100 text-green-800 rounded">
+                  EMPLOYEE
+                </span>
               </label>
             </div>
           </div>

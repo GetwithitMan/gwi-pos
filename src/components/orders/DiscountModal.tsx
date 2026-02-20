@@ -20,6 +20,7 @@ interface DiscountRule {
   }
   requiresApproval: boolean
   isActive: boolean
+  isEmployeeDiscount: boolean
 }
 
 // Module-level cache — discount rules rarely change during a shift
@@ -310,31 +311,55 @@ export function DiscountModal({
                   <br />
                   Use custom discount below.
                 </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {discountRules.map(rule => {
-                    const config = rule.discountConfig
-                    const preview = config.type === 'percent'
-                      ? Math.round(orderSubtotal * (config.value / 100) * 100) / 100
-                      : config.value
+              ) : (() => {
+                const employeeDiscounts = discountRules.filter(r => r.isEmployeeDiscount === true)
+                const regularDiscounts = discountRules.filter(r => r.isEmployeeDiscount !== true)
 
-                    return (
-                      <Button
-                        key={rule.id}
-                        variant="outline"
-                        className="h-auto py-3 flex-col items-start text-left"
-                        onClick={() => handleApplyPreset(rule)}
-                        disabled={isProcessing}
-                      >
-                        <span className="font-medium">{rule.displayText}</span>
-                        <span className="text-xs text-gray-500">
-                          -{formatCurrency(preview)}
-                        </span>
-                      </Button>
-                    )
-                  })}
-                </div>
-              )}
+                const renderButton = (rule: DiscountRule) => {
+                  const config = rule.discountConfig
+                  const preview = config.type === 'percent'
+                    ? Math.round(orderSubtotal * (config.value / 100) * 100) / 100
+                    : config.value
+
+                  return (
+                    <Button
+                      key={rule.id}
+                      variant="outline"
+                      className="h-auto py-3 flex-col items-start text-left"
+                      onClick={() => handleApplyPreset(rule)}
+                      disabled={isProcessing}
+                    >
+                      <span className="font-medium">{rule.displayText}</span>
+                      <span className="text-xs text-gray-500">
+                        -{formatCurrency(preview)}
+                      </span>
+                    </Button>
+                  )
+                }
+
+                return (
+                  <>
+                    {employeeDiscounts.length > 0 && (
+                      <div className="mb-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="px-2 py-0.5 text-xs font-bold bg-green-500 text-white rounded">
+                            EMPLOYEE
+                          </span>
+                          <span className="text-sm font-medium text-green-800">Employee Discount</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {employeeDiscounts.map(renderButton)}
+                        </div>
+                      </div>
+                    )}
+                    {regularDiscounts.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2">
+                        {regularDiscounts.map(renderButton)}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
 
               <div className="border-t pt-3 mt-3">
                 <Button
