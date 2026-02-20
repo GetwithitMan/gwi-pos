@@ -40,6 +40,15 @@ export interface OrderPanelItemData {
   ingredientModifications?: IngredientModification[]
   // Split label for grouped display (e.g. "68-1")
   splitLabel?: string
+  // Item-level discounts (P2-D01)
+  itemDiscounts?: Array<{
+    id: string
+    amount: number
+    percent?: number | null
+    reason?: string | null
+  }>
+  // itemTotal from DB (used for discount display)
+  itemTotal?: number
 }
 
 interface OrderPanelItemProps {
@@ -77,6 +86,9 @@ interface OrderPanelItemProps {
   // Dual pricing: multiplier to convert cash (DB) price to card (display) price
   // e.g. 1.04 for 4% surcharge. When undefined or 1, shows cash price as-is.
   cardPriceMultiplier?: number
+  // Item-level discounts (P2-D01)
+  onItemDiscount?: (itemId: string) => void
+  onItemDiscountRemove?: (itemId: string, discountId: string) => void
 }
 
 export const OrderPanelItem = memo(function OrderPanelItem({
@@ -108,10 +120,17 @@ export const OrderPanelItem = memo(function OrderPanelItem({
   onFireItem,
   onCancelItemDelay,
   cardPriceMultiplier,
+  onItemDiscount,
+  onItemDiscountRemove,
 }: OrderPanelItemProps) {
   const isVoided = item.status === 'voided'
   const isComped = item.status === 'comped'
   const isCompedOrVoided = isVoided || isComped
+
+  // Item-level discount derived values (P2-D01)
+  const totalItemDiscount = item.itemDiscounts?.reduce((sum, d) => sum + d.amount, 0) ?? 0
+  const hasItemDiscount = totalItemDiscount > 0
+  const discountedPrice = hasItemDiscount ? (item.itemTotal !== undefined ? Number(item.itemTotal) - totalItemDiscount : null) : null
 
   // Apply card price multiplier for dual pricing display
   const pm = cardPriceMultiplier || 1
@@ -877,6 +896,25 @@ export const OrderPanelItem = memo(function OrderPanelItem({
               </svg>
             </button>
           )}
+          {/* Item discount button (P2-D01) */}
+          {onItemDiscount && item.status === 'active' && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onItemDiscount(item.id) }}
+              style={{
+                padding: '3px 5px',
+                background: hasItemDiscount ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                border: hasItemDiscount ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '5px',
+                color: hasItemDiscount ? '#4ade80' : '#94a3b8',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: 600,
+              }}
+              title="Apply discount"
+            >
+              %
+            </button>
+          )}
           <div style={{ textAlign: 'right' }}>
             {isCompedOrVoided ? (
               <>
@@ -889,10 +927,20 @@ export const OrderPanelItem = memo(function OrderPanelItem({
               </>
             ) : (
               <>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: hasItemDiscount ? '#4ade80' : '#e2e8f0' }}>
                   ${totalPrice.toFixed(2)}
                 </div>
-                {item.quantity > 1 && (
+                {hasItemDiscount && discountedPrice !== null && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
+                    <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 500 }}>
+                      -{totalItemDiscount.toFixed(2)}
+                    </span>
+                    <span style={{ fontSize: '10px', color: '#64748b', textDecoration: 'line-through' }}>
+                      {(totalPrice + totalItemDiscount).toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                {item.quantity > 1 && !hasItemDiscount && (
                   <div style={{ fontSize: '10px', color: '#64748b', marginTop: '-2px' }}>
                     ${(totalPrice / item.quantity).toFixed(2)} ea
                   </div>

@@ -238,6 +238,9 @@ model Location {
   // Fleet Management (Skill 345)
   serverRegistrationTokens ServerRegistrationToken[]
 
+  // Item-level discounts (P2-D01)
+  itemDiscounts OrderItemDiscount[]
+
   @@index([organizationId])
 }
 
@@ -1653,6 +1656,7 @@ model Order {
   orderOwnerships     OrderOwnership[]
   tempSeats           Seat[]             @relation("tempSeats")
   refundLogs    RefundLog[]
+  itemDiscounts OrderItemDiscount[]
 
   @@index([locationId])
   @@index([employeeId])
@@ -1763,6 +1767,9 @@ model OrderItem {
 
   // Pizza Builder - detailed pizza configuration
   pizzaData OrderItemPizza?
+
+  // Item-level discounts (P2-D01)
+  itemDiscounts OrderItemDiscount[]
 
   @@index([locationId])
   @@index([orderId])
@@ -2151,6 +2158,7 @@ model DiscountRule {
   syncedAt  DateTime?
 
   appliedDiscounts OrderDiscount[]
+  itemDiscounts    OrderItemDiscount[]
 
   @@index([locationId])
   @@index([isActive, isAutomatic])
@@ -6456,5 +6464,34 @@ model RefundLog {
   @@index([paymentId])
   @@index([employeeId])
   @@index([createdAt])
+  @@index([locationId, createdAt])
+}
+
+// ============================================
+// ITEM-LEVEL DISCOUNTS (P2-D01)
+// ============================================
+
+model OrderItemDiscount {
+  id             String        @id @default(cuid())
+  locationId     String
+  location       Location      @relation(fields: [locationId], references: [id])
+  orderId        String
+  order          Order         @relation(fields: [orderId], references: [id])
+  orderItemId    String
+  orderItem      OrderItem     @relation(fields: [orderItemId], references: [id])
+  discountRuleId String?
+  discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
+  amount         Decimal
+  percent        Decimal?
+  appliedById    String?
+  reason         String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+  syncedAt       DateTime?
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([orderItemId])
   @@index([locationId, createdAt])
 }
