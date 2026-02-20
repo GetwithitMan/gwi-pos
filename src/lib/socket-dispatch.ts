@@ -17,6 +17,7 @@
 
 import type { RoutingResult } from '@/types/routing'
 import { emitToLocation, emitToTags } from '@/lib/socket-server'
+import { CFD_EVENTS } from '@/types/multi-surface'
 
 interface DispatchOptions {
   /** Don't await the dispatch (fire and forget) */
@@ -862,4 +863,68 @@ export async function dispatchTipGroupUpdate(
   }
 
   return doEmit()
+}
+
+// CFD Events (P2-H03)
+
+/**
+ * Dispatch CFD show-order event
+ *
+ * Called when the payment modal opens with order data.
+ * Sends order line items and totals to the Customer-Facing Display.
+ */
+export function dispatchCFDShowOrder(locationId: string, data: {
+  terminalId?: string
+  orderId: string
+  orderNumber: number
+  items: Array<{ name: string; quantity: number; price: number; modifiers?: string[] }>
+  subtotal: number
+  tax: number
+  total: number
+}): void {
+  void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
+}
+
+/**
+ * Dispatch CFD payment-started event
+ *
+ * Called when the card reader is activated for a transaction.
+ * Transitions the CFD from the order screen to the payment screen.
+ */
+export function dispatchCFDPaymentStarted(locationId: string, data: {
+  terminalId?: string
+  orderId: string
+  amount: number
+  paymentMethod: string
+}): void {
+  void emitToLocation(locationId, CFD_EVENTS.PAYMENT_STARTED, data).catch(console.error)
+}
+
+/**
+ * Dispatch CFD tip-prompt event
+ *
+ * Called when the tip selection step is shown to the cashier.
+ * Optionally mirrors tip options to the CFD screen.
+ */
+export function dispatchCFDTipPrompt(locationId: string, data: {
+  terminalId?: string
+  orderId: string
+  subtotal: number
+  suggestedTips: Array<{ label: string; percent: number; amount: number }>
+}): void {
+  void emitToLocation(locationId, CFD_EVENTS.TIP_PROMPT, data).catch(console.error)
+}
+
+/**
+ * Dispatch CFD receipt-sent event
+ *
+ * Called after a successful payment DB write when the order is fully paid.
+ * Transitions the CFD to the receipt/thank-you screen.
+ */
+export function dispatchCFDReceiptSent(locationId: string, data: {
+  terminalId?: string
+  orderId: string
+  total: number
+}): void {
+  void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, data).catch(console.error)
 }

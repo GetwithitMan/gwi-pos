@@ -7,6 +7,7 @@ import { useDatacap, DatacapResult } from '@/hooks/useDatacap'
 import { SwapConfirmationModal } from './SwapConfirmationModal'
 import { ReaderStatusIndicator } from './ReaderStatusIndicator'
 import { formatCurrency } from '@/lib/utils'
+import { getSharedSocket } from '@/lib/shared-socket'
 
 interface DatacapPaymentProcessorProps {
   orderId: string
@@ -101,6 +102,14 @@ export function DatacapPaymentProcessor({
   }
 
   const handleStartPayment = async () => {
+    // Notify CFD that card payment is starting (fire and forget)
+    const socket = getSharedSocket()
+    socket.emit('cfd:payment-started', {
+      orderId,
+      amount: totalToCharge,
+      paymentMethod: 'credit',
+    })
+
     await processPayment({
       orderId,
       amount: totalToCharge,

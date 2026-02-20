@@ -8,6 +8,7 @@ import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSe
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
 import { toast } from '@/stores/toast-store'
+import { getSharedSocket } from '@/lib/shared-socket'
 
 export interface TabCard {
   id: string
@@ -164,6 +165,32 @@ export function PaymentModal({
         })
     }
   }, [isOpen, orderId, orderTotal])
+
+  // CFD: emit show-order when payment modal opens (fire and forget)
+  useEffect(() => {
+    if (!isOpen || !orderId || !locationId) return
+    fetch(`/api/orders/${orderId}`)
+      .then(res => res.json())
+      .then(raw => {
+        const data = raw.data ?? raw
+        const socket = getSharedSocket()
+        socket.emit('cfd:show-order', {
+          orderId: data.id ?? orderId,
+          orderNumber: data.orderNumber ?? 0,
+          items: (data.items ?? []).map((i: { name: string; quantity: number; price: number | string }) => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.price),
+          })),
+          subtotal: Number(data.subtotal ?? 0),
+          tax: Number(data.taxTotal ?? 0),
+          total: Number(data.total ?? orderTotal),
+        })
+      })
+      .catch(err => {
+        console.error('[CFD] Failed to emit cfd:show-order:', err)
+      })
+  }, [isOpen, orderId, locationId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Use fetched total if orderTotal was 0
   const effectiveOrderTotal = orderTotal > 0 ? orderTotal : (fetchedOrderTotal ?? 0)

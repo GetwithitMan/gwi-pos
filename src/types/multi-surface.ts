@@ -86,6 +86,7 @@ export const CFD_EVENTS = {
   APPROVED: 'cfd:approved',
   DECLINED: 'cfd:declined',
   IDLE: 'cfd:idle',
+  RECEIPT_SENT: 'cfd:receipt-sent',
   // CFD → POS
   TIP_SELECTED: 'cfd:tip-selected',
   SIGNATURE_DONE: 'cfd:signature-done',

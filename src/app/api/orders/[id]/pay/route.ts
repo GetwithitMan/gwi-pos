@@ -15,7 +15,7 @@ import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { emitCloudEvent } from '@/lib/cloud-events'
@@ -1026,6 +1026,14 @@ export const POST = withVenue(withTiming(async function POST(
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     if (updateData.status === 'paid') {
       dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
+    }
+
+    // Notify CFD that receipt was sent — transitions CFD to thank-you screen (fire-and-forget)
+    if (updateData.status === 'paid') {
+      dispatchCFDReceiptSent(order.locationId, {
+        orderId: order.id,
+        total: Number(order.total),
+      })
     }
 
     // Emit cloud event for fully paid orders (fire-and-forget)
