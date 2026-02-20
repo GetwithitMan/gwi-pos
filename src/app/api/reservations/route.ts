@@ -79,6 +79,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             email: true,
           },
         },
+        bottleServiceTier: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            depositAmount: true,
+            minimumSpend: true,
+          },
+        },
       },
       orderBy: [
         { reservationDate: 'asc' },
@@ -114,6 +123,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       internalNotes,
       customerId,
       createdBy,
+      bottleServiceTierId,
     } = body
 
     if (!locationId || !guestName || !partySize || !reservationDate || !reservationTime) {
@@ -202,6 +212,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         customerId,
         createdBy,
         status: 'confirmed',
+        bottleServiceTierId: bottleServiceTierId || null,
       },
       include: {
         table: {
@@ -216,6 +227,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             id: true,
             firstName: true,
             lastName: true,
+          },
+        },
+        bottleServiceTier: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            depositAmount: true,
+            minimumSpend: true,
           },
         },
       },

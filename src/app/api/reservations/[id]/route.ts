@@ -15,6 +15,15 @@ export const GET = withVenue(async function GET(
       include: {
         customer: { select: { id: true, firstName: true, lastName: true, phone: true } },
         table: { select: { id: true, name: true } },
+        bottleServiceTier: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            depositAmount: true,
+            minimumSpend: true,
+          },
+        },
       },
     })
 
@@ -56,10 +65,20 @@ export const PUT = withVenue(async function PUT(
         ...(body.status !== undefined && { status: body.status }),
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.specialRequests !== undefined && { specialRequests: body.specialRequests }),
+        bottleServiceTierId: body.bottleServiceTierId === undefined ? undefined : (body.bottleServiceTierId ?? null),
       },
       include: {
         customer: { select: { id: true, firstName: true, lastName: true } },
         table: { select: { id: true, name: true } },
+        bottleServiceTier: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            depositAmount: true,
+            minimumSpend: true,
+          },
+        },
       },
     })
 

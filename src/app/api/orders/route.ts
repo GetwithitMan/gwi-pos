@@ -29,6 +29,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     }
 
     const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields } = validation.data
+    const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
 
     // Get next order number for today
     const today = new Date()
@@ -105,6 +106,33 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           details: { orderNumber: order.orderNumber, orderType, tableId: tableId || null },
         },
       }).catch(() => {})
+
+      // Link reservation to this draft order (fire-and-forget)
+      if (reservationId) {
+        void (async () => {
+          try {
+            const reservation = await db.reservation.findUnique({
+              where: { id: reservationId },
+              select: { orderId: true, bottleServiceTierId: true, bottleServiceTier: { select: { minimumSpend: true } } },
+            })
+            if (reservation && !reservation.orderId) {
+              await db.reservation.update({ where: { id: reservationId }, data: { orderId: order.id } })
+            }
+            if (reservation?.bottleServiceTierId) {
+              await db.order.update({
+                where: { id: order.id },
+                data: {
+                  isBottleService: true,
+                  bottleServiceTierId: reservation.bottleServiceTierId,
+                  bottleServiceMinSpend: reservation.bottleServiceTier?.minimumSpend ?? null,
+                },
+              })
+            }
+          } catch (e) {
+            console.error('Failed to link reservation to draft order:', e)
+          }
+        })()
+      }
 
       // No socket dispatches for drafts — invisible to Open Orders & Floor Plan
       return NextResponse.json({ data: {
@@ -360,6 +388,33 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     })
 
     timing.end('db', 'Order create with items')
+
+    // Link reservation to this order (fire-and-forget)
+    if (reservationId) {
+      void (async () => {
+        try {
+          const reservation = await db.reservation.findUnique({
+            where: { id: reservationId },
+            select: { orderId: true, bottleServiceTierId: true, bottleServiceTier: { select: { minimumSpend: true } } },
+          })
+          if (reservation && !reservation.orderId) {
+            await db.reservation.update({ where: { id: reservationId }, data: { orderId: order.id } })
+          }
+          if (reservation?.bottleServiceTierId) {
+            await db.order.update({
+              where: { id: order.id },
+              data: {
+                isBottleService: true,
+                bottleServiceTierId: reservation.bottleServiceTierId,
+                bottleServiceMinSpend: reservation.bottleServiceTier?.minimumSpend ?? null,
+              },
+            })
+          }
+        } catch (e) {
+          console.error('Failed to link reservation to order:', e)
+        }
+      })()
+    }
 
     // Audit log: order created
     await db.auditLog.create({

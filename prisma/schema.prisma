@@ -2096,6 +2096,10 @@ model Reservation {
   // Link to order when seated
   orderId String?
 
+  // Bottle Service (P2-B03)
+  bottleServiceTierId String?
+  bottleServiceTier   BottleServiceTier? @relation(fields: [bottleServiceTierId], references: [id])
+
   // Tracking
   createdBy    String? // Employee who created
   seatedAt     DateTime?
@@ -2114,6 +2118,7 @@ model Reservation {
   @@index([status])
   @@index([tableId])
   @@index([customerId])
+  @@index([bottleServiceTierId])
   @@index([locationId, reservationDate, status])
 }
 
@@ -6234,6 +6239,9 @@ model BottleServiceTier {
   // Configuration
   sortOrder  Int      @default(0)  // Display order
   isActive   Boolean  @default(true)
+
+  // Back-relations
+  reservations Reservation[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

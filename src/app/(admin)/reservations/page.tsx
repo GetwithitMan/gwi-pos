@@ -17,6 +17,14 @@ interface Table {
   section?: { id: string; name: string }
 }
 
+interface BottleServiceTier {
+  id: string
+  name: string
+  color: string
+  depositAmount: number
+  minimumSpend: number
+}
+
 interface Reservation {
   id: string
   guestName: string
@@ -36,6 +44,8 @@ interface Reservation {
     firstName: string
     lastName: string
   }
+  bottleServiceTierId?: string
+  bottleServiceTier?: BottleServiceTier
   seatedAt?: string
   createdAt: string
 }
@@ -365,6 +375,14 @@ function ReservationCard({
             <span className={`px-2 py-0.5 text-xs rounded ${STATUS_COLORS[reservation.status]}`}>
               {reservation.status}
             </span>
+            {reservation.bottleServiceTier && (
+              <span
+                className="px-2 py-0.5 text-xs rounded font-medium text-white"
+                style={{ backgroundColor: reservation.bottleServiceTier.color }}
+              >
+                {reservation.bottleServiceTier.name}
+              </span>
+            )}
           </div>
           <div className="text-sm text-gray-400 mt-1">
             Party of {reservation.partySize} &bull; {reservation.duration} min
@@ -490,6 +508,7 @@ function ReservationModal({
   onClose: () => void
   onSave: () => void
 }) {
+  const [bottleServiceTiers, setBottleServiceTiers] = useState<Array<{ id: string; name: string; color: string; depositAmount: number; minimumSpend: number }>>([])
   const [form, setForm] = useState({
     guestName: reservation?.guestName || '',
     guestPhone: reservation?.guestPhone || '',
@@ -503,9 +522,26 @@ function ReservationModal({
     tableId: reservation?.tableId || '',
     specialRequests: reservation?.specialRequests || '',
     internalNotes: reservation?.internalNotes || '',
+    bottleServiceTierId: reservation?.bottleServiceTierId || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!locationId) return
+    fetch(`/api/bottle-service/tiers?locationId=${locationId}`)
+      .then(r => r.json())
+      .then(data => {
+        const tiers = Array.isArray(data?.data) ? data.data : []
+        setBottleServiceTiers(tiers.map((t: BottleServiceTier & { depositAmount: unknown; minimumSpend: unknown }) => ({
+          ...t,
+          depositAmount: Number(t.depositAmount),
+          minimumSpend: Number(t.minimumSpend),
+        })))
+      })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -517,6 +553,7 @@ function ReservationModal({
         ...form,
         locationId,
         tableId: form.tableId || null,
+        bottleServiceTierId: form.bottleServiceTierId || null,
       }
 
       const res = await fetch(
@@ -650,6 +687,36 @@ function ReservationModal({
                   No tables large enough for this party size
                 </p>
               )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Bottle Service Tier</label>
+            <div className="flex items-center gap-2">
+              <select
+                value={form.bottleServiceTierId}
+                onChange={e => setForm({ ...form, bottleServiceTierId: e.target.value })}
+                className="flex-1 px-3 py-2 bg-gray-700 rounded"
+              >
+                <option value="">None</option>
+                {bottleServiceTiers.map(tier => (
+                  <option key={tier.id} value={tier.id}>
+                    {tier.name}
+                  </option>
+                ))}
+              </select>
+              {form.bottleServiceTierId && (() => {
+                const tier = bottleServiceTiers.find(t => t.id === form.bottleServiceTierId)
+                if (!tier) return null
+                return (
+                  <span
+                    className="px-3 py-1 rounded text-sm font-medium text-white whitespace-nowrap"
+                    style={{ backgroundColor: tier.color }}
+                  >
+                    {tier.name}
+                  </span>
+                )
+              })()}
             </div>
           </div>
 
