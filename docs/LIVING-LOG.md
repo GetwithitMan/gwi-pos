@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-02-20 — Venue-Local Login + Multi-Venue Owner Routing
+
+**Session Summary:** Built venue-local admin login system to replace broken MC redirect flow, added Clerk credential passthrough (same email+password as Mission Control), and wired in multi-venue owner routing with venue picker UI and cross-domain owner token.
+
+### Commits
+
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | 4f2434d | feat(auth): venue-local admin login — bypass Mission Control redirect |
+| gwi-pos | f4947b1 | feat(auth): venue login uses Clerk credentials (Option B) |
+| gwi-pos | 7b6bb2f | feat(auth): multi-venue owner routing — venue picker + owner session |
+| gwi-mission-control | 74bf036 | feat(owner): GET /api/owner/venues — returns venues for an owner email |
+| gwi-mission-control | a4eeaf9 | fix(auth): bypass Clerk for /api/owner/* routes (PROVISION_API_KEY auth) |
+
+### Deployments
+- gwi-pos → `*.ordercontrolcenter.com` (Vercel, auto-deploy on push to main)
+- gwi-mission-control → `app.thepasspos.com` (Vercel, auto-deploy on push to main)
+
+### Features Delivered
+- **Venue admin login page** at `{slug}.ordercontrolcenter.com/admin-login` — no MC redirect required
+- **Clerk credential passthrough** — same email+password as Mission Control works on venue login
+- **bcrypt fallback** — local employee password used if owner has no Clerk account
+- **venue-setup endpoint** — emergency credential bootstrap via `PROVISION_API_KEY`
+- **Multi-venue owner detection** — after Clerk auth, checks MC for owner's venue count
+- **Venue picker UI** — dark card grid shown when owner has 2+ venues
+- **Cross-domain owner token** — 10-minute HMAC-SHA256 JWT carries identity to target venue
+- **`/auth/owner` landing page** — validates token, issues venue session, redirects to `/settings`
+- **`/api/auth/owner-session`** — server endpoint: validates owner token, issues `pos-cloud-session`
+- **MC `/api/owner/venues`** — internal endpoint (PROVISION_API_KEY) returns all venues for an owner email
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| `shanes-admin-demo.ordercontrolcenter.com/settings` inaccessible | `app.thepasspos.com` served old deployment missing `/pos-access` routes | Replaced MC redirect with venue-local login (4f2434d) |
+| MC `/api/owner/venues` returning 404 | Clerk middleware `auth.protect()` intercepting requests before handler ran | Added `isOwnerApiRoute` bypass in MC middleware (a4eeaf9) |
+
+### Skills
+- **395** — Venue-Local Admin Login + Clerk Auth (`docs/skills/395-VENUE-LOCAL-ADMIN-LOGIN.md`)
+- **396** — Multi-Venue Owner Routing (`docs/skills/396-MULTI-VENUE-OWNER-ROUTING.md`)
+
+---
+
 ## 2026-02-20 (PM5) — Third-Party Audit: Datacap Bulletproofing (Commit 14de60e)
 
 ### Session Summary
