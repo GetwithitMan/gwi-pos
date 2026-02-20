@@ -5,6 +5,41 @@
 
 ---
 
+## 2026-02-20 — Datacap Payment Verification Report
+
+**Session Summary:** Built a Payment Verification report so owners can see which card payments went through live, which are sitting in offline/SAF mode, and cross-reference against Datacap's cloud records when a Reporting API key is configured.
+
+### Commits
+
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | af96d3f | feat: add Datacap payment verification report (Skill 398) |
+
+### Deployments
+- gwi-pos → `*.ordercontrolcenter.com` (Vercel auto-deploy)
+
+### Features Delivered
+- **Payment Verification report** at `/reports/datacap` — new tile in Reports Hub under Operations
+- **Status badges**: Live (green), Offline/SAF (yellow), Voided (gray), Refunded (blue) on every card payment
+- **Summary cards**: Total card payments, Live count, Offline/SAF count, Voided/Refunded count
+- **Date range filters**: Today / Yesterday / This Week quick-select + custom date range
+- **Status filter** (All / Live / Offline / Voided) on local payments tab
+- **Datacap Reporting V3 integration**: When `DATACAP_REPORTING_API_KEY` env var is set, cross-references each local payment against Datacap's cloud records by auth code — shows Approved/Declined per payment
+- **Datacap Cloud tab**: Raw Datacap V3 transaction view (TranCode, amount, card type, auth code, result)
+- **Config guidance**: Warning if merchant ID not set; info banner explaining how to add reporting key
+
+### New Files
+| File | Purpose |
+|------|---------|
+| `src/app/api/reports/datacap-transactions/route.ts` | Queries local payments + Datacap V3 API, cross-reference by authCode |
+| `src/app/(admin)/reports/datacap/page.tsx` | Full report UI |
+| (modified) `src/app/(admin)/reports/page.tsx` | Payment Verification tile added |
+
+### Skills
+- **398** — Datacap Payment Verification Report (`docs/skills/398-DATACAP-PAYMENT-VERIFICATION-REPORT.md`)
+
+---
+
 ## 2026-02-20 — Password Reset System
 
 **Session Summary:** Built end-to-end password reset flow keeping merchants entirely on {slug}.ordercontrolcenter.com. Venue login page gains forgot/verify modes via Clerk FAPI. MC location detail gains an Owner Access card so GWI admins can trigger resets and share deep-links with merchants.

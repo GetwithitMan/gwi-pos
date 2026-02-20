@@ -1173,6 +1173,7 @@ These skills emerged during development and are now part of the system:
 | 395 | VENUE-LOCAL-ADMIN-LOGIN | DONE | Auth / Cloud | - | Venue-local admin login at {slug}.ordercontrolcenter.com/admin-login; Clerk FAPI primary + bcrypt fallback; pos-cloud-session JWT via Web Crypto |
 | 396 | MULTI-VENUE-OWNER-ROUTING | DONE | Auth / Cloud / Multi-Tenancy | - | Multi-venue owner detection after Clerk auth; venue picker UI; cross-domain owner token (10min HMAC JWT); /auth/owner landing + /api/auth/owner-session; MC /api/owner/venues endpoint |
 | 397 | PASSWORD-RESET-SYSTEM | DONE | Auth / Cloud | - | Venue self-service forgot-password (Clerk FAPI email_code, stays on {slug}.occ.com); MC admin trigger with copyable deep-link; 4 new routes + OwnerResetCard |
+| 398 | DATACAP-PAYMENT-VERIFICATION-REPORT | DONE | Payments / Reports | - | /reports/datacap — local card payments with Live/Offline-SAF/Voided status badges; optional Datacap Reporting V3 cross-reference (DATACAP_REPORTING_API_KEY); summary cards; Datacap Cloud tab |
 
 ---
 
