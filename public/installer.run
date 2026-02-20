@@ -1112,11 +1112,10 @@ function handleForceUpdate(payload) {
     return ok || failOk
   }
 
-  step('git stash', 'git stash', true, 30)
-  if (!step('git pull', 'git pull --ff-only', false, 60)) {
+  step('git fetch', 'git fetch origin', true, 60)
+  if (!step('git reset', 'git reset --hard origin/main', false, 30)) {
     return { ok: false, error: 'git pull failed', steps: steps }
   }
-  step('git stash pop', 'git stash pop', true, 30)
 
   // Re-copy env files in case they were updated
   try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
