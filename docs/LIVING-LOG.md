@@ -5,6 +5,62 @@
 
 ---
 
+## 2026-02-20 (PM2) — Datacap Store-and-Forward / SAF (Skill 389)
+
+### Session Summary
+Implemented full SAF (Store-and-Forward) support across the Datacap stack — library layer, 2 API routes, batch pre-check, and SAF queue management UI on the payment readers settings page. 0 TypeScript errors. Used a 3-agent parallel team.
+
+### Commits (POS — `gwi-pos`)
+
+| Commit | Description |
+|--------|-------------|
+| `9e10978` | feat(datacap): Store-and-Forward (SAF) — certification tests 18.x |
+
+### Deployments
+
+| App | URL | Status |
+|-----|-----|--------|
+| POS | barpos.restaurant | Auto-deployed via Vercel (commit 9e10978) |
+
+### Features Delivered
+
+**SAF Library Layer**
+- `forceOffline?: boolean` on `SaleParams`, `PreAuthParams`, `DatacapRequestFields` — sends `<ForceOffline>Yes</ForceOffline>` in XML (cert test 18.1)
+- `DatacapResponse`: new fields `safCount`, `safAmount`, `safForwarded`, `storedOffline`
+- `xml-parser.ts`: parses SAFCount, SAFAmount, SAFForwarded, StoredOffline tags
+- `DatacapClient.safStatistics(readerId)` — queries reader SAF queue (cert test 18.2)
+- `DatacapClient.safForwardAll(readerId)` — flushes queue to processor (cert test 18.3)
+
+**SAF API Routes**
+- `GET /api/datacap/saf/statistics?locationId=&readerId=` — returns `{ safCount, safAmount, hasPending }`
+- `POST /api/datacap/saf/forward` — returns `{ safForwarded }` count
+- `GET /api/datacap/batch` — batch summary now includes `safCount`, `safAmount`, `hasSAFPending` so UI can warn before batch close if offline transactions are queued
+
+**SAF UI (Payment Readers Settings)**
+- Per-reader SAF Queue widget: "Check" button → fetches live stats from reader
+- Amber badge when pending transactions exist (`X pending · $Y.ZZ`)
+- "Forward Now" button with loading state — flushes queue, resets badge to green "Clear"
+- Disabled automatically when reader is offline
+
+### Certification Progress
+
+| Test | Case | Status |
+|------|------|--------|
+| 18.1 | ForceOffline flag in sale/preAuth | ✅ Done |
+| 18.2 | SAF_Statistics | ✅ Done |
+| 18.3 | SAF_ForwardAll | ✅ Done |
+
+**Updated pass rate: ~23/27 (85%)** — up from 74%
+
+### Remaining for Full Certification
+- GetDevicesInfo — UDP discovery route (UDP discovery lib exists at `src/lib/datacap/discovery.ts`; just needs a cert-facing API route)
+- Level II (tax + customer code in sale requests)
+
+### Skill Docs Created
+- `docs/skills/389-STORE-AND-FORWARD-SAF.md`
+
+---
+
 ## 2026-02-20 (PM) — Datacap Certification: Token Transactions + Simulator Scenarios (Skills 385–388)
 
 ### Session Summary
