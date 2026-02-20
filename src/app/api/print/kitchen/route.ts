@@ -390,6 +390,7 @@ function buildKitchenTicket(
       sauce: { name: string } | null
       cheese: { name: string } | null
     } | null
+    _modifierOnlyFor?: string
   }>,
   width: number,
   printerType: string = 'thermal',
@@ -558,6 +559,12 @@ function buildKitchenTicket(
       // Regular seat number only
       positionPrefix = `S${item.seatNumber}: `
     }
+    // Modifier-only context line: show which item this modifier belongs to
+    if (item._modifierOnlyFor) {
+      content.push(NORMAL)
+      content.push(line(`FOR: ${item._modifierOnlyFor}`))
+    }
+
     let itemName = `${positionPrefix}${item.quantity}x ${item.name}`
     if (allCapsItems) itemName = itemName.toUpperCase()
     content.push(importantLine(itemName, itemNameSize, useRedItemNames, boldItems))
