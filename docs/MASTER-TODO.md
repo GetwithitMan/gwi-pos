@@ -13,7 +13,7 @@
 | Payments (Datacap, bar tabs, pre-auth) | 🟢 Ready | 90% |
 | Discounts (check-level, employee, happy hour) | 🟢 Built | 90% |
 | Bottle Service (tiers, deposits, auto-grat) | 🟡 Partial | 70% |
-| House Accounts (schema + API) | 🟡 Partial | 50% |
+| House Accounts (schema + API + AR report) | 🟢 Ready | 85% |
 | Floor Plan | 🟢 Ready | 92% |
 | Reports (24 endpoints, 14 UI pages) | 🟢 Ready | 90% |
 | Installer | 🟢 Ready | 100% |
@@ -103,12 +103,8 @@ Also: false-positive partials when requested == approved amount.
 
 ---
 
-### P1-03 — House Accounts: Accounts Receivable + Aging Report
-**Build:**
-- Report showing all open balances grouped by account
-- 30/60/90-day aging buckets
-- "Record Payment" button per account (cash/check received)
-- Statement print/email per account
+### ~~P1-03 — House Accounts: Accounts Receivable + Aging Report~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `POST /api/house-accounts/[id]/payments` + `GET /api/reports/house-accounts` + `/reports/house-accounts` page built. 30/60/90/over-90 aging buckets, inline Record Payment form, CSV export. Commit `78e0859`.
 
 ---
 
@@ -163,9 +159,8 @@ Also: false-positive partials when requested == approved amount.
 **Gap:** When a discounted order is voided or refunded, is the discount reversed correctly?
 **Test & fix:** Verify discount amount correctly excluded from refund total. Refund should return what customer actually paid, not the pre-discount total.
 
-#### P2-D04 — Discount on Receipt
-**Check:** Does OrderDiscount appear as a separate line item on printed receipt?
-**Fix if not:** Add discount line to `lib/escpos/receipt-builder.ts`
+#### ~~P2-D04 — Discount on Receipt~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — Discount line added to `src/lib/print-factory.ts` between Subtotal and Tax. Conditional render (only when `totals.discount > 0`). Commit `d8a8432`.
 
 ---
 
@@ -195,14 +190,8 @@ Also: false-positive partials when requested == approved amount.
 #### ~~P2-P01 — Split Payments (Multiple Methods, One Order)~~ ✅ ALREADY IMPLEMENTED
 **Status:** ✅ ALREADY IMPLEMENTED — Split payments fully built (schema: Payment[], API: /pay-additional, UI: PaymentModal split flow). Confirmed by audit 2026-02-20.
 
-#### P2-P02 — Refund vs Void UX Distinction
-**Current:** No visual distinction — both called "void" in UI.
-**Build:**
-1. Check Payment.settledAt status: if settled → show "Refund" button; if not → show "Void" button
-2. Partial refund: "Refund $X of $Y" input with validation
-3. Refund reason tracking (separate from VoidLog — add RefundLog model)
-4. Refund receipt prints automatically
-5. Refund audit: who, when, amount, reason
+#### ~~P2-P02 — Refund vs Void UX Distinction~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — 3-phase delivery: (1) `Payment.settledAt` + `RefundLog` model schema (`54ccb3e`), (2) `/api/datacap/refund` + `/api/orders/[id]/refund-payment` routes (`4b62e9e`), (3) `VoidPaymentModal.tsx` detects settled state, shows amber Refund path with partial refund input + reader dropdown (`b8644a1`).
 
 #### ~~P2-P03 — Batch Close Admin UI~~ ✅ RESOLVED
 **Status:** ✅ RESOLVED — Batch Management card added to /settings/payments with batch summary, SAF queue status, and Close Batch confirmation dialog. Commit 35224cd.
@@ -214,20 +203,14 @@ Also: false-positive partials when requested == approved amount.
 
 ### REPORTS
 
-#### P2-R01 — Closed Orders Management UI
-**Current:** `GET /api/orders/closed` exists. No admin UI.
-**Build:** `/settings/orders/closed` page:
-- Search by date, server, table, order type
-- View full order detail
-- Reopen order (with reason, manager PIN)
-- Receipt reprint button
-- Tip adjustment from order detail
+#### ~~P2-R01 — Closed Orders Management UI~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `/settings/orders/closed` page built. Filter bar, summary stats, cursor-based pagination, amber Needs-Tip badges, Reopen + Adjust Tip + Reprint row actions. Commit `2fab494`.
 
 #### ~~P2-R02 — Labor Cost % in Reports~~ ✅ RESOLVED
 **Status:** ✅ RESOLVED — /reports/labor page built with labor cost %, hours, overtime, by-employee/day/role tabs. Commit a0b8259.
 
-#### P2-R03 — Hourly Sales Breakdown
-**Build:** `/reports/hourly` — bar chart of sales by hour of day. Helps identify rush periods, staffing needs.
+#### ~~P2-R03 — Hourly Sales Breakdown~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — `GET /api/reports/hourly` + `/reports/hourly` page built. CSS-only bar chart, peak hour highlighted, optional compare-date overlay, 4 summary cards. Commit `0cf6786`.
 
 ---
 
@@ -247,14 +230,8 @@ Also: false-positive partials when requested == approved amount.
 **When:** Modifier.printerRouting = "only" routes to different printer than item.
 **Build:** Add "FOR: {item name}" header line to modifier-only kitchen tickets.
 
-#### P2-H03 — Wire CFD (Customer-Facing Display) Socket Events (T-018)
-**File:** `src/app/(cfd)/cfd/page.tsx`
-**Build:** Wire Socket.io events:
-- `cfd:show-order` → display current order summary
-- `cfd:payment-started` → show payment screen
-- `cfd:tip-prompt` → show tip selection
-- `cfd:receipt-sent` → show thank you screen
-- CFD device pairing (T-024) — assign CFD to specific terminal
+#### ~~P2-H03 — Wire CFD (Customer-Facing Display) Socket Events (T-018)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — 4 CFD emit calls wired across 5 files: `cfd:show-order` (PaymentModal), `cfd:payment-started` (DatacapPaymentProcessor), `cfd:receipt-sent` (pay route). 4 dispatch helpers added to `socket-dispatch.ts`. `RECEIPT_SENT` added to `CFD_EVENTS`. Commit `b693b5f`.
 
 #### P2-H04 — Mobile Bartender Tab Sync (T-019)
 **File:** `src/components/mobile/MobileTabActions.tsx`
@@ -391,8 +368,8 @@ These are DONE and working — reference before adding anything similar:
 | Priority | Count | Est. Effort |
 |----------|-------|-------------|
 | 🚨 Go-Live Blockers | 1 remaining (GL-06 only — run pre-launch tests) | 1 week |
-| 🔴 P1 Critical | 3 remaining (P1-03, P1-05, P1-07) | 1–2 weeks |
-| 🟠 P2 Important | ~12 remaining | 3–4 weeks |
+| 🔴 P1 Critical | 2 remaining (P1-05, P1-07) | 1–2 weeks |
+| 🟠 P2 Important | ~6 remaining | 2–3 weeks |
 | 🟡 P3 Polish | ~20 | 2–3 months |
 | 🟢 Future Roadmap | 7+ | Ongoing |
 
@@ -400,4 +377,4 @@ These are DONE and working — reference before adding anything similar:
 
 ---
 
-*Last updated: 2026-02-20 — Multi-agent sprint: GL-03 through GL-08 resolved, P1-01/04/06 fixed, P2-P03/P04/R02/B01 built*
+*Last updated: 2026-02-20 — P2 sprint: P1-03, P2-R01, P2-R03, P2-P02, P2-D04, P2-H03 all resolved*

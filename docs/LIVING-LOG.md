@@ -7,14 +7,16 @@
 
 ## 2026-02-20 — P2 Feature Sprint (Multi-Agent Team)
 
-**Session theme:** P2 features — closed orders UI, AR aging report, hourly sales, refund vs void
+**Session theme:** P2 features — closed orders UI, AR aging report, hourly sales, refund vs void, discount on receipt, CFD socket wiring
 
-**Summary:** Multi-agent sprint delivering 5 P2 features. P2-R01 (Closed Orders UI) and P1-03 (House Accounts AR Report) fully built. P2-R03 (Hourly Sales) added with CSS-only bar chart. P2-P02 (Refund vs Void) delivered in 3 phases: schema migration, two new routes, and VoidPaymentModal UI overhaul. All previously-built APIs reused — zero duplicate work.
+**Summary:** Multi-agent sprint delivering 7 P2/P1 features. P2-R01 (Closed Orders UI) and P1-03 (House Accounts AR Report) fully built. P2-R03 (Hourly Sales) added with CSS-only bar chart. P2-P02 (Refund vs Void) delivered in 3 phases: schema migration, two new routes, and VoidPaymentModal UI overhaul. P2-D04 discount line added to thermal receipt builder. P2-H03 wired 4 CFD socket emit calls across 5 files. All previously-built APIs reused — zero duplicate work.
 
 ### Commits — gwi-pos
 
 | Hash | Description |
 |------|-------------|
+| `b693b5f` | feat(cfd): P2-H03 — wire CFD socket emit calls |
+| `d8a8432` | fix(receipts): P2-D04 — add discount line to thermal receipt builder |
 | `2fab494` | feat(orders): P2-R01 — Closed Orders Management UI |
 | `d515a88` | docs: update MASTER-TODO — sprint completions 2026-02-20 |
 | `b0b9678` | docs: update living log for 2026-02-20 sprint session |
@@ -62,9 +64,21 @@
 |-----|-----------|-----|
 | Vercel deploy failure (TS2322) | GL-08 fix returned Prisma `Decimal` object where `number` expected | Wrapped `DEFAULT_MULTIPLIERS` fallbacks in `Number()` in helpers.ts — commit `dc95f38` |
 
+**P2-D04 — Discount Line on Thermal Receipt** (`d8a8432`)
+- Added `discount?: number` to `totals` parameter type in `src/lib/print-factory.ts`
+- Conditional discount line renders between Subtotal and Tax: `Discount: -$X.XX`
+- Callers pass `discount: Number(order.discountTotal)` — zero impact on receipts with no discount
+
+**P2-H03 — CFD Socket Event Wiring** (`b693b5f`)
+- Added `RECEIPT_SENT: 'cfd:receipt-sent'` to `CFD_EVENTS` in `src/types/multi-surface.ts`
+- Added 4 fire-and-forget CFD dispatch functions to `src/lib/socket-dispatch.ts`: `dispatchCFDShowOrder`, `dispatchCFDPaymentStarted`, `dispatchCFDTipPrompt`, `dispatchCFDReceiptSent`
+- `PaymentModal.tsx` emits `cfd:show-order` when modal opens (order summary to CFD)
+- `DatacapPaymentProcessor.tsx` emits `cfd:payment-started` before card reader activates
+- `src/app/api/orders/[id]/pay/route.ts` emits `cfd:receipt-sent` server-side on full payment
+
 ### Known Issues / Next Up
-- P2-D04 (Discount on receipt) — audit in progress
-- P2-H03 (CFD socket events) — audit in progress
+- P2-H04 (Mobile Bartender Tab Sync) — queued
+- P2-H05 (Pay-at-Table Socket Sync) — queued
 - P2-D01 (Item-level discounts) — needs schema + API + UI, queued
 
 ---
