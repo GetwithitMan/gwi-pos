@@ -137,6 +137,17 @@ export default function ReportsHubPage() {
           ),
         },
         {
+          name: 'Hourly Sales',
+          href: '/reports/hourly',
+          description: 'Revenue and order counts broken down by hour of day',
+          permission: PERMISSIONS.REPORTS_SALES,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          ),
+        },
+        {
           name: 'Product Mix',
           href: '/reports/product-mix',
           description: 'Best selling items, category performance',
