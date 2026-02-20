@@ -1,5 +1,29 @@
 # Payments Domain Changelog
 
+## 2026-02-20 (PM5) — Third-Party Audit Bulletproofing (Commit 14de60e)
+
+### New Features / Hardening
+
+- **Reader health state machine** (`reader-health.ts`): Per-reader `healthy | degraded` tracking. Transactions refused on degraded readers. Pad-reset failures mark degraded; successful pad-reset (manual or automatic) clears state.
+- **Configurable pad-reset timeout**: `padResetTimeoutMs` in `DatacapConfig` — venue operators can increase for high-latency environments.
+- **Production simulated-mode guard**: `validateDatacapConfig` now throws if `communicationMode === 'simulated'` in production.
+- **SimScenario XML tag**: Blocked in production — never emitted to the wire.
+- **`validateCustomerCode()`**: New export from `xml-builder.ts` for upstream validation before truncation occurs.
+- **Button labels cap**: Enforced max 4 buttons in `buildRequest()`.
+- **`extractPrintData` bounds**: Max 36 lines, 500 chars each — prevents memory issues on pathological receipts.
+- **`rawXml` redacted in production**: Prevents response XML accumulation in production logs.
+- **Discovery ports**: `DEFAULT_PORTS.PAX` replaces hardcoded `8080` in `discovery.ts`.
+- **Walkout-retry JSON safety**: Malformed JSON now returns `400 Invalid JSON request body`.
+- **Internal card-profile calls**: `INTERNAL_BASE_URL` + `x-internal-call` header replaces `NEXT_PUBLIC_BASE_URL`.
+- **Numeric validation normalized**: `!amount` → `=== undefined || null` in 5 monetary routes.
+- **Logging discipline**: Remaining `console.*` in datacap paths migrated to `logger`.
+
+### Commit
+
+`14de60e` — feat(datacap): third-party audit bulletproofing — reader health, security, XML safety
+
+---
+
 ## 2026-02-20 (PM4) — Forensic Audit Fixes (Commit 894e5fe)
 
 ### Bug Fixes

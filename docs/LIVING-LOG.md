@@ -5,6 +5,77 @@
 
 ---
 
+## 2026-02-20 (PM5) — Third-Party Audit: Datacap Bulletproofing (Commit 14de60e)
+
+### Session Summary
+Implemented all recommendations from a third-party developer audit across 8 sections. Added a per-reader health state machine, hardened all XML builders, locked down API route security, guarded production from simulated mode, and cleaned up logging discipline. 14 files changed (1 new), 0 TypeScript errors.
+
+### Commits (POS — `gwi-pos`)
+
+| Commit | Description |
+|--------|-------------|
+| `14de60e` | feat(datacap): third-party audit bulletproofing — reader health, security, XML safety |
+
+### Deployments
+
+| App | URL | Status |
+|-----|-----|--------|
+| POS | barpos.restaurant | Auto-deployed via Vercel (commit 14de60e) |
+
+### Features / Hardening Delivered
+
+**§1 — Reader Lifecycle & Health**
+- New `src/lib/datacap/reader-health.ts` — per-reader state machine (`healthy | degraded`)
+- `withPadReset` now calls `assertReaderHealthy()` before every transaction — refused if degraded
+- Pad reset failure → `markReaderDegraded()` + structured log error (was silent `console.error`)
+- Successful pad reset → `markReaderHealthy()` — manual pad-reset route also clears state
+- `padResetTimeoutMs` is now configurable in `DatacapConfig` (was hardcoded 5s globally)
+
+**§2/§3 — XML Building & Parsing Safety**
+- `validateCustomerCode()` exported from `xml-builder.ts` for upstream route validation
+- Dev-mode warning logged when customerCode >17 chars is truncated (silent before)
+- `buttonLabels` capped at 4 (Datacap protocol max) — was unbounded
+- `SimScenario` XML tag blocked in production (`NODE_ENV=production`) — never reaches wire
+- `extractPrintData` bounded: max 36 lines, 500 chars/line (prevents memory blowup on bad payloads)
+- `rawXml` stripped in production (`''`) — avoids accumulating response data in prod logs
+
+**§4 — Discovery Hardening**
+- `discovery.ts`: hardcoded `port: 8080` → `DEFAULT_PORTS.PAX` (single source of truth)
+
+**§5 — API Route Security**
+- `walkout-retry`: malformed JSON now returns `400 Invalid JSON` (was silently `missing walkoutRetryId`)
+- `sale` route: card-profile fire-and-forget uses `INTERNAL_BASE_URL` + `x-internal-call` header instead of `NEXT_PUBLIC_BASE_URL`
+- Numeric validation normalized: `!amount` → `amount === undefined || amount === null` in 5 routes
+
+**§6 — Logging Discipline**
+- Cloud fallback `console.warn` → `logger.warn` with structured context
+- `walkout-retry` `console.error` → `logger.error`
+- `helpers.ts`: re-exports `getReaderHealth`, `clearReaderHealth`, `ReaderHealth` type
+
+**§7 — Config Hardening**
+- `validateDatacapConfig` throws if `communicationMode === 'simulated'` in production
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/lib/datacap/reader-health.ts` | NEW — per-reader health state machine |
+| `src/lib/datacap/types.ts` | `padResetTimeoutMs` on DatacapConfig; prod guard in validateDatacapConfig |
+| `src/lib/datacap/client.ts` | Health integration in withPadReset + padReset; configurable timeout; logger |
+| `src/lib/datacap/xml-builder.ts` | Button cap, customerCode warning, SimScenario prod guard, validateCustomerCode |
+| `src/lib/datacap/xml-parser.ts` | printData bounds; rawXml stripped in production |
+| `src/lib/datacap/discovery.ts` | DEFAULT_PORTS.PAX replaces hardcoded 8080 |
+| `src/lib/datacap/helpers.ts` | Re-exports reader health functions |
+| `src/lib/datacap/index.ts` | Barrel exports for reader-health module |
+| `src/app/api/datacap/walkout-retry/route.ts` | JSON parse hardening; logger migration |
+| `src/app/api/datacap/sale/route.ts` | INTERNAL_BASE_URL; numeric validation |
+| `src/app/api/datacap/sale-by-record/route.ts` | Numeric validation |
+| `src/app/api/datacap/preauth/route.ts` | Numeric validation |
+| `src/app/api/datacap/preauth-by-record/route.ts` | Numeric validation |
+| `src/app/api/datacap/return/route.ts` | Numeric validation |
+
+---
+
 ## 2026-02-20 (PM4) — Datacap Forensic Audit + Fixes (Commit 894e5fe)
 
 ### Session Summary
