@@ -39,8 +39,9 @@ function wrapResponse(content: string): string {
 interface SimOptions {
   sequenceNo?: string
   decline?: boolean
-  error?: boolean    // Simulate a device/communication error
-  partial?: boolean  // Simulate partial approval (approves 50% of requested amount)
+  error?: boolean        // Simulate a device/communication error
+  partial?: boolean      // Simulate partial approval (approves 50% of requested amount)
+  forceOffline?: boolean // Simulate SAF store-and-forward (transaction stored offline)
 }
 
 /**
@@ -71,6 +72,19 @@ export function simulateResponse(
     `)
   }
 
+  // Simulate SAF store-and-forward (forceOffline flag) — transaction stored on reader
+  if (options.forceOffline) {
+    return wrapResponse(`
+      <CmdStatus>Approved</CmdStatus>
+      <DSIXReturnCode>000000</DSIXReturnCode>
+      <ResponseOrigin>Client</ResponseOrigin>
+      <TextResponse>STORED OFFLINE</TextResponse>
+      <SequenceNo>${seqOut}</SequenceNo>
+      <TranCode>${tranCode}</TranCode>
+      <StoredOffline>Yes</StoredOffline>
+    `)
+  }
+
   // Simulate decline
   if (options.decline) {
     return wrapResponse(`
@@ -90,6 +104,30 @@ export function simulateResponse(
     case 'EMVForceAuth': {
       const amount = fields.amounts?.purchase?.toFixed(2) || '0.00'
       const gratuity = fields.amounts?.gratuity?.toFixed(2)
+      // Partial approval simulation: approve only 50% of requested amount
+      if (options.partial && tranCode === 'EMVSale') {
+        const partialAmount = (parseFloat(amount) / 2).toFixed(2)
+        return wrapResponse(`
+          <CmdStatus>Approved</CmdStatus>
+          <DSIXReturnCode>000001</DSIXReturnCode>
+          <ResponseOrigin>Processor</ResponseOrigin>
+          <TextResponse>PARTIAL APPROVAL</TextResponse>
+          <SequenceNo>${seqOut}</SequenceNo>
+          <TranCode>${tranCode}</TranCode>
+          <Authorize>${partialAmount}</Authorize>
+          <AuthCode>${authCode}</AuthCode>
+          <RefNo>${refNo}</RefNo>
+          <RecordNo>${recordNo}</RecordNo>
+          <AcctNo>***${card.last4}</AcctNo>
+          <CardType>${card.type}</CardType>
+          <CardholderName>${card.name}</CardholderName>
+          <CardholderID>SIM_${randomAlphaNum(16)}</CardholderID>
+          <EntryMethod>CONTACTLESS</EntryMethod>
+          <AID>A0000000031010</AID>
+          <CVM>NO_CVM</CVM>
+          <PartialAuthApprovalCode>P</PartialAuthApprovalCode>
+        `)
+      }
       return wrapResponse(`
         <CmdStatus>Approved</CmdStatus>
         <DSIXReturnCode>000000</DSIXReturnCode>
@@ -338,7 +376,7 @@ export function simulateResponse(
           <AuthCode>${authCode}</AuthCode>
           <RefNo>${refNo}</RefNo>
           <RecordNo>${fields.recordNo || recordNo}</RecordNo>
-          <PartialAuthApprovalCode>${authCode}</PartialAuthApprovalCode>
+          <PartialAuthApprovalCode>P</PartialAuthApprovalCode>
         `)
       }
       return wrapResponse(`

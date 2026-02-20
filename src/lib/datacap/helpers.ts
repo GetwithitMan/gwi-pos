@@ -89,9 +89,18 @@ export async function parseBody<T>(request: Request): Promise<T> {
 
 /**
  * Standard error response for Datacap API routes.
+ * Handles both standard Error objects and DatacapError plain objects.
  */
 export function datacapErrorResponse(error: unknown, status = 500) {
-  const message = error instanceof Error ? error.message : 'Internal server error'
+  let message: string
+  if (error instanceof Error) {
+    message = error.message
+  } else if (error && typeof error === 'object' && 'text' in error) {
+    // DatacapError plain object — use the text field
+    message = String((error as { text: unknown }).text)
+  } else {
+    message = 'Internal server error'
+  }
   console.error('[Datacap API]', message)
   return Response.json({ error: message }, { status })
 }

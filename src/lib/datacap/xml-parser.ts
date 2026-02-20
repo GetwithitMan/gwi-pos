@@ -151,8 +151,9 @@ export function parseResponse(xml: string): DatacapResponse {
   const safAmount = extractTag(xml, 'SAFAmount')
   const safForwarded = extractTag(xml, 'SAFForwarded')
   // Stored offline detection: reader stores transaction when processor unreachable
-  const storedOffline = textResponse.toUpperCase().includes('STORED') ||
-    extractTag(xml, 'StoredOffline') === 'Yes'
+  // Use explicit tag first; textResponse match is a fallback using exact phrase to avoid false positives
+  const storedOffline = extractTag(xml, 'StoredOffline') === 'Yes' ||
+    textResponse.toUpperCase().includes('STORED OFFLINE')
 
   // Level II response
   const level2Status = extractTag(xml, 'Level2Status')

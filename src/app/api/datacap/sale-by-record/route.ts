@@ -34,6 +34,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         recordNo: response.recordNo,
         amountAuthorized: response.authorize,
         isPartialApproval: response.isPartialApproval,
+        storedOffline: response.storedOffline,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
       },

@@ -14,10 +14,8 @@ import { withVenue } from '@/lib/with-venue'
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const timeoutMs = Math.min(
-      parseInt(searchParams.get('timeoutMs') || '5000', 10),
-      15000
-    )
+    const rawTimeout = parseInt(searchParams.get('timeoutMs') || '5000', 10)
+    const timeoutMs = Math.min(isNaN(rawTimeout) ? 5000 : rawTimeout, 15000)
 
     const devices = await discoverAllDevices(timeoutMs)
 

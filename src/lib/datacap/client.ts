@@ -289,10 +289,33 @@ export class DatacapClient {
       const tranCode = (tranCodeMatch?.[1] || 'EMVPadReset') as TranCode
       const scenarioMatch = xml.match(/<SimScenario>([^<]+)<\/SimScenario>/)
       const simScenario = scenarioMatch?.[1] as 'decline' | 'error' | 'partial' | undefined
-      const simXml = simulateResponse(tranCode, { merchantId: '', operatorId: '', tranCode }, {
+
+      // Extract additional fields from XML so simulator can produce accurate responses
+      const purchaseMatch = xml.match(/<Purchase>([\d.]+)<\/Purchase>/)
+      const gratuityMatch = xml.match(/<Gratuity>([\d.]+)<\/Gratuity>/)
+      const customerCodeMatch = xml.match(/<CustomerCode>([^<]+)<\/CustomerCode>/)
+      const forceOffline = /<ForceOffline>Yes<\/ForceOffline>/i.test(xml)
+      const recordNoMatch = xml.match(/<RecordNo>([^<]+)<\/RecordNo>/)
+      const invoiceMatch = xml.match(/<InvoiceNo>([^<]+)<\/InvoiceNo>/)
+
+      const simXml = simulateResponse(tranCode, {
+        merchantId: '',
+        operatorId: '',
+        tranCode,
+        invoiceNo: invoiceMatch?.[1],
+        recordNo: recordNoMatch?.[1],
+        customerCode: customerCodeMatch?.[1],
+        amounts: purchaseMatch
+          ? {
+              purchase: parseFloat(purchaseMatch[1]),
+              gratuity: gratuityMatch ? parseFloat(gratuityMatch[1]) : undefined,
+            }
+          : undefined,
+      }, {
         decline: simScenario === 'decline',
         error: simScenario === 'error',
         partial: simScenario === 'partial',
+        forceOffline,
       })
       return parseResponse(simXml)
     }
