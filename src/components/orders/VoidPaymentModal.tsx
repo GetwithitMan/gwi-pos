@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
 import { toast } from '@/stores/toast-store'
@@ -13,6 +13,14 @@ interface Payment {
   paymentMethod: string
   cardLast4?: string
   cardBrand?: string
+  settledAt?: string | null
+  datacapRecordNo?: string | null
+}
+
+interface PaymentReader {
+  id: string
+  name: string
+  isActive: boolean
 }
 
 interface Order {
@@ -30,6 +38,7 @@ interface VoidPaymentModalProps {
   payment: Payment
   locationId: string
   onSuccess: () => void
+  readers?: PaymentReader[]
 }
 
 const VOID_REASONS = [
@@ -48,21 +57,52 @@ export function VoidPaymentModal({
   payment,
   locationId,
   onSuccess,
+  readers,
 }: VoidPaymentModalProps) {
   const [selectedReason, setSelectedReason] = useState('')
   const [notes, setNotes] = useState('')
   const [showPinModal, setShowPinModal] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [pendingAction, setPendingAction] = useState<'void' | 'refund'>('void')
+  const [refundAmount, setRefundAmount] = useState<string>('')
+  const [refundAmountError, setRefundAmountError] = useState('')
+  const [selectedReaderId, setSelectedReaderId] = useState('')
 
-  const handleConfirm = () => {
+  // Pre-fill refund amount when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setRefundAmount(Number(payment?.amount || 0).toFixed(2))
+      setRefundAmountError('')
+      setPendingAction(payment?.settledAt ? 'refund' : 'void')
+      setSelectedReaderId(readers?.find((r) => r.isActive)?.id ?? '')
+    }
+  }, [isOpen, payment?.amount, payment?.settledAt, readers])
+
+  const isSettled = Boolean(payment.settledAt)
+  const isCardPayment =
+    payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
+
+  const handleConfirm = (action: 'void' | 'refund') => {
     if (!selectedReason) {
-      toast.error('Please select a void reason')
+      toast.error('Please select a reason')
       return
     }
     if (selectedReason === 'other' && !notes.trim()) {
-      toast.error('Please explain the reason for voiding')
+      toast.error('Please explain the reason')
       return
     }
+    if (action === 'refund') {
+      const amount = parseFloat(refundAmount)
+      if (isNaN(amount) || amount <= 0) {
+        setRefundAmountError('Enter a valid refund amount')
+        return
+      }
+      if (amount > Number(payment.amount)) {
+        setRefundAmountError(`Cannot exceed $${Number(payment.amount).toFixed(2)}`)
+        return
+      }
+    }
+    setPendingAction(action)
     setShowPinModal(true)
   }
 
@@ -70,6 +110,39 @@ export function VoidPaymentModal({
     setIsSubmitting(true)
     setShowPinModal(false)
 
+    if (pendingAction === 'refund') {
+      const amount = parseFloat(refundAmount)
+      try {
+        const res = await fetch(`/api/orders/${order.id}/refund-payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentId: payment.id,
+            refundAmount: amount,
+            refundReason: selectedReason,
+            notes: notes.trim(),
+            managerId,
+            readerId: selectedReaderId || undefined,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Refund failed')
+        toast.success(
+          data.data.isPartial
+            ? `Partial refund of $${amount.toFixed(2)} processed by ${managerName}`
+            : `Full refund of $${amount.toFixed(2)} processed by ${managerName}`
+        )
+        onSuccess()
+        onClose()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Refund failed')
+      } finally {
+        setIsSubmitting(false)
+      }
+      return
+    }
+
+    // Existing void path
     try {
       const res = await fetch(`/api/orders/${order.id}/void-payment`, {
         method: 'POST',
@@ -83,7 +156,6 @@ export function VoidPaymentModal({
       })
 
       if (res.ok) {
-        const { data } = await res.json()
         toast.warning(
           `Payment voided - $${payment.totalAmount.toFixed(2)} by ${managerName}`
         )
@@ -117,27 +189,29 @@ export function VoidPaymentModal({
       <Modal isOpen={isOpen} onClose={onClose} size="md">
         <div className="bg-slate-900 rounded-xl p-6 border border-white/10">
           <h2 className="text-xl font-bold text-white mb-4">
-            Void Payment - Order #{order.orderNumber}
+            {isSettled ? 'Refund Payment' : 'Void Payment'} - Order #{order.orderNumber}
           </h2>
 
           <div className="space-y-4">
-            {/* Warning */}
-            <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 p-3 rounded-lg border border-red-500/20">
-              <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <div>
-                <p className="font-semibold">WARNING: This cannot be undone</p>
-                <p className="text-xs mt-1 text-red-300">
-                  This marks the payment as voided in the system. To process an actual refund,
-                  you must do so through the payment processor separately.
-                </p>
+            {/* Warning — only shown for void path */}
+            {!isSettled && (
+              <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+                <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <div>
+                  <p className="font-semibold">WARNING: This cannot be undone</p>
+                  <p className="text-xs mt-1 text-red-300">
+                    This marks the payment as voided in the system. To process an actual refund,
+                    you must do so through the payment processor separately.
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Payment Info */}
             <div className="text-sm text-slate-400 space-y-1 bg-white/5 p-3 rounded-lg">
@@ -151,10 +225,10 @@ export function VoidPaymentModal({
               </p>
             </div>
 
-            {/* Void Reason */}
+            {/* Reason */}
             <div>
               <label className="block text-sm text-slate-300 mb-2">
-                Void Reason <span className="text-red-400">*</span>
+                {isSettled ? 'Refund Reason' : 'Void Reason'} <span className="text-red-400">*</span>
               </label>
               <select
                 value={selectedReason}
@@ -184,6 +258,81 @@ export function VoidPaymentModal({
               />
             </div>
 
+            {/* Settled / Refund Section */}
+            {isSettled && (
+              <div className="space-y-3 border border-amber-500/30 rounded-lg p-3 bg-amber-500/5">
+                <div className="flex items-start gap-2 text-sm text-amber-400">
+                  <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span>
+                    This payment has been settled. A refund will be issued to the{' '}
+                    {isCardPayment ? 'card' : 'original payment method'}.
+                  </span>
+                </div>
+
+                {/* Refund Amount */}
+                <div>
+                  <label className="block text-sm text-slate-300 mb-1">
+                    Refund Amount <span className="text-red-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      max={Number(payment.amount).toFixed(2)}
+                      value={refundAmount}
+                      onChange={(e) => {
+                        setRefundAmount(e.target.value)
+                        setRefundAmountError('')
+                      }}
+                      className="w-full pl-7 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  {refundAmountError && (
+                    <p className="text-xs text-red-400 mt-1">{refundAmountError}</p>
+                  )}
+                  <p className="text-xs text-slate-500 mt-1">
+                    Min: $0.01 | Max: ${Number(payment.amount).toFixed(2)}
+                  </p>
+                  {refundAmount && parseFloat(refundAmount) > 0 && parseFloat(refundAmount) < Number(payment.amount) && (
+                    <p className="text-xs text-amber-400 mt-1">
+                      Partial refund — customer keeps $
+                      {(Number(payment.amount) - parseFloat(refundAmount)).toFixed(2)} of the
+                      original ${Number(payment.amount).toFixed(2)} charge
+                    </p>
+                  )}
+                </div>
+
+                {/* Reader selection (card payments only, when readers provided) */}
+                {isCardPayment && readers && readers.length > 0 && (
+                  <div>
+                    <label className="block text-sm text-slate-300 mb-1">
+                      Payment Reader
+                    </label>
+                    <select
+                      value={selectedReaderId}
+                      onChange={(e) => setSelectedReaderId(e.target.value)}
+                      className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="">None (card-not-present)</option>
+                      {readers.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}{r.isActive ? ' (active)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Manager PIN Warning */}
             <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
               <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -206,14 +355,41 @@ export function VoidPaymentModal({
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleConfirm}
-                disabled={isSubmitting || !selectedReason || (selectedReason === 'other' && !notes.trim())}
-                className="flex-1 px-4 py-2 bg-red-600 rounded-lg text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSubmitting ? 'Voiding...' : 'Void - PIN Required'}
-              </button>
+
+              {isSettled ? (
+                <>
+                  {/* Primary: Refund */}
+                  <button
+                    type="button"
+                    onClick={() => handleConfirm('refund')}
+                    disabled={isSubmitting || !selectedReason || (selectedReason === 'other' && !notes.trim())}
+                    className="flex-1 px-4 py-2 bg-amber-600 rounded-lg text-white hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting && pendingAction === 'refund'
+                      ? 'Refunding...'
+                      : `Refund $${refundAmount || Number(payment.amount).toFixed(2)} - PIN`}
+                  </button>
+                  {/* Secondary: Void anyway */}
+                  <button
+                    type="button"
+                    onClick={() => handleConfirm('void')}
+                    disabled={isSubmitting || !selectedReason || (selectedReason === 'other' && !notes.trim())}
+                    className="px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-slate-400 hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    title="Override: void without processing refund through payment processor"
+                  >
+                    {isSubmitting && pendingAction === 'void' ? 'Voiding...' : 'Void Anyway'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleConfirm('void')}
+                  disabled={isSubmitting || !selectedReason || (selectedReason === 'other' && !notes.trim())}
+                  className="flex-1 px-4 py-2 bg-red-600 rounded-lg text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? 'Voiding...' : 'Void - PIN Required'}
+                </button>
+              )}
             </div>
           </div>
         </div>
