@@ -757,6 +757,7 @@ export class PrintTemplateFactory {
     printerType: 'thermal' | 'impact' | null,
     totals: {
       subtotal: number
+      discount?: number
       tax: number
       total: number
       payments?: { method: string; amount: number }[]
@@ -807,6 +808,9 @@ export class PrintTemplateFactory {
 
     // Totals
     content.push(twoColumnLine('Subtotal:', `$${totals.subtotal.toFixed(2)}`, width))
+    if (totals.discount && totals.discount > 0) {
+      content.push(twoColumnLine('Discount:', `-$${totals.discount.toFixed(2)}`, width))
+    }
     content.push(twoColumnLine('Tax:', `$${totals.tax.toFixed(2)}`, width))
     content.push(TALL)
     content.push(ESCPOS.BOLD_ON)
