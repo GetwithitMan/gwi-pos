@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
+import { getCurrentBusinessDay } from '@/lib/business-day'
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -25,6 +26,19 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       )
     }
 
+    // Compute business day start for filtering — only orders from the current business day
+    // (skip this filter when explicitly querying rolled-over orders from prior days)
+    let businessDayStart: Date | null = null
+    if (rolledOver !== 'true') {
+      const location = await db.location.findFirst({
+        where: { id: locationId },
+        select: { settings: true },
+      })
+      const settings = location?.settings as Record<string, unknown> | null
+      const dayStartTime = (settings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+      businessDayStart = getCurrentBusinessDay(dayStartTime).start
+    }
+
     // Summary mode: lightweight response for sidebar/list views
     const summary = searchParams.get('summary') === 'true'
     if (summary) {
@@ -34,6 +48,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           locationId,
           status: { in: ['open', 'sent', 'in_progress', 'split'] },
           deletedAt: null,
+          ...(businessDayStart ? { createdAt: { gte: businessDayStart } } : {}),
           ...(employeeId ? { employeeId } : {}),
           ...(orderType ? { orderType } : {}),
           ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),
@@ -210,6 +225,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       where: {
         locationId,
         status: { in: ['open', 'sent', 'in_progress', 'split'] },
+        deletedAt: null,
+        ...(businessDayStart ? { createdAt: { gte: businessDayStart } } : {}),
         ...(employeeId ? { employeeId } : {}),
         ...(orderType ? { orderType } : {}),
         ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),

@@ -4,6 +4,7 @@ import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { getCurrentBusinessDay } from '@/lib/business-day'
 
 /**
  * POST /api/eod/reset
@@ -54,14 +55,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    // Find any open orders that should have been closed (safety check)
-    // These are orders older than 24 hours that are still open
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    // Find open orders from BEFORE the current business day started — these are stale
+    const location = await db.location.findFirst({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const locSettings = location?.settings as Record<string, unknown> | null
+    const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+    const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
+
     const staleOpenOrders = await db.order.findMany({
       where: {
         locationId,
         status: 'open',
-        createdAt: { lt: twentyFourHoursAgo },
+        createdAt: { lt: currentBusinessDayStart },
         deletedAt: null,
       },
       select: {
@@ -245,12 +252,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const getLocation = await db.location.findFirst({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const getSettings = getLocation?.settings as Record<string, unknown> | null
+    const getDayStartTime = (getSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+    const getBusinessDayStart = getCurrentBusinessDay(getDayStartTime).start
+
     const staleOrderCount = await db.order.count({
       where: {
         locationId,
         status: 'open',
-        createdAt: { lt: twentyFourHoursAgo },
+        createdAt: { lt: getBusinessDayStart },
         deletedAt: null,
       },
     })
