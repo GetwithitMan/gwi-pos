@@ -128,8 +128,10 @@ export interface PaymentSettings {
   processor: 'none' | 'simulated' | 'datacap'  // datacap = Datacap Direct integration
   testMode: boolean
 
-  // Datacap Direct configuration
-  datacapMerchantId?: string
+  // Datacap Direct configuration (written by UPDATE_PAYMENT_CONFIG fleet command)
+  datacapMerchantId?: string       // Datacap Merchant ID (MID)
+  datacapTokenKey?: string         // Datacap AES token key (32-char hex)
+  datacapEnvironment?: 'cert' | 'production'  // cert = Datacap testing, production = live
   readerTimeoutSeconds: number     // Timeout for reader response (default: 30)
   autoSwapOnFailure: boolean       // Automatically offer reader swap when offline (default: true)
 

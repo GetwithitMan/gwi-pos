@@ -22,12 +22,20 @@ export async function getDatacapClient(locationId: string): Promise<DatacapClien
   const settings = parseSettings(location.settings)
   const payments = settings.payments
 
+  // Map MC environment to testMode (cert → testMode=true, production → testMode=false)
+  const isTestMode = payments.datacapEnvironment
+    ? payments.datacapEnvironment === 'cert'
+    : payments.testMode
+
   const config: DatacapConfig = {
     merchantId: payments.datacapMerchantId || '',
     operatorId: 'POS',
     posPackageId: POS_PACKAGE_ID,
     communicationMode: payments.processor === 'simulated' ? 'simulated' : 'local',
-    cloudUrl: payments.testMode ? CLOUD_URLS.test : CLOUD_URLS.prod,
+    cloudUrl: isTestMode ? CLOUD_URLS.test : CLOUD_URLS.prod,
+    // Datacap cloud auth: MID as username, tokenKey as password (used for cloud mode)
+    cloudUsername: payments.datacapMerchantId || '',
+    cloudPassword: payments.datacapTokenKey || '',
     localTimeoutMs: (payments.readerTimeoutSeconds || 30) * 1000,
   }
 

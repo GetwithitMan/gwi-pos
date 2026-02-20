@@ -994,9 +994,10 @@ const { execSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
-const ENV_FILE = '/opt/gwi-pos/.env'
-const APP_DIR = '/opt/gwi-pos/app'
-const LOG_FILE = '/opt/gwi-pos/sync-agent.log'
+const ENV_FILE         = '/opt/gwi-pos/.env'
+const APP_DIR          = '/opt/gwi-pos/app'
+const LOG_FILE         = '/opt/gwi-pos/sync-agent.log'
+const PRIVATE_KEY_PATH = '/opt/gwi-pos/keys/private.pem'
 
 // ── Load config from .env ──────────────────────────────────────────────────
 const env = {}
@@ -1190,6 +1191,34 @@ async function processCommand(dataStr) {
       } else {
         log('[Sync] Unhandled DATA_CHANGED domain: ' + domain)
         result = { ok: true }
+      }
+    } else if (cmd.type === 'UPDATE_PAYMENT_CONFIG') {
+      try {
+        var encryptedPayload = cmd.payload && cmd.payload.encrypted
+        if (!encryptedPayload) {
+          log('[Sync] UPDATE_PAYMENT_CONFIG: missing encrypted payload')
+          result = { ok: false, error: 'missing-payload' }
+        } else {
+          // RSA-OAEP decrypt using server private key (matches MC's rsaEncrypt)
+          var privateKey = fs.readFileSync(PRIVATE_KEY_PATH, 'utf-8')
+          var decryptedBuf = crypto.privateDecrypt(
+            { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+            Buffer.from(encryptedPayload, 'base64')
+          )
+          var paymentConfig = JSON.parse(decryptedBuf.toString('utf-8'))
+          // Push decrypted credentials to local POS
+          var pcRes = await putJsonLocal('/api/payment-config', paymentConfig)
+          if (pcRes.status === 200) {
+            log('[Sync] Payment config updated — processor=' + paymentConfig.processor + ' env=' + paymentConfig.environment)
+            result = { ok: true }
+          } else {
+            log('[Sync] Local payment-config update failed: HTTP ' + pcRes.status)
+            result = { ok: false, error: 'local-update-failed' }
+          }
+        }
+      } catch (err) {
+        log('[Sync] UPDATE_PAYMENT_CONFIG error: ' + err.message)
+        result = { ok: false, error: err.message }
       }
     } else if (cmd.type === 'KILL_SWITCH') {
       log('[Sync] KILL_SWITCH received — acknowledged')
