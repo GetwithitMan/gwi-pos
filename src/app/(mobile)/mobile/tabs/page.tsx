@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import MobileTabCard from '@/components/mobile/MobileTabCard'
 import { useEvents } from '@/lib/events/use-events'
 
@@ -38,13 +38,52 @@ export default function MobileTabsPage() {
 }
 
 function MobileTabsContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const employeeId = searchParams.get('employeeId')
+  // locationId is used for the login redirect; kept as a query param so the
+  // login page can be reached from a QR code that embeds the locationId.
+  const locationId = searchParams.get('locationId') ?? ''
 
+  const [employeeId, setEmployeeId] = useState<string | null>(
+    // Backwards-compat fallback: accept ?employeeId if no session cookie yet
+    searchParams.get('employeeId')
+  )
   const [tabs, setTabs] = useState<MobileTab[]>([])
   const [loading, setLoading] = useState(true)
+  const [authChecked, setAuthChecked] = useState(false)
   const [filter, setFilter] = useState<'mine' | 'all'>('mine')
   const { isConnected, subscribe } = useEvents({})
+
+  // Verify session cookie on mount. Redirect to login if not authenticated.
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const res = await fetch('/api/mobile/device/auth')
+        if (res.ok) {
+          const data = await res.json()
+          setEmployeeId(data.data.employeeId)
+          setAuthChecked(true)
+          return
+        }
+      } catch {
+        // network error — fall through to redirect
+      }
+
+      // No valid session: redirect to login
+      const loginUrl = locationId
+        ? `/mobile/login?locationId=${locationId}`
+        : '/mobile/login'
+      router.replace(loginUrl)
+    }
+
+    // Only run auth check if we don't already have a session-derived employeeId
+    // (i.e. not from the backwards-compat ?employeeId param)
+    if (!employeeId) {
+      checkAuth()
+    } else {
+      setAuthChecked(true)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTabs = useCallback(async () => {
     try {
@@ -62,8 +101,8 @@ function MobileTabsContent() {
   }, [])
 
   useEffect(() => {
-    loadTabs()
-  }, [loadTabs])
+    if (authChecked) loadTabs()
+  }, [authChecked, loadTabs])
 
   // Socket-driven updates
   useEffect(() => {
@@ -91,6 +130,11 @@ function MobileTabsContent() {
     document.addEventListener('visibilitychange', handler)
     return () => document.removeEventListener('visibilitychange', handler)
   }, [loadTabs])
+
+  // Don't render until auth is resolved
+  if (!authChecked) {
+    return <div className="min-h-screen bg-gray-950" />
+  }
 
   const filteredTabs = filter === 'all' ? tabs : tabs
 
@@ -153,7 +197,7 @@ function MobileTabsContent() {
                 displayName: getDisplayName(tab),
               }}
               onTap={() => {
-                window.location.href = `/mobile/tabs/${tab.id}?employeeId=${employeeId}`
+                window.location.href = `/mobile/tabs/${tab.id}`
               }}
             />
           ))

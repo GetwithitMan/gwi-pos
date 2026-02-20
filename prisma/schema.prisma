@@ -241,6 +241,10 @@ model Location {
   // Item-level discounts (P2-D01)
   itemDiscounts OrderItemDiscount[]
 
+  // Mobile Device Authentication (P2-E02)
+  registeredDevices RegisteredDevice[]
+  mobileSessions    MobileSession[]
+
   @@index([organizationId])
 }
 
@@ -472,6 +476,9 @@ model Employee {
 
   // Multi-role support
   employeeRoles EmployeeRole[]
+
+  // Mobile Device Authentication (P2-E02)
+  mobileSessions MobileSession[]
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -6503,4 +6510,48 @@ model OrderItemDiscount {
   @@index([orderId])
   @@index([orderItemId])
   @@index([locationId, createdAt])
+}
+
+// ============================================
+// MOBILE DEVICE AUTHENTICATION (P2-E02)
+// Session-based auth for bartender/server phones
+// ============================================
+
+model RegisteredDevice {
+  id                String   @id @default(cuid())
+  locationId        String
+  location          Location @relation(fields: [locationId], references: [id])
+  name              String                     // "Sarah's iPhone"
+  deviceType        String   @default("phone") // phone, tablet
+  deviceFingerprint String?                    // browser fingerprint (optional)
+  registeredById    String                     // employeeId who first registered
+  isActive          Boolean  @default(true)
+  lastSeenAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+  syncedAt          DateTime?
+  sessions          MobileSession[]
+
+  @@index([locationId])
+  @@index([locationId, isActive])
+}
+
+model MobileSession {
+  id           String           @id @default(cuid())
+  locationId   String
+  location     Location         @relation(fields: [locationId], references: [id])
+  deviceId     String
+  device       RegisteredDevice @relation(fields: [deviceId], references: [id])
+  employeeId   String
+  employee     Employee         @relation(fields: [employeeId], references: [id])
+  sessionToken String           @unique
+  expiresAt    DateTime
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  revokedAt    DateTime?
+
+  @@index([locationId])
+  @@index([sessionToken])
+  @@index([employeeId])
 }
