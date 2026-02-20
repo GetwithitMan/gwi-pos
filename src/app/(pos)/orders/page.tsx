@@ -2476,167 +2476,128 @@ export default function OrdersPage() {
               // after hiding a tab (React state update hasn't flushed yet)
               const existingOrderId = store.currentOrder?.id || null
 
-              // ── Existing tab with saved order → check for card & re-auth ──
+              // ── Existing tab with saved order → optimistic clear, background work ──
               if (existingOrderId) {
-                setIsSendingOrder(true)
-                try {
-                  // Check server for card on file (source of truth — avoids stale tabCardInfo)
-                  let cardLast4 = ''
-                  try {
-                    const cardsRes = await fetch(`/api/orders/${existingOrderId}/cards`)
-                    if (cardsRes.ok) {
-                      const cardsData = await cardsRes.json()
-                      const activeCard = (cardsData.data || []).find((c: { status: string }) => c.status === 'authorized')
-                      if (activeCard) {
-                        cardLast4 = activeCard.cardLast4 || ''
-                        setTabCardInfo({
-                          cardholderName: activeCard.cardholderName || undefined,
-                          cardLast4: activeCard.cardLast4,
-                          cardType: activeCard.cardType,
-                          recordNo: activeCard.recordNo || undefined,
-                          authAmount: activeCard.authAmount != null ? Number(activeCard.authAmount) : undefined,
-                        })
-                      }
-                    }
-                  } catch { /* fall through to new tab flow */ }
+                // Capture everything we need before clearing state
+                const capturedOrderId = existingOrderId
+                const capturedEmployeeId = employee?.id
+                const capturedNewItems = items.filter(i => !i.sentToKitchen)
+                // Use already-loaded tabCardInfo for instant feedback (background will verify)
+                const optimisticCardLast4 = tabCardInfo?.cardLast4 ?? ''
 
-                  if (cardLast4) {
-                    // Card on file → append new items, send to kitchen, auto-increment
-                    // Only POST unsent items (items already sent have sentToKitchen: true)
-                    const newItems = items.filter(i => !i.sentToKitchen)
-                    if (newItems.length > 0) {
-                      const appendRes = await fetch(`/api/orders/${existingOrderId}/items`, {
+                // Serialise items once — shared by both paths in the background
+                const serialisedItems = capturedNewItems.map(item => ({
+                  menuItemId: item.menuItemId,
+                  name: item.name,
+                  price: item.price,
+                  quantity: item.quantity,
+                  isHeld: item.isHeld || false,
+                  modifiers: (item.modifiers || []).map(mod => ({
+                    modifierId: (mod.id || mod.modifierId) ?? '',
+                    name: mod.name,
+                    price: Number(mod.price),
+                    depth: mod.depth ?? 0,
+                    preModifier: mod.preModifier ?? null,
+                    spiritTier: mod.spiritTier ?? null,
+                    linkedBottleProductId: mod.linkedBottleProductId ?? null,
+                    parentModifierId: mod.parentModifierId ?? null,
+                  })),
+                  specialNotes: item.specialNotes,
+                }))
+
+                // ── Clear UI immediately — bartender starts next order now ──
+                bartenderDeselectTabRef.current?.()
+                clearOrder()
+                setSavedOrderId(null)
+                setOrderSent(false)
+                setSelectedOrderType(null)
+                setOrderCustomFields({})
+                toast.success(
+                  optimisticCardLast4
+                    ? `Sending to tab •••${optimisticCardLast4}…`
+                    : 'Sending to tab…'
+                )
+
+                // ── Background: verify card, append, send, re-auth ──
+                void (async () => {
+                  try {
+                    // Source-of-truth card check (runs after UI is already clear)
+                    let verifiedCardLast4 = ''
+                    try {
+                      const cardsRes = await fetch(`/api/orders/${capturedOrderId}/cards`)
+                      if (cardsRes.ok) {
+                        const cardsData = await cardsRes.json()
+                        const activeCard = (cardsData.data || []).find(
+                          (c: { status: string }) => c.status === 'authorized'
+                        )
+                        if (activeCard) {
+                          verifiedCardLast4 = activeCard.cardLast4 || ''
+                          setTabCardInfo({
+                            cardholderName: activeCard.cardholderName || undefined,
+                            cardLast4: activeCard.cardLast4,
+                            cardType: activeCard.cardType,
+                            recordNo: activeCard.recordNo || undefined,
+                            authAmount: activeCard.authAmount != null ? Number(activeCard.authAmount) : undefined,
+                          })
+                        }
+                      }
+                    } catch { /* use optimistic value */ }
+
+                    // Fall back to optimistic card info if server returns nothing
+                    const effectiveLast4 = verifiedCardLast4 || optimisticCardLast4
+
+                    // Append unsent items
+                    if (serialisedItems.length > 0) {
+                      const appendRes = await fetch(`/api/orders/${capturedOrderId}/items`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          items: newItems.map(item => ({
-                            menuItemId: item.menuItemId,
-                            name: item.name,
-                            price: item.price,
-                            quantity: item.quantity,
-                            isHeld: item.isHeld || false,
-                            modifiers: (item.modifiers || []).map(mod => ({
-                              modifierId: (mod.id || mod.modifierId) ?? '',
-                              name: mod.name,
-                              price: Number(mod.price),
-                              depth: mod.depth ?? 0,
-                              preModifier: mod.preModifier ?? null,
-                              spiritTier: mod.spiritTier ?? null,
-                              linkedBottleProductId: mod.linkedBottleProductId ?? null,
-                              parentModifierId: mod.parentModifierId ?? null,
-                            })),
-                            specialNotes: item.specialNotes,
-                          })),
-                        }),
+                        body: JSON.stringify({ items: serialisedItems }),
                       })
                       if (!appendRes.ok) {
-                        toast.error('Failed to save new items')
+                        toast.error('Failed to save items — check the tab')
                         return
                       }
                     }
 
-                    // Send unsent items to kitchen
-                    const sendRes = await fetch(`/api/orders/${existingOrderId}/send`, {
+                    // Send to kitchen
+                    const sendRes = await fetch(`/api/orders/${capturedOrderId}/send`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ employeeId: employee?.id }),
+                      body: JSON.stringify({ employeeId: capturedEmployeeId }),
                     })
-                    if (sendRes.ok) {
-                      // Await IncrementalAuthByRecordNo — show approval/decline to user
+                    if (!sendRes.ok) {
+                      toast.error('Failed to send to kitchen — check open orders')
+                      return
+                    }
+
+                    // Auto-increment if card on file (best-effort — never blocks UI)
+                    if (effectiveLast4) {
                       try {
-                        const authRes = await fetch(`/api/orders/${existingOrderId}/auto-increment`, {
+                        const authRes = await fetch(`/api/orders/${capturedOrderId}/auto-increment`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ employeeId: employee?.id, force: true }),
+                          body: JSON.stringify({ employeeId: capturedEmployeeId, force: true }),
                         })
                         if (authRes.ok) {
                           const d = await authRes.json()
                           if (d.data?.incremented) {
-                            toast.success(`Re-auth approved — hold now $${d.data.newAuthorizedTotal.toFixed(2)} •••${cardLast4}`)
-                          } else if (d.data?.action === 'below_threshold') {
-                            toast.success(`Sent to tab •••${cardLast4} — hold $${d.data.totalAuthorized.toFixed(2)} still covers`)
+                            toast.success(`Re-auth ✓ — hold $${d.data.newAuthorizedTotal.toFixed(2)} •••${effectiveLast4}`)
                           } else if (d.data?.action === 'increment_failed') {
-                            toast.error(`Re-auth DECLINED •••${cardLast4} — hold remains $${d.data.totalAuthorized.toFixed(2)}`)
-                          } else if (d.data?.action === 'no_card') {
-                            toast.warning(`Sent to tab — no card on file for re-auth`)
-                          } else {
-                            toast.success(`Added to tab •••${cardLast4}`)
+                            toast.error(`Re-auth declined •••${effectiveLast4} — hold $${d.data.totalAuthorized?.toFixed(2) ?? '?'}`)
                           }
-                        } else {
-                          toast.success(`Added to tab •••${cardLast4}`)
+                          // below_threshold / no_card / disabled → silent (initial "Sending…" toast covers it)
                         }
-                      } catch {
-                        toast.success(`Added to tab •••${cardLast4}`)
-                      }
-
-                      // Deselect tab in BartenderView so it can be re-selected
-                      bartenderDeselectTabRef.current?.()
-                      clearOrder()
-                      setSavedOrderId(null)
-                      setOrderSent(false)
-                      setSelectedOrderType(null)
-                      setOrderCustomFields({})
-                      setTabsRefreshTrigger(prev => prev + 1)
-                    } else {
-                      toast.error('Failed to send to kitchen')
+                      } catch { /* auto-increment is best-effort */ }
                     }
-                    return
-                  }
-                  // Card not found on existing order — still send items to the tab
-                  const newItems = items.filter(i => !i.sentToKitchen)
-                  if (newItems.length > 0) {
-                    const appendRes = await fetch(`/api/orders/${existingOrderId}/items`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        items: newItems.map(item => ({
-                          menuItemId: item.menuItemId,
-                          name: item.name,
-                          price: item.price,
-                          quantity: item.quantity,
-                          isHeld: item.isHeld || false,
-                          modifiers: (item.modifiers || []).map(mod => ({
-                            modifierId: (mod.id || mod.modifierId) ?? '',
-                            name: mod.name,
-                            price: Number(mod.price),
-                            depth: mod.depth ?? 0,
-                            preModifier: mod.preModifier ?? null,
-                            spiritTier: mod.spiritTier ?? null,
-                            linkedBottleProductId: mod.linkedBottleProductId ?? null,
-                            parentModifierId: mod.parentModifierId ?? null,
-                          })),
-                          specialNotes: item.specialNotes,
-                        })),
-                      }),
-                    })
-                    if (!appendRes.ok) {
-                      toast.error('Failed to save new items')
-                      return
-                    }
-                  }
-                  // Send to kitchen
-                  const noCardSendRes = await fetch(`/api/orders/${existingOrderId}/send`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ employeeId: employee?.id }),
-                  })
-                  if (noCardSendRes.ok) {
-                    toast.success('Added to tab')
-                    // Deselect tab in BartenderView so it can be re-selected
-                    bartenderDeselectTabRef.current?.()
-                    clearOrder()
-                    setSavedOrderId(null)
-                    setOrderSent(false)
-                    setSelectedOrderType(null)
-                    setOrderCustomFields({})
+                  } catch (err) {
+                    console.error('[onStartTab] Background tab update failed:', err)
+                    toast.error('Tab may not have updated — check open orders')
+                  } finally {
                     setTabsRefreshTrigger(prev => prev + 1)
-                  } else {
-                    toast.error('Failed to send to kitchen')
                   }
-                  return
-                } finally {
-                  setIsSendingOrder(false)
-                }
+                })()
+
+                return
               }
 
               // ── New tab (no existing order) ──
