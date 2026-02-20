@@ -28,6 +28,7 @@ import { validateDatacapConfig } from './types'
 import { buildRequest, buildAdminRequest } from './xml-builder'
 import { parseResponse, parseError } from './xml-parser'
 import { getSequenceNo, updateSequenceNo } from './sequence'
+import { assertReaderHealthy, markReaderHealthy, markReaderDegraded, clearReaderHealth } from './reader-health'
 import { simulateResponse } from './simulator'
 import { SIMULATED_DEFAULTS } from './simulated-defaults' // 🚨 SIMULATED_DEFAULTS — remove for go-live
 import {
@@ -332,7 +333,7 @@ export class DatacapClient {
     try {
       return await this.sendLocal(reader, xml, timeoutMs)
     } catch (localError) {
-      console.warn('[Datacap] Local failed, trying cloud fallback:', localError)
+      logger.warn('datacap', 'Local failed, trying cloud fallback', { readerId: reader.id })
       return this.sendCloud(xml, timeoutMs)
     }
   }
@@ -344,6 +345,9 @@ export class DatacapClient {
     readerId: string,
     fn: (reader: ReaderInfo, seqNo: string) => Promise<T>
   ): Promise<T> {
+    // Refuse transactions on degraded readers — operator must resolve first
+    assertReaderHealthy(readerId)
+
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
 
@@ -354,8 +358,11 @@ export class DatacapClient {
       // Always pad reset, even if the transaction failed
       try {
         await this.padReset(readerId)
+        markReaderHealthy(readerId)
       } catch (resetError) {
-        console.error('[Datacap] Pad reset failed after transaction:', resetError)
+        const reason = resetError instanceof Error ? resetError.message : 'Pad reset failed'
+        markReaderDegraded(readerId, reason)
+        logger.error('datacap', `Pad reset failed — reader marked degraded`, resetError, { readerId })
       }
     }
 
@@ -827,7 +834,12 @@ export class DatacapClient {
     }
 
     const xml = buildRequest(fields)
-    const response = await this.send(reader, xml, PAD_RESET_TIMEOUT_MS)
+    const padResetTimeout = this.config.padResetTimeoutMs || PAD_RESET_TIMEOUT_MS
+    const response = await this.send(reader, xml, padResetTimeout)
+    // A successful manual pad reset clears any degraded state
+    if (response.cmdStatus === 'Success') {
+      clearReaderHealth(readerId)
+    }
     return this.handleResponse(readerId, response)
   }
 

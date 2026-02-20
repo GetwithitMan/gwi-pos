@@ -183,7 +183,10 @@ export function buildRequest(fields: DatacapRequestFields): string {
   // Device prompts
   if (fields.promptText) parts.push(tag('PromptText', fields.promptText))
   if (fields.buttonLabels && fields.buttonLabels.length > 0) {
-    fields.buttonLabels.forEach((label, i) => {
+    // Datacap supports a maximum of 4 button labels for GetMultipleChoice
+    const MAX_BUTTONS = 4
+    const labels = fields.buttonLabels.slice(0, MAX_BUTTONS)
+    labels.forEach((label, i) => {
       parts.push(tag(`Button${i + 1}`, label))
     })
   }
@@ -194,11 +197,19 @@ export function buildRequest(fields: DatacapRequestFields): string {
   // ForceOffline — SAF storage flag (certification test 18.x)
   if (fields.forceOffline) parts.push('<ForceOffline>Yes</ForceOffline>')
 
-  // Level II — customer/PO code for B2B interchange qualification
-  if (fields.customerCode) parts.push(tag('CustomerCode', fields.customerCode.slice(0, 17)))
+  // Level II — customer/PO code for B2B interchange qualification (max 17 chars per Datacap spec)
+  if (fields.customerCode) {
+    const truncated = fields.customerCode.slice(0, 17)
+    if (process.env.NODE_ENV !== 'production' && fields.customerCode.length > 17) {
+      console.warn(`[Datacap] customerCode truncated from ${fields.customerCode.length} to 17 chars`)
+    }
+    parts.push(tag('CustomerCode', truncated))
+  }
 
-  // Simulator scenario tag (dev only — read back by send() for simulator routing)
-  if (fields.simScenario) parts.push(`<SimScenario>${fields.simScenario}</SimScenario>`)
+  // Simulator scenario tag — dev/staging only, never emitted in production
+  if (fields.simScenario && process.env.NODE_ENV !== 'production') {
+    parts.push(`<SimScenario>${fields.simScenario}</SimScenario>`)
+  }
 
   // Filter out empty strings
   const content = parts.filter(Boolean).join('')
@@ -231,4 +242,24 @@ export function buildAdminRequest(fields: DatacapRequestFields): string {
   const content = parts.filter(Boolean).join('')
 
   return `<TStream><Admin>${content}</Admin></TStream>`
+}
+
+// ─── Customer Code Validator ─────────────────────────────────────────────────
+
+/**
+ * Validate a customer/PO code for Level II interchange.
+ * Call this in API route handlers to give users a clear error instead of silent truncation.
+ *
+ * @returns { valid: true } or { valid: false, error: string }
+ */
+export function validateCustomerCode(value: string): { valid: boolean; error?: string } {
+  if (!value) return { valid: true }
+  if (value.length > 17) {
+    return {
+      valid: false,
+      error: `Customer code must be 17 characters or fewer (got ${value.length}). ` +
+        `It will be truncated to: "${value.slice(0, 17)}"`,
+    }
+  }
+  return { valid: true }
 }

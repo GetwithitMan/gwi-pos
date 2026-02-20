@@ -1,7 +1,7 @@
 // Datacap Direct API — UDP Device Discovery
 // Broadcasts on port 9001 to find Datacap readers on the local network
 
-import { DISCOVERY_PORT, DISCOVERY_RETRIES, DISCOVERY_RETRY_DELAY_MS } from './constants'
+import { DISCOVERY_PORT, DISCOVERY_RETRIES, DISCOVERY_RETRY_DELAY_MS, DEFAULT_PORTS } from './constants'
 import type { DiscoveredDevice } from './types'
 
 function sleep(ms: number): Promise<void> {
@@ -44,7 +44,7 @@ export async function discoverDevice(serialNumber: string): Promise<DiscoveredDe
             resolve({
               serialNumber,
               ipAddress: match[2].trim(),
-              port: 8080, // Default — PAX uses 8080
+              port: DEFAULT_PORTS.PAX, // PAX default — 8080
             })
           } else {
             socket.close()
@@ -128,7 +128,7 @@ export async function discoverAllDevices(timeoutMs = 5000): Promise<DiscoveredDe
           devices.push({
             serialNumber,
             ipAddress,
-            port: 8080, // Default PAX port
+            port: DEFAULT_PORTS.PAX, // PAX default — 8080
           })
         }
       }

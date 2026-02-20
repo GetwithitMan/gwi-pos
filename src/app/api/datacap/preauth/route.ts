@@ -16,7 +16,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body = await parseBody<PreAuthRequest>(request)
     const { locationId, readerId, orderId, amount, employeeId } = body
 
-    if (!locationId || !readerId || !orderId || !amount) {
+    if (!locationId || !readerId || !orderId || amount === undefined || amount === null) {
       return Response.json({ error: 'Missing required fields: locationId, readerId, orderId, amount' }, { status: 400 })
     }
 

@@ -18,7 +18,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body = await parseBody<ReturnRequest>(request)
     const { locationId, readerId, recordNo, amount, cardPresent, employeeId, invoiceNo } = body
 
-    if (!locationId || !readerId || !amount) {
+    if (!locationId || !readerId || amount === undefined || amount === null) {
       return Response.json({ error: 'Missing required fields: locationId, readerId, amount' }, { status: 400 })
     }
 

@@ -100,6 +100,10 @@ export {
   PARAM_DOWNLOAD_TIMEOUT_MS,
 } from './constants'
 
+// ─── Reader Health ───────────────────────────────────────────────────────────
+export { getReaderHealth, clearReaderHealth } from './reader-health'
+export type { ReaderHealth, ReaderHealthStatus } from './reader-health'
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 export {
   getDatacapClient,

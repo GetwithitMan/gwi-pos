@@ -6,6 +6,8 @@ import { parseSettings } from '@/lib/settings'
 import { DatacapClient } from './client'
 import type { DatacapConfig } from './types'
 import { POS_PACKAGE_ID, CLOUD_URLS } from './constants'
+import { getReaderHealth, clearReaderHealth } from './reader-health'
+import type { ReaderHealth } from './reader-health'
 
 /**
  * Create a DatacapClient configured for a specific location.
@@ -104,3 +106,10 @@ export function datacapErrorResponse(error: unknown, status = 500) {
   console.error('[Datacap API]', message)
   return Response.json({ error: message }, { status })
 }
+
+/**
+ * Get current health status for a payment reader.
+ * Useful for admin endpoints and status checks.
+ */
+export { getReaderHealth, clearReaderHealth }
+export type { ReaderHealth }

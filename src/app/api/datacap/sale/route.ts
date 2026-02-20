@@ -21,7 +21,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body = await parseBody<SaleRequest>(request)
     const { locationId, readerId, invoiceNo, amount, tipAmount, tipMode, tipSuggestions, employeeId } = body
 
-    if (!locationId || !readerId || !invoiceNo || !amount) {
+    if (!locationId || !readerId || !invoiceNo || amount === undefined || amount === null) {
       return Response.json({ error: 'Missing required fields: locationId, readerId, invoiceNo, amount' }, { status: 400 })
     }
 
@@ -45,10 +45,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const error = parseError(response)
 
     // Fire-and-forget: card recognition (Phase 8)
+    // Use server-relative URL to avoid exposing internal endpoints via NEXT_PUBLIC_ vars
     if (response.cmdStatus === 'Approved' && response.cardholderIdHash) {
-      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'}/api/card-profiles`, {
+      const baseUrl = process.env.INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'
+      fetch(`${baseUrl}/api/card-profiles`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-call': process.env.INTERNAL_API_SECRET || '',
+        },
         body: JSON.stringify({
           locationId,
           cardholderIdHash: response.cardholderIdHash,

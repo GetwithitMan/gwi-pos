@@ -65,8 +65,9 @@ export interface DatacapConfig {
   cloudUsername?: string
   cloudPassword?: string
   // Timeouts
-  localTimeoutMs?: number   // Default: 60000 (60s for card interaction)
-  cloudTimeoutMs?: number   // Default: 30000
+  localTimeoutMs?: number      // Default: 60000 (60s for card interaction)
+  cloudTimeoutMs?: number      // Default: 30000
+  padResetTimeoutMs?: number   // Default: PAD_RESET_TIMEOUT_MS (5000ms) — increase for high-latency venues
 }
 
 // ─── Request Fields ──────────────────────────────────────────────────────────
@@ -316,6 +317,14 @@ export type DatacapResult<T = DatacapResponse> =
  */
 export function validateDatacapConfig(config: DatacapConfig): void {
   const { communicationMode } = config
+
+  // Simulated mode is never allowed in production — prevent accidental deployment
+  if (communicationMode === 'simulated' && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Simulated communication mode is not allowed in production. ' +
+      'Set communicationMode to "local" or "cloud" and configure real Datacap credentials.'
+    )
+  }
 
   // Validate mode is one of the allowed values
   const validModes: CommunicationMode[] = ['local', 'cloud', 'local_with_cloud_fallback', 'simulated']

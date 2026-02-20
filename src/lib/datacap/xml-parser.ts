@@ -56,15 +56,22 @@ export function extractCardLast4(acctNo: string | undefined): string | undefined
 export function extractPrintData(xml: string): Record<string, string> | undefined {
   const printData: Record<string, string> = {}
 
+  // Datacap spec: up to 36 receipt lines, each up to ~200 chars — cap defensively
+  const MAX_LINES = 36
+  const MAX_CHARS_PER_LINE = 500
+
   // Single regex to capture all Line tags at once (Line1 through Line36)
   const lineRegex = /<(Line\d+)>([\s\S]*?)<\/\1>/gi
   let match: RegExpExecArray | null
+  let lineCount = 0
 
   while ((match = lineRegex.exec(xml)) !== null) {
+    if (lineCount >= MAX_LINES) break
     const tagName = match[1] // e.g., "Line1"
-    const value = match[2]?.trim()
+    const value = match[2]?.trim().slice(0, MAX_CHARS_PER_LINE)
     if (value) {
       printData[tagName] = value
+      lineCount++
     }
   }
 
@@ -189,7 +196,8 @@ export function parseResponse(xml: string): DatacapResponse {
     safForwarded,
     storedOffline,
     level2Status,
-    rawXml: xml,
+    // rawXml is only included in non-production to avoid accumulating sensitive data in logs
+    rawXml: process.env.NODE_ENV === 'production' ? '' : xml,
   }
 }
 
