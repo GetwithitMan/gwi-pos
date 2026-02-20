@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -35,23 +35,18 @@ interface ReportCategory {
 }
 
 export default function ReportsHubPage() {
-  const router = useRouter()
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports' })
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [stats, setStats] = useState<TodayStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   const permissions = employee?.permissions || []
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/reports')
-      return
-    }
     if (employee?.location?.id) {
       loadTodayStats()
     }
-  }, [isAuthenticated, router, employee?.location?.id])
+  }, [employee?.location?.id])
 
   const loadTodayStats = async () => {
     if (!employee?.location?.id) return
@@ -224,6 +219,17 @@ export default function ReportsHubPage() {
             </svg>
           ),
         },
+        {
+          name: 'Tip Adjustments',
+          href: '/reports/tip-adjustments',
+          description: 'Adjust card tips post-sale via Datacap gratuity adjust',
+          permission: PERMISSIONS.REPORTS_COMMISSION,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          ),
+        },
       ],
     },
     {
@@ -299,7 +305,7 @@ export default function ReportsHubPage() {
     }))
     .filter(category => category.reports.length > 0)
 
-  if (!isAuthenticated) return null
+  if (!hydrated) return null
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
