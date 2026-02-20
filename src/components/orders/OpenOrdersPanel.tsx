@@ -236,12 +236,13 @@ export function OpenOrdersPanel({
 
   const dark = isExpanded || forceDark
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (forPreviousDay = false) => {
     if (!locationId) return
     try {
-      const response = await fetch(`/api/orders/open?locationId=${locationId}&summary=true`, {
-        cache: 'no-store',
-      })
+      const url = forPreviousDay
+        ? `/api/orders/open?locationId=${locationId}&summary=true&previousDay=true`
+        : `/api/orders/open?locationId=${locationId}&summary=true`
+      const response = await fetch(url, { cache: 'no-store' })
       if (response.ok) {
         const data = await response.json()
         setOrders(data.data?.orders || [])
@@ -254,8 +255,8 @@ export function OpenOrdersPanel({
   }, [locationId])
 
   useEffect(() => {
-    if (locationId) loadOrders()
-  }, [locationId, refreshTrigger, loadOrders])
+    if (locationId) loadOrders(ageFilter === 'previous')
+  }, [locationId, refreshTrigger, ageFilter, loadOrders])
 
   // Ref to avoid stale closure when reading orders inside socket handler
   const ordersRef = useRef(orders)
@@ -269,6 +270,7 @@ export function OpenOrdersPanel({
   // Delta updates: "paid"/"voided" remove from list locally; others trigger full refresh
   const handleSocketOrdersChanged = useCallback((data: { locationId: string; trigger: string; orderId?: string }) => {
     if (viewMode !== 'open') return
+    if (ageFilter === 'previous') return // Don't overwrite prior-day results with socket refreshes
     const { trigger, orderId } = data
     if (orderId && (trigger === 'paid' || trigger === 'voided')) {
       // Check if this is a split child being paid — refresh to update parent's split tabs
@@ -373,12 +375,9 @@ export function OpenOrdersPanel({
   if (typeFilter) {
     filteredOrders = filteredOrders.filter(o => o.orderType === typeFilter)
   }
-  // Age filter
-  if (ageFilter === 'previous') {
-    filteredOrders = filteredOrders.filter(o => o.isRolledOver)
-  } else if (ageFilter === 'today') {
-    filteredOrders = filteredOrders.filter(o => !o.isRolledOver)
-  } else if (ageFilter === 'declined') {
+  // Age filter — 'previous' and 'today' are handled server-side via the API;
+  // client-side we just filter 'declined' which is a status flag on current-day orders
+  if (ageFilter === 'declined') {
     filteredOrders = filteredOrders.filter(o => o.isCaptureDeclined)
   }
   if (searchQuery.trim()) {

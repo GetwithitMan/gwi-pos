@@ -6,6 +6,7 @@
  */
 
 import { db } from '@/lib/db'
+import { getCurrentBusinessDay } from '@/lib/business-day'
 
 export interface SnapshotTable {
   id: string
@@ -115,6 +116,15 @@ export interface SnapshotResult {
  * Runs 4 parallel queries: tables, sections, elements, open orders count.
  */
 export async function getFloorPlanSnapshot(locationId: string): Promise<SnapshotResult> {
+  // Get business day start so the open orders count matches what the panel shows
+  const locationSettings = await db.location.findFirst({
+    where: { id: locationId },
+    select: { settings: true },
+  })
+  const locSettings = locationSettings?.settings as Record<string, unknown> | null
+  const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+  const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+
   const [tables, sections, elements, openOrdersCount] = await Promise.all([
     // Tables with seats + current order summary (no items/modifiers)
     db.table.findMany({
@@ -194,9 +204,9 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
       orderBy: { sortOrder: 'asc' },
     }),
 
-    // Open orders count (lightweight aggregate — exclude child splits)
+    // Open orders count — current business day only, exclude child splits
     db.order.count({
-      where: { locationId, status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null },
+      where: { locationId, status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null, createdAt: { gte: businessDayStart } },
     }),
   ])
 

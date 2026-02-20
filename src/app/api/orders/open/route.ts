@@ -17,6 +17,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const employeeId = searchParams.get('employeeId')
     const orderType = searchParams.get('orderType') // optional filter
     const rolledOver = searchParams.get('rolledOver')
+    const previousDay = searchParams.get('previousDay') === 'true'
     const minAge = searchParams.get('minAge')
 
     if (!locationId) {
@@ -26,17 +27,21 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       )
     }
 
-    // Compute business day start for filtering — only orders from the current business day
-    // (skip this filter when explicitly querying rolled-over orders from prior days)
-    let businessDayStart: Date | null = null
-    if (rolledOver !== 'true') {
-      const location = await db.location.findFirst({
-        where: { id: locationId },
-        select: { settings: true },
-      })
-      const settings = location?.settings as Record<string, unknown> | null
-      const dayStartTime = (settings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-      businessDayStart = getCurrentBusinessDay(dayStartTime).start
+    // Compute business day boundary for filtering
+    const location = await db.location.findFirst({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const settings = location?.settings as Record<string, unknown> | null
+    const dayStartTime = (settings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+    const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+
+    // Date filter: current day by default; prior days when previousDay=true; no filter when rolledOver=true
+    let businessDayFilter: { createdAt?: { gte: Date } | { lt: Date } } = {}
+    if (previousDay) {
+      businessDayFilter = { createdAt: { lt: businessDayStart } }
+    } else if (rolledOver !== 'true') {
+      businessDayFilter = { createdAt: { gte: businessDayStart } }
     }
 
     // Summary mode: lightweight response for sidebar/list views
@@ -48,7 +53,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           locationId,
           status: { in: ['open', 'sent', 'in_progress', 'split'] },
           deletedAt: null,
-          ...(businessDayStart ? { createdAt: { gte: businessDayStart } } : {}),
+          ...businessDayFilter,
           ...(employeeId ? { employeeId } : {}),
           ...(orderType ? { orderType } : {}),
           ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),
