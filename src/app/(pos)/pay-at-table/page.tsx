@@ -47,6 +47,7 @@ function PayAtTableContent() {
   const [tipAmount, setTipAmount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const socketRef = useRef<ReturnType<typeof getSharedSocket> | null>(null)
+  const accumulatedTipRef = useRef(0)
 
   // Wire socket for real-time payment sync with POS terminal
   useEffect(() => {
@@ -61,10 +62,24 @@ function PayAtTableContent() {
       if (data.success) {
         // If more splits to process
         if (currentSplit + 1 < splitCount) {
+          accumulatedTipRef.current += tipAmount
           setCurrentSplit(prev => prev + 1)
           setTipAmount(0)
           setState('tip')
         } else {
+          const finalTip = accumulatedTipRef.current + tipAmount
+          // Notify POS terminals that payment is complete (fire-and-forget)
+          if (orderId && employeeId) {
+            fetch(`/api/orders/${orderId}/pat-complete`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                employeeId,
+                totalPaid: (order?.total ?? 0) + finalTip,
+                tipAmount: finalTip,
+              }),
+            }).catch(console.error)
+          }
           setState('done')
         }
       } else {
@@ -80,7 +95,7 @@ function PayAtTableContent() {
       socketRef.current = null
       releaseSharedSocket()
     }
-  }, [orderId, currentSplit, splitCount])
+  }, [orderId, currentSplit, splitCount, tipAmount, order, employeeId])
 
   // Load order on mount
   useEffect(() => {
@@ -124,6 +139,7 @@ function PayAtTableContent() {
   const handleSplitSelected = (count: number) => {
     setSplitCount(count)
     setCurrentSplit(0)
+    accumulatedTipRef.current = 0
     setState('tip')
   }
 
@@ -172,12 +188,26 @@ function PayAtTableContent() {
         return
       }
 
+      // Accumulate tip across all splits
+      accumulatedTipRef.current += tip
+
       // If more splits to process
       if (currentSplit + 1 < splitCount) {
         setCurrentSplit(prev => prev + 1)
         setTipAmount(0)
         setState('tip')
       } else {
+        // Notify POS terminals that payment is complete (fire-and-forget)
+        fetch(`/api/orders/${orderId}/pat-complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeId,
+            totalPaid: order.total + accumulatedTipRef.current,
+            tipAmount: accumulatedTipRef.current,
+          }),
+        }).catch(console.error)
+
         setState('done')
       }
     } catch {
