@@ -122,6 +122,7 @@ model Location {
   paidInOuts           PaidInOut[]
   sectionAssignments   SectionAssignment[]
   voidLogs             VoidLog[]
+  refundLogs           RefundLog[]
   breaks               Break[]
   remoteVoidApprovals  RemoteVoidApproval[]
 
@@ -424,6 +425,7 @@ model Employee {
   voidLogs         VoidLog[]
   auditLogs        AuditLog[]
   sections         SectionAssignment[]
+  refundLogs       RefundLog[]
 
   // Tip sharing relations
   tipSharesGiven    TipShare[] @relation("TipShareFrom")
@@ -1650,6 +1652,7 @@ model Order {
   remoteVoidApprovals RemoteVoidApproval[]
   orderOwnerships     OrderOwnership[]
   tempSeats           Seat[]             @relation("tempSeats")
+  refundLogs    RefundLog[]
 
   @@index([locationId])
   @@index([employeeId])
@@ -1874,6 +1877,8 @@ model Payment {
   voidedBy     String? // Employee ID who voided
   voidReason   String?
 
+  settledAt    DateTime?          // When payment was settled/batched by processor
+
   // Offline Payment Tracking (Store and Forward)
   offlineIntentId    String?   @unique // UUID from PaymentIntentManager for deduplication
   idempotencyKey     String?   @unique // Terminal+Order+Timestamp fingerprint for deduplication
@@ -1903,6 +1908,8 @@ model Payment {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  // Refund logs (P2-P02)
+  refundLogs   RefundLog[]
 
   @@index([locationId])
   @@index([orderId])
@@ -6404,4 +6411,50 @@ model CloudEventQueue {
 
   @@index([nextRetryAt])
   @@map("cloud_event_queue")
+}
+
+// ============================================
+// REFUND LOG (P2-P02 — Refund vs Void)
+// Tracks post-settlement refunds back to processor
+// ============================================
+
+model RefundLog {
+  id              String    @id @default(cuid())
+  locationId      String
+  location        Location  @relation(fields: [locationId], references: [id])
+  orderId         String
+  order           Order     @relation(fields: [orderId], references: [id])
+  paymentId       String
+  payment         Payment   @relation(fields: [paymentId], references: [id])
+  employeeId      String
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  refundAmount    Decimal
+  originalAmount  Decimal
+  refundReason    String
+  notes           String?
+
+  // Datacap processor reference
+  datacapRecordNo String?
+  datacapRefNo    String?
+
+  // Approval chain
+  approvedById    String?
+  approvedAt      DateTime?
+
+  // Receipt
+  receiptPrinted    Boolean  @default(false)
+  receiptPrintedAt  DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+  syncedAt        DateTime?
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([paymentId])
+  @@index([employeeId])
+  @@index([createdAt])
+  @@index([locationId, createdAt])
 }
