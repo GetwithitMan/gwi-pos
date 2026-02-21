@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
       include: {
         schedule: {
-          select: { weekStart: true, weekEnd: true, status: true },
+          select: { id: true, weekStart: true, weekEnd: true, status: true },
         },
         role: {
           select: { name: true },
@@ -56,6 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       breakMinutes: shift.breakMinutes,
       status: shift.status,
       roleName: shift.role?.name ?? null,
+      scheduleId: shift.schedule?.id ?? null,
       scheduleWeekStart: shift.schedule?.weekStart?.toISOString() ?? null,
       notes: shift.notes ?? null,
     }))

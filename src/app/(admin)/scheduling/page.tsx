@@ -41,12 +41,197 @@ interface Schedule {
   shifts: ScheduledShift[]
 }
 
+interface SwapRequestEmployee {
+  id: string
+  firstName: string
+  lastName: string
+  displayName: string | null
+}
+
+interface SwapRequest {
+  id: string
+  status: string
+  notes: string | null
+  createdAt: string
+  shift: {
+    id: string
+    date: string
+    startTime: string
+    endTime: string
+    status: string
+  }
+  requestedByEmployee: SwapRequestEmployee
+  requestedToEmployee: SwapRequestEmployee | null
+}
+
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const TIME_SLOTS = [
   '06:00', '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
   '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00',
   '20:00', '21:00', '22:00', '23:00', '00:00', '01:00', '02:00'
 ]
+
+function employeeDisplayName(emp: SwapRequestEmployee): string {
+  return emp.displayName || `${emp.firstName} ${emp.lastName}`
+}
+
+function formatShiftDate(dateStr: string): string {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+function SwapStatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    pending: 'bg-amber-100 text-amber-800',
+    accepted: 'bg-blue-100 text-blue-800',
+    approved: 'bg-green-100 text-green-800',
+    rejected: 'bg-gray-100 text-gray-600',
+    cancelled: 'bg-gray-100 text-gray-500',
+  }
+  const labels: Record<string, string> = {
+    pending: 'Pending',
+    accepted: 'Awaiting Approval',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    cancelled: 'Cancelled',
+  }
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[status] ?? 'bg-gray-100 text-gray-600'}`}>
+      {labels[status] ?? status}
+    </span>
+  )
+}
+
+// ─── ShiftSwapRequestModal ───────────────────────────────────────────────────
+
+interface ShiftSwapRequestModalProps {
+  isOpen: boolean
+  shift: ScheduledShift | null
+  scheduleId: string
+  locationId: string
+  requestedByEmployeeId: string
+  employees: Employee[]
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function ShiftSwapRequestModal({
+  isOpen,
+  shift,
+  scheduleId,
+  locationId,
+  requestedByEmployeeId,
+  employees,
+  onClose,
+  onSuccess,
+}: ShiftSwapRequestModalProps) {
+  const [targetEmployeeId, setTargetEmployeeId] = useState('')
+  const [notes, setNotes] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setTargetEmployeeId('')
+      setNotes('')
+    }
+  }, [isOpen])
+
+  const handleSubmit = async () => {
+    if (!shift) return
+    setSubmitting(true)
+    try {
+      const res = await fetch(
+        `/api/schedules/${scheduleId}/shifts/${shift.id}/swap-requests`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            locationId,
+            requestedByEmployeeId,
+            requestedToEmployeeId: targetEmployeeId || undefined,
+            notes: notes || undefined,
+          }),
+        }
+      )
+      if (res.ok) {
+        toast.success('Swap request created')
+        onSuccess()
+        onClose()
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to create swap request')
+      }
+    } catch {
+      toast.error('Failed to create swap request')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      isOpen={isOpen && !!shift}
+      onClose={onClose}
+      title="Request Shift Swap"
+      size="md"
+    >
+      <div className="space-y-4">
+        {shift && (
+          <div className="bg-gray-50 rounded-lg p-3 text-sm">
+            <p className="font-medium text-gray-900">{formatShiftDate(shift.date)}</p>
+            <p className="text-gray-600">{shift.startTime} – {shift.endTime}</p>
+            <p className="text-gray-500 mt-0.5">Currently: {shift.employee.name}</p>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Offer this shift to (optional)
+          </label>
+          <select
+            value={targetEmployeeId}
+            onChange={(e) => setTargetEmployeeId(e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg text-sm"
+          >
+            <option value="">Open request (any employee)</option>
+            {employees
+              .filter(e => shift ? e.id !== shift.employee.id : true)
+              .map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name} ({emp.role})
+                </option>
+              ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Notes (optional)
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            className="w-full px-3 py-2 border rounded-lg text-sm resize-none"
+            placeholder="Any notes about this swap request..."
+          />
+        </div>
+
+        <div className="flex gap-2 justify-end pt-2">
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? 'Creating...' : 'Create Request'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SchedulingPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/scheduling' })
@@ -73,6 +258,12 @@ export default function SchedulingPage() {
   const [editShiftNotes, setEditShiftNotes] = useState('')
   const [editShiftRoleId, setEditShiftRoleId] = useState('')
 
+  // Swap request state
+  const [swapRequests, setSwapRequests] = useState<SwapRequest[]>([])
+  const [swapRequestsLoading, setSwapRequestsLoading] = useState(false)
+  const [showSwapModal, setShowSwapModal] = useState(false)
+  const [swapTargetShift, setSwapTargetShift] = useState<ScheduledShift | null>(null)
+
   // Current week
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     const now = new Date()
@@ -89,6 +280,15 @@ export default function SchedulingPage() {
       loadEmployees()
     }
   }, [employee?.location?.id, currentWeekStart])
+
+  // Load swap requests whenever selected schedule changes
+  useEffect(() => {
+    if (selectedSchedule && employee?.location?.id) {
+      loadSwapRequests()
+    } else {
+      setSwapRequests([])
+    }
+  }, [selectedSchedule?.id, employee?.location?.id])
 
   const loadSchedules = async () => {
     if (!employee?.location?.id) return
@@ -131,6 +331,29 @@ export default function SchedulingPage() {
       }
     } catch (error) {
       console.error('Failed to load employees:', error)
+    }
+  }
+
+  const loadSwapRequests = async () => {
+    if (!employee?.location?.id) return
+    setSwapRequestsLoading(true)
+    try {
+      const res = await fetch(
+        `/api/shift-swap-requests?locationId=${employee.location.id}`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        // Filter to only requests for shifts in the selected schedule
+        const scheduleShiftIds = new Set(selectedSchedule?.shifts.map(s => s.id) ?? [])
+        const filtered = (data.data.requests as SwapRequest[]).filter(
+          r => scheduleShiftIds.has(r.shift.id)
+        )
+        setSwapRequests(filtered)
+      }
+    } catch (err) {
+      console.error('Failed to load swap requests:', err)
+    } finally {
+      setSwapRequestsLoading(false)
     }
   }
 
@@ -289,6 +512,76 @@ export default function SchedulingPage() {
     }
   }
 
+  // Manager approves a swap request.
+  // The API /approve requires status === 'accepted', so if it's still 'pending'
+  // (manager bypassing employee step) we first call /accept then /approve.
+  const approveSwapRequest = async (req: SwapRequest) => {
+    if (!employee?.location?.id || !employee?.id || !selectedSchedule) return
+    try {
+      // If pending, move to accepted first so the approve endpoint is happy
+      if (req.status === 'pending') {
+        const acceptRes = await fetch(
+          `/api/shift-swap-requests/${req.id}/accept`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationId: employee.location.id }),
+          }
+        )
+        if (!acceptRes.ok) {
+          const err = await acceptRes.json()
+          toast.error(err.error || 'Failed to approve swap request')
+          return
+        }
+      }
+
+      const res = await fetch(
+        `/api/shift-swap-requests/${req.id}/approve`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            locationId: employee.location.id,
+            approvedByEmployeeId: employee.id,
+          }),
+        }
+      )
+      if (res.ok) {
+        toast.success('Swap approved — shift reassigned')
+        await refreshSelectedSchedule(selectedSchedule.id)
+        loadSwapRequests()
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to approve swap request')
+      }
+    } catch {
+      toast.error('Failed to approve swap request')
+    }
+  }
+
+  const rejectSwapRequest = async (req: SwapRequest) => {
+    if (!employee?.location?.id || !selectedSchedule) return
+    try {
+      const res = await fetch(
+        `/api/shift-swap-requests/${req.id}/reject`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locationId: employee.location.id }),
+        }
+      )
+      if (res.ok) {
+        toast.success('Swap request rejected')
+        loadSwapRequests()
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to reject swap request')
+      }
+    } catch {
+      toast.error('Failed to reject swap request')
+    }
+  }
+
   const getWeekDates = () => {
     const dates: Date[] = []
     for (let i = 0; i < 7; i++) {
@@ -332,6 +625,14 @@ export default function SchedulingPage() {
   if (!hydrated) return null
 
   const weekDates = getWeekDates()
+
+  // Active swap requests = pending + accepted (not terminal states)
+  const activeSwapRequests = swapRequests.filter(r =>
+    r.status === 'pending' || r.status === 'accepted'
+  )
+  const terminalSwapRequests = swapRequests.filter(r =>
+    r.status === 'approved' || r.status === 'rejected' || r.status === 'cancelled'
+  )
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -424,35 +725,56 @@ export default function SchedulingPage() {
                                   {shift.role && (
                                     <div className="text-gray-500">{shift.role.name}</div>
                                   )}
-                                  {/* Edit / Delete buttons — visible on hover */}
-                                  {selectedSchedule.status === 'draft' && (
-                                    <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  {/* Action buttons — visible on hover */}
+                                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {/* Swap button — always show on published schedules */}
+                                    {selectedSchedule.status === 'published' && (
                                       <button
-                                        onClick={() => openEditShift(shift)}
-                                        className="p-0.5 rounded bg-white/80 hover:bg-white text-blue-600 hover:text-blue-800 shadow-sm"
-                                        title="Edit shift"
-                                        aria-label="Edit shift"
+                                        onClick={() => {
+                                          setSwapTargetShift(shift)
+                                          setShowSwapModal(true)
+                                        }}
+                                        className="p-0.5 rounded bg-white/80 hover:bg-white text-purple-600 hover:text-purple-800 shadow-sm"
+                                        title="Request shift swap"
+                                        aria-label="Request shift swap"
                                       >
-                                        {/* Pencil icon */}
+                                        {/* Swap arrows icon */}
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                            d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H7v-3a2 2 0 01.586-1.414z" />
+                                            d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                                         </svg>
                                       </button>
-                                      <button
-                                        onClick={() => deleteShift(shift)}
-                                        className="p-0.5 rounded bg-white/80 hover:bg-white text-red-500 hover:text-red-700 shadow-sm"
-                                        title="Delete shift"
-                                        aria-label="Delete shift"
-                                      >
-                                        {/* X icon */}
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                            d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  )}
+                                    )}
+                                    {/* Edit / Delete — only in draft */}
+                                    {selectedSchedule.status === 'draft' && (
+                                      <>
+                                        <button
+                                          onClick={() => openEditShift(shift)}
+                                          className="p-0.5 rounded bg-white/80 hover:bg-white text-blue-600 hover:text-blue-800 shadow-sm"
+                                          title="Edit shift"
+                                          aria-label="Edit shift"
+                                        >
+                                          {/* Pencil icon */}
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                              d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H7v-3a2 2 0 01.586-1.414z" />
+                                          </svg>
+                                        </button>
+                                        <button
+                                          onClick={() => deleteShift(shift)}
+                                          className="p-0.5 rounded bg-white/80 hover:bg-white text-red-500 hover:text-red-700 shadow-sm"
+                                          title="Delete shift"
+                                          aria-label="Delete shift"
+                                        >
+                                          {/* X icon */}
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                              d="M6 18L18 6M6 6l12 12" />
+                                          </svg>
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                               {selectedSchedule.status === 'draft' && (
@@ -513,6 +835,80 @@ export default function SchedulingPage() {
                   <div className="mt-1">{getStatusBadge(selectedSchedule.status)}</div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Swap Requests Panel ─────────────────────────────────────────── */}
+        {selectedSchedule && (
+          <Card className="mt-6">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>
+                  Swap Requests
+                  {swapRequests.length > 0 && (
+                    <span className="ml-2 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                      {swapRequests.length}
+                    </span>
+                  )}
+                </CardTitle>
+                <button
+                  onClick={loadSwapRequests}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Refresh swap requests"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {swapRequestsLoading ? (
+                <div className="text-center py-6 text-gray-400 text-sm">Loading swap requests...</div>
+              ) : swapRequests.length === 0 ? (
+                <div className="text-center py-6 text-gray-400 text-sm">
+                  No swap requests for this schedule.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Active requests first */}
+                  {activeSwapRequests.length > 0 && (
+                    <div className="space-y-2">
+                      {activeSwapRequests.map(req => (
+                        <SwapRequestRow
+                          key={req.id}
+                          req={req}
+                          onApprove={() => approveSwapRequest(req)}
+                          onReject={() => rejectSwapRequest(req)}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Terminal requests */}
+                  {terminalSwapRequests.length > 0 && (
+                    <>
+                      {activeSwapRequests.length > 0 && (
+                        <div className="border-t pt-3 mt-3">
+                          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Resolved</p>
+                        </div>
+                      )}
+                      <div className="space-y-2">
+                        {terminalSwapRequests.map(req => (
+                          <SwapRequestRow
+                            key={req.id}
+                            req={req}
+                            onApprove={() => approveSwapRequest(req)}
+                            onReject={() => rejectSwapRequest(req)}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -709,6 +1105,78 @@ export default function SchedulingPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Shift Swap Request Modal */}
+      {selectedSchedule && employee && (
+        <ShiftSwapRequestModal
+          isOpen={showSwapModal}
+          shift={swapTargetShift}
+          scheduleId={selectedSchedule.id}
+          locationId={employee.location?.id ?? ''}
+          requestedByEmployeeId={employee.id}
+          employees={employees}
+          onClose={() => { setShowSwapModal(false); setSwapTargetShift(null) }}
+          onSuccess={loadSwapRequests}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── SwapRequestRow sub-component ──────────────────────────────────────────────
+
+function SwapRequestRow({
+  req,
+  onApprove,
+  onReject,
+}: {
+  req: SwapRequest
+  onApprove: () => void
+  onReject: () => void
+}) {
+  const isActionable = req.status === 'pending' || req.status === 'accepted'
+  const isTerminal = req.status === 'approved' || req.status === 'rejected' || req.status === 'cancelled'
+
+  return (
+    <div className={`flex items-center justify-between gap-4 p-3 rounded-lg border ${isTerminal ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200'}`}>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-gray-900">
+            {formatShiftDate(req.shift.date)}
+          </span>
+          <span className="text-xs text-gray-500">
+            {req.shift.startTime} – {req.shift.endTime}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 mt-0.5 text-sm text-gray-600">
+          <span>{employeeDisplayName(req.requestedByEmployee)}</span>
+          <span className="text-gray-400">→</span>
+          <span>{req.requestedToEmployee ? employeeDisplayName(req.requestedToEmployee) : 'Open'}</span>
+        </div>
+        {req.notes && (
+          <p className="text-xs text-gray-400 mt-0.5 truncate">{req.notes}</p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <SwapStatusBadge status={req.status} />
+        {isActionable && (
+          <div className="flex gap-1.5">
+            <button
+              onClick={onApprove}
+              className="px-2.5 py-1 text-xs font-medium rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+            >
+              Approve
+            </button>
+            <button
+              onClick={onReject}
+              className="px-2.5 py-1 text-xs font-medium rounded bg-white text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
+            >
+              Reject
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

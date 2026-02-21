@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { toast } from '@/stores/toast-store'
 
 interface ScheduleShift {
   id: string
@@ -12,7 +13,31 @@ interface ScheduleShift {
   status: string
   roleName: string | null
   scheduleWeekStart: string | null
+  scheduleId: string | null
   notes: string | null
+}
+
+interface SwapRequestEmployee {
+  id: string
+  firstName: string
+  lastName: string
+  displayName: string | null
+}
+
+interface IncomingSwapRequest {
+  id: string
+  status: string
+  notes: string | null
+  createdAt: string
+  shift: {
+    id: string
+    date: string
+    startTime: string
+    endTime: string
+    status: string
+  }
+  requestedByEmployee: SwapRequestEmployee
+  requestedToEmployee: SwapRequestEmployee | null
 }
 
 function formatTime(time: string): string {
@@ -22,6 +47,11 @@ function formatTime(time: string): string {
   const period = hour >= 12 ? 'PM' : 'AM'
   const displayHour = hour % 12 === 0 ? 12 : hour % 12
   return `${displayHour}:${minute} ${period}`
+}
+
+function formatShortDate(dateStr: string): string {
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 function formatDayDate(dateStr: string): { day: string; date: string } {
@@ -110,6 +140,10 @@ function getStatusLabel(status: string): string {
   }
 }
 
+function empName(emp: SwapRequestEmployee): string {
+  return emp.displayName || `${emp.firstName} ${emp.lastName}`
+}
+
 export default function MobileSchedulePage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-gray-950" />}>
@@ -128,6 +162,15 @@ function MobileScheduleContent() {
   const [shifts, setShifts] = useState<ScheduleShift[]>([])
   const [loading, setLoading] = useState(true)
   const [authChecked, setAuthChecked] = useState(false)
+
+  // Incoming swap requests (offers made TO this employee)
+  const [incomingSwaps, setIncomingSwaps] = useState<IncomingSwapRequest[]>([])
+  const [swapsLoading, setSwapsLoading] = useState(false)
+
+  // Swap request dialog state (for requesting a swap on own shift)
+  const [swapDialogShift, setSwapDialogShift] = useState<ScheduleShift | null>(null)
+  const [swapNotes, setSwapNotes] = useState('')
+  const [swapSubmitting, setSwapSubmitting] = useState(false)
 
   // Auth check on mount
   useEffect(() => {
@@ -182,17 +225,128 @@ function MobileScheduleContent() {
     }
   }, [employeeId, locationId])
 
+  const loadIncomingSwaps = useCallback(async () => {
+    if (!employeeId || !locationId) return
+    setSwapsLoading(true)
+    try {
+      const params = new URLSearchParams({
+        locationId,
+        employeeId,
+        status: 'pending',
+      })
+      const res = await fetch(`/api/shift-swap-requests?${params}`)
+      if (res.ok) {
+        const data = await res.json()
+        setIncomingSwaps(data.data.requests ?? [])
+      }
+    } catch (err) {
+      console.error('Failed to load incoming swap requests:', err)
+    } finally {
+      setSwapsLoading(false)
+    }
+  }, [employeeId, locationId])
+
   useEffect(() => {
     if (authChecked && employeeId && locationId) {
       loadSchedule()
+      loadIncomingSwaps()
     }
-  }, [authChecked, employeeId, locationId, loadSchedule])
+  }, [authChecked, employeeId, locationId, loadSchedule, loadIncomingSwaps])
+
+  // Submit a swap request for one of the employee's own shifts
+  const handleSendSwapRequest = async () => {
+    if (!swapDialogShift || !employeeId || !locationId) return
+    if (!swapDialogShift.scheduleId) {
+      toast.error('Schedule information unavailable for this shift')
+      return
+    }
+    setSwapSubmitting(true)
+    try {
+      const res = await fetch(
+        `/api/schedules/${swapDialogShift.scheduleId}/shifts/${swapDialogShift.id}/swap-requests`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            locationId,
+            requestedByEmployeeId: employeeId,
+            notes: swapNotes || undefined,
+          }),
+        }
+      )
+      if (res.ok) {
+        toast.success('Swap request sent')
+        setSwapDialogShift(null)
+        setSwapNotes('')
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to send swap request')
+      }
+    } catch {
+      toast.error('Failed to send swap request')
+    } finally {
+      setSwapSubmitting(false)
+    }
+  }
+
+  // Accept an incoming swap request
+  const handleAcceptSwap = async (req: IncomingSwapRequest) => {
+    if (!locationId) return
+    try {
+      const res = await fetch(
+        `/api/shift-swap-requests/${req.id}/accept`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locationId }),
+        }
+      )
+      if (res.ok) {
+        toast.success('Swap accepted — awaiting manager approval')
+        loadIncomingSwaps()
+        loadSchedule()
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to accept swap')
+      }
+    } catch {
+      toast.error('Failed to accept swap')
+    }
+  }
+
+  // Decline an incoming swap request
+  const handleDeclineSwap = async (req: IncomingSwapRequest) => {
+    if (!locationId) return
+    try {
+      const res = await fetch(
+        `/api/shift-swap-requests/${req.id}/decline`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locationId }),
+        }
+      )
+      if (res.ok) {
+        toast.success('Swap declined')
+        loadIncomingSwaps()
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to decline swap')
+      }
+    } catch {
+      toast.error('Failed to decline swap')
+    }
+  }
 
   if (!authChecked) {
     return <div className="min-h-screen bg-gray-950" />
   }
 
   const weekGroups = groupShiftsByWeek(shifts)
+
+  // Shifts eligible for swap requests (not yet worked / called off)
+  const isSwappable = (status: string) =>
+    status === 'scheduled' || status === 'confirmed'
 
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-white">
@@ -209,7 +363,7 @@ function MobileScheduleContent() {
         </button>
         <h1 className="text-xl font-bold">My Schedule</h1>
         <button
-          onClick={loadSchedule}
+          onClick={() => { loadSchedule(); loadIncomingSwaps() }}
           className="text-white/60 hover:text-white transition-colors"
           aria-label="Refresh"
         >
@@ -303,15 +457,168 @@ function MobileScheduleContent() {
                             {shift.notes}
                           </div>
                         )}
+
+                        {/* Swap request button */}
+                        {isSwappable(shift.status) && (
+                          <div className="mt-3 pt-3 border-t border-white/10">
+                            <button
+                              onClick={() => {
+                                setSwapDialogShift(shift)
+                                setSwapNotes('')
+                              }}
+                              className="flex items-center gap-1.5 text-xs font-medium text-purple-400 hover:text-purple-300 transition-colors"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                  d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                              </svg>
+                              Request Swap
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
                 </div>
               </div>
             ))}
+
+            {/* ── Incoming Swap Requests ─────────────────────────────────── */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-semibold tracking-widest text-white/40 uppercase">
+                  Swap Requests For You
+                  {incomingSwaps.length > 0 && (
+                    <span className="ml-2 px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded-full text-xs normal-case tracking-normal">
+                      {incomingSwaps.length}
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              {swapsLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : incomingSwaps.length === 0 ? (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-white/5 text-center text-white/30 text-sm">
+                  No pending swap offers.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {incomingSwaps.map(req => (
+                    <div
+                      key={req.id}
+                      className="bg-gray-800 rounded-xl p-4 border border-purple-500/20"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {formatShortDate(req.shift.date)}
+                          </p>
+                          <p className="text-white/60 text-xs">
+                            {formatTime(req.shift.startTime)} – {formatTime(req.shift.endTime)}
+                          </p>
+                        </div>
+                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 shrink-0">
+                          Swap Offer
+                        </span>
+                      </div>
+
+                      <p className="text-white/50 text-sm mb-3">
+                        From: <span className="text-white/80">{empName(req.requestedByEmployee)}</span>
+                      </p>
+
+                      {req.notes && (
+                        <p className="text-white/40 text-xs mb-3 italic">&ldquo;{req.notes}&rdquo;</p>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleAcceptSwap(req)}
+                          className="flex-1 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 text-white transition-colors"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          onClick={() => handleDeclineSwap(req)}
+                          className="flex-1 py-2 rounded-lg text-sm font-medium bg-gray-700 hover:bg-gray-600 text-white/70 hover:text-white transition-colors"
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      {/* ── Swap Request Dialog (bottom sheet style overlay) ──────────────── */}
+      {swapDialogShift && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => { setSwapDialogShift(null); setSwapNotes('') }}
+          />
+
+          {/* Sheet */}
+          <div className="relative w-full max-w-lg bg-gray-900 rounded-t-2xl border-t border-white/10 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Offer Shift for Swap?</h2>
+              <button
+                onClick={() => { setSwapDialogShift(null); setSwapNotes('') }}
+                className="text-white/40 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="bg-gray-800 rounded-xl p-3 text-sm">
+              <p className="font-semibold text-white">{formatShortDate(swapDialogShift.date)}</p>
+              <p className="text-white/60 mt-0.5">
+                {formatTime(swapDialogShift.startTime)} – {formatTime(swapDialogShift.endTime)}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1.5">
+                Notes (optional)
+              </label>
+              <textarea
+                value={swapNotes}
+                onChange={(e) => setSwapNotes(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-xl text-white text-sm resize-none placeholder:text-white/30 focus:outline-none focus:border-purple-500/50"
+                placeholder="Any reason or message..."
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => { setSwapDialogShift(null); setSwapNotes('') }}
+                disabled={swapSubmitting}
+                className="flex-1 py-3 rounded-xl text-sm font-medium bg-gray-800 hover:bg-gray-700 text-white/60 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSendSwapRequest}
+                disabled={swapSubmitting}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white transition-colors disabled:opacity-60"
+              >
+                {swapSubmitting ? 'Sending...' : 'Send Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
