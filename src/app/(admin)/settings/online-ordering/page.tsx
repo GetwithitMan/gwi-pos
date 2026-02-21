@@ -88,7 +88,6 @@ export default function OnlineOrderingOverviewPage() {
   const employee = useAuthStore(s => s.employee)
   const [settings, setSettings] = useState<OnlineOrderingSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [toggling, setToggling] = useState(false)
   const [locationSlug, setLocationSlug] = useState<string | null>(null)
 
   const locationId = employee?.location?.id
@@ -128,34 +127,6 @@ export default function OnlineOrderingOverviewPage() {
     }
     load()
   }, [locationId])
-
-  const handleToggleEnabled = async () => {
-    if (!locationId || !settings || toggling) return
-    setToggling(true)
-    const newEnabled = !settings.enabled
-    try {
-      const res = await fetch('/api/settings/online-ordering', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          employeeId: employee?.id,
-          settings: { onlineOrdering: { enabled: newEnabled } },
-        }),
-      })
-      if (res.ok) {
-        setSettings(prev => prev ? { ...prev, enabled: newEnabled } : prev)
-        toast.success(newEnabled ? 'Online ordering enabled' : 'Online ordering disabled')
-      } else {
-        const err = await res.json()
-        toast.error(err.error || 'Failed to update')
-      }
-    } catch {
-      toast.error('Failed to update setting')
-    } finally {
-      setToggling(false)
-    }
-  }
 
   const orderingUrl = locationSlug
     ? `ordercontrolcenter.com/${locationSlug}`
@@ -209,22 +180,32 @@ export default function OnlineOrderingOverviewPage() {
             )}
           </div>
 
-          {/* Toggle */}
-          <div className="flex items-center justify-between py-3 border-t border-gray-100">
-            <span className="text-sm font-medium text-gray-700">Enable Online Ordering</span>
-            <button
-              onClick={handleToggleEnabled}
-              disabled={toggling}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                settings?.enabled ? 'bg-emerald-500' : 'bg-gray-300'
-              } ${toggling ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            >
+          {/* Read-only status — controlled by Mission Control */}
+          <div className="py-3 border-t border-gray-100 space-y-2">
+            <div className="flex items-center gap-2">
               <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  settings?.enabled ? 'translate-x-6' : 'translate-x-1'
+                className={`inline-block h-2.5 w-2.5 rounded-full ${
+                  settings?.enabled ? 'bg-emerald-500' : 'bg-gray-400'
                 }`}
               />
-            </button>
+              <span className="text-sm font-medium text-gray-700">
+                {settings?.enabled ? 'Accepting Orders' : 'Disabled'}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Enable or disable online ordering from Mission Control.
+            </p>
+            <a
+              href="https://app.thepasspos.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+            >
+              Open Mission Control
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
           </div>
 
           {/* URL */}
