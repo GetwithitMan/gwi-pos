@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { formatCurrency } from '@/lib/utils'
-import { calculateCardPrice, applyPriceRounding } from '@/lib/pricing'
+import { calculateCardPrice, applyPriceRounding, calculateSurcharge } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, calculateChange, PAYMENT_METHOD_LABELS } from '@/lib/payment'
-import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings } from '@/lib/settings'
+import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings, PricingProgram } from '@/lib/settings'
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
 import { toast } from '@/stores/toast-store'
@@ -39,6 +39,7 @@ interface PaymentModalProps {
   locationId?: string  // Required for Datacap integration
   initialMethod?: 'cash' | 'credit'  // Skip method selection, go straight to payment
   waitForOrderReady?: () => Promise<void>  // Await background items persist before /pay
+  pricingProgram?: PricingProgram  // T-080 Phase 3: surcharge model support
 }
 
 interface PendingPayment {
@@ -105,6 +106,7 @@ export function PaymentModal({
   locationId,
   initialMethod,
   waitForOrderReady,
+  pricingProgram,
 }: PaymentModalProps) {
   // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
   // State for fetched order data (when orderTotal is not provided)
@@ -259,6 +261,18 @@ export function PaymentModal({
     () => getQuickCashAmounts(totalWithTip),
     [totalWithTip]
   )
+
+  // Surcharge line item (T-080 Phase 3) — only for surcharge model, card payments
+  const surchargeAmount = useMemo(() => {
+    if (
+      pricingProgram?.model === 'surcharge' &&
+      pricingProgram.enabled &&
+      selectedMethod !== 'cash'
+    ) {
+      return calculateSurcharge(effectiveSubtotal, pricingProgram.surchargePercent ?? 0)
+    }
+    return 0
+  }, [pricingProgram, selectedMethod, effectiveSubtotal])
 
   // Don't render if not open
   if (!isOpen) return null
@@ -792,10 +806,21 @@ export function PaymentModal({
                 <span>{cashRoundingAdjustment > 0 ? '+' : ''}{formatCurrency(cashRoundingAdjustment)}</span>
               </div>
             )}
+            {surchargeAmount > 0 && selectedMethod !== 'cash' && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#f59e0b', marginTop: 2 }}>
+                <span>Credit Card Surcharge ({pricingProgram?.surchargePercent ?? 0}%)</span>
+                <span>+{formatCurrency(surchargeAmount)}</span>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.08)', color: '#ffffff', fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
               <span>Remaining</span>
-              <span>{formatCurrency(selectedMethod === 'cash' ? currentTotal : remainingBeforeTip)}</span>
+              <span>{formatCurrency(selectedMethod === 'cash' ? currentTotal : (remainingBeforeTip + surchargeAmount))}</span>
             </div>
+            {surchargeAmount > 0 && selectedMethod !== 'cash' && (
+              <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>
+                {pricingProgram?.surchargeDisclosure || 'A credit card surcharge is applied to card payments.'}
+              </div>
+            )}
           </div>
 
           {/* Step: Select Payment Method */}

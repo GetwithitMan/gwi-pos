@@ -19,6 +19,7 @@ export interface DailyReportPrintData {
   salesTax: number
   tips: number
   totalCollected: number
+  surchargeTotal?: number  // T-080 Phase 5: optional surcharge collected total
 
   // Payments
   cashPayments: { count: number; amount: number }
@@ -84,6 +85,9 @@ export function buildDailyReportReceipt(data: DailyReportPrintData): Buffer {
   parts.push(twoColumnLine('Net Sales', fmt(data.netSales), W))
   parts.push(twoColumnLine('Sales Tax', fmt(data.salesTax), W))
   parts.push(twoColumnLine('Tips', fmt(data.tips), W))
+  if (data.surchargeTotal && data.surchargeTotal > 0) {
+    parts.push(twoColumnLine('Surcharges Collected', fmt(data.surchargeTotal), W))
+  }
   parts.push(divider(W, '-'))
   parts.push(ESCPOS.BOLD_ON)
   parts.push(twoColumnLine('Total Collected', fmt(data.totalCollected), W))

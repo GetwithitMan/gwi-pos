@@ -4,11 +4,12 @@ import { useMemo } from 'react'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import {
   calculateCardPrice,
+  calculateSurcharge,
   roundToCents,
   formatSavingsMessage,
 } from '@/lib/pricing'
 import { calculateOrderTotals } from '@/lib/order-calculations'
-import type { DualPricingSettings, PriceRoundingSettings } from '@/lib/settings'
+import type { DualPricingSettings, PriceRoundingSettings, PricingProgram } from '@/lib/settings'
 
 interface UsePricingOptions {
   // Raw order values (from store or local state)
@@ -58,6 +59,10 @@ interface UsePricingReturn {
 
   // === For PaymentModal props ===
   cashDiscountRate: number  // The percentage (4.0, not 0.04)
+
+  // === Surcharge (T-080 Phase 3) ===
+  surchargeAmount: number   // Surcharge line item amount (0 for all non-surcharge models)
+  pricingProgram: PricingProgram
 }
 
 /**
@@ -71,7 +76,7 @@ interface UsePricingReturn {
  * 4. Returns the same shape consumers expect
  */
 export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePricingReturn {
-  const { dualPricing, taxRate, priceRounding, taxInclusiveLiquor, taxInclusiveFood, isLoading } = useOrderSettings()
+  const { dualPricing, taxRate, priceRounding, taxInclusiveLiquor, taxInclusiveFood, pricingProgram, isLoading } = useOrderSettings()
 
   const hasTaxInclusive = taxInclusiveLiquor || taxInclusiveFood
   const paymentMethod = options.paymentMethod || 'card'
@@ -129,6 +134,16 @@ export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePri
       ? roundToCents(cardSubtotal - cashSubtotal)
       : 0
 
+    // 7. Compute surcharge amount (surcharge model only, card payments only)
+    let surchargeAmount = 0
+    if (
+      pricingProgram.model === 'surcharge' &&
+      pricingProgram.enabled &&
+      paymentMethod !== 'cash'
+    ) {
+      surchargeAmount = calculateSurcharge(displaySubtotal, pricingProgram.surchargePercent ?? 0)
+    }
+
     return {
       subtotal: displaySubtotal,
       cashSubtotal,
@@ -147,6 +162,7 @@ export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePri
       cardTax: cardResult.taxTotal,
       cashRoundingDelta: cashResult.roundingDelta,
       cardRoundingDelta: cardResult.roundingDelta,
+      surchargeAmount,
     }
   }, [
     options.subtotal,
@@ -159,6 +175,7 @@ export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePri
     taxRate,
     priceRounding,
     hasTaxInclusive,
+    pricingProgram,
   ])
 
   // Savings message - only show when paying with card and dual pricing is enabled
@@ -175,5 +192,6 @@ export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePri
     isLoading,
     savingsMessage,
     cashDiscountRate: dualPricing.cashDiscountPercent || 4.0,
+    pricingProgram,
   }
 }

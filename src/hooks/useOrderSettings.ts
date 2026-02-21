@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings } from '@/lib/settings'
+import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings, PricingProgram } from '@/lib/settings'
+import { getPricingProgram } from '@/lib/settings'
 import { useOrderStore } from '@/stores/order-store'
 import { setLocationTaxRate } from '@/lib/seat-utils'
 
@@ -77,7 +78,10 @@ interface SettingsCache {
   taxInclusiveFood: boolean
   receiptSettings: Partial<ReceiptSettings>
   requireCardForTab: boolean
+  pricingProgram: PricingProgram
 }
+
+const DEFAULT_PRICING_PROGRAM: PricingProgram = { model: 'none', enabled: false }
 let cachedSettings: SettingsCache | null = null
 let cacheTime = 0
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
@@ -100,6 +104,9 @@ export function useOrderSettings() {
     cachedSettings?.receiptSettings ?? {}
   )
   const [requireCardForTab, setRequireCardForTab] = useState(cachedSettings?.requireCardForTab ?? false)
+  const [pricingProgram, setPricingProgram] = useState<PricingProgram>(
+    cachedSettings?.pricingProgram ?? DEFAULT_PRICING_PROGRAM
+  )
   const [isLoading, setIsLoading] = useState(!cachedSettings)
 
   const applySettings = (settings: {
@@ -109,9 +116,14 @@ export function useOrderSettings() {
     tax?: { defaultRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean }
     receipts?: Partial<ReceiptSettings>
     barTabs?: { requireCardForTab?: boolean }
+    pricingProgram?: PricingProgram
   }) => {
+    const effectiveDualPricing = settings.dualPricing || DEFAULT_DUAL_PRICING
+    const derivedPricingProgram = settings.pricingProgram
+      ? settings.pricingProgram
+      : getPricingProgram({ dualPricing: effectiveDualPricing } as Parameters<typeof getPricingProgram>[0])
     const result: SettingsCache = {
-      dualPricing: settings.dualPricing || DEFAULT_DUAL_PRICING,
+      dualPricing: effectiveDualPricing,
       paymentSettings: settings.payments || DEFAULT_PAYMENT_SETTINGS,
       priceRounding: settings.priceRounding || DEFAULT_PRICE_ROUNDING,
       taxRate: 0,
@@ -119,6 +131,7 @@ export function useOrderSettings() {
       taxInclusiveFood: false,
       receiptSettings: settings.receipts || {},
       requireCardForTab: settings.barTabs?.requireCardForTab ?? false,
+      pricingProgram: derivedPricingProgram,
     }
 
     if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
@@ -149,6 +162,7 @@ export function useOrderSettings() {
     setTaxInclusiveFood(result.taxInclusiveFood)
     setReceiptSettings(result.receiptSettings)
     setRequireCardForTab(result.requireCardForTab)
+    setPricingProgram(result.pricingProgram)
   }
 
   const loadSettings = async () => {
@@ -165,6 +179,7 @@ export function useOrderSettings() {
         },
         receipts: cachedSettings.receiptSettings,
         barTabs: { requireCardForTab: cachedSettings.requireCardForTab },
+        pricingProgram: cachedSettings.pricingProgram,
       })
       setIsLoading(false)
       return
@@ -185,6 +200,7 @@ export function useOrderSettings() {
           },
           receipts: result.receiptSettings,
           barTabs: { requireCardForTab: result.requireCardForTab },
+          pricingProgram: result.pricingProgram,
         })
       }
       setIsLoading(false)
@@ -233,6 +249,7 @@ export function useOrderSettings() {
     taxInclusiveFood,
     receiptSettings,
     requireCardForTab,
+    pricingProgram,
     isLoading,
     reloadSettings: forceReload,
   }

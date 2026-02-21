@@ -20,6 +20,7 @@ export interface ShiftCloseoutData {
   cashSales: number
   cardSales: number
   orderCount: number
+  surchargeTotal?: number  // T-080 Phase 5: optional surcharge collected during shift
   // Drawer
   startingCash: number
   cashReceived: number
@@ -72,6 +73,9 @@ export function buildShiftCloseoutReceipt(data: ShiftCloseoutData): Buffer {
   parts.push(twoColumnLine('  Cash', formatDollars(data.cashSales), W))
   parts.push(twoColumnLine('  Card', formatDollars(data.cardSales), W))
   parts.push(twoColumnLine('Orders', String(data.orderCount), W))
+  if (data.surchargeTotal && data.surchargeTotal > 0) {
+    parts.push(twoColumnLine('Surcharges Collected', formatDollars(data.surchargeTotal), W))
+  }
 
   // Drawer
   parts.push(divider(W))

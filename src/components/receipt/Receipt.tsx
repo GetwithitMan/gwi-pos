@@ -65,6 +65,10 @@ export interface ReceiptData {
   } | null
   loyaltyPointsEarned?: number | null
   loyaltyPointsRedeemed?: number | null
+  // Surcharge (T-080 Phase 5)
+  surchargeAmount?: number | null
+  surchargePercent?: number | null
+  surchargeDisclosure?: string | null
 }
 
 interface ReceiptProps {
@@ -227,6 +231,12 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
               <span>-{formatCurrency(data.discountTotal)}</span>
             </div>
           )}
+          {data.surchargeAmount != null && data.surchargeAmount > 0 && (
+            <div className="flex justify-between text-xs text-yellow-600">
+              <span>Credit Card Surcharge{data.surchargePercent ? ` (${data.surchargePercent}%)` : ''}:</span>
+              <span>+{formatCurrency(data.surchargeAmount)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-xs">
             <span>Tax:</span>
             <span>{formatCurrency(data.taxTotal)}</span>
@@ -305,6 +315,13 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
               <span>{data.customer.loyaltyPoints} pts</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Surcharge Disclosure (T-080 Phase 5) */}
+      {data.surchargeAmount != null && data.surchargeAmount > 0 && (
+        <div className="text-center text-xs text-gray-500 italic mb-2">
+          *{data.surchargeDisclosure || 'Credit card surcharge applied per Visa/MC guidelines'}
         </div>
       )}
 
