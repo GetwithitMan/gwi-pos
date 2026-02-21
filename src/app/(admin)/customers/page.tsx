@@ -35,6 +35,13 @@ interface Customer {
   createdAt: string
 }
 
+interface OrdersPagination {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+}
+
 interface CustomerDetail extends Customer {
   recentOrders: {
     id: string
@@ -46,6 +53,7 @@ interface CustomerDetail extends Customer {
     itemCount: number
     createdAt: string
   }[]
+  ordersPagination: OrdersPagination
   favoriteItems: {
     menuItemId: string
     name: string
@@ -67,6 +75,11 @@ export default function CustomersPage() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [viewingCustomer, setViewingCustomer] = useState<CustomerDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+
+  // Orders pagination + date filter state
+  const [orderPage, setOrderPage] = useState(1)
+  const [orderDateFilter, setOrderDateFilter] = useState({ startDate: '', endDate: '' })
+  const [pendingDateFilter, setPendingDateFilter] = useState({ startDate: '', endDate: '' })
 
   // Custom filtered load (search + tag support)
   const loadCustomers = useCallback(async () => {
@@ -131,10 +144,17 @@ export default function CustomersPage() {
     }
   }, [employee?.location?.id, loadCustomers])
 
-  const loadCustomerDetail = async (customerId: string) => {
+  const loadCustomerDetail = async (
+    customerId: string,
+    page = 1,
+    dateFilter = { startDate: '', endDate: '' }
+  ) => {
     setLoadingDetail(true)
     try {
-      const response = await fetch(`/api/customers/${customerId}`)
+      const params = new URLSearchParams({ page: String(page), limit: '10' })
+      if (dateFilter.startDate) params.set('startDate', dateFilter.startDate)
+      if (dateFilter.endDate) params.set('endDate', dateFilter.endDate)
+      const response = await fetch(`/api/customers/${customerId}?${params}`)
       if (response.ok) {
         const data = await response.json()
         setViewingCustomer(data.data)
@@ -314,7 +334,12 @@ export default function CustomersPage() {
               <Card
                 key={customer.id}
                 className="p-4 hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => loadCustomerDetail(customer.id)}
+                onClick={() => {
+                  setOrderPage(1)
+                  setOrderDateFilter({ startDate: '', endDate: '' })
+                  setPendingDateFilter({ startDate: '', endDate: '' })
+                  loadCustomerDetail(customer.id, 1, { startDate: '', endDate: '' })
+                }}
               >
                 <div className="flex items-start justify-between mb-2">
                   <div>
@@ -513,6 +538,9 @@ export default function CustomersPage() {
         onClose={() => {
           setShowDetailModal(false)
           setViewingCustomer(null)
+          setOrderPage(1)
+          setOrderDateFilter({ startDate: '', endDate: '' })
+          setPendingDateFilter({ startDate: '', endDate: '' })
         }}
         title="Customer Details"
       >
@@ -591,10 +619,52 @@ export default function CustomersPage() {
             )}
 
             {/* Recent Orders */}
-            {viewingCustomer.recentOrders.length > 0 && (
-              <div>
-                <h4 className="font-medium text-gray-900 mb-2">Recent Orders</h4>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div>
+              <h4 className="font-medium text-gray-900 mb-2">Recent Orders</h4>
+
+              {/* Date range filter */}
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <input
+                  type="date"
+                  value={pendingDateFilter.startDate}
+                  onChange={(e) => setPendingDateFilter(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="text-xs border rounded px-2 py-1 text-gray-700"
+                />
+                <span className="text-xs text-gray-400">to</span>
+                <input
+                  type="date"
+                  value={pendingDateFilter.endDate}
+                  onChange={(e) => setPendingDateFilter(prev => ({ ...prev, endDate: e.target.value }))}
+                  className="text-xs border rounded px-2 py-1 text-gray-700"
+                />
+                <button
+                  className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  onClick={() => {
+                    setOrderDateFilter(pendingDateFilter)
+                    setOrderPage(1)
+                    loadCustomerDetail(viewingCustomer.id, 1, pendingDateFilter)
+                  }}
+                >
+                  Apply
+                </button>
+                {(orderDateFilter.startDate || orderDateFilter.endDate) && (
+                  <button
+                    className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+                    onClick={() => {
+                      const cleared = { startDate: '', endDate: '' }
+                      setOrderDateFilter(cleared)
+                      setPendingDateFilter(cleared)
+                      setOrderPage(1)
+                      loadCustomerDetail(viewingCustomer.id, 1, cleared)
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {viewingCustomer.recentOrders.length > 0 ? (
+                <div className="space-y-2">
                   {viewingCustomer.recentOrders.map(order => (
                     <div
                       key={order.id}
@@ -612,8 +682,41 @@ export default function CustomersPage() {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <p className="text-sm text-gray-400 py-2">No orders found.</p>
+              )}
+
+              {/* Pagination controls */}
+              {viewingCustomer.ordersPagination.totalPages > 1 && (
+                <div className="flex items-center justify-between mt-3 text-xs text-gray-600">
+                  <button
+                    disabled={orderPage <= 1}
+                    className="px-2 py-1 rounded border disabled:opacity-40 hover:bg-gray-100 disabled:cursor-not-allowed"
+                    onClick={() => {
+                      const newPage = orderPage - 1
+                      setOrderPage(newPage)
+                      loadCustomerDetail(viewingCustomer.id, newPage, orderDateFilter)
+                    }}
+                  >
+                    &larr; Prev
+                  </button>
+                  <span>
+                    Page {viewingCustomer.ordersPagination.page} of {viewingCustomer.ordersPagination.totalPages}
+                  </span>
+                  <button
+                    disabled={orderPage >= viewingCustomer.ordersPagination.totalPages}
+                    className="px-2 py-1 rounded border disabled:opacity-40 hover:bg-gray-100 disabled:cursor-not-allowed"
+                    onClick={() => {
+                      const newPage = orderPage + 1
+                      setOrderPage(newPage)
+                      loadCustomerDetail(viewingCustomer.id, newPage, orderDateFilter)
+                    }}
+                  >
+                    Next &rarr;
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Last Visit */}
             <div className="text-sm text-gray-500">

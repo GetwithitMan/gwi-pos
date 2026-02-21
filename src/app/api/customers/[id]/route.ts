@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -10,18 +11,39 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
-    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    const searchParams = request.nextUrl.searchParams
+    const locationId = searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    // Pagination params
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
+    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '10', 10)))
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
+
+    // Build orders where clause with optional date filter
+    const ordersWhere: Prisma.OrderWhereInput = {
+      customerId: id,
+      status: { in: ['completed', 'paid'] },
+      deletedAt: null,
+    }
+    if (startDate || endDate) {
+      ordersWhere.createdAt = {
+        ...(startDate ? { gte: new Date(startDate) } : {}),
+        ...(endDate ? { lte: new Date(endDate) } : {}),
+      }
     }
 
     const customer = await db.customer.findFirst({
       where: { id, locationId },
       include: {
         orders: {
-          where: { status: { in: ['completed', 'paid'] } },
+          where: ordersWhere,
           orderBy: { createdAt: 'desc' },
-          take: 20,
+          skip: (page - 1) * limit,
+          take: limit,
           select: {
             id: true,
             orderNumber: true,
@@ -48,6 +70,9 @@ export const GET = withVenue(async function GET(
         { status: 404 }
       )
     }
+
+    // Total count for pagination
+    const totalOrders = await db.order.count({ where: ordersWhere })
 
     // Get favorite items (most ordered)
     const favoriteItems = await db.orderItem.groupBy({
@@ -93,6 +118,12 @@ export const GET = withVenue(async function GET(
         itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
         createdAt: o.createdAt.toISOString(),
       })),
+      ordersPagination: {
+        page,
+        limit,
+        total: totalOrders,
+        totalPages: Math.ceil(totalOrders / limit),
+      },
       favoriteItems: favoriteItems.map(f => ({
         menuItemId: f.menuItemId,
         name: f.name,
