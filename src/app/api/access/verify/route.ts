@@ -1,13 +1,15 @@
 /**
  * POST /api/access/verify
  *
- * Verify a 6-digit SMS OTP. On success, sets the gwi-access httpOnly cookie
- * (8-hour JWT) and logs the access event.
+ * Verify a personal access code for a registered phone number.
+ * On success, sets the gwi-access httpOnly cookie (1-hour JWT, refreshed on each request)
+ * and logs the access event.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyOTP, signAccessToken, normalizePhone, maskPhone } from '@/lib/access-gate'
+import { signAccessToken, normalizePhone, maskPhone } from '@/lib/access-gate'
 import { logAccess } from '@/lib/access-log'
+import { verifyAccessCode } from '@/lib/access-allowlist'
 
 const ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
 
@@ -30,26 +32,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid phone number' }, { status: 400 })
   }
 
-  if (!/^\d{6}$/.test(code)) {
-    return NextResponse.json({ error: 'Code must be 6 digits' }, { status: 400 })
+  if (!code) {
+    return NextResponse.json({ error: 'Access code is required' }, { status: 400 })
   }
 
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   const ua = req.headers.get('user-agent') ?? ''
 
-  const valid = await verifyOTP(normalized, code, ACCESS_SECRET)
+  const valid = await verifyAccessCode(normalized, code)
 
   if (!valid) {
     await logAccess(maskPhone(normalized), ip, ua, 'denied')
-    return NextResponse.json({ error: 'Invalid or expired code' }, { status: 401 })
+    return NextResponse.json({ error: 'Invalid access code' }, { status: 401 })
   }
 
-  // Sign the access token
   const token = await signAccessToken(normalized, ACCESS_SECRET)
-
   await logAccess(maskPhone(normalized), ip, ua, 'verified')
 
-  // Set gwi-access cookie (1 hour, refreshed on each request while active)
   const res = NextResponse.json({ success: true })
   res.cookies.set('gwi-access', token, {
     httpOnly: true,
@@ -58,7 +57,6 @@ export async function POST(req: NextRequest) {
     maxAge: 60 * 60,
     path: '/',
   })
-  // Clear the rate-limit cookie on success
   res.cookies.delete('gwi-access-rate')
   return res
 }

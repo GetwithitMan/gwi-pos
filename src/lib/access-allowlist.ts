@@ -1,23 +1,39 @@
 /**
  * GWI Access Allowlist
  *
- * Manages the list of phone numbers allowed to receive SMS OTP codes.
- * Uses the neon serverless driver directly (no Prisma migration needed —
- * the table is created on first use via CREATE TABLE IF NOT EXISTS).
+ * Each approved user gets a permanent personal access code (e.g., A3K9MN).
+ * Brian shares codes manually — no SMS, email, or external service required.
+ *
+ * Table is created/migrated on first use:
+ *   CREATE TABLE IF NOT EXISTS   (safe for new installs)
+ *   ALTER TABLE ADD COLUMN IF NOT EXISTS access_code  (safe migration for existing tables)
  *
  * Set ACCESS_DATABASE_URL to use a dedicated DB; falls back to DATABASE_URL.
  */
 
 import { neon } from '@neondatabase/serverless'
+import { randomBytes } from 'crypto'
 
 export interface AllowlistEntry {
   id: string
   name: string
   email: string
-  phone: string       // E.164 full number
+  phone: string         // E.164 full number (e.g. +12125551234)
+  access_code: string   // 6-char personal code (e.g. A3K9MN)
   notes: string | null
   added_by: string
   created_at: string
+}
+
+// Uppercase alphanumeric with visually confusable chars removed (0/O, 1/I/L)
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+
+/** Generate a fresh 6-character personal access code */
+export function generateAccessCode(): string {
+  const bytes = randomBytes(6)
+  return Array.from(bytes)
+    .map((b) => CODE_CHARS[b % CODE_CHARS.length])
+    .join('')
 }
 
 function getSql() {
@@ -28,18 +44,34 @@ function getSql() {
 
 async function ensureTable() {
   const sql = getSql()
+  // Create table (no-op if it already exists)
   await sql`
     CREATE TABLE IF NOT EXISTS gwi_access_allowlist (
-      id         TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      name       TEXT        NOT NULL,
-      email      TEXT        NOT NULL,
-      phone      TEXT        NOT NULL,
-      notes      TEXT,
-      added_by   TEXT        NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT NOW()
+      id          TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      name        TEXT        NOT NULL,
+      email       TEXT        NOT NULL,
+      phone       TEXT        NOT NULL,
+      access_code TEXT        NOT NULL DEFAULT '',
+      notes       TEXT,
+      added_by    TEXT        NOT NULL,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
     )
   `
-  return sql
+  // Migrate: add access_code column if the table was created before this column existed
+  await sql`
+    ALTER TABLE gwi_access_allowlist
+    ADD COLUMN IF NOT EXISTS access_code TEXT NOT NULL DEFAULT ''
+  `
+  // Backfill: generate codes for any existing rows that have an empty code
+  const blanks = await sql`
+    SELECT id FROM gwi_access_allowlist WHERE access_code = '' OR access_code IS NULL
+  `
+  for (const row of blanks) {
+    const code = generateAccessCode()
+    await sql`
+      UPDATE gwi_access_allowlist SET access_code = ${code} WHERE id = ${row.id as string}
+    `
+  }
 }
 
 let tableReady: Promise<void> | null = null
@@ -59,7 +91,7 @@ export async function getEntryByPhone(phone: string): Promise<AllowlistEntry | n
     await getTableReady()
     const sql = getSql()
     const rows = await sql`
-      SELECT id, name, email, phone, notes, added_by, created_at
+      SELECT id, name, email, phone, access_code, notes, added_by, created_at
       FROM gwi_access_allowlist WHERE phone = ${phone} LIMIT 1
     `
     return rows.length > 0 ? (rows[0] as AllowlistEntry) : null
@@ -69,13 +101,23 @@ export async function getEntryByPhone(phone: string): Promise<AllowlistEntry | n
   }
 }
 
+/**
+ * Verify a phone + personal access code pair.
+ * Comparison is case-insensitive and trims whitespace.
+ */
+export async function verifyAccessCode(phone: string, code: string): Promise<boolean> {
+  const entry = await getEntryByPhone(phone)
+  if (!entry || !entry.access_code) return false
+  return entry.access_code.toUpperCase() === code.trim().toUpperCase()
+}
+
 /** Get all entries ordered by created_at DESC */
 export async function getAllowlist(): Promise<AllowlistEntry[]> {
   try {
     await getTableReady()
     const sql = getSql()
     const rows = await sql`
-      SELECT id, name, email, phone, notes, added_by, created_at
+      SELECT id, name, email, phone, access_code, notes, added_by, created_at
       FROM gwi_access_allowlist
       ORDER BY created_at DESC
     `
@@ -86,7 +128,7 @@ export async function getAllowlist(): Promise<AllowlistEntry[]> {
   }
 }
 
-/** Add a new entry. Returns the created entry. */
+/** Add a new entry. Generates a personal access code automatically. */
 export async function addToAllowlist(
   name: string,
   email: string,
@@ -96,19 +138,27 @@ export async function addToAllowlist(
 ): Promise<AllowlistEntry> {
   await getTableReady()
   const sql = getSql()
+  const accessCode = generateAccessCode()
   const rows = await sql`
-    INSERT INTO gwi_access_allowlist (name, email, phone, notes, added_by)
-    VALUES (${name}, ${email}, ${phone}, ${notes}, ${addedBy})
-    RETURNING id, name, email, phone, notes, added_by, created_at
+    INSERT INTO gwi_access_allowlist (name, email, phone, access_code, notes, added_by)
+    VALUES (${name}, ${email}, ${phone}, ${accessCode}, ${notes}, ${addedBy})
+    RETURNING id, name, email, phone, access_code, notes, added_by, created_at
   `
   return rows[0] as AllowlistEntry
+}
+
+/** Regenerate the access code for an existing entry. Returns the new code. */
+export async function regenerateAccessCode(id: string): Promise<string> {
+  await getTableReady()
+  const sql = getSql()
+  const code = generateAccessCode()
+  await sql`UPDATE gwi_access_allowlist SET access_code = ${code} WHERE id = ${id}`
+  return code
 }
 
 /** Remove an entry by id */
 export async function removeFromAllowlist(id: string): Promise<void> {
   await getTableReady()
   const sql = getSql()
-  await sql`
-    DELETE FROM gwi_access_allowlist WHERE id = ${id}
-  `
+  await sql`DELETE FROM gwi_access_allowlist WHERE id = ${id}`
 }

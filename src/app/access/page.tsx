@@ -1,13 +1,13 @@
 'use client'
 
 /**
- * GWI Access Gate — SMS OTP Verification (T-070)
+ * GWI Access Gate — Personal Code Verification (T-070)
  *
- * Step 1: Enter phone number → receive SMS code
- * Step 2: Enter 6-digit code → gain access to barpos.restaurant
+ * Step 1: Enter registered phone number
+ * Step 2: Enter your personal GWI access code (provided by GWI)
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
@@ -19,17 +19,8 @@ function AccessGate() {
   const [step, setStep] = useState<'phone' | 'code'>('phone')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
-  const [maskedEmail, setMaskedEmail] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [countdown, setCountdown] = useState(0)
-  const codeInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (countdown <= 0) return
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000)
-    return () => clearTimeout(t)
-  }, [countdown])
 
   function formatPhoneDisplay(raw: string) {
     const digits = raw.replace(/\D/g, '').slice(0, 10)
@@ -38,7 +29,7 @@ function AccessGate() {
     return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
   }
 
-  async function handleSendCode(e: React.FormEvent) {
+  async function handlePhoneSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
@@ -59,12 +50,9 @@ function AccessGate() {
       const data = await res.json()
 
       if (!res.ok) {
-        setError(data.error || 'Failed to send code')
+        setError(data.error || 'Failed to verify phone')
       } else {
-        setMaskedEmail(data.email || '')
         setStep('code')
-        setCountdown(60)
-        setTimeout(() => codeInputRef.current?.focus(), 100)
       }
     } catch {
       setError('Network error — please try again')
@@ -73,7 +61,7 @@ function AccessGate() {
     }
   }
 
-  async function handleVerifyCode(e: React.FormEvent) {
+  async function handleCodeSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
@@ -82,12 +70,12 @@ function AccessGate() {
       const res = await fetch('/api/access/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: phone.replace(/\D/g, ''), code }),
+        body: JSON.stringify({ phone: phone.replace(/\D/g, ''), code: code.toUpperCase() }),
       })
       const data = await res.json()
 
       if (!res.ok) {
-        setError(data.error || 'Invalid code')
+        setError(data.error || 'Invalid access code')
       } else {
         router.push(nextPath)
       }
@@ -119,13 +107,13 @@ function AccessGate() {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-white">GWI Point of Sale</h1>
-          <p className="text-gray-400 text-sm mt-1">Secure access required</p>
+          <p className="text-gray-400 text-sm mt-1">Authorized access only</p>
         </div>
 
         {/* Card */}
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 shadow-xl">
           {step === 'phone' ? (
-            <form onSubmit={handleSendCode} className="space-y-4">
+            <form onSubmit={handlePhoneSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Phone number
@@ -141,7 +129,7 @@ function AccessGate() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-lg tracking-wide placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-2">
-                  We&apos;ll email a 6-digit code to your registered address.
+                  Enter your registered number to continue.
                 </p>
               </div>
 
@@ -156,15 +144,15 @@ function AccessGate() {
                 disabled={loading || phone.replace(/\D/g, '').length !== 10}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
               >
-                {loading ? 'Sending…' : 'Send code'}
+                {loading ? 'Checking…' : 'Continue'}
               </button>
             </form>
           ) : (
-            <form onSubmit={handleVerifyCode} className="space-y-4">
+            <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-sm font-medium text-gray-300">
-                    Verification code
+                    GWI access code
                   </label>
                   <button
                     type="button"
@@ -175,17 +163,18 @@ function AccessGate() {
                   </button>
                 </div>
                 <p className="text-gray-400 text-sm mb-3">
-                  Sent to {maskedEmail || 'your registered email'}
+                  Enter the access code provided by GWI.
                 </p>
                 <input
-                  ref={codeInputRef}
                   type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
+                  autoComplete="off"
+                  autoFocus
                   maxLength={6}
-                  placeholder="000000"
+                  placeholder="A3K9MN"
                   value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={(e) =>
+                    setCode(e.target.value.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 6))
+                  }
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-2xl tracking-[0.5em] text-center placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -198,28 +187,11 @@ function AccessGate() {
 
               <button
                 type="submit"
-                disabled={loading || code.length !== 6}
+                disabled={loading || code.length < 4}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
               >
-                {loading ? 'Verifying…' : 'Verify & enter'}
+                {loading ? 'Verifying…' : 'Enter demo'}
               </button>
-
-              <div className="text-center">
-                {countdown > 0 ? (
-                  <p className="text-gray-500 text-sm">
-                    Resend available in {countdown}s
-                  </p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSendCode}
-                    disabled={loading}
-                    className="text-blue-400 hover:text-blue-300 text-sm disabled:text-gray-600"
-                  >
-                    Resend code
-                  </button>
-                )}
-              </div>
             </form>
           )}
         </div>
