@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-02-20 — T-013 Modifier Multipliers (Session 8)
+
+**Session theme:** Per-modifier Lite/Extra multiplier overrides in Item Builder and inventory deduction engine
+
+**Summary:** T-013 shipped. Added `liteMultiplier` and `extraMultiplier` nullable Decimal fields to Modifier model. Item Builder now shows inline `×` multiplier inputs beside Lite/Extra toggles. Deduction engine applies per-modifier overrides, falling back to location-level defaults. `prisma db push` run to add columns.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `63d72ca` | feat(menu): T-013 — per-modifier liteMultiplier/extraMultiplier in Item Builder |
+
+### Features Delivered
+
+**T-013** — Modifier model gains `liteMultiplier`/`extraMultiplier` (nullable Decimal). Item Builder shows `×` inputs next to Lite/Extra toggles. POST/PUT modifier API persists + returns new fields. `formatModifierGroup()` includes them in responses. Deduction engine applies per-modifier multiplier override with location-default fallback (0.5/2.0).
+
+### Resolved Task Board Items
+T-013
+
+### Known Issues / Blockers
+- T-046: Socket end-to-end validation — needs Docker/hardware
+- T-049: KDS full flow on Chrome 108 — needs physical device
+- T-026: Card token persistence — needs live Datacap hardware
+
+---
+
 ## 2026-02-20 — T-021/022/034/036 + Task Board Cleanup (Session 7)
 
 **Session theme:** Clear remaining P1/P2 items — normalizeCoord hardening, soft-delete audit, batch close UI, tip adjustment report

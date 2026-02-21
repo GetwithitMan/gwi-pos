@@ -42,7 +42,6 @@
 | T-010 | Test "No Ranch" on item with base Ranch — verify base recipe Ranch NOT deducted | PM: Inventory | PM: Inventory | 2026-02-06 | P1 | Part of Skill 215 verification |
 | T-011 | Unify Liquor + Food Inventory Engines — migrate liquor cocktail recipes into unified MenuItemRecipe structure | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Currently two separate engines: processLiquorInventory() and deductInventoryForOrder() |
 | T-012 | Remove customization options from Ingredient Admin — No/Lite/Extra/On Side, Extra Price, Multipliers, Swap belong in Modifier Groups in Item Builder, not ingredients | PM: Inventory | PM: Menu | 2026-02-06 | P2 | Ingredient-level customization confuses the data model. These are modifier-level concerns. |
-| T-013 | Add customization to Item Builder Modifiers — Allow No/Lite/Extra/On Side toggles, extra price upcharge, lite/extra multipliers, swap group config in modifier group editor | PM: Menu | PM: Inventory | 2026-02-06 | P2 | Some may already exist in ModifierGroup/Modifier models |
 | T-014 | Bulk "Move to Category" action for selected ingredients in hierarchy view | PM: Inventory | PM: Inventory | 2026-02-06 | P3 | Checkbox selection works, bulk action not yet wired |
 | T-017 | Inventory ↔ Menu sync verification — test ingredient linking end-to-end, investigate "Beef Patty → Casa Fries" bug | PM: Menu | PM: Inventory | 2026-02-06 | P2 | Carryover from Menu changelog. May be stale ingredientsLibrary data. |
 | T-024 | CFD terminal pairing — admin pairs CFD device to specific POS terminal. Similar to KDS pairing flow. | PM: Hardware | PM: Payments | 2026-02-06 | P3 | Needed before CFD Socket.io events work in multi-terminal setups. |
@@ -100,6 +99,7 @@
 | T-080 | Full Pricing Program System (all phases) | PM: Payments | 2026-02-20 | Phase 1: PricingProgram interface + strategy functions. Phase 2: MC PricingProgramCard. Phase 3+5: surcharge in checkout + receipts. Phase 4: settings viewer. Phase 6: backoffice reports. Commits: `d295212`, `7c13ecf`, `9a8c423` |
 | T-043 | Clean up duplicate IngredientModification interface | PM: Orders | 2026-02-20 | Removed local re-declaration in order-store.ts; import from @/types/orders instead. Commit `c9730de` |
 | T-012 | Remove customization options from Ingredient Admin | PM: Inventory | 2026-02-20 | VERIFIED NO CHANGE NEEDED — Ingredient Admin never exposed pre-modifier customization. These fields were never added to the UI. |
+| T-013 | Per-modifier liteMultiplier/extraMultiplier in Item Builder | PM: Menu | 2026-02-20 | Prisma schema + item-editor-types + modifiers API (POST/PUT) + formatModifierGroup + ItemEditor × inputs + order-deduction per-modifier override. Commit `63d72ca` |
 | T-018 | Wire Socket.io events to CFD page | PM: KDS | 2026-02-19 | CFD page wired to POS socket events. Commit `1e9c00e` |
 | T-019 | Wire Socket.io events to Bartender Mobile | PM: KDS | 2026-02-19 | MobileTabActions socket events wired. Commit `1e9c00e` |
 | T-020 | Wire Socket.io events to Pay-at-Table | PM: KDS | 2026-02-19 | Pay-at-Table socket sync on payment completion. Commit `72f725b` |
