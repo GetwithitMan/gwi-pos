@@ -93,6 +93,9 @@ interface OrderItem {
   pizzaConfig?: PizzaOrderConfigStore
   // Category type for tax-inclusive pricing
   categoryType?: string
+  // Pour size (liquor items) — T-006
+  pourSize?: string | null
+  pourMultiplier?: number | null
   // Split label for grouped display (e.g. "68-1")
   splitLabel?: string
 }

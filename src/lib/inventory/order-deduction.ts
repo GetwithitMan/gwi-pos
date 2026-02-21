@@ -249,13 +249,16 @@ export async function deductInventoryForOrder(
 
       // Process recipe ingredients (MenuItemRecipe system)
       if (orderItem.menuItem?.recipe) {
+        // T-006: apply pour size multiplier once per order item
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
         for (const ing of orderItem.menuItem.recipe.ingredients) {
           // Skip ingredients that were explicitly removed with "NO" modifier
           if (ing.inventoryItem && removedIngredientIds.has(ing.inventoryItem.id)) {
             continue
           }
 
-          const ingQty = toNumber(ing.quantity) * itemQty
+          const ingQty = toNumber(ing.quantity) * itemQty * pourMult
 
           if (ing.inventoryItem) {
             // Direct inventory item
@@ -293,10 +296,13 @@ export async function deductInventoryForOrder(
           }
 
           // Calculate pour quantity in oz
-          // pourCount * itemQty * (pourSizeOz or location default 1.5oz)
+          // pourCount * itemQty * pourSizeOz * pourMultiplier (T-006)
           const pourCount = toNumber(ing.pourCount) || 1
           const pourSizeOz = toNumber(ing.pourSizeOz) || toNumber(ing.bottleProduct?.pourSizeOz) || 1.5
-          const totalOz = pourCount * pourSizeOz * itemQty
+          // T-006: apply pour size multiplier once per order item
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
+          const totalOz = pourCount * pourSizeOz * itemQty * pourMult
 
           // Add usage - inventory is tracked in oz for liquor items
           addUsage(inventoryItem, totalOz)

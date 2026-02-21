@@ -1686,6 +1686,8 @@ export default function OrdersPage() {
       price: basePrice,
       quantity: 1,
       specialNotes,
+      pourSize: pourSize ?? null,
+      pourMultiplier: pourMultiplier ?? null,
       modifiers: modifiers.map(mod => ({
         id: mod.id ?? '',
         modifierId: mod.id,
@@ -2259,6 +2261,8 @@ export default function OrdersPage() {
       name: itemName,
       price: basePrice,
       specialNotes,
+      pourSize: pourSize ?? null,
+      pourMultiplier: pourMultiplier ?? null,
       modifiers: modifiers.map(mod => ({
         id: mod.id ?? '',
         modifierId: mod.id,

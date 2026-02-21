@@ -20,6 +20,8 @@ type NewItem = {
   name: string
   price: number
   quantity: number
+  pourSize?: string       // T-006: "shot", "double", "tall", "short"
+  pourMultiplier?: number // T-006: 1.0, 2.0, 1.5, 0.75
   correlationId?: string // Client-provided ID for matching response items
   modifiers: {
     modifierId: string
@@ -207,6 +209,8 @@ export const POST = withVenue(async function POST(
             isTaxInclusive: itemTaxInclusive,
             categoryType: catType,
             quantity: item.quantity,
+            pourSize: item.pourSize ?? null,
+            pourMultiplier: item.pourMultiplier ?? null,
             itemTotal: fullItemTotal,
             commissionAmount: itemCommission,
             specialNotes: item.specialNotes || null,

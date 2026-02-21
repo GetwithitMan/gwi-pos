@@ -1715,6 +1715,10 @@ model OrderItem {
   price    Decimal
   quantity Int     @default(1)
 
+  // Pour size (liquor items) — T-006
+  pourSize       String?   // "shot", "double", "tall", "short" (null = no pour selection)
+  pourMultiplier Decimal?  // 1.0, 2.0, 1.5, 0.75 (null = no pour multiplier applied)
+
   // Item-level pricing truth (Layer 2)
   cardPrice      Decimal?           // Computed card price at time of order (null if no dual pricing)
   isTaxInclusive Boolean  @default(false)  // Was this item tax-inclusive at time of sale?

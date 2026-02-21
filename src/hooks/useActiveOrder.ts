@@ -41,6 +41,8 @@ interface AddItemInput {
   sourceTableId?: string
   commissionAmount?: number
   blockTimeMinutes?: number | null
+  pourSize?: string | null       // T-006
+  pourMultiplier?: number | null // T-006
   pizzaConfig?: any
 }
 
@@ -347,6 +349,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       sourceTableId: item.sourceTableId,
       commissionAmount: item.commissionAmount,
       blockTimeMinutes: item.blockTimeMinutes,
+      pourSize: item.pourSize ?? null,
+      pourMultiplier: item.pourMultiplier ?? null,
       sentToKitchen: false,
       pizzaConfig: item.pizzaConfig,
     })

@@ -61,6 +61,8 @@ interface StoreOrderItem {
   isHeld?: boolean
   delayMinutes?: number | null
   blockTimeMinutes?: number | null
+  pourSize?: string | null       // T-006
+  pourMultiplier?: number | null // T-006
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pizzaConfig?: any
   sourceTableId?: string
@@ -101,6 +103,8 @@ export function buildOrderItemPayload(item: StoreOrderItem, options?: { includeC
     isHeld: item.isHeld || false,
     delayMinutes: item.delayMinutes || null,
     blockTimeMinutes: item.blockTimeMinutes || null,
+    pourSize: item.pourSize ?? null,
+    pourMultiplier: item.pourMultiplier ?? null,
     pizzaConfig: item.pizzaConfig,
   }
 }
