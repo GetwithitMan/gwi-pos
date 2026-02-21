@@ -124,6 +124,26 @@ export const ORDER_INVENTORY_INCLUDE = {
                       currentStock: true,
                     },
                   },
+                  prepItem: {
+                    include: {
+                      ingredients: {
+                        include: {
+                          inventoryItem: {
+                            select: {
+                              id: true,
+                              name: true,
+                              category: true,
+                              department: true,
+                              storageUnit: true,
+                              costPerUnit: true,
+                              yieldCostPerUnit: true,
+                              currentStock: true,
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
                 },
               },
             },
@@ -357,6 +377,18 @@ export async function deductInventoryForOrder(
           }
 
           addUsage(ingredient.inventoryItem, ingQty)
+        } else if (ingredient?.prepItem) {
+          const stdQty = toNumber(ingredient.standardQuantity) || 1
+          const exploded = explodePrepItem(
+            ingredient.prepItem as PrepItemWithIngredients,
+            stdQty * modQty * multiplier,
+            ingredient.standardUnit || 'each'
+          )
+          for (const exp of exploded) {
+            if (!removedIngredientIds.has(exp.inventoryItem.id)) {
+              addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
+            }
+          }
         }
       }
     }
