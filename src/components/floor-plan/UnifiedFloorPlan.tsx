@@ -11,6 +11,7 @@ import { calculateAttachSide, calculateAttachPosition } from './table-positionin
 import './styles/floor-plan.css'
 import { logger } from '@/lib/logger'
 import { useEvents } from '@/lib/events/use-events'
+import { toast } from '@/stores/toast-store'
 
 type FloorPlanMode = 'admin' | 'pos'
 
@@ -340,12 +341,18 @@ export function UnifiedFloorPlan({
       const newPosX = Math.max(0, lastDropPosition.x - draggedTable.width / 2)
       const newPosY = Math.max(0, lastDropPosition.y - draggedTable.height / 2)
 
+      const prevTables = [...tables]
       try {
-        await fetch(`/api/tables/${draggedTableId}`, {
+        const response = await fetch(`/api/tables/${draggedTableId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ locationId, posX: Math.round(newPosX), posY: Math.round(newPosY) }),
         })
+
+        if (!response.ok) {
+          toast.error('Failed to save table position')
+          return
+        }
 
         setTables(tables.map(t =>
           t.id === draggedTableId
@@ -353,7 +360,8 @@ export function UnifiedFloorPlan({
             : t
         ))
       } catch (error) {
-        console.error('Failed to update table position:', error)
+        setTables(prevTables)
+        toast.error('Failed to save table position')
       }
     }
 
@@ -385,7 +393,7 @@ export function UnifiedFloorPlan({
           ))
         }
       } catch (error) {
-        console.error('Failed to update table:', error)
+        toast.error('Failed to update table')
       }
     }
   }, [tables, setTables, onTableUpdate])
@@ -488,7 +496,7 @@ export function UnifiedFloorPlan({
         }))
       }
     } catch (error) {
-      console.error('Failed to update seat position:', error)
+      toast.error('Failed to save seat position')
     }
   }, [mode, tables, setTables])
 
@@ -583,7 +591,7 @@ export function UnifiedFloorPlan({
         ))
       }
     } catch (error) {
-      console.error('Failed to move table:', error)
+      toast.error('Failed to move table')
     }
   }, [mode, tables, setTables])
 
@@ -675,7 +683,7 @@ export function UnifiedFloorPlan({
         ))
       }
     } catch (error) {
-      console.error('Failed to rotate table:', error)
+      toast.error('Failed to rotate table')
     }
   }, [mode, tables, setTables])
 
