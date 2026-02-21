@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged, dispatchMenuStockChanged } from '@/lib/socket-dispatch'
+import { computeIsOrderableOnline } from '@/lib/online-availability'
 import { emitToLocation } from '@/lib/socket-server'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -156,10 +157,20 @@ export const PUT = withVenue(async function PUT(
       comboPrintMode,
     } = body
 
-    // Get old item to detect stock changes
+    // Get old item to detect stock changes (fetch availability fields for computeIsOrderableOnline)
     const oldItem = await db.menuItem.findUnique({
       where: { id },
-      select: { isAvailable: true, locationId: true }
+      select: {
+        isAvailable: true,
+        locationId: true,
+        showOnline: true,
+        availableFrom: true,
+        availableTo: true,
+        availableDays: true,
+        currentStock: true,
+        trackInventory: true,
+        lowStockAlert: true,
+      }
     })
 
     const item = await db.menuItem.update({
@@ -247,7 +258,16 @@ export const PUT = withVenue(async function PUT(
       dispatchMenuStockChanged(item.locationId, {
         itemId: item.id,
         stockStatus,
-        isOrderableOnline: isAvailable, // For now, simple logic
+        isOrderableOnline: computeIsOrderableOnline({
+          showOnline: item.showOnline,
+          isAvailable: item.isAvailable,
+          availableFrom: item.availableFrom,
+          availableTo: item.availableTo,
+          availableDays: item.availableDays,
+          currentStock: item.currentStock,
+          trackInventory: item.trackInventory,
+          lowStockAlert: item.lowStockAlert,
+        }),
       }, { async: true }).catch(err => {
         console.error('Failed to dispatch stock changed event:', err)
       })
