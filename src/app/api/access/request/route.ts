@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateOTP, normalizePhone, maskPhone } from '@/lib/access-gate'
 import { logAccess } from '@/lib/access-log'
+import { isPhoneAllowed } from '@/lib/access-allowlist'
 
 const ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
 
@@ -28,6 +29,18 @@ export async function POST(req: NextRequest) {
   const normalized = normalizePhone(phone)
   if (!/^\+1\d{10}$/.test(normalized)) {
     return NextResponse.json({ error: 'Enter a valid US phone number' }, { status: 400 })
+  }
+
+  // Check allowlist
+  const allowed = await isPhoneAllowed(normalized)
+  if (!allowed) {
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+    const ua = req.headers.get('user-agent') ?? ''
+    await logAccess(maskPhone(normalized), ip, ua, 'blocked')
+    return NextResponse.json(
+      { error: "This number isn't registered for demo access. Contact GWI to request access." },
+      { status: 403 }
+    )
   }
 
   // Rate-limit: check last-request cookie (set after code is sent)
