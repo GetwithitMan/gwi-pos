@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-02-20 — P3 Continued: Shift Swap Phase 2 + Online Ordering Phase 5 (Session 3)
+
+**Session theme:** Complete Shift Swap end-to-end + ship Online Ordering Phase 5 customer checkout
+
+**Summary:** Committed remaining Phase 1 shift swap (schema + 7 API routes from prior agent), built full Shift Swap Phase 2 (admin panel + mobile UI), and shipped Online Ordering Phase 5 — the complete customer-facing order page with Datacap hosted iFrame tokenization, 3-step checkout flow, and two new public API routes.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `2bd4c36` | feat(scheduling): Shift Swap Phase 1 — schema + 7 API routes |
+| `7ff4658` | feat(scheduling): Shift Swap Phase 2 — admin panel + mobile UI |
+| `325c044` | feat(online-ordering): Phase 5 — customer order page + Datacap PayAPI checkout |
+
+### Deployments
+- Pushed to `main` → Vercel auto-deploys
+
+### Features Delivered
+
+**Shift Swap Phase 1** (`2bd4c36`)
+- New `ShiftSwapRequest` Prisma model: `pending` → `accepted` → `approved` workflow
+- 7 API routes: create, list (location-wide), accept, decline, approve (with shift reassignment transaction), reject, soft-cancel (DELETE)
+- `prisma db push` applied; `prisma generate` run
+
+**Shift Swap Phase 2** (`7ff4658`)
+- Admin scheduling page: swap request modal, per-shift swap icon (shown on hover), Swap Requests panel with Approve/Reject buttons
+- Manager direct-approve: calls `/accept` then `/approve` in sequence (bypasses employee acceptance step)
+- Mobile schedule page: "Swap Requests For You" section with Accept/Decline, outgoing swap request sheet on each swappable shift
+- Mobile schedule API: `scheduleId` added to response shape (needed for swap request URL)
+
+**Online Ordering Phase 5** (`325c044`)
+- `GET /api/online/menu` — public, groups items by category, filters online-visible + orderable, includes stock status and modifier groups
+- `POST /api/online/checkout` — re-validates prices server-side, generates atomic order number, creates Order + all items/modifiers in one nested write, calls `PayApiClient.sale()`, sets status `received` on approval, hard-deletes on decline (HTTP 402)
+- `src/app/(public)/order/page.tsx` — 3-step flow: (1) menu browse with category tabs + item cards + stock badges + ItemModal with modifier validation + floating cart bar; (2) cart review + customer name/email/phone/notes; (3) Datacap hosted iFrame tokenizer + Place Order → success screen
+- Card data never touches our servers — iFrame handles tokenization; OTU token sent to checkout API
+
+### Known Issues / Blockers
+- P1-05: Socket multi-terminal validation — needs real Docker/hardware
+- P1-07: Card token persistence — needs live Datacap hardware (blocks Loyalty)
+- GL-06: Pre-launch checklist at 8% — manual hardware testing required
+- Pricing Programs: Large, 5-phase (surcharge, interchange+, tiered)
+
+---
+
 ## 2026-02-21 — P3 Continued: PayAPI Client + Shift Swap (Session 2)
 
 **Session theme:** Unblock Online Ordering Phase 5 (found + built Datacap PayAPI integration) + begin Scheduling Shift Swap workflow
