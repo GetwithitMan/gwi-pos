@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyCloudToken, isBlockedInCloudMode } from '@/lib/cloud-auth'
+import { verifyAccessToken } from '@/lib/access-gate'
+
+const GWI_ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
 
 /**
  * Multi-tenant middleware with cloud auth enforcement.
@@ -133,8 +136,10 @@ export async function middleware(request: NextRequest) {
   // Only approved users from Mission Control can access
   // ═══════════════════════════════════════════════════════════
   if (isCloud && venueSlug) {
-    // Always allow: auth endpoints (no session required)
+    // Always allow: SMS access gate + auth endpoints (no session required)
     if (
+      pathname === '/access' ||
+      pathname.startsWith('/api/access/') ||
       pathname === '/auth/cloud' ||
       pathname.startsWith('/api/auth/cloud') ||
       pathname === '/admin-login' ||
@@ -150,6 +155,23 @@ export async function middleware(request: NextRequest) {
       headers.set('x-cloud-mode', '1')
       return NextResponse.next({ request: { headers } })
     }
+
+    // ── GWI ACCESS GATE (T-070) ─────────────────────────────────
+    // First layer: verify SMS OTP session before cloud auth check.
+    // Any visitor to *.barpos.restaurant must have completed SMS OTP.
+    if (GWI_ACCESS_SECRET) {
+      const accessToken = request.cookies.get('gwi-access')?.value
+      const accessPayload = accessToken
+        ? await verifyAccessToken(accessToken, GWI_ACCESS_SECRET)
+        : null
+
+      if (!accessPayload) {
+        const gateUrl = new URL('/access', request.url)
+        gateUrl.searchParams.set('next', pathname)
+        return NextResponse.redirect(gateUrl)
+      }
+    }
+    // ─────────────────────────────────────────────────────────────
 
     // Check for cloud session cookie
     const sessionToken = request.cookies.get('pos-cloud-session')?.value
