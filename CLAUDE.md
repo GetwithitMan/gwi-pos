@@ -41,12 +41,13 @@ Spawn the right agents for the job:
 | `general-purpose` | Writing code, editing files, full implementation |
 | `Bash` | Running builds, tests, git operations |
 | `Plan` | Designing approach for complex features before coding |
+| `Bash` (Validator) | **MANDATORY final step** — runs `tsc --noEmit` + `npm run build` + reviews git diff. No commit without validator pass. |
 
 **Preferred pattern for most tasks:**
 1. Spawn an **Explore** agent to research the current state (runs in background)
 2. While it researches, use **TodoWrite** to break down the task
 3. Spawn **general-purpose** agents for each independent workstream
-4. Validate with a **Bash** agent (build, lint, type-check)
+4. **Validator agent** (Bash) → `npx tsc --noEmit && npm run build` — must pass before commit
 
 ### Step 4: Always Use TodoWrite for Multi-Step Work
 If the task has 3+ steps, create a todo list. This gives the user visibility into progress and keeps work organized.
@@ -86,6 +87,121 @@ When investigating a bug, unexpected behavior, or anything where the root cause 
 
 ### The Bias: When in Doubt, Team It
 If you're unsure whether something needs a team — **use a team**. The cost of spawning an extra agent is low. The cost of a single agent losing context halfway through a complex task is high.
+
+## Mandatory Verification Protocol (NEVER SKIP)
+
+**Every code change must pass these gates. No exceptions.**
+
+### Pre-Change Rules
+- **Read before edit**: Always read the full file before modifying it. Understand what it does.
+- **Check imports**: Before deleting or renaming anything, search for all files that import/reference it.
+- **Schema backup**: Before ANY schema change → `npm run db:backup` first. Never `db:push` or `reset` without explicit user approval.
+
+### Post-Change Rules
+- **Type-check**: Run `npx tsc --noEmit` after any TypeScript changes.
+- **Build gate**: Run `npm run build` before committing. No commit is allowed until build passes.
+- **If build fails**: Fix the error before moving on. Never commit broken code.
+
+### Protected Files (Require Extra Caution)
+These files are critical infrastructure. Modifying them can break the entire system. Always get user approval before editing:
+
+| File | Why It's Protected |
+|------|--------------------|
+| `server.ts` | Custom server — Socket.io + multi-tenant routing |
+| `src/lib/db.ts` | Prisma client proxy — every DB call routes through here |
+| `src/lib/with-venue.ts` | Route handler wrapper — multi-tenant isolation |
+| `src/lib/request-context.ts` | AsyncLocalStorage — per-request tenant context |
+| `prisma/schema.prisma` | Database schema — changes affect everything |
+| `prisma/seed.ts` | Seed data — wrong changes = data loss on reset |
+| `preload.js` | Node polyfill — must load before any imports |
+
+### Regression Prevention Checklist
+Before submitting any change, verify:
+- [ ] No exports deleted that other files import
+- [ ] No DB columns renamed without updating all queries that use them
+- [ ] No API response fields removed without checking all client consumers
+- [ ] No socket event names changed without updating all listeners (server + client)
+- [ ] No `schema.prisma` changes without running `npx prisma generate` immediately after
+- [ ] No cached data shapes changed without updating the cache layer (`menu-cache.ts`, `location-cache.ts`)
+
+## Instant Response Mandate (DESIGN PRINCIPLE)
+
+> **Every user interaction must feel instant.** This POS is used by bartenders serving 200+ customers per night. A 500ms delay after a button press is unacceptable. Design every feature with this in mind.
+
+### Optimistic Update Guide
+
+| Action | Strategy | Reason |
+|--------|----------|--------|
+| Add item to order | **Optimistic** | Local state, API fires in background |
+| Send to kitchen | **Optimistic** | Close modal, fire-and-forget to API + printer |
+| Cash payment | **Optimistic** | Close modal instantly, payment runs background |
+| Modifier selection | **Optimistic** | Pure local state until send |
+| Move table/seat | **Optimistic** | Update locally, sync in background |
+| **Card payment** | **Wait for server** | Must confirm with payment processor |
+| **Void/comp** | **Wait for server** | Money operation — needs server truth |
+| **Refund** | **Wait for server** | Money operation — needs server truth |
+| **Tip adjustment** | **Wait for server** | Money operation — needs server truth |
+
+### Cache-First Loading
+All high-frequency data is preloaded at login and refreshed via socket events:
+- Menu items + categories → `src/lib/menu-cache.ts` (60s TTL, preloaded at login)
+- Location settings → `src/lib/location-cache.ts` (preloaded at login)
+- Floor plan → `/api/floorplan/snapshot` (preloaded at login, socket-refreshed)
+- Open orders → `/api/orders/open?summary=true` (preloaded at login, socket-refreshed)
+
+**Rules:**
+- If data is cached, use the cache. Never hit the DB for data already in memory.
+- New screens must use existing caches, not create new fetch patterns.
+- Menu data on tap → comes from cache, zero network. Always.
+
+### Money Safety Rules
+For ANY operation involving payments, tips, voids, comps, or refunds:
+- Always wait for server confirmation before showing success UI
+- Never use optimistic updates for financial operations that debit or credit
+- Always display the server-returned amount, not the client-calculated amount
+- Payment rounding must use the cash rounding pipeline
+- Tip calculations use server-side math for tax/tip accuracy
+
+## Agent Team Coordination Rules (MANDATORY)
+
+### Context Handoff
+- When spawning agents, include ALL context they need in their prompt
+- Never assume an agent "knows" what another agent found — pass findings explicitly
+- If an Explore agent found key files, list those exact file paths in the implementation agent's prompt
+- Include relevant code snippets or patterns the agent needs to follow
+
+### Mandatory Agent Report-Back Format
+Every agent must end its work with a structured summary:
+- **Changed**: Files created/modified (with full paths)
+- **Verified**: Did `tsc --noEmit` pass? Any warnings?
+- **Remaining**: Follow-up work needed?
+- **Watch out**: Side effects, things that might break, assumptions made
+
+### No Silent Failures
+- If an agent encounters an error, it MUST report the exact error message
+- Never silently skip a step or ignore a build failure
+- If something can't be done, explain why and suggest alternatives
+
+### Lead Agent Owns the TodoWrite
+- Only the lead agent manages the todo list
+- Sub-agents report back; lead marks tasks complete
+- No agent should make changes outside its assigned scope
+
+### Validator Confirms Completion
+- Implementation agents do NOT mark work as "complete"
+- Only the Validator agent can confirm completion after build + type-check passes
+- If validator fails → implementation agents fix → re-validate
+
+### Team Workflow (Enforced Sequence)
+```
+1. Explore agent(s) → research, report file paths + patterns found
+2. Lead creates TodoWrite with task breakdown
+3. Implementation agent(s) → code changes (pass full context from step 1)
+4. Each agent reports back (Changed/Verified/Remaining/Watch out)
+5. Validator agent → npx tsc --noEmit + npm run build + git diff review
+6. If validator passes → lead commits
+7. If validator fails → implementation agents fix → re-validate from step 5
+```
 
 ## System Architecture
 
@@ -178,9 +294,11 @@ This system is split across **three independent repositories**. Never put Missio
 | Tailwind CSS | 4.x | Styling |
 | Prisma | 6.19.2 | ORM |
 | PostgreSQL | Neon | Database (cloud, database-per-venue) |
-| Socket.io | 4.x | Real-time cross-terminal updates |
-| Zustand | 5.x | State Management |
-| Zod | 4.x | Validation |
+| Socket.io | 4.8.x | Real-time cross-terminal updates |
+| Zustand | 5.0.x | State Management |
+| Zod | 4.3.x | Validation |
+| Vitest | 4.0.x | Unit testing |
+| Playwright | 1.58.x | E2E testing |
 
 ## Database
 
@@ -256,10 +374,27 @@ model NewModel {
 ```bash
 npm install          # Install dependencies
 npm run dev          # Start dev server (localhost:3000)
-npm run build        # Build for production
+npm run build        # Build for production (prisma generate + schema sql + next build + server build)
 npm start            # Start production server
 npm run lint         # Lint code
+
+# Testing
+npm run test:unit    # Run Vitest unit tests
+npm run test         # Run Playwright e2e tests
+npm run test:ui      # Playwright UI mode (interactive)
+npm run load-test    # Load testing
+
+# WebSocket server (separate process)
+npm run ws:dev       # Start WS server in dev mode
+npm run ws:build     # Build WS server for production
+npm run build:all    # Build everything (POS + WS server)
+
+# Schema
+npm run schema:sql   # Generate SQL from Prisma schema
 ```
+
+### Git Worktrees
+This project uses git worktrees for parallel development. Check which worktree you're in before making changes. The main repo is at `/Users/brianlewis/Documents/My websites/2-8 2026-B-am GWI POINT OF SALE` and worktrees live under `.claude/worktrees/`.
 
 ### Custom Server (`server.ts`)
 
@@ -270,14 +405,14 @@ The POS uses a **custom Node.js server** that wraps Next.js. This is required fo
 ```
 npm run dev   → dotenv -e .env.local -- tsx -r ./preload.js server.ts
 npm start     → NODE_ENV=production node -r ./preload.js server.js
-npm run build → prisma generate && next build && node scripts/build-server.mjs
+npm run build → prisma generate && generate-schema-sql && next build && build-server
 ```
 
 **`preload.js`** polyfills `globalThis.AsyncLocalStorage` for Node 20 compatibility (Next.js 16 expects it globally). Must load via `-r ./preload.js` BEFORE any imports.
 
 ### Multi-Tenant DB Routing (`withVenue`)
 
-All 348 API routes are wrapped with `withVenue()` from `src/lib/with-venue.ts`:
+All 403+ API routes are wrapped with `withVenue()` from `src/lib/with-venue.ts`:
 
 ```typescript
 import { withVenue } from '@/lib/with-venue'
@@ -424,9 +559,11 @@ Single-screen builder with item-owned modifier groups (not shared). Left panel h
 
 ```
 gwi-pos/
-├── server.ts            # Custom server (Socket.io + multi-tenant routing)
-├── preload.js           # AsyncLocalStorage polyfill (loaded via -r flag)
-├── prisma/              # Schema, seed, migrations
+├── server.ts            # Custom server (Socket.io + multi-tenant routing) [PROTECTED]
+├── ws-server.ts         # WebSocket server (separate from HTTP server)
+├── preload.js           # AsyncLocalStorage polyfill (loaded via -r flag) [PROTECTED]
+├── prisma/              # Schema, seed, migrations [PROTECTED]
+├── scripts/             # Build scripts, utilities, load testing
 ├── public/
 │   └── installer.run    # NUC provisioning script (~1,454 lines)
 ├── src/
@@ -435,14 +572,14 @@ gwi-pos/
 │   │   ├── (pos)/       # POS interface
 │   │   ├── (admin)/     # Admin pages
 │   │   ├── (kds)/       # Kitchen Display System
-│   │   └── api/         # API routes (348 routes, all wrapped with withVenue)
+│   │   └── api/         # API routes (403+ routes, all wrapped with withVenue)
 │   ├── components/      # React components
 │   ├── hooks/           # Custom hooks
 │   ├── stores/          # Zustand stores
 │   ├── lib/
-│   │   ├── db.ts        # Prisma client (3-tier Proxy: ALS → headers → master)
-│   │   ├── with-venue.ts       # Route handler wrapper for multi-tenant isolation
-│   │   ├── request-context.ts  # AsyncLocalStorage for per-request tenant context
+│   │   ├── db.ts        # Prisma client (3-tier Proxy) [PROTECTED]
+│   │   ├── with-venue.ts       # Route handler wrapper [PROTECTED]
+│   │   ├── request-context.ts  # AsyncLocalStorage [PROTECTED]
 │   │   ├── socket-server.ts    # Socket.io server init + emitToLocation/emitToTags
 │   │   ├── shared-socket.ts    # Client-side singleton socket connection
 │   │   ├── menu-cache.ts       # In-memory menu cache (60s TTL)
@@ -450,7 +587,7 @@ gwi-pos/
 │   │   └── inventory-calculations.ts  # Deduction engine
 │   └── types/           # TypeScript types
 ├── docs/
-│   ├── skills/          # Skill docs (347+ skills)
+│   ├── skills/          # Skill docs (420+ skills)
 │   ├── changelogs/      # Domain changelogs
 │   └── PM-TASK-BOARD.md # Cross-domain task board
 └── CLAUDE.md            # This file
@@ -635,7 +772,7 @@ All change history is maintained in the Living Log and domain changelogs:
 - **Domain changelogs:** `/docs/changelogs/[DOMAIN]-CHANGELOG.md`
 - **Skill docs:** `/docs/skills/` (indexed in `/docs/skills/SKILLS-INDEX.md`)
 
-Key recent work: NUC installer package (Skill 345), kiosk exit zone (Skill 346), heartbeat IP + auto-provisioning (Skill 347), performance overhaul — 6 phases (Skills 339-344), multi-tenant DB routing (Skill 337), cloud session validation (Skill 338), combine features fully removed (Skill 326), seat management fixes (Skill 328), cash rounding pipeline (Skill 327).
+Key recent work: Skills 382-420 sprint documentation, pour size deduction fix (T-006), mobile auth security fix (T-025), online ordering middleware routing (T-071/T-072), inventory enhancements, full project directory cleanup. Earlier: NUC installer (Skill 345), kiosk exit zone (Skill 346), heartbeat IP + auto-provisioning (Skill 347), performance overhaul (Skills 339-344), multi-tenant DB routing (Skill 337), cash rounding pipeline (Skill 327).
 
 ## Pre-Launch Test Checklist
 
