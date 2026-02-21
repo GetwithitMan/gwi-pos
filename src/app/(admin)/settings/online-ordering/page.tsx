@@ -266,6 +266,45 @@ export default function OnlineOrderingOverviewPage() {
           </div>
         </div>
 
+        {/* Third-Party Delivery */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Third-Party Delivery</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Enable receiving orders from delivery platforms once connected
+            </p>
+          </div>
+
+          {[
+            { name: 'DoorDash', color: '#FF3008', connected: false },
+            { name: 'Uber Eats', color: '#06C167', connected: false },
+            { name: 'Grubhub', color: '#F63440', connected: false },
+          ].map((platform, i, arr) => (
+            <div
+              key={platform.name}
+              className={`flex items-center justify-between py-3 ${i < arr.length - 1 ? 'border-b border-gray-100' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className="inline-block h-3 w-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: platform.color }}
+                />
+                <span className="text-sm font-medium text-gray-700">{platform.name}</span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200">
+                  Not connected
+                </span>
+              </div>
+              <button
+                disabled
+                title="Connect this platform to enable"
+                className="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-200 opacity-40 cursor-not-allowed"
+              >
+                <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-1" />
+              </button>
+            </div>
+          ))}
+        </div>
+
         {/* Quick Links */}
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Configuration</h2>
