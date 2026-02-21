@@ -173,22 +173,22 @@ function ItemModal({ item, onClose, onAdd }: ItemModalProps) {
   const lineTotal = (item.price + modsTotal) * quantity
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-lg bg-gray-900 rounded-2xl overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-lg bg-white rounded-2xl overflow-hidden shadow-2xl">
         {item.imageUrl && (
           <img src={item.imageUrl} alt={item.name} className="w-full h-48 object-cover" />
         )}
         <div className="p-5">
           <div className="flex justify-between items-start mb-1">
-            <h2 className="text-xl font-bold text-white">{item.name}</h2>
-            <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl leading-none ml-4">
+            <h2 className="text-xl font-bold text-gray-900">{item.name}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none ml-4">
               &times;
             </button>
           </div>
           {item.description && (
-            <p className="text-gray-400 text-sm mb-3">{item.description}</p>
+            <p className="text-gray-500 text-sm mb-3">{item.description}</p>
           )}
-          <p className="text-green-400 font-semibold mb-4">{formatPrice(item.price)}</p>
+          <p className="text-emerald-600 font-semibold mb-4">{formatPrice(item.price)}</p>
 
           <div className="space-y-4 max-h-64 overflow-y-auto pr-1">
             {item.modifierGroups.map(group => {
@@ -196,12 +196,12 @@ function ItemModal({ item, onClose, onAdd }: ItemModalProps) {
               return (
                 <div key={group.id}>
                   <div className="flex items-baseline gap-2 mb-2">
-                    <span className="text-white font-medium text-sm">{group.name}</span>
+                    <span className="text-gray-900 font-medium text-sm">{group.name}</span>
                     {group.isRequired && (
-                      <span className="text-xs bg-amber-600 text-white px-1.5 py-0.5 rounded">Required</span>
+                      <span className="text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded">Required</span>
                     )}
                     {group.maxSelections > 1 && (
-                      <span className="text-xs text-gray-400">Pick up to {group.maxSelections}</span>
+                      <span className="text-xs text-gray-500">Pick up to {group.maxSelections}</span>
                     )}
                   </div>
                   <div className="space-y-1">
@@ -214,7 +214,7 @@ function ItemModal({ item, onClose, onAdd }: ItemModalProps) {
                           className={`w-full flex justify-between items-center px-3 py-2 rounded-lg text-sm transition-colors ${
                             isSelected
                               ? 'bg-blue-600 text-white'
-                              : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
                           <span>{option.name}</span>
@@ -228,20 +228,20 @@ function ItemModal({ item, onClose, onAdd }: ItemModalProps) {
             })}
           </div>
 
-          {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
+          {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
 
           <div className="flex items-center gap-3 mt-4">
-            <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2">
               <button
                 onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                className="text-gray-400 hover:text-white w-6 h-6 flex items-center justify-center text-lg"
+                className="text-gray-500 hover:text-gray-900 w-6 h-6 flex items-center justify-center text-lg"
               >
                 -
               </button>
-              <span className="text-white font-medium w-6 text-center">{quantity}</span>
+              <span className="text-gray-900 font-medium w-6 text-center">{quantity}</span>
               <button
                 onClick={() => setQuantity(q => q + 1)}
-                className="text-gray-400 hover:text-white w-6 h-6 flex items-center justify-center text-lg"
+                className="text-gray-500 hover:text-gray-900 w-6 h-6 flex items-center justify-center text-lg"
               >
                 +
               </button>
@@ -471,21 +471,25 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
 
   if (orderSuccess) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
-        <div className="bg-gray-900 rounded-2xl p-8 max-w-md w-full text-center">
-          <div className="text-6xl mb-4">&#10003;</div>
-          <h1 className="text-2xl font-bold text-white mb-2">Order Received!</h1>
-          <p className="text-gray-400 mb-6">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-lg border border-gray-200">
+          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Order Received!</h1>
+          <p className="text-gray-500 mb-6">
             Your order #{orderSuccess.orderNumber} has been placed successfully.
           </p>
-          <div className="bg-gray-800 rounded-xl p-4 mb-6">
-            <div className="flex justify-between text-white">
+          <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-200">
+            <div className="flex justify-between text-gray-900">
               <span>Order Total</span>
               <span className="font-semibold">{formatPrice(orderSuccess.total)}</span>
             </div>
           </div>
-          <div className="bg-blue-900/40 border border-blue-700 rounded-xl p-4">
-            <p className="text-blue-300 text-sm">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="text-blue-700 text-sm">
               Estimated ready in approximately <strong>20 minutes</strong>.
               A confirmation will be sent to {customerEmail}.
             </p>
@@ -499,7 +503,7 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
 
   if (menuLoading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-gray-400 text-lg">Loading menu…</div>
       </div>
     )
@@ -507,9 +511,9 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
 
   if (menuError) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
-        <div className="bg-red-900/40 border border-red-700 rounded-xl p-6 max-w-sm text-center">
-          <p className="text-red-300">{menuError}</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 max-w-sm text-center">
+          <p className="text-red-600">{menuError}</p>
         </div>
       </div>
     )
@@ -521,13 +525,13 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
     const activeCategory = categories.find(c => c.id === activeCategoryId) ?? categories[0]
 
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
-        <div className="sticky top-0 z-10 bg-gray-950 border-b border-gray-800 px-4 py-4">
-          <h1 className="text-xl font-bold">{locationName}</h1>
-          <p className="text-gray-400 text-sm">Browse our menu and add items to your cart</p>
+      <div className="min-h-screen bg-gray-50 text-gray-900">
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-4 shadow-sm">
+          <h1 className="text-xl font-bold text-gray-900">{locationName}</h1>
+          <p className="text-gray-500 text-sm">Browse our menu and add items to your cart</p>
         </div>
 
-        <div className="sticky top-[73px] z-10 bg-gray-950 border-b border-gray-800 px-4 overflow-x-auto">
+        <div className="sticky top-[73px] z-10 bg-white border-b border-gray-200 px-4 overflow-x-auto">
           <div className="flex gap-1 py-2 min-w-max">
             {categories.map(cat => (
               <button
@@ -536,7 +540,7 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
                 className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
                   cat.id === activeCategoryId
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 {cat.name}
@@ -546,7 +550,7 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
         </div>
 
         <div className="px-4 py-4 pb-28">
-          <h2 className="text-lg font-semibold mb-3 text-gray-200">{activeCategory?.name}</h2>
+          <h2 className="text-lg font-semibold mb-3 text-gray-800">{activeCategory?.name}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {(activeCategory?.items ?? []).map(item => {
               const outOfStock = item.stockStatus === 'out_of_stock'
@@ -555,10 +559,10 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
                   key={item.id}
                   onClick={() => !outOfStock && setSelectedItem(item)}
                   disabled={outOfStock}
-                  className={`bg-gray-900 rounded-xl p-4 text-left flex gap-3 transition-colors ${
+                  className={`bg-white rounded-xl p-4 text-left flex gap-3 transition-all border border-gray-200 shadow-sm ${
                     outOfStock
                       ? 'opacity-50 cursor-not-allowed'
-                      : 'hover:bg-gray-800 cursor-pointer'
+                      : 'hover:border-blue-300 hover:shadow-md cursor-pointer'
                   }`}
                 >
                   {item.imageUrl && (
@@ -570,18 +574,18 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start gap-2">
-                      <h3 className="font-semibold text-white text-sm leading-tight">{item.name}</h3>
+                      <h3 className="font-semibold text-gray-900 text-sm leading-tight">{item.name}</h3>
                       {item.stockStatus === 'low_stock' && (
-                        <span className="text-xs text-amber-400 whitespace-nowrap">Low stock</span>
+                        <span className="text-xs text-amber-600 whitespace-nowrap">Low stock</span>
                       )}
                       {outOfStock && (
-                        <span className="text-xs text-red-400 whitespace-nowrap">Sold out</span>
+                        <span className="text-xs text-red-500 whitespace-nowrap">Sold out</span>
                       )}
                     </div>
                     {item.description && (
-                      <p className="text-gray-400 text-xs mt-1 line-clamp-2">{item.description}</p>
+                      <p className="text-gray-500 text-xs mt-1 line-clamp-2">{item.description}</p>
                     )}
-                    <p className="text-green-400 font-semibold text-sm mt-2">{formatPrice(item.price)}</p>
+                    <p className="text-emerald-600 font-semibold text-sm mt-2">{formatPrice(item.price)}</p>
                   </div>
                 </button>
               )
@@ -590,7 +594,7 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
         </div>
 
         {itemCount > 0 && (
-          <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-950 border-t border-gray-800">
+          <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
             <button
               onClick={() => setStep('cart')}
               className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3.5 rounded-xl flex items-center justify-between px-5 transition-colors"
@@ -619,17 +623,17 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
 
   if (step === 'cart') {
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
-        <div className="sticky top-0 z-10 bg-gray-950 border-b border-gray-800 px-4 py-4 flex items-center gap-3">
+      <div className="min-h-screen bg-gray-50 text-gray-900">
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3 shadow-sm">
           <button
             onClick={() => setStep('menu')}
-            className="text-gray-400 hover:text-white text-lg"
+            className="text-gray-400 hover:text-gray-900 text-lg"
           >
             &larr;
           </button>
           <div>
-            <h1 className="text-xl font-bold">Your Cart</h1>
-            <p className="text-gray-400 text-sm">{itemCount} item{itemCount !== 1 ? 's' : ''}</p>
+            <h1 className="text-xl font-bold text-gray-900">Your Cart</h1>
+            <p className="text-gray-500 text-sm">{itemCount} item{itemCount !== 1 ? 's' : ''}</p>
           </div>
         </div>
 
@@ -638,39 +642,39 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
             {cartItems.map(item => {
               const lineTotal = cartItemTotal(item)
               return (
-                <div key={item.id} className="bg-gray-900 rounded-xl p-4">
+                <div key={item.id} className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-white text-sm">{item.name}</h3>
+                      <h3 className="font-semibold text-gray-900 text-sm">{item.name}</h3>
                       {item.modifiers.length > 0 && (
-                        <p className="text-gray-400 text-xs mt-0.5">
+                        <p className="text-gray-500 text-xs mt-0.5">
                           {item.modifiers.map(m => m.name).join(', ')}
                         </p>
                       )}
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-green-400 font-semibold text-sm">{formatPrice(lineTotal)}</p>
+                      <p className="text-emerald-600 font-semibold text-sm">{formatPrice(lineTotal)}</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between mt-3">
-                    <div className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5">
+                    <div className="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-1.5">
                       <button
                         onClick={() => updateQty(item.id, -1)}
-                        className="text-gray-400 hover:text-white w-5 h-5 flex items-center justify-center"
+                        className="text-gray-500 hover:text-gray-900 w-5 h-5 flex items-center justify-center"
                       >
                         -
                       </button>
-                      <span className="text-white text-sm w-5 text-center">{item.quantity}</span>
+                      <span className="text-gray-900 text-sm w-5 text-center">{item.quantity}</span>
                       <button
                         onClick={() => updateQty(item.id, 1)}
-                        className="text-gray-400 hover:text-white w-5 h-5 flex items-center justify-center"
+                        className="text-gray-500 hover:text-gray-900 w-5 h-5 flex items-center justify-center"
                       >
                         +
                       </button>
                     </div>
                     <button
                       onClick={() => removeFromCart(item.id)}
-                      className="text-red-400 hover:text-red-300 text-sm"
+                      className="text-red-500 hover:text-red-600 text-sm"
                     >
                       Remove
                     </button>
@@ -680,23 +684,23 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
             })}
           </div>
 
-          <div className="bg-gray-900 rounded-xl p-4">
-            <div className="flex justify-between text-sm text-gray-400 mb-1">
+          <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+            <div className="flex justify-between text-sm text-gray-500 mb-1">
               <span>Subtotal</span>
               <span>{formatPrice(total)}</span>
             </div>
-            <div className="flex justify-between font-semibold text-white pt-2 border-t border-gray-800">
+            <div className="flex justify-between font-semibold text-gray-900 pt-2 border-t border-gray-200">
               <span>Total</span>
               <span>{formatPrice(total)}</span>
             </div>
-            <p className="text-gray-500 text-xs mt-1">Tax calculated at checkout</p>
+            <p className="text-gray-400 text-xs mt-1">Tax calculated at checkout</p>
           </div>
 
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Your Info</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Your Info</h2>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
+              <label className="block text-sm text-gray-600 mb-1">
                 Name <span className="text-red-400">*</span>
               </label>
               <input
@@ -704,15 +708,15 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
                 value={customerName}
                 onChange={e => setCustomerName(e.target.value)}
                 placeholder="Your full name"
-                className={`w-full bg-gray-900 border rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm outline-none focus:border-blue-500 ${
-                  infoErrors.name ? 'border-red-500' : 'border-gray-700'
+                className={`w-full bg-white border rounded-lg px-4 py-2.5 text-gray-900 placeholder-gray-400 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 ${
+                  infoErrors.name ? 'border-red-400' : 'border-gray-300'
                 }`}
               />
-              {infoErrors.name && <p className="text-red-400 text-xs mt-1">{infoErrors.name}</p>}
+              {infoErrors.name && <p className="text-red-500 text-xs mt-1">{infoErrors.name}</p>}
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
+              <label className="block text-sm text-gray-600 mb-1">
                 Email <span className="text-red-400">*</span>
               </label>
               <input
@@ -720,26 +724,26 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
                 value={customerEmail}
                 onChange={e => setCustomerEmail(e.target.value)}
                 placeholder="your@email.com"
-                className={`w-full bg-gray-900 border rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm outline-none focus:border-blue-500 ${
-                  infoErrors.email ? 'border-red-500' : 'border-gray-700'
+                className={`w-full bg-white border rounded-lg px-4 py-2.5 text-gray-900 placeholder-gray-400 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 ${
+                  infoErrors.email ? 'border-red-400' : 'border-gray-300'
                 }`}
               />
-              {infoErrors.email && <p className="text-red-400 text-xs mt-1">{infoErrors.email}</p>}
+              {infoErrors.email && <p className="text-red-500 text-xs mt-1">{infoErrors.email}</p>}
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Phone (optional)</label>
+              <label className="block text-sm text-gray-600 mb-1">Phone (optional)</label>
               <input
                 type="tel"
                 value={customerPhone}
                 onChange={e => setCustomerPhone(e.target.value)}
                 placeholder="555-123-4567"
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm outline-none focus:border-blue-500"
+                className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2.5 text-gray-900 placeholder-gray-400 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200"
               />
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
+              <label className="block text-sm text-gray-600 mb-1">
                 Special Instructions (optional)
               </label>
               <textarea
@@ -747,13 +751,13 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
                 onChange={e => setSpecialNotes(e.target.value)}
                 placeholder="Allergies, special requests…"
                 rows={3}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 text-sm outline-none focus:border-blue-500 resize-none"
+                className="w-full bg-white border border-gray-300 rounded-lg px-4 py-2.5 text-gray-900 placeholder-gray-400 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-200 resize-none"
               />
             </div>
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-950 border-t border-gray-800">
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
           <div className="max-w-xl mx-auto">
             <button
               onClick={proceedToPayment}
@@ -770,68 +774,68 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
   // ── Step 3: Payment ───────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <div className="sticky top-0 z-10 bg-gray-950 border-b border-gray-800 px-4 py-4 flex items-center gap-3">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3 shadow-sm">
         <button
           onClick={() => {
             setStep('cart')
             setPaymentError(null)
           }}
           disabled={paymentLoading}
-          className="text-gray-400 hover:text-white text-lg disabled:opacity-50"
+          className="text-gray-400 hover:text-gray-900 text-lg disabled:opacity-50"
         >
           &larr;
         </button>
         <div>
-          <h1 className="text-xl font-bold">Payment</h1>
-          <p className="text-gray-400 text-sm">Secure card entry</p>
+          <h1 className="text-xl font-bold text-gray-900">Payment</h1>
+          <p className="text-gray-500 text-sm">Secure card entry</p>
         </div>
       </div>
 
       <div className="px-4 py-4 pb-36 space-y-4 max-w-xl mx-auto">
-        <div className="bg-gray-900 rounded-xl p-4">
-          <h2 className="font-semibold text-gray-300 text-sm mb-3">Order Summary</h2>
+        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <h2 className="font-semibold text-gray-700 text-sm mb-3">Order Summary</h2>
           <div className="space-y-2">
             {cartItems.map(item => (
               <div key={item.id} className="flex justify-between text-sm">
-                <span className="text-gray-400">
+                <span className="text-gray-500">
                   {item.quantity}x {item.name}
                   {item.modifiers.length > 0 && (
-                    <span className="text-gray-500"> ({item.modifiers.map(m => m.name).join(', ')})</span>
+                    <span className="text-gray-400"> ({item.modifiers.map(m => m.name).join(', ')})</span>
                   )}
                 </span>
-                <span className="text-white">{formatPrice(cartItemTotal(item))}</span>
+                <span className="text-gray-900">{formatPrice(cartItemTotal(item))}</span>
               </div>
             ))}
           </div>
-          <div className="border-t border-gray-800 mt-3 pt-3 flex justify-between font-semibold">
-            <span>Total</span>
-            <span className="text-green-400">{formatPrice(total)}</span>
+          <div className="border-t border-gray-200 mt-3 pt-3 flex justify-between font-semibold">
+            <span className="text-gray-900">Total</span>
+            <span className="text-emerald-600">{formatPrice(total)}</span>
           </div>
         </div>
 
-        <div className="bg-gray-900 rounded-xl p-4 text-sm">
+        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm text-sm">
           <div className="flex justify-between">
-            <span className="text-gray-400">Name</span>
-            <span className="text-white">{customerName}</span>
+            <span className="text-gray-500">Name</span>
+            <span className="text-gray-900">{customerName}</span>
           </div>
           <div className="flex justify-between mt-1">
-            <span className="text-gray-400">Email</span>
-            <span className="text-white">{customerEmail}</span>
+            <span className="text-gray-500">Email</span>
+            <span className="text-gray-900">{customerEmail}</span>
           </div>
           {customerPhone && (
             <div className="flex justify-between mt-1">
-              <span className="text-gray-400">Phone</span>
-              <span className="text-white">{customerPhone}</span>
+              <span className="text-gray-500">Phone</span>
+              <span className="text-gray-900">{customerPhone}</span>
             </div>
           )}
         </div>
 
-        <div className="bg-gray-900 rounded-xl p-4">
-          <h2 className="font-semibold text-gray-300 text-sm mb-3">Card Details</h2>
+        <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+          <h2 className="font-semibold text-gray-700 text-sm mb-3">Card Details</h2>
           <div className="min-h-[160px] flex items-center justify-center">
             {!datacapReady && (
-              <p className="text-gray-500 text-sm">Loading payment form…</p>
+              <p className="text-gray-400 text-sm">Loading payment form…</p>
             )}
             <iframe
               id="datacap-token-iframe"
@@ -843,18 +847,18 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
         </div>
 
         {paymentError && (
-          <div className="bg-red-900/40 border border-red-700 rounded-xl p-4">
-            <p className="text-red-300 text-sm">{paymentError}</p>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <p className="text-red-600 text-sm">{paymentError}</p>
           </div>
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-950 border-t border-gray-800">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-lg">
         <div className="max-w-xl mx-auto">
           <button
             onClick={handlePlaceOrder}
             disabled={paymentLoading || !datacapReady}
-            className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2"
+            className="w-full bg-green-600 hover:bg-green-500 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             {paymentLoading ? (
               <>
@@ -868,7 +872,7 @@ function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustom
               `Place Order — ${formatPrice(total)}`
             )}
           </button>
-          <p className="text-center text-gray-500 text-xs mt-2">
+          <p className="text-center text-gray-400 text-xs mt-2">
             Your card is charged only when the order is confirmed.
           </p>
         </div>
@@ -936,7 +940,7 @@ export default function OnlineOrderPage({ params }: PageProps) {
 
   if (resolveState.status === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-gray-400 text-lg">Loading…</div>
       </div>
     )
@@ -944,10 +948,10 @@ export default function OnlineOrderPage({ params }: PageProps) {
 
   if (resolveState.status === 'error') {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-6">
-        <div className="bg-gray-900 rounded-2xl p-8 max-w-sm w-full text-center">
-          <h1 className="text-2xl font-bold text-white mb-2">Store Not Found</h1>
-          <p className="text-gray-400">{resolveState.message}</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center border border-gray-200 shadow-lg">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Store Not Found</h1>
+          <p className="text-gray-500">{resolveState.message}</p>
         </div>
       </div>
     )
