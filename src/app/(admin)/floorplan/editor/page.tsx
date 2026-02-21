@@ -13,18 +13,19 @@
 import React from 'react';
 import { FloorPlanEditor } from '@/domains/floor-plan/admin';
 import { useAuthStore } from '@/stores/auth-store';
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard';
 
 export default function FloorPlanEditorPage() {
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/floorplan/editor' });
   const employee = useAuthStore(s => s.employee);
   const locationId = employee?.location?.id ?? null;
-  const isLoading = !employee;
 
   const handleExit = () => {
     // Navigate back to orders (production FOH view)
     window.location.href = '/orders';
   };
 
-  if (isLoading) {
+  if (!hydrated) {
     return (
       <div
         style={{

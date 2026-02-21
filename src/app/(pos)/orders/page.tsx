@@ -2942,7 +2942,9 @@ export default function OrdersPage() {
           onOpenAdminNav={canAccessAdmin ? () => router.push('/settings') : undefined}
           canCustomize={canCustomize}
           quickBarEnabled={quickBarEnabled}
-          onToggleQuickBar={() => updateLayoutSetting('quickPickEnabled', !quickBarEnabled)}
+          onToggleQuickBar={() => updateLayoutSetting('quickBarEnabled', !quickBarEnabled)}
+          quickPickEnabled={layout.quickPickEnabled}
+          onToggleQuickPick={() => updateLayoutSetting('quickPickEnabled', !layout.quickPickEnabled)}
           isEditingFavorites={isEditingFavorites}
           onToggleEditFavorites={() => setIsEditingFavorites(!isEditingFavorites)}
           isEditingCategories={isEditingCategories}

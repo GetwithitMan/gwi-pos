@@ -157,10 +157,11 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
     return () => { clearTimeout(timer) }
   }, [hasUnsavedChanges, saveLayout, canCustomize])
 
-  // Load on mount
+  // Load when employeeId is available — guard prevents "Failed to fetch" before auth resolves
   useEffect(() => {
+    if (!employeeId) return
     loadLayout()
-  }, [loadLayout])
+  }, [employeeId, loadLayout])
 
   // Update a single setting
   const updateSetting = useCallback(<K extends keyof POSLayoutSettings>(

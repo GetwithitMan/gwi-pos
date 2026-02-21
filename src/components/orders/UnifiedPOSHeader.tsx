@@ -48,6 +48,8 @@ export interface UnifiedPOSHeaderProps {
   canCustomize: boolean
   quickBarEnabled: boolean
   onToggleQuickBar: () => void
+  quickPickEnabled: boolean
+  onToggleQuickPick: () => void
   isEditingFavorites: boolean
   onToggleEditFavorites: () => void
   isEditingCategories: boolean
@@ -85,6 +87,8 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   canCustomize,
   quickBarEnabled,
   onToggleQuickBar,
+  quickPickEnabled,
+  onToggleQuickPick,
   isEditingFavorites,
   onToggleEditFavorites,
   isEditingCategories,
@@ -346,6 +350,10 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
                   <DropItem
                     label={quickBarEnabled ? '\u2713 Quick Bar Enabled' : 'Enable Quick Bar'}
                     onClick={() => { onToggleQuickBar(); setShowGearMenu(false) }}
+                  />
+                  <DropItem
+                    label={quickPickEnabled ? '\u2713 Quick Pick Numbers' : 'Quick Pick Numbers'}
+                    onClick={() => { onToggleQuickPick(); setShowGearMenu(false) }}
                   />
                   <Sep />
                   <DropItem
