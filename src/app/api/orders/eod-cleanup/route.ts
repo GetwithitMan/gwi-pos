@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { getCurrentBusinessDay } from '@/lib/business-day'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -12,16 +13,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
-    const startOfToday = new Date()
-    startOfToday.setHours(0, 0, 0, 0)
+    // Resolve the current business day boundary using location settings (same as /api/eod/reset)
+    const location = await db.location.findFirst({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const locSettings = location?.settings as Record<string, unknown> | null
+    const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+    const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
 
-    // Find stale orders: draft/open, created before today, not deleted
+    // Find stale orders: draft/open, whose businessDayDate is before the current business day, not deleted
     const staleOrders = await db.order.findMany({
       where: {
         locationId,
         deletedAt: null,
         status: { in: ['draft', 'open'] },
-        createdAt: { lt: startOfToday },
+        OR: [
+          { businessDayDate: { lt: currentBusinessDayStart } },
+          { businessDayDate: null, createdAt: { lt: currentBusinessDayStart } },
+        ],
       },
       select: {
         id: true,

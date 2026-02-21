@@ -143,6 +143,7 @@ export type {
   TabUpdatedEvent,
   TableStatus,
   FloorPlanUpdatedEvent,
+  EodResetCompleteEvent,
 } from './types'
 
 export { buildChannelName, parseChannelName } from './types'

@@ -273,6 +273,14 @@ export function FloorPlanHome({
     showRoomReorderModal, setShowRoomReorderModal,
   } = useFloorPlanModals()
 
+  // EOD summary overlay state (shown after eod:reset-complete socket event)
+  const [eodSummary, setEodSummary] = useState<{
+    cancelledDrafts: number
+    rolledOverOrders: number
+    tablesReset: number
+    businessDay: string
+  } | null>(null)
+
   // Active order state (for selected table or quick order)
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null)
@@ -868,6 +876,19 @@ export function FloorPlanHome({
       subscribe('entertainment:session-update', () => {
         logger.log('[FloorPlanHome] entertainment:session-update — full reload')
         loadFloorPlanData(false)
+      }),
+      // EOD reset complete — show manager summary overlay
+      subscribe('eod:reset-complete', (data) => {
+        logger.log('[FloorPlanHome] eod:reset-complete received', data)
+        toast.success('End of day reset complete')
+        setEodSummary({
+          cancelledDrafts: data.cancelledDrafts,
+          rolledOverOrders: data.rolledOverOrders,
+          tablesReset: data.tablesReset,
+          businessDay: data.businessDay,
+        })
+        // Refresh floor plan so table statuses reflect the reset
+        refreshAll()
       }),
     ]
 
@@ -2643,6 +2664,58 @@ export function FloorPlanHome({
             onClose={() => setShowShareOwnership(false)}
           />
         </Suspense>
+      )}
+
+      {/* EOD Summary Overlay — shown after eod:reset-complete socket event */}
+      {eodSummary && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            zIndex: 1000,
+            background: 'rgba(15, 23, 42, 0.97)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRadius: '12px',
+            padding: '20px 24px',
+            minWidth: '280px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+          }}
+        >
+          <p style={{ fontSize: '14px', fontWeight: 700, color: '#f1f5f9', marginBottom: '12px' }}>
+            End of Day Reset
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 16px 0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <li style={{ fontSize: '13px', color: '#94a3b8' }}>
+              <span style={{ color: '#4ade80', marginRight: '8px' }}>✓</span>
+              {eodSummary.cancelledDrafts} draft {eodSummary.cancelledDrafts === 1 ? 'order' : 'orders'} cancelled
+            </li>
+            <li style={{ fontSize: '13px', color: '#94a3b8' }}>
+              <span style={{ color: '#60a5fa', marginRight: '8px' }}>↻</span>
+              {eodSummary.rolledOverOrders} {eodSummary.rolledOverOrders === 1 ? 'order' : 'orders'} rolled to next business day
+            </li>
+            <li style={{ fontSize: '13px', color: '#94a3b8' }}>
+              <span style={{ color: '#a78bfa', marginRight: '8px' }}>⊞</span>
+              {eodSummary.tablesReset} {eodSummary.tablesReset === 1 ? 'table' : 'tables'} reset to available
+            </li>
+          </ul>
+          <button
+            onClick={() => setEodSummary(null)}
+            style={{
+              width: '100%',
+              padding: '8px',
+              borderRadius: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              background: 'rgba(255, 255, 255, 0.06)',
+              color: '#94a3b8',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: 'pointer',
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
       )}
     </div>
   )

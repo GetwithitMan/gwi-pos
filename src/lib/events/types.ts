@@ -197,6 +197,9 @@ export interface EventMap {
 
   // Location Alerts
   'location:alert': LocationAlertEvent
+
+  // EOD
+  'eod:reset-complete': EodResetCompleteEvent
 }
 
 export type EventName = keyof EventMap
@@ -361,6 +364,14 @@ export interface LocationAlertEvent {
   message: string
   dismissable?: boolean
   duration?: number
+}
+
+// EOD Reset Events
+export interface EodResetCompleteEvent {
+  cancelledDrafts: number
+  rolledOverOrders: number
+  tablesReset: number
+  businessDay: string
 }
 
 // ==================== Channel Types ====================

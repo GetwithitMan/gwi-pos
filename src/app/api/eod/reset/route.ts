@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { emitToLocation } from '@/lib/socket-server'
 
 /**
  * POST /api/eod/reset
@@ -199,6 +200,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (staleOpenOrders.length > 0) {
       dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})
     }
+
+    // Notify all terminals that EOD reset is complete (manager notification)
+    void emitToLocation(locationId, 'eod:reset-complete', {
+      cancelledDrafts: 0,
+      rolledOverOrders: stats.orphanedOrdersClosed,
+      tablesReset: stats.tablesReset,
+      businessDay: currentBusinessDayStart.toISOString().split('T')[0],
+    }).catch(console.error)
 
     return NextResponse.json({ data: {
       success: true,
