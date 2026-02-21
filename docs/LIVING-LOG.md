@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-02-20 — Inventory Engine Sprint: T-002/T-004/T-014 (Session 11)
+
+**Session theme:** Inventory deduction hardening — prep item explosion, unit mismatch warnings, bulk move verified
+
+**Summary:** Three inventory tasks cleared. T-002 adds prep item explosion to Path B modifier deductions. T-004 adds unit mismatch warnings at link-time (API + toast) and deduction-time. T-014 verified already complete.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `19ebc15` | feat(inventory): T-004 — unit mismatch warning on modifier→ingredient links |
+| `b71b8fe` | feat(inventory): T-002 — prep item explosion for modifier deductions (Path B) |
+
+### Features Delivered
+
+**T-002** — Modifier→PrepItem deductions now explode to raw sub-ingredients. `ORDER_INVENTORY_INCLUDE` includes `prepItem.ingredients.inventoryItem`. Path B: `else if (ingredient?.prepItem)` calls `explodePrepItem()`. 1 file, 32 lines.
+
+**T-004** — `inventory-link` API returns non-blocking `warning` field on cross-category UOM. `useModifierEditor` shows 8s `toast.warning`. Path A+B log `console.warn` with context on null conversion.
+
+**T-014** — Verified complete (already wired). No change needed.
+
+### Resolved Task Board Items
+T-002, T-004, T-014
+
+---
+
 ## 2026-02-20 — T-071/T-072 Online Ordering Routing + Pages (Session 10)
 
 **Session theme:** Customer-facing online ordering — middleware bypass + dynamic `/{orderCode}/{slug}/` route
