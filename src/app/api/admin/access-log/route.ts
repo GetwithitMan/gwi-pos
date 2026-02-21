@@ -9,9 +9,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAccessLogs, getAccessStats } from '@/lib/access-log'
 
 export async function GET(req: NextRequest) {
-  // Basic admin guard — must have a cloud session cookie
+  // Accept either a cloud session cookie (admin UI) or INTERNAL_API_SECRET bearer token (MC proxy)
   const session = req.cookies.get('pos-cloud-session')?.value
-  if (!session) {
+  const bearer = req.headers.get('authorization')
+  const internalSecret = process.env.INTERNAL_API_SECRET
+  const hasBearerAuth = internalSecret && bearer === `Bearer ${internalSecret}`
+
+  if (!session && !hasBearerAuth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
