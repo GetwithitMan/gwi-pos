@@ -123,7 +123,7 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
 | **2** | Build Admin Console (`gwi-mission-control`) | 🔄 In Progress |
 | **3** | Deployment Infrastructure | 🔄 In Progress |
 
-**Full architecture details:** See `/docs/GWI-ARCHITECTURE.md`
+**Full architecture details:** See `/docs/architecture/GWI-ARCHITECTURE.md`
 
 ### Three Separate Repos & Deployments
 
@@ -299,7 +299,7 @@ export const GET = withVenue(async (request) => {
 ## Performance Rules (MANDATORY)
 
 **These rules are NON-NEGOTIABLE for any new feature on POS, KDS, or Expo screens.**
-**Full architecture details:** See `/docs/GWI-ARCHITECTURE.md` Real-Time Architecture section.
+**Full architecture details:** See `/docs/architecture/GWI-ARCHITECTURE.md` Real-Time Architecture section.
 **Skill docs:** See `/docs/skills/339-344` for implementation details.
 
 ### Socket-First Updates (No Polling)
@@ -598,7 +598,7 @@ If port 3000 is in use, dev server auto-selects another port (usually 3001).
 
 ## Upcoming Work
 
-> **See:** `/docs/PM-TASK-BOARD.md` for the cross-domain task board with granular tasks.
+> **See:** `/docs/guides/PM-TASK-BOARD.md` for the cross-domain task board with granular tasks.
 
 Key priorities:
 1. POS Front-End Ordering UI Lift (PM: Menu)
@@ -614,7 +614,7 @@ Key priorities:
 
 ## Living Log (MANDATORY)
 
-**Location:** `/docs/LIVING-LOG.md`
+**Location:** `/docs/logs/LIVING-LOG.md`
 
 **RULE: Update the Living Log at the end of every work session.** Add a new entry at the top with:
 1. Date + Sprint/Theme name
@@ -631,7 +631,7 @@ This is the team-shared record of all development work. Newest entries go at the
 ## Recent Changes
 
 All change history is maintained in the Living Log and domain changelogs:
-- **Living Log:** `/docs/LIVING-LOG.md` (rolling session-by-session record)
+- **Living Log:** `/docs/logs/LIVING-LOG.md` (rolling session-by-session record)
 - **Domain changelogs:** `/docs/changelogs/[DOMAIN]-CHANGELOG.md`
 - **Skill docs:** `/docs/skills/` (indexed in `/docs/skills/SKILLS-INDEX.md`)
 
@@ -639,13 +639,13 @@ Key recent work: NUC installer package (Skill 345), kiosk exit zone (Skill 346),
 
 ## Pre-Launch Test Checklist
 
-**Moved to:** `/docs/PRE-LAUNCH-CHECKLIST.md`
+**Moved to:** `/docs/planning/PRE-LAUNCH-CHECKLIST.md`
 
 22 test categories, 200+ individual tests. Must all pass before go-live. Updated during every PM EOD session.
 
 ## PM Mode & Worker Prompts
 
-**Moved to:** `/docs/PM-MODE-GUIDE.md`
+**Moved to:** `/docs/guides/PM-MODE-GUIDE.md`
 
 Contains: PM Mode triggers (Classic, Single Agent, Agent Team), worker prompt templates, domain registry (25 domains), layer separation rules, morning startup protocol, EOD protocol, quality control guidelines.
 
