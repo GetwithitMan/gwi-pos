@@ -60,6 +60,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         lastKnownIp: s.lastKnownIp,
         staticIp: s.staticIp,
         enforceStaticIp: s.enforceStaticIp,
+        deviceInfo: s.deviceInfo,
         stationCount: s.stations.length,
         stations: s.stations.map((st) => ({
           id: st.id,

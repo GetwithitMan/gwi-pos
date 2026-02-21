@@ -33,6 +33,7 @@ interface KDSScreen {
   lastKnownIp: string | null
   staticIp: string | null
   enforceStaticIp: boolean
+  deviceInfo: { chromeVersion?: string; userAgent?: string } | null
   stationCount: number
   stations: Array<{
     id: string
@@ -383,6 +384,11 @@ export default function KDSScreensPage() {
                           Last seen: {new Date(screen.lastSeenAt).toLocaleString()}
                           {screen.lastKnownIp && (
                             <span className="ml-2 text-gray-500">IP: {screen.lastKnownIp}</span>
+                          )}
+                          {screen.deviceInfo?.chromeVersion && (
+                            <span className="ml-2 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 font-medium">
+                              Chrome {screen.deviceInfo.chromeVersion}
+                            </span>
                           )}
                         </p>
                       )}

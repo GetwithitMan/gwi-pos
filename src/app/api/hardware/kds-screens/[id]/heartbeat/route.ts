@@ -55,13 +55,39 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Update last seen time and IP
+    // Extract browser/Chrome version from User-Agent
+    const userAgent = request.headers.get('user-agent') || ''
+    const chromeMatch = userAgent.match(/Chrome\/(\d+\.\d+)/)
+    let chromeVersion: string | null = null
+    let browserSummary: string | null = null
+    if (chromeMatch) {
+      chromeVersion = chromeMatch[1]
+      browserSummary = `Chrome ${chromeVersion}`
+    } else if (userAgent) {
+      // Fallback: extract main browser name from UA string
+      const browserMatch = userAgent.match(/(\w+)\/[\d.]+\s*$/) ||
+        userAgent.match(/(Firefox|Safari|Edge|OPR|Opera)\/[\d.]+/)
+      browserSummary = browserMatch ? browserMatch[1] : 'Unknown'
+    }
+
+    // Merge new device info with any existing data
+    const existingDeviceInfo = (screen.deviceInfo && typeof screen.deviceInfo === 'object' && !Array.isArray(screen.deviceInfo))
+      ? screen.deviceInfo as Record<string, unknown>
+      : {}
+    const updatedDeviceInfo = {
+      ...existingDeviceInfo,
+      ...(chromeVersion !== null && { chromeVersion }),
+      ...(browserSummary !== null && { userAgent: browserSummary }),
+    }
+
+    // Update last seen time, IP, and device info
     await db.kDSScreen.update({
       where: { id },
       data: {
         lastSeenAt: new Date(),
         isOnline: true,
         ...(lastKnownIp && { lastKnownIp }),
+        deviceInfo: updatedDeviceInfo,
       },
     })
 
