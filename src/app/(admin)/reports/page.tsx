@@ -253,10 +253,10 @@ export default function ReportsHubPage() {
           ),
         },
         {
-          name: 'Tip Adjustments',
-          href: '/reports/tip-adjustments',
-          description: 'Adjust card tips post-sale via Datacap gratuity adjust',
-          permission: PERMISSIONS.REPORTS_COMMISSION,
+          name: 'Tip Adjustment',
+          href: '/reports/tip-adjustment',
+          description: 'Review and adjust card transaction tips for today\'s shifts',
+          permission: PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS,
           icon: (
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
