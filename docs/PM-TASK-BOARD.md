@@ -33,7 +33,6 @@
 | T-001 | Link remaining Ranch-related ingredients to InventoryItems (Ranch, Ranch Dressing, Ranch Drizzle all missing inventoryItemId) | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Only "Ranch (side)" is linked. Others need InventoryItems created and linked |
 | T-002 | Prep item explosion for modifiers — when modifier → ingredient is a prep item (not inventory item), explode into sub-ingredients for deduction | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Documented in Skill 215 Section 13 |
 | T-003 | Modifier-level variance drill-down in AvT reports — show which modifiers contributed to variance | PM: Reports | PM: Inventory | 2026-02-06 | P3 | Requires AvT report UI work |
-| T-004 | Unit mismatch warning — detect cross-category UOM (volume→weight) on modifier→ingredient links and warn in UI | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Currently silently falls back to storageUnit |
 | T-005 | Modifier recipe support — allow modifiers to have multi-ingredient recipes (not just single ingredient link) | PM: Menu | PM: Inventory | 2026-02-06 | P3 | R365 "concatenation" model. Big feature. |
 | T-006 | Pour size integration with ingredient deduction path — apply pour size multiplier to Path B deductions | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Currently pour sizes only affect pricing, not ingredient qty |
 | T-007 | Conditional deduction rules — time-of-day or menu-context-based ingredient quantities | PM: Inventory | PM: Inventory | 2026-02-06 | P3 | e.g., happy hour smaller portions |
@@ -99,6 +98,7 @@
 | T-071 | Online ordering middleware routing | PM: Mission Control | 2026-02-20 | Middleware bypass for /:orderCode/:slug + /api/online\|public/* paths. x-venue-slug header set. Zero auth for customer routes. Commit `34e237b` |
 | T-072 | Online ordering customer pages | PM: Mission Control | 2026-02-20 | src/app/[orderCode]/[slug]/page.tsx (962 lines) — 3-step flow (menu→cart→Datacap). resolve-order-code public API. error.tsx + not-found.tsx. Next.js 15 async params. Commit `34e237b` |
 | T-014 | Bulk "Move to Category" for ingredients | PM: Inventory | 2026-02-20 | ALREADY DONE — IngredientLibrary.tsx fully wired: handleBulkMove() calls PUT /api/ingredients/bulk-move; prep-item move-under inline handler also complete. No code change needed. |
+| T-004 | Unit mismatch warning on modifier→ingredient links | PM: Inventory | 2026-02-20 | inventory-link API returns warning field on cross-category UOM. useModifierEditor shows toast.warning. order-deduction console.warn on Path A+B null-conversion. Commit `19ebc15` |
 | T-018 | Wire Socket.io events to CFD page | PM: KDS | 2026-02-19 | CFD page wired to POS socket events. Commit `1e9c00e` |
 | T-019 | Wire Socket.io events to Bartender Mobile | PM: KDS | 2026-02-19 | MobileTabActions socket events wired. Commit `1e9c00e` |
 | T-020 | Wire Socket.io events to Pay-at-Table | PM: KDS | 2026-02-19 | Pay-at-Table socket sync on payment completion. Commit `72f725b` |
