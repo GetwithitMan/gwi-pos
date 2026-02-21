@@ -48,12 +48,10 @@ export default function MobileTabDetailPage({
 function MobileTabDetailContent({ tabId }: { tabId: string }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  // locationId forwarded for login redirect; employeeId kept as backwards-compat fallback
+  // locationId forwarded for login redirect
   const locationId = searchParams.get('locationId') ?? ''
 
-  const [employeeId, setEmployeeId] = useState<string>(
-    searchParams.get('employeeId') ?? ''
-  )
+  const [employeeId, setEmployeeId] = useState<string>('')
   const [tab, setTab] = useState<TabDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [authChecked, setAuthChecked] = useState(false)
@@ -79,11 +77,7 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
       router.replace(loginUrl)
     }
 
-    if (!employeeId) {
-      checkAuth()
-    } else {
-      setAuthChecked(true)
-    }
+    checkAuth()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

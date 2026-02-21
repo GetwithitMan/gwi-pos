@@ -44,10 +44,7 @@ function MobileTabsContent() {
   // login page can be reached from a QR code that embeds the locationId.
   const locationId = searchParams.get('locationId') ?? ''
 
-  const [employeeId, setEmployeeId] = useState<string | null>(
-    // Backwards-compat fallback: accept ?employeeId if no session cookie yet
-    searchParams.get('employeeId')
-  )
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [tabs, setTabs] = useState<MobileTab[]>([])
   const [loading, setLoading] = useState(true)
   const [authChecked, setAuthChecked] = useState(false)
@@ -76,13 +73,7 @@ function MobileTabsContent() {
       router.replace(loginUrl)
     }
 
-    // Only run auth check if we don't already have a session-derived employeeId
-    // (i.e. not from the backwards-compat ?employeeId param)
-    if (!employeeId) {
-      checkAuth()
-    } else {
-      setAuthChecked(true)
-    }
+    checkAuth()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTabs = useCallback(async () => {
