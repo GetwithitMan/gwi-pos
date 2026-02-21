@@ -157,7 +157,19 @@ function MobileTabsContent() {
       {/* Header */}
       <div className="p-4 border-b border-white/10 flex items-center justify-between">
         <h1 className="text-xl font-bold">My Tabs</h1>
-        <span className="text-white/40 text-sm">{sortedTabs.length} open</span>
+        <div className="flex items-center gap-3">
+          <a
+            href={locationId ? `/mobile/schedule?locationId=${locationId}` : '/mobile/schedule'}
+            className="flex items-center gap-1.5 text-sm text-white/50 hover:text-white/90 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            Schedule
+          </a>
+          <span className="text-white/40 text-sm">{sortedTabs.length} open</span>
+        </div>
       </div>
 
       {/* Filter */}

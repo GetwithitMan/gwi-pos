@@ -63,6 +63,16 @@ export default function SchedulingPage() {
   const [newShiftStartTime, setNewShiftStartTime] = useState('09:00')
   const [newShiftEndTime, setNewShiftEndTime] = useState('17:00')
 
+  // Edit shift state
+  const [showEditShiftModal, setShowEditShiftModal] = useState(false)
+  const [editingShift, setEditingShift] = useState<ScheduledShift | null>(null)
+  const [editShiftEmployeeId, setEditShiftEmployeeId] = useState('')
+  const [editShiftDate, setEditShiftDate] = useState('')
+  const [editShiftStartTime, setEditShiftStartTime] = useState('09:00')
+  const [editShiftEndTime, setEditShiftEndTime] = useState('17:00')
+  const [editShiftNotes, setEditShiftNotes] = useState('')
+  const [editShiftRoleId, setEditShiftRoleId] = useState('')
+
   // Current week
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     const now = new Date()
@@ -124,6 +134,16 @@ export default function SchedulingPage() {
     }
   }
 
+  const refreshSelectedSchedule = async (scheduleId: string) => {
+    const scheduleResponse = await fetch(`/api/schedules/${scheduleId}`)
+    if (scheduleResponse.ok) {
+      const data = await scheduleResponse.json()
+      setSelectedSchedule(prev =>
+        prev ? { ...prev, shifts: data.data.shifts } : null
+      )
+    }
+  }
+
   const createSchedule = async () => {
     if (!employee?.location?.id) return
 
@@ -166,12 +186,7 @@ export default function SchedulingPage() {
       if (response.ok) {
         setShowAddShiftModal(false)
         setNewShiftEmployeeId('')
-        // Reload schedule
-        const scheduleResponse = await fetch(`/api/schedules/${selectedSchedule.id}`)
-        if (scheduleResponse.ok) {
-          const data = await scheduleResponse.json()
-          setSelectedSchedule({ ...selectedSchedule, shifts: data.data.shifts })
-        }
+        await refreshSelectedSchedule(selectedSchedule.id)
         loadSchedules()
       } else {
         const error = await response.json()
@@ -179,6 +194,77 @@ export default function SchedulingPage() {
       }
     } catch (error) {
       console.error('Failed to add shift:', error)
+    }
+  }
+
+  const openEditShift = (shift: ScheduledShift) => {
+    setEditingShift(shift)
+    setEditShiftEmployeeId(shift.employee.id)
+    setEditShiftDate(shift.date.split('T')[0])
+    setEditShiftStartTime(shift.startTime)
+    setEditShiftEndTime(shift.endTime)
+    setEditShiftNotes(shift.notes || '')
+    setEditShiftRoleId(shift.role?.id || '')
+    setShowEditShiftModal(true)
+  }
+
+  const saveEditShift = async () => {
+    if (!editingShift || !selectedSchedule) return
+
+    try {
+      const response = await fetch(
+        `/api/schedules/${selectedSchedule.id}/shifts/${editingShift.id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeId: editShiftEmployeeId,
+            date: new Date(editShiftDate).toISOString(),
+            startTime: editShiftStartTime,
+            endTime: editShiftEndTime,
+            roleId: editShiftRoleId || null,
+            notes: editShiftNotes || null,
+          }),
+        }
+      )
+
+      if (response.ok) {
+        setShowEditShiftModal(false)
+        setEditingShift(null)
+        toast.success('Shift updated')
+        await refreshSelectedSchedule(selectedSchedule.id)
+        loadSchedules()
+      } else {
+        const error = await response.json()
+        toast.error(error.error || 'Failed to update shift')
+      }
+    } catch (error) {
+      console.error('Failed to update shift:', error)
+      toast.error('Failed to update shift')
+    }
+  }
+
+  const deleteShift = async (shift: ScheduledShift) => {
+    if (!selectedSchedule) return
+    if (!window.confirm(`Delete shift for ${shift.employee.name}? This cannot be undone.`)) return
+
+    try {
+      const response = await fetch(
+        `/api/schedules/${selectedSchedule.id}/shifts/${shift.id}`,
+        { method: 'DELETE' }
+      )
+
+      if (response.ok) {
+        toast.success('Shift deleted')
+        await refreshSelectedSchedule(selectedSchedule.id)
+        loadSchedules()
+      } else {
+        const error = await response.json()
+        toast.error(error.error || 'Failed to delete shift')
+      }
+    } catch (error) {
+      console.error('Failed to delete shift:', error)
+      toast.error('Failed to delete shift')
     }
   }
 
@@ -329,14 +415,43 @@ export default function SchedulingPage() {
                               {shifts.map(shift => (
                                 <div
                                   key={shift.id}
-                                  className="bg-blue-100 border border-blue-200 rounded p-2 text-xs"
+                                  className="bg-blue-100 border border-blue-200 rounded p-2 text-xs relative group"
                                 >
-                                  <div className="font-medium">{shift.employee.name}</div>
+                                  <div className="font-medium pr-10">{shift.employee.name}</div>
                                   <div className="text-gray-600">
                                     {shift.startTime} - {shift.endTime}
                                   </div>
                                   {shift.role && (
                                     <div className="text-gray-500">{shift.role.name}</div>
+                                  )}
+                                  {/* Edit / Delete buttons — visible on hover */}
+                                  {selectedSchedule.status === 'draft' && (
+                                    <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        onClick={() => openEditShift(shift)}
+                                        className="p-0.5 rounded bg-white/80 hover:bg-white text-blue-600 hover:text-blue-800 shadow-sm"
+                                        title="Edit shift"
+                                        aria-label="Edit shift"
+                                      >
+                                        {/* Pencil icon */}
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                            d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H7v-3a2 2 0 01.586-1.414z" />
+                                        </svg>
+                                      </button>
+                                      <button
+                                        onClick={() => deleteShift(shift)}
+                                        className="p-0.5 rounded bg-white/80 hover:bg-white text-red-500 hover:text-red-700 shadow-sm"
+                                        title="Delete shift"
+                                        aria-label="Delete shift"
+                                      >
+                                        {/* X icon */}
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                            d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                      </button>
+                                    </div>
                                   )}
                                 </div>
                               ))}
@@ -468,6 +583,128 @@ export default function SchedulingPage() {
               disabled={!newShiftEmployeeId}
             >
               Add Shift
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Shift Modal */}
+      <Modal
+        isOpen={showEditShiftModal && !!editingShift}
+        onClose={() => { setShowEditShiftModal(false); setEditingShift(null) }}
+        title="Edit Shift"
+        size="md"
+      >
+        <div className="space-y-4">
+          {/* Employee */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Employee
+            </label>
+            <select
+              value={editShiftEmployeeId}
+              onChange={(e) => setEditShiftEmployeeId(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="">Select employee...</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name} ({emp.role})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Date
+            </label>
+            <input
+              type="date"
+              value={editShiftDate}
+              onChange={(e) => setEditShiftDate(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
+          </div>
+
+          {/* Start / End time */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Start Time
+              </label>
+              <select
+                value={editShiftStartTime}
+                onChange={(e) => setEditShiftStartTime(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                {TIME_SLOTS.map(time => (
+                  <option key={time} value={time}>{time}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                End Time
+              </label>
+              <select
+                value={editShiftEndTime}
+                onChange={(e) => setEditShiftEndTime(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                {TIME_SLOTS.map(time => (
+                  <option key={time} value={time}>{time}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Role */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Role (optional)
+            </label>
+            <select
+              value={editShiftRoleId}
+              onChange={(e) => setEditShiftRoleId(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="">No specific role</option>
+              {/* Roles are not separately loaded; show current role as an option */}
+              {editingShift?.role && (
+                <option value={editingShift.role.id}>{editingShift.role.name}</option>
+              )}
+            </select>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Notes (optional)
+            </label>
+            <textarea
+              value={editShiftNotes}
+              onChange={(e) => setEditShiftNotes(e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 border rounded-lg resize-none"
+              placeholder="Any notes for this shift..."
+            />
+          </div>
+
+          <div className="flex gap-2 justify-end pt-4">
+            <Button
+              variant="outline"
+              onClick={() => { setShowEditShiftModal(false); setEditingShift(null) }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={saveEditShift}
+              disabled={!editShiftEmployeeId || !editShiftDate}
+            >
+              Save Changes
             </Button>
           </div>
         </div>
