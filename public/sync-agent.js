@@ -261,6 +261,29 @@ async function processCommand(dataStr) {
       log('[Sync] Cancelling scheduled reboot')
       run('sudo shutdown -c', APP_DIR, 10)
       result = { ok: true }
+    } else if (cmd.type === 'REPAIR_GIT_CREDENTIALS') {
+      try {
+        var token = cmd.payload && cmd.payload.deployToken
+        if (!token || typeof token !== 'string' || token.length < 10) {
+          log('[Sync] REPAIR_GIT_CREDENTIALS: missing or invalid deployToken')
+          result = { ok: false, error: 'missing-deploy-token' }
+        } else {
+          var credContent = 'https://' + token + ':x-oauth-basic@github.com\n'
+          fs.writeFileSync('/opt/gwi-pos/.git-credentials', credContent, { mode: 0o600 })
+          log('[Sync] REPAIR_GIT_CREDENTIALS: credentials file updated')
+          var fetchOk = run('git fetch origin', APP_DIR, 60)
+          if (fetchOk) {
+            log('[Sync] REPAIR_GIT_CREDENTIALS: git fetch OK — credentials valid')
+            result = { ok: true }
+          } else {
+            log('[Sync] REPAIR_GIT_CREDENTIALS: git fetch failed after credential update')
+            result = { ok: false, error: 'git-fetch-failed-after-update' }
+          }
+        }
+      } catch (e) {
+        log('[Sync] REPAIR_GIT_CREDENTIALS error: ' + e.message)
+        result = { ok: false, error: e.message }
+      }
     } else {
       log('[Sync] Unknown command: ' + cmd.type + ', ACK OK')
       result = { ok: true }
