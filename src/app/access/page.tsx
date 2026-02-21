@@ -19,6 +19,7 @@ function AccessGate() {
   const [step, setStep] = useState<'phone' | 'code'>('phone')
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
+  const [maskedEmail, setMaskedEmail] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [countdown, setCountdown] = useState(0)
@@ -60,6 +61,7 @@ function AccessGate() {
       if (!res.ok) {
         setError(data.error || 'Failed to send code')
       } else {
+        setMaskedEmail(data.email || '')
         setStep('code')
         setCountdown(60)
         setTimeout(() => codeInputRef.current?.focus(), 100)
@@ -139,7 +141,7 @@ function AccessGate() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-lg tracking-wide placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
                 <p className="text-xs text-gray-500 mt-2">
-                  We&apos;ll send a 6-digit code to this number.
+                  We&apos;ll email a 6-digit code to your registered address.
                 </p>
               </div>
 
@@ -173,7 +175,7 @@ function AccessGate() {
                   </button>
                 </div>
                 <p className="text-gray-400 text-sm mb-3">
-                  Sent to ({phone.slice(0, 3)}) {phone.slice(3, 6)}-{phone.slice(6)}
+                  Sent to {maskedEmail || 'your registered email'}
                 </p>
                 <input
                   ref={codeInputRef}

@@ -8,9 +8,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateOTP, normalizePhone, maskPhone } from '@/lib/access-gate'
 import { logAccess } from '@/lib/access-log'
-import { isPhoneAllowed } from '@/lib/access-allowlist'
+import { getEntryByPhone } from '@/lib/access-allowlist'
 
 const ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
+
+/** Mask email for display: j***@gmail.com */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@')
+  if (!domain) return '***'
+  const visible = local.slice(0, Math.min(2, local.length))
+  return `${visible}***@${domain}`
+}
 
 export async function POST(req: NextRequest) {
   if (!ACCESS_SECRET) {
@@ -31,9 +39,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Enter a valid US phone number' }, { status: 400 })
   }
 
-  // Check allowlist
-  const allowed = await isPhoneAllowed(normalized)
-  if (!allowed) {
+  // Check allowlist and get entry (includes email)
+  const entry = await getEntryByPhone(normalized)
+  if (!entry) {
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
     const ua = req.headers.get('user-agent') ?? ''
     await logAccess(maskPhone(normalized), ip, ua, 'blocked')
@@ -59,43 +67,49 @@ export async function POST(req: NextRequest) {
   // Generate OTP
   const code = await generateOTP(normalized, ACCESS_SECRET)
 
-  // Send SMS via Twilio
-  const twilioSid = process.env.TWILIO_ACCOUNT_SID
-  const twilioToken = process.env.TWILIO_AUTH_TOKEN
-  const twilioFrom = process.env.TWILIO_FROM_NUMBER
+  // Send code via email (Resend)
+  const resendKey = process.env.RESEND_API_KEY
+  const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'access@barpos.restaurant'
 
-  if (!twilioSid || !twilioToken || !twilioFrom) {
-    console.error('[access/request] Twilio credentials not configured')
-    return NextResponse.json({ error: 'SMS service not configured' }, { status: 503 })
+  if (!resendKey) {
+    console.error('[access/request] RESEND_API_KEY not set')
+    return NextResponse.json({ error: 'Email service not configured' }, { status: 503 })
   }
 
   try {
-    const body = new URLSearchParams({
-      To: normalized,
-      From: twilioFrom,
-      Body: `GWI POS access code: ${code}\n\nExpires in 10 minutes. Do not share this code.`,
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${resendKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: `GWI POS Access <${fromEmail}>`,
+        to: [entry.email],
+        subject: `Your GWI POS access code: ${code}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+            <h2 style="margin:0 0 8px;font-size:20px;color:#111">GWI Point of Sale</h2>
+            <p style="margin:0 0 24px;color:#555;font-size:14px">Your access code for barpos.restaurant</p>
+            <div style="background:#f4f4f5;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
+              <p style="margin:0 0 4px;font-size:13px;color:#888;letter-spacing:0.05em;text-transform:uppercase">Access Code</p>
+              <p style="margin:0;font-size:40px;font-weight:700;letter-spacing:0.15em;color:#111">${code}</p>
+            </div>
+            <p style="margin:0 0 8px;color:#555;font-size:13px">Enter this code on the access page. It expires in <strong>10 minutes</strong>.</p>
+            <p style="margin:0;color:#999;font-size:12px">If you didn't request this, you can ignore this email.</p>
+          </div>
+        `,
+      }),
     })
-
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body,
-      }
-    )
 
     if (!response.ok) {
       const err = await response.text()
-      console.error('[access/request] Twilio error:', err)
-      return NextResponse.json({ error: 'Failed to send SMS' }, { status: 502 })
+      console.error('[access/request] Resend error:', err)
+      return NextResponse.json({ error: 'Failed to send email' }, { status: 502 })
     }
   } catch (err) {
-    console.error('[access/request] SMS send failed:', err)
-    return NextResponse.json({ error: 'Failed to send SMS' }, { status: 502 })
+    console.error('[access/request] Email send failed:', err)
+    return NextResponse.json({ error: 'Failed to send email' }, { status: 502 })
   }
 
   // Log the attempt
@@ -104,7 +118,7 @@ export async function POST(req: NextRequest) {
   await logAccess(maskPhone(normalized), ip, ua, 'code_sent')
 
   // Set rate-limit cookie (1-minute window)
-  const res = NextResponse.json({ success: true })
+  const res = NextResponse.json({ success: true, email: maskEmail(entry.email) })
   res.cookies.set('gwi-access-rate', String(Date.now()), {
     httpOnly: true,
     sameSite: 'lax',

@@ -50,16 +50,22 @@ function getTableReady(): Promise<void> {
 
 /** Check if a normalized E.164 phone is on the allowlist */
 export async function isPhoneAllowed(phone: string): Promise<boolean> {
+  return (await getEntryByPhone(phone)) !== null
+}
+
+/** Return the allowlist entry for a phone, or null if not found */
+export async function getEntryByPhone(phone: string): Promise<AllowlistEntry | null> {
   try {
     await getTableReady()
     const sql = getSql()
     const rows = await sql`
-      SELECT 1 FROM gwi_access_allowlist WHERE phone = ${phone} LIMIT 1
+      SELECT id, name, email, phone, notes, added_by, created_at
+      FROM gwi_access_allowlist WHERE phone = ${phone} LIMIT 1
     `
-    return rows.length > 0
+    return rows.length > 0 ? (rows[0] as AllowlistEntry) : null
   } catch (err) {
     console.error('[gwi-access-allowlist] check failed:', err)
-    return false
+    return null
   }
 }
 
