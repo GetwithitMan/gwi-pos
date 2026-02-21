@@ -11,6 +11,7 @@ import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { HardwareHealthWidget } from '@/components/hardware/HardwareHealthWidget'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useEvents } from '@/lib/events/use-events'
+import { toast } from '@/stores/toast-store'
 
 export default function SettingsPage() {
   const employee = useAuthStore(s => s.employee)
@@ -26,6 +27,22 @@ export default function SettingsPage() {
   const [terminals, setTerminals] = useState<any[]>([])
   const [printers, setPrinters] = useState<any[]>([])
   const [kdsScreens, setKdsScreens] = useState<any[]>([])
+
+  // Batch Settlement state
+  const [paymentReaders, setPaymentReaders] = useState<any[]>([])
+  const [selectedReaderId, setSelectedReaderId] = useState<string>('')
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+  const [batchSummaryData, setBatchSummaryData] = useState<{
+    success: boolean
+    batchNo: string | null
+    transactionCount: string | null
+    safCount: number
+    safAmount: number
+    hasSAFPending: boolean
+    error: { code: string; message: string } | null
+  } | null>(null)
+  const [isFetchingBatchSummary, setIsFetchingBatchSummary] = useState(false)
+  const [isClosingBatch, setIsClosingBatch] = useState(false)
 
   // Check if user has admin/settings permissions
   const isSuperAdmin = employee?.role?.name === 'Owner' ||
@@ -58,10 +75,89 @@ export default function SettingsPage() {
     }
   }, [locationId])
 
+  const loadPaymentReaders = useCallback(async () => {
+    if (!locationId) return
+    try {
+      const res = await fetch(`/api/hardware/payment-readers?locationId=${locationId}&activeOnly=true`)
+      if (res.ok) {
+        const data = await res.json()
+        const readers = data.data.readers || []
+        setPaymentReaders(readers)
+        if (readers.length > 0 && !selectedReaderId) {
+          setSelectedReaderId(readers[0].id)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load payment readers:', error)
+    }
+  }, [locationId, selectedReaderId])
+
+  const handleOpenBatchDialog = async () => {
+    if (!locationId || !selectedReaderId) {
+      toast.error('Select a payment reader first')
+      return
+    }
+    setIsFetchingBatchSummary(true)
+    setBatchSummaryData(null)
+    setBatchDialogOpen(true)
+    try {
+      const res = await fetch(
+        `/api/datacap/batch?locationId=${encodeURIComponent(locationId)}&readerId=${encodeURIComponent(selectedReaderId)}`
+      )
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error || 'Failed to fetch batch summary')
+        setBatchDialogOpen(false)
+        return
+      }
+      setBatchSummaryData(json.data)
+    } catch {
+      toast.error('Failed to fetch batch summary')
+      setBatchDialogOpen(false)
+    } finally {
+      setIsFetchingBatchSummary(false)
+    }
+  }
+
+  const handleConfirmBatchClose = async () => {
+    if (!locationId || !selectedReaderId) return
+    setIsClosingBatch(true)
+    try {
+      const res = await fetch('/api/datacap/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId, readerId: selectedReaderId }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        toast.error(json.error || 'Batch close failed')
+        return
+      }
+      if (json.data?.success) {
+        toast.success(
+          json.data.batchNo
+            ? `Batch #${json.data.batchNo} closed successfully`
+            : 'Batch closed successfully'
+        )
+      } else if (json.data?.error) {
+        toast.error(`Batch close error: ${json.data.error.message}`)
+      } else {
+        toast.warning('Batch close completed with unknown status')
+      }
+      setBatchDialogOpen(false)
+      setBatchSummaryData(null)
+    } catch {
+      toast.error('Batch close request failed')
+    } finally {
+      setIsClosingBatch(false)
+    }
+  }
+
   useEffect(() => {
     loadSettings()
     loadHardwareStatus()
-  }, [loadHardwareStatus])
+    loadPaymentReaders()
+  }, [loadHardwareStatus, loadPaymentReaders])
 
   // 20s fallback polling only when socket is disconnected
   useEffect(() => {
@@ -1605,6 +1701,139 @@ export default function SettingsPage() {
             </div>
           </div>
         </Card>
+
+        {/* Batch Settlement — manager-gated */}
+        {isSuperAdmin && (
+          <Card className="p-6">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold">Batch Settlement</h2>
+              <p className="text-sm text-gray-500">Settle all card transactions with the processor at end of day</p>
+            </div>
+
+            <div className="space-y-4">
+              {/* Reader selector */}
+              {paymentReaders.length === 0 ? (
+                <p className="text-sm text-gray-500">No active payment readers configured for this location.</p>
+              ) : (
+                <>
+                  {paymentReaders.length > 1 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Payment Reader</label>
+                      <select
+                        value={selectedReaderId}
+                        onChange={(e) => setSelectedReaderId(e.target.value)}
+                        className="px-3 py-2 border rounded-lg"
+                      >
+                        {paymentReaders.map((r) => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {paymentReaders.length === 1 && (
+                    <p className="text-sm text-gray-600">
+                      Reader: <span className="font-medium">{paymentReaders[0].name}</span>
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="primary"
+                      onClick={handleOpenBatchDialog}
+                      disabled={!selectedReaderId}
+                    >
+                      Close Batch
+                    </Button>
+                    <p className="text-xs text-gray-500">
+                      Fetches current batch summary before confirming
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Confirmation dialog */}
+            {batchDialogOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+                  <h3 className="text-lg font-semibold mb-4">Close Batch</h3>
+
+                  {isFetchingBatchSummary && (
+                    <div className="py-6 text-center">
+                      <p className="text-sm text-gray-500">Fetching batch summary...</p>
+                    </div>
+                  )}
+
+                  {!isFetchingBatchSummary && batchSummaryData && (
+                    <>
+                      {batchSummaryData.error ? (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm font-medium text-red-700">Reader error</p>
+                          <p className="text-xs text-red-600 mt-0.5">{batchSummaryData.error.message}</p>
+                        </div>
+                      ) : (
+                        <div className="mb-5 space-y-3">
+                          <div className="bg-gray-50 border rounded-lg p-4 space-y-2">
+                            {batchSummaryData.batchNo && (
+                              <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">Batch #</span>
+                                <span className="font-medium text-gray-900">{batchSummaryData.batchNo}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Transaction count</span>
+                              <span className="font-medium text-gray-900">
+                                {batchSummaryData.transactionCount ?? '—'}
+                              </span>
+                            </div>
+                            {batchSummaryData.hasSAFPending && (
+                              <div className="flex justify-between text-sm border-t pt-2">
+                                <span className="text-amber-600">SAF pending</span>
+                                <span className="font-medium text-amber-700">
+                                  {batchSummaryData.safCount} txn
+                                  {batchSummaryData.safAmount > 0 && ` · ${formatCurrency(batchSummaryData.safAmount)}`}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            This will settle all transactions above with your payment processor.
+                            This action cannot be undone.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <div className="flex justify-end gap-3 mt-2">
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setBatchDialogOpen(false)
+                        setBatchSummaryData(null)
+                      }}
+                      disabled={isClosingBatch}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="primary"
+                      onClick={handleConfirmBatchClose}
+                      disabled={
+                        isClosingBatch ||
+                        isFetchingBatchSummary ||
+                        !batchSummaryData ||
+                        !!batchSummaryData.error
+                      }
+                    >
+                      {isClosingBatch ? 'Closing...' : 'Confirm & Close Batch'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* POS Display Settings */}
         <Card className="p-6">
