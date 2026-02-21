@@ -142,8 +142,13 @@ export async function middleware(request: NextRequest) {
     (hostname === 'www.barpos.restaurant' || hostname === 'barpos.restaurant') &&
     GWI_ACCESS_SECRET
   ) {
-    // Always allow: the access gate page itself + its API routes
-    if (pathname === '/access' || pathname.startsWith('/api/access/')) {
+    // Always allow: the access gate page itself, its API routes,
+    // and internal admin API routes called server-to-server (Bearer token)
+    if (
+      pathname === '/access' ||
+      pathname.startsWith('/api/access/') ||
+      pathname.startsWith('/api/admin/')
+    ) {
       return NextResponse.next()
     }
 
