@@ -259,13 +259,13 @@ These 8 items will break the system at a real venue.
 - ~~**Notes:** Per-customer staff notes (allergies, preferences, VIP status)~~ ✅ RESOLVED — Inline notes editor in detail modal: pencil toggle → textarea edit → Save/Cancel with PUT API call + toast. Commit `d0a8dc5`.
 
 ### REPORTS (Advanced)
-- **Forecasting:** Sales projections based on historical day-of-week patterns
+- ~~**Forecasting:** Sales projections based on historical day-of-week patterns~~ ✅ RESOLVED — `GET /api/reports/forecasting` (businessDayDate OR-fallback, 84-day lookback, groups by weekday, projects 14 days); `/reports/forecasting` page (lookback/horizon selectors, 3 summary cards, day-of-week table with gold ★, forecast table with today/tomorrow badges); reports hub tile added. Commit `d9343c5`.
 - ~~**Product Mix Trends:**~~ ✅ VERIFIED COMPLETE — `/reports/product-mix` page + API already built with trending items.
 - ~~**Server Performance:**~~ ✅ RESOLVED — `GET /api/reports/server-performance` + `/reports/server-performance` page; orders grouped by employee, computes totalSales/tips/avgCheck/tableTurns, gold badge for top performer, CSV export. Commit `1a1f8f5`.
 - ~~**Void/Comp Report:**~~ ✅ VERIFIED CORRECT — `/reports/voids` page + API built; `isComp` correctly derived at runtime from `reason` field (no schema mismatch).
 
 ### HARDWARE (Advanced)
-- **Barcode Scanner (Skill 58):** Item lookup by UPC
+- ~~**Barcode Scanner (Skill 58):** Item lookup by UPC~~ ✅ RESOLVED — `GET /api/menu/search?sku=X` exact match; `useMenuSearch.lookupBySku()`; keyboard-wedge detector in `MenuSearchInput` + `UnifiedPOSHeader` (100ms burst heuristic → `onScanComplete`); `orders/page.tsx` wires scan → add item to order or `toast.error`. Commit `ea47c11`.
 - ~~**Cash Drawer (Skill 56):**~~ ✅ RESOLVED — `src/lib/cash-drawer.ts` + `POST /api/print/cash-drawer`; `hasCash` guard in pay route fires `triggerCashDrawer` fire-and-forget. Commit `f10c9cb`.
 - ~~**Reader Health Dashboard:**~~ ✅ RESOLVED — `PaymentReaderLog` schema + `src/lib/reader-health.ts` + `GET /api/hardware/readers/health` + `/settings/hardware/health` dashboard; `logReaderTransaction` wired into `DatacapClient.withPadReset`. Commit `3ff3755`.
 - ~~**KDS Browser Version Audit:** Display Chrome version on KDS admin page~~ ✅ RESOLVED — Heartbeat extracts Chrome version from user-agent, stores in `deviceInfo` JSON. Admin KDS page shows "Chrome X.Y" badge. Commit `ea967d9`.
