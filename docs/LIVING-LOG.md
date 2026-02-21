@@ -5,6 +5,55 @@
 
 ---
 
+## 2026-02-21 — P3 Continued: PayAPI Client + Shift Swap (Session 2)
+
+**Session theme:** Unblock Online Ordering Phase 5 (found + built Datacap PayAPI integration) + begin Scheduling Shift Swap workflow
+
+**Summary:** Session resumed from P3 sprint. Cleared the Online Ordering Phase 5 payment blocker — Datacap PayAPI documentation was located in the project folder (`Datacap/Datacap integration/Pay Api - online ordering/`). Audited the full API spec and built a complete `PayApiClient` library. Also ran full scope audit on Scheduling Shift Swap, then launched Phase 1 build (schema + 7 API routes). Late agent notifications processed (all already committed in prior session — no duplicate work).
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `4cd3024` | feat(payments): Datacap PayAPI V2 client library for online ordering + convert PayAPI docs to .txt |
+
+### Deployments
+- Pushed to `main` → Vercel auto-deploys
+
+### Features Delivered
+
+**Datacap PayAPI Client Library** (`4cd3024`)
+- `src/lib/datacap/payapi-client.ts`: Full REST client for Datacap PayAPI V2 (card-not-present, eCommerce)
+- `PayApiClient` class: `sale()`, `voidSale()`, `refund()`, `preAuth()`, `capture()`, `voidAuth()`, `getTransaction()`
+- V2 Basic Auth: `Authorization: Basic BASE64(DATACAP_PAYAPI_MID:DATACAP_PAYAPI_KEY)`
+- Cert URL: `https://pay-cert.dcap.com/v2/` / Prod URL: `https://pay.dcap.com/v2/`
+- `PayApiError` class with HTTP status + full response for caller inspection
+- Simulated mode (`DATACAP_PAYAPI_ENV=simulated`) — fake approved responses, no credentials needed for dev
+- `getPayApiClient()` singleton (same pattern as existing `DatacapClient`)
+- Converted PayAPI reference docs from `.docx` to `.txt` in project folder
+
+**Client-side tokenization flow (documented, not yet built):**
+- Load `https://token.dcap.com/v1/client/hosted` — Datacap hosted iFrame tokenizer
+- Customer enters card in iFrame (PCI scope never touches our servers)
+- `DatacapHostedWebToken.requestToken()` fires → callback receives `{ Token, Brand, Last4 }`
+- Client POSTs OTU token to our checkout API → server calls `POST /credit/sale` → creates Order + Payment
+- Credentials: `DATACAP_PAYAPI_TOKEN_KEY` (public, client-side) + MID + ApiKey (private, server-side)
+
+**Shift Swap Audit (completed, build in progress):**
+- `ShiftSwapRequest` model needed — `ScheduledShift` has `originalEmployeeId`/`swappedAt`/`swapApprovedBy` for tracking but no workflow model
+- Full scope: 1 new schema model, 7 API routes, admin panel components, mobile pages, 4 socket events
+- Phase 1 build launched: schema + all 7 API routes (in progress at session end)
+
+### Known Issues / Blockers
+- Shift Swap Phase 1 in progress at session end (schema + API routes building)
+- Online Ordering Phase 5 (customer `/order` page): unblocked — PayAPI client done; still needs checkout page + Datacap iFrame tokenization UI
+- P1-05: Socket multi-terminal validation — needs real Docker/hardware
+- P1-07: Card token persistence — needs live Datacap hardware (blocks Loyalty)
+- GL-06: Pre-launch checklist at 8% — manual hardware testing required
+- Pricing Programs: Large, 5-phase (surcharge, interchange+, tiered)
+
+---
+
 ## 2026-02-21 — P3 Feature Sprint (Multi-Agent Team)
 
 **Session theme:** P3 polish sprint (full day) — 13 features built across hardware, reports, scheduling, customers, POS, and floor plan
