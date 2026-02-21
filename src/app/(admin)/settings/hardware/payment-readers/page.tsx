@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import {
   CreditCardIcon,
@@ -583,6 +584,16 @@ export default function PaymentReadersPage() {
             </button>
           }
         />
+
+        {/* ── Health Dashboard Link ── */}
+        <div className="mb-5 flex justify-end">
+          <Link
+            href="/settings/hardware/health"
+            className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium"
+          >
+            View Health Dashboard →
+          </Link>
+        </div>
 
         {/* ── Scan Results Panel ── */}
         {(scanning || scanResults !== null || scanError) && (

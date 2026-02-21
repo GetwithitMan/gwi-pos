@@ -40,6 +40,7 @@ import {
   TRAN_CODES,
 } from './constants'
 import { logger } from '@/lib/logger'
+import { logReaderTransaction } from '@/lib/reader-health'
 
 // ─── Error Classification ────────────────────────────────────────────────────
 
@@ -163,6 +164,7 @@ async function wrapDatacapOperation<T extends DatacapResponse>(
 
 interface ReaderInfo {
   id: string
+  locationId: string
   ipAddress: string
   port: number
   merchantId?: string | null
@@ -176,6 +178,7 @@ async function getReaderInfo(readerId: string): Promise<ReaderInfo> {
     where: { id: readerId },
     select: {
       id: true,
+      locationId: true,
       ipAddress: true,
       port: true,
       merchantId: true,
@@ -192,6 +195,8 @@ async function getReaderInfo(readerId: string): Promise<ReaderInfo> {
 
 export class DatacapClient {
   private config: DatacapConfig
+  // Tracks the most recently sent tranCode per readerId — used for health logging
+  private _lastTranCode = new Map<string, string>()
 
   constructor(config: DatacapConfig) {
     // Validate configuration based on communication mode
@@ -282,10 +287,15 @@ export class DatacapClient {
   private async send(reader: ReaderInfo, xml: string, timeoutMs?: number): Promise<DatacapResponse> {
     const mode = reader.communicationMode || this.config.communicationMode
 
+    // Extract and store tranCode for health logging
+    const tranCodeMatch = xml.match(/<TranCode>([^<]+)<\/TranCode>/)
+    if (tranCodeMatch?.[1]) {
+      this._lastTranCode.set(reader.id, tranCodeMatch[1])
+    }
+
     // Simulated mode — no network calls
     if (mode === 'simulated') {
       // Extract tranCode and simScenario from XML for simulator
-      const tranCodeMatch = xml.match(/<TranCode>([^<]+)<\/TranCode>/)
       const tranCode = (tranCodeMatch?.[1] || 'EMVPadReset') as TranCode
       const scenarioMatch = xml.match(/<SimScenario>([^<]+)<\/SimScenario>/)
       const simScenario = scenarioMatch?.[1] as 'decline' | 'error' | 'partial' | undefined
@@ -340,32 +350,59 @@ export class DatacapClient {
   // ─── Pad Reset Wrapper ───────────────────────────────────────────────────
   // CRITICAL: Every monetary transaction MUST be followed by EMVPadReset
 
-  private async withPadReset<T>(
+  private async withPadReset(
     readerId: string,
-    fn: (reader: ReaderInfo, seqNo: string) => Promise<T>
-  ): Promise<T> {
+    fn: (reader: ReaderInfo, seqNo: string) => Promise<DatacapResponse>
+  ): Promise<DatacapResponse> {
     // Refuse transactions on degraded readers — operator must resolve first
     assertReaderHealthy(readerId)
 
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
 
-    let result: T
+    const startTime = Date.now()
+    let result: DatacapResponse | undefined
+    let txSuccess = false
+    let txErrorCode: string | undefined
+    let txException: unknown = undefined
+
     try {
       result = await fn(reader, seqNo)
-    } finally {
-      // Always pad reset, even if the transaction failed
-      try {
-        await this.padReset(readerId)
-        markReaderHealthy(readerId)
-      } catch (resetError) {
-        const reason = resetError instanceof Error ? resetError.message : 'Pad reset failed'
-        markReaderDegraded(readerId, reason)
-        logger.error('datacap', `Pad reset failed — reader marked degraded`, resetError, { readerId })
-      }
+      txSuccess = result.cmdStatus === 'Approved' || result.cmdStatus === 'Success'
+      txErrorCode = !txSuccess ? (result.textResponse ?? result.cmdStatus ?? undefined) : undefined
+    } catch (err) {
+      txException = err
     }
 
-    return result
+    // Capture tranType BEFORE padReset overwrites _lastTranCode
+    const tranType = this._lastTranCode.get(readerId)
+    this._lastTranCode.delete(readerId)
+    const endTime = Date.now()
+
+    // Always pad reset, even if the transaction failed
+    try {
+      await this.padReset(readerId)
+      markReaderHealthy(readerId)
+    } catch (resetError) {
+      const reason = resetError instanceof Error ? resetError.message : 'Pad reset failed'
+      markReaderDegraded(readerId, reason)
+      logger.error('datacap', `Pad reset failed — reader marked degraded`, resetError, { readerId })
+    }
+
+    // Fire-and-forget health log — never blocks the payment path
+    void logReaderTransaction({
+      locationId: reader.locationId,
+      readerId,
+      responseTimeMs: endTime - startTime,
+      success: txSuccess,
+      errorCode: txException instanceof Error ? txException.message.slice(0, 100) : txErrorCode,
+      tranType,
+    }).catch(() => {})
+
+    // Re-throw original exception if fn() failed
+    if (txException !== undefined) throw txException
+
+    return result!
   }
 
   // ─── Field Builder ───────────────────────────────────────────────────────

@@ -186,6 +186,7 @@ model Location {
   printRoutes       PrintRoute[]
   printJobs         PrintJob[]
   paymentReaders    PaymentReader[]
+  readerLogs        PaymentReaderLog[]
 
   // Order Cards (multi-card tabs)
   orderCards OrderCard[]
@@ -5080,6 +5081,7 @@ model PaymentReader {
   // Relations
   terminals Terminal[] @relation("TerminalPaymentReader")
   backupFor Terminal[] @relation("TerminalBackupReader")
+  logs      PaymentReaderLog[]
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -5087,6 +5089,28 @@ model PaymentReader {
   @@index([isOnline])
   @@index([serialNumber])
   @@index([connectionType])
+}
+
+// ─── Reader Health Log ────────────────────────────────────────────────────────
+// Per-transaction metrics for trending response time and success rate over time.
+
+model PaymentReaderLog {
+  id           String        @id @default(cuid())
+  locationId   String
+  location     Location      @relation(fields: [locationId], references: [id])
+  readerId     String
+  reader       PaymentReader @relation(fields: [readerId], references: [id])
+  responseTime Int           // milliseconds
+  success      Boolean
+  errorCode    String?
+  tranType     String?       // sale, void, preauth, etc.
+  createdAt    DateTime      @default(now())
+  syncedAt     DateTime?
+
+  @@index([locationId])
+  @@index([readerId])
+  @@index([readerId, createdAt])
+  @@index([locationId, createdAt])
 }
 
 model PrintRule {
