@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-02-20 — T-042/T-073/T-075 Multi-Repo Sprint (Session 9)
+
+**Session theme:** Multi-select pre-modifiers (gwi-pos), QR code generation + environment field (gwi-mission-control)
+
+**Summary:** Three tasks shipped across two repos. T-042 uses compound string format to enable multi-select pre-modifiers ("side,extra") with zero schema change. T-073 adds QR code display/download for venue order codes in MC. T-075 adds a deployment environment field to CloudLocation with grouped deploy modal UX.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `77c1de6` | feat(orders): T-042 — multi-select pre-modifiers via compound string format |
+
+### Commits — gwi-mission-control
+
+| Hash | Description |
+|------|-------------|
+| `f06611e` | feat(locations): T-073 QR code generation + T-075 environment field |
+
+### Features Delivered
+
+**T-042** — Pre-modifiers now support combinations ("Side Extra Ranch"). Compound string `"side,extra"` stored in existing `preModifier String?` field. Toggle helpers, colored badges per token in OrderPanelItem, compound-aware print/KDS/inventory paths. 12 files, no schema change.
+
+**T-073** — QrCodeModal with 256px canvas QR, Download PNG, and Print actions. "Generate QR Code" button in VenueUrlCard when orderCode exists.
+
+**T-075** — `LocationEnvironment` enum + field on CloudLocation (prisma db push applied). EnvironmentSelector segmented control in location detail page. Deploy modal groups locations by Production/Staging/Development sections with color-coded headers.
+
+### Resolved Task Board Items
+T-042, T-073, T-075
+
+### Known Issues / Blockers
+- T-071/T-072 (online ordering routing + pages) — build in progress
+- T-046: Socket end-to-end — needs Docker/hardware
+- T-049: KDS full flow on Chrome 108 — needs physical device
+
+---
+
 ## 2026-02-20 — T-013 Modifier Multipliers (Session 8)
 
 **Session theme:** Per-modifier Lite/Extra multiplier overrides in Item Builder and inventory deduction engine
