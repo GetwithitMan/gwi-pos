@@ -157,8 +157,19 @@ export default function OnlineOrderingOverviewPage() {
     }
   }
 
-  const orderingUrl = locationSlug
-    ? `ordercontrolcenter.com/${locationSlug}`
+  // Generate a stable orderCode prefix required by the online-ordering URL pattern
+  // (middleware regex: /^\/([A-Z0-9]{4,8})\/([a-z0-9-]+)/)
+  // Derived deterministically from the slug so QR codes never break:
+  //   "fruita-grill" → "FRUITAGR"
+  const orderCode = locationSlug
+    ? (() => {
+        const code = locationSlug.replace(/-/g, '').toUpperCase()
+        return code.length >= 4 ? code.substring(0, 8) : code.padEnd(4, 'X')
+      })()
+    : null
+
+  const orderingUrl = orderCode && locationSlug
+    ? `ordercontrolcenter.com/${orderCode}/${locationSlug}`
     : null
 
   const handleCopyUrl = () => {
