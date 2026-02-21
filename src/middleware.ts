@@ -131,6 +131,34 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // GWI ACCESS GATE FOR www.barpos.restaurant (demo domain)
+  //
+  // The main demo domain is not a cloud venue subdomain, so the
+  // cloud-mode gate below won't catch it. Apply the SMS OTP gate
+  // here before any other routing logic.
+  // ═══════════════════════════════════════════════════════════
+  if (
+    (hostname === 'www.barpos.restaurant' || hostname === 'barpos.restaurant') &&
+    GWI_ACCESS_SECRET
+  ) {
+    // Always allow: the access gate page itself + its API routes
+    if (pathname === '/access' || pathname.startsWith('/api/access/')) {
+      return NextResponse.next()
+    }
+
+    const accessToken = request.cookies.get('gwi-access')?.value
+    const accessPayload = accessToken
+      ? await verifyAccessToken(accessToken, GWI_ACCESS_SECRET)
+      : null
+
+    if (!accessPayload) {
+      const gateUrl = new URL('/access', request.url)
+      gateUrl.searchParams.set('next', pathname)
+      return NextResponse.redirect(gateUrl)
+    }
+  }
+
   const isCloud = isCloudVenueHost(hostname)
   const venueSlug = extractVenueSlug(hostname)
 
