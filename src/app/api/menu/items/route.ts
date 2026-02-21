@@ -39,30 +39,24 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         category: {
           select: { name: true, categoryType: true }
         },
-        modifierGroups: {
-          where: {
-            deletedAt: null,
-            modifierGroup: { deletedAt: null }
-          },
+        ownedModifierGroups: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
           select: {
-            modifierGroup: {
+            id: true,
+            name: true,
+            isSpiritGroup: true,
+            modifiers: {
+              where: { deletedAt: null, isActive: true },
               select: {
                 id: true,
                 name: true,
-                isSpiritGroup: true,
-                modifiers: {
-                  where: { deletedAt: null, isActive: true },
-                  select: {
-                    id: true,
-                    name: true,
-                    price: true,
-                    spiritTier: true,
-                  },
-                  orderBy: { sortOrder: 'asc' }
-                },
+                price: true,
+                spiritTier: true,
               },
+              orderBy: { sortOrder: 'asc' },
             },
-          }
+          },
         },
         // Include ingredients for stock status (only if requested)
         ...(includeStock ? {
@@ -135,8 +129,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
 
         // Check for spirit upgrade group
-        const spiritGroup = item.modifierGroups.find(mg => mg.modifierGroup.isSpiritGroup)
-        const spiritModifiers = spiritGroup?.modifierGroup.modifiers || []
+        const spiritGroup = item.ownedModifierGroups.find(mg => mg.isSpiritGroup)
+        const spiritModifiers = spiritGroup?.modifiers || []
 
         // Group spirit modifiers by tier
         const spiritTiers = spiritModifiers.length > 0 ? {
@@ -169,9 +163,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           isActive: item.isActive,
           isAvailable: item.isAvailable,
           itemType: item.itemType,
-          hasModifiers: item.modifierGroups.length > 0 || isPizzaItem,
+          hasModifiers: item.ownedModifierGroups.length > 0 || isPizzaItem,
           // Only count non-spirit modifier groups for "other" modifiers
-          hasOtherModifiers: item.modifierGroups.filter(mg => !mg.modifierGroup.isSpiritGroup).length > 0 || isPizzaItem,
+          hasOtherModifiers: item.ownedModifierGroups.filter(mg => !mg.isSpiritGroup).length > 0 || isPizzaItem,
           isPizza: isPizzaItem,
           // Entertainment/timed rental fields
           entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,

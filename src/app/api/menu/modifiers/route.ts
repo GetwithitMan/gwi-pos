@@ -40,12 +40,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             },
           },
         },
-        menuItems: {
-          include: {
-            menuItem: {
-              select: { id: true, name: true }
-            }
-          }
+        menuItem: {
+          select: { id: true, name: true }
         },
         spiritConfig: {
           include: {
@@ -113,10 +109,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
             } : null,
           })),
-          linkedItems: group.menuItems.map(link => ({
-            id: link.menuItem.id,
-            name: link.menuItem.name,
-          }))
+          linkedItems: group.menuItem ? [{ id: group.menuItem.id, name: group.menuItem.name }] : []
         }
       })
     } })

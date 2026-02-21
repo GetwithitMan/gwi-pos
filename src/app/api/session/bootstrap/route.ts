@@ -79,20 +79,17 @@ async function getMenuForBootstrap(locationId: string) {
       orderBy: { sortOrder: 'asc' },
       include: {
         category: { select: { categoryType: true } },
-        modifierGroups: {
-          where: { deletedAt: null, modifierGroup: { deletedAt: null } },
+        ownedModifierGroups: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
           select: {
-            modifierGroup: {
-              select: {
-                id: true,
-                name: true,
-                isSpiritGroup: true,
-                modifiers: {
-                  where: { deletedAt: null, isActive: true },
-                  select: { id: true, name: true, price: true, spiritTier: true },
-                  orderBy: { sortOrder: 'asc' },
-                },
-              },
+            id: true,
+            name: true,
+            isSpiritGroup: true,
+            modifiers: {
+              where: { deletedAt: null, isActive: true },
+              select: { id: true, name: true, price: true, spiritTier: true },
+              orderBy: { sortOrder: 'asc' },
             },
           },
         },
@@ -139,8 +136,8 @@ async function getMenuForBootstrap(locationId: string) {
 
     const stockStatus = stockStatusMap.get(item.id)
 
-    const spiritGroup = item.modifierGroups.find(mg => mg.modifierGroup.isSpiritGroup)
-    const spiritModifiers = spiritGroup?.modifierGroup.modifiers || []
+    const spiritGroup = item.ownedModifierGroups.find(mg => mg.isSpiritGroup)
+    const spiritModifiers = spiritGroup?.modifiers || []
 
     const spiritTiers = spiritModifiers.length > 0 ? {
       well: spiritModifiers.filter(m => m.spiritTier === 'well').map(m => ({ id: m.id, name: m.name, price: Number(m.price) })),
@@ -162,7 +159,7 @@ async function getMenuForBootstrap(locationId: string) {
       stockCount: stockStatus?.lowestCount || null,
       stockIngredientName: stockStatus?.lowestIngredientName || null,
       spiritTiers,
-      hasOtherModifiers: item.modifierGroups.filter(mg => !mg.modifierGroup.isSpiritGroup).length > 0,
+      hasOtherModifiers: item.ownedModifierGroups.filter(mg => !mg.isSpiritGroup).length > 0,
     }
   })
 
@@ -198,10 +195,10 @@ async function getMenuForBootstrap(locationId: string) {
       entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
       currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,
       blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
-      modifierGroupCount: item.modifierGroups.length,
-      modifierGroups: item.modifierGroups.map(mg => ({
-        id: mg.modifierGroup.id,
-        name: mg.modifierGroup.name,
+      modifierGroupCount: item.ownedModifierGroups.length,
+      modifierGroups: item.ownedModifierGroups.map(mg => ({
+        id: mg.id,
+        name: mg.name,
       })),
       isLiquorItem: item.isLiquorItem,
       hasRecipe: item.hasRecipe,

@@ -25,7 +25,6 @@ async function main() {
     { label: 'MenuItemRecipeIngredient', run: () => prisma.menuItemRecipeIngredient.deleteMany(w) },
     { label: 'MenuItemRecipe', run: () => prisma.menuItemRecipe.deleteMany(w) },
     { label: 'MenuItemIngredient', run: () => prisma.menuItemIngredient.deleteMany(w) },
-    { label: 'MenuItemModifierGroup', run: () => prisma.menuItemModifierGroup.deleteMany(w) },
     { label: 'ModifierInventoryLink', run: () => prisma.modifierInventoryLink.deleteMany(w) },
     { label: 'OrderItemModifier', run: () => prisma.orderItemModifier.deleteMany(w) },
     { label: 'OrderItemIngredient', run: () => prisma.orderItemIngredient.deleteMany(w) },

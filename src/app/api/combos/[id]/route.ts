@@ -48,26 +48,23 @@ export const GET = withVenue(async function GET(
       .filter(c => c.menuItemId)
       .map(c => c.menuItemId!)
 
-    const menuItemModifierGroups = await db.menuItemModifierGroup.findMany({
-      where: { menuItemId: { in: componentMenuItemIds } },
+    const ownedModifierGroups = await db.modifierGroup.findMany({
+      where: { menuItemId: { in: componentMenuItemIds }, deletedAt: null },
       include: {
-        modifierGroup: {
-          include: {
-            modifiers: {
-              orderBy: { sortOrder: 'asc' },
-            },
-          },
+        modifiers: {
+          orderBy: { sortOrder: 'asc' },
         },
       },
     })
 
     // Build a map of menuItemId -> modifierGroups
-    const itemModifierMap: Record<string, typeof menuItemModifierGroups> = {}
-    for (const mimg of menuItemModifierGroups) {
-      if (!itemModifierMap[mimg.menuItemId]) {
-        itemModifierMap[mimg.menuItemId] = []
+    const itemModifierMap: Record<string, typeof ownedModifierGroups> = {}
+    for (const mg of ownedModifierGroups) {
+      if (!mg.menuItemId) continue
+      if (!itemModifierMap[mg.menuItemId]) {
+        itemModifierMap[mg.menuItemId] = []
       }
-      itemModifierMap[mimg.menuItemId].push(mimg)
+      itemModifierMap[mg.menuItemId].push(mg)
     }
 
     return NextResponse.json({ data: {
@@ -88,15 +85,15 @@ export const GET = withVenue(async function GET(
             id: c.menuItem.id,
             name: c.menuItem.name,
             price: Number(c.menuItem.price),
-            modifierGroups: (itemModifierMap[c.menuItem.id] || []).map(mimg => ({
+            modifierGroups: (itemModifierMap[c.menuItem.id] || []).map(mg => ({
               modifierGroup: {
-                id: mimg.modifierGroup.id,
-                name: mimg.modifierGroup.name,
-                displayName: mimg.modifierGroup.displayName,
-                minSelections: mimg.modifierGroup.minSelections,
-                maxSelections: mimg.modifierGroup.maxSelections,
-                isRequired: mimg.modifierGroup.isRequired,
-                modifiers: mimg.modifierGroup.modifiers.map(m => ({
+                id: mg.id,
+                name: mg.name,
+                displayName: mg.displayName,
+                minSelections: mg.minSelections,
+                maxSelections: mg.maxSelections,
+                isRequired: mg.isRequired,
+                modifiers: mg.modifiers.map(m => ({
                   id: m.id,
                   name: m.name,
                   price: Number(m.price),

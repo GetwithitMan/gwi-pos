@@ -57,16 +57,6 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
                 menuItem: {
                   select: { id: true, name: true },
                 },
-                // Legacy shared groups: junction table relation
-                menuItems: {
-                  where: { deletedAt: null },
-                  select: {
-                    id: true,
-                    menuItem: {
-                      select: { id: true, name: true },
-                    },
-                  },
-                },
               },
             },
           },
@@ -149,29 +139,15 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
           extraPrice: mi.extraPrice ? Number(mi.extraPrice) : null,
         })),
         linkedModifiers: (ingredient.linkedModifiers || []).map(mod => {
-          // Collect menu items from both sources:
-          // 1. Item-owned groups: direct menuItem relation (via menuItemId)
-          // 2. Legacy shared groups: junction table (MenuItemModifierGroup)
+          // Collect menu item via direct menuItem relation (menuItemId)
           const menuItemsMap = new Map<string, { id: string; name: string }>()
 
-          // Source 1: Item-owned group (menuItemId → MenuItem)
+          // Item-owned group (menuItemId → MenuItem)
           if (mod.modifierGroup.menuItem) {
             menuItemsMap.set(mod.modifierGroup.menuItem.id, {
               id: mod.modifierGroup.menuItem.id,
               name: mod.modifierGroup.menuItem.name,
             })
-          }
-
-          // Source 2: Legacy junction table (MenuItemModifierGroup)
-          if (mod.modifierGroup.menuItems) {
-            for (const mimg of mod.modifierGroup.menuItems as any[]) {
-              if (mimg.menuItem && !menuItemsMap.has(mimg.menuItem.id)) {
-                menuItemsMap.set(mimg.menuItem.id, {
-                  id: mimg.menuItem.id,
-                  name: mimg.menuItem.name,
-                })
-              }
-            }
           }
 
           return {

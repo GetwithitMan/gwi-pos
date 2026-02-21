@@ -66,25 +66,19 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           category: {
             select: { categoryType: true }
           },
-          modifierGroups: {
-            where: {
-              deletedAt: null,
-              modifierGroup: { deletedAt: null }
-            },
+          ownedModifierGroups: {
+            where: { deletedAt: null },
+            orderBy: { sortOrder: 'asc' },
             include: {
-              modifierGroup: {
-                include: {
-                  modifiers: {
-                    where: { deletedAt: null, isActive: true },
-                    select: {
-                      id: true,
-                      name: true,
-                      price: true,
-                      spiritTier: true,
-                    },
-                    orderBy: { sortOrder: 'asc' }
-                  }
-                }
+              modifiers: {
+                where: { deletedAt: null, isActive: true },
+                select: {
+                  id: true,
+                  name: true,
+                  price: true,
+                  spiritTier: true,
+                },
+                orderBy: { sortOrder: 'asc' }
               }
             }
           },
@@ -148,8 +142,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       const stockStatus = stockStatusMap.get(item.id)
 
       // Check for spirit upgrade group
-      const spiritGroup = item.modifierGroups.find(mg => mg.modifierGroup.isSpiritGroup)
-      const spiritModifiers = spiritGroup?.modifierGroup.modifiers || []
+      const spiritGroup = item.ownedModifierGroups.find(mg => mg.isSpiritGroup)
+      const spiritModifiers = spiritGroup?.modifiers || []
 
       // Group spirit modifiers by tier
       const spiritTiers = spiritModifiers.length > 0 ? {
@@ -184,7 +178,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         // Spirit tier data for quick selection
         spiritTiers,
         // Has non-spirit modifier groups
-        hasOtherModifiers: item.modifierGroups.filter(mg => !mg.modifierGroup.isSpiritGroup).length > 0,
+        hasOtherModifiers: item.ownedModifierGroups.filter(mg => !mg.isSpiritGroup).length > 0,
       }
     })
 
@@ -224,10 +218,10 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
         showOnline: item.showOnline,
         onlinePrice: item.onlinePrice !== null ? Number(item.onlinePrice) : null,
-        modifierGroupCount: item.modifierGroups.length,
-        modifierGroups: item.modifierGroups.map(mg => ({
-          id: mg.modifierGroup.id,
-          name: mg.modifierGroup.name,
+        modifierGroupCount: item.ownedModifierGroups.length,
+        modifierGroups: item.ownedModifierGroups.map(mg => ({
+          id: mg.id,
+          name: mg.name,
           showOnline: mg.showOnline,
         })),
         // Liquor Builder recipe data

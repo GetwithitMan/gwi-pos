@@ -111,7 +111,6 @@ model Location {
 
   // Menu Details (multi-tenancy)
   modifiers              Modifier[]
-  menuItemModifierGroups MenuItemModifierGroup[]
 
   // Combos (multi-tenancy)
   comboTemplates        ComboTemplate[]
@@ -934,8 +933,7 @@ model MenuItem {
   syncedAt  DateTime?
 
   // Relations
-  modifierGroups         MenuItemModifierGroup[] // Legacy junction - kept for backwards compatibility
-  ownedModifierGroups    ModifierGroup[] @relation("ItemModifierGroups") // NEW: Item-specific modifier groups
+  ownedModifierGroups    ModifierGroup[] @relation("ItemModifierGroups") // Item-specific modifier groups
   orderItems             OrderItem[]
   upsellTriggers         UpsellConfig[]          @relation("TriggerItem")
   upsellSuggestions      UpsellConfig[]          @relation("SuggestionItem")
@@ -1014,7 +1012,8 @@ model ModifierGroup {
   hasOnlineOverride Boolean @default(false) // Enable separate modifier management for online orders
 
   // Display
-  sortOrder Int @default(0)
+  sortOrder  Int     @default(0)
+  showOnline Boolean @default(true) // Whether this modifier group appears for online ordering
 
   // Liquor Builder - Spirit Group Configuration
   isSpiritGroup Boolean @default(false)
@@ -1026,7 +1025,6 @@ model ModifierGroup {
   syncedAt  DateTime?
 
   modifiers Modifier[]
-  menuItems MenuItemModifierGroup[] // Legacy junction - kept for backwards compatibility
 
   // Modifiers that use this group as a sub-modifier
   parentModifiers Modifier[] @relation("SubModifier")
@@ -1139,31 +1137,6 @@ model Modifier {
   @@index([linkedBottleProductId])
   @@index([linkedMenuItemId])
   @@index([locationId, linkedMenuItemId])
-}
-
-model MenuItemModifierGroup {
-  id              String        @id @default(cuid())
-  locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
-  menuItemId      String
-  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
-  modifierGroupId String
-  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
-
-  sortOrder  Int     @default(0)
-  showOnline Boolean @default(true) // Whether this modifier group appears for online ordering
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-
-  @@unique([menuItemId, modifierGroupId])
-  @@index([locationId])
-  @@index([modifierGroupId])
-  @@index([menuItemId])
 }
 
 // ============================================

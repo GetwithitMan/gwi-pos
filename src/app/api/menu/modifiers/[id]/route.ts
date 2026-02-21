@@ -29,12 +29,8 @@ export const GET = withVenue(async function GET(
             },
           },
         },
-        menuItems: {
-          include: {
-            menuItem: {
-              select: { id: true, name: true }
-            }
-          }
+        menuItem: {
+          select: { id: true, name: true }
         },
         spiritConfig: {
           include: {
@@ -104,10 +100,7 @@ export const GET = withVenue(async function GET(
           pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
         } : null,
       })),
-      linkedItems: modifierGroup.menuItems.map(link => ({
-        id: link.menuItem.id,
-        name: link.menuItem.name,
-      }))
+      linkedItems: modifierGroup.menuItem ? [{ id: modifierGroup.menuItem.id, name: modifierGroup.menuItem.name }] : []
     } })
   } catch (error) {
     console.error('Failed to fetch modifier group:', error)

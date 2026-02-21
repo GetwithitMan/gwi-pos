@@ -23,9 +23,9 @@ export const GET = withVenue(async function GET(
         category: {
           select: { id: true, name: true, categoryType: true },
         },
-        modifierGroups: {
-          where: { modifierGroup: { deletedAt: null } },
-          select: { modifierGroupId: true },
+        ownedModifierGroups: {
+          where: { deletedAt: null },
+          select: { id: true },
         },
       },
     })
@@ -60,8 +60,8 @@ export const GET = withVenue(async function GET(
         showOnline: item.showOnline,
         itemType: item.itemType,
         isPizza: isPizzaItem,
-        hasModifiers: item.modifierGroups.length > 0 || isPizzaItem,
-        modifierGroups: item.modifierGroups,
+        hasModifiers: item.ownedModifierGroups.length > 0 || isPizzaItem,
+        modifierGroups: item.ownedModifierGroups.map(mg => ({ modifierGroupId: mg.id })),
         // Tax
         taxRate: item.taxRate ? Number(item.taxRate) : null,
         isTaxExempt: item.isTaxExempt,

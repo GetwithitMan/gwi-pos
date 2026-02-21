@@ -69,10 +69,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       },
     })
 
-    // Update showOnline on the join table (MenuItemModifierGroup) if provided
+    // Update showOnline directly on ModifierGroup
     if (showOnline !== undefined) {
-      await db.menuItemModifierGroup.updateMany({
-        where: { menuItemId, modifierGroupId: groupId },
+      await db.modifierGroup.update({
+        where: { id: groupId },
         data: { showOnline },
       })
     }
