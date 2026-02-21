@@ -5,6 +5,83 @@
 
 ---
 
+## 2026-02-20 — P0/P1 Bug Sprint + T-080 Full Stack + T-016 UI Polish (Session 6)
+
+**Session theme:** Button up all remaining sprint items — P0 floor plan bugs, T-079 partial payments, T-077 EOD, T-080 all phases (POS + MC + receipts), T-016 glassmorphism lift
+
+**Summary:** Cleared all P0 floor plan deployment blockers (T-031, T-032, T-033, T-044), fixed partial payment void-and-retry flow, shipped EOD manager socket notifications, completed T-080 pricing program across all three layers (MC admin UI, POS checkout, receipts/print), and polished the POS ordering interface with glassmorphism throughout.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `423febb` | fix(floor-plan): T-031/033 — remove hot-path console.error, add toast + rollback |
+| `ef9eb04` | fix(payments): T-079 — Void & Retry auto-return + split-tender progress banner |
+| `87b0a09` | feat(eod): T-077 — EOD businessDay logic fix + socket notification + summary overlay |
+| `9a8c423` | feat(pricing): T-080 Phase 3+5 — surcharge line item in checkout + receipts |
+| `ac292bf` | feat(ui): T-016 — glassmorphism polish on POS ordering interface |
+
+### Commits — gwi-mission-control
+
+| Hash | Description |
+|------|-------------|
+| `7c13ecf` | feat(pricing): T-080 Phase 2 — PricingProgramCard MC admin UI |
+
+### Deployments
+- All pushed to `main` → Vercel auto-deploys
+
+### Features Delivered
+
+**P0 Floor Plan Fixes** (`423febb`)
+- T-031: Removed `console.error` from 5 hot-path handlers (handlePointerUp, handleTableUpdate, handleSeatDrag, handleMoveTable, handleRotateTable) → replaced with `toast.error()`
+- T-033: Optimistic rollback added to handlePointerUp (`prevTables` snapshot + restore on catch); `response.ok` check before applying server state
+- T-032: Verified deterministic grid placement already in place (no Math.random) — no change needed
+- T-044: Verified VOID/COMP stamps correctly render on FloorPlanHome — no change needed
+
+**Partial Payment Fixes** (`ef9eb04`)
+- T-079: After Void & Retry succeeds, `onCancel()` called automatically → returns to method selection (no manual dismiss required)
+- Split-tender progress banner shows when `pendingPayments.length > 0` ("X of Y payments captured")
+
+**EOD Reset Improvements** (`87b0a09`)
+- T-077: `eod-cleanup` route now uses `businessDayDate` OR `createdAt` fallback — consistent with `eod/reset` business day logic
+- `eod/reset` emits `eod:reset-complete` socket event with stats after reset
+- FloorPlanHome listens for `eod:reset-complete` → toast + `refreshAll()` + dismissable overlay (bottom-right)
+
+**T-080 Phase 3+5 — Surcharge in Checkout + Receipts** (`9a8c423`)
+- `useOrderSettings`: exposes `pricingProgram` from location settings cache
+- `usePricing`: computes `surchargeAmount` via `calculateSurcharge()` when model=surcharge and method≠cash
+- `PaymentModal`: surcharge line item ("Credit Card Surcharge (X%): +$X.XX") + disclosure text visible before confirm
+- `Receipt.tsx`: surcharge row between discount and tax; disclosure text above footer
+- `print-factory`: ESC/POS surcharge line + disclosure text on thermal receipts
+- `daily-report-receipt` / `shift-closeout-receipt`: optional `surchargeTotal` line in revenue/sales sections
+
+**T-080 Phase 2 — MC Pricing Admin UI** (`7c13ecf` in gwi-mission-control)
+- `PricingProgramCard.tsx` (750 lines): replaces CashDiscountCard
+- 6-pill model selector (none, cash_discount, surcharge, flat_rate, interchange_plus, tiered)
+- Conditional form fields per model; surcharge shows CT/MA/PR compliance warning + 3% cap validation
+- `buildInitialState()` backward-compat from legacy `dualPricing` settings
+- Saves as `settings.pricingProgram` via existing deep-merge endpoint
+- `LocationSettings` type + `PricingProgram` interface added to `venue-settings.ts`
+
+**T-016 Glassmorphism UI Polish** (`ac292bf`)
+- `FloorPlanMenuItem`: `backdrop-blur(12px)`, elevated box shadows, indigo hover glow
+- `OrderPanel`: `backdrop-blur(16px)` on main panel; seat group headers get accent left-border (indigo selected, seat-color otherwise)
+- `CategoriesBar`: `blur(10px)` backdrop + bottom border; active category gets glow shadow
+- `ModifierGroupSection`: required/optional badges ("• Required" / "• Optional") + left-border CSS classes
+- `ModifierModal`: "📝 Special Instructions" label + focus/blur border color transitions
+
+### Resolved Task Board Items
+T-016, T-031, T-032 (verified), T-033, T-044 (verified), T-047 (verified), T-077, T-079, T-080 (Phases 1–5)
+
+### Known Issues / Blockers
+- T-080 Phase 6: Backoffice reports (gwi-backoffice) — surcharge tracking in cloud reports. Not yet started.
+- P1-05: Socket multi-terminal validation — needs real Docker/hardware
+- P1-07: Card token persistence — needs live Datacap hardware (blocks Loyalty)
+- GL-06: Pre-launch checklist at 8% — manual hardware testing required
+- T-049: KDS full flow on Chrome 108 — needs physical KDS device
+
+---
+
 ## 2026-02-20 — Full Feature Sweep: All Remaining P1 Tasks (Session 5)
 
 **Session theme:** Clear all remaining backlog items — settings UI, orders manager, pricing engine, small UX fixes

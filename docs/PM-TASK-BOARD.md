@@ -97,11 +97,22 @@
 
 | ID | Task | Assigned To | Picked Up | Notes |
 |----|------|-------------|-----------|-------|
-| T-016 | POS front-end ordering UI lift — ModifierModal flow, item selection UX, order panel polish | PM: Menu | 2026-02-07 | OrderPanel modifier depth, pricing, pre-modifier buttons fixed this session. Remaining: ModifierModal redesign, item grid layout, glassmorphism consistency |
+
 ## Completed
 
 | ID | Task | Completed By | Date | Notes |
 |----|------|-------------|------|-------|
+| T-016 | POS front-end ordering UI lift | PM: Menu | 2026-02-20 | Glassmorphism: FloorPlanMenuItem blur/shadow, OrderPanel backdrop-blur + seat headers, CategoriesBar blur+border, ModifierGroupSection required/optional badges, ModifierModal Special Instructions. Commit `ac292bf` |
+| T-031 | Remove production console logging from Floor Plan hot paths | PM: Floor Plan | 2026-02-20 | Removed console.error from 5 hot-path handlers → toast.error(). Commit `423febb` |
+| T-032 | Replace Math.random() with deterministic table placement | PM: Floor Plan | 2026-02-20 | ALREADY DONE — deterministic grid placement was already in place. Verified. |
+| T-033 | Add API failure rollback + user notifications to Floor Plan | PM: Floor Plan | 2026-02-20 | toast.error + optimistic rollback (prevTables snapshot + restore) + response.ok check. Commit `423febb` |
+| T-044 | Verify VOID/COMP stamps render on FloorPlanHome | PM: Orders | 2026-02-20 | ALREADY DONE — stamps, voidReason, wasMade all correctly wired end-to-end. Verified. |
+| T-047 | Wire dispatchOpenOrdersChanged into void/delete route | PM: Orders | 2026-02-20 | ALREADY DONE — both comp-void and void-tab routes already fire the event. Verified. |
+| T-077 | EOD Auto-Close Stale Orders | PM: Orders | 2026-02-20 | eod-cleanup now uses businessDayDate logic; eod/reset emits eod:reset-complete socket event; FloorPlanHome shows dismissable EOD Summary overlay. Commit `87b0a09` |
+| T-079 | Handle partial payment approval flow | PM: Payments | 2026-02-20 | Void & Retry now calls onCancel() after void to auto-return to method selection; Payment Progress banner shown when pendingPayments > 0. Commit `ef9eb04` |
+| T-080 (Phase 2) | Pricing Program MC Admin UI | PM: Mission Control | 2026-02-20 | PricingProgramCard.tsx (750 lines) in gwi-mission-control. 6-pill model selector, per-model fields, surcharge compliance check. Commit `7c13ecf` |
+| T-080 (Phase 3) | Pricing Program POS Checkout UI | PM: Payments | 2026-02-20 | usePricing computes surchargeAmount; PaymentModal shows surcharge line + disclosure before confirm. Commit `9a8c423` |
+| T-080 (Phase 5) | Pricing Program Receipts + Print | PM: Hardware | 2026-02-20 | Receipt.tsx surcharge row; print-factory ESC/POS surcharge line; daily+shift closeout surchargeTotal field. Commit `9a8c423` |
 | T-038 | Fix usePOSLayout loadLayout timing | PM: Orders | 2026-02-20 | employeeId guard in useEffect + dependency array. Commit `b91bf0b` |
 | T-039 | Add Quick Pick Numbers toggle to gear dropdown | PM: Orders | 2026-02-20 | Added to UnifiedPOSHeader, wired in orders/page.tsx, fixed pre-existing quickBarEnabled bug. Commit `b91bf0b` |
 | T-052 | Quick pick bar default to true | PM: Orders | 2026-02-20 | Already defaulted to true. Verified. Commit `b91bf0b` |
