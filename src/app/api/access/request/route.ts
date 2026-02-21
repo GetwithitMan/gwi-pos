@@ -6,18 +6,31 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import nodemailer from 'nodemailer'
 import { generateOTP, normalizePhone, maskPhone } from '@/lib/access-gate'
 import { logAccess } from '@/lib/access-log'
 import { getEntryByPhone } from '@/lib/access-allowlist'
 
 const ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
 
-/** Mask email for display: j***@gmail.com */
+/** Mask email for display: br***@gmail.com */
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@')
   if (!domain) return '***'
   const visible = local.slice(0, Math.min(2, local.length))
   return `${visible}***@${domain}`
+}
+
+function createTransporter() {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT ?? '587'),
+    secure: false, // STARTTLS
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  })
 }
 
 export async function POST(req: NextRequest) {
@@ -67,46 +80,35 @@ export async function POST(req: NextRequest) {
   // Generate OTP
   const code = await generateOTP(normalized, ACCESS_SECRET)
 
-  // Send code via email (Resend)
-  const resendKey = process.env.RESEND_API_KEY
-  const fromEmail = process.env.RESEND_FROM_EMAIL ?? 'access@barpos.restaurant'
-
-  if (!resendKey) {
-    console.error('[access/request] RESEND_API_KEY not set')
+  // Send code via email (SMTP / Nodemailer)
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error('[access/request] SMTP credentials not configured')
     return NextResponse.json({ error: 'Email service not configured' }, { status: 503 })
   }
 
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: `GWI POS Access <${fromEmail}>`,
-        to: [entry.email],
-        subject: `Your GWI POS access code: ${code}`,
-        html: `
-          <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
-            <h2 style="margin:0 0 8px;font-size:20px;color:#111">GWI Point of Sale</h2>
-            <p style="margin:0 0 24px;color:#555;font-size:14px">Your access code for barpos.restaurant</p>
-            <div style="background:#f4f4f5;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
-              <p style="margin:0 0 4px;font-size:13px;color:#888;letter-spacing:0.05em;text-transform:uppercase">Access Code</p>
-              <p style="margin:0;font-size:40px;font-weight:700;letter-spacing:0.15em;color:#111">${code}</p>
-            </div>
-            <p style="margin:0 0 8px;color:#555;font-size:13px">Enter this code on the access page. It expires in <strong>10 minutes</strong>.</p>
-            <p style="margin:0;color:#999;font-size:12px">If you didn't request this, you can ignore this email.</p>
-          </div>
-        `,
-      }),
-    })
+  const fromEmail = process.env.SMTP_FROM ?? process.env.SMTP_USER
 
-    if (!response.ok) {
-      const err = await response.text()
-      console.error('[access/request] Resend error:', err)
-      return NextResponse.json({ error: 'Failed to send email' }, { status: 502 })
-    }
+  try {
+    const transporter = createTransporter()
+    await transporter.sendMail({
+      from: `GWI POS Access <${fromEmail}>`,
+      to: entry.email,
+      subject: `Your GWI demo access code: ${code}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+          <h2 style="margin:0 0 8px;font-size:20px;color:#111">GWI Point of Sale</h2>
+          <p style="margin:0 0 24px;color:#555;font-size:14px">Your access code for barpos.restaurant</p>
+          <div style="background:#f4f4f5;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
+            <p style="margin:0 0 4px;font-size:13px;color:#888;letter-spacing:0.05em;text-transform:uppercase">Access Code</p>
+            <p style="margin:0;font-size:40px;font-weight:700;letter-spacing:0.15em;color:#111">${code}</p>
+          </div>
+          <p style="margin:0 0 8px;color:#555;font-size:13px">Enter this code on the access page. It expires in <strong>10 minutes</strong>.</p>
+          <p style="margin:0 0 8px;color:#555;font-size:13px">Your session will stay active as long as you&apos;re using the demo. After <strong>1 hour of inactivity</strong> you&apos;ll need to request a new code.</p>
+          <p style="margin:0;color:#999;font-size:12px">If you didn't request this, you can ignore this email.</p>
+        </div>
+      `,
+      text: `Your GWI POS demo access code is: ${code}\n\nExpires in 10 minutes. Session stays active while you use the demo — you'll be asked to re-verify after 1 hour of inactivity.`,
+    })
   } catch (err) {
     console.error('[access/request] Email send failed:', err)
     return NextResponse.json({ error: 'Failed to send email' }, { status: 502 })

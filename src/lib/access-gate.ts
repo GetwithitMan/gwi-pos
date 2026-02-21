@@ -91,7 +91,7 @@ export async function signAccessToken(
   const payload: AccessPayload = {
     phone: maskPhone(phone),
     iat: now,
-    exp: now + 8 * 60 * 60,
+    exp: now + 60 * 60, // 1 hour — refreshed on each request while active
   }
   const encoder = new TextEncoder()
   const headerB64 = _b64u(encoder.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })))

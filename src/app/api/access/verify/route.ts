@@ -49,13 +49,13 @@ export async function POST(req: NextRequest) {
 
   await logAccess(maskPhone(normalized), ip, ua, 'verified')
 
-  // Set gwi-access cookie (8 hours, httpOnly, secure in production)
+  // Set gwi-access cookie (1 hour, refreshed on each request while active)
   const res = NextResponse.json({ success: true })
   res.cookies.set('gwi-access', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 8 * 60 * 60,
+    maxAge: 60 * 60,
     path: '/',
   })
   // Clear the rate-limit cookie on success

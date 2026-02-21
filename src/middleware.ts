@@ -162,6 +162,20 @@ export async function middleware(request: NextRequest) {
       gateUrl.searchParams.set('next', pathname)
       return NextResponse.redirect(gateUrl)
     }
+
+    // Refresh the session cookie on every request — resets the 1-hour
+    // inactivity clock so active users stay logged in automatically.
+    const { signAccessToken } = await import('@/lib/access-gate')
+    const freshToken = await signAccessToken(accessPayload.phone, GWI_ACCESS_SECRET)
+    const response = NextResponse.next()
+    response.cookies.set('gwi-access', freshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: 60 * 60,
+      path: '/',
+    })
+    return response
   }
 
   const isCloud = isCloudVenueHost(hostname)
