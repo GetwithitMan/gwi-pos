@@ -16,7 +16,7 @@
  *   NEXT_PUBLIC_DATACAP_ENV             — "cert" (default) | "production"
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 // ─── Datacap Hosted Token Global ─────────────────────────────────────────────
@@ -269,7 +269,7 @@ function ItemModal({ item, onClose, onAdd }: ItemModalProps) {
 
 // ─── Main Page Component ──────────────────────────────────────────────────────
 
-export default function OnlineOrderPage() {
+function OnlineOrderPageInner() {
   const searchParams = useSearchParams()
   const locationId = searchParams.get('locationId') ?? ''
 
@@ -913,5 +913,17 @@ export default function OnlineOrderPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function OnlineOrderPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-gray-400 text-lg">Loading…</div>
+      </div>
+    }>
+      <OnlineOrderPageInner />
+    </Suspense>
   )
 }
