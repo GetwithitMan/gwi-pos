@@ -72,30 +72,39 @@ export async function GET(request: NextRequest) {
             trackInventory: true,
             currentStock: true,
             lowStockAlert: true,
-            // Modifier groups (item-specific)
-            ownedModifierGroups: {
+            // Modifier groups via junction table (same path as admin /api/menu)
+            modifierGroups: {
+              where: {
+                deletedAt: null,
+                showOnline: true,
+                modifierGroup: { deletedAt: null },
+              },
               orderBy: { sortOrder: 'asc' },
-              select: {
-                id: true,
-                name: true,
-                displayName: true,
-                minSelections: true,
-                maxSelections: true,
-                isRequired: true,
-                allowStacking: true,
-                sortOrder: true,
-                modifiers: {
-                  where: {
-                    isActive: true,
-                    showOnline: true,
-                  },
-                  orderBy: { sortOrder: 'asc' },
+              include: {
+                modifierGroup: {
                   select: {
                     id: true,
                     name: true,
-                    price: true,
-                    showOnline: true,
-                    isActive: true,
+                    displayName: true,
+                    minSelections: true,
+                    maxSelections: true,
+                    isRequired: true,
+                    allowStacking: true,
+                    sortOrder: true,
+                    modifiers: {
+                      where: {
+                        isActive: true,
+                        showOnline: true,
+                        deletedAt: null,
+                      },
+                      orderBy: { sortOrder: 'asc' },
+                      select: {
+                        id: true,
+                        name: true,
+                        displayName: true,
+                        price: true,
+                      },
+                    },
                   },
                 },
               },
@@ -141,18 +150,18 @@ export async function GET(request: NextRequest) {
               lowStockAlert: item.lowStockAlert,
               isAvailable: item.isAvailable,
             }),
-            modifierGroups: item.ownedModifierGroups
-              .filter(mg => mg.modifiers.length > 0)
+            modifierGroups: item.modifierGroups
+              .filter(mg => mg.modifierGroup.modifiers.length > 0)
               .map(mg => ({
-                id: mg.id,
-                name: mg.displayName ?? mg.name,
-                minSelections: mg.minSelections,
-                maxSelections: mg.maxSelections,
-                isRequired: mg.isRequired,
-                allowStacking: mg.allowStacking,
-                options: mg.modifiers.map(mod => ({
+                id: mg.modifierGroup.id,
+                name: mg.modifierGroup.displayName ?? mg.modifierGroup.name,
+                minSelections: mg.modifierGroup.minSelections,
+                maxSelections: mg.modifierGroup.maxSelections,
+                isRequired: mg.modifierGroup.isRequired,
+                allowStacking: mg.modifierGroup.allowStacking,
+                options: mg.modifierGroup.modifiers.map(mod => ({
                   id: mod.id,
-                  name: mod.name,
+                  name: mod.displayName ?? mod.name,
                   price: Number(mod.price),
                 })),
               })),
