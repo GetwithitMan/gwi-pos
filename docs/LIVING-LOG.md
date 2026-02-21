@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-02-20 — T-071/T-072 Online Ordering Routing + Pages (Session 10)
+
+**Session theme:** Customer-facing online ordering — middleware bypass + dynamic `/{orderCode}/{slug}/` route
+
+**Summary:** T-071 and T-072 shipped. Middleware now bypasses cloud auth for `/:orderCode/:slug` paths. New public `resolve-order-code` endpoint resolves slug → locationId with backward-compatible onlineOrderingEnabled check. Full 3-step online ordering flow (menu → cart → Datacap payment) available at `/{orderCode}/{slug}/` using Next.js 15 async params. Zero TypeScript errors.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `34e237b` | feat(online-ordering): T-071 + T-072 — middleware routing + customer ordering pages |
+
+### Features Delivered
+
+**T-071** — Middleware bypass for `/:orderCode/:slug` and `/api/online|public/*` paths. Runs before cloud auth, sets `x-venue-slug` header, passes through unauthenticated. All existing admin auth untouched.
+
+**T-072** — `src/app/[orderCode]/[slug]/page.tsx` (962 lines): full online ordering flow using `use(params)` for Next.js 15 async params. Calls `GET /api/public/resolve-order-code?slug=X` on mount. Error + not-found pages included. `onlineOrderingEnabled` defaults to allowed if key absent (backward compat).
+
+### Resolved Task Board Items
+T-071, T-072
+
+### Known Issues / Blockers
+- `Location.settings.onlineOrdering.enabled` key not yet populated — online ordering defaults to allowed for all venues. Need to add toggle in POS settings UI (future task).
+- T-046: Socket end-to-end — needs Docker/hardware
+- T-049: KDS full flow on Chrome 108 — needs physical device
+
+---
+
 ## 2026-02-20 — T-042/T-073/T-075 Multi-Repo Sprint (Session 9)
 
 **Session theme:** Multi-select pre-modifiers (gwi-pos), QR code generation + environment field (gwi-mission-control)
