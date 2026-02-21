@@ -5,6 +5,42 @@
 
 ---
 
+## 2026-02-20 — T-021/022/034/036 + Task Board Cleanup (Session 7)
+
+**Session theme:** Clear remaining P1/P2 items — normalizeCoord hardening, soft-delete audit, batch close UI, tip adjustment report
+
+**Summary:** Four more tasks shipped. T-034 adds fail-fast dev behavior and context-aware logging to `normalizeCoord`. T-036 fixes two missing `deletedAt: null` guards in floor-plan-elements. T-021 ships the Batch Settlement card in settings. T-022 ships the Tip Adjustment report with live Datacap gratuity adjust. Task board cleaned up (duplicates removed, T-023/T-048 back-filled).
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `b3442a6` | fix(floor-plan): T-034 + T-036 — normalizeCoord context logging + soft-delete guards |
+| `aedfad2` | docs: task board — mark T-023/034/036/048 complete, remove duplicate rows |
+| `7fe7fb5` | feat(settings): T-021 — Batch Settlement card in settings/payments |
+| `0beee97` | feat(reports): T-022 — Tip Adjustment report with per-row Datacap gratuity adjust |
+
+### Features Delivered
+
+**T-034** — `normalizeCoord` now throws in dev on invalid coords (fail-fast). Prod logs tableId+action context. bulk-update route passes context.
+
+**T-036** — Audited 22 DB queries across floor plan routes. Fixed 2 missing `deletedAt: null` in floor-plan-elements POST (menuItem + section validation).
+
+**T-021** — Batch Settlement card in settings/payments: reader selector, live batch summary preview modal, Confirm & Close Batch flow with SAF warning.
+
+**T-022** — `/reports/tip-adjustment`: date-range filter, 3 summary cards, per-row inline Datacap gratuity adjust, disabled for SAF/offline payments, optimistic state update.
+
+### Resolved Task Board Items
+T-021, T-022, T-034, T-036 (plus back-filled T-023, T-048)
+
+### Known Issues / Blockers
+- T-080 Phase 6: Backoffice surcharge reports (gwi-backoffice) — not yet started
+- P1-05: Socket multi-terminal validation — needs Docker/hardware
+- P1-07: Card token persistence — needs live Datacap hardware
+- T-049: KDS full flow on Chrome 108 — needs physical device
+
+---
+
 ## 2026-02-20 — P0/P1 Bug Sprint + T-080 Full Stack + T-016 UI Polish (Session 6)
 
 **Session theme:** Button up all remaining sprint items — P0 floor plan bugs, T-079 partial payments, T-077 EOD, T-080 all phases (POS + MC + receipts), T-016 glassmorphism lift
