@@ -1,0 +1,340 @@
+﻿One-Time-Use Tokenization
+Datacap provides a number of ways for the POS to collect manually entered card data in exchange for a one-time-use token. This keeps the POS clear of credit card data and out of PA-DSS scope. Either drop in a prebuilt iFrame control or configure your form to use a Datacap JavaScript client library.
+Datacap JS Client
+A web-based tokenization solution using a Datacap JS client.
+Datacap JS Client Demo
+Try Live Demo
+Type Definitions
+DatacapToken
+Type:
+Object
+Properties
+Name
+	Type
+	Description
+	Token
+	String
+	Token of user-entered account data.
+	Brand
+	String
+	Card brand of account represented by token.
+	ExpirationMonth
+	String
+	Expiration month of account represented by token.
+	ExpirationYear
+	String
+	Expiration year of account represented by token.
+	Last4
+	String
+	Last four digits of account represented by token
+	Bin
+	String
+	First six digits of account represented by token.
+	CVV
+	String
+	CVV number of account represented by token.
+	Methods
+(static) requestToken(publicAuthenticator, formName, callbackFunction) → {DatacapToken}
+Request a token from the Datacap Token API.
+Parameters:
+Name
+	Type
+	Description
+	publicAuthenticator
+	String
+	A Datacap token key.
+	formName
+	String
+	The name of the form containing account data entry elements.
+	callbackFunction
+	function
+	The function which to call with tokenization results.
+	Returns:
+A DatacapToken object containing the token properties of the tokenized user-entered account data.
+Type DatacapToken
+________________
+
+
+(static) validateCardNumber(cardNumber) → {Boolean}
+Validate a credit card number with the Luhn Algorithm.
+Parameters:
+Name
+	Type
+	Description
+	CardNumber
+	String
+	A credit card number to validate.
+	Returns:
+Credit card number validation status.
+Type Boolean
+________________
+
+
+(static) validateCVV(cvv) → {Boolean}
+Validate a credit card CVV.
+Parameters:
+Name
+	Type
+	Description
+	cvv
+	String
+	A credit card CVV/CVC to validate.
+	Returns:
+Credit card CVV/CVC validation status.
+Type Boolean
+________________
+
+
+(static) validateExpirationDate(month, year) → {Boolean}
+Validate a credit card expiration date.
+Parameters:
+Name
+	Type
+	Description
+	month
+	String
+	A 2-digit representation of the card’s expiration month.
+	year
+	String
+	A 2-digit or 4-digit representation of the card’s expiration year.
+	Returns:
+Credit card expiration date validation status.
+Type Boolean
+Getting started with Datacap JavaScript client library
+Include the client on your page
+Add the secure, hosted JavaScript client in the <head> of your page:
+* html
+<script src="https://token.dcap.com/v1/client"></script>
+
+Type
+	URL
+	Certification
+	https://token-cert.dcap.com/v1/client
+	Certification
+	https://token-cert.dcap.com/v2/info/20241220
+	Production
+	https://token.dcap.com/v1/client
+	Production
+	https://token.dcap.com/v2/info/20241220
+	Define the required form and controls
+Give your payment form an ID:
+* html
+<form id="payment_form">
+Add the following 4 payment information input controls to your form:
+* html
+<input type="text" data-token="card_number" />
+<input type="text" data-token="exp_month" />
+<input type="text" data-token="exp_year" />
+<input type="text" data-token="cvv" />
+Note: The payment info input controls must not have ID or Name attributes.
+Define an input control to insert the token into:
+* html
+<input type="hidden" id="token" />
+Define required JavaScript
+Define a JavaScript callback method for token events:
+* javascript
+var tokenCallback = function(response) {
+  if (response.Error)
+  {
+    alert("Token error: " + response.Error);
+  }
+  else
+  {
+    var token = response.Token;
+    document.getElementById("token").value = token;
+  }
+}
+Request a token
+Call requestToken with your token key, payment form ID, and token callback method:
+* javascript
+ DatacapWebToken.requestToken("[Token Key Goes Here]", "payment_form", tokenCallback);
+The response object received by your callback method looks like this:
+On Success
+* json
+{
+  "Token": "DC4:AAAMbdJpMn6wZYlx84etCekz2HMpp6IQtqL0G3aMInirXYQMNLpr9oJMctxC76NVSGkO5XXO/naM0X1CfzX1md2caSTHKO4QjpYmzJlMOsQwer5VUEJWCZVzd0Ytr2jvRLw=",
+  "Brand": "Visa",
+  "ExpirationMonth": "12",
+  "ExpirationYear": "2026",
+  "Last4": "1111",
+  "Bin": "123456",
+  "CVV": "555"
+}
+On Failure
+* json
+{
+    "Errors": [
+        "The reason the error was thrown."
+    ]
+}
+Possible Error Responses
+Error
+	Description
+	"The Account field is not a valid credit card number."
+	The provided card number does not pass the Luhn Algorithm’s test for validity.
+	"Invalid Expiration Month"
+	The month format is incorrect. Must be a 2-digit representation of the card’s expiration month.
+	"Invalid Expiration Year"
+	The year format is incorrect. Must be a 2-digit or 4-digit representation of the card’s expiration year.
+	"Invalid CVV"
+	The CVV format is incorrect. Must be 3 to 4 digits long.
+	"Token Privileges Suspended"
+	Fraud protection has been triggered because of multiple failed responses. Wait 20 minutes and try again.
+	Validation Helper Methods
+The Datacap WebToken client provides a few methods to help integrators validate their input fields, for card number, expiration date, and CVV that return bool values indicating input validity.
+Validate Credit Card Number
+* javascript
+var validCard = DatacapWebToken.validateCardNumber("4242424242424242");
+Validate Expiration Date
+* javascript
+var validExpirationDate = DatacapWebToken.validateExpirationDate("06", "2020");
+Validate CVV
+* javascript
+var validCVV = DatacapWebToken.validateCVV("123");
+Use your tokens
+Now that you’ve got fresh tokens in your payment form, you can submit the form and process token payments on Datacap’s payment platform.
+Report Bugs
+If you encounter any bugs or issues with the latest version of WebToken, please report them to us by e-mailing Integration Support
+iFrames
+A web-based tokenization solution using a Datacap hosted iFrame.
+iFrame Demo
+Try Live Demo
+Type Definitions
+DatacapToken
+Type: object
+Properties:
+Name
+	Type
+	Description
+	Token
+	String
+	Token of user-entered account data.
+	Brand
+	String
+	Card brand of account represented by token.
+	ExpirationMonth
+	String
+	Expiration month of account represented by token.
+	ExpirationYear
+	String
+	Expiration year of account represented by token.
+	Last4
+	String
+	Last four digits of account represented by token.
+	Bin
+	String
+	First six digits of account represented by token.
+	CVV
+	String
+	CVV number of account represented by token.
+	Methods
+(static) requestToken(publicAuthenticator, iframeID, callbackFunction, css) → {DatacapToken}
+Initialize an iframe to request a token from the Datacap Token API.
+Parameters:
+Name
+	Type
+	Description
+	publicAuthenticator
+	String
+	A Datacap token key.
+	iframeID
+	String
+	The name of the iframe element to initailize.
+	callbackFunction
+	Function
+	The function which to call with tokenization results.
+	css
+	String (Optional)
+	Custom CSS stylesheet which to apply to iframe contents.
+	Returns: A DatacapToken object containing the token properties of the tokenized user-entered account data.
+Type DatacapToken
+Getting started with iFrames
+Include the client on your page
+Add the secure, hosted JavaScript client in the <head> of your page:
+* html
+<script src="https://token.dcap.com/v1/client/hosted"></script>
+
+Type
+	URL
+	Certification
+	https://token-cert.dcap.com/v1/client/hosted
+	Certification
+	https://token-cert.dcap.com/v2/client/20241220/hosted
+	Production
+	https://token.dcap.com/v1/client/hosted
+	Production
+	https://token.dcap.com/v2/client/20241220/hosted
+	Define the required iFrame control
+Create an iFrame and give it an ID:
+* html
+<iframe id="token-iframe" frameborder="0"></iframe>
+Define an input control to insert the token resulting into:
+* html
+<input type="hidden" id="token" />
+Define required JavaScript
+Define a JavaScript callback method for token events:
+* javascript
+var tokenCallback = function(response) {
+          if (response.Error)
+          {
+            alert("Token error: " + response.Error);
+          }
+          else
+          {
+            var token = response.Token;
+            document.getElementById("token").value = token;
+          }
+        }
+Initialize the hosted iFrame
+Call init with your token key, iframe control ID, and token callback method:
+* javascript
+DatacapHostedWebToken.init('[Token Key Goes Here]', 'token-iframe', tokenCallback);
+Optional: Provide init with a string of your custom CSS to style the iframe contents:
+* javascript
+var customCSS = ".card-data { background-color: #ADD8E6; color: white; }";
+        DatacapHostedWebToken.init('[Token Key Goes Here]', 'token-iframe', tokenCallback, customCSS);
+Optional: For single page frameworks utilize DatacapHostedWebToken.removeMessageEventListener() to remove the current event listener to avoid multiple instances being active at once.
+The layout of the iframe contents and their classes can be found here: https://token.dcap.com/v1/view/i
+Note: When custom CSS is provided, Datacap’s default styling is entirely cleared.
+Request a token
+Call requestToken from your page to trigger tokenization:
+* xml
+<input type="button" onclick="DatacapHostedWebToken.requestToken()" value="Submit" />
+The response object received by your callback method looks like this:
+On Success
+* json
+{
+  "Token": "DC4:AAAMbdJpMn6wZYlx84etCekz2HMpp6IQtqL0G3aMInirXYQMNLpr9oJMctxC76NVSGkO5XXO/naM0X1CfzX1md2caSTHKO4QjpYmzJlMOsQwer5VUEJWCZVzd0Ytr2jvRLw=",
+  "Brand": "Visa",
+  "ExpirationMonth": "12",
+  "ExpirationYear": "2026",
+  "Last4": "1111",
+  "Bin": "123456",
+  "CVV": "555"
+}
+
+
+On Failure
+* json
+{
+    "Errors": [
+        "The reason the error was thrown."
+    ]
+}
+Possible Error Responses
+Error
+	Description
+	"The Account field is not a valid credit card number."
+	The provided card number does not pass the Luhn Algorithm’s test for validity.
+	"Invalid Expiration Month"
+	The month format is incorrect. Must be a 2-digit representation of the card’s expiration month.
+	"Invalid Expiration Year"
+	The year format is incorrect. Must be a 2-digit or 4-digit representation of the card’s expiration year.
+	"Invalid CVV"
+	The CVV format is incorrect. Must be 3 to 4 digits long.
+	"Token Privileges Suspended"
+	Fraud protection has been triggered because of multiple failed responses. Wait 20 minutes and try again.
+	Use your tokens
+Now that you’ve got a fresh token in your payment form, you can submit the form and process token payments on Datacap’s payment platform!
+Report bugs
+If you encounter any bugs or issues with the latest version of WebToken, please report them to us by e-mailing Integration Support

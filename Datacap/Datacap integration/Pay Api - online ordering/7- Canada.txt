@@ -1,0 +1,774 @@
+﻿Canada
+Sale
+To process a credit eCommerce transaction in Canada.
+POST /CanadianCredit/Sale
+Implementation Notes
+1. Pay API is only supported to Global Canada.
+2. Only supports transactions processed as credit
+Sample Request
+* Required Sale
+* Optional Sale
+POST /V2/CanadianCredit/Sale HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebAppCanada/1.0.1
+Authorization: ••••••
+Content-Length: 229
+
+
+{
+    "Token": "DC4:AQGHXLpr9utlIgMSQtRqAvrMkdfAuda-P4pAID4IPRSKaRcgDlowMZAln7Y4gBjLy3SV9C75hV3GU2o28RI7Kodn902nVij3pi7KJbmTw4ALCD5i5i7l0CtHBGTmeGMJZ5SDy3nosC0HTh-GVOOMpLVG",
+    "Amount" : "4.00",
+    "InvoiceNo" : "24370"
+}
+
+Token
+(String 1-256)
+	Required
+Datacap Token
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	ReturnClearExpDate
+(String 1-5)
+	“Allow” to return the clear expiration date.
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "541333XXXXXX4111",
+    "Expiration": "XXXX",
+    "Brand": "M/C",
+    "TranCode": "Sale",
+    "AuthCode": "111991",
+    "RefNo": "q-34Qe7g8Q4StKzgcri4r8Ju8WcO3",
+    "InvoiceNo": "24370",
+    "CVVResult": "M",
+    "Amount": "4.00",
+    "Authorized": "4.00",
+    "Token": "DC4:AQHiQN69H5JoKMuP3hVeTikkdX73-fZNU5anHC_e5torlSkyx3xUSsrImfomGEpSZJm-jRjEp0FkJXLZd2-yWHzrGNgBDUGQj4jSeYQWfwC7Cz6abYkbWFDl4Fbagy48mprEUsSRzVmtjhnpZXfZCJDR"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	transaction identifier
+	CVVResult
+(String 1-40 chars)
+	The CVV result returned by the processor
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorized
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.
+	Void Sale
+To void (reverse) a previously processed Sale.
+POST /CanadianCredit/Sale/{RefNo}/Void
+Implementation Notes:
+1. If using Pay API to void a card present transaction, be sure to use the PayAPI_ID as the RefNo.
+Sample Request
+* Required VoidSale
+* Optional VoidSale
+POST /V2/CanadianCredit/Sale/q-34Qe7g8Q4StKzgcri4r8Ju8WcO3/void HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebAppCanada/1.0.1
+Authorization: ••••••
+Content-Length: 230
+
+
+{
+    "Token" : "DC4:AQHiQN69H5JoKMuP3hVeTikkdX73-fZNU5anHC_e5torlSkyx3xUSsrImfomGEpSZJm-jRjEp0FkJXLZd2-yWHzrGNgBDUGQj4jSeYQWfwC7Cz6abYkbWFDl4Fbagy48mprEUsSRzVmtjhnpZXfZCJDR",
+    "Amount" : "4.00",
+    "InvoiceNo" : "24370",
+
+
+}
+
+Token
+(String 1-256)
+	Required
+Datacap Token
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	ReturnClearExpDate
+(String 1-5)
+	“Allow” to return the clear expiration date.
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "541333XXXXXX4111",
+    "Expiration": "XXXX",
+    "Brand": "M/C",
+    "TranCode": "VoidSale",
+    "AuthCode": "111991",
+    "RefNo": "q-34Qn2QkIXqyBpkCSzq4EYmOik4x",
+    "InvoiceNo": "24370",
+    "Amount": "4.00",
+    "Authorized": "4.00",
+    "Token": "DC4:AQHtffN1jHBQXUXsjHflJEkJ2VJHzrbSEaCkONVvnxJ9CSTdonhSpgrWQdh3t8MFxZPgj--a4riX2RuyR2u9nZC0DpFJVx5ruZ1WvCr-Hpd8ahfHVOionToF-P6Sq4tT9y2SsxNSIuMOS2Dw2HGOFzY8"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	transaction identifier
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorized
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.
+	Return
+To process a refund for the full or partial amount
+POST /CanadianCredit/Return
+Implementation Notes:
+1. To utilize Linked Returns, enable the Linked Returns setting in PSCS. To link a return to the sale or capture, save the RefNo value from the initial response and include the RefNo in the URL. The <ReturnAmountRemaining> tag is returned in the subsequent response with the remaining amount to be returned from the original sale or capture. The <ReturnAmountRemaining> value is the <Authorize> amount returned in the original sale or capture. A Linked Return of the full amount will result in 0.00 being returned.
+Sample Request
+* Required Return
+* Optional Return
+POST /V2/CanadianCredit/Return HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebAppCanada/1.0.1
+Authorization: ••••••
+Content-Length: 229
+
+
+{
+    "Token": "DC4:AQGgJkprdYhgvmIER6uQkmwUKJJLKgJKk2zwyY2rxWn9C6o7Bew73enHtqKL0bq0eWbjHbPLNWVjFwuxuJzEBjrzjPVHrDVegKoJPbH6FL-96GArrPZYiHuTk5Dq3tjadrMeNSr-qdE2nCEsU4mX8bid",
+    "Amount" : "2.50",
+    "InvoiceNo" : "24372"
+}
+
+Token
+(String 1-256)
+	Required
+Datacap Token
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	ReturnClearExpDate
+(String 1-5)
+	“Allow” to return the clear expiration date.
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "476173XXXXXX0043",
+    "Expiration": "XXXX",
+    "Brand": "VISA",
+    "TranCode": "Return",
+    "AuthCode": "000211",
+    "RefNo": "q-34QkuAkhSSACDF8BYZLErWE8EVy",
+    "InvoiceNo": "24372",
+    "Amount": "2.50",
+    "Authorized": "2.50",
+    "Token": "DC4:AQEnYLxLrffjHuz7wE7MBwKSzrdP6a4OL0jjv6ty2UNsajLW6oFwEy4I5TM-Wa-KvLQrwS3lgtl_i2EEG2Ee3J-aBHX3UVVT7oh7H5piphgBPuy9F9n_api4o_BLxpwnZqDriomaoNEniBkiPHdmWdp7"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	transaction identifier
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorized
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.
+	VoidReturn
+To void (reverse) a previously completed Return.
+POST /CanadianCredit/Return/{RefNo}/Void
+Sample Request
+* Required VoidReturn
+* Optional VoidReturn
+POST /V2/CanadianCredit/Return/q-34QkuAkhSSACDF8BYZLErWE8EVy/void HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebAppCanada/1.0.1
+Authorization: ••••••
+Content-Length: 229
+
+
+{
+    "Token": "DC4:AQEnYLxLrffjHuz7wE7MBwKSzrdP6a4OL0jjv6ty2UNsajLW6oFwEy4I5TM-Wa-KvLQrwS3lgtl_i2EEG2Ee3J-aBHX3UVVT7oh7H5piphgBPuy9F9n_api4o_BLxpwnZqDriomaoNEniBkiPHdmWdp7",
+    "Amount" : "2.50",
+    "InvoiceNo" : "24372"
+}
+
+Token
+(String 1-256)
+	Required
+Datacap Token
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	ReturnClearExpDate
+(String 1-5)
+	“Allow” to return the clear expiration date.
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "476173XXXXXX0043",
+    "Expiration": "XXXX",
+    "Brand": "VISA",
+    "TranCode": "VoidReturn",
+    "AuthCode": "000211",
+    "RefNo": "q-34QmMmUdNE61mEGfTDwTXGSCZyQ",
+    "InvoiceNo": "24372",
+    "Amount": "2.50",
+    "Authorized": "2.50",
+    "Token": "DC4:AQFqNsu07V_4iaSrfgCeUKxm1MbvbM1sYw3XPHFKMlcZCA1wfZH8dd5hy9z-d8arEbbx2Rntc9h2Ncy2a9xa-wTJ4ZU_67dPT-L18IgPxONpzy6v0LSqhTQv-ahgQPITMeawJLkBFtNH76rSfH80raK-"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	transaction identifier
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorized
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.
+	AuthOnly
+To verify a card is valid without charging any amount. This transaction does not create a charge/debit to the cardholder account and no funds will be accrued to the merchant.
+POST /CanadianCredit/Authonly
+Sample Request
+* Required AuthOnly
+* Optional AuthOnly
+POST /V2/CanadianCredit/AuthOnly HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebAppCanada/1.0.1
+Authorization: ••••••
+Content-Length: 239
+
+
+{
+    "Token": "DC4:AQHUWiyALPe-k8o1XM7mumUGZyEprflYbF1gXlEpQ-_phrlfZT9X3DNa6OFObvu60U4uzVUcbvoX1nCQJ23duhGtjRFa6Hlh5Ua3jt5nCbxVzy8AIKvZztqM5Wj4cj5JZSjoVh2ejV3od3ry6IzLcftT",
+    "Amount" : "0.00",
+    "InvoiceNo" : "24385"
+}
+
+Token
+(String 1-256)
+	Required
+Datacap Token
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	ReturnClearExpDate
+(String 1-5)
+	“Allow” to return the clear expiration date.
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "541333XXXXXX4111",
+    "Expiration": "XXXX",
+    "Brand": "M/C",
+    "TranCode": "ZeroAuth",
+    "AuthCode": "318492",
+    "RefNo": "q-34QopHeGUUDnTbegK00UH8GQrTa",
+    "InvoiceNo": "24386",
+    "CVVResult": "M",
+    "Amount": "0.00",
+    "Authorized": "0.00",
+    "Token": "DC4:AQH3IPpgbbPb48P_Et8VXEBP_4a3IP4gZGh51fZgONulHJ_XN7fWi75aFXRbM6Gkyb-CMyi4_k63UKlZpW2Il3k5KEc49x7b79TuB6ikHYrQlP8QFFZUYi3GX-p-P3EbhKb1_BmAPdN4TxaXyf7FWSC9",
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	transaction identifier
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorized
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.
+	Transaction Detail
+Replay transaction response by RefNo or InvoiceNo.
+GET /CanadianCredit/{RefNo}
+Implementation Notes:
+1. If using Pay API to get transaction detail for a card present transaction, be sure to use the PayAPI_ID as the RefNo.
+Sample Request
+* RefNo 
+GET /V2/CanadianCredit/q-34QfFNWcHtpC1SkhxfEu3cdPC8I/ HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebAppCanada/1.0.1
+Authorization: ••••••
+
+RefNo
+(String 1-20)
+	Required
+Included in URL when searching by RefNo.
+	Sample Response
+* RefNo Response
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "541333XXXXXX4111",
+    "Expiration": "1231",
+    "Brand": "M/C",
+    "TranCode": "Sale",
+    "AuthCode": "812161",
+    "RefNo": "q-34QfFNWcHtpC1SkhxfEu3cdPC8I",
+    "InvoiceNo": "24371",
+    "CVVResult": "M",
+    "Amount": "3.50",
+    "Authorized": "3.50",
+    "Token": "DC4:AQGioqq1uvFyyA8uWfwBnnueSKS_jV1ysADWabFgZ0fFeLjcgOOIynUXOGPBbB-H3kWZtjIzEQyr0yBWjXIAZhYlT4X35vrmrzlISd9heSKthYD7F18jWrXTZ0KZiEN2JNtg7n7EHTlscBHphceEbJXo"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	transaction identifier
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorized
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.
+	Card Lookup
+BIN lookup to determine card capabilities.
+POST /CanadianCredit/Cardlookup
+Sample Request
+* Required CardLookup
+POST /V2/CanadianCredit/cardlookup HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: LPOSeComm/10.0
+Authorization: ••••••
+Content-Length: 186
+
+
+{
+    "Token" : "DC4:AQH3IPpgbbPb48P_Et8VXEBP_4a3IP4gZGh51fZgONulHJ_XN7fWi75aFXRbM6Gkyb-CMyi4_k63UKlZpW2Il3k5KEc49x7b79TuB6ikHYrQlP8QFFZUYi3GX-p-P3EbhKb1_BmAPdN4TxaXyf7FWSC9"
+
+
+}
+
+Token
+(String 1-256)
+	Required
+Datacap multi-use token returned in transaction response.
+	Sample Response
+* Required Response
+{
+    "ResponseOrigin": "DSILogicEngine",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "SUCCESSFUL LOOKUP",
+    "Account": "541333XXXXXX4111",
+    "Expiration": "1231",
+    "CardUsage": "DEBIT",
+    "ExtendedCardInfo": "Debit,CheckCard,PrePaid,HSA",
+    "Brand": "M/C",
+    "TranCode": "CardLookup",
+    "Token": "DC4:AQFQHo9mnOcRON9ZNLM-a9W7BmJl6VSO05H9pXE6tNzmiDLzuKnlPMrZTnhiYxJvRnzcMT2EGSBNInjrCtO71fBGrUwi5h32b_GswHQlhL6-qRRJakwrf0l9aoPHPNuCOx7EezrvnBMsZfV-jt2s6qkA",
+    "RefNo": "q-34QqAf6nC2uql51yQopEfuSDafQ"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	CardUsage
+(String 1-20)
+	Values FSA, DEBIT, OTHER
+	ExtendedCardInfo
+(String 1-100)
+	Values Checkcard, Credit, Debit, Commercial, Fleet, PrePaid, HSA, PINlessBillPay, EBT, eWIC, or FSA.
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.
+	RefNo
+(String 1-20)
+	Transaction reference number.
+	Responses
+Credit transaction response bodies will include the following fields. The fields returned in the response body are dependent on the type of transaction processed.
+Response Fields
+Field
+	Type
+	Max Length
+	Description
+	ResponseOrigin
+	String
+	10
+	Indicates the source of response
+	ReturnCode
+	Number
+	6
+	Six digit return code that identifies the error type. See Definitions
+	Status
+	String
+	10
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+	String
+	256
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+	Numeric
+	19
+	Masked Card Account Number
+	Expiration
+	String
+	4
+	Card Expiration Date in MMYY format
+	Brand
+	String
+	5
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	AuthCode
+	String
+	16
+	Authorization code issued by the host for an approved transaction.
+	Amount
+	String
+	11
+	Transaction amount formatted to two decimal places.
+	Authorized
+	String
+	8
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	CVVResult
+	String
+	40
+	The CVV result returned by the processor
+	InvoiceNo
+	Number
+	8
+	Echoed Unique Transaction Identifier
+	RefNo
+	String
+	50
+	ransaction reference number. Store RefNo value for follow-up transaction use.
+	Token
+	String
+	256
+	Datacap Token
+	Trace
+	String
+	40
+	value supplied by application echoed in Response
+	CardUsage
+	String
+	20
+	Values FSA, DEBIT, OTHER
+	ExtendedCardInfo
+	String
+	100
+	Values Checkcard, Credit, Debit, Commercial, Fleet, PrePaid, HSA, PINlessBillPay, EBT, eWIC, or FSA.
+	TranCode
+	String
+	100
+	TranCode value for transaction request.

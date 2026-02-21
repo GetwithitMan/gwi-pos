@@ -1,0 +1,10 @@
+﻿Mobile Libraries
+Datacap’s one-time-use token libraries are also availalbe in iOS and Android mobile formats. These include prebuilt user interfaces to manually collect card data. Just drop in the form, enter your authentication information, and you’re ready to receive tokens in your mobile application.
+iOS
+A mobile tokenization solution using an iOS library.
+View MobileToken for iOS on GitHub:
+https://github.com/datacapsystems/Datacap-MobileToken-iOS-Library-2025
+Android
+A mobile tokenization solution using an Android library.
+View MobileToken for Android on GitHub:
+https://github.com/datacapsystems/MobileToken-Android

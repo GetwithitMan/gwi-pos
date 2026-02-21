@@ -1,0 +1,20 @@
+﻿eCommerce Plugins
+Plug and Play eCommerce for your website.
+Supported Operations
+Operation
+	Description
+	Sale (Authorize and Capture)
+	Charges the customer’s card immediately
+	PreAuth (Authorize Only)
+	Reserves funds on customer’s card without charging
+	Capture
+	Charges a previously authorized payment
+	Return (Refund)
+	Returns money to customer’s card
+	ApplePay & GooglePay transactions NOT supported through eCommerce Plugins
+Magento
+Datacap’s Magento Commerce Plugin for NETePay Hosted.
+View Installation Steps on GitHub
+WooCommerce Wordpress
+Datacap’s WooCommerce plugin for WordPress.
+View Installation Steps on GitHub

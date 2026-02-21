@@ -1,0 +1,1233 @@
+﻿PrePaid Transactions
+Create
+To create a virtual prepaid card and load with a value.
+POST /storedvalue/create
+Implementation Notes:
+1. The Create field can only be used with Datacap Gift™
+2. CreditLimit cannot be set on an account that has not been assigned a custom identifier.
+Sample Request
+* Required Create
+* Optional Create
+POST /V2/storedvalue/create HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 58
+
+
+{
+    "Amount" : "45.00",
+    "InvoiceNo" : "11526"
+}
+
+Amount
+(Number 1-8)
+	Required
+Prepaid amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	NewIdentifier
+(String 1-30)
+	New account Custom alternate identifer.
+	Promo
+(Boolean)
+	Set value to “true” to indicate promo Prepaid.
+	Locked
+(Boolean)
+	Account number locked
+	CreditLimit
+(Number 1-8)
+	Conditional
+To set negative value limits for accounts with custom identifiers. NewIdentifier must be set prior to or at the time CreditLimit is set.
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142623",
+    "TranCode": "Create",
+    "AuthCode": "004500",
+    "RefNo": "q-34QLFUPN8Q0dVCbKOgXznCbIMWE",
+    "InvoiceNo": "11526",
+    "Amount": "45.00",
+    "CVV": "834",
+    "ShortCode": "4B8Z",
+    "Balance": "45.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	Transaction identifier
+	Amount
+(Number 1-8)
+	Amount loaded to Prepaid account
+	CVV
+(String 1-4)
+	Prepaid CVV value
+	ShortCode
+(String 1-10)
+	Alternative code used for retrieving prepaid value from balance endpoint.
+	Locked
+(Boolen)
+	1 = true, 0 = false
+	Balance
+(Number 1-8)
+	Prepaid value
+	Set
+The Set command is used to modify Prepaid account attributes without affecting the account balance. It provides functionality to manage custom identifiers, account locks, and credit limits.
+POST /storedvalue/set
+Implementation Notes:
+1. The Set field can only be used with Datacap Gift™
+2. CreditLimit cannot be set on an account that does not have a custom identifier.
+3. Set must specify at least one of: NewIdentifier, Locked, or CreditLimit. NewIdentifer must must be unique within your business.
+4. Set is the only request that works on locked accounts.
+5. NewIdentifier set to empty string (“”) removes the custom identifier and removes any associated CreditLimit.
+Sample Request
+* Required Set
+* Optional Set
+POST /V2/storedvalue/set HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 133
+
+
+{
+     "Account": "8282820000142623",
+     "CVV" : "834",
+     "Amount" : "0.00",
+     "NewIdentifier" : "NEW142623",
+     "CreditLimit" : "10.00"
+}
+
+Account
+(Number 1-19)
+	Required
+Account or Track2 is required.
+	Amount
+(Number 1-8)
+	Required
+Include with value set to 0.00
+	CVV
+(Number 1-4)
+	Required
+Prepaid card CVV value
+	Track2
+(String 1-37)
+	Conditional
+Account or Track2 is required. Include Track2 for prepaid card swipe.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	Locked
+(Boolean)
+	Conditional
+Account number locked
+	NewIdentifier
+(String 1-30)
+	Conditional
+New/updated custom identifier for the account
+	CreditLimit
+(Number 1-8)
+	Conditional
+To set negative balance limits for accounts with custom identifiers. NewIdentifier must be set prior to or at the time CreditLimit is set.
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142623",
+    "TranCode": "Set",
+    "AuthCode": "000000",
+    "RefNo": "q-34QLyuEZHFl16Qe4vyvbnSyqT5k"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	Locked
+(Boolen)
+	1 = true, 0 = false
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	Issue
+To issue a new prepaid card with a starting value.
+POST /storedvalue/issue
+Implementation Notes:
+1. If Create request processed to generate Prepaid, Prepaid card has been issued and Reload request will load value to a prepaid card.
+Sample Request
+* Required Issue
+* Optional Issue
+POST /V2/storedvalue/issue HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 94
+
+
+{
+    "Account": "8282820000142631",
+    "Amount" : "40.00",
+    "InvoiceNo" : "11537"
+}
+
+Account
+(Number 1-19)
+	Required
+Account or Track2 is required.
+	Amount
+(Number 1-8)
+	Required
+Prepaid amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Track2
+(String 1-37)
+	Conditional
+Account or Track2 is required. Include Track2 for prepaid card swipe.
+	CVV
+(String 1-4)
+	Prepaid CVV value.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	OverrideDuplicate
+(Boolean)
+	Set value to “true” to allow for duplicates.
+	Promo
+(Boolean)
+	Set value to “true” to indicate promo prepaid.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142631",
+    "TranCode": "Issue",
+    "AuthCode": "004000",
+    "RefNo": "q-34QNcs8aknFR6RNdfQgjcCTrEdt",
+    "InvoiceNo": "11537",
+    "Amount": "40.00",
+    "Balance": "40.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	Transaction identifier
+	Amount
+(Number 1-8)
+	Amount loaded to Prepaid account
+	Balance
+(Number 1-8)
+	Prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Void Issue
+To void a previously issued or virtually created prepaid card.
+POST /storedvalue/issue/{RefNo}/void
+Implementation Notes:
+1. A VoidIssue is processed to void a new Prepaid previously generated via the Create command.
+Sample Request
+* Required VoidIssue
+* Optional VoidIssue
+POST /V2/storedvalue/issue/q-34QNcs8aknFR6RNdfQgjcCTrEdt/void HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 94
+
+
+{
+    "Account": "8282820000142631",
+    "InvoiceNo" : "11537",
+    "Amount" : "40.00"
+}
+
+RefNo
+(String 1-20)
+	Required
+Include in URL. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	Required
+InvoiceNo value from Prepaid Issue.
+	Amount
+(Number 1-8)
+	Required
+Amount loaded to Prepaid account
+	Account
+(Number 1-19)
+	Conditional
+Required for non-Datacap gift processing.
+	AuthCode
+(String 1-16)
+	Conditional
+Authorization code from response for non-Datacap gift approved transaction.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142631",
+    "TranCode": "VoidIssue",
+    "AuthCode": "000000",
+    "RefNo": "q-34QOeIGCjpNJdmtVtZ8LQYPwC4j",
+    "InvoiceNo": "11537",
+    "Amount": "40.00",
+    "Balance": "0.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	Amount
+(Number 1-8)
+	Amount loaded to Prepaid account
+	Balance
+(Number 1-8)
+	Prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Balance
+To verify the remaining value on a prepaid card.
+POST /storedvalue/balance
+Implementation Notes:
+1. The balance endpoint c.dcap.com/shortcode provides a way to verify the prepaid value with the ShortCode from Create response.
+Sample Request
+* Required Balance
+* Optional Balance
+POST /V2/storedvalue/balance HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 41
+
+
+{
+    "Account": "8282820000142631"
+    "Amount" : "0.00"
+}
+
+Account
+(Number 1-19)
+	Required
+Account or Track2 is required.
+	Amount
+(Number 1-8)
+	Required
+Include with value set to 0.00.
+	Track2
+(String 1-37)
+	Conditional
+Account or Track2 is required. Include Track2 for prepaid card swipe.
+	CVV
+(String 1-4)
+	Prepaid CVV value.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142631",
+    "TranCode": "Balance",
+    "AuthCode": "000000",
+    "Balance": "0.00",
+    "RefNo": "q-34QPXn1NK4mvQ0wUPh3BxlzB8cT"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Balance
+(Number 1-8)
+	Prepaid value
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	Sale
+To process a payment using a prepaid card. Prepaid sales reduce the value on the prepaid card.
+POST /storedvalue/sale
+Implementation Notes:
+1. All prepaid sales are processed as NoNSFSale transactions. The TranCode returned in response for sale is NoNSFSale.
+Sample Request
+* Required Sale
+* Optional Sale
+POST /V2/storedvalue/sale HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 103
+
+
+{
+    "Account": "8282820000142631",
+    "Amount" : "15.00",
+    "InvoiceNo" : "11610"
+}
+
+Account
+(Number 1-19)
+	Required
+Account or Track2 is required.
+	Amount
+(Number 1-8)
+	Required
+Prepaid amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Track2
+(String 1-37)
+	Conditional
+Account or Track2 is required. Include Track2 for prepaid card swipe.
+	CVV
+(String 1-4)
+	Prepaid CVV value.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	OverrideDuplicate
+(Boolean)
+	Set value to “true” to allow for duplicates.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142631",
+    "TranCode": "NoNSFSale",
+    "AuthCode": "002500",
+    "RefNo": "q-34QRSbqYUZmTXlfFRxqmt8MqItO",
+    "InvoiceNo": "11610",
+    "Amount": "15.00",
+    "Balance": "25.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(String 1-8)
+	Unique Transaction Identifier.
+	Amount
+(Number 1-8)
+	Transaction amount.
+	Balance
+(Number 1-8)
+	Remaining prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Void Sale
+To void a previous sale processed with a prepaid card. Void sale increases the value on the prepaid card.
+POST /storedvalue/sale/{RefNo}/void
+Sample Request
+* Required VoidSale
+* Optional VoidSale
+POST /V2/storedvalue/sale/q-34QRSbqYUZmTXlfFRxqmt8MqItO/void HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 66
+
+
+{
+    "Amount" : "15.00",
+    "InvoiceNo": "11610"
+}
+
+RefNo
+(String 1-20)
+	Required
+Include in URL. Store RefNo value for follow-up transaction use.
+	Amount
+(Number 1-8)
+	Required
+Prepaid amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+InvoiceNo value from Prepaid Sale.
+	Account
+(Number 1-19)
+	Conditional
+Required for non-Datacap gift processing.
+	AuthCode
+(String 1-16)
+	Conditional
+Authorization code from response for non-Datacap gift approved transaction.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	OverrideDuplicate
+(Boolean)
+	Set value to “true” to allow for duplicates.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "TranCode": "VoidSale",
+    "AuthCode": "004000",
+    "RefNo": "q-34QRjhpZCyWzoRCNu2iaIVt2D2A",
+    "InvoiceNo": "11610",
+    "Amount": "15.00",
+    "Balance": "40.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(String 1-8)
+	Unique Transaction Identifier.
+	Amount
+(Number 1-8)
+	Transaction amount.
+	Balance
+(Number 1-8)
+	Remaining prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Return
+To process a return to a prepaid card. PrePaid returns increase the value on the prepaid card.
+POST /storedvalue/return
+Implementation Notes
+1. A Return is processed to issue a refund to the prepaid card.
+Sample Request
+* Required Return
+* Optional Return
+POST /V2/storedvalue/return HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 95
+
+
+{
+    "Account" : "8282820000142565",
+    "Amount" : "10.00",
+    "InvoiceNo" : "11752"
+}
+
+Account
+(Number 1-19)
+	Required
+Account or Track2 is required.
+	Amount
+(Number 1-8)
+	Required
+Prepaid amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Track2
+(String 1-37)
+	Conditional
+Account or Track2 is required. Include Track2 for prepaid card swipe.
+	CVV
+(String 1-4)
+	Prepaid CVV value.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	OverrideDuplicate
+(Boolean)
+	Set value to “true” to allow for duplicates.
+	Promo
+(Boolean)
+	Set value to “true” to indicate promo prepaid.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142565",
+    "TranCode": "Return",
+    "AuthCode": "001000",
+    "RefNo": "q-34QS8XUjS0bgXR5ZuUmLgjJFTzg",
+    "InvoiceNo": "11752",
+    "Amount": "10.00",
+    "Balance": "10.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(String 1-8)
+	Unique Transaction Identifier.
+	Amount
+(Number 1-8)
+	Transaction amount.
+	Balance
+(Number 1-8)
+	Remaining prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Void Return
+To void a previous return on a prepaid card. Void return decreases the value on the prepaid card.
+POST /storedvalue/return/{RefNo}/void
+Sample Request
+* Required VoidReturn
+* Optional VoidReturn
+POST /V2/storedvalue/return/q-34QS8XUjS0bgXR5ZuUmLgjJFTzg/void HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 67
+
+
+{
+    "Amount" : "10.00"
+    "InvoiceNo": "11752"
+}
+
+RefNo
+(String 1-20)
+	Required
+Include in URL. Store RefNo value for follow-up transaction use.
+	Amount
+(Number 1-8)
+	Required
+Prepaid amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+InvoiceNo value from Prepaid Return.
+	Account
+(Number 1-19)
+	Conditional
+Required for non-Datacap gift processing.
+	AuthCode
+(String 1-16)
+	Conditional
+Authorization code from response for non-Datacap gift approved transaction.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	OverrideDuplicate
+(Boolean)
+	Set value to “true” to allow for duplicates.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142565",
+    "TranCode": "VoidReturn",
+    "AuthCode": "000000",
+    "RefNo": "q-34NTc8C9jvaKxWIa15xeGyI6h9O",
+    "Amount": "10.00",
+    "Balance": "0.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Amount
+(Number 1-8)
+	Transaction amount.
+	Balance
+(Number 1-8)
+	Remaining prepaid value
+	Reload
+To add value to an existing prepaid card. Reload increases the value on the prepaid card.
+POST /storedvalue/reload
+Sample Request
+* Required Reload
+* Optional Reload
+POST /V2/storedvalue/reload/ HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 94
+
+
+{
+    "Account" : "8282820000142631",
+    "Amount" : "55.00",
+    "InvoiceNo" : "119568"
+}
+
+Account
+(Number 1-19)
+	Required
+Prepaid account number.
+	Amount
+(Number 1-8)
+	Required
+Prepaid amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Track2
+(String 1-37)
+	Conditional
+Account or Track2 is required. Include Track2 for prepaid card swipe.
+	CVV
+(String 1-4)
+	Prepaid CVV value.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	OverrideDuplicate
+(Boolean)
+	Set value to “true” to allow for duplicates.
+	Promo
+(Boolean)
+	Set value to “true” to indicate promo Prepaid.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142631",
+    "TranCode": "Reload",
+    "AuthCode": "009500",
+    "RefNo": "q-34QTB3AFDoIH8G2UwSmwhzDRItA",
+    "InvoiceNo": "119568",
+    "Amount": "55.00",
+    "Balance": "95.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(String 1-8)
+	Unique Transaction Identifier.
+	Amount
+(Number 1-8)
+	Transaction amount.
+	Balance
+(Number 1-8)
+	Remaining prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Void Reload
+To void a previous reload to a prepaid card. Void Reload decreases the value on the prepaid card.
+POST /storedvalue/reload/{RefNo}/void
+Sample Request
+* Required VoidReload
+* Optional VoidReload
+POST /V2/storedvalue/reload/q-34QTB3AFDoIH8G2UwSmwhzDRItA/void HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.0.0
+Authorization: ••••••
+Content-Length: 60
+
+
+{ 
+    "Amount" : "55.00",
+    "InvoiceNo" : "119568"
+}
+
+RefNo
+(String 1-20)
+	Required
+Include in URL. Store RefNo value for follow-up transaction use.
+	Amount
+(Number 1-8)
+	Required
+Prepaid amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Account
+(Number 1-19)
+	Conditional
+Required for non-Datacap gift processing.
+	AuthCode
+(String 1-16)
+	Conditional
+Authorization code from response for non-Datacap gift approved transaction.
+	CVV
+(String 1-4)
+	Prepaid CVV value.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "TranCode": "VoidReload",
+    "AuthCode": "004000",
+    "RefNo": "q-34QTsRQ8aPeVhAYbmIRJMnjmMda",
+    "InvoiceNo": "119568",
+    "Amount": "55.00",
+    "Balance": "40.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(String 1-8)
+	Unique Transaction Identifier.
+	Amount
+(Number 1-8)
+	Transaction amount.
+	Balance
+(Number 1-8)
+	Remaining prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Cash Out
+To process a cash refund for the remaining value on a prepaid card. A CashOut reduces the value of the prepaid card to zero.
+POST /storedvalue/cashout
+Sample Request
+* Required CashOut
+* Optional CashOut
+POST /V2/storedvalue/cashout HTTP/1.1
+Host: pay-cert.dcap.com
+User-Agent: WebApp/1.0.0
+Content-Type: application/json
+Authorization: ••••••
+Content-Length: 69
+
+
+{
+    "Account" : "8282820000142631",
+    "Amount" : "0.00",
+    "InvoiceNo" : "118568"
+}
+
+Account
+(Number 1-19)
+	Required
+Account or Track2 is required.
+	Amount
+(Number 1-8)
+	Required
+Value set to 0.00.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Track2
+(String 1-37)
+	Conditional
+Account or Track2 is required. Include Track2 for prepaid card swipe.
+	CVV
+(String 1-4)
+	Prepaid CVV value.
+	Identifier
+(String 1-30)
+	Existing custom identifier.
+	OverrideDuplicate
+(Boolean)
+	Set value to “true” to allow for duplicates.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Sample Response
+* Required Response
+* Optional Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142631",
+    "TranCode": "CashOut",
+    "AuthCode": "000000",
+    "RefNo": "q-34QU4YMNwxyc01lqi62SL1AnVQp",
+    "InvoiceNo": "118568",
+    "Amount": "40.00",
+    "Balance": "0.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(String 1-8)
+	Unique Transaction Identifier.
+	Amount
+(Number 1-8)
+	Transaction amount.
+	Balance
+(Number 1-8)
+	Remaining prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Transaction Detail
+GET /storedvalue/{RefNo}
+Implementation Notes
+1. Only supported using RefNo value from response
+Sample Request
+* RefNo 
+GET /V2/storedvalue/q-34LWURjHnVmWOZpdDLQFdF0pQRq HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+Authorization: Basic 
+
+RefNo
+(String 1-20)
+	Required
+Include in URL if searching by RefNo.
+	Sample Response
+* RefNo Response
+{
+    "Status": "Approved",
+    "Message": "Approved",
+    "Account": "8282820000142433",
+    "TranCode": "Return",
+    "AuthCode": "006000",
+    "RefNo": "q-34LWURjHnVmWOZpdDLQFdF0pQRq",
+    "Amount": "60.00",
+    "Balance": "60.00"
+}
+
+Status
+(String 1-10)
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+(Number 1-19)
+	Prepaid account number
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction.
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(String 1-8)
+	Unique Transaction Identifier.
+	Amount
+(Number 1-8)
+	Transaction amount.
+	Balance
+(Number 1-8)
+	Remaining prepaid value
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response
+	Responses
+Stored Value transaction response bodies will include the following fields. The fields returned in the response body are dependent on the type of transaction processed.
+Response Fields
+Field
+	Type
+	Max Length
+	Description
+	Status
+	String
+	10
+	Indicates result of request. Values Approved, Duplicate, Declined, or Error. “Success” = command completed successfully.
+	Message
+	String
+	256
+	Response Message. This field can contain additional messaging from the server or processor.
+	Account
+	Number
+	19
+	Prepaid account number
+	TranCode
+	String
+	40
+	TranCode value
+	CVV
+	String
+	4
+	Prepaid CVV value
+	Identifier
+	String
+	30
+	Existing custom identifier
+	AuthCode
+	String
+	16
+	Authorization code returned for an approved transaction.
+	Amount
+	Number
+	8
+	Prepaid amount formatted to two decimal places
+	Balance
+	Number
+	8
+	Remaining prepaid value
+	RefNo
+	String
+	50
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+	Number
+	8
+	Unique transaction identifier created and supplied by the application.
+	Locked
+	Boolean
+	
+
+	False = 0, True = 1
+	ShortCode
+	String
+	10
+	Only in Create response. Alternative code used for retrieving prepaid value from balance endpoint.
+	Trace
+	String
+	40
+	value supplied by application echoed in Response

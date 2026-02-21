@@ -1,0 +1,381 @@
+﻿Card on File
+About Card On File
+Card on File (COF) is a payment flow intended to support payments processed at recurring intervals, such as payment subscriptions. This flow involves using the RecurringData tag in the Point of Sale’s payment requests, in order to receive a scheme of transaction data within the resulting RecurringData response field to store and include in each subsequent installment.
+Using Card on File
+During the initial payment, the RecurringData field must be included as part of the request containing the COF transaction type the customer has agreed to. For processors where COF is supported, responses will include the RecurringData field. This value must be stored along with Token and sent as part of the next transaction in the series. Each subsequent response (approved or declined) will include new RecurringData which must be stored and sent in the next transaction of the series. In cases where the initial transaction is declined there’s no need to store RecurringData or Token.
+The following types of card on file transactions are supported:
+* “Recurring” Merchant initiated, processed at regular intervals.
+* “Installment” Merchant initiated, processed at regular intervals over a fixed period of time. Transaction amounts are fixed.
+* “Unscheduled” Merchant initiated, processed at irregular intervals.
+* “CardHolderInitiated” Transactions initiated by the cardholder.
+* See Certification Environment for testing URL.
+Example Flow
+Sale Request with Token
+* json
+POST /v2/credit/sale HTTP/1.1
+    User-Agent: WebApp/1.1.0
+    Content-Type: application/json
+    Accept: application/json
+    Authorization: ************
+    Host: pay-cert.dcap.com
+    Accept-Encoding: gzip, deflate, br
+    Connection: keep-alive
+    Content-Length: 140
+
+
+    {
+    "Amount": "1.00",
+    "Token": "DC4:BHDWPNNkncp36UyNxV4ygCrXdibdVcrBCE-fn"OIEHF_neoinfowenfwoe_ncOFENOnceoEOCNEN8t8u6o64Y1YiLi8DHMJhL7kHc5_6ARC8jL83JsuH4rt3sdZJJ35Y9YZo_TCw7_Du2tOl_-NwQOHO"
+    "InvoiceNo": "1001",
+    "RecurringData": "Recurring"
+    }
+Response with Token
+* json
+HTTP/1.1 200 OK
+    Date: Wed, 07 Jul 2021 16:15:51 GMT
+    Content-Type: application/json; charset=utf-8
+    Transfer-Encoding: chunked
+    Connection: keep-alive
+    Cache-Control: no-cache
+    Pragma: no-cache
+    Content-Encoding: gzip
+    Expires: -1
+    Vary: Accept-Encoding
+    Server: Microsoft-IIS/10.0
+    Request-Context: appId=cid-v1:fc20dba9-d083-4e04-a99f-5fb7e91541f7
+    Access-Control-Expose-Headers: Request-Context
+    X-Powered-By: ASP.NET
+
+
+    {
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "XXXXXXXXXXXX0119",
+    "Expiration": "XXXX",
+    "Brand": "VISA",
+    "AuthCode": "OK034C",
+    "RefNo": "q-22C0A369EEDC4F84AFD7148CBD6F9F4F",
+    "InvoiceNo": "1001",
+    "Amount": "1.00",
+    "Authorized": "1.00",
+    "RecurringData": "Recurring|00|011188619368181G590",
+    "Token": "DC4:AAACZQYGhjN36UyNxV4ygCrXdibdVcrPbXE3gb19HrEhOVrWJLXWDkfDfxoq0sXyV6_Abu5nTNkA8t8u6o64Y1YiLi8DHMJhL7kHc5_6ARC8jL83JsuH4rt3sdZJJ35Y9YZo_TCw7_Du2tOl_-NwQOHO"
+    }
+2nd Sale Request with Token
+* json
+ POST /v2/credit/sale HTTP/1.1
+    User-Agent: WebApp/1.1.0
+    Content-Type: application/json
+    Accept: application/json
+    Authorization: ************
+    Host: pay-cert.dcap.com
+    Accept-Encoding: gzip, deflate, br
+    Connection: keep-alive
+    Content-Length: 276
+
+
+    {
+    "Token": "DC4:AAACZQYGhjN36UyNxV4ygCrXdibdVcrPbXE3gb19HrEhOVrWJLXWDkfDfxoq0sXyV6_Abu5nTNkA8t8u6o64Y1YiLi8DHMJhL7kHc5_6ARC8jL83JsuH4rt3sdZJJ35Y9YZo_TCw7_Du2tOl_-NwQOHO",
+    "Amount": "1.00",
+    "InvoiceNo": "1002",
+    "RecurringData": "Recurring|00|011188619368181G590"
+    }
+2nd Sale Response with Token
+* json
+ HTTP/1.1 200 OK
+    Date: Wed, 07 Jul 2021 16:16:42 GMT
+    Content-Type: application/json; charset=utf-8
+    Transfer-Encoding: chunked
+    Connection: keep-alive
+    Cache-Control: no-cache
+    Pragma: no-cache
+    Content-Encoding: gzip
+    Expires: -1
+    Vary: Accept-Encoding
+    Server: Microsoft-IIS/10.0
+    Request-Context: appId=cid-v1:fc20dba9-d083-4e04-a99f-5fb7e91541f7
+    Access-Control-Expose-Headers: Request-Context
+    X-Powered-By: ASP.NET
+
+
+    {
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "XXXXXXXXXXXX0119",
+    "Expiration": "XXXX",
+    "Brand": "VISA",
+    "AuthCode": "OK088C",
+    "RefNo": "q-BEE20019264E40E38262BD506AA7B9DD",
+    "InvoiceNo": "1002",
+    "Amount": "1.00",
+    "Authorized": "1.00",
+    "RecurringData": "Recurring|00|011188479842334G631",
+    "Token": "DC4:AABUles-Iai6Gfxmx2nRtjippdORqOUTvLP953Wl634zqrikGoN9jmOyprE09uOCEvAY5CDvVOROBkmcty4eTAWZKSncm37P8pxq4BIF67SWDZO_V_HTYHfH68wgKxW5lNeOiUCMtkfFuzDuDZFk6_y9"
+}
+Network Tokens
+Network Tokens are secure, card-network-issued tokens that replace sensitive card data (PAN) for payment processing. They provide enhanced security and improved authorization rates by leveraging tokenization services from card networks like Visa (VTS), Mastercard (MDES), and American Express.
+Note: Network Tokens are intended for use with Card On File (RecurringData) for optimal rates.
+Benefits
+* Enhanced Security: Card data is never stored or transmitted; only network tokens are used
+* Improved Authorization Rates: Network tokens are dynamically updated when cards are reissued
+* Reduced PCI Scope: Minimizes handling of sensitive card data
+* Cryptogram Support: Transaction-specific cryptograms provide additional security layer
+Integration Workflow
+1. Create a Network Token from card data
+2. Store the returned NWK: token for future use
+3. Process payments using the token with appropriate RecurringData value
+4. Delete tokens when no longer needed
+Operations
+Operation
+	Endpoint
+	Key Fields
+	Create Token
+	POST /V2/NetworkToken/Create
+	Account, Expiration, CustEmail*, CustPhone*
+	Delete Token
+	POST /V2/NetworkToken/Delete
+	Token
+	Payment (Initial)
+	POST /v2/credit/sale
+	Token, Amount, RecurringData (e.g., “Recurring”)
+	Payment (Subsequent)
+	POST /v2/credit/sale
+	Token, Amount, RecurringData (e.g., “Recurring|00|”)
+	*Recommended for AMEX cards
+Authentication
+All API requests require Basic Authentication using your Pay API credentials.
+Headers:
+* plaintext
+Authorization: Basic <base64(MerchantID:ApiKey)>
+Content-Type: application/json
+Create Network Token
+Creates a new network token from card account data.
+Endpoint
+* plaintext
+POST https://pay-cert.dcap.com/V2/NetworkToken/Create
+Request Fields
+Field
+	Type
+	Max Length
+	Required
+	Description
+	Account
+	string
+	20
+	Yes
+	Card account number (PAN)
+	Expiration
+	string
+	4
+	Yes
+	Card expiration in MMYY format
+	CustPhone
+	string
+	50
+	No
+	Customer phone number
+	CustEmail
+	string
+	50
+	No
+	Customer email address
+	RefNo
+	string
+	19
+	No
+	Reference number for the request
+	InvoiceNo
+	string
+	10
+	No
+	Unique transaction identifier
+	Best Practice for AMEX Cards: For American Express cards, include CustEmail or CustPhone to improve network token provisioning success rates. AMEX uses this information for additional cardholder verification.
+Example Request
+* Required
+* Optional
+{
+  "Account": "5120350100064594",
+  "Expiration": "0827"
+}
+Example Response
+* json
+{
+    "ResponseOrigin": "DSILogicEngine",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "SUCCESSFUL Create",
+    "TranCode": "Create",
+    "Token": "NWK:70711751160118611141208261631707448",
+    "RefNo": "q-382KrsCmIXCJ88CYTFv3h6xV24q"
+}
+Response Fields
+Field
+	Description
+	Status
+	Transaction status (Approved, Error)
+	Message
+	Detailed response message
+	Trancode
+	Trancode of transaction
+	Token
+	The created network token in NWK: format - store this for future payments
+	RefNo
+	Transaction reference number
+	ReturnCode
+	Datacap return code (000000 = success)
+	ResponseOrigin
+	Origin of the response
+	Delete Network Token
+Deletes an existing network token when it is no longer needed.
+Endpoint
+* plaintext
+POST https://pay-cert.dcap.com/V2/NetworkToken/Delete
+Request Fields
+Field
+	Type
+	Max Length
+	Required
+	Description
+	Token
+	string
+	256
+	Yes
+	The network token to delete (NWK:...)
+	Example Request
+* json
+{
+    "Token": "NWK:70711751160118611141208261631707448"
+}
+Example Response
+* json
+{
+    "ResponseOrigin": "DSILogicEngine",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "SUCCESSFUL Delete",
+    "TranCode": "Delete",
+    "RefNo": "q-382JfY4AUCeFwF46bWtwiQIIfZ9"
+}
+Processing Payments with Network Tokens
+Network tokens are used with the standard Credit Sale Pay API endpoint. The key difference is including the Created NWK: formatted Network Token in the Token field instead of the standard DC4 token.
+Credit Sale with Network Token
+Endpoint
+* plaintext
+POST https://pay-cert.dcap.com/v2/credit/sale
+Request Fields
+Field
+	Type
+	Required
+	Description
+	Amount
+	string
+	Yes
+	Transaction amount (e.g., “2.00”)
+	Token
+	string
+	Yes
+	Network token (NWK:...)
+	RecurringData
+	string
+	Yes
+	Use ‘Recurring’ for initial card on file transaction and RecurringData response value for subsequent card on file transactions
+	RecurringData Field
+The RecurringData field is critical for network token transactions. This field determines how the transaction is classified, and requires the Pay API software to fetch a cryptogram for the cardholder data.
+Initial Transaction Values (Triggers Cryptogram Fetch)
+For new transactions, use one of these values:
+Value
+	Description
+	Recurring
+	Merchant initiated transaction processed at regular intervals
+	Installment
+	Merchant initiated transaction processed at regular intervals over a fixed period of time. Transaction amounts are fixed.
+	Unscheduled
+	Merchant initiated transaction processed at irregular intervals
+	CardHolderInitiated
+	Transaction initiated by the cardholder
+	Example Request
+* json
+{
+    "Amount": "2.00",
+    "Token": "NWK:70711751160118611141208261631707448",
+    "RecurringData": "Recurring"
+}
+Example Response
+* json
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "518615XXXXXX7572",
+    "Expiration": "XXXX",
+    "Brand": "M/C",
+    "TranCode": "Sale",
+    "AuthCode": "439516",
+    "RefNo": "q-382L1nuCX2Dv5gHKJuP6cxkty9W",
+    "InvoiceNo": "0921014423",
+    "Amount": "2.00",
+    "Authorized": "2.00",
+    "RecurringData": "Recurring|00|",
+    "Token": "NWK:70711751160118611141208261631707448"
+}
+Subsequent Transaction Behavior (No Cryptogram Fetch)
+For subsequent recurring transactions, pass the RecurringData value returned from the previous transaction response (e.g., "Recurring|00|").
+When RecurringData contains the pipe-delimited format from a previous response, no new cryptogram fetch is required. This is the expected behavior for recurring payments.
+Example: Subsequent Recurring Transaction
+* json
+{
+    "Amount": "2.00",
+    "Token": "NWK:70711751160118611141208261631707448",
+    "RecurringData": "Recurring|00|"
+}
+Response
+* json
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "518615XXXXXX7572",
+    "Expiration": "XXXX",
+    "Brand": "M/C",
+    "TranCode": "Sale",
+    "AuthCode": "439542",
+    "RefNo": "q-382LHFEwnTll7mBDs8aaltNcXid",
+    "InvoiceNo": "0921034858",
+    "Amount": "2.00",
+    "Authorized": "2.00",
+    "RecurringData": "Recurring|00|",
+    "Token": "NWK:70711751160118611141208261631707448"
+}
+Best Practices
+American Express (AMEX) Cards
+For AMEX cards, always include cardholder contact information when creating network tokens:
+* json
+{
+    "Account": "371234567890123",
+    "Expiration": "0627",
+    "CustEmail": "customer@example.com",
+    "CustPhone": "5551234567"
+}
+AMEX network token provisioning has higher success rates when cardholder email or phone is provided. This information is used for additional verification by the AMEX network.
+Token Storage
+* Store the complete NWK: token string returned from Create
+* Tokens remain valid until deleted or the underlying card expires/is canceled
+* Network tokens are automatically updated when cards are reissued (card-on-file updates)
+Error Handling
+Always check the Status field in responses:
+* Approved / Success - Transaction completed successfully
+* Error - Validation or processing error (check Message for details)
+Token Format
+Network tokens use the NWK: prefix format:
+* plaintext
+NWK:<encoded_token_data>
+Example:
+* plaintext
+NWK:70711751160118611141208261631707448
+The token data is opaque and should be stored and passed exactly as received.

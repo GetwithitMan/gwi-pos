@@ -1,0 +1,9 @@
+﻿Third-Party Partners
+Datacap-ready alternative payment options from leading Third-Party providers enable solutions like:
+
+* QR Code payments
+* Online Ordering
+* Turn-key kiosks
+* Memberships with Recurring Payments
+* TextPay Invoicing for Field Services
+*

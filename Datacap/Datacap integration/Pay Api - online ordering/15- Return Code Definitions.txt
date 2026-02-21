@@ -1,0 +1,54 @@
+﻿Return Code Definitions
+Every transaction is returned with a Datacap ReturnCode. Return codes are subject to change, so it’s best to show the returned Message to a cashier or customer rather than hardcoding return code definitions.
+Code
+	Definition
+	000000
+	Successful.
+	002604
+	Transaction not found.
+	002755
+	Data decryption error.
+	002500
+	Database or data error.
+	002757
+	Invalid token.
+	001007
+	Timeout.
+	004017
+	Invalid check digit.
+	004003
+	Communication error or bad response
+	004040
+	Only Major Credit Cards Accepted.
+	004304
+	Purchase Amount Adjustment Not Supported
+	004848
+	Decryption error.
+	100204
+	Invalid field: Account Number.
+	100205
+	Invalid field: Expiration Date.
+	100206
+	Invalid field: Auth Code.
+	100207
+	Invalid field: Reference Number.
+	100208
+	Invalid field: Auth Amount.
+	100211
+	Invalid field: Purchase Amount.
+	100212
+	Invalid field: Mag Stripe.
+	100219
+	Invalid field: TranCode.
+	100221
+	Invalid field: TStream.
+	100222
+	Invalid field: Batch Number.
+	100252
+	Invalid field: Encrypted Format.
+	100254
+	Invalid field: Encrypted Block.
+	100255
+	Invalid field: Encrypted Key.
+	100259
+	Invalid Field - Acquirer Reference Data.

@@ -1,0 +1,4 @@
+﻿Brandable Payment Links
+What are Payment Links?
+Payment Links API is an additional Card-Not-Present option used to generate customizable links for payment sent through SMS or Email. Composed of similar HTTP methods to Pay API such as (POST/GET/PUT), and content types (JSON/XML/form encoded), Payment Links provides a streamlined way to prompt for Debit, Credit, ACH, Apple Pay and Google Pay payments through the web, without building a separate webpage. Using existing Pay API credentials for Authorization and Payment Routing, Payment Links API offers features such as Updating existing links, Cancelling active links, Querying sent links, and more.
+Go to Payment Links API

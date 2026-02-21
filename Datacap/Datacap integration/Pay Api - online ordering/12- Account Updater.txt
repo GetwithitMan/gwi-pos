@@ -1,0 +1,83 @@
+﻿Account Updater
+Datacap’s Account Updater service is operated by two endpoints (create endpoint and delete endpoint). To use the service, an integrator will provide a Datacap token or encrypted card data to be enrolled in the account updater service. If the integrator successfully submits a token for account updater the create endpoint will return a Payment Account ID (PID) in the Token field. This PID can be used like any other multi-use Token. The PID is special in the fact that twice a month the card data will be checked and updated to newer card data if applicable. The integrator can be confident that while using a PID the card data is never more than 2 weeks out of date and is advised to try a recurring transaction a week later if a decline is received. If the integrator no longer wants to have a PID enrolled in the account updater service the delete endpoint is where the PID will be removed from getting updated and deleted. For a full listing of currently vaulted PIDs, see Reporting API
+Supports Visa, American Express, Mastercard and Discover
+Note Interac cards are not supported on Datacap’s Card Account Updater service
+Create
+To create a new PID that is associated with a merchant ID and token group.
+POST /V1/AccountUpdate/Create
+Request Fields
+* fields Required
+Field
+	Type
+	Max Length
+	Description
+	Location
+	* Token
+	String
+	256
+	Datacap Token
+	Body
+	Sample Request
+* json
+POST /V1/AccountUpdate/Create
+Host: https://pay-cert.dcap.com
+Charset: UTF-8
+Authorization: Datacap Merchant ID
+Content-type: application/json
+Content-length: <###>
+{
+  "Token": "DC4:AAC--cEQEcagxVpU_YjOQaTbtJSLtoJRN20D0C1g1uO0oZvkQj4AkQfEXxC_4fxK2aQ9AgJm3g79SpWjtZT-_6uWAaw6XRtL90qbMYsJ1QfFIgNIsPCR_mEgk8uvaWGEKNYlb_7mW5UEELZtxm9wvrDs$$"
+}
+Sample Response
+* json
+{
+  "application/json": {
+    "ResponseOrigin": "Server",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "SUCCESSFUL Create",
+    "Brand": "VISA",
+    "RefNo": "q-41AB9DC10FD24CA1AE2733907D4367E4",
+    "InvoiceNo": "2312582651",
+    "Token": "PID:132135"
+  }
+}
+Delete
+To delete a PID that is associated with a merchant ID.
+POST /V1/AccountUpdate/Delete
+Request Fields
+* fields Required
+Field
+	Type
+	Max Length
+	Description
+	Location
+	* Token
+	String
+	256
+	Datacap PID to Delete
+	Body
+	Sample Request
+* json
+POST /V1/AccountUpdate/Delete
+Host: https://pay-cert.dcap.com
+Charset: UTF-8
+Authorization: Datacap Merchant ID
+Content-type: application/json
+Content-length: <###>
+{
+  "Token": "PID:132135"
+}
+Sample Response
+* json
+{
+  "application/json": {
+    "ResponseOrigin": "Server",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "SUCCESSFUL Delete",
+    "RefNo": "q-41AB9DC10FD24CA1AE2733907D4367E4",
+    "InvoiceNo": "2312582651"
+  }
+}
+

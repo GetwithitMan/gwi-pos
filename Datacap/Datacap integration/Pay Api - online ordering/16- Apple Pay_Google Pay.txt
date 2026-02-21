@@ -1,0 +1,563 @@
+﻿Apple Pay/Google Pay
+Apple Pay
+Apple Pay® allows customers to securely make payments using Apple Pay on their iPhone, iPad, or Apple Watch. You can also use Apple Pay on the web to allow customers to use Apple Pay at checkout using Datacap’s Wallet client.
+Datacap’s Wallet client enables a merchant website to accept payment through a third party wallet like Apple Pay, offering customers a quick and familar payment option. Tokenized card data is returned to the merchant in the same format as our Datacap JS Client and Hosted iFrame.
+Follow the steps below to use Apple Pay on the web with Datacap:
+1. Include the Wallet client on your page
+2. Place the Apple Pay button
+3. Define required JavaScript
+4. Initialize token callback method
+5. Test Apple Pay on the Web
+6. Setup Apple Pay on the Web for use in production
+Include the Wallet client on your page
+Add the secure, hosted JavaScript client in the <head> of your page:
+* xml
+Production:
+<script src="https://wallet.dcap.com/v1/client/applepay"></script>
+
+
+Certification:
+<script src="https://wallet-cert.dcap.com/v1/client/applepay"></script>
+Place the Apple Pay button
+Where to place the Apple Pay button
+The Apple Pay button can be displayed prior to website login to facilitate an ‘express’ checkout. The Datacap token provided to the POS contains the customer’s contact information, so the POS knows how to identify the customer.
+Alternatively, the POS can place the Apple Pay button on their checkout form, allowing the cusomter to use Apple Pay instead of entering card details.
+See Apple’s guidelines for more details on Apple Pay button placement.
+Show the Apple Pay button
+ Apple Pay button 
+
+Create a DIV with the ID: <apple-pay-button>
+* xml
+<div id="apple-pay-button">
+*Note: The Apple Pay button is generated dynamically from the JavaScript client, including all styling. The Apple Pay button is only displayed in Safari on compatible versions of iOS or macOS.
+*Note: The Apple Pay button will only be displayed if the merchant’s processor supports Apple Pay transactions.
+Define required JavaScript
+Define a JavaScript callback method that:
+1. Handles token events
+2. Sends the token to the POS server for payment processing
+* javascript
+var tokenCallback = function(tokenResponse)
+{
+  return new Promise(function(resolve, reject)
+  {
+    // Token error!
+    if (tokenResponse.Error)
+    {
+      alert("Token error: " + tokenResponse.Error);
+      return;
+    }
+
+
+    // Good token! Send it to POS server for payment processing
+    fetch("https://your-server-for-receiving-order-info/",
+      {
+        method: "POST",
+        body: JSON.stringify(tokenResponse)
+      })
+      .then(function(paymentResponse)
+      {
+        paymentResponse.json().then(function(json)
+        {
+          // Use Datacap's Pay API HTTP status 
+          // to determine how to return promise 
+          if (payApiResponse.status != 200)
+          {
+            reject("Error" + json.Message);
+          }
+          else
+          {
+            resolve("Approved" + json.Message);
+          }
+        });
+      });
+  });
+};
+
+
+*Note: For the best user experience, the callback should return a promise to the Wallet client. A successful return dismisses the Apple Pay sheet with a successful message. Rejecting the promise dismisses the Apple Pay sheet with a “Payment not complete” message.
+If the merchant’s website is unable to fulfill the promise, the Apple Pay sheet disappears without providing feedback to the customer.
+Initialize
+Call init with your token callback method, token key, merchant name to display, Apple Pay merchant ID, and amount to display:
+* json
+DatacapApplePay.init(tokenCallback, "[Token Key]", "[Merchant Name]", "[Apple Pay Merchant ID]", "[Amount]");
+*Note: All parameters of the init method aside from tokenCallback are strings.
+The response object received by your callback method looks like this:
+On Success
+* json
+{
+  "Brand": "VISA",
+  "ExpirationMonth": "12",
+  "ExpirationYear": "20",
+  "Last4": "1234",
+  "Token": "DC4:vEyLV7sH5F-me8BnK1nwwHesAWJQTRNK8",
+  "Customer": {
+    "Address": ["100 New Britain Blvd"],
+    "City": "Chalfont",
+    "Email": integrationsupport@dcap.com,
+    "FirstName": "Integration",
+    "LastName": "Support",
+    "Phone": "2159978989",
+    "State": "PA",
+    "Zip": "18914"
+  }
+}
+On Failure
+* json
+{
+  Error: "Failed to create token"
+}
+Use your tokens
+Now that you’ve got a Datacap token, you can use it for payment processing with Pay API. Do this by asynchronously calling your server with the token, and return the result as a JavaScript promise to the Wallet client. This cleanly dismisses the Apple Pay sheet and lets the customer know the result of their Apple Pay transaction.
+Recurring Transactions
+Wallet API now supports recurring payments for Apple Pay, enabling subscription services and recurring billing scenarios.
+Mastercard does not support recurring with Apple Pay
+Basic Initialization (Backward Compatible)
+* javascript
+// Existing 5-parameter initialization (still works)
+DatacapApplePay.init(
+    callbackFunction,
+    tokenKey,
+    storeName,
+    appleMerchantID,
+    amount
+);
+Recurring Payment Initialization
+* javascript
+// New 6-parameter initialization with recurring configuration
+DatacapApplePay.init(
+    callbackFunction,
+    tokenKey,
+    storeName,
+    appleMerchantID,
+    amount,
+    recurringConfig  // New recurring configuration object
+);
+Recurring Configuration Object
+* javascript
+var recurringConfig = {
+    isRecurring: true,
+    description: "Monthly Subscription",
+    label: "Premium Subscription - $9.99/month",
+    managementURL: "https://example.com/manage-subscription",
+    intervalUnit: "month",        // "weekOfYear", "month", "year"
+    intervalCount: 1             // Number of intervals (e.g., 2 = every 2 months)
+};
+Complete Example
+* javascript
+function initializeRecurringApplePay() {
+    var recurringConfig = {
+        isRecurring: true,
+        description: "Premium Subscription",
+        label: "Premium Plan - $19.99/month",
+        managementURL: window.location.origin + "/manage-subscription",
+        intervalUnit: "month",
+        intervalCount: 1
+    };
+
+
+    DatacapApplePay.init(
+        handlePaymentResponse,
+        "[YOUR_TOKEN_KEY]",
+        "Your Store Name",
+        "[YOUR_APPLE_MERCHANT_ID]", 
+        "19.99",
+        recurringConfig
+    );
+}
+
+
+function handlePaymentResponse(tokenResponse) {
+    if (tokenResponse.Error) {
+        console.error("Payment failed:", tokenResponse.Error);
+        return Promise.reject(tokenResponse.Error);
+    }
+
+
+    console.log("Recurring payment token received:", tokenResponse.Token);
+    // Store this token for future recurring charges
+    return Promise.resolve("Recurring payment setup successful");
+}
+Processing Recurring Payments
+When IsRecurring is true:
+1. The API generates an MPAN-compliant token suitable for storage and reuse
+2. The token can be stored securely for future recurring charges
+3. Future charges use the stored token without requiring customer re-authentication
+Callback Example
+* json
+  var tokenCallback = function(tokenResponse)
+  {
+    return new Promise(function(resolve, reject)
+    {
+      // Token error!
+      if (tokenResponse.Error)
+      {
+        alert("Token error: " + tokenResponse.Error);
+        return;
+      }
+
+
+      // Extract the token and recurring data
+      var paymentData = {
+        token: tokenResponse.Token,
+        recurringData: tokenResponse.RecurringData || null,  // Will be null for one-time payments
+        // Include other relevant data your server might need
+        amount: DatacapApplePay.subTotal,
+        customerInfo: tokenResponse.Customer || {}
+      };
+
+
+      // Log for debugging (remove in production)
+      console.log("Payment token:", paymentData.token);
+      if (paymentData.recurringData) {
+        console.log("Recurring data:", paymentData.recurringData);
+      }
+
+
+      // Good token! Send it to POS server for payment processing
+      fetch("https://your-server-for-receiving-order-info/",
+        {
+          method: "POST",
+          body: JSON.stringify(paymentData)
+        })
+        .then(function(paymentResponse)
+        {
+          paymentResponse.json().then(function(json)
+          {
+            // Check if this was a recurring payment and save the token
+            if (paymentData.recurringData) {
+              // Store the recurring token for future charges
+              // This is typically done on your server, but you could also
+              // trigger a client-side action here
+              console.log("Recurring payment authorized. Token saved for future use.");
+            }
+
+
+            // Use Datacap's Pay API HTTP status
+            // to determine how to return promise
+            if (paymentResponse.status != 200)
+            {
+              reject("Error: " + json.Message);
+            }
+            else
+            {
+              resolve("Approved: " + json.Message);
+            }
+          });
+        });
+    });
+  };
+Apple Pay Intervals
+Apple Pay supports the following billing intervals:
+* javascript
+// Weekly billing
+intervalUnit: "weekOfYear"
+intervalCount: 1
+
+
+// Bi-weekly billing  
+intervalUnit: "weekOfYear"
+intervalCount: 2
+
+
+// Monthly billing
+intervalUnit: "month"
+intervalCount: 1
+
+
+// Quarterly billing
+intervalUnit: "month" 
+intervalCount: 3
+
+
+// Semi-annual billing
+intervalUnit: "month"
+intervalCount: 6
+
+
+// Annual billing
+intervalUnit: "year"
+intervalCount: 1
+Apple Pay Demo
+Try Live Demo
+* Requires Safari on iOS 10 or later, or macOS 10.12 or later.
+Apple Pay Testing
+Follow the instructions below to test Apple Pay on the Web:
+
+1. Download the test domain file (.txt) (right-click > Save as… > apple-developer-merchantid-domain-association.txt).
+2. Host the domain verification file at the URL entered in the .well-known directory. Example: https://yoursite/.well-known/apple-developer-merchantid-domain-association. The well-known domain file should match the domain verification file here
+3. Contact integration support to generate an Apple Pay test MID and Apple Pay test account. Please include the following:
+   * Domain to generate Apple Pay Test MID
+   * Email address (not already registered with Apple)
+4. Add Apple Pay Test Card(s) to your Apple Wallet. The Apple Pay Sandbox environment allows merchants and developers to test their implementation of Apple Pay with test credit and debit cards.
+Apple Pay in Production
+To use Apple Pay on the Web with Datacap, you must first register and verify the domain you’ll be processing payments with. To do that, follow these steps.
+1. Download the Datacap merchant domain verification file here.
+2. Host the domain verification file at the URL you entered in the .well-known directory For example: https://yoursite/.well-known/apple-developer-merchantid-domain-association
+3. Create a PSCS e-commerce deployment for a processing network that supports Apple Pay on the Web with Datacap.
+4. In the Apple Pay Partner Merchant Domain field, enter the fully qualified domain where you’ll be using Apple Pay.  Apple Pay Merchant Domain 
+5. Click the Continue button in PSCS to perform the domain verification. If successful, you’ll be presented with your Apple Pay merchant ID upon activation of your software.
+Google Pay
+Datacap’s Wallet client enables a merchant website to accept payment through a third party wallet like Google Pay™, offering customers a quick and familiar payment option. Tokenized card data is returned to the merchant in the same format as our Datacap JS Client and Hosted iFrame. The Google Pay Web Integration has been done and wrapped into Datacap’s DatacapGooglePay library to closely match the integration to Datacap’s other tokenization methods.
+Follow the steps below to use Google Pay with Datacap:
+   1. Include the Wallet client on your page
+   2. Place the Google Pay button
+   3. Define required JavaScript
+   4. Initialize token callback method
+   5. Test Google Pay
+   6. Setup Google Pay for use in production
+Include the Wallet client on your page
+Add the secure, hosted JavaScript client in the <head> of your page:
+   * xml
+Production:
+<script src="https://wallet.dcap.com/v1/client/googlepay"></script>
+<script src="https://pay.google.com/gp/p/js/pay.js"></script>
+<script src="https://wallet.dcap.com/v2/client/googlepay"></script>
+<script src="https://wallet.dcap.com/v2/view/testGoogle"></script>
+
+
+Certification:
+<script src="https://wallet-cert.dcap.com/v1/client/googlepay"></script>
+<script src="https://pay.google.com/gp/p/js/pay.js"></script>
+<script src="https://wallet-cert.dcap.com/v2/client/googlepay"></script>
+<script src="https://wallet-cert.dcap.com/v2/view/testGoogle"></script>
+Place the Google Pay button
+Show the Google Pay button
+ Google Pay button 
+
+Create a DIV with the ID: <div id="google-pay-button">
+   * xml
+<div id="google-pay-button">
+*Note: The Google Pay button is generated dynamically from the JavaScript client, including all styling. The Google Pay button is supported in most modern browsers.
+*Note: The Google Pay button will only be displayed if the merchant’s processor supports Google Pay transactions.
+Where to place the Google Pay button
+The Google Pay button can be displayed on a POS checkout form, allowing the customer to use Google Pay instead of entering card details.
+See Google’s guidelines for more details on Google Pay button placement.
+Define required JavaScript
+Define a JavaScript callback method that:
+   1. Handles token events
+   2. Sends the token to the POS server for payment processing
+   * javascript
+var tokenCallback = function(tokenResponse)
+{
+  return new Promise(function(resolve, reject)
+  {
+    // Token error!
+    if (tokenResponse.Error)
+    {
+      alert("Token error: " + tokenResponse.Error);
+      return;
+    }
+
+
+    // Good token! Send it to POS server for payment processing
+    fetch("https://your-server-for-receiving-order-info/",
+      {
+        method: "POST",
+        body: JSON.stringify(tokenResponse)
+      })
+      .then(function(paymentResponse)
+      {
+        paymentResponse.json().then(function(json)
+        {
+          // Use Datacap's Pay API HTTP status 
+          // to determine how to return promise 
+          if (payApiResponse.status != 200)
+          {
+            reject("Error" + json.Message);
+          }
+          else
+          {
+            resolve("Approved" + json.Message);
+          }
+        });
+      });
+  });
+};
+
+
+*Note: For the best user experience, the callback should return a promise to the Wallet client. A successful return dismisses the Google Pay sheet with a successful message. Rejecting the promise dismisses the Google Pay sheet with a “Payment not complete” message.
+If the merchant’s website is unable to fulfill the promise, the Google Pay sheet disappears without providing feedback to the customer.
+Initialize
+Call init with your token callback method, token key, merchant name to display, Google Pay merchant ID, and amount to display:
+   * json
+DatacapGooglePay.init(tokenCallback, "[Token Key]", "[Merchant Name]", "[Google Pay Merchant ID]", "[Amount]");
+*Note: All parameters of the init method aside from tokenCallback are strings.
+The response object received by your callback method looks like this:
+On Success
+   * json
+{
+  "Brand": "VISA",
+  "ExpirationMonth": "12",
+  "ExpirationYear": "20",
+  "Last4": "1234",
+  "Token": "DC4:vEyLV7sH5F-me8BnK1nwwHesAWJQTRNK8",
+  "Customer": {
+    "Address": ["100 New Britain Blvd"],
+    "City": "Chalfont",
+    "Email": integrationsupport@dcap.com,
+    "FirstName": "Integration",
+    "LastName": "Support",
+    "Phone": "2159978989",
+    "State": "PA",
+    "Zip": "18914"
+
+
+  }
+}
+On Failure
+   * json
+{
+  Error: "Failed to create token"
+}
+Use your tokens
+Now that you’ve got a Datacap token, you can use it for payment processing with Pay API. Do this by asynchronously calling your server with the token, and return the result as a JavaScript promise to the Wallet client. This cleanly dismisses the Google Pay sheet and lets the customer know the result of their Google Pay transaction.
+Recurring Transactions
+Wallet API now supports recurring payments for Google Pay, enabling subscription services and recurring billing scenarios.
+Basic Initialization (Backward Compatible)
+   * javascript
+// Existing 5-parameter initialization (still works)
+DatacapGooglePay.init(
+    callbackFunction,
+    tokenKey,
+    storeName,
+    googleMerchantID,
+    amount
+);
+Recurring Payment Initialization
+   * javascript
+// Initialize Google Pay with recurring configuration
+var recurringConfig = {
+    isRecurring: true,
+    description: "Monthly Subscription", 
+    label: "Premium Subscription - $9.99/month"
+};
+
+
+DatacapGooglePay.init(
+    callbackFunction,
+    tokenKey,
+    storeName,
+    googleMerchantID,
+    amount,
+    recurringConfig  // Recurring configuration
+);
+Complete Example
+   * javascript
+function initializeRecurringGooglePay() {
+    var recurringConfig = {
+        isRecurring: true,
+        description: "Premium Subscription",
+        label: "Premium Plan - $19.99/month"
+    };
+
+
+    DatacapGooglePay.init(
+        handlePaymentResponse,
+        "[YOUR_TOKEN_KEY]",
+        "Your Store Name", 
+        "[YOUR_GOOGLE_MERCHANT_ID]",
+        "19.99",
+        recurringConfig
+    );
+}
+
+
+function handlePaymentResponse(tokenResponse) {
+    if (tokenResponse.Error) {
+        console.error("Payment failed:", tokenResponse.Error);
+        return Promise.reject(tokenResponse.Error);
+    }
+
+
+    console.log("Recurring payment token received:", tokenResponse.Token);
+    // Store this token for future recurring charges
+    return Promise.resolve("Recurring payment setup successful");
+}
+Processing Recurring Payments
+When IsRecurring is true:
+   1. The API generates an MPAN-compliant token suitable for storage and reuse
+   2. The token can be stored securely for future recurring charges
+   3. Future charges use the stored token without requiring customer re-authentication
+Callback Example
+   * json
+var tokenCallback = function(tokenResponse)
+  {
+    return new Promise(function(resolve, reject)
+    {
+      // Token error!
+      if (tokenResponse.Error)
+      {
+        alert("Token error: " + tokenResponse.Error);
+        return;
+      }
+
+
+      // Extract the token and recurring data
+      var paymentData = {
+        token: tokenResponse.Token,
+        recurringData: tokenResponse.RecurringData || null,  // Will be null for one-time payments
+        // Include other relevant data your server might need
+        amount: DatacapGooglePay.subTotal,
+        customerInfo: tokenResponse.Customer || {}
+      };
+
+
+      // Log for debugging (remove in production)
+      console.log("Payment token:", paymentData.token);
+      if (paymentData.recurringData) {
+        console.log("Recurring data:", paymentData.recurringData);
+      }
+
+
+      // Good token! Send it to POS server for payment processing
+      fetch("https://your-server-for-receiving-order-info/",
+        {
+          method: "POST",
+          body: JSON.stringify(paymentData)
+        })
+        .then(function(paymentResponse)
+        {
+          paymentResponse.json().then(function(json)
+          {
+            // Check if this was a recurring payment and save the token
+            if (paymentData.recurringData) {
+              // Store the recurring token for future charges
+              // This is typically done on your server, but you could also
+              // trigger a client-side action here
+              console.log("Recurring payment authorized. Token saved for future use.");
+            }
+
+
+            // Use Datacap's Pay API HTTP status
+            // to determine how to return promise
+            if (paymentResponse.status != 200)
+            {
+              reject("Error: " + json.Message);
+            }
+            else
+            {
+              resolve("Approved: " + json.Message);
+            }
+          });
+        });
+    });
+  };
+Google Pay Intervals
+Google Pay intervals are handled server-side through your subscription management system. The client-side configuration is primarily for display purposes.
+Google Pay Demo
+Try Live Demo
+* Requires Google Chrome and Google Pay.
+Google Pay Testing
+There is no additional setup to test Google Pay. Use “GooglePayTestMID” for the Google Pay MID.
+The Pay API MID generated for Apple Pay testing can also used for Google Pay testing.
+Google Pay in Production
+Follow the steps below to setup your merchants once you’ve completed the Google Pay Datacap integration. The following steps are required to obtain a valid Google Pay business ID to enable Google Pay on your merchant’s website or hosted checkout page. Google requires screenshots that show how the Google Pay button is presented on the checkout page to validate the style guidelines outlined by Google. Use Datacap’s cert environment to test Google Pay and take screenshots that you can submit as part of the web integration. Without a valid Google Pay business ID, the merchant will not be able to utilize the Google Pay button or accept payments via Google Pay.
+   1. Complete the web integration (requires Google approval). To access the web integration, log into the Google Pay & Wallet console using your gmail.
+
+ Google Wallet Console 
+
+
+   2. Select Datacap as the PSP (Payment Service Provider). See the integration type dropdown.
+
+ Google integration type 
+   3. Submit for Approval.

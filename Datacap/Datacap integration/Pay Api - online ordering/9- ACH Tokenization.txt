@@ -1,0 +1,248 @@
+﻿ACH Tokenization
+ACH Token iFrames
+A web-based ACH tokenization solution using a Datacap hosted iFrame.
+ACH Token iFrames Demo
+Try Live Demo
+Methods
+(static) requestToken(achMerchID, iframeID, callbackFunction, businessName, css) → {ACHResponse}
+Initialize an iFrame to run an ACH transaction.
+Parameters:
+Name
+	Type
+	Description
+	achMerchID
+	String
+	A Datacap ACH Merchant ID.
+	iframeID
+	String
+	The name of the iframe element to initailize.
+	callbackFunction
+	Function
+	The function which to call with tokenization results.
+	businessName
+	String
+	The name of the business accepting ACH payment.
+	css
+	String (Optional)
+	Custom CSS stylesheet which to apply to iframe contents.
+	Returns:
+A ACHResponse object containing the ACH data and authorized amount.
+Type ACHResponse
+Type Definitions
+ACHResponse
+Type: object
+Properties:
+Name
+	Type
+	Description
+	Status
+	String
+	Transaction Status
+	ResponseOrigin
+	String
+	Origin of response.
+	RoutingNo
+	String
+	Routing number of Customers Bank
+	AcctNo
+	String
+	Customers Account Number.
+	AcctType
+	String
+	Type of Account, either Checking or Savings.
+	Amount
+	String
+	Transaction Amount.
+	Authorized
+	String
+	Amount Authorized.
+	CustFirstName
+	String
+	Customer First Name
+	CustLastName
+	String
+	Customer Last Name
+	FullName
+	String
+	Business Name
+	InvoiceNo
+	String
+	Unique Transaction Identifier
+	SequenceNo
+	String
+	Check Sequence Number
+	Last4
+	String
+	Last four digits of account represented by token
+	Getting started with ACH Token iFrames
+Include the client on your page
+Add the secure, hosted JavaScript client in the <head> of your page:
+* html
+<script src="https://token.dcap.com/v1/client/hostedACHToken"></script>
+
+Type
+	URL
+	Production
+	https://token.dcap.com/v1/client/hostedACHToken
+	Certification
+	https://token-cert.dcap.com/v1/client/hostedACHToken
+	Define the required iFrame control
+Create an iFrame and give it an ID:
+* html
+<iframe id="ach-iframe" frameborder="0"></iframe>
+Define an input control to insert the ach resulting into:
+* html
+<input type="hidden" id="ach" />
+Define required JavaScript
+Define a JavaScript callback method for ach response events:
+* javascript
+var achCallback = function(response) {
+          if (response.Error)
+          {
+            alert("ACH error: " + response.Error);
+          }
+          else
+          {
+            var ACH = response
+          }
+        }
+Initialize the hosted Token iFrame
+Call init with your ACH Merchant ID, iframe control ID, ach callback method, and merchant name:
+* javascript
+DatacapHostedWebAch.init('[ACH Merchant ID]', 'ach-iframe', achCallback, '[Merchant Name]');
+Optional: Provide init with a string of your custom CSS to style the iframe contents:
+* javascript
+var customCSS = ".ach-data { background-color: #ADD8E6; color: white; }";
+        DatacapHostedWebAch.init('[ACH Merchant ID]', 'ach-iframe', achCallback, '[Merchant Name]', customCSS);
+The layout of the iframe contents and their classes can be found here: https://token.dcap.com/v1/view/iACHToken
+Optional: For single page frameworks utilize DatacapHostedWebToken.removeMessageEventListener() to remove the current event listener to avoid multiple instances being active at once.
+Note: When custom CSS is provided, Datacap’s default styling is entirely cleared.
+ACH Token Javascript client library
+A web-based ACH tokenization solution using a Datacap JS client.
+Getting started with ACH Token Javascript client library
+Include the client on your page
+Add the secure, hosted JavaScript client in the <head> of your page:
+* html
+<script src="https://token.dcap.com/v1/client/clientACHToken"></script>
+
+Type
+	URL
+	Production
+	https://token.dcap.com/v1/client/clientACHToken
+	Certification
+	https://token-cert.dcap.com/v1/client/clientACHToken
+	Define the required form and control
+Give your payment form an ID:
+* html
+<form id="payment_form">
+Add the following 3 payment information input controls to your form:
+* html
+<input type="text" data-token="routing_number" />
+<input type="text" data-token="account_number" />
+<input type="text" data-token="acct_type" />
+Note: The payment info input controls must not have ID or Name attributes.
+Define an input control to insert the token into:
+* html
+<input type="hidden" id="token" />
+Define required JavaScript
+Define a JavaScript callback method for token events:
+* javascript
+var tokenCallback = function(response) {
+  if (response.Error)
+  {
+    alert("Token error: " + response.Error);
+  }
+  else
+  {
+    var token = response.Token;
+    document.getElementById("token").value = token;
+  }
+}
+Request a token
+Call requestToken with your token key, payment form ID, and token callback method:
+* javascript
+ DatacapWebAchToken.processACHToken ("[Token Key Goes Here]", "payment_form", tokenCallback);
+The response object received by your callback method looks like this:
+On Success
+* json
+{
+  "RoutingNo": "123456780",
+  "AccountNo": "20003412",
+  "Token": DC4:AQE-MmUV0t2_zfOweOnIhWDsPayFBphSXmqmG2wtaAG6SofrVu52MlMBdz_yp90_qvslq-XdkdYBSmyafopKd4vXpjVy7pZ1KbQ7vi3um2KNbF-oi1xPbpOgKeBNDkwBWLrVtyZqIMHTfORSinaRMT98"
+}
+Run ACH transaction
+Call processAch from your page to trigger an Authorization:
+* xml
+<input type="button" onclick="DatacapHostedWebAch.processAch()" value="Submit" />
+The response object received by your callback method looks like this:
+On Success
+* json
+{
+          ResponseOrigin: "Processor",
+          ReturnCode: "000000",
+          Status: "Approved",
+          AcctNo: "XXXX3412",
+          RefNo: "q-5A277031DD1F4DB58EE5123BB0093637"
+          InvoiceNo: "2311174537"
+          Amount: "100.00"
+          Authorize: "100.00"
+          InvoiceNo: "1111"
+          CustLastName: "Doe"
+          CustFirstName: "Jane"
+          AcctType: "Checking"
+          RoutingNo: "123456780"
+        }
+
+
+On Failure
+* json
+ {
+            ResponseOrigin: "Processor",
+            ReturnCode: "000000",
+            Status: "Declined",
+            Message: "Declined error 2039",
+            }
+Send ACH Email
+After every ACH authorization it is the integrators responsibility to send the customer an email on behalf of the merchant and include the following information:
+* plaintext
+Thank you for your payent!
+This email is confirmation that on MM/DD/YYYY you have authorized 
+'[Merchant Name]' to debit your personal bank account for a 
+one-time tranaction. This email will server as your formal 
+notification and receipt. Please review the informtion included
+ below for acciracy. 
+
+
+Confirmation Number: ##########
+
+
+Customer: '[CUSTOMER NAME]'
+Account Number: ##########
+Authorized Bank Account: '[Merchant routing and truncated account number]'
+Date of Authorization: MM/DD/YYYY 
+Date of Payment: MM/DD/YYYY 
+Payment Amount: $XX.XX
+
+
+Please note that because this is and electronic transaction, 
+the funds will be electronically withdrawn from your acccount 
+on or after the above noted transaction date. If you would like
+ to revoke your authorization or you believe any of the above 
+ information is incorrect, please contact us immediately by 
+ calling '[Merchant Phone]'
+
+
+If this information is incorrect or you have questions regarding 
+your paymet, please contact us. 
+
+
+'[Merchant Name]'
+'[Merchant Address]'
+'[Merchant Phone]'
+
+
+This is an automated email, please do not reply. If you have additional 
+questions, please utalize the contact information above.
+
+
+

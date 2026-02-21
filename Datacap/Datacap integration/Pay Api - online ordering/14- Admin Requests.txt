@@ -1,0 +1,197 @@
+﻿Admin Requests
+AcquireInitialApiKey - V2 Only
+To acquire an initial API Key and switch your MID from V1 to V2 authentication. Uses V1 authentication. This can also be used after resetting an API Key through PSCS.
+POST /V2/Admin/AcquireInitialApiKey
+Implementation Notes:
+1. Can only be performed once per deployment, subsequent requests to roll the token should use AcquireApiKey.
+2. If ApiKey is lost, manual reset can be performed in the deployment file for the given merchant.
+Sample Request
+* Required Request
+POST /V2/Admin/AcquireInitialApiKey HTTP/1.1
+Host: https://pay-cert.dcap.com
+Charset: UTF-8
+Authorization: Datacap Merchant ID
+Content-type: application/json
+Content-length: 123
+
+
+{
+  "PayAPIPublicKey": "fd3B4d92D1921hCBedcB3183827f3e32"
+}
+
+
+
+PayAPIPublicKey
+(String 1-32)
+	Required
+Datacap Token Key (from HostedIntegration section in PSCS)
+	Sample Response
+* Required Response
+
+{
+    "ResponseOrigin": "DSILogicEngine",
+    "ReturnCode": "000000",
+    "Status": "Success",
+    "Message": "Success",
+    "ApiKey": "GNFF3fVp8e32fdhlIWqRoLcsPWlW_K0jtV24sfaMxAhYjVJ-8HdA5kevGk5woQUAUtP04LxiyU6ghfSy4DJfoUbEq7ekLE2Ha0fW1QhsphX"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	ApiKey
+(String 1-500)
+	Rollable token to be paired with MerchantID in V2 Auth Token for BASIC authentication.
+	AcquireApiKey - V2 Only
+To rotate an existing API Key for a given MID. Limit one request per hour. This is to be used as a preventive measure against API Key theft.
+POST /V2/Admin/AcquireApiKey
+Sample Request
+* Required Request
+POST /V2/Admin/AcquireApiKey HTTP/1.1
+Host: https://pay-cert.dcap.com
+Charset: UTF-8
+Authorization: Basic DatacapMerchantID:APIKey
+Content-type: application/json
+Content-length: 123
+
+
+{
+  "PayAPIPublicKey": "fd3B4d92D1921hCBedcB3183827f3e32"
+}
+
+
+
+PayAPIPublicKey
+(String 1-32)
+	Required
+Datacap Token Key (from HostedIntegration section in PSCS).
+	Sample Response
+* Required Response
+
+{
+    "ResponseOrigin": "DSILogicEngine",
+    "ReturnCode": "000000",
+    "Status": "Success",
+    "Message": "Success",
+    "ApiKey": "GNFF3fVp8e32fdhlIWqRoLcsPWlW_K0jtV24sfaMxAhYjVJ-8HdA5kevGk5woQUAUtP04LxiyU6ghfSy4DJfoUbEq7ekLE2Ha0fW1QhsphX"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	ApiKey
+(String 1-500)
+	Rollable token to be paired with MerchantID in V2 Auth Token for BASIC authentication.
+	Batch Summary
+GET /admin/batchsummary
+Sample Request
+No request fields for Batch Summary Admin Command.
+Sample Response
+* Required Response
+
+{
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Success",
+    "Message": "SUCCESS",
+    "BatchNo": "132829",
+    "BatchItemCount": "1",
+    "NetBatchTotal": "1.00"
+}
+
+
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response.
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	BatchNo
+(Number 1-6)
+	The Batch identification number returned by the processor.
+	BatchItemCount
+(Number 1-8)
+	Total number of total items within this batch.
+	NetBatchTotal
+(Number 1-10)
+	Net of all transactions within this batch.
+	Batch Close
+POST /admin/batchclose
+Sample Request
+* Required Request
+{
+"BatchNo": "132829",
+"BatchItemCount": "1",
+"NetBatchTotal": "1.00"
+
+
+}
+
+BatchNo
+(Number 1-255)
+	The Batch identification number returned by the processor.
+	BatchItemCount
+(Number 1-8)
+	Total number of total items within this batch.
+	NetBatchTotal
+(Number 1-10)
+	Net of all transactions within this batch.
+	Sample Response
+* Required Response
+
+{
+"ResponseOrigin": "Processor",
+"ReturnCode": "000000",
+"Status": "Success",
+"Message": "SUCCESS",
+"BatchNo": "132829",
+"BatchItemCount": "1",
+"NetBatchTotal": "1.00"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response.
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	BatchNo
+(Number 1-6)
+	The Batch identification number returned by the processor.
+	BatchItemCount
+(Number 1-8)
+	Total number of total items within this batch.
+	NetBatchTotal
+(Number 1-10)
+	Net of all transactions within this batch.

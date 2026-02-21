@@ -1,0 +1,376 @@
+﻿Pay API
+Resource Reference Guide
+Notice: This document contains information proprietary to Datacap Systems Inc. The only acceptable use for the information contained herein is to interface third party systems exclusively to Datacap’s ePay server and Tran products. Any other use is strictly prohibited.
+dsiPDCX®, dsiEMVUS®, dsiEMVX®, Pay API™, EasyCheckout™. dsiEMVAndroid™, dsiEMVApple™, DSIEMVClientX®, DSIClientX®, DataTran™, NETePay™, NETePay Hosted™, TranCloud™, dsiTranCloud™, DC Direct™, DIALePay™, GIFTePay™, ePay™, ePay Administrator™, DataTran™, DialTran™, IPTran™, IPTranLT™, TwinTran™, AutoLoad™, NoLoad™, PSCS™, DatacapConnect™, dsiPDCiOS™, dsiPDCAndroid™ and Datacap names and logos and all related trademarks, trade names, and other intellectual property are the property of Datacap Systems Inc. and cannot be used without its express prior written permission. All other names or trademarks are the property of the other owners.
+
+What is Pay API?
+Pay API is Datacap’s payment API built around RESTful standards. These include standard HTTP methods (POST/GET/PUT), content types (JSON/XML/form encoded), and a resource-oriented architecture. It’s a straightforward integration to ecommerce credit, ACH, gift and other card-not-present payments.
+URL
+Type
+	URL
+	Certification
+	https://pay-cert.dcap.com/{version}/
+	Production
+	https://pay.dcap.com/{version}/
+	Authorization
+Note:
+1. If using ‘subresource integrity’, V2 to strongly recommended since Datacap will not change the V2 source. If changes are needed, a new V2 subversion will be created. The current sub version for V2 is ‘20241220’. The V1 source will remain in sync with the latest V2 subversion.
+2. The ‘subresource integrity’ hash values are different between cert and prod for the same files. It is recommended that these hash values are made configurable within the integrator’s source.
+V2 Authorization
+We use Basic Authorization on all V2 endpoints with the help of a Pay API-supplied API Key acquired via the endpoint /AcquireInitialApiKey and rotated via the endpoint /AcquireApiKey.
+This new API key guarantees request-level secure authentication to a greater level than the current (V1) “MID-only” authorizations. Once you have switched to V2 Authorization, MID-only authorization will no longer work on PayAPI transactions. This prevents those with access to the non-changing MID from producing unauthorized transactions. The API Key allows for quick revocation and resetting of credentials - either in case of emergency or as a pre-emptive measure - through API Key rotation, where a user-supplied API Key is exchanged for a new API Key for a given MID. On any rotation, the new API must be injected into all solutions that previously used the old API Key and MID.
+If the API Key is lost, or is stolen while you are unable to rotate your API Key, a reset process is available on the corresponding deployment in PSCS.
+For eCommerce transactions, the authorization header scheme is:
+Authorization: Basic BASE64(eCommerceMID:ApiKey)
+And for ACH transactions:
+Authorization: Basic BASE64(achMID:ApiKey)
+That is, using “Basic” as the Authorization type, with the value of the authorization string as the Base64 encoding of a Merchant ID and an ApiKey, separated by a colon, such that a properly formed Authorization header would look something like this:
+Authorization: Basic YWNoTUlEOkFwaUtleQ==
+Endpoints for acquiring and rotating an API Key are further explained in the “Admin Requests” section.
+V2 Authorization Reset
+To reset your API Key (in case you have lost the credential completely) go to the deployment in PSCS and press the button that reads “Reset API Key”, near the section containing hosted integration credentials. This will lead you through the process for resetting the API Key for the MIDs of your choice.
+Once you have reset your API Key, your other credentials (MID, Token Key) will remain the same, but you must acquire a new API Key at /AcquireInitialApiKey. Once you have acquired a new API Key, you must then replace the old API Key at all places where the previous API Key exists.
+Getting Started with Datacap Pay API
+Identification
+Send your product name and version in the User-Agent header:
+User-Agent: WebApp/1.1.0
+Content Types
+We support the following for Content-Type and Accepts values:
+* application/json
+* application/xml
+* application/x-www-url-encoded
+Transactions
+Credit Transactions
+Operation
+	HTTP Method
+	URL
+	Sale
+	POST
+	/credit/sale
+	Void Sale
+	POST
+	/credit/sale/{RefNo}/void
+	Adjust
+	PUT
+	/credit/sale/{RefNo}
+	Return
+	POST
+	/credit/return
+	Void Return
+	POST
+	/credit/return/{RefNo}/void
+	PreAuth
+	POST
+	/credit/preauth
+	Capture
+	PUT
+	/credit/preauth/{RefNo}
+	Increment
+	PUT
+	/credit/preauth/incrementalauth/{RefNo}
+	PartialReversal
+	PUT
+	/credit/preauth/partialreversal/{RefNo}
+	Void Auth
+	POST
+	/credit/preauth/{RefNo}/void
+	Auth Only
+	POST
+	/credit/authonly
+	Transaction Detail
+	GET
+	/credit/{RefNo}
+	Card Lookup
+	POST
+	/credit/cardlookup
+	ACH Transactions
+Operation
+	HTTP Method
+	URL
+	Authorize
+	POST
+	/ach/authorize
+	Return
+	POST
+	/ach/return/{RefNo}
+	Void
+	POST
+	/ach/authorize/{RefNo}/void
+	Payout
+	POST
+	/ach/payout
+	FSA Transactions
+Operation
+	HTTP Method
+	URL
+	FSA Sale
+	POST
+	credit/fsa/sale
+	Void FSA Sale
+	POST
+	credit/fsa/sale/{RefNo}/void
+	Stored Value Transactions
+Operation
+	HTTP Method
+	URL
+	Sale
+	POST
+	/storedvalue/sale
+	Void Sale
+	POST
+	/storedvalue/sale/{RefNo}/void
+	Return
+	POST
+	/storedvalue/return
+	Void Return
+	POST
+	/storedvalue/return/{RefNo}/void
+	Reload
+	POST
+	/storedvalue/reload
+	Void Reload
+	POST
+	/storedvalue/reload/{RefNo}/void
+	Issue
+	POST
+	/storedvalue/issue
+	Void Issue
+	POST
+	/storedvalue/issue/{RefNo}/void
+	Balance
+	POST
+	/storedvalue/balance
+	Create
+	POST
+	/storedvalue/create
+	Set
+	POST
+	/storedvalue/set
+	Cash Out
+	POST
+	/storedvalue/cashout
+	Transaction Detail
+	GET
+	/storedvalue/{RefNo}
+	Administration Requests
+Operation
+	HTTP Method
+	URL
+	AcquireInitialApiKey
+	POST
+	admin/AcquireInitialApiKey
+	AcquireApiKey
+	POST
+	admin/AcquireApiKey
+	Batch Summary
+	GET
+	/admin/batchsummary
+	Batch Close
+	POST
+	/admin/batchclose
+	Token Exchange
+	POST
+	/admin/tokenexchange
+	Success Responses
+* 200 OK Approved Transaction
+* 402 PAYMENT REQUIRED Declined Transaction
+Failure Responses
+* 400 BAD REQUEST Invalid Transaction Requests
+* 401 UNAUTHORIZED Unauthorized Transaction
+* 404 NOT FOUND Resource Not Found
+Rate Limits
+Transaction rate limits are applied per IP address or region, measured over a one-minute period.
+Certification Environment
+* Traffic originating outside of the US are limited to 100 requests per region per minute.
+* TransactionDetail requests to Pay API endpoint are limited to 20 requests per IP address per minute.
+* One Time Use tokens are limited to 10 from a single IP per one minute.
+* All traffic to all endpoints originating from a single IP address cannot exceed 200 requests within one minute.
+* If limit is exceeded, 403 Forbidden error is returned.
+Production Environment
+* Traffic originating outside of the US are limited to 100 requests per region per minute.
+* TransactionDetail requests to Pay API endpoint are limited to 60 requests per IP address per minute.
+* One Time Use tokens are limited to 10 from a single IP per one minute.
+* All traffic to all endpoints originating from a single IP address cannot exceed 2000 requests within one minute.
+* If limit is exceeded, 403 Forbidden error is returned.
+eCommerce Integration
+A typical eCommerce integration with Datacap consists of the following:
+* Client side tokenization utilizing one or more of our tokenization frameworks.
+   * An otu (one-time-use) token is created that is good for 15 minutes.
+* Payment processing utilizing one of our gateway platforms.
+   * An Auth Only transaction is sent to validate the account information represented by the one-time-use token.
+   * A card token is returned with any successful transaction and is good through the expiration date of the account it represents.
+Certification Environment
+Datacap provides a fully functional certification sandbox environment for developer testing. Contact Integration Support to request credentials. To access the certification environment, replace the production URL with the following:
+* https://pay-cert.dcap.com/v2/
+Using Tokens
+To avoid handling card data, use one of our javascript libraries to collect and tokenize card data for you.
+* Datacap JS Client
+* iFrames
+Example Credit Sale Request with Token
+* json
+POST https://pay.dcap.com/v2/credit/sale/
+
+
+Authorization: ecommerceMIDHERE
+User-Agent: WebApp/1.1.0
+Content-Type: application/json
+Accept: application/json
+
+
+{
+  "Amount": "1.00",
+  "Token": "DC4:AADTD3XG+nHaY2EYXaggxwpqBOlZavIEQX1bnvHBM4EgqMgPlLsF+ZWhzKDGi+fSC4Vz570gjerEwliduLD91diU8rfHPhWn/IjAP5+KCXh+HmozrJvSj6yYboD37KFPyX8="
+}
+Example Credit Sale Response with Token
+* json
+200 OK
+
+
+{
+    "Status": "Approved",
+    "Message": "APPROVAL",
+    "Account": "XXXXXXXXXXXX4242",
+    "Expiration": "XXXX",
+    "Brand": "VISA",
+    "AuthCode": "ABC123",
+    "RefNo": "123",
+    "Amount": "1.00",
+    "Authorized": "1.00",
+    "Token": "DC4:AAD6D/mKUkecMSkLdyt4Ha+zwdH22c6QTUPX0gyZzWerqCwSNJBMfTmg0GeFrpc8ABBlz70FdNjJID/0/GsKSducw46fFI9xkhDOoZK4qDHlbRoIQwgrswfFZNPLOaYXRwoqYUN5h5siZ+rAyzjN+VtY"
+  }
+Using Card on File
+During the initial payment, the RecurringData field must be included as part of the request containing the COF transaction type the customer has agreed to. For processors where COF is supported, responses will include the RecurringData field. This value must be stored along with Token and sent as part of the next transaction in the series. Each subsequent response (approved or declined) will include new RecurringData which must be stored and sent in the next transaction of the series. In cases where the initial transaction is declined there’s no need to store RecurringData or Token.
+The following types of card on file transactions are supported.
+* “Recurring” Merchant initiated, processed at regular intervals.
+* “Installment” Merchant initiated, processed at regular intervals over a fixed period of time. Transaction amounts are fixed.
+* “Unscheduled” Merchant initiated, processed at irregular intervals.
+* “CardHolderInitiated” Transactions initiated by the cardholder.
+* See Certification Environment for testing URL.
+Sale Request with Token
+* json
+POST /v2/credit/sale HTTP/1.1
+    User-Agent: WebApp/1.1.0
+    Content-Type: application/json
+    Accept: application/json
+    Authorization: ************
+    Host: pay-cert.dcap.com
+    Accept-Encoding: gzip, deflate, br
+    Connection: keep-alive
+    Content-Length: 140
+
+
+    {
+    "Amount": "1.00",
+    "Token": "DC4:BHDWPNNkncp36UyNxV4ygCrXdibdVcrBCE-fn"OIEHF_neoinfowenfwoe_ncOFENOnceoEOCNEN8t8u6o64Y1YiLi8DHMJhL7kHc5_6ARC8jL83JsuH4rt3sdZJJ35Y9YZo_TCw7_Du2tOl_-NwQOHO"
+    "InvoiceNo": "1001",
+    "RecurringData": "Recurring"
+    }
+Response with Token
+* json
+HTTP/1.1 200 OK
+    Date: Wed, 07 Jul 2021 16:15:51 GMT
+    Content-Type: application/json; charset=utf-8
+    Transfer-Encoding: chunked
+    Connection: keep-alive
+    Cache-Control: no-cache
+    Pragma: no-cache
+    Content-Encoding: gzip
+    Expires: -1
+    Vary: Accept-Encoding
+    Server: Microsoft-IIS/10.0
+    Request-Context: appId=cid-v1:fc20dba9-d083-4e04-a99f-5fb7e91541f7
+    Access-Control-Expose-Headers: Request-Context
+    X-Powered-By: ASP.NET
+
+
+    {
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "XXXXXXXXXXXX0119",
+    "Expiration": "XXXX",
+    "Brand": "VISA",
+    "AuthCode": "OK034C",
+    "RefNo": "q-22C0A369EEDC4F84AFD7148CBD6F9F4F",
+    "InvoiceNo": "1001",
+    "Amount": "1.00",
+    "Authorized": "1.00",
+    "RecurringData": "Recurring|00|011188619368181G590",
+    "Token": "DC4:AAACZQYGhjN36UyNxV4ygCrXdibdVcrPbXE3gb19HrEhOVrWJLXWDkfDfxoq0sXyV6_Abu5nTNkA8t8u6o64Y1YiLi8DHMJhL7kHc5_6ARC8jL83JsuH4rt3sdZJJ35Y9YZo_TCw7_Du2tOl_-NwQOHO"
+    }
+2nd Sale Request with Token
+* json
+ POST /v2/credit/sale HTTP/1.1
+    User-Agent: WebApp/1.1.0
+    Content-Type: application/json
+    Accept: application/json
+    Authorization: ************
+    Host: pay-cert.dcap.com
+    Accept-Encoding: gzip, deflate, br
+    Connection: keep-alive
+    Content-Length: 276
+
+
+    {
+    "Token": "DC4:AAACZQYGhjN36UyNxV4ygCrXdibdVcrPbXE3gb19HrEhOVrWJLXWDkfDfxoq0sXyV6_Abu5nTNkA8t8u6o64Y1YiLi8DHMJhL7kHc5_6ARC8jL83JsuH4rt3sdZJJ35Y9YZo_TCw7_Du2tOl_-NwQOHO",
+    "Amount": "1.00",
+    "InvoiceNo": "1002",
+    "RecurringData": "Recurring|00|011188619368181G590"
+    }
+2nd Sale Response with Token
+* json
+ HTTP/1.1 200 OK
+    Date: Wed, 07 Jul 2021 16:16:42 GMT
+    Content-Type: application/json; charset=utf-8
+    Transfer-Encoding: chunked
+    Connection: keep-alive
+    Cache-Control: no-cache
+    Pragma: no-cache
+    Content-Encoding: gzip
+    Expires: -1
+    Vary: Accept-Encoding
+    Server: Microsoft-IIS/10.0
+    Request-Context: appId=cid-v1:fc20dba9-d083-4e04-a99f-5fb7e91541f7
+    Access-Control-Expose-Headers: Request-Context
+    X-Powered-By: ASP.NET
+
+
+    {
+    "ResponseOrigin": "Processor",
+    "ReturnCode": "000000",
+    "Status": "Approved",
+    "Message": "APPROVED",
+    "Account": "XXXXXXXXXXXX0119",
+    "Expiration": "XXXX",
+    "Brand": "VISA",
+    "AuthCode": "OK088C",
+    "RefNo": "q-BEE20019264E40E38262BD506AA7B9DD",
+    "InvoiceNo": "1002",
+    "Amount": "1.00",
+    "Authorized": "1.00",
+    "RecurringData": "Recurring|00|011188479842334G631",
+    "Token": "DC4:AABUles-Iai6Gfxmx2nRtjippdORqOUTvLP953Wl634zqrikGoN9jmOyprE09uOCEvAY5CDvVOROBkmcty4eTAWZKSncm37P8pxq4BIF67SWDZO_V_HTYHfH68wgKxW5lNeOiUCMtkfFuzDuDZFk6_y9"
+}
+Datacap Gift - omnichannel gift card platform
+
+
+ Datacap Gift logo 
+
+What is Datacap Gift?
+Datacap Gift™ is Datacap’s omnichannel gift card platform that enables card-present and card-not-present gift. Pay API connects card-not-present gift to the Datacap Gift platform - see PrePaid Transactions in section 8. To add support for Datacap Gift for card-present payments, refer to the prepaid transactions section in each corresponding Datacap card-present interface (DC Direct, dsiEMVX, dsiEMVApple, dsiEMVAndroid, etc).
+Note: For card-present gift, Datacap Gift mirrors Datacap’s GIFTePay™ integration.
+To learn more about Datacap Gift click here.
+See Datacap Gift in action - Datacap Gift Demo
+Datacap Gift key features
+* Omnichannel Gift - sell, load or redeem gift cards online or in-store for a consistent experience across all channels.
+* Real-time reporting for credit and gift transactions available 24/7 for solution providers and merchants.
+* Pre-loaded promotions for products and services with automated expiration.
+* White-label ready - White-label all aspects of Datacap’s gift platform: pre-branded gift cards, reporting dashboard, etc.
+* Multi-location management - Manage gift cards across multiple chain locations or groups with shared reporting.
+* Easy migration to and from dozens of third party gift services.
+* Alternative Gift - Add support for alternative gift payments such as QR Code, Text-to-Pay, memberships, etc.
+* Check Balances options - Cardholders can check gift card balances online or via QR code.
+Datacap Gift Reporting
+Use Datacap’s Reportal dashboard or build your own cusom dashboard using Reporting API
+ Datacap Reporting

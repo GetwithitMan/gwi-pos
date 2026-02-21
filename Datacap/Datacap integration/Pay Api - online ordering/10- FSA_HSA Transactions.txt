@@ -1,0 +1,239 @@
+﻿FSA/HSA Transactions
+FSA/HSA Sale
+To process a payment on a Flexible Spending Account or Health Savings Account card.
+POST /credit/fsa/sale
+Implementation Notes:
+1. Partial auth cannot be disabled for FSA transactions.
+2. For the Amount tag, Healthcare items must have been validated against the IIAS database. The entire Purchase Amount must be Healthcare account eligible.
+3. At least one FSA purchase tag must be present in the request.
+4. The sum of the FSA tag values should equal the “Amount” value.
+Sample Request
+* Required
+POST /V2/credit/sale HTTP/1.1
+Host: pay-cert.dcap.com
+Content-Type: application/json
+Accept: application/json
+User-Agent: WebApp/1.1.0
+Authorization: ••••••
+Content-Length: 253
+
+
+{
+    "InvoiceNo": "1712465648",
+    "Amount" : "12.00",
+    "FSAPrescription" :"12.00",
+    "Token": "DC4:AQEAb-lKxJ9-O4-Z9awi4jcHSqnjRwqkdrds6_zSCfH62eHo6T1xQV2bzibFbTtU97CRmEZqg92GOPpOMsFvM2IXmObHqoA2ZITJ27DKzKlofOw-nlNi7ljckXlpjzfY9M3eqZv8C1lM0cG1nDUrv6E1"
+}
+
+Token
+(String 1-256)
+	Required
+Datacap Token
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	FSAPrescription
+(String 1-8)
+	Conditional
+Price for FSA qualifying prescription purchase.
+	FSAVision
+(String 1-8)
+	Conditional
+Price for FSA qualifying vision/optical purchase
+	FSAClinical
+(String 1-8)
+	Conditional
+Price for FSA qualifying clinical purchase
+	FSADental
+(String 1-8)
+	Conditional
+Price for FSA qualifying dental purchase
+	Zip
+(String 1-10)
+	Cardholder Zip Code. Alpha-Numeric Only for Fiserv Rapid Connect. Required to support Address Verification.
+	Address
+(String 1-8)
+	Cardholder Street Address Number. Required to support Address Verification.
+	OverrideDuplicate
+(Boolean)
+	Use “true” to allow duplicate transactions to supported processors.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response.
+	Sample Response
+* Required
+{
+"ResponseOrigin": "Processor",
+"ReturnCode": "000000",
+"Status": "Approved",
+"Message": "APPROVED",
+"Account": "511509XXXXXX7899",
+"Expiration": "XXXX",
+"Brand": "M/C",
+"TranCode": "FSASale",
+"AuthCode": "zdMY6Bke",
+"RefNo": "q-34C6TsxbMP5MvNuQuBDadkC1eBh",
+"InvoiceNo": "1712465648",
+"Amount": "12.00",
+"Authorized": "12.00",
+"Token": "DC4:AQH-WjyqKnZaoPE3A4CibNyal30-Cl4FRYyy4uV_QOUqOpScXCJ1-3cLWNfUFl2Gk6OGt-JCRCdrfm0N_hRG5KOWKATt-U3DWc61smW99YrfqsEFN-Qnk6cy_3Z1sqC_ALSD-HAQLdJW0vor3Lsy5zvS"
+}
+
+ResponseOrigin
+(String 1-10)
+	Indicates the source of response.
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions.
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	transaction identifier
+	AVSResult
+(String 1-40)
+	The AVS result returned by the processor
+	Amount
+(String 1-8)
+	Transaction amount with two decimal places. Min. 0.01. Example: 29.95
+	Authorized
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.
+	Void FSA/HSA Sale
+To void (reverse) a previously completed sale (payment) transaction in the current batch on a Flexible Spending Account or Health Savings Account card.
+POST /credit//fsa/sale/{RefNo}/void
+Implementation Notes:
+1. If using Pay API to void a card present FSA/HSA transaction, be sure to use the PayAPI_ID as the RefNo.
+Sample Request
+* Required
+POST /v2/credit/fsa/sale/q-34Kfv6qVg7qioZ39CeNKLnOTlJy/void HTTP/1.1
+Content-Type: application/json
+Authorization: ••••••
+User-Agent: WebApp/1.1.0
+Accept: application/json
+Host: pay-cert.dcap.com
+Content-Length: 203
+
+
+{
+"Amount" : "12.00",
+"Token":"DC4:AQGffGktrF7nKKrwI7bHyCNgx_wuONX0No6uOS85l3sor9Pj4l4hLu77ymI8tQslPiqVvD8DzBIO7j26pJGuSJNMnyhQIq69R-LQC27Hyf-RAY8Nv1GKAfwn95yBYHkFUvKSHLgVrDK5LvVCv9rfusXv",
+"InvoiceNo": "2013365063"
+}
+
+Token
+(String 1-256)
+	Required
+Datacap Token
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response.
+	Sample Response
+* Required
+{
+"ResponseOrigin": "Processor",
+"ReturnCode": "000000",
+"Status": "Approved",
+"Message": "APPROVED",
+"Account": "511509XXXXXX7899",
+"Expiration": "XXXX",
+"Brand": "M/C",
+"TranCode": "VoidSale",
+"AuthCode": "Fa1oXa1",
+"RefNo": "q-34KhTf5mm5YAM3bzuhyBfONCxZC",
+"InvoiceNo": "2013365063",
+"Amount": "12.00",
+"Authorized": "12.00",
+"Token": "DC4:AQHIeqth9uZqpJGyTDCWPaur65DuFaWqoT1grgR9hG9sXyZbbgNrwi8V4CCwvBFaj3h-G-ay7uJvl1emkv5aTkloGlEpjsjaOELSqaU9ImTQQ-0yqOgs-cUz6fEyoe_nXPr-Lb1n3_9vt3IU6Cj4Jk70"
+}
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by DC Direct application
+“DCDirect” = generated by DC Direct application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions.
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Account
+(Number 1-19)
+	Masked Card Account Number
+	Expiration
+(String 1-4)
+	Card Expiration Date in MMYY format
+	Brand
+(String 1-5)
+	Card Brand. Values: VISA, M/C, DCVR, AMEX, DCLB, JCB, or OTHER
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	AuthCode
+(String 1-16)
+	Authorization code issued by the host for an approved transaction
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	InvoiceNo
+(Number 1-8)
+	transaction identifier
+	Amount
+(String 1-8)
+	Transaction amount with two decimal places. Min. 0.01. Example: 29.95
+	Authorized
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	Token
+(String 1-256)
+	Datacap multi-use token returned in response. Remains valid for as long as the associated card remains valid.

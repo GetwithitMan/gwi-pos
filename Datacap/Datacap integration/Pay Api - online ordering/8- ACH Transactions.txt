@@ -1,0 +1,620 @@
+﻿ACH Transactions
+ACH Best Practices
+View ACH Type Definitions and Methods
+Collection fields
+When presenting an ACH form to a customer the following fields need to be collected and visible.
+Field
+	Type
+	Max Length
+	Description
+	Location
+	Routing Number
+	String
+	24
+	Routing number of Customers Bank
+	Body
+	Account Number
+	String
+	24
+	Customers Account Number
+	Body
+	Account Type
+	String
+	10
+	Type of Account, either Checking or Savings
+	Body
+	Amount
+	String
+	8
+	Transaction Amount
+	Body
+	Customer First Name
+	String
+	50
+	Customer First Name
+	Body
+	Customer Last Name
+	String
+	50
+	Customer Last Name
+	Body
+	FullName
+	String
+	100
+	Business Name
+	Body
+	Entry Class
+	String
+	7
+	(Personal or Business)
+	Body
+	User Acknowledgment
+The following text needs to be used to authorize the initial payment. The user needs to acknowledge the prompt before processing the payment. [CUST_NAME] being replaced by the merchant accepting the payment, [DATE_NOW] is the current date the prompt is being shown.
+Note: User Acknowledgment is a NACHA requirement.
+By checking this box and clicking “Submit” below I authorize [CUST_NAME] to debit the bank account indicated on this web form for the noted amount on [DATE_NOW]. I understand that because this is an ACH transaction, these funds may be withdrawn as soon as [DATE_NOW]. I understand that in the event this ACH transaction is returned by my financial institution, I may be subject to a returned item fee. I have read and understand the cancellation and return policy outlined in the Terms and Conditions (if applicable) and agree to allow [CUST_NAME] a reasonable opportunity to act in response to it.
+To access a ready to deploy solution look at:
+https://datacapsystems.github.io/HostedACH/
+Authorize
+To pull funds from a bank account to complete an ACH transaction.
+POST /ach/authorize
+Implementation Notes:
+1. RoutingNo is required for initial authorization, but not for recurring authorizations.
+2. EntryClass : Personal or Company used for initial transaction, PersonalRecurring or CompanyRecurring used for recurring authorizations.
+3. Token is required for recurring transactions.
+4. StandardEntryClassCode & SingleOrRecurring override the values in EntryClass or the iSTREAM_EntryClassCode parameter for the merchant. These codes are meant to signify the types of authorization used for an ACH transaction and come from iStream. TEL stands for telephone, PPD for non-telephone, non-web such as in person or mail, and CCD is for business checking. These codes can be used on any ACH transaction, either as an XML tag or as part of the HTTP body depending on your integration.
+Sample Request
+* Required Request
+POST /v2/ach/authorize HTTP/1.1
+Content-Type: application/json
+Authorization: ••••••
+User-Agent: WebApp/1.1.0
+Accept: application/json
+Host: pay-cert.dcap.com
+Content-Length: 192
+
+
+{
+"RoutingNo": "123456789",
+"AcctNo": "1234",
+"AcctType": "Checking",
+"Amount": "15.00",
+"CustFirstName": "Test",
+"CustLastName": "Customer",
+"EntryClass": "Personal"
+}
+
+
+
+RoutingNo
+(String 1-24)
+	Routing number of Customers Bank.
+	AcctNo
+(String 1-24)
+	Customers Account Number
+	AcctType
+(String 1-10)
+	Type of Account, either Checking or Savings.
+	CustFirstName
+(String 1-50)
+	Customer First Name.
+	CustLastName
+(String 1-50)
+	Customer Last Name.
+	FullName
+(String 1-100)
+	Business Name. When the FullName field is passed, the CustFirstName & CustLastName fields are ignored.
+	EntryClass
+(String 1-7)
+	Entry Class Type, either Personal, Company, PersonalRecurring, or CompanyRecurring.
+	Token
+(String 1-256)
+	Required
+Datacap Token
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	InvoiceNo
+(Number 1-8)
+	Required
+Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response.
+	OverrideDuplicate
+(Boolean)
+	Override Duplicate Transaction.
+	StandardEntryClassCode
+(String 3-3)
+	Valid Codes: TEL, PPD, CCD, WEB and MUST have a SingleOrRecurring tag.
+	SingleOrRecurring
+(String 1-1)
+	Valid values: S (Single), R (Recurring) and only operable if paired with StandardEntryClassCode.
+	Sample Response
+* Required Response
+
+{
+"ResponseOrigin": "Processor",
+"ReturnCode": "000000",
+"Status": "Approved",
+"Message": "APPROVED",
+"AcctNo": "1234",
+"TranCode": "Authorize",
+"RefNo": "q-34LNgrBYez7Wxu3I7TfCsGKzYFZ",
+"InvoiceNo": "2019364502",
+"Amount": "15.00",
+"Authorize": "15.00",
+"RoutingNo": "123456789",
+"AcctType": "Checking",
+"FullName": "Test Customer",
+"Token": "DC4:AQG2_uwzpfzLGTQ7LzYYRffbZ1pkRDMaoHprbATH4pMr4cBW15JdpV8MtvASrLltlu_JgsS7xP_EI9VlhJzSCft_FNtrj_5MmfeDcuh-YCYfFfzTpkKSAUBmlSI_OzDC69E",
+"CustFirstName": "Test",
+"CustLastName": "Customer"
+}
+
+
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by DC Direct application
+“DCDirect” = generated by DC Direct application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions.
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Token
+(String 1-256)
+	Datacap Token
+	RoutingNo
+(String 1-24)
+	Routing number of Customers Bank.
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorize
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	AcctNo
+(String 1-24)
+	Customers Account Number
+	AcctType
+(String 1-10)
+	Type of Account, either Checking or Savings.
+	CustFirstName
+(String 1-50)
+	Customer First Name.
+	CustLastName
+(String 1-50)
+	Customer Last Name.
+	FullName
+(String 1-100)
+	Business Name. When the FullName field is passed, the CustFirstName & CustLastName fields are ignored.
+	InvoiceNo
+(Number 1-8)
+	Unique transaction identifier created and supplied by the application.
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	Return
+To return or refund from a previously processed Authorization.
+POST /ach/return/{RefNo}
+Implementation Notes:
+1. All returns have to be made within 45 days of the original and cannot exceed the original amount.
+Sample Request
+* Required Request
+POST /v2/ach/return/q-34LNgrBYez7Wxu3I7TfCsGKzYFZ HTTP/1.1
+Content-Type: application/json
+Authorization: ••••••
+User-Agent: PostmanRuntime/7.49.0
+Host: pay-cert.dcap.com
+Accept-Encoding: gzip, deflate, br
+Connection: keep-alive
+Content-Length: 155
+
+
+{
+"CustFirstName": "Marek",
+"CustLastName": "Svatos",
+"RoutingNo": "123456789",
+"AcctNo": "1234",
+"AcctType": "Checking",
+"Amount": "8.00",
+"FullName" : "Marek Svatos",
+"EntryClass": "Personal"
+}
+
+CustFirstName
+(String 1-50)
+	Required
+Customer First Name.
+	CustLastName
+(String 1-50)
+	Required
+Customer Last Name.
+	RoutingNo
+(String 1-24)
+	Required
+Routing number of Customers Bank.
+	AcctNo
+(String 1-24)
+	Required
+Customers Account Number
+	Amount
+(String 1-11)
+	Required
+Transaction amount formatted to two decimal places.
+	EntryClass
+(String 1-7)
+	Required
+Entry Class Type, either Personal, Company, PersonalRecurring, or CompanyRecurring.
+	FullName
+(String 1-100)
+	Conditional
+Business Name. When the FullName field is passed, the CustFirstName & CustLastName fields are ignored.
+	AcctType
+(String 1-10)
+	Type of Account, either Checking or Savings.
+	Token
+(String 1-256)
+	Datacap Token
+	InvoiceNo
+(Number 1-8)
+	Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response.
+	OverrideDuplicate
+(Boolean)
+	Override Duplicate Transaction.
+	StandardEntryClassCode
+(String 3-3)
+	Valid Codes: TEL, PPD, CCD, WEB and MUST have a SingleOrRecurring tag.
+	SingleOrRecurring
+(String 1-1)
+	Valid values: S (Single), R (Recurring) and only operable if paired with StandardEntryClassCode.
+	Sample Response
+* Required Response
+{
+"ResponseOrigin": "Processor",
+"ReturnCode": "000000",
+"Status": "Approved",
+"Message": "APPROVED",
+"AcctNo": "1234",
+"TranCode": "Return",
+"RefNo": "q-34U6ZiAOXwncCKUG8lBD8aj8U47",
+"InvoiceNo": "2321441970",
+"Amount": "8.00",
+"Authorize": "8.00",
+"RoutingNo": "123456789",
+"AcctType": "Checking",
+"FullName": "A B",
+"Token": "DC4:AQGjj-qctIJyfPKm7io9ijexU94tEzjNyDoT7s0poVWbgO6yqqc-oGgLpPDS-KtvG7xcWsD5-jDBs_OoVW6RFDhIG-CrueRuGw9lw7cT8TavOWI9PlrstHRIyto0uTk9ijI"
+}
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by DC Direct application
+“DCDirect” = generated by DC Direct application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions.
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Token
+(String 1-256)
+	Datacap Token
+	InvoiceNo
+(Number 1-8)
+	Unique transaction identifier created and supplied by the application.
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	AcctNo
+(String 1-24)
+	Customers Account Number
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorize
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	RoutingNo
+(String 1-24)
+	Routing number of Customers Bank.
+	AcctType
+(String 1-10)
+	Type of Account, either Checking or Savings.
+	CustFirstName
+(String 1-50)
+	Customer First Name.
+	CustLastName
+(String 1-50)
+	Customer Last Name.
+	FullName
+(String 1-100)
+	Business Name. When the FullName field is passed, the CustFirstName & CustLastName fields are ignored.
+	Void
+To void from a previously processed Authorization.
+POST /ach/authorize/{RefNo}/void
+Implementation Notes:
+1. All voids have to be made the same day as the original.
+Sample Request
+* Required Request
+POST /v2/ach/authorize/q-34U1nz0UPWa1KtnnFyGfnlZ1BuS/Void HTTP/1.1
+Content-Type: application/json
+Authorization: ••••••
+User-Agent: PostmanRuntime/7.49.0
+Accept: */*
+Host: pay-cert.dcap.com
+Accept-Encoding: gzip, deflate, br
+Connection: keep-alive
+Content-Length: 229
+
+
+{
+"Token": "DC4:AQHImeWm_sZIf-WGn_Cc2xnd9lNoSS7L8Yo0QNbS7GM1b-jzYrX4S-Sc0ktzcxD_VPf66AxRy-73Womnx3PL90v9EKPvTdu5RN3RjmcAvZ3T-BONuazbBWo7wd-oileJFymO-XTUUU-HkSGqXT0W1O65",
+"CustFirstName" : "Test",
+"CustLastName": "Customer"
+}
+
+Token
+(String 1-256)
+	Required
+Datacap Token
+	CustFirstName
+(String 1-50)
+	Required
+Customer First Name.
+	CustLastName
+(String 1-50)
+	Required
+Customer Last Name.
+	FullName
+(String 1-100)
+	Conditional
+Business Name. When the FullName field is passed, the CustFirstName & CustLastName fields are ignored.
+	Sample Response
+* Required Response
+{
+"ResponseOrigin": "Processor",
+"ReturnCode": "000000",
+"Status": "Approved",
+"Message": "APPROVED",
+"AcctNo": "1234",
+"TranCode": "Void",
+"RefNo": "q-34U5ldN4rcKzxquu6ekgHXy4VVo",
+"InvoiceNo": "001",
+"Amount": "12.00",
+"Authorize": "12.00",
+"RoutingNo": "123456789",
+"AcctType": "Checking",
+"FullName": "Test Customer",
+"Token": "DC4:AQHWZ2uIZDe2IDoHlQ7oM00d6OHSU10x39iEDRaM_F2e7zH1X4xcN-ig5rAdR4fPZxxRfojxPakJ7vICskws9hoyM1-K60V2kDZOeFiWkHdgLN6gomOadsWL0stV5676vF8IhdKKRdIQL2Y02E1PloKR",
+"CustFirstName": "Test",
+"CustLastName": "Customer"
+}
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by DC Direct application
+“DCDirect” = generated by DC Direct application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions.
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	InvoiceNo
+(Number 1-8)
+	Unique transaction identifier created and supplied by the application.
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	AcctNo
+(String 1-24)
+	Customers Account Number
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	Authorize
+(String 1-8)
+	The amount authorized for the transaction. This amount could be less than the Amount requested and the POS/application should verify to determine if additional tender is required to satisfy the total payment amount.
+	RoutingNo
+(String 1-24)
+	Routing number of Customers Bank.
+	AcctType
+(String 1-10)
+	Type of Account, either Checking or Savings.
+	CustFirstName
+(String 1-50)
+	Conditional
+Customer First Name.
+	CustLastName
+(String 1-50)
+	Conditional
+Customer Last Name.
+	FullName
+(String 1-100)
+	Business Name. When the FullName field is passed, the CustFirstName & CustLastName fields are ignored.
+	Payout
+To reverse a previously processed Authorization.
+POST /ach/payout
+Implementation Notes:
+1. Payout adds money to the designated account number.
+2. StandardEntryClassCode & SingleOrRecurring override the values in EntryClass or the iSTREAM_EntryClassCode parameter for the merchant. These codes are meant to signify the types of authorization used for an ACH transaction and come from iStream. TEL stands for telephone, PPD for non-telephone, non-web such as in person or mail, and CCD is for business checking. These codes can be used on any ACH transaction, either as an XML tag or as part of the HTTP body depending on your integration.
+Sample Request
+* Required Request
+POST /v2/ach/payout HTTP/1.1
+Content-Type: application/json
+Authorization: ••••••
+User-Agent: PostmanRuntime/7.49.0
+Accept: */*
+Cache-Control: no-cache
+Postman-Token: de79873c-0f2b-4309-9ce5-40709ed1ba37
+Host: pay-cert.dcap.com
+Accept-Encoding: gzip, deflate, br
+Connection: keep-alive
+Content-Length: 155
+
+
+{
+"RoutingNo": "123456789",
+"AcctNo": "1234",
+"AcctType": "Checking",
+"Amount": "8.00",
+"FullName" : "A B",
+"EntryClass": "Personal"
+}
+
+RoutingNo
+(String 1-24)
+	Routing number of Customers Bank.
+	AcctNo
+(String 1-24)
+	Customers Account Number
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	CustFirstName
+(String 1-50)
+	Customer First Name.
+	CustLastName
+(String 1-50)
+	Customer Last Name.
+	FullName
+(String 1-100)
+	Business Name. When the FullName field is passed, the CustFirstName & CustLastName fields are ignored.
+	AcctType
+(String 1-10)
+	Type of Account, either Checking or Savings.
+	EntryClass
+(String 1-7)
+	Entry Class Type, either Personal, Company, PersonalRecurring, or CompanyRecurring.
+	Token
+(String 1-256)
+	Datacap Token
+	InvoiceNo
+(Number 1-8)
+	Unique transaction identifier created and supplied by the application.
+	Trace
+(String 1-40)
+	value supplied by application for tracking purposes and echoed in Response.
+	OverrideDuplicate
+(Boolean)
+	Override Duplicate Transaction.
+	StandardEntryClassCode
+(String 3-3)
+	Valid Codes: TEL, PPD, CCD, WEB and MUST have a SingleOrRecurring tag.
+	SingleOrRecurring
+(String 1-1)
+	Valid values: S (Single), R (Recurring) and only operable if paired with StandardEntryClassCode.
+	Sample Response
+* Required Response
+{
+"ResponseOrigin": "Processor",
+"ReturnCode": "000000",
+"Status": "Approved",
+"Message": "APPROVED",
+"AcctNo": "1234",
+"TranCode": "PayOut",
+"RefNo": "q-34U6ZiAOXwncCKUG8lBD8aj8U47",
+"InvoiceNo": "2321441970",
+"Amount": "8.00",
+"Authorize": "8.00",
+"RoutingNo": "123456789",
+"AcctType": "Checking",
+"FullName": "A B",
+"Token": "DC4:AQGjj-qctIJyfPKm7io9ijexU94tEzjNyDoT7s0poVWbgO6yqqc-oGgLpPDS-KtvG7xcWsD5-jDBs_OoVW6RFDhIG-CrueRuGw9lw7cT8TavOWI9PlrstHRIyto0uTk9ijI"
+}
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by DC Direct application
+“DCDirect” = generated by DC Direct application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	ReturnCode
+(Number 1-6)
+	Six digit return code that identifies the error type. See Definitions.
+	Status
+(String 1-10)
+	Indicates results of request. Values Approved, Declined, Success, or Error. “Success” = command completed successfully. “Approved” = transaction approved by processor. “Declined” = transaction declined by processor. “Error” = error processing command.
+	Message
+(String 1-256)
+	Response Message. This field can contain additional messaging from the server or processor.
+	Trace
+(String 1-40)
+	value supplied by application echoed in Response
+	Token
+(String 1-256)
+	Datacap Token
+	InvoiceNo
+(Number 1-8)
+	Unique transaction identifier created and supplied by the application.
+	TranCode
+(String 1-40 chars)
+	TranCode value supplied in the transaction request
+	RefNo
+(String 1-20)
+	Transaction reference number. Store RefNo value for follow-up transaction use.
+	Amount
+(String 1-11)
+	Transaction amount formatted to two decimal places.
+	CustFirstName
+(String 1-50)
+	Customer First Name.
+	CustLastName
+(String 1-50)
+	Customer Last Name.
+	FullName
+(String 1-100)
+	Business Name. When the FullName field is passed, the CustFirstName & CustLastName fields are ignored.
+	AcctType
+(String 1-10)
+	Type of Account, either Checking or Savings.
+	RoutingNo
+(String 1-24)
+	Routing number of Customers Bank.
+	AcctNo
+(String 1-24)
+	Customers Account Number
