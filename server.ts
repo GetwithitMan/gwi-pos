@@ -15,6 +15,7 @@ import { initializeSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
 import { startCloudEventWorker } from './src/lib/cloud-event-queue'
+import { startOnlineOrderDispatchWorker } from './src/lib/online-order-worker'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -110,6 +111,7 @@ async function main() {
     console.log(`[Server] Mode: ${dev ? 'development' : 'production'}`)
     startCloudEventWorker()
     startEodScheduler()
+    startOnlineOrderDispatchWorker(port)
   })
 }
 
