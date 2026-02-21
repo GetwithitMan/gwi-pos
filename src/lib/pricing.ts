@@ -1,7 +1,8 @@
 // Pricing Utilities
 // Skill 31: Cash Discount Program & Skill 29: Commissions
+// T-080 Phase 1B: Full Pricing Program Engine
 
-import { DualPricingSettings } from './settings'
+import { DualPricingSettings, PricingProgram } from './settings'
 import { formatCurrency } from './utils'
 
 // Re-export for backwards compatibility
@@ -174,4 +175,161 @@ export function applyPriceRounding(
   }
 
   return roundPrice(price, settings.increment, settings.direction)
+}
+
+// ─── Surcharge Strategy (T-080 Phase 1B) ─────────────────────────────────────
+
+/**
+ * Calculate the surcharge amount for a card transaction.
+ * Surcharge is added ON TOP of the base price (unlike cash discount which reduces it).
+ * Visa/MC cap: 3%. Must not apply to debit cards in most states.
+ */
+export function calculateSurcharge(basePrice: number, surchargePercent: number): number {
+  return roundToCents(basePrice * (surchargePercent / 100))
+}
+
+/**
+ * Total price including surcharge.
+ */
+export function calculateSurchargeTotal(basePrice: number, surchargePercent: number): number {
+  return roundToCents(basePrice + calculateSurcharge(basePrice, surchargePercent))
+}
+
+// ─── Merchant Cost Strategies (absorbed by merchant, invisible to customer) ──
+
+/**
+ * Calculate merchant processing cost for a flat-rate processor (e.g. Square/Stripe model).
+ * Customer price is unchanged — this is just for P&L tracking.
+ */
+export function calculateFlatRateCost(amount: number, ratePercent: number, perTxnFee: number): number {
+  return roundToCents(amount * (ratePercent / 100) + perTxnFee)
+}
+
+/**
+ * Calculate merchant cost for interchange-plus pricing.
+ * interchange = actual interchange rate paid (varies by card type).
+ * markupPercent and markupPerTxn are the processor's margin above interchange.
+ */
+export function calculateInterchangePlusCost(
+  amount: number,
+  interchangePercent: number,
+  markupPercent: number,
+  markupPerTxn: number
+): number {
+  return roundToCents(amount * ((interchangePercent + markupPercent) / 100) + markupPerTxn)
+}
+
+/**
+ * Tiered pricing — qualified / mid-qualified / non-qualified rates.
+ * tier determines which rate bucket applies.
+ */
+export function calculateTieredCost(
+  amount: number,
+  tier: 'qualified' | 'mid_qualified' | 'non_qualified',
+  rates: { qualifiedRate: number; midQualifiedRate: number; nonQualifiedRate: number },
+  perTxnFee: number
+): number {
+  const rateMap = {
+    qualified: rates.qualifiedRate,
+    mid_qualified: rates.midQualifiedRate,
+    non_qualified: rates.nonQualifiedRate,
+  }
+  return roundToCents(amount * (rateMap[tier] / 100) + perTxnFee)
+}
+
+// ─── Compliance ───────────────────────────────────────────────────────────────
+
+/** States where surcharging on credit cards is banned or restricted. */
+const SURCHARGE_BANNED_STATES = new Set(['CT', 'MA', 'PR'])
+
+/**
+ * Returns true if surcharging is permitted in the given US state/territory.
+ * Visa/MC rules: surcharge banned in CT, MA. Puerto Rico also prohibits it.
+ */
+export function isSurchargeLegal(state: string): boolean {
+  return !SURCHARGE_BANNED_STATES.has(state.toUpperCase().trim())
+}
+
+// ─── Strategy Selector ────────────────────────────────────────────────────────
+
+export interface PricingResult {
+  basePrice: number
+  finalPrice: number
+  surchargeAmount: number
+  merchantCost: number
+  pricingModel: PricingProgram['model']
+}
+
+/**
+ * Compute the final customer price and any surcharge/merchant cost for a given amount.
+ * For surcharge models: finalPrice > basePrice (customer pays more).
+ * For merchant-absorbed models: finalPrice === basePrice (customer sees no change).
+ * For cash discount: use getDualPrices() or calculateCardPrice() (existing functions).
+ */
+export function applyPricingProgram(
+  basePrice: number,
+  program: PricingProgram,
+  paymentMethod: 'cash' | 'credit' | 'debit' = 'credit'
+): PricingResult {
+  const base: PricingResult = {
+    basePrice,
+    finalPrice: basePrice,
+    surchargeAmount: 0,
+    merchantCost: 0,
+    pricingModel: program.model,
+  }
+
+  if (!program.enabled) return base
+
+  switch (program.model) {
+    case 'cash_discount': {
+      // Use existing calculateCardPrice for backward compat
+      if (paymentMethod === 'cash') return base
+      const pct = program.cashDiscountPercent ?? 0
+      const applies = (paymentMethod === 'credit' && (program.applyToCredit ?? true))
+        || (paymentMethod === 'debit' && (program.applyToDebit ?? true))
+      if (!applies) return base
+      return { ...base, finalPrice: calculateCardPrice(basePrice, pct) }
+    }
+
+    case 'surcharge': {
+      if (paymentMethod === 'cash') return base
+      // Typically only credit, not debit
+      const appliesToCard = (paymentMethod === 'credit' && (program.surchargeApplyToCredit ?? true))
+        || (paymentMethod === 'debit' && (program.surchargeApplyToDebit ?? false))
+      if (!appliesToCard) return base
+      const pct = program.surchargePercent ?? 0
+      const surcharge = calculateSurcharge(basePrice, pct)
+      return { ...base, finalPrice: roundToCents(basePrice + surcharge), surchargeAmount: surcharge }
+    }
+
+    case 'flat_rate': {
+      const cost = calculateFlatRateCost(basePrice, program.flatRatePercent ?? 0, program.flatRatePerTxn ?? 0)
+      return { ...base, merchantCost: cost }
+    }
+
+    case 'interchange_plus': {
+      // interchange rate not stored — use markup only for tracking
+      const cost = calculateInterchangePlusCost(basePrice, 0, program.markupPercent ?? 0, program.markupPerTxn ?? 0)
+      return { ...base, merchantCost: cost }
+    }
+
+    case 'tiered': {
+      // Default to qualified rate for estimate
+      const cost = calculateTieredCost(
+        basePrice,
+        'qualified',
+        {
+          qualifiedRate: program.qualifiedRate ?? 0,
+          midQualifiedRate: program.midQualifiedRate ?? 0,
+          nonQualifiedRate: program.nonQualifiedRate ?? 0,
+        },
+        program.tieredPerTxn ?? 0
+      )
+      return { ...base, merchantCost: cost }
+    }
+
+    default:
+      return base
+  }
 }

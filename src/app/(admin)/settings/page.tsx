@@ -232,95 +232,220 @@ export default function SettingsPage() {
       />
 
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Cash Discount Program Section (Read-Only) */}
+        {/* Pricing Program Section (Read-Only) — T-080 Phase 4 */}
         <Card className="p-6">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-lg font-semibold">Cash Discount Program</h2>
-            {settings.dualPricing.enabled ? (
-              <span className="flex items-center gap-1.5 text-sm font-medium text-green-600">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" />
-                Enabled
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Processing Program</h2>
+            {/* Model badge */}
+            {activePricingProgram.model === 'none' || !activePricingProgram.enabled ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                <span className="inline-block w-2 h-2 rounded-full bg-gray-400" />
+                No Surcharge Program
+              </span>
+            ) : activePricingProgram.model === 'cash_discount' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+                Cash Discount
+              </span>
+            ) : activePricingProgram.model === 'surcharge' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
+                Surcharge
+              </span>
+            ) : activePricingProgram.model === 'flat_rate' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
+                Flat Rate
+              </span>
+            ) : activePricingProgram.model === 'interchange_plus' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
+                Interchange Plus
               </span>
             ) : (
-              <span className="flex items-center gap-1.5 text-sm font-medium text-gray-400">
-                <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300" />
-                Disabled
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
+                Tiered Pricing
               </span>
             )}
           </div>
 
-          {settings.dualPricing.enabled ? (
+          {/* Model-specific detail display */}
+          {(activePricingProgram.model === 'none' || !activePricingProgram.enabled) && (
+            <p className="text-sm text-gray-500">No processing program configured</p>
+          )}
+
+          {activePricingProgram.enabled && activePricingProgram.model === 'cash_discount' && (
             <>
               <p className="text-sm text-gray-500 mb-4">
-                Card price is the default - cash customers receive a discount
+                Card price is the default — cash customers receive a discount
               </p>
-
-              {/* Current Rate */}
               <div className="mb-4">
                 <p className="text-sm font-medium text-gray-700 mb-2">Current Rate</p>
                 <div className="bg-gray-50 border rounded-lg p-4">
-                  <p className="text-2xl font-bold text-gray-900">{discountPercent}%</p>
+                  <p className="text-2xl font-bold text-gray-900">{activePricingProgram.cashDiscountPercent ?? discountPercent}%</p>
                   <p className="text-sm text-gray-500 mb-3">Cash Discount</p>
                   <p className="text-sm text-gray-600">
                     {formatCurrency(exampleCashPrice)} → Card: {formatCurrency(exampleCardPrice)} | Cash: {formatCurrency(exampleCashPrice)}
                   </p>
                 </div>
               </div>
+              <div className="mb-4 space-y-1.5">
+                <p className="text-sm font-medium text-gray-700 mb-2">Applies To</p>
+                {activePricingProgram.applyToCredit && (
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Credit cards
+                  </div>
+                )}
+                {activePricingProgram.applyToDebit && (
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Debit cards
+                  </div>
+                )}
+                {activePricingProgram.showSavingsMessage && (
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Savings message shown at checkout
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
-              {/* Card Types */}
+          {activePricingProgram.enabled && activePricingProgram.model === 'surcharge' && (
+            <>
+              <p className="text-sm text-gray-500 mb-4">
+                A surcharge is added on top of the base price for card payments
+              </p>
               <div className="mb-4">
-                <p className="text-sm font-medium text-gray-700 mb-2">Card Types</p>
-                <div className="space-y-1.5">
-                  {settings.dualPricing.applyToCredit && (
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Credit Cards (full price)
-                    </div>
-                  )}
-                  {settings.dualPricing.applyToDebit && (
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Debit Cards (full price)
+                <p className="text-sm font-medium text-gray-700 mb-2">Surcharge Rate</p>
+                <div className="bg-gray-50 border rounded-lg p-4">
+                  <p className="text-2xl font-bold text-gray-900">{activePricingProgram.surchargePercent ?? 0}%</p>
+                  <p className="text-sm text-gray-500 mb-2">Added to card transactions (Visa/MC cap: 3%)</p>
+                  <p className="text-sm text-gray-600">
+                    {formatCurrency(exampleCashPrice)} base → Card: {formatCurrency(Math.round(exampleCashPrice * (1 + (activePricingProgram.surchargePercent ?? 0) / 100) * 100) / 100)}
+                  </p>
+                </div>
+              </div>
+              <div className="mb-4 space-y-1.5">
+                <p className="text-sm font-medium text-gray-700 mb-2">Applies To</p>
+                {activePricingProgram.surchargeApplyToCredit !== false && (
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Credit cards
+                  </div>
+                )}
+                {activePricingProgram.surchargeApplyToDebit && (
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Debit cards
+                  </div>
+                )}
+              </div>
+              {activePricingProgram.surchargeDisclosure && (
+                <div className="mb-4">
+                  <p className="text-sm font-medium text-gray-700 mb-1">Disclosure Text</p>
+                  <p className="text-sm text-gray-500 italic">&ldquo;{activePricingProgram.surchargeDisclosure}&rdquo;</p>
+                </div>
+              )}
+            </>
+          )}
+
+          {activePricingProgram.enabled && activePricingProgram.model === 'flat_rate' && (
+            <>
+              <p className="text-sm text-gray-500 mb-4">
+                Flat-rate processing — merchant absorbs fees, customer price is unchanged
+              </p>
+              <div className="mb-4">
+                <div className="bg-gray-50 border rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Rate</span>
+                    <span className="font-medium text-gray-900">{activePricingProgram.flatRatePercent ?? 0}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Per-transaction fee</span>
+                    <span className="font-medium text-gray-900">{formatCurrency(activePricingProgram.flatRatePerTxn ?? 0)}</span>
+                  </div>
+                  <div className="border-t pt-2 flex justify-between text-sm">
+                    <span className="text-gray-600">Example cost on {formatCurrency(exampleCashPrice)}</span>
+                    <span className="font-medium text-gray-900">
+                      {formatCurrency(Math.round((exampleCashPrice * (activePricingProgram.flatRatePercent ?? 0) / 100 + (activePricingProgram.flatRatePerTxn ?? 0)) * 100) / 100)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activePricingProgram.enabled && activePricingProgram.model === 'interchange_plus' && (
+            <>
+              <p className="text-sm text-gray-500 mb-4">
+                Interchange-plus pricing — merchant pays interchange + markup, customer price is unchanged
+              </p>
+              <div className="mb-4">
+                <div className="bg-gray-50 border rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Markup rate</span>
+                    <span className="font-medium text-gray-900">{activePricingProgram.markupPercent ?? 0}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Markup per transaction</span>
+                    <span className="font-medium text-gray-900">{formatCurrency(activePricingProgram.markupPerTxn ?? 0)}</span>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activePricingProgram.enabled && activePricingProgram.model === 'tiered' && (
+            <>
+              <p className="text-sm text-gray-500 mb-4">
+                Tiered pricing — rate depends on card qualification bucket
+              </p>
+              <div className="mb-4">
+                <div className="bg-gray-50 border rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Qualified rate</span>
+                    <span className="font-medium text-gray-900">{activePricingProgram.qualifiedRate ?? 0}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Mid-qualified rate</span>
+                    <span className="font-medium text-gray-900">{activePricingProgram.midQualifiedRate ?? 0}%</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Non-qualified rate</span>
+                    <span className="font-medium text-gray-900">{activePricingProgram.nonQualifiedRate ?? 0}%</span>
+                  </div>
+                  {(activePricingProgram.tieredPerTxn ?? 0) > 0 && (
+                    <div className="flex justify-between text-sm border-t pt-2">
+                      <span className="text-gray-600">Per-transaction fee</span>
+                      <span className="font-medium text-gray-900">{formatCurrency(activePricingProgram.tieredPerTxn ?? 0)}</span>
                     </div>
                   )}
                 </div>
               </div>
-
-              {/* Display Options */}
-              {settings.dualPricing.showSavingsMessage && (
-                <div className="flex items-center gap-2 text-sm text-gray-700 mb-4">
-                  <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Savings message shown at checkout
-                </div>
-              )}
-
-              {/* Info Note */}
-              <p className="text-xs text-gray-400 flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Contact your administrator to change processing rates
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-gray-500 mb-4">
-                Cash discount program is not currently active
-              </p>
-              <p className="text-xs text-gray-400 flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Contact your administrator to enable
-              </p>
             </>
           )}
+
+          {/* Info note — always shown */}
+          <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-2">
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Contact your administrator to change processing rates
+          </p>
         </Card>
 
         {/* Price Rounding Section */}

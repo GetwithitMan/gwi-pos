@@ -4,6 +4,66 @@
 import { type GlobalReceiptSettings, DEFAULT_GLOBAL_RECEIPT_SETTINGS, mergeGlobalReceiptSettings } from '@/types/print'
 export type { GlobalReceiptSettings }
 
+// ─── Pricing Program (T-080 Phase 1A) ────────────────────────────────────────
+
+export interface PricingProgram {
+  model: 'cash_discount' | 'surcharge' | 'flat_rate' | 'interchange_plus' | 'tiered' | 'none'
+  enabled: boolean
+
+  // Cash Discount fields (model === 'cash_discount')
+  cashDiscountPercent?: number        // 0-10%
+  applyToCredit?: boolean
+  applyToDebit?: boolean
+  showSavingsMessage?: boolean
+
+  // Surcharge fields (model === 'surcharge')
+  surchargePercent?: number           // 0-3% (Visa/MC cap)
+  surchargeApplyToCredit?: boolean
+  surchargeApplyToDebit?: boolean
+  surchargeDisclosure?: string
+
+  // Flat Rate fields (model === 'flat_rate')
+  flatRatePercent?: number
+  flatRatePerTxn?: number
+
+  // Interchange Plus fields (model === 'interchange_plus')
+  markupPercent?: number
+  markupPerTxn?: number
+
+  // Tiered fields (model === 'tiered')
+  qualifiedRate?: number
+  midQualifiedRate?: number
+  nonQualifiedRate?: number
+  tieredPerTxn?: number
+
+  // State compliance
+  venueState?: string
+}
+
+export const DEFAULT_PRICING_PROGRAM: PricingProgram = {
+  model: 'none',
+  enabled: false,
+}
+
+export function getPricingProgram(settings: LocationSettings): PricingProgram {
+  // If new pricingProgram field exists, use it
+  if (settings.pricingProgram) return settings.pricingProgram
+  // Fall back to legacy dualPricing
+  if (settings.dualPricing?.enabled) {
+    return {
+      model: 'cash_discount',
+      enabled: true,
+      cashDiscountPercent: settings.dualPricing.cashDiscountPercent,
+      applyToCredit: settings.dualPricing.applyToCredit,
+      applyToDebit: settings.dualPricing.applyToDebit,
+      showSavingsMessage: settings.dualPricing.showSavingsMessage,
+    }
+  }
+  return DEFAULT_PRICING_PROGRAM
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export interface DualPricingSettings {
   enabled: boolean
   cashDiscountPercent: number      // % discount for paying with cash (e.g., 4 = 4% off)
@@ -366,6 +426,7 @@ export const DEFAULT_LAYOUT_SETTINGS: POSLayoutSettings = {
 export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
+  pricingProgram?: PricingProgram       // New multi-model pricing program (optional for backward compat)
   priceRounding: PriceRoundingSettings
   tips: TipSettings
   tipShares: TipShareSettings
