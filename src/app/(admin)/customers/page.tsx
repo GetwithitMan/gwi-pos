@@ -11,6 +11,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import { toast } from '@/stores/toast-store'
 
 // Common customer tags
 const CUSTOMER_TAGS = ['VIP', 'Regular', 'First-Timer', 'Staff', 'Family', 'Business', 'Birthday Club']
@@ -75,6 +76,11 @@ export default function CustomersPage() {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [viewingCustomer, setViewingCustomer] = useState<CustomerDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+
+  // Inline notes edit state
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [notesValue, setNotesValue] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
 
   // Orders pagination + date filter state
   const [orderPage, setOrderPage] = useState(1)
@@ -228,6 +234,41 @@ export default function CustomersPage() {
     if (deleted && showDetailModal) {
       setShowDetailModal(false)
       setViewingCustomer(null)
+    }
+  }
+
+  const startEditingNotes = () => {
+    setNotesValue(viewingCustomer?.notes ?? '')
+    setEditingNotes(true)
+  }
+
+  const cancelEditingNotes = () => {
+    setEditingNotes(false)
+    setNotesValue('')
+  }
+
+  const saveNotes = async () => {
+    if (!viewingCustomer) return
+    setSavingNotes(true)
+    try {
+      const response = await fetch(`/api/customers/${viewingCustomer.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: notesValue.trim() || null }),
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        toast.error(err.error || 'Failed to save notes')
+        return
+      }
+      setViewingCustomer(prev => prev ? { ...prev, notes: notesValue.trim() || null } : prev)
+      setEditingNotes(false)
+      setNotesValue('')
+      toast.success('Notes saved')
+    } catch {
+      toast.error('Failed to save notes')
+    } finally {
+      setSavingNotes(false)
     }
   }
 
@@ -541,6 +582,8 @@ export default function CustomersPage() {
           setOrderPage(1)
           setOrderDateFilter({ startDate: '', endDate: '' })
           setPendingDateFilter({ startDate: '', endDate: '' })
+          setEditingNotes(false)
+          setNotesValue('')
         }}
         title="Customer Details"
       >
@@ -593,13 +636,61 @@ export default function CustomersPage() {
               </div>
             )}
 
-            {/* Notes */}
-            {viewingCustomer.notes && (
-              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm font-medium text-yellow-800 mb-1">Notes:</p>
-                <p className="text-sm text-yellow-700">{viewingCustomer.notes}</p>
+            {/* Notes — inline edit */}
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-sm font-medium text-yellow-800">Notes</p>
+                {!editingNotes && (
+                  <button
+                    type="button"
+                    onClick={startEditingNotes}
+                    className="text-yellow-600 hover:text-yellow-800 p-0.5 rounded transition-colors"
+                    title="Edit notes"
+                    aria-label="Edit notes"
+                  >
+                    {/* Pencil icon */}
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                    </svg>
+                  </button>
+                )}
               </div>
-            )}
+
+              {editingNotes ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={notesValue}
+                    onChange={(e) => setNotesValue(e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border border-yellow-300 rounded bg-white text-yellow-900 focus:outline-none focus:ring-1 focus:ring-yellow-400 resize-none"
+                    rows={3}
+                    placeholder="e.g., Nut allergy, prefers window seat, always asks for extra napkins"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={saveNotes}
+                      disabled={savingNotes}
+                      className="px-3 py-1 text-xs font-medium bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50 transition-colors"
+                    >
+                      {savingNotes ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditingNotes}
+                      disabled={savingNotes}
+                      className="px-3 py-1 text-xs font-medium bg-white text-yellow-700 border border-yellow-300 rounded hover:bg-yellow-50 disabled:opacity-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : viewingCustomer.notes ? (
+                <p className="text-sm text-yellow-700 whitespace-pre-wrap">{viewingCustomer.notes}</p>
+              ) : (
+                <p className="text-sm text-yellow-500 italic">No notes. Click the pencil to add.</p>
+              )}
+            </div>
 
             {/* Favorite Items */}
             {viewingCustomer.favoriteItems.length > 0 && (
