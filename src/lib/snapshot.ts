@@ -48,6 +48,8 @@ export interface SnapshotTable {
     bottleServiceMinSpend: number | null
     bottleServiceTierName: string | null
     bottleServiceTierColor: string | null
+    bottleServiceCurrentSpend: number
+    bottleServiceReAuthNeeded: boolean
     splitOrders: {
       id: string
       splitIndex: number
@@ -148,8 +150,8 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
         orders: {
           where: { status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null },
           select: {
-            id: true, orderNumber: true, guestCount: true, total: true, createdAt: true,
-            status: true, isBottleService: true, bottleServiceTierId: true, bottleServiceMinSpend: true,
+            id: true, orderNumber: true, guestCount: true, total: true, subtotal: true, createdAt: true,
+            status: true, isBottleService: true, bottleServiceTierId: true, bottleServiceMinSpend: true, bottleServiceDeposit: true,
             employee: { select: { displayName: true, firstName: true, lastName: true } },
             splitOrders: {
               where: { deletedAt: null },
@@ -265,6 +267,14 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
         bottleServiceMinSpend: t.orders[0].bottleServiceMinSpend !== undefined && t.orders[0].bottleServiceMinSpend !== null ? Number(t.orders[0].bottleServiceMinSpend) : null,
         bottleServiceTierName: t.orders[0].bottleServiceTierId ? (tierMap.get(t.orders[0].bottleServiceTierId)?.name ?? null) : null,
         bottleServiceTierColor: t.orders[0].bottleServiceTierId ? (tierMap.get(t.orders[0].bottleServiceTierId)?.color ?? null) : null,
+        bottleServiceCurrentSpend: t.orders[0].isBottleService ? Number(t.orders[0].subtotal) || 0 : 0,
+        bottleServiceReAuthNeeded: t.orders[0].isBottleService
+          ? (() => {
+              const deposit = Number(t.orders[0].bottleServiceDeposit) || 0
+              const spend = Number(t.orders[0].subtotal) || 0
+              return deposit > 0 && spend >= deposit * 0.8
+            })()
+          : false,
         splitOrders: (t.orders[0].splitOrders || []).map((s: any) => ({
           id: s.id,
           splitIndex: s.splitIndex,

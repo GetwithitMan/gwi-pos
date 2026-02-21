@@ -41,6 +41,8 @@ export interface FloorPlanTable {
     bottleServiceMinSpend?: number | null
     bottleServiceTierName?: string | null
     bottleServiceTierColor?: string | null
+    bottleServiceCurrentSpend?: number | null
+    bottleServiceReAuthNeeded?: boolean
     splitOrders?: Array<{
       id: string
       splitIndex: number | null

@@ -25,6 +25,9 @@ interface TableNodeProps {
     isBottleService?: boolean
     bottleServiceTierName?: string | null
     bottleServiceTierColor?: string | null
+    bottleServiceMinSpend?: number | null
+    bottleServiceCurrentSpend?: number | null
+    bottleServiceReAuthNeeded?: boolean
   }
   seatsWithItems?: Set<number>
   onTap: (tableId: string) => void
@@ -561,6 +564,24 @@ export const TableNode = memo(function TableNode({
                       {orderStatusBadges.bottleServiceTierName ?? 'BTL'}
                     </span>
                   )}
+                  {orderStatusBadges.isBottleService && orderStatusBadges.bottleServiceReAuthNeeded && !(
+                    orderStatusBadges.bottleServiceMinSpend != null &&
+                    orderStatusBadges.bottleServiceMinSpend > 0 &&
+                    (orderStatusBadges.bottleServiceCurrentSpend ?? 0) >= orderStatusBadges.bottleServiceMinSpend
+                  ) && (
+                    <span style={{
+                      fontSize: '8px',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      background: 'rgba(245, 158, 11, 0.2)',
+                      border: '1px solid rgba(245, 158, 11, 0.5)',
+                      color: '#fbbf24',
+                      fontWeight: 700,
+                      lineHeight: 1.3,
+                    }}>
+                      ⚠ Extend
+                    </span>
+                  )}
                   {orderStatusBadges.hasDelay && (
                     <span style={{
                       fontSize: '8px',
@@ -602,6 +623,46 @@ export const TableNode = memo(function TableNode({
                   )}
                 </div>
               )}
+              {/* Bottle service min-spend progress bar */}
+              {orderStatusBadges?.isBottleService &&
+                orderStatusBadges.bottleServiceMinSpend != null &&
+                orderStatusBadges.bottleServiceMinSpend > 0 &&
+                orderStatusBadges.bottleServiceCurrentSpend !== undefined &&
+                orderStatusBadges.bottleServiceCurrentSpend !== null && (() => {
+                  const currentSpend = orderStatusBadges.bottleServiceCurrentSpend as number
+                  const minSpend = orderStatusBadges.bottleServiceMinSpend as number
+                  const progress = Math.min(1, currentSpend / minSpend)
+                  const minimumMet = currentSpend >= minSpend
+                  const barColor = minimumMet ? '#22c55e' : (orderStatusBadges.bottleServiceTierColor ?? '#D4AF37')
+                  return (
+                    <div style={{ marginTop: '4px', width: '100%' }}>
+                      <div style={{
+                        width: '100%',
+                        height: '4px',
+                        borderRadius: '2px',
+                        background: 'rgba(255,255,255,0.1)',
+                        overflow: 'hidden',
+                      }}>
+                        <div style={{
+                          height: '100%',
+                          borderRadius: '2px',
+                          width: `${Math.round(progress * 100)}%`,
+                          backgroundColor: barColor,
+                          transition: 'width 0.4s ease',
+                        }} />
+                      </div>
+                      <div style={{
+                        fontSize: '7px',
+                        color: 'rgba(255,255,255,0.4)',
+                        marginTop: '2px',
+                        textAlign: 'center',
+                        lineHeight: 1,
+                      }}>
+                        ${currentSpend.toFixed(0)} / ${minSpend.toFixed(0)} min
+                      </div>
+                    </div>
+                  )
+                })()}
             </>
           ) : (
             <div className="table-node-info" style={{ fontSize: `${infoFontSize}px` }}>

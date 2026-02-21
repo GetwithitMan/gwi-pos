@@ -479,6 +479,9 @@ export function FloorPlanHome({
       isBottleService: !!(activeTable?.currentOrder?.isBottleService),
       bottleServiceTierName: activeTable?.currentOrder?.bottleServiceTierName ?? null,
       bottleServiceTierColor: activeTable?.currentOrder?.bottleServiceTierColor ?? null,
+      bottleServiceMinSpend: activeTable?.currentOrder?.bottleServiceMinSpend ?? null,
+      bottleServiceCurrentSpend: activeTable?.currentOrder?.bottleServiceCurrentSpend ?? null,
+      bottleServiceReAuthNeeded: activeTable?.currentOrder?.bottleServiceReAuthNeeded ?? false,
     }
   }, [activeTableId, activeOrder.pendingDelay, activeOrder.coursingEnabled, inlineOrderItems, tables])
 
@@ -1981,7 +1984,7 @@ export function FloorPlanHome({
                             table.id === activeTableId
                               ? activeOrderStatusBadges
                               : table.currentOrder.isBottleService
-                                ? { isBottleService: true, bottleServiceTierName: table.currentOrder.bottleServiceTierName ?? null, bottleServiceTierColor: table.currentOrder.bottleServiceTierColor ?? null }
+                                ? { isBottleService: true, bottleServiceTierName: table.currentOrder.bottleServiceTierName ?? null, bottleServiceTierColor: table.currentOrder.bottleServiceTierColor ?? null, bottleServiceMinSpend: table.currentOrder.bottleServiceMinSpend ?? null, bottleServiceCurrentSpend: table.currentOrder.bottleServiceCurrentSpend ?? null, bottleServiceReAuthNeeded: table.currentOrder.bottleServiceReAuthNeeded ?? false }
                                 : undefined
                           ) : undefined}
                           seatsWithItems={table.id === activeTableId ? seatsWithItems : undefined}
