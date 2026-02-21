@@ -3431,6 +3431,110 @@ async function main() {
   }
   console.log(`Created ${allIngredients.length} ingredients`)
 
+  // ========================================
+  // RANCH INVENTORY ITEM + INGREDIENT LINKS
+  // ========================================
+  // One shared InventoryItem backs all Ranch-flavored ingredients.
+  // "Ranch (side)" was the first to be linked (inv-ranch-dressing-001).
+  // This section creates/ensures that InventoryItem exists and links
+  // Ranch, Ranch Dressing, Ranch (side), and Ranch Drizzle to it.
+
+  // 1. Ensure the shared Ranch Dressing InventoryItem exists
+  await prisma.inventoryItem.upsert({
+    where: { id: 'inv-ranch-dressing-001' },
+    update: {},
+    create: {
+      id: 'inv-ranch-dressing-001',
+      locationId: location.id,
+      name: 'Ranch Dressing',
+      department: 'food',
+      itemType: 'bulk',
+      revenueCenter: 'kitchen',
+      category: 'Dressings',
+      purchaseUnit: 'gallon',
+      purchaseSize: 1,
+      purchaseCost: 6.40,
+      storageUnit: 'oz',
+      unitsPerPurchase: 128,
+      costPerUnit: 0.05,
+    },
+  })
+
+  // 2. Link ing-ranch (from allIngredients above) to the Ranch Dressing InventoryItem
+  await prisma.ingredient.update({
+    where: { id: 'ing-ranch' },
+    data: {
+      inventoryItemId: 'inv-ranch-dressing-001',
+      standardQuantity: 1.5,
+      standardUnit: 'oz',
+    },
+  })
+
+  // 3. Ranch Dressing — used as a salad dressing modifier
+  await prisma.ingredient.upsert({
+    where: { id: 'ing-ranch-dressing' },
+    update: { inventoryItemId: 'inv-ranch-dressing-001' },
+    create: {
+      id: 'ing-ranch-dressing',
+      locationId: location.id,
+      name: 'Ranch Dressing',
+      category: 'Sauces',
+      categoryId: categoryMap['Sauces'] || null,
+      allowNo: true,
+      allowLite: true,
+      allowOnSide: false,
+      allowExtra: true,
+      extraPrice: 0,
+      standardQuantity: 2,
+      standardUnit: 'oz',
+      inventoryItemId: 'inv-ranch-dressing-001',
+    },
+  })
+
+  // 4. Ranch (side) — served as a dipping sauce on the side
+  await prisma.ingredient.upsert({
+    where: { id: 'ing-ranch-side' },
+    update: { inventoryItemId: 'inv-ranch-dressing-001' },
+    create: {
+      id: 'ing-ranch-side',
+      locationId: location.id,
+      name: 'Ranch (side)',
+      category: 'Sauces',
+      categoryId: categoryMap['Sauces'] || null,
+      allowNo: true,
+      allowLite: true,
+      allowOnSide: false,
+      allowExtra: true,
+      extraPrice: 0,
+      standardQuantity: 1.5,
+      standardUnit: 'oz',
+      inventoryItemId: 'inv-ranch-dressing-001',
+    },
+  })
+
+  // 5. Ranch Drizzle — thin drizzle on dishes (e.g., buffalo chicken pizza)
+  await prisma.ingredient.upsert({
+    where: { id: 'ing-ranch-drizzle' },
+    update: { inventoryItemId: 'inv-ranch-dressing-001' },
+    create: {
+      id: 'ing-ranch-drizzle',
+      locationId: location.id,
+      name: 'Ranch Drizzle',
+      category: 'Sauces',
+      categoryId: categoryMap['Sauces'] || null,
+      allowNo: true,
+      allowLite: true,
+      allowOnSide: false,
+      allowExtra: true,
+      extraPrice: 0,
+      standardQuantity: 1,
+      standardUnit: 'oz',
+      inventoryItemId: 'inv-ranch-dressing-001',
+    },
+  })
+
+  console.log('Linked Ranch, Ranch Dressing, Ranch (side), Ranch Drizzle → inv-ranch-dressing-001')
+
   // Link ingredients to Classic Burger (item-5)
   const burgerIngredientLinks = [
     { id: 'link-burger-patty', ingredientId: 'ing-beef-patty', isIncluded: true },
