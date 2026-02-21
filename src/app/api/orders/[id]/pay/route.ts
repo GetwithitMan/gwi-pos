@@ -19,6 +19,7 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotals
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { emitCloudEvent } from '@/lib/cloud-events'
+import { triggerCashDrawer } from '@/lib/cash-drawer'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 
@@ -966,6 +967,12 @@ export const POST = withVenue(withTiming(async function POST(
       deductInventoryForOrder(orderId, employeeId).catch(err => {
         console.error('Background inventory deduction failed:', err)
       })
+
+      // Kick cash drawer on cash payments (Skill 56) — fire-and-forget
+      // Failure must never fail the payment response
+      if (hasCash) {
+        void triggerCashDrawer(order.locationId).catch(() => {})
+      }
 
       // Allocate tips via the tip bank pipeline (Skill 269)
       // Handles: CC fee deduction, tip group detection, ownership splits, ledger posting
