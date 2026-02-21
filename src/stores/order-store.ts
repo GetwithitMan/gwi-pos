@@ -1,20 +1,11 @@
 import { create } from 'zustand'
-import type { UiModifier } from '@/types/orders'
+import type { UiModifier, IngredientModification } from '@/types/orders'
 import { generateTempItemId } from '@/lib/order-utils'
 import { toast } from '@/stores/toast-store'
 
 interface OrderItemModifier extends UiModifier {
   // Additional fields specific to order store
   commissionAmount?: number  // Commission earned on this modifier
-}
-
-// Ingredient modification types
-interface IngredientModification {
-  ingredientId: string
-  name: string
-  modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
-  priceAdjustment: number
-  swappedTo?: { modifierId: string; name: string; price: number }
 }
 
 // Pizza order configuration (inline type to avoid circular imports)
