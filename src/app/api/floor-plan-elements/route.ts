@@ -124,10 +124,10 @@ export const POST = withVenue(async function POST(req: Request) {
       )
     }
 
-    // Verify linkedMenuItemId exists if provided
+    // Verify linkedMenuItemId exists if provided (must not be soft-deleted)
     if (linkedMenuItemId) {
-      const menuItem = await db.menuItem.findUnique({
-        where: { id: linkedMenuItemId },
+      const menuItem = await db.menuItem.findFirst({
+        where: { id: linkedMenuItemId, deletedAt: null },
         select: { id: true },
       })
       if (!menuItem) {
@@ -138,10 +138,10 @@ export const POST = withVenue(async function POST(req: Request) {
       }
     }
 
-    // Verify sectionId exists if provided
+    // Verify sectionId exists if provided (must not be soft-deleted)
     if (sectionId) {
-      const section = await db.section.findUnique({
-        where: { id: sectionId },
+      const section = await db.section.findFirst({
+        where: { id: sectionId, deletedAt: null },
         select: { id: true },
       })
       if (!section) {

@@ -34,13 +34,25 @@ const GRID_SIZE = 4
  *
  * @param coord - The coordinate to normalize (handles null/undefined/NaN safely)
  * @param gridSize - Grid size (default 4px)
+ * @param context - Optional context for logging (e.g., { tableId, action })
  * @returns Normalized coordinate snapped to grid, or safe fallback (100) if invalid
  */
-export function normalizeCoord(coord: number | undefined | null, gridSize: number = GRID_SIZE): number {
-  // Guard: if coord is missing or invalid, return a safe fallback
-  // This prevents tables from flying to 0,0 during state transitions
+export function normalizeCoord(
+  coord: number | undefined | null,
+  gridSize: number = GRID_SIZE,
+  context?: { tableId?: string; action?: string }
+): number {
   if (coord === undefined || coord === null || isNaN(coord)) {
-    console.warn('[normalizeCoord] Invalid coordinate received, using safe fallback:', coord)
+    const ctx = context
+      ? ` [tableId=${context.tableId ?? 'unknown'}, action=${context.action ?? 'unknown'}]`
+      : ''
+    if (process.env.NODE_ENV === 'development') {
+      throw new Error(
+        `[normalizeCoord] Invalid coordinate received${ctx}. Value: ${coord}. ` +
+        'This indicates a bug in table position handling — fix the upstream data source.'
+      )
+    }
+    console.warn(`[normalizeCoord] Invalid coordinate received${ctx}, using safe fallback:`, coord)
     return 100 // Safe margin from edge
   }
   return Math.round(coord / gridSize) * gridSize

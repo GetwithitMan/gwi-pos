@@ -46,8 +46,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // This ensures DB values match what the editor displays (same grid snapping)
     const normalizedTables = tables.map(t => ({
       ...t,
-      posX: normalizeCoord(t.posX),
-      posY: normalizeCoord(t.posY),
+      posX: normalizeCoord(t.posX, undefined, { tableId: t.id, action: 'bulk-update' }),
+      posY: normalizeCoord(t.posY, undefined, { tableId: t.id, action: 'bulk-update' }),
     }))
 
     // Perform all updates in a single transaction for atomicity
