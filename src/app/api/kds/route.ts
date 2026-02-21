@@ -178,8 +178,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           firedAt: item.firedAt?.toISOString() || null,
           modifiers: item.modifiers.map(mod => ({
             id: mod.id,
+            // T-042: handle compound preModifier strings (e.g. "side,extra" → "Side Extra Ranch")
             name: mod.preModifier
-              ? `${mod.preModifier.charAt(0).toUpperCase() + mod.preModifier.slice(1)} ${mod.name}`
+              ? `${mod.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} ${mod.name}`
               : mod.name,
             depth: mod.depth || 0,
           })),

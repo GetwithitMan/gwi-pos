@@ -723,7 +723,8 @@ export default function OpenOrdersManagerPage() {
                         </div>
                         {item.modifiers.map(mod => (
                           <div key={mod.id} className="text-xs text-gray-500 pl-4">
-                            {mod.preModifier ? `${mod.preModifier} ` : ''}{mod.name}
+                            {/* T-042: handle compound preModifier strings */}
+                            {mod.preModifier ? `${mod.preModifier.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} ` : ''}{mod.name}
                             {mod.price > 0 && ` +${formatCurrency(mod.price)}`}
                           </div>
                         ))}

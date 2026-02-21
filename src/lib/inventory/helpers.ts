@@ -45,23 +45,11 @@ export const DEFAULT_MULTIPLIERS: Required<MultiplierSettings> = {
 }
 
 /**
- * Gets the multiplier for a modifier instruction (preModifier)
- *
- * @param instruction - The preModifier value ("no", "lite", "extra", etc.)
- * @param settings - Optional location-specific multiplier settings
- * @returns The multiplier to apply to usage quantity
- *
- * Examples:
- * - "no" returns 0 (don't deduct anything)
- * - "lite" returns 0.5 (deduct half)
- * - "extra" returns 2.0 (deduct double)
- * - null/undefined returns 1.0 (standard amount)
+ * Gets the multiplier for a single (non-compound) modifier instruction token.
+ * Internal helper — do not call directly; use getModifierMultiplier instead.
  */
-export function getModifierMultiplier(
-  instruction: string | null | undefined,
-  settings?: MultiplierSettings
-): number {
-  const normalized = instruction?.toUpperCase().trim() || 'NORMAL'
+function getSingleTokenMultiplier(token: string, settings?: MultiplierSettings): number {
+  const normalized = token.toUpperCase().trim()
 
   // Handle zero/removal instructions
   if (['NO', 'NONE', 'REMOVE', 'WITHOUT', 'HOLD'].includes(normalized)) {
@@ -109,11 +97,55 @@ export function getModifierMultiplier(
 }
 
 /**
- * Check if a modifier instruction indicates removal (NO, NONE, etc.)
+ * Gets the multiplier for a modifier instruction (preModifier).
+ *
+ * T-042: Supports compound strings (e.g. "side,extra" → tokens ["side", "extra"]).
+ * When multiple tokens are present the highest-priority token wins:
+ *   1. Any removal token (NO, etc.) → 0
+ *   2. Highest non-1.0 multiplier wins (EXTRA > TRIPLE > LITE)
+ *   3. Otherwise 1.0 (SIDE, NORMAL, etc.)
+ *
+ * @param instruction - The preModifier value, possibly compound e.g. "side,extra"
+ * @param settings - Optional location-specific multiplier settings
+ * @returns The multiplier to apply to usage quantity
+ *
+ * Examples:
+ * - "no"         → 0   (don't deduct anything)
+ * - "lite"       → 0.5 (deduct half)
+ * - "extra"      → 2.0 (deduct double)
+ * - "side,extra" → 2.0 (extra dominates)
+ * - "side"       → 1.0 (on the side — same quantity)
+ * - null/undefined → 1.0 (standard amount)
+ */
+export function getModifierMultiplier(
+  instruction: string | null | undefined,
+  settings?: MultiplierSettings
+): number {
+  if (!instruction) return 1.0
+
+  // T-042: parse compound string (backward-compatible — single tokens still work)
+  const tokens = instruction.split(',').map(t => t.trim()).filter(Boolean)
+  if (tokens.length === 0) return 1.0
+
+  // Evaluate each token and pick the highest-priority result
+  const multipliers = tokens.map(t => getSingleTokenMultiplier(t, settings))
+
+  // If any token is a removal instruction (0), that takes precedence
+  if (multipliers.includes(0)) return 0
+
+  // Otherwise return the maximum multiplier across all tokens
+  return Math.max(...multipliers)
+}
+
+/**
+ * Check if a modifier instruction indicates removal (NO, NONE, etc.).
+ * T-042: Supports compound strings — returns true if ANY token is a removal instruction.
  */
 export function isRemovalInstruction(instruction: string | null | undefined): boolean {
-  const normalized = instruction?.toUpperCase().trim() || ''
-  return ['NO', 'NONE', 'REMOVE', 'WITHOUT', 'HOLD'].includes(normalized)
+  if (!instruction) return false
+  const tokens = instruction.split(',').map(t => t.trim()).filter(Boolean)
+  const removalTokens = new Set(['NO', 'NONE', 'REMOVE', 'WITHOUT', 'HOLD'])
+  return tokens.some(t => removalTokens.has(t.toUpperCase().trim()))
 }
 
 // ============================================

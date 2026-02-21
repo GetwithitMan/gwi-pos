@@ -175,9 +175,11 @@ function buildTicketBuffer(order: OrderContext, manifest: RoutingManifest): Buff
     // Modifiers with depth indentation and pre-modifier labels
     for (const mod of item.modifiers) {
       const indent = mod.depth > 0 ? '  '.repeat(mod.depth) + '- ' : '  '
-      const modText = mod.preModifier
-        ? `${mod.preModifier.toUpperCase()} ${mod.name.toUpperCase()}`
-        : mod.name.toUpperCase()
+      // T-042: handle compound preModifier strings (e.g. "side,extra" → "SIDE EXTRA Ranch")
+      const preLabel = mod.preModifier
+        ? mod.preModifier.split(',').map(t => t.trim().toUpperCase()).filter(Boolean).join(' ') + ' '
+        : ''
+      const modText = `${preLabel}${mod.name.toUpperCase()}`
       content.push(line(`${indent}${modText}`))
     }
 

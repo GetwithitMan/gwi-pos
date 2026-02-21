@@ -93,6 +93,81 @@ export const PRE_MODIFIER_CONFIG: Record<string, { label: string; cssClass: stri
   side: { label: 'Side', cssClass: 'mm-premod-side', activeClass: 'mm-premod-side active' },
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Pre-modifier compound string helpers (T-042)
+//
+// preModifier is stored as a comma-separated string so that multiple
+// pre-modifiers can be combined without a schema change, e.g.:
+//   "side"          → single pre-mod (backward compatible)
+//   "side,extra"    → "Side Extra Ranch"
+//   "lite,side"     → "Lite Side Bleu Cheese"
+//
+// "no" is always exclusive — it cannot be combined with other pre-mods.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Parse a compound preModifier string into an array of tokens */
+export function parsePreModifiers(preModifier: string | null | undefined): string[] {
+  if (!preModifier) return []
+  return preModifier.split(',').map(s => s.trim()).filter(Boolean)
+}
+
+/** Join an array of tokens back into a compound preModifier string (or undefined if empty) */
+export function joinPreModifiers(tokens: string[]): string | undefined {
+  const unique = [...new Set(tokens)].filter(Boolean)
+  return unique.length > 0 ? unique.join(',') : undefined
+}
+
+/** Check whether a compound preModifier string contains a specific token */
+export function hasPreModifier(preModifier: string | null | undefined, token: string): boolean {
+  return parsePreModifiers(preModifier).includes(token)
+}
+
+/**
+ * Toggle a single pre-modifier token within the compound string.
+ *
+ * Rules:
+ *  - "no" is exclusive: selecting it clears all others; selecting another clears "no".
+ *  - Toggling a token that's already present removes it.
+ *  - Toggling a token that's absent adds it.
+ *  - Returns undefined when the resulting set is empty (no pre-modifier).
+ */
+export function togglePreModifierToken(
+  current: string | null | undefined,
+  token: string
+): string | undefined {
+  const existing = parsePreModifiers(current)
+
+  // "no" is mutually exclusive with all other tokens
+  if (token === 'no') {
+    // If already the only token, remove it entirely
+    if (existing.length === 1 && existing[0] === 'no') return undefined
+    return 'no'
+  }
+
+  // If "no" is active, clicking any other token replaces it
+  if (existing.includes('no')) {
+    return token
+  }
+
+  // Toggle: if already present remove, otherwise add
+  const updated = existing.includes(token)
+    ? existing.filter(t => t !== token)
+    : [...existing, token]
+
+  return joinPreModifiers(updated)
+}
+
+/**
+ * Compute a display label from a compound preModifier string.
+ * e.g. "side,extra" → "Side Extra"
+ */
+export function formatPreModifierLabel(preModifier: string | null | undefined): string {
+  const tokens = parsePreModifiers(preModifier)
+  return tokens
+    .map(t => PRE_MODIFIER_CONFIG[t]?.label ?? t)
+    .join(' ')
+}
+
 // Tiered pricing helper: Calculate dynamic price based on selection position
 function getTieredPrice(
   group: ModifierGroup,
@@ -423,15 +498,20 @@ export function useModifierSelections(
     const existingIndex = current.findIndex(s => s.id === modifier.id)
     const existingMod = existingIndex >= 0 ? current[existingIndex] : null
 
-    // Apply tiered pricing: use selection index to determine if this item is free
-    let price = modifier.price
-    if (group.tieredPricingConfig?.enabled) {
-      price = getTieredPrice(group, modifier, current.length)
-    }
-    if (preModifier === 'extra' && modifier.extraPrice) {
-      price = modifier.extraPrice
-    } else if (preModifier === 'no') {
-      price = 0
+    // ── Compute price for a given compound preModifier string ──────────────
+    // Rules (highest priority wins):
+    //   "no" anywhere in compound → price = 0
+    //   "extra" anywhere → price = extraPrice (if set)
+    //   otherwise → base price (tiered or normal)
+    const computePrice = (compoundPreMod: string | undefined): number => {
+      const tokens = parsePreModifiers(compoundPreMod)
+      let p = modifier.price
+      if (group.tieredPricingConfig?.enabled) {
+        p = getTieredPrice(group, modifier, current.length)
+      }
+      if (tokens.includes('no')) return 0
+      if (tokens.includes('extra') && modifier.extraPrice) return modifier.extraPrice
+      return p
     }
 
     const depth = getGroupDepth(group.id)
@@ -441,31 +521,20 @@ export function useModifierSelections(
     if (existingMod) {
       const newSelections = { ...selections }
 
-      // If clicking with a preModifier
+      // If clicking with a preModifier — toggle that token in/out of compound
       if (preModifier) {
-        // If same preModifier, remove it (toggle off the preModifier, keep modifier selected normally)
-        if (existingMod.preModifier === preModifier) {
-          // Update to regular selection (no preModifier)
-          const updatedMod: SelectedModifier = {
-            ...existingMod,
-            price: modifier.price,
-            preModifier: undefined,
-          }
-          newSelections[group.id] = current.map(s => s.id === modifier.id ? updatedMod : s)
-        } else {
-          // Different preModifier, update to new one
-          const updatedMod: SelectedModifier = {
-            ...existingMod,
-            price,
-            preModifier,
-          }
-          newSelections[group.id] = current.map(s => s.id === modifier.id ? updatedMod : s)
+        const newCompound = togglePreModifierToken(existingMod.preModifier, preModifier)
+        const updatedMod: SelectedModifier = {
+          ...existingMod,
+          price: computePrice(newCompound),
+          preModifier: newCompound,
         }
+        newSelections[group.id] = current.map(s => s.id === modifier.id ? updatedMod : s)
         setSelections(newSelections)
       } else {
         // Clicking main button without preModifier
         if (existingMod.preModifier) {
-          // Has a preModifier, clicking main button removes preModifier
+          // Has a preModifier, clicking main button removes all pre-modifiers
           const updatedMod: SelectedModifier = {
             ...existingMod,
             price: modifier.price,
@@ -507,7 +576,8 @@ export function useModifierSelections(
         }
       }
     } else {
-      // Modifier not selected, add it
+      // Modifier not selected, add it (preModifier is the first token of the compound)
+      const price = computePrice(preModifier)
       const newMod: SelectedModifier = {
         id: modifier.id,
         name: modifier.name,

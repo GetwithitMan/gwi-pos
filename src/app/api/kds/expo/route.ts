@@ -145,7 +145,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               prepStationName: stationId ? stationMap.get(stationId) : null,
               modifiers: item.modifiers.map((m) => ({
                 id: m.id,
-                name: m.preModifier ? `${m.preModifier} ${m.name}` : m.name,
+                // T-042: handle compound preModifier strings (e.g. "side,extra" → "Side Extra Ranch")
+                name: m.preModifier
+                  ? `${m.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} ${m.name}`
+                  : m.name,
                 depth: m.depth || 0,
               })),
             }

@@ -215,7 +215,8 @@ export default function ClosedOrdersPage() {
 
     const itemRows = order.items.map(item => {
       const mods = item.modifiers.length > 0
-        ? item.modifiers.map(m => `<div style="padding-left:20px;font-size:12px;color:#666;">${m.preModifier ? m.preModifier + ' ' : ''}${m.name}${m.price > 0 ? ` +${formatCurrency(m.price)}` : ''}</div>`).join('')
+        // T-042: handle compound preModifier strings
+        ? item.modifiers.map(m => `<div style="padding-left:20px;font-size:12px;color:#666;">${m.preModifier ? m.preModifier.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => t.charAt(0).toUpperCase() + t.slice(1)).join(' ') + ' ' : ''}${m.name}${m.price > 0 ? ` +${formatCurrency(m.price)}` : ''}</div>`).join('')
         : ''
       return `<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>${item.quantity}x ${item.name}</span><span>${formatCurrency(item.itemTotal)}</span></div>${mods}`
     }).join('')
@@ -534,7 +535,8 @@ ${paymentRows}
                     </div>
                     {item.modifiers.map(mod => (
                       <div key={mod.id} className="text-xs text-gray-500 pl-4">
-                        {mod.preModifier ? `${mod.preModifier} ` : ''}{mod.name}
+                        {/* T-042: handle compound preModifier strings */}
+                        {mod.preModifier ? `${mod.preModifier.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} ` : ''}{mod.name}
                         {mod.price > 0 && ` +${formatCurrency(mod.price)}`}
                       </div>
                     ))}

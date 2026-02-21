@@ -139,7 +139,8 @@ function buildDivider(config: DividerConfig, width: number): Buffer {
 }
 
 /**
- * Format pre-modifier based on style
+ * Format pre-modifier based on style.
+ * Accepts a single token string (no commas).
  */
 function formatPreModifier(
   preModifier: string,
@@ -156,6 +157,20 @@ function formatPreModifier(
     default:
       return mod
   }
+}
+
+/**
+ * T-042: Format a compound preModifier string (e.g. "side,extra") into a
+ * display prefix (e.g. "Side Extra" or "SIDE EXTRA").
+ * Returns an empty string when preModifier is null/undefined.
+ */
+function formatCompoundPreModifier(
+  preModifier: string | null | undefined,
+  style: 'plain' | 'stars' | 'brackets' | 'parens' | 'caps'
+): string {
+  if (!preModifier) return ''
+  const tokens = preModifier.split(',').map(t => t.trim()).filter(Boolean)
+  return tokens.map(t => formatPreModifier(t, style)).join(' ')
 }
 
 /**
@@ -597,7 +612,8 @@ export class PrintTemplateFactory {
           const extraIndent = '  '.repeat(mod.depth)
           let modText = mod.name
           if (mod.preModifier) {
-            const formattedPre = formatPreModifier(mod.preModifier, s.preModifiers.style)
+            // T-042: use compound-aware formatter
+            const formattedPre = formatCompoundPreModifier(mod.preModifier, s.preModifiers.style)
             modText = `${formattedPre} ${modText}`
 
             // Highlight pre-modifiers if configured
@@ -973,7 +989,11 @@ export class PrintTemplateFactory {
       // Modifiers (indented)
       for (const mod of item.modifiers) {
         const indent = '  '.repeat(Math.max(1, mod.depth + 1))
-        let modText = mod.preModifier ? `${mod.preModifier} ${mod.name}` : mod.name
+        // T-042: compound preModifier support
+        const preLabel = mod.preModifier
+          ? `${formatCompoundPreModifier(mod.preModifier, 'plain')} `
+          : ''
+        const modText = `${preLabel}${mod.name}`
         content.push(line(`${indent}${modText.toUpperCase()}`))
       }
 
@@ -1379,9 +1399,11 @@ export class PrintTemplateFactory {
 
       // Modifiers (mixers, garnishes, etc.)
       for (const mod of item.modifiers) {
-        const modText = mod.preModifier
-          ? `${mod.preModifier} ${mod.name}`
-          : mod.name
+        // T-042: compound preModifier support
+        const preLabel = mod.preModifier
+          ? `${formatCompoundPreModifier(mod.preModifier, 'plain')} `
+          : ''
+        const modText = `${preLabel}${mod.name}`
         content.push(line(`  - ${modText}`))
       }
 

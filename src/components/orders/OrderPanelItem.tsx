@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, memo } from 'react'
 import { EntertainmentSessionControls } from './EntertainmentSessionControls'
 import type { UiModifier, IngredientModification } from '@/types/orders'
 import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
+import { parsePreModifiers, PRE_MODIFIER_CONFIG } from '@/components/modifiers/useModifierSelections'
 
 export interface OrderPanelItemData {
   id: string
@@ -687,13 +688,26 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                   >
                     <span className="truncate" title={mod.name}>
                       {depth === 0 ? '• ' : '↳ '}
-                      {mod.preModifier ? (
-                        <span className={`font-semibold uppercase text-[10px] mr-1 ${
-                          mod.preModifier === 'no' ? 'text-red-400'
-                            : mod.preModifier === 'extra' ? 'text-amber-400'
-                            : 'text-blue-400'
-                        }`}>{mod.preModifier}{' '}</span>
-                      ) : null}
+                      {mod.preModifier ? (() => {
+                        // T-042: parse compound preModifier string (e.g. "side,extra" → ["side","extra"])
+                        const tokens = parsePreModifiers(mod.preModifier)
+                        return (
+                          <>
+                            {tokens.map((token, ti) => {
+                              const tokenColor = token === 'no' ? 'text-red-400'
+                                : token === 'extra' ? 'text-amber-400'
+                                : 'text-blue-400'
+                              const label = PRE_MODIFIER_CONFIG[token]?.label ?? token
+                              return (
+                                <span key={ti} className={`font-semibold uppercase text-[10px] mr-0.5 ${tokenColor}`}>
+                                  {label}
+                                </span>
+                              )
+                            })}
+                            {' '}
+                          </>
+                        )
+                      })() : null}
                       {mod.name}
                     </span>
                     {mod.price > 0 && (

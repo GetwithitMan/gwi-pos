@@ -2,7 +2,7 @@
 
 import { formatCurrency } from '@/lib/utils'
 import type { SelectedModifier, Modifier, ModifierGroup } from '@/types'
-import { PRE_MODIFIER_CONFIG, type SpiritTier, SPIRIT_TIER_CONFIG } from './useModifierSelections'
+import { PRE_MODIFIER_CONFIG, type SpiritTier, SPIRIT_TIER_CONFIG, hasPreModifier } from './useModifierSelections'
 import { useState } from 'react'
 import { EightySixBadge } from './EightySixBadge'
 import { toast } from '@/stores/toast-store'
@@ -279,7 +279,8 @@ export function ModifierGroupSection({
                   {preModifiers.map(preMod => {
                     const config = PRE_MODIFIER_CONFIG[preMod]
                     if (!config) return null
-                    const isPreModSelected = selectedPreMod === preMod
+                    // T-042: check if this token is present in the compound preModifier string
+                    const isPreModSelected = hasPreModifier(selectedPreMod, preMod)
 
                     return (
                       <button

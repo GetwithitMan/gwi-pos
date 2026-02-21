@@ -573,7 +573,11 @@ function buildKitchenTicket(
     if (!item.pizzaData) {
       for (const mod of item.modifiers) {
         const prefix = mod.depth > 0 ? '  '.repeat(mod.depth) + '- ' : '  '
-        let modLine = mod.preModifier ? `${mod.preModifier} ${mod.name}` : mod.name
+        // T-042: handle compound preModifier strings (e.g. "side,extra" → "Side Extra Ranch")
+        const preLabel = mod.preModifier
+          ? mod.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ') + ' '
+          : ''
+        let modLine = `${preLabel}${mod.name}`
         if (allCapsMods) {
           modLine = modLine.toUpperCase()
         }
