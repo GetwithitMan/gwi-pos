@@ -86,7 +86,9 @@ export const ORDER_INVENTORY_INCLUDE = {
       modifiers: {
         include: {
           modifier: {
-            include: {
+            select: {
+              liteMultiplier: true,
+              extraMultiplier: true,
               inventoryLink: {
                 include: {
                   inventoryItem: {
@@ -285,9 +287,22 @@ export async function deductInventoryForOrder(
       for (const mod of orderItem.modifiers) {
         const modQty = (mod.quantity || 1) * itemQty
 
-        // Get the multiplier based on the instruction
+        // Get the multiplier based on the instruction.
+        // If the modifier has per-modifier liteMultiplier/extraMultiplier set, build an
+        // effective settings object that overrides the location-level values for this modifier.
         const preModifier = mod.preModifier
-        const multiplier = getModifierMultiplier(preModifier, multiplierSettings || undefined)
+        const normalized = preModifier?.toUpperCase().trim()
+        const perModSettings: typeof multiplierSettings = { ...multiplierSettings }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const modRecord = (mod.modifier as any)
+        if (modRecord?.liteMultiplier !== null && modRecord?.liteMultiplier !== undefined) {
+          perModSettings.multiplierLite = Number(modRecord.liteMultiplier)
+        }
+        if (modRecord?.extraMultiplier !== null && modRecord?.extraMultiplier !== undefined) {
+          // 'extra' and 'double' both map to multiplierExtra in getModifierMultiplier
+          perModSettings.multiplierExtra = Number(modRecord.extraMultiplier)
+        }
+        const multiplier = getModifierMultiplier(preModifier, perModSettings || undefined)
 
         // If multiplier is 0 (e.g., "NO"), skip this modifier entirely
         if (multiplier === 0) continue

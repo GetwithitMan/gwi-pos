@@ -548,13 +548,41 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 No
               </button>
             </span>
-            <span className={`flex items-center h-6 rounded border px-0.5 ${mod.allowLite ? 'border-yellow-300 bg-yellow-50' : 'border-yellow-200 bg-yellow-50/40'}`}>
+            <span className={`flex items-center gap-0.5 h-6 rounded border px-0.5 ${mod.allowLite ? 'border-yellow-300 bg-yellow-50' : 'border-yellow-200 bg-yellow-50/40'}`}>
               <button
                 onClick={() => updateModifier(groupId, mod.id, { allowLite: !mod.allowLite })}
                 className={`h-5 rounded text-[9px] font-bold px-1.5 ${mod.allowLite ? 'bg-yellow-500 text-white' : 'bg-yellow-100 text-yellow-300'}`}
               >
                 Lite
               </button>
+              {mod.allowLite && (
+                <>
+                  <span className={`text-[9px] font-bold text-yellow-600`}>×</span>
+                  <input
+                    type="number"
+                    defaultValue={mod.liteMultiplier ?? 0.5}
+                    key={`lite-${mod.id}-${mod.liteMultiplier ?? 0.5}`}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onBlur={(e) => {
+                      const parsed = parseFloat(e.target.value)
+                      const val = Number.isFinite(parsed) ? parsed : 0.5
+                      const current = mod.liteMultiplier ?? 0.5
+                      if (val !== current) {
+                        updateModifier(groupId, mod.id, { liteMultiplier: val })
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation()
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    }}
+                    className="w-12 h-5 px-1 text-[10px] font-semibold rounded text-center bg-white border border-yellow-300 text-yellow-700 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-300 focus:outline-none"
+                    step="0.1"
+                    min="0"
+                    max="10"
+                  />
+                </>
+              )}
             </span>
             <span className={`flex items-center h-6 rounded border px-0.5 ${mod.allowOnSide ? 'border-blue-300 bg-blue-50' : 'border-blue-200 bg-blue-50/40'}`}>
               <button
@@ -578,6 +606,34 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               >
                 Extra
               </button>
+              {mod.allowExtra && (
+                <>
+                  <span className="text-[9px] font-bold text-green-600">×</span>
+                  <input
+                    type="number"
+                    defaultValue={mod.extraMultiplier ?? 2.0}
+                    key={`extra-mult-${mod.id}-${mod.extraMultiplier ?? 2.0}`}
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onBlur={(e) => {
+                      const parsed = parseFloat(e.target.value)
+                      const val = Number.isFinite(parsed) ? parsed : 2.0
+                      const current = mod.extraMultiplier ?? 2.0
+                      if (val !== current) {
+                        updateModifier(groupId, mod.id, { extraMultiplier: val })
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      e.stopPropagation()
+                      if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    }}
+                    className="w-12 h-5 px-1 text-[10px] font-semibold rounded text-center bg-white border border-green-300 text-green-700 focus:border-green-500 focus:ring-1 focus:ring-green-300 focus:outline-none"
+                    step="0.1"
+                    min="0"
+                    max="10"
+                  />
+                </>
+              )}
               <span className={`text-[9px] font-bold ${mod.allowExtra ? 'text-green-600' : 'text-green-300'}`}>$</span>
               {mod.allowExtra ? (
                 <input

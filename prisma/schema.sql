@@ -851,6 +851,7 @@ CREATE TABLE "Payment" (
     "voidedAt" TIMESTAMP(3),
     "voidedBy" TEXT,
     "voidReason" TEXT,
+    "settledAt" TIMESTAMP(3),
     "offlineIntentId" TEXT,
     "idempotencyKey" TEXT,
     "isOfflineCapture" BOOLEAN NOT NULL DEFAULT false,
@@ -961,6 +962,7 @@ CREATE TABLE "Reservation" (
     "internalNotes" TEXT,
     "customerId" TEXT,
     "orderId" TEXT,
+    "bottleServiceTierId" TEXT,
     "createdBy" TEXT,
     "seatedAt" TIMESTAMP(3),
     "completedAt" TIMESTAMP(3),
@@ -991,6 +993,7 @@ CREATE TABLE "DiscountRule" (
     "maxPerOrder" INTEGER,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "isAutomatic" BOOLEAN NOT NULL DEFAULT false,
+    "isEmployeeDiscount" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2686,6 +2689,21 @@ CREATE TABLE "PaymentReader" (
 );
 
 -- CreateTable
+CREATE TABLE "PaymentReaderLog" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "readerId" TEXT NOT NULL,
+    "responseTime" INTEGER NOT NULL,
+    "success" BOOLEAN NOT NULL,
+    "errorCode" TEXT,
+    "tranType" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "PaymentReaderLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "PrintRule" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
@@ -3076,6 +3094,28 @@ CREATE TABLE "ScheduledShift" (
 );
 
 -- CreateTable
+CREATE TABLE "ShiftSwapRequest" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "shiftId" TEXT NOT NULL,
+    "requestedByEmployeeId" TEXT NOT NULL,
+    "requestedToEmployeeId" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "respondedAt" TIMESTAMP(3),
+    "approvedAt" TIMESTAMP(3),
+    "approvedByEmployeeId" TEXT,
+    "expiresAt" TIMESTAMP(3),
+    "notes" TEXT,
+    "declineReason" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ShiftSwapRequest_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "AvailabilityEntry" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
@@ -3453,6 +3493,83 @@ CREATE TABLE "cloud_event_queue" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "cloud_event_queue_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "RefundLog" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "paymentId" TEXT NOT NULL,
+    "employeeId" TEXT NOT NULL,
+    "refundAmount" DECIMAL(65,30) NOT NULL,
+    "originalAmount" DECIMAL(65,30) NOT NULL,
+    "refundReason" TEXT NOT NULL,
+    "notes" TEXT,
+    "datacapRecordNo" TEXT,
+    "datacapRefNo" TEXT,
+    "approvedById" TEXT,
+    "approvedAt" TIMESTAMP(3),
+    "receiptPrinted" BOOLEAN NOT NULL DEFAULT false,
+    "receiptPrintedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "RefundLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OrderItemDiscount" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "orderItemId" TEXT NOT NULL,
+    "discountRuleId" TEXT,
+    "amount" DECIMAL(65,30) NOT NULL,
+    "percent" DECIMAL(65,30),
+    "appliedById" TEXT,
+    "reason" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "OrderItemDiscount_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "RegisteredDevice" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "deviceType" TEXT NOT NULL DEFAULT 'phone',
+    "deviceFingerprint" TEXT,
+    "registeredById" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "lastSeenAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "RegisteredDevice_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MobileSession" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "deviceId" TEXT NOT NULL,
+    "employeeId" TEXT NOT NULL,
+    "sessionToken" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "revokedAt" TIMESTAMP(3),
+
+    CONSTRAINT "MobileSession_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -3952,6 +4069,9 @@ CREATE INDEX "Reservation_tableId_idx" ON "Reservation"("tableId");
 
 -- CreateIndex
 CREATE INDEX "Reservation_customerId_idx" ON "Reservation"("customerId");
+
+-- CreateIndex
+CREATE INDEX "Reservation_bottleServiceTierId_idx" ON "Reservation"("bottleServiceTierId");
 
 -- CreateIndex
 CREATE INDEX "Reservation_locationId_reservationDate_status_idx" ON "Reservation"("locationId", "reservationDate", "status");
@@ -4791,6 +4911,18 @@ CREATE INDEX "PaymentReader_connectionType_idx" ON "PaymentReader"("connectionTy
 CREATE UNIQUE INDEX "PaymentReader_locationId_name_key" ON "PaymentReader"("locationId", "name");
 
 -- CreateIndex
+CREATE INDEX "PaymentReaderLog_locationId_idx" ON "PaymentReaderLog"("locationId");
+
+-- CreateIndex
+CREATE INDEX "PaymentReaderLog_readerId_idx" ON "PaymentReaderLog"("readerId");
+
+-- CreateIndex
+CREATE INDEX "PaymentReaderLog_readerId_createdAt_idx" ON "PaymentReaderLog"("readerId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "PaymentReaderLog_locationId_createdAt_idx" ON "PaymentReaderLog"("locationId", "createdAt");
+
+-- CreateIndex
 CREATE INDEX "PrintRule_locationId_idx" ON "PrintRule"("locationId");
 
 -- CreateIndex
@@ -4957,6 +5089,21 @@ CREATE INDEX "ScheduledShift_date_idx" ON "ScheduledShift"("date");
 
 -- CreateIndex
 CREATE INDEX "ScheduledShift_status_idx" ON "ScheduledShift"("status");
+
+-- CreateIndex
+CREATE INDEX "ShiftSwapRequest_locationId_idx" ON "ShiftSwapRequest"("locationId");
+
+-- CreateIndex
+CREATE INDEX "ShiftSwapRequest_shiftId_idx" ON "ShiftSwapRequest"("shiftId");
+
+-- CreateIndex
+CREATE INDEX "ShiftSwapRequest_requestedByEmployeeId_idx" ON "ShiftSwapRequest"("requestedByEmployeeId");
+
+-- CreateIndex
+CREATE INDEX "ShiftSwapRequest_requestedToEmployeeId_idx" ON "ShiftSwapRequest"("requestedToEmployeeId");
+
+-- CreateIndex
+CREATE INDEX "ShiftSwapRequest_status_idx" ON "ShiftSwapRequest"("status");
 
 -- CreateIndex
 CREATE INDEX "AvailabilityEntry_locationId_idx" ON "AvailabilityEntry"("locationId");
@@ -5146,6 +5293,54 @@ CREATE INDEX "ServerRegistrationToken_locationId_status_expiresAt_idx" ON "Serve
 
 -- CreateIndex
 CREATE INDEX "cloud_event_queue_nextRetryAt_idx" ON "cloud_event_queue"("nextRetryAt");
+
+-- CreateIndex
+CREATE INDEX "RefundLog_locationId_idx" ON "RefundLog"("locationId");
+
+-- CreateIndex
+CREATE INDEX "RefundLog_orderId_idx" ON "RefundLog"("orderId");
+
+-- CreateIndex
+CREATE INDEX "RefundLog_paymentId_idx" ON "RefundLog"("paymentId");
+
+-- CreateIndex
+CREATE INDEX "RefundLog_employeeId_idx" ON "RefundLog"("employeeId");
+
+-- CreateIndex
+CREATE INDEX "RefundLog_createdAt_idx" ON "RefundLog"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "RefundLog_locationId_createdAt_idx" ON "RefundLog"("locationId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "OrderItemDiscount_locationId_idx" ON "OrderItemDiscount"("locationId");
+
+-- CreateIndex
+CREATE INDEX "OrderItemDiscount_orderId_idx" ON "OrderItemDiscount"("orderId");
+
+-- CreateIndex
+CREATE INDEX "OrderItemDiscount_orderItemId_idx" ON "OrderItemDiscount"("orderItemId");
+
+-- CreateIndex
+CREATE INDEX "OrderItemDiscount_locationId_createdAt_idx" ON "OrderItemDiscount"("locationId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "RegisteredDevice_locationId_idx" ON "RegisteredDevice"("locationId");
+
+-- CreateIndex
+CREATE INDEX "RegisteredDevice_locationId_isActive_idx" ON "RegisteredDevice"("locationId", "isActive");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MobileSession_sessionToken_key" ON "MobileSession"("sessionToken");
+
+-- CreateIndex
+CREATE INDEX "MobileSession_locationId_idx" ON "MobileSession"("locationId");
+
+-- CreateIndex
+CREATE INDEX "MobileSession_sessionToken_idx" ON "MobileSession"("sessionToken");
+
+-- CreateIndex
+CREATE INDEX "MobileSession_employeeId_idx" ON "MobileSession"("employeeId");
 
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -5395,6 +5590,9 @@ ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_tableId_fkey" FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_bottleServiceTierId_fkey" FOREIGN KEY ("bottleServiceTierId") REFERENCES "BottleServiceTier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "DiscountRule" ADD CONSTRAINT "DiscountRule_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -5892,6 +6090,12 @@ ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_backupPaymentReaderId_fkey" FORE
 ALTER TABLE "PaymentReader" ADD CONSTRAINT "PaymentReader_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "PaymentReaderLog" ADD CONSTRAINT "PaymentReaderLog_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PaymentReaderLog" ADD CONSTRAINT "PaymentReaderLog_readerId_fkey" FOREIGN KEY ("readerId") REFERENCES "PaymentReader"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "PrintRule" ADD CONSTRAINT "PrintRule_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -6012,6 +6216,21 @@ ALTER TABLE "ScheduledShift" ADD CONSTRAINT "ScheduledShift_employeeId_fkey" FOR
 ALTER TABLE "ScheduledShift" ADD CONSTRAINT "ScheduledShift_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "Role"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "ShiftSwapRequest" ADD CONSTRAINT "ShiftSwapRequest_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShiftSwapRequest" ADD CONSTRAINT "ShiftSwapRequest_shiftId_fkey" FOREIGN KEY ("shiftId") REFERENCES "ScheduledShift"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShiftSwapRequest" ADD CONSTRAINT "ShiftSwapRequest_requestedByEmployeeId_fkey" FOREIGN KEY ("requestedByEmployeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShiftSwapRequest" ADD CONSTRAINT "ShiftSwapRequest_requestedToEmployeeId_fkey" FOREIGN KEY ("requestedToEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ShiftSwapRequest" ADD CONSTRAINT "ShiftSwapRequest_approvedByEmployeeId_fkey" FOREIGN KEY ("approvedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "AvailabilityEntry" ADD CONSTRAINT "AvailabilityEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -6094,4 +6313,40 @@ ALTER TABLE "HealthCheck" ADD CONSTRAINT "HealthCheck_locationId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "ServerRegistrationToken" ADD CONSTRAINT "ServerRegistrationToken_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RefundLog" ADD CONSTRAINT "RefundLog_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RefundLog" ADD CONSTRAINT "RefundLog_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RefundLog" ADD CONSTRAINT "RefundLog_paymentId_fkey" FOREIGN KEY ("paymentId") REFERENCES "Payment"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RefundLog" ADD CONSTRAINT "RefundLog_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItemDiscount" ADD CONSTRAINT "OrderItemDiscount_discountRuleId_fkey" FOREIGN KEY ("discountRuleId") REFERENCES "DiscountRule"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RegisteredDevice" ADD CONSTRAINT "RegisteredDevice_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MobileSession" ADD CONSTRAINT "MobileSession_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MobileSession" ADD CONSTRAINT "MobileSession_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "RegisteredDevice"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MobileSession" ADD CONSTRAINT "MobileSession_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

@@ -53,6 +53,8 @@ export interface Modifier {
   allowOnSide?: boolean
   allowExtra?: boolean
   extraPrice?: number
+  liteMultiplier?: number | null   // Per-modifier deduction multiplier for "Lite" (null → use location default 0.5)
+  extraMultiplier?: number | null  // Per-modifier deduction multiplier for "Extra" (null → use location default 2.0)
   isDefault?: boolean
   sortOrder: number
   ingredientId?: string | null

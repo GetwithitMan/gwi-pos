@@ -66,6 +66,8 @@ function formatModifierGroup(group: {
         allowOnSide: m.allowOnSide,
         allowExtra: m.allowExtra,
         extraPrice: Number(m.extraPrice),
+        liteMultiplier: m.liteMultiplier !== null ? Number(m.liteMultiplier) : null,
+        extraMultiplier: m.extraMultiplier !== null ? Number(m.extraMultiplier) : null,
         isDefault: m.isDefault,
         sortOrder: m.sortOrder,
         isLabel: m.isLabel ?? false,

@@ -1063,6 +1063,11 @@ model Modifier {
   allowExtra   Boolean  @default(false)
   extraPrice   Decimal  @default(0) // Price when "extra" is selected
 
+  // Per-modifier deduction multipliers (override location-level defaults)
+  // null = fall back to location MultiplierSettings (0.5 for lite, 2.0 for extra)
+  liteMultiplier  Decimal? // Multiplier applied when "Lite" selected (default 0.5x)
+  extraMultiplier Decimal? // Multiplier applied when "Extra" selected (default 2.0x)
+
   // Legacy JSON field - kept for backwards compatibility
   allowedPreModifiers Json? // Array of allowed prefixes: ["no", "lite", "extra", "side"]
   extraUpsellPrice    Decimal? // Upsell price for "extra"
