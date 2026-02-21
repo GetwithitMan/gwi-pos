@@ -5,6 +5,89 @@
 
 ---
 
+## 2026-02-21 — P3 Feature Sprint (Multi-Agent Team)
+
+**Session theme:** P3 polish sprint — server performance report, online ordering Phase 3+4, cash drawer, reader health dashboard, scheduling shift edit/delete + mobile schedule view, customer history pagination
+
+**Summary:** Continued from P2 completion sprint. Verified P1-01 (Void & Retry), P3 Online Ordering Phases 2-4, Server Performance, Product Mix Trends, Void/Comp, Quick Pick toggle, KDS prep station — all confirmed already built. Then built: Server Performance Report, Online Ordering Phase 3+4 socket hook + availability utility, Cash Drawer Signal, Reader Health Dashboard (with PaymentReaderLog schema). Session 2 continued: Scheduling shift edit/delete API + admin UI + mobile schedule view, Customer order history pagination + date range filter.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `add469a` | docs: update MASTER-TODO — scheduling + customer history resolved |
+| `52438dc` | feat(customers): order history pagination + date range filter |
+| `3b26b0e` | feat(scheduling): shift edit/delete API + mobile schedule view |
+| `3ff3755` | feat(hardware): Reader Health Dashboard — PaymentReaderLog schema + health API + dashboard UI |
+| `f10c9cb` | feat(hardware): Skill 56 — Cash Drawer Signal on cash payment |
+| `573446c` | feat(online-ordering): P3 Online Ordering Phase 3+4 — useMenuSocket hook + isOrderableOnline utility |
+| `1a1f8f5` | feat(reports): Server Performance Report + mark P1-01 verified |
+| `58cb7cc` | docs: P2 sprint session 2 complete — all P2 items resolved |
+
+### Deployments
+- All commits pushed to `main` → Vercel auto-deploys to `barpos.restaurant` / `*.ordercontrolcenter.com`
+
+### Features Delivered
+
+**Server Performance Report** (`1a1f8f5`)
+- `GET /api/reports/server-performance`: groups paid orders by employee, computes totalSales/tips/orderCount/avgCheckSize/tableTurns; sorted by revenue desc
+- `/reports/server-performance` page: date range filter, 4 summary cards, server table with gold #1 badge for top performer, CSV export
+
+**Online Ordering Phase 3+4** (`573446c`)
+- `src/hooks/useMenuSocket.ts`: subscribes to location room via `getSharedSocket()`; routes `menu:item-changed`, `menu:stock-changed`, `menu:structure-changed` to callbacks; stale-closure safe via `callbacksRef`; cleanup releases socket
+- `src/lib/online-availability.ts`: `computeIsOrderableOnline()` (showOnline → isAvailable → stock → availableDays → time windows incl. overnight); `getStockStatus()` (out_of_stock/low_stock/in_stock)
+- `menu/items/[id]/route.ts`: stock change dispatch now uses full `computeIsOrderableOnline()` instead of bare `isAvailable`
+
+**Cash Drawer Signal** (`f10c9cb`)
+- `src/lib/cash-drawer.ts`: `triggerCashDrawer(locationId)` finds receipt printer by `printerRole`, sends ESC/POS DRAWER_KICK byte sequence; always resolves, never throws
+- `POST /api/print/cash-drawer`: withVenue, delegates to `triggerCashDrawer`, always 200
+- `pay/route.ts`: fire-and-forget `triggerCashDrawer` guarded by `hasCash` flag
+
+**Reader Health Dashboard** (`3ff3755`)
+- Schema: `PaymentReaderLog` model (locationId, readerId, responseTime, success, errorCode, tranType). db:push applied.
+- `src/lib/reader-health.ts`: `logReaderTransaction()` — creates log row + fire-and-forget rolling avg/successRate update on `PaymentReader` (last 50 logs); `getReaderHealthSummary()` — returns metrics + 10 recent errors
+- `GET /api/hardware/readers/health`: all-readers summary or single-reader detail; withVenue
+- `/settings/hardware/health` page: per-reader cards, color-coded response time + success rate, online/offline badge, 30s auto-refresh
+- `DatacapClient.withPadReset`: timing wrapper tracks startTime/endTime, captures tranType before padReset clears it, logs every transaction fire-and-forget
+
+**Scheduling — Shift Edit/Delete + Mobile View** (`3b26b0e`)
+- `PUT/DELETE /api/schedules/[id]/shifts/[shiftId]`: update shift fields (date, times, role, notes, employee) or soft-delete; ownership validated
+- Admin scheduling page: pencil/× hover buttons on draft shift cards; `EditShiftModal` for inline editing; `refreshSelectedSchedule()` helper used by add/edit/delete
+- `GET /api/mobile/schedule`: returns upcoming published shifts (today + N weeks) for an employee
+- `/mobile/schedule` page: auth-guarded, week-grouped shift cards (This Week / Next Week / Week of…), 12h time format, status color badges, role icon, notes; dark theme matching mobile style
+- Mobile tabs header: "Schedule" nav link with calendar icon
+
+**Customer Order History Pagination** (`52438dc`)
+- `GET /api/customers/[id]`: accepts `page`, `limit` (max 50), `startDate`, `endDate`; uses `Prisma.OrderWhereInput` to avoid readonly array TS errors; returns `ordersPagination: { page, limit, total, totalPages }`
+- Customer detail modal: date range inputs (start/end) + Apply/Clear buttons + Prev/Next pagination controls in "Recent Orders" section
+
+### Bug Fixes
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| `as const` on Prisma `status: { in: [...] }` caused `readonly` type error | Typed `ordersWhere` as `Prisma.OrderWhereInput`, removed `as const`, mutated `createdAt` conditionally | `52438dc` |
+| `Schedule.name` field doesn't exist — mobile schedule API tried to select it | Changed to `weekStart`/`weekEnd` select, display uses `getWeekLabel()` helper | `3b26b0e` |
+
+### Verified Complete (No Build Needed)
+
+| Item | Finding |
+|------|---------|
+| P1-01 Void & Retry | All 5 layers already implemented |
+| Online Ordering Phase 2 | All active menu CRUD routes dispatch socket events |
+| Product Mix Trends | `/reports/product-mix` + API already built |
+| Void/Comp Report | `isComp` correctly derived at runtime from `reason` field |
+| Quick Pick toggle | Lives in gear menu, calls `updateLayoutSetting()` |
+| KDS prep station assignment | `KDSScreenStation` junction model, admin UI, fully DB-driven |
+| Customer Favorites | Auto-computed top-5 from order history — complete as-is |
+
+### Known Issues / Blockers
+- GL-06: Pre-launch checklist at 8% — requires manual hardware testing
+- Online Ordering Phase 5 (customer-facing `/order` page) — medium effort (~2-3 weeks), blocked on payment processor decision
+- Scheduling shift request/swap, clock-in/out comparison, labor vs actual report — still pending
+- Customer Notes: readable via yellow alert box in detail modal; edit requires opening the full Edit modal (2-step UX, no inline edit)
+
+---
+
 ## 2026-02-20 — P2 Feature Sprint Session 2 (Multi-Agent Team)
 
 **Session theme:** P2 completion sprint — item discounts, employee discounts, bottle service floor plan + reservations, mobile auth, print routing, mobile tab sync, pay-at-table sync
