@@ -20,7 +20,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, getDbForVenue } from '@/lib/db'
 import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 
@@ -38,6 +38,7 @@ interface CheckoutItem {
 
 interface CheckoutBody {
   locationId: string
+  slug?: string
   token: string
   cardBrand?: string
   cardLast4?: string
@@ -63,7 +64,11 @@ export async function POST(request: NextRequest) {
 
   // ── 1. Validate required fields ────────────────────────────────────────────
 
-  const { locationId, token, items, customerName, customerEmail } = body
+  const { locationId, slug, token, items, customerName, customerEmail } = body
+
+  // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
+  // Falls back to db proxy (NUC local mode).
+  const venueDb = slug ? getDbForVenue(slug) : db
 
   if (!locationId) {
     return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
@@ -85,7 +90,7 @@ export async function POST(request: NextRequest) {
     // ── 2. Fetch menu items server-side to compute authoritative total ─────────
 
     const menuItemIds = items.map(i => i.menuItemId)
-    const menuItems = await db.menuItem.findMany({
+    const menuItems = await venueDb.menuItem.findMany({
       where: {
         id: { in: menuItemIds },
         locationId,
@@ -130,7 +135,7 @@ export async function POST(request: NextRequest) {
     // Order.employeeId is required. Find a system/online employee, or fall
     // back to the first active employee at this location.
 
-    const systemEmployee = await db.employee.findFirst({
+    const systemEmployee = await venueDb.employee.findFirst({
       where: {
         locationId,
         isActive: true,
@@ -158,7 +163,7 @@ export async function POST(request: NextRequest) {
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const { orderNumber } = await db.$transaction(async (tx) => {
+    const { orderNumber } = await venueDb.$transaction(async (tx) => {
       const lastOrder = await tx.order.findFirst({
         where: { locationId, createdAt: { gte: today, lt: tomorrow } },
         orderBy: { orderNumber: 'desc' },
@@ -169,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     // ── 5. Compute business day ────────────────────────────────────────────────
 
-    const locationRec = await db.location.findFirst({
+    const locationRec = await venueDb.location.findFirst({
       where: { id: locationId },
       select: { settings: true },
     })
@@ -183,7 +188,7 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString()
     const seatTimestamps: Record<string, string> = { '1': now }
 
-    const order = await db.order.create({
+    const order = await venueDb.order.create({
       data: {
         locationId,
         employeeId,
@@ -249,7 +254,7 @@ export async function POST(request: NextRequest) {
       })
     } catch (payErr) {
       // Payment error — delete the order (staff never saw it)
-      await db.order.delete({ where: { id: order.id } }).catch(() => {})
+      await venueDb.order.delete({ where: { id: order.id } }).catch(() => {})
       console.error('[checkout] PayAPI error:', payErr)
       return NextResponse.json(
         { error: 'Payment processing failed. Please try again.' },
@@ -261,7 +266,7 @@ export async function POST(request: NextRequest) {
 
     if (payApiResult.status !== 'Approved') {
       // Declined — delete the order, return 402
-      await db.order.delete({ where: { id: order.id } }).catch(() => {})
+      await venueDb.order.delete({ where: { id: order.id } }).catch(() => {})
       return NextResponse.json(
         {
           error: 'Payment declined. Please try a different card.',
@@ -273,14 +278,14 @@ export async function POST(request: NextRequest) {
 
     // ── 9. Payment approved — update order status + create Payment record ──────
 
-    await db.$transaction([
+    await venueDb.$transaction([
       // Mark order as 'received' (online-specific status: paid but not yet served)
-      db.order.update({
+      venueDb.order.update({
         where: { id: order.id },
         data: { status: 'received' },
       }),
       // Record payment
-      db.payment.create({
+      venueDb.payment.create({
         data: {
           locationId,
           orderId: order.id,

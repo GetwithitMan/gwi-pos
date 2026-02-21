@@ -20,7 +20,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDbForVenue } from '@/lib/db'
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,13 +34,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Look up location by slug (soft-delete safe)
-    const location = await db.location.findFirst({
-      where: {
-        slug,
-        // Location model has no deletedAt — use isActive as the live-ness check
-        isActive: true,
-      },
+    // Route directly to the venue's database — the slug IS the database identifier.
+    // Public routes don't carry x-venue-slug headers (middleware passes them through
+    // unmodified), so we can't rely on the db proxy's header-based routing here.
+    let venueDb
+    try {
+      venueDb = getDbForVenue(slug)
+    } catch {
+      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+    }
+
+    const location = await venueDb.location.findFirst({
+      where: { isActive: true },
       select: {
         id: true,
         name: true,

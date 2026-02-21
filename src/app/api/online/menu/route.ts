@@ -16,13 +16,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, getDbForVenue } from '@/lib/db'
 import { computeIsOrderableOnline, getStockStatus } from '@/lib/online-availability'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl
     const locationId = searchParams.get('locationId')
+    const slug = searchParams.get('slug')
 
     if (!locationId) {
       return NextResponse.json(
@@ -31,8 +32,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
+    // Falls back to db proxy (NUC local mode where DATABASE_URL already points
+    // to the venue database).
+    const venueDb = slug ? getDbForVenue(slug) : db
+
     // Fetch all active categories that are shown online for this location
-    const categories = await db.category.findMany({
+    const categories = await venueDb.category.findMany({
       where: {
         locationId,
         isActive: true,

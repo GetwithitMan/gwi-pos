@@ -265,11 +265,12 @@ function ItemModal({ item, onClose, onAdd }: ItemModalProps) {
 interface OrderingFlowProps {
   locationId: string
   locationName: string
+  slug: string
   customerEmail: string
   setCustomerEmail: (v: string) => void
 }
 
-function OrderingFlow({ locationId, locationName, customerEmail, setCustomerEmail }: OrderingFlowProps) {
+function OrderingFlow({ locationId, locationName, slug, customerEmail, setCustomerEmail }: OrderingFlowProps) {
   // Menu
   const [categories, setCategories] = useState<MenuCategory[]>([])
   const [menuLoading, setMenuLoading] = useState(true)
@@ -299,7 +300,7 @@ function OrderingFlow({ locationId, locationName, customerEmail, setCustomerEmai
   // ── Load menu ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    fetch(`/api/online/menu?locationId=${encodeURIComponent(locationId)}`)
+    fetch(`/api/online/menu?locationId=${encodeURIComponent(locationId)}&slug=${encodeURIComponent(slug)}`)
       .then(res => res.json())
       .then(json => {
         if (json.error) throw new Error(json.error)
@@ -378,6 +379,7 @@ function OrderingFlow({ locationId, locationName, customerEmail, setCustomerEmai
     try {
       const payload = {
         locationId,
+        slug,
         token: resp.Token,
         cardBrand: resp.Brand,
         cardLast4: resp.Last4,
@@ -955,6 +957,7 @@ export default function OnlineOrderPage({ params }: PageProps) {
     <OrderingFlow
       locationId={resolveState.locationId}
       locationName={resolveState.locationName}
+      slug={slug}
       customerEmail={customerEmail}
       setCustomerEmail={setCustomerEmail}
     />
