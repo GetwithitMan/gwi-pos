@@ -281,9 +281,9 @@ These 8 items will break the system at a real venue.
 
 ### MISC SMALL THINGS
 - ~~Quick Pick Numbers toggle in gear menu (T-039)~~ ✅ VERIFIED COMPLETE — toggle lives in gear menu (`UnifiedPOSHeader.tsx` line 290-293), calls `onToggleQuickBar` → `updateLayoutSetting('quickPickEnabled', ...)`. Fully functional. Task board note was outdated.
-- Integration settings pages (SMS, Slack, Email) — currently placeholders
-- ESC/POS custom logo per printer
-- Printer round-robin load distribution (Skill 103)
+- ~~Integration settings pages (SMS, Slack, Email)~~ ✅ VERIFIED COMPLETE — All three settings pages exist and are fully functional (`/settings/integrations/sms`, `/slack`, `/email`). `GET /api/integrations/status` + `POST /api/integrations/test` routes wired. `src/lib/twilio.ts` (SMS service, void approval flow), `src/lib/email-service.ts` (Resend API), `src/lib/alert-service.ts` (rules-based routing + throttling) all fully implemented. No per-venue DB config layer — env vars per NUC is sufficient. No action needed.
+- ESC/POS custom logo per printer — DEFERRED: requires image processing library (sharp/jimp), GS v 0 raster bitmap ESC/POS command, file storage for logo data, and real thermal printer for testing. Medium-Large scope. Revisit when venue specifically requests it.
+- Printer round-robin load distribution (Skill 103) — DEFERRED: current first-match routing works correctly; most venues have 1 printer per role. Option A (DB counter: add `roundRobinIndex` to Printer, update after each send) is Small scope when needed. Wait for venue demand signal.
 - ~~KDS prep station assignment per terminal UI~~ ✅ VERIFIED COMPLETE — `KDSScreenStation` junction model, multi-select admin UI in `/settings/hardware/kds-screens`, socket `join_station` builds tags from `PrepStation.stationType`, `/api/kds` filters orders by stationId. Fully DB-driven.
 
 ---
