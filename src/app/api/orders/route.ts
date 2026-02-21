@@ -490,6 +490,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
     const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'))
 
+    // T-078 admin filters
+    const dateFrom = searchParams.get('dateFrom')
+    const dateTo = searchParams.get('dateTo')
+    const balanceFilter = searchParams.get('balanceFilter') // 'zero' | 'nonzero' | omit
+    const includeRolledOver = searchParams.get('includeRolledOver') === 'true'
+
     if (!locationId) {
       return NextResponse.json(
         { error: 'Location ID is required' },
@@ -497,11 +503,34 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
+    // Build date range filter on createdAt
+    const dateRangeFilter: Record<string, unknown> = {}
+    if (dateFrom) {
+      dateRangeFilter.gte = new Date(dateFrom)
+    }
+    if (dateTo) {
+      // Include the full dateTo day by going to end of that day
+      const end = new Date(dateTo)
+      end.setHours(23, 59, 59, 999)
+      dateRangeFilter.lte = end
+    }
+
+    // Build balance (total) filter
+    let totalFilter: Record<string, unknown> | undefined
+    if (balanceFilter === 'zero') {
+      totalFilter = { lte: 0 }
+    } else if (balanceFilter === 'nonzero') {
+      totalFilter = { gt: 0 }
+    }
+
     const orders = await db.order.findMany({
       where: {
         locationId,
         ...(status ? { status } : {}),
         ...(employeeId ? { employeeId } : {}),
+        ...(Object.keys(dateRangeFilter).length > 0 ? { createdAt: dateRangeFilter } : {}),
+        ...(totalFilter ? { total: totalFilter } : {}),
+        ...(includeRolledOver ? { rolledOverAt: { not: null } } : {}),
       },
       include: {
         employee: {

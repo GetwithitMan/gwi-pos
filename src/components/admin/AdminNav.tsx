@@ -312,6 +312,7 @@ const navSections: NavSection[] = [
       { name: 'My Commissions', href: '/reports/commission', icon: Icons.money, permission: PERMISSIONS.REPORTS_COMMISSION },
     ],
     adminItems: [
+      { name: 'Open Orders', href: '/orders/manager', icon: Icons.history },
       { name: 'Reports Hub', href: '/reports', icon: Icons.reports },
       { name: 'Daily Summary', href: '/reports/daily', icon: Icons.calendar },
       { name: 'Sales', href: '/reports/sales', icon: Icons.money },

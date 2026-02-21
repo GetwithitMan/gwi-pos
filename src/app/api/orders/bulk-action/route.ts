@@ -10,7 +10,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body = await request.json()
     const { orderIds, action, employeeId, toEmployeeId, reason } = body as {
       orderIds: string[]
-      action: 'void' | 'transfer'
+      action: 'void' | 'transfer' | 'cancel'
       employeeId: string
       toEmployeeId?: string
       reason?: string
@@ -88,6 +88,77 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Note: We intentionally don't call Datacap voidSale here because
       // rolled-over preauths have likely already expired. If they haven't,
       // the hold will auto-release after the processor's hold period (typically 7 days).
+
+    } else if (action === 'cancel') {
+      // Cancel action: soft-delete draft/open/split orders with no preAuth
+      // First check for preAuth — those must be voided, not cancelled
+      const ordersWithPreAuth = await db.order.findMany({
+        where: {
+          id: { in: orderIds },
+          preAuthId: { not: null },
+          deletedAt: null,
+        },
+        select: { id: true, orderNumber: true },
+      })
+      if (ordersWithPreAuth.length > 0) {
+        const nums = ordersWithPreAuth.map(o => `#${o.orderNumber}`).join(', ')
+        return NextResponse.json(
+          { error: `Orders ${nums} have a pre-authorization and must be voided, not cancelled` },
+          { status: 422 }
+        )
+      }
+
+      await db.$transaction(async (tx) => {
+        // Fetch the orders to get their tableIds for cleanup
+        const targetOrders = await tx.order.findMany({
+          where: {
+            id: { in: orderIds },
+            status: { in: ['draft', 'open', 'split'] },
+            deletedAt: null,
+          },
+          select: { id: true, tableId: true },
+        })
+        const tableIds = targetOrders.map(o => o.tableId).filter((t): t is string => !!t)
+
+        // Soft-delete / cancel
+        const result = await tx.order.updateMany({
+          where: {
+            id: { in: orderIds },
+            status: { in: ['draft', 'open', 'split'] },
+            deletedAt: null,
+          },
+          data: {
+            status: 'cancelled',
+            closedAt: now,
+            deletedAt: now,
+          },
+        })
+        processedCount = result.count
+
+        // Reset associated tables to available
+        if (tableIds.length > 0) {
+          await tx.table.updateMany({
+            where: { id: { in: tableIds } },
+            data: { status: 'available' },
+          })
+        }
+
+        // Audit log
+        await tx.auditLog.create({
+          data: {
+            locationId,
+            employeeId,
+            action: 'bulk_cancel_orders',
+            entityType: 'order',
+            entityId: orderIds.join(','),
+            details: {
+              orderIds,
+              count: processedCount,
+              reason: reason || 'Bulk cancel of draft/open orders',
+            },
+          },
+        })
+      })
 
     } else if (action === 'transfer') {
       if (!toEmployeeId) {
