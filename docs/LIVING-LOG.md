@@ -5,6 +5,45 @@
 
 ---
 
+## 2026-02-20 — Mobile Auth Security Fix (Session 13)
+
+**Session theme:** T-025 — remove backwards-compat ?employeeId query param bypass from mobile bartender tabs
+
+**Summary:** The `?employeeId` query param auth bypass was the last security hole in the mobile device auth flow. Both mobile/tabs/page.tsx and mobile/tabs/[id]/page.tsx now unconditionally call `checkAuth()` on mount, requiring a valid httpOnly session cookie. RegisteredDevice + MobileSession infrastructure already in place.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `d1868b3` | fix(security): T-025 — remove ?employeeId auth bypass from mobile tabs |
+
+### Features Delivered
+
+**T-025** — `searchParams.get('employeeId')` removed from mobile/tabs/page.tsx and mobile/tabs/[id]/page.tsx. `checkAuth()` always called on mount. Invalid/expired session → redirect to `/mobile/login`. 2 files, ~18 lines removed.
+
+### Resolved Task Board Items
+T-025
+
+---
+
+## 2026-02-20 — T-001/T-050/T-017 Cleanup Sprint (Session 12)
+
+**Session theme:** Seed data cleanup, CSS optimization, inventory verification, inventory engine deferral
+
+**Summary:** T-001 links all Ranch ingredient variants to shared InventoryItem in seed.ts. T-050 adds `optimize: true` to postcss for dev/prod CSS parity. T-017 verified code-complete (Skill 291 already fixed root causes). T-011 deferred post-MVP (10-17d data migration, HIGH risk).
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `12da703` | fix(css): T-050 — optimize: true in @tailwindcss/postcss |
+| `4870737` | fix(seed): T-001 — link Ranch/RanchDressing/RanchDrizzle to inv-ranch-dressing-001 |
+
+### Resolved Task Board Items
+T-001, T-050, T-017 (code-complete), T-014 (verified already done), T-011 (deferred)
+
+---
+
 ## 2026-02-20 — Inventory Engine Sprint: T-002/T-004/T-014 (Session 11)
 
 **Session theme:** Inventory deduction hardening — prep item explosion, unit mismatch warnings, bulk move verified

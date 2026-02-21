@@ -30,7 +30,7 @@
 
 | ID | Task | Assigned To | Created By | Date | Priority | Notes |
 |----|------|-------------|------------|------|----------|-------|
-| T-003 | Modifier-level variance drill-down in AvT reports — show which modifiers contributed to variance | PM: Reports | PM: Inventory | 2026-02-06 | P3 | Requires AvT report UI work |
+| T-003 | Modifier-level variance drill-down in AvT reports — show which modifiers contributed to variance | PM: Reports | PM: Inventory | 2026-02-06 | P3 | DEFER: needs schema change (InventoryItemTransaction.modifierId), theoretical-usage refactor, new UI. 3-4 days. Build after inventory engine stabilizes. |
 | T-005 | Modifier recipe support — allow modifiers to have multi-ingredient recipes (not just single ingredient link) | PM: Menu | PM: Inventory | 2026-02-06 | P3 | R365 "concatenation" model. Big feature. |
 | T-006 | Pour size integration with ingredient deduction path — apply pour size multiplier to Path B deductions | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Currently pour sizes only affect pricing, not ingredient qty |
 | T-007 | Conditional deduction rules — time-of-day or menu-context-based ingredient quantities | PM: Inventory | PM: Inventory | 2026-02-06 | P3 | e.g., happy hour smaller portions |
@@ -39,7 +39,6 @@
 | T-010 | Test "No Ranch" on item with base Ranch — verify base recipe Ranch NOT deducted | PM: Inventory | PM: Inventory | 2026-02-06 | P1 | Part of Skill 215 verification |
 | T-011 | Unify Liquor + Food Inventory Engines — migrate liquor cocktail recipes into unified MenuItemRecipe structure | PM: Inventory | PM: Inventory | 2026-02-06 | P3 | DEFERRED post-MVP. Both engines work. Migration: 10-17 days, HIGH risk (500+ bottle InventoryItem backfill, pour-count representation decision, transaction history). Unify when unified COGS reporting becomes a business req. |
 | T-024 | CFD terminal pairing — admin pairs CFD device to specific POS terminal. Similar to KDS pairing flow. | PM: Hardware | PM: Payments | 2026-02-06 | P3 | Needed before CFD Socket.io events work in multi-terminal setups. |
-| T-025 | Mobile device authentication — PIN-based session for bartender phone access. Uses planned RegisteredDevice/DeviceSession models from CLAUDE.md. | PM: Employees | PM: Payments | 2026-02-06 | P3 | /mobile/tabs currently uses ?employeeId query param. Needs proper auth. |
 | T-026 | Card token persistence verification — Run test transactions with real Datacap hardware to verify processor returns same token for same card on repeat uses. Critical blocker for Skill 228. | PM: Payments | PM: Payments | 2026-02-06 | P1 | Must complete before any Skill 228 work. See docs/skills/228-CARD-TOKEN-LOYALTY.md Phase 1. Contact processor if tokens don't persist. |
 | T-027 | Card token loyalty schema — Add Customer and CardProfile models, create migrations, build API routes for customer CRUD and card linking. Skill 228 Phase 2. | PM: Payments | PM: Payments | 2026-02-06 | P2 | Blocked by T-026. Creates /api/customers routes and token lookup endpoints. |
 | T-028 | Loyalty enrollment flow — Build first-visit enrollment modal (phone capture), integrate token recognition into PaymentModal, create LinkCardModal for multi-card linking. Skill 228 Phase 3-5. | PM: Payments | PM: Payments | 2026-02-06 | P2 | Blocked by T-027. Components: LoyaltyEnrollmentModal, LinkCardModal, auto-recognition logic. |
@@ -60,6 +59,7 @@
 
 | ID | Task | Completed By | Date | Notes |
 |----|------|-------------|------|-------|
+| T-025 | Mobile device authentication — remove ?employeeId bypass | PM: Employees | 2026-02-20 | Removed searchParams.get('employeeId') bypass from mobile/tabs/page.tsx and mobile/tabs/[id]/page.tsx. checkAuth() now runs unconditionally on mount. Session cookie required. Commit `d1868b3` |
 | T-016 | POS front-end ordering UI lift | PM: Menu | 2026-02-20 | Glassmorphism: FloorPlanMenuItem blur/shadow, OrderPanel backdrop-blur + seat headers, CategoriesBar blur+border, ModifierGroupSection required/optional badges, ModifierModal Special Instructions. Commit `ac292bf` |
 | T-031 | Remove production console logging from Floor Plan hot paths | PM: Floor Plan | 2026-02-20 | Removed console.error from 5 hot-path handlers → toast.error(). Commit `423febb` |
 | T-032 | Replace Math.random() with deterministic table placement | PM: Floor Plan | 2026-02-20 | ALREADY DONE — deterministic grid placement was already in place. Verified. |
