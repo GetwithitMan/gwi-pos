@@ -801,6 +801,39 @@ export function PaymentModal({
           {/* Step: Select Payment Method */}
           {step === 'method' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+              {/* Payment Progress — shown when one or more partial payments have been collected */}
+              {pendingPayments.length > 0 && (
+                <div style={{
+                  padding: 12,
+                  borderRadius: 10,
+                  background: 'rgba(15, 23, 42, 0.9)',
+                  border: '1px solid rgba(99, 102, 241, 0.35)',
+                  marginBottom: 4,
+                }}>
+                  <div style={{ fontSize: 11, color: '#818cf8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, marginBottom: 8 }}>
+                    Payment Progress
+                  </div>
+                  {pendingPayments.map((p, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#94a3b8', marginBottom: 4 }}>
+                      <span style={{ color: '#a5b4fc' }}>
+                        {'\u2713'} {PAYMENT_METHOD_LABELS[p.method] ?? p.method}
+                        {p.cardLast4 ? ` \u2022\u2022\u2022${p.cardLast4}` : ''}
+                      </span>
+                      <span style={{ fontFamily: 'ui-monospace, monospace', color: '#c7d2fe' }}>
+                        {formatCurrency(p.amount + p.tipAmount)}
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: '1px solid rgba(99, 102, 241, 0.25)', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 14 }}>
+                    <span style={{ color: '#f59e0b' }}>Remaining</span>
+                    <span style={{ fontFamily: 'ui-monospace, monospace', color: '#f59e0b' }}>
+                      {formatCurrency(remainingBeforeTip)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <h3 style={sectionLabelStyle}>Select Payment Method</h3>
 
               {/* Pre-authed tab cards — charge existing card */}

@@ -152,6 +152,8 @@ export function DatacapPaymentProcessor({
       setIsVoiding(false)
       setPartialResult(null)
       cancelTransaction()
+      // Return to payment method selection so staff can retry with another method
+      onCancel()
     }
   }
 
