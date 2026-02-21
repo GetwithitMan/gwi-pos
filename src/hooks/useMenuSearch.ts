@@ -41,6 +41,8 @@ export function useMenuSearch({
   const [apiResults, setApiResults] = useState<SearchResults | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [skuResults, setSkuResults] = useState<SearchResults | null>(null)
+  const [isSkuMode, setIsSkuMode] = useState(false)
 
   const debouncedQuery = useDebounce(query, debounceMs)
 
@@ -127,15 +129,45 @@ export function useMenuSearch({
   const clearSearch = useCallback(() => {
     setQuery('')
     setApiResults(null)
+    setSkuResults(null)
+    setIsSkuMode(false)
     setError(null)
   }, [])
+
+  // SKU lookup — exact match via barcode scanner or direct call.
+  // Sets isLoading, calls /api/menu/search?sku=..., updates results.
+  // Returns the first matching item or null.
+  const lookupBySku = useCallback(async (sku: string): Promise<MenuItem | null> => {
+    if (!locationId) return null
+    setIsSearching(true)
+    setError(null)
+    setIsSkuMode(true)
+    try {
+      const res = await fetch(
+        `/api/menu/search?locationId=${encodeURIComponent(locationId)}&sku=${encodeURIComponent(sku)}`
+      )
+      if (!res.ok) throw new Error('SKU lookup failed')
+      const raw = await res.json()
+      const data: SearchResults = raw.data ?? raw
+      setSkuResults(data)
+      setIsSearching(false)
+      return data.directMatches.length > 0 ? data.directMatches[0] : null
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'SKU lookup failed'
+      setError(message)
+      setIsSearching(false)
+      setSkuResults({ directMatches: [], ingredientMatches: [], totalMatches: 0 })
+      return null
+    }
+  }, [locationId])
 
   return {
     query,
     setQuery,
     isSearching,
-    results,
+    results: isSkuMode ? skuResults : results,
     error,
-    clearSearch
+    clearSearch,
+    lookupBySku,
   }
 }

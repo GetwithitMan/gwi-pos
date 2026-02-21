@@ -26,6 +26,11 @@ interface SearchResults {
   totalMatches: number
 }
 
+// Scanner heuristics (keyboard-wedge barcode scanners send chars very rapidly then Enter)
+const SCANNER_KEY_INTERVAL_MS = 100
+const SCANNER_RESET_GAP_MS = 500
+const SCANNER_MIN_LENGTH = 3
+
 export interface UnifiedPOSHeaderProps {
   employeeName: string
   employeeRole?: string
@@ -60,6 +65,7 @@ export interface UnifiedPOSHeaderProps {
   isSearching: boolean
   onSearchSelect: (item: SearchMenuItem) => void
   cardPriceMultiplier?: number
+  onScanComplete?: (sku: string) => void
 }
 
 export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
@@ -96,6 +102,7 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   isSearching,
   onSearchSelect,
   cardPriceMultiplier,
+  onScanComplete,
 }: UnifiedPOSHeaderProps) {
   const [showEmployeeMenu, setShowEmployeeMenu] = useState(false)
   const [showGearMenu, setShowGearMenu] = useState(false)
@@ -103,6 +110,8 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   const gearRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchWrapRef = useRef<HTMLDivElement>(null)
+  const scanBuffer = useRef('')
+  const lastKeyTime = useRef(0)
 
   // Click-outside to close dropdowns
   useEffect(() => {
@@ -131,6 +140,53 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [searchQuery, onSearchClear])
+
+  // Keyboard-wedge barcode scanner detection.
+  // Scanners send chars at <100ms intervals then fire Enter.
+  // When Enter fires with buffer.length >= 3 and search input is NOT focused → fire onScanComplete.
+  useEffect(() => {
+    if (!onScanComplete) return
+
+    const handler = (e: KeyboardEvent) => {
+      const now = Date.now()
+      const gap = now - lastKeyTime.current
+
+      // Long gap since last keypress — not a scanner burst, reset buffer
+      if (gap > SCANNER_RESET_GAP_MS && lastKeyTime.current !== 0) {
+        scanBuffer.current = ''
+      }
+
+      lastKeyTime.current = now
+
+      if (e.key === 'Enter') {
+        const inputFocused = document.activeElement === searchInputRef.current
+        if (!inputFocused && scanBuffer.current.length >= SCANNER_MIN_LENGTH) {
+          e.preventDefault()
+          const sku = scanBuffer.current
+          scanBuffer.current = ''
+          onScanComplete(sku)
+        } else {
+          scanBuffer.current = ''
+        }
+        return
+      }
+
+      // Accumulate printable single-char keys that arrive in rapid succession
+      if (e.key.length === 1) {
+        const inputFocused = document.activeElement === searchInputRef.current
+        if (!inputFocused && gap < SCANNER_KEY_INTERVAL_MS) {
+          scanBuffer.current += e.key
+        } else if (!inputFocused) {
+          // Human-speed keystroke outside the input — reset buffer
+          scanBuffer.current = e.key
+        }
+        // If input is focused, let normal typing work (don't accumulate in scan buffer)
+      }
+    }
+
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onScanComplete])
 
   const defaultOrderTypes: Pick<OrderTypeConfig, 'slug' | 'name' | 'color' | 'isActive'>[] = [
     { slug: 'dine_in', name: 'Dine In', color: '#6366f1', isActive: true },

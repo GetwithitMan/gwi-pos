@@ -2,6 +2,11 @@
 
 import { useRef, useEffect } from 'react'
 
+// Scanner heuristics
+const SCANNER_KEY_INTERVAL_MS = 100  // keys arriving faster than this are scanner input
+const SCANNER_RESET_GAP_MS = 500     // gap longer than this resets the buffer
+const SCANNER_MIN_LENGTH = 3         // minimum chars to treat as a valid SKU scan
+
 interface MenuSearchInputProps {
   value: string
   onChange: (value: string) => void
@@ -10,6 +15,7 @@ interface MenuSearchInputProps {
   isSearching?: boolean
   className?: string
   autoFocus?: boolean
+  onScanComplete?: (sku: string) => void
 }
 
 export function MenuSearchInput({
@@ -19,15 +25,68 @@ export function MenuSearchInput({
   placeholder = 'Search menu...',
   isSearching = false,
   className = '',
-  autoFocus = false
+  autoFocus = false,
+  onScanComplete,
 }: MenuSearchInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const scanBuffer = useRef('')
+  const lastKeyTime = useRef(0)
 
   useEffect(() => {
     if (autoFocus && inputRef.current) {
       inputRef.current.focus()
     }
   }, [autoFocus])
+
+  // Global keydown listener for keyboard-wedge barcode scanners.
+  // Scanners send digits rapidly (<100ms apart) then fire Enter.
+  // When Enter fires with a buffer of 3+ chars and the input is NOT focused,
+  // treat it as a scan and fire onScanComplete.
+  useEffect(() => {
+    if (!onScanComplete) return
+
+    const handler = (e: KeyboardEvent) => {
+      const now = Date.now()
+      const gap = now - lastKeyTime.current
+
+      // Long gap since last key — not a scanner burst, reset buffer
+      if (gap > SCANNER_RESET_GAP_MS && lastKeyTime.current !== 0) {
+        scanBuffer.current = ''
+      }
+
+      lastKeyTime.current = now
+
+      // If Enter is pressed
+      if (e.key === 'Enter') {
+        const inputFocused = document.activeElement === inputRef.current
+        if (!inputFocused && scanBuffer.current.length >= SCANNER_MIN_LENGTH) {
+          // Fast-burst chars accumulated — treat as scan
+          e.preventDefault()
+          const sku = scanBuffer.current
+          scanBuffer.current = ''
+          onScanComplete(sku)
+        } else {
+          // Input is focused or buffer too short — let Enter propagate normally
+          scanBuffer.current = ''
+        }
+        return
+      }
+
+      // Only accumulate printable single chars that arrived quickly (scanner burst)
+      if (e.key.length === 1 && gap < SCANNER_KEY_INTERVAL_MS) {
+        const inputFocused = document.activeElement === inputRef.current
+        if (!inputFocused) {
+          scanBuffer.current += e.key
+        }
+      } else if (e.key.length === 1) {
+        // Slow keystroke (human typing) — reset buffer
+        scanBuffer.current = ''
+      }
+    }
+
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [onScanComplete])
 
   return (
     <div className={`relative flex items-center ${className}`}>

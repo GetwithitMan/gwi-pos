@@ -11,6 +11,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const query = searchParams.get('q')
+    const sku = searchParams.get('sku')
     const limitParam = searchParams.get('limit')
     const limit = limitParam ? parseInt(limitParam, 10) : 30
 
@@ -20,6 +21,34 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { error: 'Location ID is required' },
         { status: 400 }
       )
+    }
+
+    // SKU lookup — exact match, bypasses name/spirit/ingredient search
+    if (sku) {
+      const skuItem = await db.menuItem.findFirst({
+        where: { locationId, sku: sku.trim(), deletedAt: null, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          categoryId: true,
+          isAvailable: true,
+        }
+      })
+      const skuResponse = NextResponse.json({ data: {
+        directMatches: skuItem ? [{
+          id: skuItem.id,
+          name: skuItem.name,
+          price: Number(skuItem.price),
+          categoryId: skuItem.categoryId,
+          isAvailable: skuItem.isAvailable ?? true,
+        }] : [],
+        ingredientMatches: [],
+        totalMatches: skuItem ? 1 : 0
+      } })
+      skuResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+      skuResponse.headers.set('Pragma', 'no-cache')
+      return skuResponse
     }
 
     // Require minimum 2 characters for search

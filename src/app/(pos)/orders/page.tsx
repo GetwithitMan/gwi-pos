@@ -2012,6 +2012,17 @@ export default function OrdersPage() {
     menuSearch.clearSearch()
   }, [menuItems, menuSearch])
 
+  // Handle barcode scanner scan — lookup by SKU and immediately add to order
+  const handleScanComplete = useCallback(async (sku: string) => {
+    const result = await menuSearch.lookupBySku(sku)
+    if (result) {
+      // Reuse handleSearchSelect to add the item the same way a manual selection does
+      handleSearchSelect(result)
+    } else {
+      toast.error(`Item not found: ${sku}`)
+    }
+  }, [menuSearch, handleSearchSelect])
+
   // Handle opening entertainment session start modal
   // Shared handler for opening modifier modal from FloorPlanHome/BartenderView inline ordering
   // Called by useOrderingEngine via onOpenModifiers(item, onComplete, existingModifiers, existingIngredientMods)
@@ -2948,6 +2959,7 @@ export default function OrdersPage() {
           searchResults={menuSearch.results || { directMatches: [], ingredientMatches: [], totalMatches: 0 }}
           isSearching={menuSearch.isSearching}
           onSearchSelect={handleSearchSelect}
+          onScanComplete={handleScanComplete}
           cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
         />
         {viewMode === 'floor-plan' && (
