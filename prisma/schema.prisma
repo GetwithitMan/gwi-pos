@@ -839,9 +839,10 @@ model MenuItem {
   imageUrl    String?
 
   // Pricing
-  price   Decimal          // Cash price (or base price if no dual pricing)
-  priceCC Decimal?         // Credit card price (for dual pricing)
-  cost    Decimal?         // For profit tracking
+  price       Decimal          // Cash price (or base price if no dual pricing)
+  priceCC     Decimal?         // Credit card price (for dual pricing)
+  cost        Decimal?         // For profit tracking
+  onlinePrice Decimal?         // Online ordering price override (null = use POS price)
 
   // Tax
   taxRate     Decimal? // Override location default

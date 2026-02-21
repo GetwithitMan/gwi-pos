@@ -77,11 +77,28 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // ── Extract online ordering settings with defaults ──────────────────────
+    const prepTime = (onlineOrderingSettings?.prepTime as number) ?? 20
+    const hours = (onlineOrderingSettings?.hours as unknown[]) ?? [0, 1, 2, 3, 4, 5, 6].map((day) => ({
+      day,
+      open: '11:00',
+      close: '22:00',
+      closed: false,
+    }))
+    const tipSuggestions = (onlineOrderingSettings?.tipSuggestions as number[]) ?? [15, 18, 20]
+    const defaultTip = (onlineOrderingSettings?.defaultTip as number) ?? 18
+    const orderTypes = (onlineOrderingSettings?.orderTypes as string[]) ?? ['takeout']
+
     // ── Success ─────────────────────────────────────────────────────────────
     return NextResponse.json({
       locationId: location.id,
       name: location.name,
       slug: location.slug,
+      prepTime,
+      hours,
+      tipSuggestions,
+      defaultTip,
+      orderTypes,
     })
   } catch (error) {
     console.error('[GET /api/public/resolve-order-code] Error:', error)

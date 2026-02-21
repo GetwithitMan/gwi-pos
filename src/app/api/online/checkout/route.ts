@@ -47,6 +47,7 @@ interface CheckoutBody {
   customerPhone?: string
   orderType?: string
   notes?: string
+  tip?: number
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -121,7 +122,9 @@ export async function POST(request: NextRequest) {
       return { item, mi, basePrice, modsTotal, lineTotal }
     })
 
+    const tip = typeof body.tip === 'number' && body.tip >= 0 ? Math.round(body.tip * 100) / 100 : 0
     const total = subtotal // Online orders: no tax computed server-side for now (location tax rules vary)
+    const chargeAmount = total + tip // Total charged to card includes tip
 
     // ── 3. Find an employee to attach to the order ─────────────────────────────
     // Order.employeeId is required. Find a system/online employee, or fall
@@ -197,8 +200,8 @@ export async function POST(request: NextRequest) {
         taxTotal: 0,
         taxFromInclusive: 0,
         taxFromExclusive: 0,
-        tipTotal: 0,
-        total,
+        tipTotal: tip,
+        total: chargeAmount,
         commissionTotal: 0,
         notes: [
           `Online Order`,
@@ -241,7 +244,7 @@ export async function POST(request: NextRequest) {
     try {
       payApiResult = await getPayApiClient().sale({
         token,
-        amount: total.toFixed(2),
+        amount: chargeAmount.toFixed(2),
         invoiceNo: order.orderNumber.toString(),
       })
     } catch (payErr) {
@@ -283,8 +286,8 @@ export async function POST(request: NextRequest) {
           orderId: order.id,
           employeeId,
           amount: total,
-          tipAmount: 0,
-          totalAmount: total,
+          tipAmount: tip,
+          totalAmount: chargeAmount,
           paymentMethod: 'credit',
           cardBrand: body.cardBrand ?? payApiResult.brand ?? null,
           cardLast4: body.cardLast4 ?? (payApiResult.account ? payApiResult.account.slice(-4) : null),
@@ -293,20 +296,25 @@ export async function POST(request: NextRequest) {
           datacapRefNumber: payApiResult.refNo ?? null,
           entryMethod: 'Manual',
           status: 'completed',
-          amountRequested: total,
-          amountAuthorized: total,
+          amountRequested: chargeAmount,
+          amountAuthorized: chargeAmount,
         },
       }),
     ])
 
     // ── 10. Return success ─────────────────────────────────────────────────────
 
+    const prepTimeMinutes =
+      (locSettings?.onlineOrdering as Record<string, unknown> | null)?.prepTime as number | undefined ?? 20
+
     return NextResponse.json({
       data: {
         orderId: order.id,
         orderNumber: order.orderNumber,
-        total,
-        estimatedReadyMinutes: 20,
+        subtotal,
+        tip,
+        total: chargeAmount,
+        prepTime: prepTimeMinutes,
       },
     })
   } catch (error) {

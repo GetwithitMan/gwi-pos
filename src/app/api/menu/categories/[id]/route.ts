@@ -13,7 +13,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, color, categoryType, categoryShow, printerIds } = body
+    const { name, color, categoryType, categoryShow, printerIds, showOnline } = body
     const locationId = body.locationId || request.nextUrl.searchParams.get('locationId')
 
     // Verify the category belongs to this location before updating
@@ -33,6 +33,7 @@ export const PUT = withVenue(async function PUT(
         ...(color && { color }),
         ...(categoryType && { categoryType }),
         ...(categoryShow && { categoryShow }),
+        ...(showOnline !== undefined && { showOnline }),
         // Allow setting printerIds to null to clear it (empty array also becomes null)
         ...(printerIds !== undefined && {
           printerIds: printerIds && printerIds.length > 0 ? printerIds : null
@@ -65,6 +66,7 @@ export const PUT = withVenue(async function PUT(
       categoryType: category.categoryType,
       categoryShow: category.categoryShow,
       isActive: category.isActive,
+      showOnline: category.showOnline,
       printerIds: category.printerIds
     } })
   } catch (error) {

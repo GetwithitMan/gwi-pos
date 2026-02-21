@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged, dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { computeIsOrderableOnline } from '@/lib/online-availability'
@@ -49,6 +50,7 @@ export const GET = withVenue(async function GET(
         displayName: item.displayName,
         price: Number(item.price),
         priceCC: item.priceCC ? Number(item.priceCC) : null,
+        onlinePrice: item.onlinePrice !== null ? Number(item.onlinePrice) : null,
         cost: item.cost ? Number(item.cost) : null,
         description: item.description,
         sku: item.sku,
@@ -121,6 +123,7 @@ export const PUT = withVenue(async function PUT(
       isAvailable,
       showOnPOS,
       showOnline,
+      onlinePrice,
       sortOrder,
       deletedAt,
       // Tax
@@ -188,6 +191,7 @@ export const PUT = withVenue(async function PUT(
         ...(isAvailable !== undefined && { isAvailable }),
         ...(showOnPOS !== undefined && { showOnPOS }),
         ...(showOnline !== undefined && { showOnline }),
+        ...(onlinePrice !== undefined && { onlinePrice: onlinePrice !== null ? new Prisma.Decimal(onlinePrice) : null }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(deletedAt !== undefined && { deletedAt: deletedAt ? new Date(deletedAt) : null }),
         // Tax
@@ -282,6 +286,7 @@ export const PUT = withVenue(async function PUT(
       name: item.name,
       price: Number(item.price),
       priceCC: item.priceCC ? Number(item.priceCC) : null,
+      onlinePrice: item.onlinePrice !== null ? Number(item.onlinePrice) : null,
       description: item.description,
       isActive: item.isActive,
       isAvailable: item.isAvailable,

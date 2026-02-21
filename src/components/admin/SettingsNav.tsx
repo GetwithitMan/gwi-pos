@@ -55,6 +55,19 @@ const settingsSections: SettingsSection[] = [
     ],
   },
   {
+    title: 'Online Ordering',
+    icon: '🌐',
+    permission: PERMISSIONS.SETTINGS_VENUE,
+    items: [
+      { name: 'Overview', href: '/settings/online-ordering' },
+      { name: 'Online Menu', href: '/settings/online-ordering/menu' },
+      { name: 'Order Config', href: '/settings/online-ordering/orders' },
+      { name: 'Hours', href: '/settings/online-ordering/hours' },
+      { name: 'Payments', href: '/settings/online-ordering/payments' },
+      { name: 'Notifications', href: '/settings/online-ordering/notifications' },
+    ],
+  },
+  {
     title: 'Inventory',
     icon: '📦',
     permission: PERMISSIONS.SETTINGS_INVENTORY,

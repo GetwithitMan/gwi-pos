@@ -196,6 +196,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         categoryType: c.categoryType || 'food', // Ensure fallback for legacy data
         categoryShow: c.categoryShow || 'all', // Bartender view section (bar/food/entertainment/all)
         isActive: c.isActive,
+        showOnline: c.showOnline,
         itemCount: c._count.menuItems,
         printerIds: c.printerIds,
       })),
@@ -221,10 +222,13 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
         currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,
         blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
+        showOnline: item.showOnline,
+        onlinePrice: item.onlinePrice !== null ? Number(item.onlinePrice) : null,
         modifierGroupCount: item.modifierGroups.length,
         modifierGroups: item.modifierGroups.map(mg => ({
           id: mg.modifierGroup.id,
-          name: mg.modifierGroup.name
+          name: mg.modifierGroup.name,
+          showOnline: mg.showOnline,
         })),
         // Liquor Builder recipe data
         isLiquorItem: item.isLiquorItem,

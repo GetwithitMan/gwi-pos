@@ -13,7 +13,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
-    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey } = body
+    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline } = body
 
     // Validate inputs
     if (name !== undefined && typeof name === 'string' && name.trim() === '') {
@@ -68,6 +68,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         },
       },
     })
+
+    // Update showOnline on the join table (MenuItemModifierGroup) if provided
+    if (showOnline !== undefined) {
+      await db.menuItemModifierGroup.updateMany({
+        where: { menuItemId, modifierGroupId: groupId },
+        data: { showOnline },
+      })
+    }
 
     // Fire-and-forget socket dispatch for real-time menu structure updates
     void dispatchMenuStructureChanged(group.locationId, {
