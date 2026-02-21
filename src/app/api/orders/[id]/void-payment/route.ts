@@ -5,6 +5,13 @@ import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
+/**
+ * Records a payment void in the database only.
+ * IMPORTANT: Callers must first successfully call POST /api/datacap/void to void
+ * the transaction in the payment processor. If the Datacap void succeeds but this
+ * DB write fails, the charge is reversed at the processor but still shows as
+ * "completed" in the system — reconcile manually via the Datacap portal.
+ */
 export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

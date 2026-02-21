@@ -31,6 +31,12 @@ async function ensureTable() {
   return sql
 }
 
+let tableReady: Promise<void> | null = null
+function getTableReady(): Promise<void> {
+  if (!tableReady) tableReady = ensureTable().then(() => {})
+  return tableReady
+}
+
 export type AccessAction = 'code_sent' | 'verified' | 'denied' | 'blocked'
 
 export async function logAccess(
@@ -40,7 +46,8 @@ export async function logAccess(
   action: AccessAction
 ): Promise<void> {
   try {
-    const sql = await ensureTable()
+    await getTableReady()
+    const sql = getSql()
     await sql`
       INSERT INTO gwi_access_logs (phone_mask, ip, user_agent, action)
       VALUES (${phone}, ${ip}, ${userAgent}, ${action})
@@ -62,7 +69,8 @@ export interface AccessLogEntry {
 
 export async function getAccessLogs(limit = 100): Promise<AccessLogEntry[]> {
   try {
-    const sql = await ensureTable()
+    await getTableReady()
+    const sql = getSql()
     const rows = await sql`
       SELECT id, phone_mask, ip, user_agent, action, created_at
       FROM gwi_access_logs
@@ -82,7 +90,8 @@ export async function getAccessStats(): Promise<{
   verifiedToday: number
 }> {
   try {
-    const sql = await ensureTable()
+    await getTableReady()
+    const sql = getSql()
     const rows = await sql`
       SELECT
         COUNT(*)                                            AS total_today,

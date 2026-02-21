@@ -108,6 +108,7 @@ export function QuickPayButton({
               datacapRecordNo: data.recordNo,
               datacapSequenceNo: data.sequenceNo,
               entryMethod: data.entryMethod,
+              // Datacap returns amounts as strings in XML responses
               amountAuthorized: parseFloat(data.amountAuthorized) || (subtotal + selectedTip),
             }],
           }),

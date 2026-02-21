@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice, applyPriceRounding, calculateSurcharge } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, calculateChange, PAYMENT_METHOD_LABELS } from '@/lib/payment'
@@ -84,6 +84,34 @@ const DEFAULT_TIP_SETTINGS: TipSettings = {
   enabled: true,
   suggestedPercentages: [15, 18, 20, 25],
   calculateOn: 'subtotal',
+}
+
+class PaymentStepErrorBoundary extends React.Component<
+  { children: React.ReactNode; onReset: () => void },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; onReset: () => void }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(error: Error) { console.error('Payment step error:', error) }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 text-center">
+          <p className="text-red-600 font-medium mb-2">Something went wrong in this payment step.</p>
+          <button
+            onClick={() => { this.setState({ hasError: false }); this.props.onReset() }}
+            className="text-sm underline text-gray-600"
+          >
+            Return to Payment Method Selection
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }
 
 export function PaymentModal({
@@ -388,7 +416,7 @@ export function PaymentModal({
   const loadHouseAccounts = async () => {
     setHouseAccountsLoading(true)
     try {
-      const response = await fetch(`/api/house-accounts?locationId=${orderId?.split('-')[0] || ''}&status=active`)
+      const response = await fetch(`/api/house-accounts?locationId=${locationId || ''}&status=active`)
       if (response.ok) {
         const raw = await response.json()
         const data = raw.data ?? raw
@@ -448,7 +476,7 @@ export function PaymentModal({
       giftCardId: giftCardInfo.id,
       giftCardNumber: giftCardInfo.cardNumber,
     }
-    processPayments([...pendingPayments, payment])
+    processPayments([...pendingPayments, payment], pendingPayments)
   }
 
   const handleHouseAccountPayment = () => {
@@ -460,7 +488,7 @@ export function PaymentModal({
       tipAmount,
       houseAccountId: selectedHouseAccount.id,
     }
-    processPayments([...pendingPayments, payment])
+    processPayments([...pendingPayments, payment], pendingPayments)
   }
 
   const handleSelectTip = (percent: number | null) => {
@@ -519,7 +547,7 @@ export function PaymentModal({
     }
     // Don't add to pendingPayments yet — wait for API success
     // (adding before API call corrupts totals if the call fails)
-    processPayments([...pendingPayments, payment])
+    processPayments([...pendingPayments, payment], pendingPayments)
   }
 
   // Handle Datacap payment success
@@ -546,7 +574,7 @@ export function PaymentModal({
       signatureData: result.signatureData,
       amountAuthorized: result.amountAuthorized,
     }
-    processPayments([...pendingPayments, payment])
+    processPayments([...pendingPayments, payment], pendingPayments)
   }
 
   // Build the /pay request body (shared between sync and fire-and-forget paths)
@@ -576,7 +604,7 @@ export function PaymentModal({
     idempotencyKey,
   })
 
-  const processPayments = async (payments: PendingPayment[]) => {
+  const processPayments = async (payments: PendingPayment[], currentPendingPayments: PendingPayment[]) => {
     // Safety: Validate orderId exists before attempting payment
     if (!orderId) {
       setError('Cannot process payment: No order ID provided. Please close this dialog and try again.')
@@ -585,7 +613,7 @@ export function PaymentModal({
     }
 
     // Cash-only full payment — await the API before closing so failures are surfaced
-    const isCashOnly = payments.every(p => p.method === 'cash') && pendingPayments.length === 0
+    const isCashOnly = payments.every(p => p.method === 'cash') && currentPendingPayments.length === 0
     if (isCashOnly) {
       setIsProcessing(true)
       setError(null)
@@ -823,6 +851,7 @@ export function PaymentModal({
             )}
           </div>
 
+          <PaymentStepErrorBoundary onReset={() => setStep('method')}>
           {/* Step: Select Payment Method */}
           {step === 'method' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1673,6 +1702,7 @@ export function PaymentModal({
               </div>
             </div>
           )}
+          </PaymentStepErrorBoundary>
         </div>
 
         {/* Footer */}

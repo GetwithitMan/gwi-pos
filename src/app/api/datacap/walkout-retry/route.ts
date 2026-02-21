@@ -5,6 +5,8 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { logger } from '@/lib/logger'
 
 // POST - Retry capture for a walkout tab (manual trigger)
@@ -41,6 +43,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const locationId = retry.locationId
+
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status ?? 403 })
+    }
+
     const settings = parseSettings(await getLocationSettings(locationId))
     const { walkoutRetryFrequencyDays, walkoutMaxRetryDays } = settings.payments
 

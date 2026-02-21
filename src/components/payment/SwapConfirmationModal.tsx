@@ -20,14 +20,18 @@ export function SwapConfirmationModal({
 }: SwapConfirmationModalProps) {
   const [isPinging, setIsPinging] = useState(false)
   const [beeped, setBeeped] = useState(false)
+  const [pingError, setPingError] = useState<string | null>(null)
 
   const handleBeep = async () => {
+    if (isPinging) return
     setIsPinging(true)
+    setPingError(null)
     try {
       await onBeep()
       setBeeped(true)
     } catch (err) {
       console.error('Failed to beep:', err)
+      setPingError('Failed to ping reader — check network or hardware connection')
     } finally {
       setIsPinging(false)
     }
@@ -95,6 +99,10 @@ export function SwapConfirmationModal({
             </>
           )}
         </button>
+
+        {pingError && (
+          <p className="text-red-400 text-xs mb-3">{pingError}</p>
+        )}
 
         {/* Confirm Button */}
         <button

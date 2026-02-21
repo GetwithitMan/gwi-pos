@@ -7,12 +7,25 @@
 
 import React from 'react'
 
+type ProcessingStatus = 'idle' | 'checking_reader' | 'waiting_card' | 'authorizing' | 'approved' | 'declined' | 'error'
+
+const STATUS_LABELS: Record<ProcessingStatus, string> = {
+  idle: 'Ready',
+  checking_reader: 'Verifying reader\u2026',
+  waiting_card: 'Present card\u2026',
+  authorizing: 'Authorizing\u2026',
+  approved: 'Approved',
+  declined: 'Declined',
+  error: 'Error \u2014 try again',
+}
+
 interface CardProcessingStepProps {
   isProcessing: boolean
   amount: number
   terminalId?: string
   onCancel: () => void
   instructions?: string
+  status?: ProcessingStatus
 }
 
 export function CardProcessingStep({
@@ -21,6 +34,7 @@ export function CardProcessingStep({
   terminalId,
   onCancel,
   instructions = 'Please follow the prompts on the card reader',
+  status,
 }: CardProcessingStepProps) {
   if (!terminalId) {
     return (
@@ -52,6 +66,12 @@ export function CardProcessingStep({
           <div className="text-xl font-bold text-gray-800">
             Processing Card Payment
           </div>
+
+          {status && (
+            <div className="text-sm text-gray-500">
+              {STATUS_LABELS[status] ?? 'Processing\u2026'}
+            </div>
+          )}
 
           <div className="p-4 bg-blue-50 rounded-lg">
             <div className="text-lg font-bold text-blue-600 mb-2">

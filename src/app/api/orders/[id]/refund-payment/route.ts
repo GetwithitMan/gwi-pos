@@ -90,6 +90,19 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Check cumulative refunds don't exceed original payment amount
+    const existingRefunds = await db.refundLog.aggregate({
+      where: { paymentId },
+      _sum: { refundAmount: true },
+    })
+    const totalAlreadyRefunded = Number(existingRefunds._sum.refundAmount ?? 0)
+    if (totalAlreadyRefunded + refundAmount > Number(payment.amount)) {
+      return NextResponse.json(
+        { error: `Refund amount exceeds remaining refundable balance. Already refunded: $${totalAlreadyRefunded.toFixed(2)}, remaining: $${(Number(payment.amount) - totalAlreadyRefunded).toFixed(2)}` },
+        { status: 400 }
+      )
+    }
+
     // Process Datacap refund for card payments
     let datacapRefNo: string | null = null
 
@@ -129,6 +142,7 @@ export const POST = withVenue(async function POST(
         data: {
           status: isPartial ? 'completed' : 'refunded',
           refundedAt: new Date(),
+          refundedAmount: totalAlreadyRefunded + refundAmount,
         },
       }),
       // Create RefundLog

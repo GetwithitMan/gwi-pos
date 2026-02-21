@@ -36,10 +36,11 @@ export function GiftCardStep({
   onBack,
 }: GiftCardStepProps) {
   const canCheckBalance = giftCardNumber.length >= 10 && !isLoading
+  const appliedAmount = giftCardInfo ? Math.min(giftCardInfo.balance, amountDue) : 0
   const canComplete =
     giftCardInfo &&
     giftCardInfo.isActive &&
-    giftCardInfo.balance >= amountDue
+    giftCardInfo.balance > 0
 
   return (
     <div className="space-y-3">
@@ -123,11 +124,11 @@ export function GiftCardStep({
             </div>
           </div>
 
-          {/* Insufficient balance warning */}
-          {giftCardInfo.balance < amountDue && (
+          {/* Partial payment notice */}
+          {giftCardInfo.balance < amountDue && giftCardInfo.balance > 0 && (
             <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-700 text-sm">
-              Insufficient balance. This card has ${giftCardInfo.balance.toFixed(2)}{' '}
-              but ${amountDue.toFixed(2)} is required.
+              Partial payment of ${giftCardInfo.balance.toFixed(2)} will be applied.
+              Remaining ${(amountDue - giftCardInfo.balance).toFixed(2)} due via another method.
             </div>
           )}
 
@@ -158,7 +159,9 @@ export function GiftCardStep({
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
             }`}
           >
-            Apply Gift Card
+            {appliedAmount < amountDue
+              ? `Apply $${appliedAmount.toFixed(2)} from Gift Card`
+              : 'Pay with Gift Card'}
           </button>
         )}
       </div>

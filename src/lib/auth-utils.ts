@@ -13,7 +13,6 @@ export function hasPermission(permissions: string[], requiredPermission: string)
   }
 
   // Check for wildcard patterns (e.g., 'pos.*' matches 'pos.access')
-  const requiredParts = requiredPermission.split('.')
   for (const perm of permissions) {
     if (perm.endsWith('.*')) {
       const prefix = perm.slice(0, -2) // Remove '.*'

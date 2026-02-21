@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface PreAuthRequest {
   locationId: string
@@ -18,6 +20,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (!locationId || !readerId || !orderId || amount === undefined || amount === null) {
       return Response.json({ error: 'Missing required fields: locationId, readerId, orderId, amount' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
+    if (!auth.authorized) {
+      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
     }
 
     await validateReader(readerId, locationId)

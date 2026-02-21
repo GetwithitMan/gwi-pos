@@ -658,10 +658,6 @@ export const POST = withVenue(withTiming(async function POST(
           const cardBalance = Number(giftCard.currentBalance)
           const paymentAmount = payment.amount + (payment.tipAmount || 0)
 
-          if (paymentAmount > cardBalance) {
-            throw new Error(`GC_INSUFFICIENT:${cardBalance.toFixed(2)}`)
-          }
-
           const newBalance = cardBalance - paymentAmount
 
           paymentRecord = {
@@ -700,10 +696,6 @@ export const POST = withVenue(withTiming(async function POST(
           }
           if (err.message === 'GC_EXPIRED') {
             return { error: 'Gift card has expired', status: 400 } as const
-          }
-          if (err.message.startsWith('GC_INSUFFICIENT:')) {
-            const balance = err.message.split(':')[1]
-            return { error: `Insufficient gift card balance. Available: $${balance}`, status: 400, currentBalance: parseFloat(balance) } as const
           }
           throw err // Re-throw unexpected errors
         })

@@ -499,58 +499,6 @@ class PaymentIntentManagerClass {
   }
 
   /**
-   * Sync a single intent to the server
-   */
-  private async syncIntent(intent: PaymentIntent): Promise<void> {
-    try {
-      // Mark as syncing in status history
-      intent.statusHistory.push({
-        status: intent.status,
-        timestamp: new Date().toISOString(),
-        details: 'Syncing to server...',
-      })
-      await offlineDb.paymentIntents.put(intent)
-
-      // Send to server
-      const response = await fetch('/api/payments/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          intentId: intent.id,
-          orderId: intent.orderId,
-          localOrderId: intent.localOrderId,
-          amount: intent.amount,
-          tipAmount: intent.tipAmount,
-          paymentMethod: intent.paymentMethod,
-          cardToken: intent.cardToken,
-          cardBrand: intent.cardBrand,
-          cardLast4: intent.cardLast4,
-          gatewayTransactionId: intent.gatewayTransactionId,
-          authorizationCode: intent.authorizationCode,
-          isOfflineCapture: intent.isOfflineCapture,
-          offlineCapturedAt: intent.offlineCapturedAt,
-          terminalId: intent.terminalId,
-          employeeId: intent.employeeId,
-        }),
-      })
-
-      if (response.ok) {
-        const raw = await response.json()
-        const data = raw.data ?? raw
-        await this.recordCapture(intent.id, data.paymentId)
-        await this.logSync('payment_synced', intent.id, intent.amount)
-      } else {
-        const error = await response.json()
-        console.error(`[PaymentIntentManager] Sync failed for ${intent.id}:`, error)
-        // Don't mark as failed - will retry
-      }
-    } catch (error) {
-      console.error(`[PaymentIntentManager] Network error syncing ${intent.id}:`, error)
-      // Don't mark as failed - will retry on next interval
-    }
-  }
-
-  /**
    * Get all intents that need reconciliation (for EOD report)
    */
   async getIntentsNeedingReconciliation(): Promise<PaymentIntent[]> {

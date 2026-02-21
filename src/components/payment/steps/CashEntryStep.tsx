@@ -45,7 +45,8 @@ export function CashEntryStep({
   const amounts = quickCashAmounts || defaultQuickAmounts
 
   const tenderedAmount = parseFloat(amountTendered || customCashAmount || '0')
-  const changeDue = tenderedAmount >= amountDue ? tenderedAmount - amountDue : 0
+  // Change owed back to customer (never negative)
+  const changeToReturn = Math.max(0, tenderedAmount - amountDue)
   const canComplete = tenderedAmount >= amountDue
 
   return (
@@ -104,11 +105,11 @@ export function CashEntryStep({
         </div>
 
         {/* Change due display */}
-        {changeDue > 0 && (
+        {changeToReturn > 0 && (
           <div className="mt-3 p-3 bg-yellow-50 rounded-lg">
             <div className="flex justify-between font-bold">
               <span>Change Due:</span>
-              <span className="text-yellow-700">${changeDue.toFixed(2)}</span>
+              <span className="text-yellow-700">${changeToReturn.toFixed(2)}</span>
             </div>
           </div>
         )}

@@ -72,7 +72,7 @@ export async function verifyCloudToken(
     ) as CloudTokenPayload
 
     // Check expiry
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+    if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) {
       return null
     }
 

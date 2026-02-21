@@ -1,18 +1,21 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface RefundRequest {
   readerId: string
   recordNo: string
   invoiceNo: string
   amount: number
+  employeeId?: string
 }
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await parseBody<RefundRequest>(request)
-    const { readerId, recordNo, invoiceNo, amount } = body
+    const { readerId, recordNo, invoiceNo, amount, employeeId } = body
 
     if (!readerId || !recordNo || !invoiceNo || amount === undefined || amount === null) {
       return Response.json(
@@ -30,6 +33,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (!reader) {
       return Response.json({ error: 'Payment reader not found' }, { status: 404 })
+    }
+
+    const auth = await requirePermission(employeeId, reader.locationId, PERMISSIONS.POS_CARD_PAYMENTS)
+    if (!auth.authorized) {
+      return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
     }
 
     await validateReader(readerId, reader.locationId)

@@ -12,11 +12,6 @@ const globalForPrisma = globalThis as unknown as {
  */
 const NO_SOFT_DELETE_MODELS = new Set(['Organization', 'Location', 'SyncAuditEntry', 'CloudEventQueue'])
 
-/**
- * Prisma actions that read data and should auto-filter soft-deleted rows.
- */
-const READ_ACTIONS = new Set(['findMany', 'findFirst', 'findUnique', 'findFirstOrThrow', 'findUniqueOrThrow', 'count', 'aggregate', 'groupBy'])
-
 function createPrismaClient(url?: string) {
   const baseUrl = url || process.env.DATABASE_URL || ''
   const pooledUrl = appendPoolParams(baseUrl)

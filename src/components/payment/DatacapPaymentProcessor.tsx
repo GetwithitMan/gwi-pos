@@ -47,6 +47,7 @@ export function DatacapPaymentProcessor({
   const [showCustomTip, setShowCustomTip] = useState(false)
   const [partialResult, setPartialResult] = useState<(DatacapResult & { tipAmount: number }) | null>(null)
   const [isVoiding, setIsVoiding] = useState(false)
+  const [voidError, setVoidError] = useState<string | null>(null)
 
   const {
     reader,
@@ -131,6 +132,7 @@ export function DatacapPaymentProcessor({
     }
 
     setIsVoiding(true)
+    setVoidError(null)
     try {
       const res = await fetch('/api/datacap/void', {
         method: 'POST',
@@ -145,16 +147,21 @@ export function DatacapPaymentProcessor({
       const data = await res.json()
       if (!data.data?.approved) {
         console.error('[DatacapPaymentProcessor] Void failed:', data.data?.error)
+        setVoidError('Card void failed — verify in Datacap portal to confirm the authorization was released before retrying')
+        setIsVoiding(false)
+        return
       }
     } catch (err) {
       console.error('[DatacapPaymentProcessor] Void request failed:', err)
-    } finally {
+      setVoidError('Card void failed — verify in Datacap portal to confirm the authorization was released before retrying')
       setIsVoiding(false)
-      setPartialResult(null)
-      cancelTransaction()
-      // Return to payment method selection so staff can retry with another method
-      onCancel()
+      return
     }
+    setIsVoiding(false)
+    setPartialResult(null)
+    cancelTransaction()
+    // Return to payment method selection so staff can retry with another method
+    onCancel()
   }
 
   const handleConfirmSwap = () => {
@@ -371,6 +378,12 @@ export function DatacapPaymentProcessor({
               <p className="text-amber-100 text-xs mb-4">
                 Accept partial or collect remaining with another payment method
               </p>
+
+              {voidError && (
+                <div className="p-3 mb-4 bg-red-900/30 border border-red-700 rounded-xl text-red-300 text-xs">
+                  {voidError}
+                </div>
+              )}
 
               <div className="flex gap-3">
                 <button

@@ -52,6 +52,9 @@ const CLOUD_PARENT_DOMAINS = [
 
 const MISSION_CONTROL_URL =
   process.env.MISSION_CONTROL_URL || 'https://app.thepasspos.com'
+if (!process.env.PROVISION_API_KEY && process.env.NODE_ENV === 'production') {
+  throw new Error('[Startup] PROVISION_API_KEY environment variable is required in production')
+}
 const PROVISION_API_KEY = process.env.PROVISION_API_KEY || ''
 
 function isVercelPreview(hostname: string): boolean {

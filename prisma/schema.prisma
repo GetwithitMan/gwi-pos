@@ -16,6 +16,9 @@ datasource db {
 // ORGANIZATION & LOCATIONS (Skill 53)
 // ============================================
 
+// NOTE: If you add a new model that intentionally omits `deletedAt`, also add
+// it to NO_SOFT_DELETE_MODELS in src/lib/db.ts or soft-delete filtering will break.
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
