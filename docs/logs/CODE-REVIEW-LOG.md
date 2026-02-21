@@ -49,6 +49,12 @@ All findings across all sessions. Cleared when resolved.
 | 018 | 🔵 Low | `src/components/payment/PaymentModal.tsx` | CFD "show order" `useEffect` has `// eslint-disable-line react-hooks/exhaustive-deps` on its dependency array. Risk: future devs add more prop reads inside the effect without updating deps, creating stale closures. | FE-A | Move CFD emission into a `useCallback` that explicitly lists its dependencies, then call it from an effect that only depends on `isOpen` + the stable callback. Removes the need to suppress the lint rule. | Open |
 | 019 | 🔵 Low | `src/components/payment/PaymentModal.tsx` | `PaymentModal` uses large inline `style={{ ... }}` objects for layout while the rest of the app (including `DatacapPaymentProcessor`) uses Tailwind. Mixed styling approaches increase maintenance cost when multiple devs touch the same file. | FE-A | Adopt Tailwind as the standard for new work; migrate existing inline styles to Tailwind class names incrementally when the file is touched for other reasons. Not a blocker. | Open |
 | 020 | 🔵 Low | `src/components/payment/QuickPayButton.tsx` | `parseFloat(data.amountAuthorized)` and similar string re-parsing for monetary values — inconsistent with the tolerance-compare pattern (`Math.abs(a - b) < 0.01`) used correctly in `DatacapPaymentProcessor`. | FE-A | Standardize: compute money in integer cents on the backend; frontend amounts should be numbers, not re-parsed strings. Avoid `parseFloat` on currency fields where the value is already numeric. | Open |
+| 021 | 🔴 Critical | `src/components/payment/GiftCardStep.tsx` | **Partial gift cards not supported.** Current logic blocks completing the step unless `giftCardInfo.balance >= amountDue`. In real bar conditions, guests routinely present partially-used gift cards (e.g., $10 remaining on a $50 check). Staff cannot apply the partial balance at all, creating friction and blocking a common real-world tender path. | FE-A + BE-A | Apply `Math.min(balance, amountDue)` as `appliedAmount`. Create a `gift_card` payment row for `appliedAmount` and reduce remaining balance. Leave modal open for a second tender if `appliedAmount < amountDue`. Update button label: "Apply $X from Gift Card" (partial) vs "Pay with Gift Card" (full). Backend: gift card payment must behave like other partial tenders — order stays open until fully paid. | Open |
+| 022 | ⚠️ Medium | `src/components/payment/SwapConfirmationModal.tsx` | Beep/ping failure is not surfaced visually — errors are only `console.error`'d. Staff cannot tell whether the ping succeeded or failed other than by listening for a physical beep, which is unreliable in noisy bar environments. | FE-A | On `onBeep()` failure, show an inline error in the modal: "Failed to ping reader — check network or hardware." Consistent with Issue #014 (void failure) fix pattern. | Open |
+| 023 | 🔵 Low | `src/components/payment/SwapConfirmationModal.tsx` | `onBeep` may not be internally debounced at the hook/handler level. While `isPinging` state is tracked in the component, if `onBeep` itself does not guard against concurrent calls, a slow Datacap response + repeated taps could send multiple ping commands. | FE-A | Ensure `onBeep` ignores/queues new calls while a previous ping is in-flight, independent of whether the component checks `isPinging`. | Open |
+| 024 | 🔵 Low | `src/components/payment/CashEntryStep.tsx` | Change calculation (amount tendered – amount due) is computed inline in this step and separately in `PaymentModal`. Two independent implementations risk drift. | FE-A | Extract a shared `calculateChange(tendered, amountDue)` helper and use it in both `CashEntryStep` and `PaymentModal`. Apply consistent rounding/ceiling rules. | Open |
+| 025 | 🔵 Low | `src/components/payment/CardProcessingStep.tsx` | Processing status is shown as an animated indicator only — no human-readable text tied to the underlying status enum (`checking_readers`, `waiting_card`, `authorizing`, etc.). Staff can see *something* is happening but not *which phase*. | FE-A | Map status enum → status string: `{ checking_readers: 'Verifying reader…', waiting_card: 'Present card…', authorizing: 'Authorizing…' }`. Display below the animation. `terminalId` is already shown — keep it. | Open |
+| 026 | ℹ️ Info | `src/components/payment/TipPromptSelector.tsx` | Rounding logic `Math.round(orderAmount * (percent / 100) * 100) / 100` is correct and consistent in this file. No action needed here. Note: verify same formula is used in `PaymentModal` and `DatacapPaymentProcessor` tip paths to prevent penny discrepancies across screens. `requireCustomForZeroTip` should be documented in settings UI so venue owners choose friction level explicitly. | FE-A | No code change needed now. Document `requireCustomForZeroTip` in settings page help text. Verify tip rounding formula consistency across files when touching tip logic. | Open |
 
 **Severity key:**
 - 🔴 Critical — active security/data risk, fix before next deploy
@@ -60,6 +66,41 @@ All findings across all sessions. Cleared when resolved.
 - `BE-A` — Back-end application developer
 - `FE-A` — Front-end application developer
 - `Infra` — Infrastructure / DevOps (env vars, encryption keys, Vercel config)
+
+---
+
+## Session 3-C — 2026-02-21 (Supplemental: Third-Party Review, UX & Hardware Layer Parts 6–10)
+
+**Source:** Third-party review — UX & Hardware layer
+**Theme:** Payment tender steps — swap confirmation, contextual tipping, card processing, cash, gift card
+**Note:** These files are scheduled for formal checklist review in Tier 3 (Core POS Pages). Findings tracked here immediately. Checklist progress count **not** incremented — will be updated at formal review.
+
+### Files Covered
+
+| File | Review Source | Status | Findings |
+|------|---------------|--------|----------|
+| `src/components/payment/SwapConfirmationModal.tsx` | Third-party | ⚠️ Issues | Issues #022, #023 — beep failure silent + debounce gap |
+| `src/components/payment/TipPromptSelector.tsx` | Third-party | ✅ Solid | Issue #026 (ℹ️ Info) — rounding formula confirmed correct; consistency check + settings doc needed |
+| `src/components/payment/CardProcessingStep.tsx` | Third-party | ✅ Solid | Issue #025 — no human-readable status text per phase |
+| `src/components/payment/CashEntryStep.tsx` | Third-party | ✅ Solid | Issue #024 — change calculation not centralized |
+| `src/components/payment/GiftCardStep.tsx` | Third-party | 🔴 Critical | Issue #021 — partial gift cards completely blocked |
+
+### Session Notes
+
+**`SwapConfirmationModal`** — Anti-"ghost swap" design is correct: the modal pings the target reader before committing the swap, preventing staff from accidentally binding to a reader across the room. Beep + visual confirmation and last-6-digits serial UX are both right for noisy bar environments. Two issues: beep failure is only `console.error`'d (Issue #022, same pattern as void failure in Issue #014), and `onBeep` may lack internal debounce guard independent of the component's `isPinging` state (Issue #023). The fix pattern for #022 is the same as #014 — add an inline error message.
+
+**`TipPromptSelector`** — Well-implemented contextual tipping: switches from fixed dollar amounts (small checks) to percentage tips (larger checks), which is the correct UX for maximizing tip averages naturally. "No Tip" behind `requireCustomForZeroTip` is a legitimate business rule with appropriate friction. Rounding (`Math.round(orderAmount * (percent / 100) * 100) / 100`) is correct. No code change needed in this file — Issue #026 is a consistency check across all tip-computing paths + settings documentation reminder.
+
+**`CardProcessingStep`** — Animated dots + card icon during "Waiting for card / Authorizing" is critical UX — without it, staff force-quit thinking the POS is frozen. `terminalId` displayed on screen is a big win for real-world support. One improvement: map the processing status enum to human-readable text so staff know which phase they're in ("Verifying reader…" vs "Present card…" vs "Authorizing…"), not just that something is happening (Issue #025).
+
+**`CashEntryStep`** — Smart quick-cash generation (amounts derived from `amountDue` — exact, rounded to 5/10/20/50/100) is correct; far better than a fixed `[5,10,20]` list. Underpayment guard ("Amount tendered is less than amount due") is essential for busy bars. Change calculation should be centralized into a shared helper used by both this step and `PaymentModal` (Issue #024).
+
+**`GiftCardStep`** — The critical finding (Issue #021): the completion condition requires `giftCardInfo.balance >= amountDue`. This blocks all partially-used gift cards. In real bar conditions, partial gift cards are common (e.g., $10 balance on a $50 check). Staff are currently blocked from applying any value from such a card, which is operationally unacceptable. The fix: compute `appliedAmount = Math.min(balance, amountDue)`, apply that as a `gift_card` payment row, reduce remaining balance, and return to tender selection for the remainder. Button label changes: "Apply $X from Gift Card" (partial) vs "Pay with Gift Card" (full cover). Backend must treat gift card payments like other partial tenders — order stays open until fully paid.
+
+### Cross-Cutting Notes (from Review)
+
+- **Button debouncing convention:** All buttons that await network/hardware calls (`isPinging`, loading flags, etc.) must gate concurrent presses at both the component level AND the handler/hook level. Components forgetting to check state should not result in duplicate hardware commands.
+- **Input modes:** `inputMode="decimal"` is correctly applied in `TipPromptSelector` and `CashEntryStep`. Apply consistently to any custom amount inputs in gift card flows as well.
 
 ---
 
