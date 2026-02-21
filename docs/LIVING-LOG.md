@@ -7,14 +7,24 @@
 
 ## 2026-02-21 — P3 Feature Sprint (Multi-Agent Team)
 
-**Session theme:** P3 polish sprint — server performance report, online ordering Phase 3+4, cash drawer, reader health dashboard, scheduling shift edit/delete + mobile schedule view, customer history pagination
+**Session theme:** P3 polish sprint (full day) — 13 features built across hardware, reports, scheduling, customers, POS, and floor plan
 
-**Summary:** Continued from P2 completion sprint. Verified P1-01 (Void & Retry), P3 Online Ordering Phases 2-4, Server Performance, Product Mix Trends, Void/Comp, Quick Pick toggle, KDS prep station — all confirmed already built. Then built: Server Performance Report, Online Ordering Phase 3+4 socket hook + availability utility, Cash Drawer Signal, Reader Health Dashboard (with PaymentReaderLog schema). Session 2 continued: Scheduling shift edit/delete API + admin UI + mobile schedule view, Customer order history pagination + date range filter.
+**Summary:** Continued from P2 completion sprint. Full-day multi-agent sprint resolving virtually all remaining small-to-medium P3 items. Verified 10+ items as already complete (no build needed). Built: Server Performance Report, Online Ordering Phase 3+4, Cash Drawer Signal, Reader Health Dashboard, Scheduling shift edit/delete + mobile view, Customer history pagination + date filter, KDS Browser Version badge, Customer Notes inline editor, Sales Forecasting report, Barcode Scanner (Skill 58), P2-B01 Bottle Service floor plan progress bar + re-auth alert. All remaining items are Large scope or blocked on external dependencies.
 
 ### Commits — gwi-pos
 
 | Hash | Description |
 |------|-------------|
+| `ec61b20` | docs: P2-B01 resolved — bottle service workflow Phase 1 complete |
+| `eb30807` | feat(floor-plan): P2-B01 bottle service min-spend progress bar + re-auth alert |
+| `99727e9` | docs: MASTER-TODO — integration settings verified complete, logo/round-robin deferred |
+| `b9dfc57` | docs: MASTER-TODO — customer notes, KDS browser version, shift swap scope |
+| `30bf5f7` | docs: MASTER-TODO — forecasting report + barcode scanner resolved |
+| `ea47c11` | feat(pos): Barcode Scanner / SKU item lookup (Skill 58) |
+| `d9343c5` | feat(reports): Sales Forecasting report — day-of-week patterns + 14-day projection |
+| `d0a8dc5` | feat(customers): inline notes editor in customer detail modal |
+| `ea967d9` | feat(kds): display Chrome version on KDS admin page |
+| `65a6575` | docs: living log — P3 sprint session (2026-02-21) |
 | `add469a` | docs: update MASTER-TODO — scheduling + customer history resolved |
 | `52438dc` | feat(customers): order history pagination + date range filter |
 | `3b26b0e` | feat(scheduling): shift edit/delete API + mobile schedule view |
@@ -61,6 +71,34 @@
 - `GET /api/customers/[id]`: accepts `page`, `limit` (max 50), `startDate`, `endDate`; uses `Prisma.OrderWhereInput` to avoid readonly array TS errors; returns `ordersPagination: { page, limit, total, totalPages }`
 - Customer detail modal: date range inputs (start/end) + Apply/Clear buttons + Prev/Next pagination controls in "Recent Orders" section
 
+**KDS Browser Version** (`ea967d9`)
+- Heartbeat route extracts Chrome/browser version from `user-agent` header, stores in existing `deviceInfo` JSON field
+- `GET /api/hardware/kds-screens` now returns `deviceInfo` in response
+- KDS admin page shows "Chrome X.Y" badge next to last-seen timestamp (hidden until first heartbeat)
+
+**Customer Notes Inline Editor** (`d0a8dc5`)
+- Replaced read-only yellow box with persistent editable card in customer detail modal
+- Pencil icon toggles edit mode → textarea auto-focuses → Save (`PUT /api/customers/[id]` with notes) or Cancel
+- Empty state: "No notes. Click the pencil to add." placeholder
+- Edit state resets on modal close
+
+**Sales Forecasting Report** (`d9343c5`)
+- `GET /api/reports/forecasting`: businessDayDate OR-fallback, 84-day lookback by default, groups by weekday (JS `.getDay()`), projects forward N days using day-of-week averages
+- `/reports/forecasting` page: lookback/horizon selectors (28/56/84 days, 7/14 days), 3 summary cards (Strongest Day gold, Weakest Day, Projected 7-Day Revenue), day-of-week table with gold ★ for top day, forecast table with Today/Tomorrow badges
+- Reports hub: new "Sales Forecasting" tile in Sales & Revenue section
+
+**Barcode Scanner / SKU Lookup — Skill 58** (`ea47c11`)
+- `GET /api/menu/search?sku=X`: exact-match on `MenuItem.sku` (already indexed `@@unique([locationId, sku])`), returns same response shape as name search
+- `useMenuSearch`: new `lookupBySku(sku)` function + `isSkuMode`/`skuResults` state path
+- `MenuSearchInput` + `UnifiedPOSHeader`: global keyboard-wedge detector (100ms burst heuristic → buffer; Enter with buffer.length ≥ 3 + input unfocused → `onScanComplete`)
+- `orders/page.tsx`: `handleScanComplete` → `lookupBySku` → `handleSearchSelect` (adds to order) or `toast.error("Item not found: {sku}")`
+
+**P2-B01 Bottle Service Floor Plan Progress Bar + Re-Auth Alert** (`eb30807`)
+- `snapshot.ts`: added `subtotal` + `bottleServiceDeposit` to order select; computes `bottleServiceCurrentSpend` and `bottleServiceReAuthNeeded` (≥ 80% of deposit triggers flag)
+- `FloorPlanTable` interface: `bottleServiceCurrentSpend?` + `bottleServiceReAuthNeeded?` fields
+- `FloorPlanHome`: passes new fields through active + non-active bottle service badge objects
+- `TableNode`: 4px horizontal progress bar (tier color → green when min spend met) with "$X / $Y min" label below; amber "⚠ Extend" badge when `reAuthNeeded` is true
+
 ### Bug Fixes
 
 | Bug | Fix | Commit |
@@ -79,12 +117,19 @@
 | Quick Pick toggle | Lives in gear menu, calls `updateLayoutSetting()` |
 | KDS prep station assignment | `KDSScreenStation` junction model, admin UI, fully DB-driven |
 | Customer Favorites | Auto-computed top-5 from order history — complete as-is |
+| Integration Settings (SMS/Slack/Email) | All three settings pages + APIs + Twilio/Resend/alert-service fully built |
+| Bottle Service deposit pre-auth | `POST /api/orders/[id]/bottle-service` fully implemented (collectCardData → preAuth → OrderCard) |
+| Bottle Service re-auth | `POST /api/orders/[id]/bottle-service/re-auth` built; `BottleServiceBanner` shows amber "Extend" alert at 80% |
 
 ### Known Issues / Blockers
 - GL-06: Pre-launch checklist at 8% — requires manual hardware testing
-- Online Ordering Phase 5 (customer-facing `/order` page) — medium effort (~2-3 weeks), blocked on payment processor decision
-- Scheduling shift request/swap, clock-in/out comparison, labor vs actual report — still pending
-- Customer Notes: readable via yellow alert box in detail modal; edit requires opening the full Edit modal (2-step UX, no inline edit)
+- Online Ordering Phase 5 (customer-facing `/order` page) — Large effort, blocked on payment processor decision (Stripe vs Datacap)
+- Scheduling shift request/swap — Large (18-20 files, needs new `ShiftSwapRequest` model); use existing shift edit as workaround
+- P1-05: Socket layer multi-terminal validation — needs real Docker/hardware environment
+- P1-07: Card token persistence test — needs live Datacap hardware (blocks Loyalty Program)
+- Pricing Programs (surcharge, interchange+, tiered) — Large, 5-phase overhaul
+- ESC/POS custom logo — deferred (needs image processing lib + real printer testing)
+- Printer round-robin — deferred (wait for venue with 3+ same-role printers)
 
 ---
 
