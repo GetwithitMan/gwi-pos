@@ -471,16 +471,19 @@ export function ModifierModal({
 
               {/* Special Notes */}
               <div className="mt-3 pt-3 border-t border-white/10">
-                <label className="block text-sm font-medium text-slate-200 mb-1">
-                  Notes <span className="text-slate-500 font-normal">(optional)</span>
+                <label className="block font-medium text-slate-200 mb-1" style={{ fontSize: '13px', letterSpacing: '0.02em' }}>
+                  📝 Special Instructions <span className="text-slate-500 font-normal">(optional)</span>
                 </label>
                 <textarea
                   value={specialNotes}
                   onChange={(e) => setSpecialNotes(e.target.value)}
                   placeholder="Special instructions..."
-                  className="w-full p-2 bg-white/5 border border-white/10 rounded text-sm text-white placeholder:text-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-2 bg-white/5 border border-white/10 rounded text-sm text-white placeholder:text-slate-500 resize-none focus:outline-none"
+                  style={{ transition: 'border-color 0.15s ease' }}
                   rows={2}
                   maxLength={200}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.5)' }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)' }}
                 />
               </div>
             </>

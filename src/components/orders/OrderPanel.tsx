@@ -810,11 +810,14 @@ export const OrderPanel = memo(function OrderPanel({
                     onClick={() => onSeatSelect?.(group.seatNumber)}
                     style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    background: isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
+                    padding: '4px 10px',
+                    background: isSelected
+                      ? 'rgba(99, 102, 241, 0.1)'
+                      : isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
                     borderBottom: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.2)' : getSeatBorderColor(group.seatNumber!)}`,
+                    borderRadius: '6px 6px 0 0',
                     cursor: onSeatSelect ? 'pointer' : undefined,
-                    borderLeft: isSelected ? `3px solid ${seatColor}` : '3px solid transparent',
+                    borderLeft: isSelected ? '3px solid rgba(99, 102, 241, 0.6)' : `3px solid ${seatColor}`,
                     transition: 'border-left-color 0.15s ease, background 0.15s ease',
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -945,11 +948,14 @@ export const OrderPanel = memo(function OrderPanel({
                     onClick={() => onSeatSelect?.(group.seatNumber)}
                     style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '6px 12px',
-                    background: isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
+                    padding: '4px 10px',
+                    background: isSelected
+                      ? 'rgba(99, 102, 241, 0.1)'
+                      : isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
                     borderBottom: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.2)' : getSeatBorderColor(group.seatNumber!)}`,
+                    borderRadius: '6px 6px 0 0',
                     cursor: onSeatSelect ? 'pointer' : undefined,
-                    borderLeft: isSelected ? `3px solid ${seatColor}` : '3px solid transparent',
+                    borderLeft: isSelected ? '3px solid rgba(99, 102, 241, 0.6)' : `3px solid ${seatColor}`,
                     transition: 'border-left-color 0.15s ease, background 0.15s ease',
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -993,7 +999,9 @@ export const OrderPanel = memo(function OrderPanel({
     <div
       className={`flex flex-col h-full ${className}`}
       style={{
-        background: 'rgba(15, 23, 42, 0.95)',
+        background: 'rgba(15, 23, 42, 0.75)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
         borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
       }}
     >

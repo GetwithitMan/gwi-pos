@@ -76,8 +76,15 @@ export function ModifierGroupSection({
 
     return (
       <div className={boxClass}>
-        <div className={headerClass}>
-          <span className="truncate">{group.displayName || group.name}</span>
+        <div className={`${headerClass} ${group.isRequired ? 'mm-group-header-required' : 'mm-group-header-optional'}`}>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate">{group.displayName || group.name}</span>
+            {group.isRequired ? (
+              <span className="text-red-400/70 text-[10px] flex-shrink-0">• Required</span>
+            ) : (
+              <span className="text-gray-400/60 text-[10px] flex-shrink-0">• Optional</span>
+            )}
+          </div>
           <div className="flex items-center gap-1">
             {group.isRequired && !isComplete && <span className="text-red-400 text-[10px]">REQ</span>}
             {selectedCount > 0 && (
@@ -163,10 +170,15 @@ export function ModifierGroupSection({
   return (
     <div className={boxClass}>
       {/* Box header with group name */}
-      <div className={headerClass} style={{ borderBottomColor: groupColor + '30' }}>
+      <div className={`${headerClass} ${group.isRequired ? 'mm-group-header-required' : 'mm-group-header-optional'}`} style={{ borderBottomColor: groupColor + '30' }}>
         <div className="flex items-center gap-1.5 min-w-0">
           <div className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: groupColor }} />
           <span className="truncate">{group.displayName || group.name}</span>
+          {group.isRequired ? (
+            <span className="text-red-400/70 text-[10px] flex-shrink-0">• Required</span>
+          ) : (
+            <span className="text-gray-400/60 text-[10px] flex-shrink-0">• Optional</span>
+          )}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
           {group.isRequired && !isComplete && <span className="text-red-400 text-[10px] font-bold">REQ</span>}

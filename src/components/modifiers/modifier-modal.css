@@ -296,6 +296,15 @@
   border-color: #4ade80;
 }
 
+/* Required / Optional group left-border accents */
+.mm-group-header-required {
+  border-left: 2px solid rgba(239, 68, 68, 0.4);
+}
+
+.mm-group-header-optional {
+  border-left: 2px solid rgba(100, 116, 139, 0.3);
+}
+
 /* Group box header */
 .mm-group-box-header {
   padding: 6px 8px;

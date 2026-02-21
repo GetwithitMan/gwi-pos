@@ -46,7 +46,7 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
   const isItem86d = item.is86d || item.stockStatus === 'out'
   const bgColor = isItem86d
     ? 'rgba(100, 100, 100, 0.3)'
-    : (customStyle?.bgColor || 'rgba(255, 255, 255, 0.03)')
+    : (customStyle?.bgColor || 'rgba(255, 255, 255, 0.05)')
   const textColor = isItem86d
     ? '#6b7280'
     : (customStyle?.textColor || '#e2e8f0')
@@ -76,7 +76,10 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
         justifyContent: 'center',
         padding: '20px 16px',
         background: bgColor,
-        border: `1px solid ${isItem86d ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+        backdropFilter: isItem86d ? undefined : 'blur(12px)',
+        WebkitBackdropFilter: isItem86d ? undefined : 'blur(12px)',
+        border: `1px solid ${isItem86d ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.12)'}`,
+        boxShadow: isItem86d ? undefined : '0 4px 12px rgba(0, 0, 0, 0.3)',
         borderRadius: '14px',
         cursor: isItem86d ? 'not-allowed' : 'pointer',
         minHeight: '110px',
@@ -87,16 +90,18 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
       onMouseOver={(e) => {
         if (!isItem86d) {
           if (!customStyle?.bgColor) {
-            e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)'
+            e.currentTarget.style.background = 'rgba(99, 102, 241, 0.18)'
           }
           e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.3)'
+          e.currentTarget.style.boxShadow = '0 8px 20px rgba(99, 102, 241, 0.2)'
         }
       }}
       onMouseOut={(e) => {
         e.currentTarget.style.background = bgColor
         e.currentTarget.style.borderColor = isItem86d
           ? 'rgba(239, 68, 68, 0.3)'
-          : 'rgba(255, 255, 255, 0.08)'
+          : 'rgba(255, 255, 255, 0.12)'
+        e.currentTarget.style.boxShadow = isItem86d ? '' : '0 4px 12px rgba(0, 0, 0, 0.3)'
       }}
     >
       {/* Quick bar indicator */}

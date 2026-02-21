@@ -57,6 +57,9 @@ export function CategoriesBar({
         fontWeight: 500,
         cursor: 'pointer',
         whiteSpace: 'nowrap' as const,
+        boxShadow: selectedCategoryId === category.id
+          ? '0 0 12px rgba(99, 102, 241, 0.4)'
+          : undefined,
       }}
     >
       {category.name}
@@ -68,7 +71,13 @@ export function CategoriesBar({
 
 
   return (
-    <div className="categories-bar-container" style={{ minHeight: '100px', background: 'rgba(0,0,0,0.2)' }}>
+    <div className="categories-bar-container" style={{
+      minHeight: '100px',
+      background: 'rgba(0, 0, 0, 0.35)',
+      backdropFilter: 'blur(10px)',
+      WebkitBackdropFilter: 'blur(10px)',
+      borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    }}>
       {/* Food Row */}
       <div className="categories-bar categories-row-food" style={{ display: 'flex', padding: '8px 20px', gap: '8px' }}>
         <span className="category-row-label" style={{ color: '#f97316', fontWeight: 600, fontSize: '11px', display: 'flex', alignItems: 'center', gap: '6px', textTransform: 'uppercase' as const }}>
