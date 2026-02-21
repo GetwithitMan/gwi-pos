@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getEffectiveCost, toNumber } from '@/lib/inventory-calculations'
 import { createModifierInventoryLinkSchema, validateRequest } from '@/lib/validations'
 import { withVenue } from '@/lib/with-venue'
+import { areUnitsCompatible, getUnitCategory } from '@/lib/inventory/unit-conversion'
 
 // GET - Get inventory link for modifier
 export const GET = withVenue(async function GET(
@@ -119,6 +120,14 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Inventory item not found' }, { status: 404 })
     }
 
+    // Check for cross-category unit mismatch (e.g. volume usageUnit vs weight storageUnit)
+    let unitWarning: string | undefined
+    if (!areUnitsCompatible(usageUnit, inventoryItem.storageUnit)) {
+      const usageCategory = getUnitCategory(usageUnit)
+      const storageCategory = getUnitCategory(inventoryItem.storageUnit)
+      unitWarning = `Unit mismatch: usageUnit (${usageUnit}) is ${usageCategory ?? 'unknown'} but storageUnit (${inventoryItem.storageUnit}) is ${storageCategory ?? 'unknown'}. Deduction will use raw quantity without conversion.`
+    }
+
     // Use transaction for atomic upsert
     const link = await db.$transaction(async (tx) => {
       // Check if link already exists
@@ -179,23 +188,26 @@ export const POST = withVenue(async function POST(
       data: { calculatedCost: totalCost },
     })
 
-    return NextResponse.json({ data: {
-      modifier: {
-        id: modifier.id,
-        name: modifier.name,
-        price: toNumber(modifier.price),
+    return NextResponse.json({
+      data: {
+        modifier: {
+          id: modifier.id,
+          name: modifier.name,
+          price: toNumber(modifier.price),
+        },
+        inventoryLink: {
+          id: link.id,
+          modifierId: link.modifierId,
+          inventoryItemId: link.inventoryItemId,
+          usageQuantity: toNumber(link.usageQuantity),
+          usageUnit: link.usageUnit,
+          inventoryItem: link.inventoryItem,
+          unitCost,
+          totalCost,
+        },
       },
-      inventoryLink: {
-        id: link.id,
-        modifierId: link.modifierId,
-        inventoryItemId: link.inventoryItemId,
-        usageQuantity: toNumber(link.usageQuantity),
-        usageUnit: link.usageUnit,
-        inventoryItem: link.inventoryItem,
-        unitCost,
-        totalCost,
-      },
-    } })
+      ...(unitWarning ? { warning: unitWarning } : {}),
+    })
   } catch (error) {
     console.error('Save modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to save inventory link' }, { status: 500 })

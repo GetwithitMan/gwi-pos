@@ -318,6 +318,14 @@ export async function deductInventoryForOrder(
             const converted = convertUnits(linkQty, link.usageUnit, linkItem.storageUnit)
             if (converted !== null) {
               linkQty = converted
+            } else {
+              console.warn('[inventory] Unit mismatch on modifier link:', {
+                modifierName: modRecord?.name,
+                itemName: linkItem.name,
+                fromUnit: link.usageUnit,
+                toUnit: linkItem.storageUnit,
+                orderId,
+              })
             }
           }
 
@@ -337,6 +345,14 @@ export async function deductInventoryForOrder(
             const converted = convertUnits(ingQty, ingredient.standardUnit, ingredient.inventoryItem.storageUnit)
             if (converted !== null) {
               ingQty = converted
+            } else {
+              console.warn('[inventory] Unit mismatch on modifier link:', {
+                modifierName: modRecord?.name,
+                itemName: ingredient.inventoryItem.name,
+                fromUnit: ingredient.standardUnit,
+                toUnit: ingredient.inventoryItem.storageUnit,
+                orderId,
+              })
             }
           }
 

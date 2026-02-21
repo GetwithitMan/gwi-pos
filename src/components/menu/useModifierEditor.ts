@@ -98,6 +98,11 @@ export function useModifierEditor({
         // Revert on failure
         await loadData()
         toast.error('Failed to update modifier')
+      } else {
+        const json = await res.json().catch(() => null)
+        if (json?.warning) {
+          toast.warning(json.warning, 8000)
+        }
       }
     } catch (e) {
       console.error('Failed to update modifier:', e)
@@ -262,12 +267,39 @@ export function useModifierEditor({
       ? ingredientsLibrary.find(i => i.id === ingredientId)?.name || null
       : null
     await updateModifier(groupId, modifierId, { ingredientId, ingredientName } as Partial<Modifier>)
-    // Refresh data to update the 🔗 badge immediately
+    // Refresh data to update the link badge immediately
     await loadData()
     // Reset ALL linking state to prevent stale data on next open
     setLinkingModifier(null)
     setModIngredientSearch('')
     resetCreationExpansionRef.current()
+  }
+
+  const saveInventoryLink = async (
+    modifierId: string,
+    inventoryItemId: string,
+    usageQuantity: number,
+    usageUnit: string
+  ) => {
+    try {
+      const res = await fetch(`/api/modifiers/${modifierId}/inventory-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inventoryItemId, usageQuantity, usageUnit }),
+      })
+      if (!res.ok) {
+        toast.error('Failed to save inventory link')
+        return
+      }
+      const json = await res.json().catch(() => null)
+      if (json?.warning) {
+        toast.warning(json.warning, 8000)
+      }
+      await loadData()
+    } catch (e) {
+      console.error('Failed to save inventory link:', e)
+      toast.error('Failed to save inventory link')
+    }
   }
 
   return {
@@ -283,6 +315,6 @@ export function useModifierEditor({
     dragOverModifierId, setDragOverModifierId,
     addModifier, updateModifier, toggleDefault, deleteModifier,
     startEditModifier, commitEditModifier,
-    createChildGroup, addChoice, linkIngredient,
+    createChildGroup, addChoice, linkIngredient, saveInventoryLink,
   }
 }
