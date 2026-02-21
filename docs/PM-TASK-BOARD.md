@@ -30,7 +30,6 @@
 
 | ID | Task | Assigned To | Created By | Date | Priority | Notes |
 |----|------|-------------|------------|------|----------|-------|
-| T-001 | Link remaining Ranch-related ingredients to InventoryItems (Ranch, Ranch Dressing, Ranch Drizzle all missing inventoryItemId) | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Only "Ranch (side)" is linked. Others need InventoryItems created and linked |
 | T-003 | Modifier-level variance drill-down in AvT reports — show which modifiers contributed to variance | PM: Reports | PM: Inventory | 2026-02-06 | P3 | Requires AvT report UI work |
 | T-005 | Modifier recipe support — allow modifiers to have multi-ingredient recipes (not just single ingredient link) | PM: Menu | PM: Inventory | 2026-02-06 | P3 | R365 "concatenation" model. Big feature. |
 | T-006 | Pour size integration with ingredient deduction path — apply pour size multiplier to Path B deductions | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Currently pour sizes only affect pricing, not ingredient qty |
@@ -99,6 +98,7 @@
 | T-002 | Prep item explosion for modifier deductions (Path B) | PM: Inventory | 2026-02-20 | ORDER_INVENTORY_INCLUDE gains prepItem.ingredients.inventoryItem. Path B: else if (ingredient?.prepItem) calls explodePrepItem(), skips removed ingredients. Mirrors base recipe pattern. 1 file, 32 lines. Commit `b71b8fe` |
 | T-017 | Inventory ↔ Menu sync verification (Beef Patty bug) | PM: Menu | 2026-02-20 | CODE FIXED — Skill 291 (commit f11e25f) fixed expansion state reset + POST data shape normalization. "Casa Fries" bug non-reproducible. Remaining: E2E hardware verification (needs live POS). |
 | T-050 | Tailwind v4 dev/prod CSS optimization parity | PM: Development-RnD | 2026-02-20 | Added optimize: true to @tailwindcss/postcss in postcss.config.mjs. Forces Lightning CSS in dev to match prod. oklab transpilation unaffected. Commit `12da703` |
+| T-001 | Link Ranch ingredients to InventoryItems in seed | PM: Inventory | 2026-02-20 | inv-ranch-dressing-001 upsert + ing-ranch/ing-ranch-dressing/ing-ranch-side/ing-ranch-drizzle all linked. Shared InventoryItem (Ranch Dressing, 128oz/gallon, $0.05/oz). Commit `4870737` |
 | T-018 | Wire Socket.io events to CFD page | PM: KDS | 2026-02-19 | CFD page wired to POS socket events. Commit `1e9c00e` |
 | T-019 | Wire Socket.io events to Bartender Mobile | PM: KDS | 2026-02-19 | MobileTabActions socket events wired. Commit `1e9c00e` |
 | T-020 | Wire Socket.io events to Pay-at-Table | PM: KDS | 2026-02-19 | Pay-at-Table socket sync on payment completion. Commit `72f725b` |
