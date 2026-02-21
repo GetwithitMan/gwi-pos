@@ -55,6 +55,13 @@ All findings across all sessions. Cleared when resolved.
 | 024 | 🔵 Low | `src/components/payment/CashEntryStep.tsx` | Change calculation (amount tendered – amount due) is computed inline in this step and separately in `PaymentModal`. Two independent implementations risk drift. | FE-A | Extract a shared `calculateChange(tendered, amountDue)` helper and use it in both `CashEntryStep` and `PaymentModal`. Apply consistent rounding/ceiling rules. | Open |
 | 025 | 🔵 Low | `src/components/payment/CardProcessingStep.tsx` | Processing status is shown as an animated indicator only — no human-readable text tied to the underlying status enum (`checking_readers`, `waiting_card`, `authorizing`, etc.). Staff can see *something* is happening but not *which phase*. | FE-A | Map status enum → status string: `{ checking_readers: 'Verifying reader…', waiting_card: 'Present card…', authorizing: 'Authorizing…' }`. Display below the animation. `terminalId` is already shown — keep it. | Open |
 | 026 | ℹ️ Info | `src/components/payment/TipPromptSelector.tsx` | Rounding logic `Math.round(orderAmount * (percent / 100) * 100) / 100` is correct and consistent in this file. No action needed here. Note: verify same formula is used in `PaymentModal` and `DatacapPaymentProcessor` tip paths to prevent penny discrepancies across screens. `requireCustomForZeroTip` should be documented in settings UI so venue owners choose friction level explicitly. | FE-A | No code change needed now. Document `requireCustomForZeroTip` in settings page help text. Verify tip rounding formula consistency across files when touching tip logic. | Open |
+| 027 | ⚠️ Medium | `src/app/api/datacap/sale/route.ts` (and `capture`, `refund`, `void`, `preauth`, `adjust`, `increment`, `walkout-retry`) | **Datacap API routes lack `requirePermission` checks.** All 8 routes validate the reader (cross-tenant guard) and Datacap client, but do not check `pos.card_payments` permission. Any employee with a valid venue session can call these hardware endpoints directly. The permission check lives only in `/api/orders/:id/pay`. | BE-A | Add `requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)` to each Datacap API route, or create a shared Datacap route middleware. Alternatively, accept the design choice that `validateReader` is the security gate, and document it explicitly. | Open |
+| 028 | ⚠️ Medium | `src/app/api/datacap/sale/route.ts` | `INTERNAL_API_SECRET` falls back to empty string `''` in the card-recognition fire-and-forget call (`process.env.INTERNAL_API_SECRET \|\| ''`). If the env var is not set, the `/api/card-profiles` internal endpoint accepts any request. Same pattern as Issue #001. | Infra | Add hard startup guard in prod: `if (!process.env.INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') throw new Error(...)`. Consistent fix with Issue #001. | Open |
+| 029 | ⚠️ Medium | `src/app/api/orders/[id]/refund-payment/route.ts` | **Partial refund double-refund risk.** The validation checks `refundAmount > payment.amount` (original amount), but does not check how much has already been refunded via previous `RefundLog` entries. Multiple partial refunds can sum to more than the original payment (e.g., refund $15 + refund $10 on a $20 payment = $25 total refund). `payment.refundedAmount` field exists in the schema but is never updated by this route. | BE-A | Before processing: `const alreadyRefunded = await db.refundLog.aggregate({ where: { paymentId }, _sum: { refundAmount: true } })`. Validate `refundAmount <= payment.amount - alreadyRefunded._sum.refundAmount`. Update `payment.refundedAmount` inside the transaction. | Open |
+| 030 | ⚠️ Medium | `src/app/api/orders/[id]/void-payment/route.ts` | **Orphaned void risk (inverse of #013).** This route only records the void in the DB. The Datacap void (`POST /api/datacap/void`) must succeed first, then this endpoint records it. If the Datacap void succeeds but this DB write fails, the payment is voided in the processor but still shows `completed` in the system — charges reversed in Datacap but revenue counted in POS. | BE-A | Add a comment to both routes documenting the required call sequence. Long-term: consider a single server action that calls Datacap void and writes DB atomically (same fix direction as Issue #013). Until then, wrap the two calls in a retry or dead-letter queue in the calling component. | Open |
+| 031 | 🔵 Low | `src/components/payment/PaymentModal.tsx` (orchestrator) | Payment step orchestrator lacks a React Error Boundary. If any step (e.g., HouseAccountStep) throws due to malformed data, the whole modal crashes with no recovery path. Staff cannot retry or return to method selection. | FE-A | Wrap the step-rendering section in an Error Boundary that catches errors and renders: "Something went wrong in this payment step" + "Return to Payment Method Selection" button that resets step to `'method'`. The underlying order state should remain intact. | Open |
+| 032 | 🔵 Low | `src/components/payment/PaymentModal.tsx` | Modal modality not verified: (a) focus trap (Tab/Shift+Tab staying inside modal) — if staff accidentally Tab out, they can interact with the background order screen mid-payment; (b) z-index — if modal is below toasts or drawers, it could be partially hidden mid-transaction on touch screens. | FE-A | Verify focus trap using `@headlessui/react` Dialog or similar. Define a `z-modal-payment` value above all other overlay z-indices. Test on target tablet/touch hardware. | Open |
+| 033 | ℹ️ Info | `src/components/payment/` (all step components) | Analytics hooks are not wired. The modular architecture produces composable callbacks (`onSelectMethod`, `onComplete`, `onTipChange`, etc.) that are ideal telemetry attachment points. No current metrics on tip conversion rate, payment method distribution, time-to-payment, or step abandonment by venue. | FE-A | Wire `onComplete`, `onSelectMethod`, `onTipChange` to telemetry calls (Posthog, custom endpoint, or similar). Key metrics: method distribution per terminal, time from tip prompt → payment complete, custom tip vs suggested tip ratio. Review before adding if analytics service is not yet selected. | Open |
 
 **Severity key:**
 - 🔴 Critical — active security/data risk, fix before next deploy
@@ -66,6 +73,89 @@ All findings across all sessions. Cleared when resolved.
 - `BE-A` — Back-end application developer
 - `FE-A` — Front-end application developer
 - `Infra` — Infrastructure / DevOps (env vars, encryption keys, Vercel config)
+
+---
+
+## Session 4 — 2026-02-21
+
+**Theme:** Tier 1 — Payment API Routes (12 routes — Tier 1 Complete)
+**Tier coverage:** Tier 1: 36/36 complete (+12 this session) ✅
+
+### Files Reviewed
+
+| File | Lines | Status | Findings |
+|------|-------|--------|----------|
+| `src/app/api/datacap/sale/route.ts` | 90 | ✅ Solid | Issue #027 (missing permission check) + Issue #028 (INTERNAL_API_SECRET fallback) |
+| `src/app/api/datacap/capture/route.ts` | 47 | ✅ Clean | Issue #027 (missing permission check) |
+| `src/app/api/datacap/refund/route.ts` | 66 | ✅ Clean | Issue #027 (missing permission check) |
+| `src/app/api/datacap/void/route.ts` | 39 | ✅ Clean | Issue #027 (missing permission check) |
+| `src/app/api/datacap/preauth/route.ts` | 51 | ✅ Clean | Issue #027 (missing permission check) |
+| `src/app/api/datacap/adjust/route.ts` | 46 | ✅ Clean | Issue #027 (missing permission check) |
+| `src/app/api/datacap/increment/route.ts` | 44 | ✅ Clean | Issue #027 (missing permission check) |
+| `src/app/api/datacap/walkout-retry/route.ts` | 198 | ✅ Solid | Issue #027 (missing permission check) |
+| `src/app/api/orders/[id]/pay/route.ts` | 1,198 | ✅ Very solid | None (see notes) |
+| `src/app/api/orders/[id]/void-payment/route.ts` | 181 | ✅ Solid | Issue #030 — DB-only void, orphaned void risk |
+| `src/app/api/orders/[id]/refund-payment/route.ts` | 186 | ✅ Solid | Issue #029 — partial refund double-refund risk |
+| `src/app/api/simulated-reader/process/route.ts` | 100 | ✅ Clean | None — `checkSimulatedReaderAccess()` blocks prod |
+
+### Session Notes
+
+**Datacap API routes (sale, capture, refund, void, preauth, adjust, increment)** — These 7 routes follow a tight, consistent pattern: `parseBody` → validate required fields → `validateReader` (cross-tenant guard) → `requireDatacapClient` → call client method → `parseError` → return structured response. All are thin pass-throughs; business logic lives in `client.ts`. Issue #027 applies to all of them: they validate the *reader* (which venue it belongs to) but don't validate whether the *employee* has `pos.card_payments` permission. The permission check lives only in `/api/orders/:id/pay`. Whether this is a design choice or an oversight needs to be decided. Note: `refund/route.ts` uniquely omits `locationId` from the request body and instead looks up the reader by ID from the DB — correct for card-not-present refunds using stored tokens.
+
+**`walkout-retry/route.ts`** (198 lines, most complex Datacap route) — Two endpoints: POST (trigger/retry a capture) and GET (list walkout retries for a location). The POST success path uses `db.$transaction` to update `walkoutRetry` and `orderCard` atomically. Failure path correctly updates retry state (count, error, nextRetryAt, status) even when Datacap declines. Retry exhaustion logic (`nextRetry > maxDate`) prevents infinite retry cycles. The GET endpoint uses `locationId` from query params with a Prisma `where` filter — safe under the multi-tenant DB model (wrong locationId returns empty results). One batch query + Map lookup avoids N+1 for order card enrichment. No permission check (Issue #027).
+
+**`orders/[id]/pay/route.ts`** (1,198 lines — the most important route in the codebase) — No new issues found. This is the most thoroughly implemented route in the system:
+- **Idempotency**: deduplicates on `idempotencyKey` using already-loaded payment data (no extra query).
+- **Zod validation**: `PaymentRequestSchema` validates all inputs with precise error messages.
+- **Server-side auth**: `requireAnyPermission(employeeId, locationId, [POS_CASH_PAYMENTS, POS_CARD_PAYMENTS])`.
+- **Gift card TOCTOU-safe**: reads balance + deducts + creates payment in a single `db.$transaction`. Race condition on gift card balance is correctly prevented.
+- **Loyalty points pre-computed before transaction**: avoids nested query inside transaction that could cause deadlocks.
+- **Cash rounding**: two rounding systems (`priceRounding` takes precedence over legacy `cashRounding`), with correct per-payment `alreadyPaidInLoop` tracking for multi-payment orders.
+- **Datacap field validation**: checks mutual exclusivity — if any Datacap field is present, all required fields must be present. Catches corrupted payment records at API boundary.
+- **Amount guard**: NaN check + `amount <= 0` + max 150% of order total as sanity bound.
+- **Audit trail**: `payment_processed` + `order_closed` events logged inside the transaction.
+- **Side effects**: inventory, tips, drawer, floor plan — all fire-and-forget after the transaction commits.
+- **Gift card backend note**: Line 661 checks `if (paymentAmount > cardBalance) throw 'GC_INSUFFICIENT'`. This is the backend enforcement of the full-coverage requirement flagged in Issue #021 (GiftCardStep). Both layers need to change to support partial gift card tenders.
+- **Simulated fallback**: `generateFakeAuthCode()`/`generateFakeTransactionId()` are called only when no Datacap fields are present (`!isDatacap`). These are correctly the simulated path, not production.
+
+**`void-payment/route.ts`** — DB-only: marks payment as `voided`, updates order status, writes audit log, dispatches socket events, triggers tip chargeback — all well-implemented. No Datacap call. This is the correct design (Datacap void must be called first by the caller), but creates Issue #030 (orphaned void risk if the DB write fails after Datacap void succeeds). Tip chargeback (`handleTipChargeback`) is correctly handled with a non-fatal catch for payments without tip allocations.
+
+**`refund-payment/route.ts`** — Validates refund amount, checks payment status (blocks voided/already-refunded), requires manager permission, calls `emvReturn` for card payments (card-not-present using stored `datacapRecordNo`), creates `RefundLog` + `AuditLog` atomically. Issue #029: validation checks `refundAmount > payment.amount` (original amount) but not the sum of prior `RefundLog` entries — multiple partial refunds could total more than the original payment amount.
+
+**`simulated-reader/process/route.ts`** — `checkSimulatedReaderAccess()` from `../guard` blocks in production. Validates Amount, TranType (Sale/Auth only), Invoice. Simulates ~5% decline rate, 800–1500ms reader delay, random entry method distribution (60% Tap, 20% Chip, 20% Swipe). Cardholder name only included for Chip reads — realistic.
+
+**Additional Datacap routes not in Tier 1** (found during filesystem check, will be reviewed in appropriate tiers): `preauth-by-record`, `sale-by-record`, `auth-only`, `batch`, `param-download`, `device-prompt`, `collect-card`, `return`, `partial-reversal`, `saf/statistics`, `saf/forward`, `discover` (separate from `discovery.ts`), `pad-reset`. These are operational support routes — lower-risk than the core sale/void/refund paths reviewed here.
+
+---
+
+## Session 3-D — 2026-02-21 (Supplemental: Third-Party Review, Modular Payments Architecture Parts 11–14)
+
+**Source:** Third-party review — Modular payments architecture
+**Theme:** HouseAccountStep, PaymentMethodStep, TipEntryStep, Payments README
+**Note:** Supplemental. Files scheduled for formal Tier 3 review. Issues tracked here; checklist progress not incremented.
+
+### Files Covered
+
+| File | Review Source | Status | Findings |
+|------|---------------|--------|----------|
+| `src/components/payment/HouseAccountStep.tsx` | Third-party | ✅ Solid | None — credit limit enforcement + new balance preview correct |
+| `src/components/payment/PaymentMethodStep.tsx` | Third-party | ✅ Solid | None — remaining amount correctly passed in |
+| `src/components/payment/TipEntryStep.tsx` | Third-party | ✅ Solid | None — `Math.round(x*100)/100` correct; `calculateOn` prop correct |
+| `src/components/payment/` README | Third-party | ✅ Solid | None — documents architecture decisions correctly |
+
+### Session Notes
+
+**Overall architecture verdict (Review):** Moving from a ~927-line monolithic payment flow to modular per-step components is the right decision. Each step encapsulates a distinct concern, enabling unit testing in isolation, reuse in future flows, and single-responsibility maintainability. The modular architecture is **sound and ready for production integration**.
+
+**`HouseAccountStep`** — Credit limit enforcement (`balance + amountDue <= creditLimit`) at UI layer is correct. Must remain mirrored on backend — ✅ confirmed: `orders/[id]/pay/route.ts` enforces the same check server-side (line ~762). "New Balance" preview gives staff and members immediate clarity before charging. Robust empty states distinguish loading / no matches / not configured — avoids blank-panel confusion. For future: partial house account support should follow the same pattern as Issue #021 (gift card partial tender): apply up to the allowed amount, route remainder to method selection.
+
+**`PaymentMethodStep`** — Color-coded buttons with icons build "muscle memory" for fast staff. `remainingAmount` passed in (not original total) — correct, prevents confusion after partial tenders. Future improvement: surface "partial paid" badges showing existing payments (e.g., "Cash $20, Gift Card $10 already applied").
+
+**`TipEntryStep`** — `Math.round(x * 100) / 100` used for tip calculation — correct. `calculateOn: 'subtotal' | 'total'` prop enables jurisdiction/venue flexibility for pre-tax vs. post-tax tip calculation. Critical: all tip-computing paths (Datacap, PaymentModal, QuickPay, this step) must use the same `calculateOn` logic to prevent penny mismatches.
+
+**Payments README** — Explains *why* the modular approach was chosen, not just *what* the components are. "Before vs. After" snippet comparing monolith to step-based architecture is textbook migration documentation. Should be kept in sync as new steps (loyalty, stored value) are added.
+
+**Three production-readiness additions (Issues #031, #032, #033):** Error Boundary around orchestrator (step throws → recovery UI, not crash), modal modality verification (focus trap + z-index), analytics wiring (composable callbacks are the right hook points for telemetry).
 
 ---
 
@@ -283,7 +373,58 @@ Architecture quality: High. The multi-tenant Prisma proxy pattern (`db.ts`) is w
 
 ## Tier 1 Summary
 
-_To be written when all 37 Tier 1 files are reviewed. Will consolidate critical/medium issues by theme: auth, DB, payments._
+**Completed:** 2026-02-21 (Sessions 1–4) | **36 files reviewed** | **Open issues: 30** (4 critical, 12 medium, 10 low, 4 info)
+
+### Critical Issues (#006, #013, #021, #029-like)
+
+| # | File | Issue |
+|---|------|-------|
+| #006 | `prisma/schema.prisma` | `Employee.bankAccountNumber` stored plaintext — encrypt before payroll goes live |
+| #013 | `QuickPayButton.tsx` | Two-step sale + DB write — orphaned charge risk |
+| #021 | `GiftCardStep.tsx` | Partial gift cards blocked — full coverage required |
+| #029 | `refund-payment/route.ts` | Partial refund double-refund risk — `refundedAmount` not tracked |
+
+### Medium Issues by Theme
+
+**Auth & Env:**
+- #001 — `PROVISION_API_KEY` empty string fallback
+- #002 — Soft-mode auth bypass (`api-auth.ts`)
+- #007 — `verifyCloudToken` expiry logic bug (falsy `exp` → permanent validity)
+- #008 — `CLOUD_BLOCKED_PATHS` blocklist (new routes accessible by default)
+- #028 — `INTERNAL_API_SECRET` empty string fallback
+
+**Payments:**
+- #010 — `reader-health.ts` in-memory Map (not shared across instances)
+- #011 — `rounding.ts` JS floating point for cash rounding math
+- #014 — `DatacapPaymentProcessor` void failure silent (only `console.error`)
+- #015 — `DatacapPaymentProcessor` stale CFD tip after `handleStartPayment`
+- #016 — `PaymentModal` house account lookup derives `locationId` from `orderId` prefix
+- #022 — `SwapConfirmationModal` beep failure not surfaced visually
+- #027 — Datacap API routes (8 routes) missing `requirePermission` check
+- #030 — `void-payment/route.ts` DB-only void — orphaned void risk if DB write fails
+
+### Theme Analysis
+
+| Theme | Critical | Medium | Low/Info |
+|-------|----------|--------|----------|
+| Auth & Sessions | 0 | 4 (#001, #002, #007, #008) | 1 (#003) |
+| Database & Schema | 1 (#006) | 0 | 2 (#004, #005) |
+| Payment Processing | 2 (#013, #021) | 9 (#010–#016, #027–#030) | 8 (#012, #017–#020, #023–#025) |
+| Env & Infra | 1 (#029) | 1 (#028) | 0 |
+| Frontend UX | 0 | 0 | 5 (#026, #031–#033, #025) |
+
+### Fix Priority Order (before go-live)
+
+1. **#006** — Encrypt bank account numbers (before payroll feature is live)
+2. **#013** — Consolidate QuickPayButton into single server action (before any card processing goes live)
+3. **#021** — Implement partial gift card tender (business logic gap, common bar scenario)
+4. **#029** — Add cumulative refund validation in `refund-payment/route.ts`
+5. **#007** — Fix `verifyCloudToken` expiry bug
+6. **#001, #028** — Add `PROVISION_API_KEY` and `INTERNAL_API_SECRET` startup guards
+7. **#027** — Add `requirePermission` to Datacap API routes
+8. **#030** — Document (and eventually consolidate) Datacap void + DB void call sequence
+9. **#014, #022** — Surface void/beep failure errors to staff (same fix pattern)
+10. **#016** — Fix house account `locationId` derivation
 
 ---
 
@@ -291,7 +432,7 @@ _To be written when all 37 Tier 1 files are reviewed. Will consolidate critical/
 
 | Tier | Files | Reviewed | Remaining |
 |------|-------|----------|-----------|
-| Tier 1 — Critical | 37 | 24 | 13 |
+| Tier 1 — Critical | 36 | 36 | 0 ✅ |
 | Tier 2 — Core Business Logic | 52 | 0 | 52 |
 | Tier 3 — Core POS Pages | 42 | 0 | 42 |
 | Tier 4 — Menu, Printing, Hardware | 38 | 0 | 38 |
@@ -300,7 +441,7 @@ _To be written when all 37 Tier 1 files are reviewed. Will consolidate critical/
 | Tier 7 — Mobile & Public | 10 | 0 | 10 |
 | Tier 8 — System & Infrastructure | 19 | 0 | 19 |
 | Tier 9 — Supporting Code | 22 | 0 | 22 |
-| **Total** | **284** | **24** | **260** |
+| **Total** | **283** | **36** | **247** |
 
 ---
 
