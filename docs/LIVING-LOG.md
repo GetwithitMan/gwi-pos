@@ -5,6 +5,72 @@
 
 ---
 
+## 2026-02-20 — P0/P1 Bug Sprint (Session 4)
+
+**Session theme:** Clear deployment blockers + high-priority payment and order fixes
+
+**Summary:** Cleared all P0 floor plan deployment blockers, fixed partial payment flow bugs, improved EOD reset with manager notifications. Also shipped Online Ordering Phase 5 and Shift Swap Phase 2 earlier this session (see commits below).
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `7ff4658` | feat(scheduling): Shift Swap Phase 2 — admin panel + mobile UI |
+| `325c044` | feat(online-ordering): Phase 5 — customer order page + Datacap PayAPI checkout |
+| `0bc5857` | docs: update Living Log |
+| `423febb` | fix(floor-plan): T-031/T-033 — remove hot-path console.error, add toast + rollback |
+| `ef9eb04` | fix(payments): T-079 — partial payment flow fixes |
+| `87b0a09` | feat(eod): T-077 — EOD manager notification + eod-cleanup businessDay fix |
+
+### Deployments
+- All pushed to `main` → Vercel auto-deploys
+
+### Features Delivered
+
+**Shift Swap Phase 2** (`7ff4658`)
+- Admin: swap request modal, per-shift icon, Swap Requests panel with approve/reject
+- Mobile: incoming swap requests section, outgoing swap request sheet
+
+**Online Ordering Phase 5** (`325c044`)
+- Public `/order` page: 3-step flow (menu → cart/customer info → Datacap iFrame checkout)
+- `GET /api/online/menu` + `POST /api/online/checkout` (PayAPI, status `received` on approval)
+
+**Floor Plan P0 Fixes** (`423febb`)
+- T-031: Removed console.error from 5 hot-path handlers (drag, seat drag, rotate, move, update)
+- T-032: Verified deterministic grid placement already in place (Math.random gone)
+- T-033: Added toast.error + optimistic rollback (prevTables restore) to all 5 handlers; response.ok guard in handlePointerUp
+- T-044: Verified VOID/COMP stamps, voidReason, wasMade all correctly wired
+
+**Partial Payment Fixes** (`ef9eb04`)
+- T-047: Verified dispatchOpenOrdersChanged already in both void routes
+- T-079: Void & Retry now auto-returns to method selection after void; Payment Progress banner shows collected + remaining when pendingPayments > 0
+
+**EOD Reset Improvements** (`87b0a09`)
+- T-077: eod-cleanup now uses businessDayDate instead of midnight UTC cutoff
+- eod/reset emits `eod:reset-complete` socket event with stats payload
+- FloorPlanHome shows dismissable EOD Summary overlay (cancelled drafts, rolled orders, tables reset) + auto-refreshes table statuses
+
+### Bug Fixes
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| console.error in drag/rotate hot paths | Removed from 5 handlers in UnifiedFloorPlan.tsx | `423febb` |
+| Floor plan drag failure: no user feedback | toast.error + state rollback on API failure | `423febb` |
+| Void & Retry left staff in limbo | onCancel() called after void to return to method selection | `ef9eb04` |
+| eod-cleanup used midnight UTC not business day | Replaced with getCurrentBusinessDay() + businessDayDate filter | `87b0a09` |
+
+### Resolved Task Board Items
+T-031, T-032, T-033, T-044, T-047, T-077, T-079
+
+### Known Issues / Blockers
+- P1-05: Socket multi-terminal validation — needs real Docker/hardware
+- P1-07: Card token persistence — needs live Datacap hardware (blocks Loyalty)
+- GL-06: Pre-launch checklist at 8% — manual hardware testing required
+- Pricing Programs (T-080): 5-phase surcharge/interchange+/tiered overhaul
+- T-078: Open/Stale Orders Manager UI (no UI to view orders from previous days)
+
+---
+
 ## 2026-02-20 — P3 Continued: Shift Swap Phase 2 + Online Ordering Phase 5 (Session 3)
 
 **Session theme:** Complete Shift Swap end-to-end + ship Online Ordering Phase 5 customer checkout
