@@ -80,10 +80,50 @@ function isCloudVenueHost(hostname: string): boolean {
   return false
 }
 
+/**
+ * Online ordering paths: /:orderCode/:slug[/...]
+ *
+ * Pattern: 4–8 uppercase alphanumeric chars followed by a lowercase slug.
+ * Example: /ABC123/my-venue or /ABC123/my-venue/confirm
+ *
+ * These are customer-facing public pages — no auth cookies required.
+ * We extract the slug from the path and pass it via x-venue-slug so that
+ * the page component can call /api/public/resolve-order-code to get the
+ * locationId without triggering the authenticated middleware flow.
+ */
+const ONLINE_ORDER_PATH_RE = /^\/([A-Z0-9]{4,8})\/([a-z0-9-]+)(\/.*)?$/
+
+/**
+ * Public API paths that must never be blocked by cloud auth.
+ * /api/online/* and /api/public/* are already behind locationId-based
+ * isolation — no venue session required.
+ */
+const PUBLIC_API_PATH_RE = /^\/api\/(online|public)\//
+
 export async function middleware(request: NextRequest) {
   const host = request.headers.get('host') || ''
   const hostname = host.split(':')[0]
   const pathname = request.nextUrl.pathname
+
+  // ═══════════════════════════════════════════════════════════
+  // EARLY BYPASS: Online ordering customer pages + public APIs
+  //
+  // These paths are served without authentication so that
+  // customers can browse menus and place orders.
+  // ═══════════════════════════════════════════════════════════
+  const onlineOrderMatch = ONLINE_ORDER_PATH_RE.exec(pathname)
+  if (onlineOrderMatch) {
+    // onlineOrderMatch[2] is the slug portion of the path
+    const slugFromPath = onlineOrderMatch[2]
+    const headers = new Headers(request.headers)
+    headers.set('x-venue-slug', slugFromPath)
+    return NextResponse.next({ request: { headers } })
+  }
+
+  if (PUBLIC_API_PATH_RE.test(pathname)) {
+    // Public APIs need no venue context — pass through unmodified
+    return NextResponse.next()
+  }
 
   const isCloud = isCloudVenueHost(hostname)
   const venueSlug = extractVenueSlug(hostname)
