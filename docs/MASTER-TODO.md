@@ -248,7 +248,7 @@ These 8 items will break the system at a real venue.
 - ~~Build scheduling admin UI (week grid, drag shift blocks)~~ ✅ RESOLVED — `/admin/scheduling` week-grid page exists, schedule publish/draft workflow, shift add modal. Verified complete.
 - ~~**Shift edit/delete (admin)**~~ ✅ RESOLVED — `PUT/DELETE /api/schedules/[id]/shifts/[shiftId]`; pencil/× buttons on draft shift cards in admin scheduling page; EditShiftModal. Commit `3b26b0e`.
 - ~~**Employee mobile: view my schedule**~~ ✅ RESOLVED — `GET /api/mobile/schedule` returns upcoming published shifts; `/mobile/schedule` dark-theme page: week-grouped cards, 12h time, status badges, role, notes. Nav link in mobile tabs header. Commit `3b26b0e`.
-- Shift request / swap workflow — still pending
+- **Shift request / swap workflow** — LARGE scope (18-20 files): needs new `ShiftSwapRequest` model + 6-8 new API routes + admin swap review panel + mobile request/pending UI + socket notifications. Audit: `ScheduledShift` has `originalEmployeeId`/`swappedAt`/`swapApprovedBy` fields but no `ShiftSwapRequest` model. Full workflow build = dedicated sprint.
 - Clock-in/out vs scheduled time comparison — still pending
 - Labor scheduling vs actual labor cost report — still pending
 
@@ -256,7 +256,7 @@ These 8 items will break the system at a real venue.
 - **Loyalty:** Points balance, tier status, history (after T-026)
 - **Favorites:** Track customer's most-ordered items (top-5 already shown in detail modal)
 - ~~**History:** Customer order history in admin view~~ ✅ RESOLVED — `GET /api/customers/[id]` now accepts `page`, `limit`, `startDate`, `endDate`; returns `ordersPagination`; detail modal has date range filter + Apply/Clear + Prev/Next pagination. Commit `52438dc`.
-- **Notes:** Per-customer staff notes (allergies, preferences, VIP status) — field exists on schema, edit UI may be needed
+- ~~**Notes:** Per-customer staff notes (allergies, preferences, VIP status)~~ ✅ RESOLVED — Inline notes editor in detail modal: pencil toggle → textarea edit → Save/Cancel with PUT API call + toast. Commit `d0a8dc5`.
 
 ### REPORTS (Advanced)
 - **Forecasting:** Sales projections based on historical day-of-week patterns
@@ -268,7 +268,7 @@ These 8 items will break the system at a real venue.
 - **Barcode Scanner (Skill 58):** Item lookup by UPC
 - ~~**Cash Drawer (Skill 56):**~~ ✅ RESOLVED — `src/lib/cash-drawer.ts` + `POST /api/print/cash-drawer`; `hasCash` guard in pay route fires `triggerCashDrawer` fire-and-forget. Commit `f10c9cb`.
 - ~~**Reader Health Dashboard:**~~ ✅ RESOLVED — `PaymentReaderLog` schema + `src/lib/reader-health.ts` + `GET /api/hardware/readers/health` + `/settings/hardware/health` dashboard; `logReaderTransaction` wired into `DatacapClient.withPadReset`. Commit `3ff3755`.
-- **KDS Browser Version Audit:** Display Chrome version on KDS admin page
+- ~~**KDS Browser Version Audit:** Display Chrome version on KDS admin page~~ ✅ RESOLVED — Heartbeat extracts Chrome version from user-agent, stores in `deviceInfo` JSON. Admin KDS page shows "Chrome X.Y" badge. Commit `ea967d9`.
 - **Offline Mode (Skill 60):** Full offline operation with sync on reconnect
 
 ### PRICING PROGRAMS (T-080 — 5 phases)
