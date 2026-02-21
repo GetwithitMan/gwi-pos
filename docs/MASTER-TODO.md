@@ -236,38 +236,38 @@ These 8 items will break the system at a real venue.
 - **Phase 7:** Email/SMS enrollment + balance notifications
 
 ### ONLINE ORDERING (Skill 217)
-*Infrastructure done, client UI pending*
-- **Phase 2:** Wire `dispatchMenuItemChanged()` on all item CRUD API routes
-- **Phase 3:** Build `useMenuSocket` hook for client subscriptions
-- **Phase 4:** `isOrderableOnline` computed field (availability + time window + stock)
-- **Phase 5:** Customer-facing order UI (React page: `/order`)
-- **Phase 6:** Online payment integration (Stripe or Datacap)
-- **Phase 7:** Order pickup/delivery workflow, ETA display
+- ~~**Phase 2:**~~ ✅ VERIFIED COMPLETE — all active menu CRUD routes wired with `dispatchMenuItemChanged`/`dispatchMenuStockChanged`/`dispatchMenuStructureChanged`
+- ~~**Phase 3:**~~ ✅ RESOLVED — `src/hooks/useMenuSocket.ts` built; subscribes to location room, routes 3 menu events to callbacks, stale-closure safe. Commit `573446c`.
+- ~~**Phase 4:**~~ ✅ RESOLVED — `src/lib/online-availability.ts`: `computeIsOrderableOnline()` (showOnline + isAvailable + inventory + availableDays + time windows including overnight); `getStockStatus()` helper. Integrated into `menu/items/[id]/route.ts` dispatch. Commit `573446c`.
+- **Phase 5:** Customer-facing order UI (React page: `/order`) — still pending
+- **Phase 6:** Online payment integration (Stripe or Datacap) — still pending
+- **Phase 7:** Order pickup/delivery workflow, ETA display — still pending
 
 ### SCHEDULING (Skill 241)
-*Schema built (ScheduledShift, AvailabilityEntry), zero UI*
-- Build scheduling admin UI (week grid, drag shift blocks)
-- Employee mobile: view my schedule
-- Shift request / swap workflow
-- Clock-in/out vs scheduled time comparison
-- Labor scheduling vs actual labor cost report
+*Schema built (ScheduledShift, AvailabilityEntry)*
+- ~~Build scheduling admin UI (week grid, drag shift blocks)~~ ✅ RESOLVED — `/admin/scheduling` week-grid page exists, schedule publish/draft workflow, shift add modal. Verified complete.
+- ~~**Shift edit/delete (admin)**~~ ✅ RESOLVED — `PUT/DELETE /api/schedules/[id]/shifts/[shiftId]`; pencil/× buttons on draft shift cards in admin scheduling page; EditShiftModal. Commit `3b26b0e`.
+- ~~**Employee mobile: view my schedule**~~ ✅ RESOLVED — `GET /api/mobile/schedule` returns upcoming published shifts; `/mobile/schedule` dark-theme page: week-grouped cards, 12h time, status badges, role, notes. Nav link in mobile tabs header. Commit `3b26b0e`.
+- Shift request / swap workflow — still pending
+- Clock-in/out vs scheduled time comparison — still pending
+- Labor scheduling vs actual labor cost report — still pending
 
 ### CUSTOMER MANAGEMENT
 - **Loyalty:** Points balance, tier status, history (after T-026)
-- **Favorites:** Track customer's most-ordered items
-- **History:** Customer order history in admin view
-- **Notes:** Per-customer staff notes (allergies, preferences, VIP status)
+- **Favorites:** Track customer's most-ordered items (top-5 already shown in detail modal)
+- ~~**History:** Customer order history in admin view~~ ✅ RESOLVED — `GET /api/customers/[id]` now accepts `page`, `limit`, `startDate`, `endDate`; returns `ordersPagination`; detail modal has date range filter + Apply/Clear + Prev/Next pagination. Commit `52438dc`.
+- **Notes:** Per-customer staff notes (allergies, preferences, VIP status) — field exists on schema, edit UI may be needed
 
 ### REPORTS (Advanced)
 - **Forecasting:** Sales projections based on historical day-of-week patterns
-- **Product Mix Trends:** Category % of sales over 30 days
-- **Server Performance:** Sales, tips, table turns per server
-- **Void/Comp Report:** Daily void analysis by employee + reason
+- ~~**Product Mix Trends:**~~ ✅ VERIFIED COMPLETE — `/reports/product-mix` page + API already built with trending items.
+- ~~**Server Performance:**~~ ✅ RESOLVED — `GET /api/reports/server-performance` + `/reports/server-performance` page; orders grouped by employee, computes totalSales/tips/avgCheck/tableTurns, gold badge for top performer, CSV export. Commit `1a1f8f5`.
+- ~~**Void/Comp Report:**~~ ✅ VERIFIED CORRECT — `/reports/voids` page + API built; `isComp` correctly derived at runtime from `reason` field (no schema mismatch).
 
 ### HARDWARE (Advanced)
 - **Barcode Scanner (Skill 58):** Item lookup by UPC
-- **Cash Drawer (Skill 56):** Drawer open signal on cash payment
-- **Reader Health Dashboard:** avgResponseTime, successRate trends per reader
+- ~~**Cash Drawer (Skill 56):**~~ ✅ RESOLVED — `src/lib/cash-drawer.ts` + `POST /api/print/cash-drawer`; `hasCash` guard in pay route fires `triggerCashDrawer` fire-and-forget. Commit `f10c9cb`.
+- ~~**Reader Health Dashboard:**~~ ✅ RESOLVED — `PaymentReaderLog` schema + `src/lib/reader-health.ts` + `GET /api/hardware/readers/health` + `/settings/hardware/health` dashboard; `logReaderTransaction` wired into `DatacapClient.withPadReset`. Commit `3ff3755`.
 - **KDS Browser Version Audit:** Display Chrome version on KDS admin page
 - **Offline Mode (Skill 60):** Full offline operation with sync on reconnect
 
@@ -280,11 +280,11 @@ These 8 items will break the system at a real venue.
 - Dual pricing compliance UI
 
 ### MISC SMALL THINGS
-- Quick Pick Numbers toggle in gear menu (T-039) — feature built, toggle missing
+- ~~Quick Pick Numbers toggle in gear menu (T-039)~~ ✅ VERIFIED COMPLETE — toggle lives in gear menu (`UnifiedPOSHeader.tsx` line 290-293), calls `onToggleQuickBar` → `updateLayoutSetting('quickPickEnabled', ...)`. Fully functional. Task board note was outdated.
 - Integration settings pages (SMS, Slack, Email) — currently placeholders
 - ESC/POS custom logo per printer
 - Printer round-robin load distribution (Skill 103)
-- KDS prep station assignment per terminal UI
+- ~~KDS prep station assignment per terminal UI~~ ✅ VERIFIED COMPLETE — `KDSScreenStation` junction model, multi-select admin UI in `/settings/hardware/kds-screens`, socket `join_station` builds tags from `PrepStation.stationType`, `/api/kds` filters orders by stationId. Fully DB-driven.
 
 ---
 
@@ -344,4 +344,4 @@ These are DONE and working — reference before adding anything similar:
 
 ---
 
-*Last updated: 2026-02-20 — P2 sprint: P1-03, P2-R01, P2-R03, P2-P02, P2-D04, P2-H03 all resolved*
+*Last updated: 2026-02-21 — P3 sprint: Scheduling shift edit/delete + mobile schedule view, Customer history pagination, all P2 items resolved, Server Performance/Cash Drawer/Reader Health/Online Ordering Phase 3+4 resolved*
