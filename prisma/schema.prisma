@@ -216,6 +216,7 @@ model Location {
   schedules           Schedule[]
   scheduledShifts     ScheduledShift[]
   availabilityEntries AvailabilityEntry[]
+  shiftSwapRequests   ShiftSwapRequest[]
   payrollSettings     PayrollSettings?
 
   // Course Configuration
@@ -480,6 +481,11 @@ model Employee {
 
   // Mobile Device Authentication (P2-E02)
   mobileSessions MobileSession[]
+
+  // Shift Swap relations
+  initiatedSwapRequests   ShiftSwapRequest[] @relation("SwapInitiator")
+  receivedSwapRequests    ShiftSwapRequest[] @relation("SwapTarget")
+  approvedSwapRequests    ShiftSwapRequest[] @relation("SwapApprover")
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -5803,10 +5809,44 @@ model ScheduledShift {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  // Relations
+  swapRequests ShiftSwapRequest[]
+
   @@index([locationId])
   @@index([scheduleId])
   @@index([employeeId])
   @@index([date])
+  @@index([status])
+}
+
+// ShiftSwapRequest - Employee shift swap workflow
+model ShiftSwapRequest {
+  id                      String           @id @default(cuid())
+  locationId              String
+  location                Location         @relation(fields: [locationId], references: [id])
+  shiftId                 String
+  shift                   ScheduledShift   @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  requestedByEmployeeId   String
+  requestedByEmployee     Employee         @relation("SwapInitiator", fields: [requestedByEmployeeId], references: [id])
+  requestedToEmployeeId   String?
+  requestedToEmployee     Employee?        @relation("SwapTarget", fields: [requestedToEmployeeId], references: [id])
+  status                  String           @default("pending") // pending | accepted | approved | rejected | cancelled
+  respondedAt             DateTime?
+  approvedAt              DateTime?
+  approvedByEmployeeId    String?
+  approvedByEmployee      Employee?        @relation("SwapApprover", fields: [approvedByEmployeeId], references: [id])
+  expiresAt               DateTime?
+  notes                   String?
+  declineReason           String?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  deletedAt               DateTime?
+  syncedAt                DateTime?
+
+  @@index([locationId])
+  @@index([shiftId])
+  @@index([requestedByEmployeeId])
+  @@index([requestedToEmployeeId])
   @@index([status])
 }
 
