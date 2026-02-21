@@ -32,7 +32,6 @@
 |----|------|-------------|------------|------|----------|-------|
 | T-003 | Modifier-level variance drill-down in AvT reports — show which modifiers contributed to variance | PM: Reports | PM: Inventory | 2026-02-06 | P3 | DEFER: needs schema change (InventoryItemTransaction.modifierId), theoretical-usage refactor, new UI. 3-4 days. Build after inventory engine stabilizes. |
 | T-005 | Modifier recipe support — allow modifiers to have multi-ingredient recipes (not just single ingredient link) | PM: Menu | PM: Inventory | 2026-02-06 | P3 | R365 "concatenation" model. Big feature. |
-| T-006 | Pour size integration with ingredient deduction path — apply pour size multiplier to Path B deductions | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Currently pour sizes only affect pricing, not ingredient qty |
 | T-007 | Conditional deduction rules — time-of-day or menu-context-based ingredient quantities | PM: Inventory | PM: Inventory | 2026-02-06 | P3 | e.g., happy hour smaller portions |
 | T-008 | End-to-end inventory deduction test — place order with Ranch modifier on live POS, pay, verify stock decrease | PM: Inventory | PM: Inventory | 2026-02-06 | P1 | Critical verification for Skill 215. Test plan in skill doc. |
 | T-009 | Test "Extra Ranch" deduction — verify 2x multiplier (3.0 oz instead of 1.5 oz) | PM: Inventory | PM: Inventory | 2026-02-06 | P1 | Part of Skill 215 verification |
@@ -59,6 +58,7 @@
 
 | ID | Task | Completed By | Date | Notes |
 |----|------|-------------|------|-------|
+| T-006 | Pour size multiplier integration with inventory deduction | PM: Inventory | 2026-02-20 | OrderItem.pourSize/pourMultiplier fields added. Multiplier applied in MenuItemRecipe + liquor RecipeIngredient deduction paths. 7 files, 32 lines. Commit `cf8c898`. NOTE: `npx prisma db push` required on NUC. |
 | T-025 | Mobile device authentication — remove ?employeeId bypass | PM: Employees | 2026-02-20 | Removed searchParams.get('employeeId') bypass from mobile/tabs/page.tsx and mobile/tabs/[id]/page.tsx. checkAuth() now runs unconditionally on mount. Session cookie required. Commit `d1868b3` |
 | T-016 | POS front-end ordering UI lift | PM: Menu | 2026-02-20 | Glassmorphism: FloorPlanMenuItem blur/shadow, OrderPanel backdrop-blur + seat headers, CategoriesBar blur+border, ModifierGroupSection required/optional badges, ModifierModal Special Instructions. Commit `ac292bf` |
 | T-031 | Remove production console logging from Floor Plan hot paths | PM: Floor Plan | 2026-02-20 | Removed console.error from 5 hot-path handlers → toast.error(). Commit `423febb` |

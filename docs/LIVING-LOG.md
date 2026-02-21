@@ -5,6 +5,27 @@
 
 ---
 
+## 2026-02-20 — Pour Size Deduction Fix (Session 14)
+
+**Session theme:** T-006 — pour size multiplier flows all the way to inventory deduction
+
+**Summary:** Pour size selection (shot/double/tall/short) was being applied to pricing but silently dropped before inventory deduction. Added `pourSize` + `pourMultiplier` fields to OrderItem schema, wired them through the store → hook → API chain, and applied the multiplier in both the MenuItemRecipe and liquor RecipeIngredient deduction paths. Zero schema breaking changes (nullable fields). `npx prisma db push` required on NUC deploy.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `cf8c898` | feat(inventory): T-006 — store pourMultiplier on OrderItem, apply in deduction engine |
+
+### Features Delivered
+
+**T-006** — 7 files, 32 insertions. OrderItem.pourSize/pourMultiplier fields added. Frontend passes them through addItem/updateItem. API stores them. Deduction engine applies `pourMult` in MenuItemRecipe path and liquor RecipeIngredient path. Modifier paths unchanged (pre-modifier multipliers remain independent).
+
+### Resolved Task Board Items
+T-006
+
+---
+
 ## 2026-02-20 — Mobile Auth Security Fix (Session 13)
 
 **Session theme:** T-025 — remove backwards-compat ?employeeId query param bypass from mobile bartender tabs
