@@ -41,7 +41,6 @@
 | T-009 | Test "Extra Ranch" deduction — verify 2x multiplier (3.0 oz instead of 1.5 oz) | PM: Inventory | PM: Inventory | 2026-02-06 | P1 | Part of Skill 215 verification |
 | T-010 | Test "No Ranch" on item with base Ranch — verify base recipe Ranch NOT deducted | PM: Inventory | PM: Inventory | 2026-02-06 | P1 | Part of Skill 215 verification |
 | T-011 | Unify Liquor + Food Inventory Engines — migrate liquor cocktail recipes into unified MenuItemRecipe structure | PM: Inventory | PM: Inventory | 2026-02-06 | P2 | Currently two separate engines: processLiquorInventory() and deductInventoryForOrder() |
-| T-014 | Bulk "Move to Category" action for selected ingredients in hierarchy view | PM: Inventory | PM: Inventory | 2026-02-06 | P3 | Checkbox selection works, bulk action not yet wired |
 | T-017 | Inventory ↔ Menu sync verification — test ingredient linking end-to-end, investigate "Beef Patty → Casa Fries" bug | PM: Menu | PM: Inventory | 2026-02-06 | P2 | Carryover from Menu changelog. May be stale ingredientsLibrary data. |
 | T-024 | CFD terminal pairing — admin pairs CFD device to specific POS terminal. Similar to KDS pairing flow. | PM: Hardware | PM: Payments | 2026-02-06 | P3 | Needed before CFD Socket.io events work in multi-terminal setups. |
 | T-025 | Mobile device authentication — PIN-based session for bartender phone access. Uses planned RegisteredDevice/DeviceSession models from CLAUDE.md. | PM: Employees | PM: Payments | 2026-02-06 | P3 | /mobile/tabs currently uses ?employeeId query param. Needs proper auth. |
@@ -99,6 +98,7 @@
 | T-075 | Environment field on CloudLocation (MC) | PM: Mission Control | 2026-02-20 | LocationEnvironment enum (DEVELOPMENT/STAGING/PRODUCTION) + field. EnvironmentSelector component. Deploy modal groups by environment. gwi-mission-control commit `f06611e` |
 | T-071 | Online ordering middleware routing | PM: Mission Control | 2026-02-20 | Middleware bypass for /:orderCode/:slug + /api/online\|public/* paths. x-venue-slug header set. Zero auth for customer routes. Commit `34e237b` |
 | T-072 | Online ordering customer pages | PM: Mission Control | 2026-02-20 | src/app/[orderCode]/[slug]/page.tsx (962 lines) — 3-step flow (menu→cart→Datacap). resolve-order-code public API. error.tsx + not-found.tsx. Next.js 15 async params. Commit `34e237b` |
+| T-014 | Bulk "Move to Category" for ingredients | PM: Inventory | 2026-02-20 | ALREADY DONE — IngredientLibrary.tsx fully wired: handleBulkMove() calls PUT /api/ingredients/bulk-move; prep-item move-under inline handler also complete. No code change needed. |
 | T-018 | Wire Socket.io events to CFD page | PM: KDS | 2026-02-19 | CFD page wired to POS socket events. Commit `1e9c00e` |
 | T-019 | Wire Socket.io events to Bartender Mobile | PM: KDS | 2026-02-19 | MobileTabActions socket events wired. Commit `1e9c00e` |
 | T-020 | Wire Socket.io events to Pay-at-Table | PM: KDS | 2026-02-19 | Pay-at-Table socket sync on payment completion. Commit `72f725b` |
