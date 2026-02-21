@@ -167,6 +167,7 @@ function AccessGate() {
                 </p>
                 <input
                   type="text"
+                  inputMode="text"
                   autoComplete="off"
                   autoCapitalize="characters"
                   spellCheck={false}
