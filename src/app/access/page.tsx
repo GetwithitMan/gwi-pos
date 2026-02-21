@@ -168,14 +168,15 @@ function AccessGate() {
                 <input
                   type="text"
                   autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
                   autoFocus
                   maxLength={6}
                   placeholder="A3K9MN"
                   value={code}
-                  onChange={(e) =>
-                    setCode(e.target.value.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 6))
-                  }
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-2xl tracking-[0.5em] text-center placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange={(e) => setCode(e.target.value.slice(0, 6))}
+                  style={{ textTransform: 'uppercase', letterSpacing: '0.25em' }}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white text-2xl text-center placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
