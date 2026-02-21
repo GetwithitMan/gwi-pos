@@ -5,6 +5,66 @@
 
 ---
 
+## 2026-02-20 — Full Feature Sweep: All Remaining P1 Tasks (Session 5)
+
+**Session theme:** Clear all remaining backlog items — settings UI, orders manager, pricing engine, small UX fixes
+
+**Summary:** Seven more tasks cleared in a parallel build sprint. All P0 and most P1 items from the backlog are now resolved. T-080 (Pricing Programs) Phase 1+4 shipped; Phases 2/3/5/6 remain for future sessions (Phase 2 is in gwi-mission-control repo).
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `b91bf0b` | fix(ux): T-038/039/052/053 — layout timing, Quick Pick toggle, hydration guard |
+| `353dd07` | feat(orders): T-078 — Open/Stale Orders Manager admin page |
+| `63c41dd` | feat(settings): T-045 — Walkout Recovery + AutoReboot UI sections |
+| `d295212` | feat(pricing): T-080 Phase 1+4 — multi-model pricing engine + settings viewer |
+
+### Deployments
+- All pushed to `main` → Vercel auto-deploys
+
+### Features Delivered
+
+**Small UX Fixes** (`b91bf0b`)
+- T-038: usePOSLayout now guards behind employeeId before fetching layout — no more "Failed to fetch" on first render
+- T-039: Quick Pick Numbers toggle added to gear dropdown in UnifiedPOSHeader; fixed pre-existing bug (quickBarEnabled was toggling quickPickEnabled)
+- T-052: Verified quickPickEnabled default already true
+- T-053: Added useAuthenticationGuard to floorplan/editor; other admin pages already had it
+
+**Open/Stale Orders Manager** (`353dd07`)
+- New `/orders/manager` admin page: filter by status, balance, rolled-over state, text search
+- Table shows order age (human-readable), status badges, rolled-over + capture-declined flags
+- Bulk Cancel (drafts/$0) + Bulk Void (has balance) with permission check
+- Detail modal: full order info, reassign table dropdown, item list with modifiers
+- Socket listener (debounced 300ms) for real-time updates
+- GET /api/orders: new dateFrom/dateTo/balanceFilter/includeRolledOver params
+- POST /api/orders/bulk-action: cancel action (pre-flight rejects pre-auth orders)
+- "Open Orders" nav link added to AdminNav (managers only)
+
+**Settings UI Completions** (`63c41dd`)
+- Walkout Recovery sub-section: enable toggle, retry frequency, max duration, idle timeout
+- AutoReboot card: nightly reboot toggle + delay-minutes input
+- Verified Price Rounding toggles + all TipBank advanced sections already existed
+
+**Pricing Program Engine** (`d295212`)
+- PricingProgram interface: 6 models (cash_discount, surcharge, flat_rate, interchange_plus, tiered, none)
+- New functions: calculateSurcharge(), calculateSurchargeTotal(), calculateFlatRateCost(), calculateInterchangePlusCost(), calculateTieredCost(), isSurchargeLegal() (CT/MA/PR banned), applyPricingProgram() strategy selector
+- getPricingProgram() backward-compat helper: reads new field, falls back to legacy dualPricing
+- Settings viewer: "Processing Program" card shows all 5 models with color-coded badge + model-specific details
+- All existing pricing functions unchanged
+
+### Resolved Task Board Items
+T-038, T-039, T-045, T-052, T-053, T-078, T-080 (Phase 1+4)
+
+### Known Issues / Blockers
+- T-080 Phases 2/3/5/6 remain: MC admin UI (separate repo), POS checkout surcharge display, receipts, backoffice reports
+- P1-05: Socket multi-terminal validation — needs real Docker/hardware
+- P1-07: Card token persistence — needs live Datacap hardware (blocks Loyalty)
+- GL-06: Pre-launch checklist at 8% — manual hardware testing required
+- T-049: KDS full flow on Chrome 108 — needs physical KDS device
+
+---
+
 ## 2026-02-20 — P0/P1 Bug Sprint (Session 4)
 
 **Session theme:** Clear deployment blockers + high-priority payment and order fixes
