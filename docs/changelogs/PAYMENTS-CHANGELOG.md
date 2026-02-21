@@ -1,5 +1,41 @@
 # Payments Domain Changelog
 
+## 2026-02-20 — Sprint Sessions 8-14: Pricing Programs, Tip Adjustment, Batch Close, Partial Void, Refunds, Datacap Client
+
+### T-080 (Phases 1-6) — Pricing Programs / Surcharge Engine
+- New `PricingProgram` Prisma model for surcharge configuration.
+- `usePricing` hook computes surcharge amounts client-side.
+- `PaymentModal` shows surcharge line item and mandatory disclosure text.
+- Receipt row and ESC/POS print line added for surcharge.
+- Mission Control `PricingProgramCard` admin component (~750 lines): create/edit/delete pricing programs per location.
+- Backoffice `surchargeTotal` field added to sales event payload.
+
+### T-022 — Tip Adjustment Report
+- New page at `/reports/tip-adjustment`.
+- Inline Datacap gratuity adjust (via `AdjustByRecordNo`) per row — no separate modal.
+- Date-range filter with summary cards: total tips, adjusted tips, unadjusted count.
+
+### T-021 — Batch Close UI
+- New card on `/settings/payments` for batch settlement.
+- Reader selector, live pre-close summary (open orders, unadjusted tips, estimated total).
+- `isSuperAdmin` gate prevents non-admin batch close.
+
+### T-079 — Partial Payment Void-and-Retry
+- "Void & Retry" flow calls `onCancel()` after void completes so the payment modal resets cleanly.
+- Payment Progress banner displayed when `pendingPayments > 0` on the order.
+
+### P2-P02 — Refund vs Void
+- New `Refund` Prisma model tracking post-settlement refunds.
+- `POST /api/orders/[id]/refund` calls Datacap `ReturnByRecord` with the stored `recordNo`.
+- `/settings/orders/refunds` admin list page with date filter and status badges.
+
+### Datacap PayAPI Client Library
+- Standalone `DatacapPayAPIClient` wrapper class extracted into `src/lib/datacap/payapi-client.ts`.
+- XML builder, XML response parser, and `CommunicationMode` enum all encapsulated.
+- Used by all Datacap transaction routes — replaces inline XML construction.
+
+---
+
 ## 2026-02-20 — DC Direct Architecture + Credential Flow (Skill 407)
 
 ### Architecture Clarification

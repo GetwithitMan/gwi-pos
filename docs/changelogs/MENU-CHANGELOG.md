@@ -1,5 +1,20 @@
 # Menu Domain Changelog
 
+## 2026-02-20 — Sprint Sessions 8-14: Per-Modifier Multipliers, Multi-Select Pre-Modifiers
+
+### T-013 — Per-Modifier Multiplier
+- `liteMultiplier` and `extraMultiplier` (`Decimal?`) fields added to the `Modifier` schema.
+- Inline `×` input fields surfaced in `ItemEditor` for both multipliers.
+- Deduction engine reads `perModSettings` override for these multipliers before falling back to location defaults.
+
+### T-042 — Multi-Select Pre-Modifiers
+- Pre-modifier field now supports compound strings (e.g., `"side,extra"`) to express combined instructions on a single modifier selection.
+- Fully backward compatible — existing single-value strings continue to work unchanged.
+- Kitchen print, KDS display, receipt, and deduction engine are all compound-aware.
+- When multiple multipliers apply, the max multiplier wins.
+
+---
+
 ## Session: Feb 11, 2026 — Edit Item Modal & Happy Hour Extraction (Skills 289-290)
 
 ### Summary

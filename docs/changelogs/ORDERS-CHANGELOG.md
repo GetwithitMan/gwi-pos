@@ -1,5 +1,34 @@
 # Orders Domain - Change Log
 
+## 2026-02-20 — Sprint Sessions 8-14: EOD Auto-Close, Stale Orders Manager, Item Discounts, Glassmorphism, Kitchen Context Lines
+
+### T-077 — EOD Auto-Close
+- `businessDayDate` logic added to `eod-cleanup` job to correctly determine which orders belong to the closing business day.
+- `eod:reset-complete` socket event emitted after cleanup so all connected terminals update.
+- `FloorPlanHome` shows a dismissable EOD Summary overlay after the reset event is received.
+
+### T-078 — Stale Orders Manager
+- New page at `/orders/manager` listing stale/open orders with age indicators.
+- Force-close and assign actions per order row; both emit socket updates on completion.
+
+### P2-D01 — Item-Level Discounts
+- `itemDiscountAmount` field added to `OrderItem` schema.
+- Manager PIN gate required before applying a discount to any item.
+- Discount subtracted from item price before tax calculation.
+- Discount amount shown on receipt line and included in ESC/POS kitchen/receipt print.
+
+### T-016 — POS UI Glassmorphism Lift
+- `FloorPlanMenuItem`: `blur` + drop shadow applied for depth.
+- `OrderPanel`: `backdrop-blur` + frosted seat headers.
+- `CategoriesBar`: blur + border styling for visual separation.
+- `ModifierGroupSection`: selection badges updated for contrast.
+- `ModifierModal` Special Instructions field: glassmorphism input styling.
+
+### P2-H02 — Modifier-Only Kitchen Context Lines
+- Standalone modifier-only orders now include the parent item name as a context line on kitchen tickets and KDS display, so the station knows what the modifier belongs to.
+
+---
+
 ## 2026-02-18 — Forensic Audit Wave 6
 
 ### Bug Fixes

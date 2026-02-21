@@ -147,6 +147,7 @@
 | 379 | Terminal License Enforcement | DONE | Mission Control | 304, 322, 376 | POS-side checkDeviceLimit(), fail-open design, progress bar UI in MC |
 | 380 | Kiosk Performance (Incognito Removal) | DONE | DevOps | 345, 377 | Remove --incognito from kiosk Chromium flags, cache assets between restarts |
 | 381 | Release Kiosk Restart | DONE | Mission Control | 334, 377 | requiresKioskRestart on Release, auto-reload terminals after deploy |
+| 404 | MC QR Code Modal + Location Environment Tags (T-073/T-075) | DONE | Mission Control | 300, 336 | T-073/T-075 — QRCodeCanvas 256px, error-correction H, Download PNG + Print actions. LocationEnvironment enum (DEVELOPMENT/STAGING/PRODUCTION) on CloudLocation, color-coded EnvironmentSelector component, prisma db push applied. Deploy modal groups by env. |
 
 ### Performance Overhaul (Feb 14, 2026)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -183,6 +184,11 @@
 | 237 | Waste Tracking (Was It Made?) | DONE | Orders | 34 | Added wasMade field to CompVoidModal UI (Yes/No buttons), VoidLog schema, and OrderItem schema. API uses explicit wasMade from UI instead of guessing from reason text. |
 | 238 | VOID/COMP Stamps on Order Panel | PARTIAL | Orders | 237, 234 | VOID/COMP badges, strikethrough name, $0.00 price, waste indicator on OrderPanelItem. Added status/voidReason/wasMade to order store, response mapper, FloorPlanHome shim. Fix applied but needs verification. |
 | 248 | Socket Layer + Fetch Consolidation | DONE | Orders | 217 | Eliminated ~40 req/min: replaced 3s entertainment + open orders polling with useOrderSockets hook, removed 5 redundant post-mutation refetches, debounced tabsRefreshTrigger, wired dispatchOpenOrdersChanged + dispatchEntertainmentStatusChanged into API routes, fixed ORDER_TOTALS_UPDATE silent 400 |
+| 385 | Item-Level Discounts (P2-D01) | DONE | Orders, Payments | 28 | P2-D01 — per-item discount on order panel: % or $ off, manager PIN gate, itemDiscountAmount field on OrderItem, subtracted before tax, shown on receipt + print. |
+| 396 | Modifier-Only Kitchen Context Lines (P2-H02) | DONE | Orders, Hardware | 103 | P2-H02 — when a modifier has no base item ticket (standalone modifier orders), kitchen print and KDS show modifier with its item context inline ("With: Burger"). |
+| 397 | Stale Orders Manager UI (T-078) | DONE | Orders | 34, 248 | T-078 — /orders/manager page: open orders older than N hours with employee attribution, "Force Close" and "Assign" actions, manager-only permission gate. Socket updates. |
+| 398 | EOD Auto-Close Stale Orders (T-077) | DONE | Orders | 34, 104 | T-077 — eod-cleanup uses businessDayDate logic; eod/reset emits eod:reset-complete socket; FloorPlanHome dismissable EOD Summary overlay shows paid/voided/stale counts. |
+| 399 | Partial Payment Void-and-Retry (T-079) | DONE | Orders, Payments | 34, 30 | T-079 — Void & Retry calls onCancel() after void to auto-return to method selection; Payment Progress banner shown when pendingPayments > 0. |
 
 ### Table Management
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -199,6 +205,8 @@
 | 328 | Seat Management Fixes | DONE | Floor Plan, Orders | 121, 206 | Add seat after send, seatNumber persistence on items, extra seats restore on reopen |
 | 348 | Per-Seat Color System | DONE | Floor Plan, Orders | 206, 328 | 8-color palette in seat-utils.ts, colors on floor plan seats, order panel badges, group headers, seat picker buttons. Temp seats use same colors (no more orange dashed). |
 | 349 | Per-Seat Check Cards & Seat Filtering | DONE | Orders, Floor Plan | 348, 11 | Auto seat-grouped check cards with per-seat subtotals, seat filter bar on floor plan seat tap, pre-split foundation. |
+| 390 | Bottle Service Floor Plan Progress Bar (P2-B01) | DONE | Floor Plan, Bar | 206, 20 | P2-B01 — when a table has an active bottle service order, FloorPlanTable renders a progress bar showing % of bottle service packages fulfilled. Color-coded (green→yellow→red). |
+| 391 | Floor Plan Stability Fixes (T-031/T-033/T-034/T-036) | DONE | Floor Plan | 106, 80 | T-031/033/034/036 — removed console.error from 5 hot-path handlers → toast.error(); optimistic rollback (prevTables snapshot + restore); normalizeCoord context logging + dev fail-fast; soft-delete filter fix in floor-plan-elements POST. |
 
 ### Bar Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -207,6 +215,8 @@
 | 247 | Tab Incremental Auth | DONE | Payments | 120, 21 | Re-Auth button (no card re-tap), IncrementalAuthByRecordNo via Datacap, configurable tip buffer %, admin settings UI, force vs auto modes |
 | 21 | Pre-auth | DONE | Payments | 30 | Card hold on tab open |
 | 22 | Tab Transfer | DONE | Orders | 20 | Move tabs between employees, audit log |
+| 386 | Mobile Bartender Tab Sync (P2-H04) | DONE | Orders, Bar | 20, 340 | P2-H04 — mobile bartender /mobile/tabs now receives socket:tabs-changed events from server. Reconnect auto-refresh. Zero polling. |
+| 387 | Pay-at-Table Socket Sync (P2-H05) | DONE | Payments | 340, 30 | P2-H05 — pay route emits payment:confirmed to table socket room after successful charge. Table-side listener updates bill display instantly. |
 
 ### Kitchen Display
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -232,6 +242,11 @@
 | 239 | Pricing Engine Refactor | DONE | Payments | 31, 36, 88 | Single source of truth: `roundToCents()`, extended `calculateOrderTotals`, `usePricing` as thin adapter, 29 files |
 | 240 | Tax-Inclusive Pricing | DONE | Settings | 36, 239 | Category-based tax-inclusive rules, `calculateSplitTax()`, item stamping, split UI display |
 | 327 | Cash Rounding Pipeline | DONE | Payments | 88, 239 | Two rounding systems (priceRounding active, cashRounding legacy). Client sends rounded amount, server computes adjustment from rawRemaining. Rounding artifact handling, paidTolerance = half increment. Daily report integration. |
+| 384 | Refund vs Void (P2-P02) | DONE | Payments, Orders | 34 | P2-P02 — full refund flow: Refund model (schema), POST /api/orders/[id]/refund (Datacap ReturnByRecord), /settings/orders/refunds admin list. Void = removes item pre-close. Refund = partial/full money-back post-close via Datacap. |
+| 392 | Pricing Programs / Surcharge Engine (T-080) | DONE | Payments, Settings | 239, 31 | T-080 — 6-phase surcharge build: PricingProgram model (6 models: standard/cash_discount/surcharge/dual_pricing/convenience_fee/service_charge), usePricing hook, PaymentModal surcharge line + disclosure, receipt row, print-factory ESC/POS line, backoffice surchargeTotal, MC admin PricingProgramCard.tsx (750 lines). |
+| 393 | Batch Close Admin UI (T-021) | DONE | Payments, Hardware | 120 | T-021 — /settings/payments: Batch Settlement card, reader selector, Close Batch button, confirmation modal (batch#, txn count, SAF warning). GET /api/datacap/batch preview, POST to confirm. Gated by isSuperAdmin. |
+| 414 | Datacap PayAPI Client Library | DONE | Payments, Hardware | 120 | Standalone Datacap PayAPI wrapper: DatacapPayAPIClient class, XML builder, response parser, communication mode enum, per-reader config, connection pooling. Full TypeScript. |
+| 415 | Cash Drawer Open Signal | DONE | Hardware, Payments | 120, 49 | Fire cash-drawer-open socket event from pay route on cash payment. DrawerOpenSignal component on POS listens and triggers peripheral drawer signal via ESC/POS. |
 
 ### Inventory & Menu
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -263,6 +278,9 @@
 | 215 | Unified Modifier Inventory Deduction | DONE | Inventory | 125, 143 | Fallback path: Modifier.ingredientId → Ingredient → InventoryItem for deduction when no ModifierInventoryLink exists; updates deductInventoryForOrder, deductInventoryForVoidedItem, calculateTheoreticalUsage, PMIX |
 | 216 | Ingredient-Modifier Connection Visibility | DONE | Inventory | 143, 204, 211, 214 | Bidirectional visibility: Connected badge, dual-path menu item resolution (item-owned + junction), expandable linked modifiers panel, linkedModifierCount |
 | 333 | Ingredient Category Inline Creation | DONE | Menu, Inventory | 145, 211 | Create categories inline from ItemEditor picker (green + purple). needsVerification flag, red badge + verify button on /ingredients page. Optimistic UI updates. |
+| 408 | Modifier Inventory Link Unit Mismatch Warnings (T-004) | DONE | Inventory | 215, 211 | T-004 — inventory-link POST API runs areUnitsCompatible() check. Returns non-blocking warning field on cross-category UOM. useModifierEditor shows 8s toast.warning. Path A+B log console.warn with context on null convertUnits(). |
+| 409 | Prep Item Explosion in Modifier Deductions (T-002) | DONE | Inventory | 215, 126 | T-002 — ORDER_INVENTORY_INCLUDE now includes prepItem.ingredients.inventoryItem. Path B modifier deductions: else-if branch calls explodePrepItem() when ingredient links to a PrepItem. Recursive raw-ingredient explosion. 32 lines. |
+| 410 | Pour Size Multiplier in Inventory Deduction (T-006) | DONE | Inventory, Menu | 215 | T-006 — OrderItem gains pourSize String? + pourMultiplier Decimal?. Frontend passes them through addItem/updateItem → API → store. Deduction engine applies pourMult in MenuItemRecipe path and liquor RecipeIngredient path. NUC: npx prisma db push required. |
 
 ### Reporting
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -279,6 +297,11 @@
 | 104 | Daily Store Report | DONE | Reports | 42, 43, 50 | Comprehensive EOD report: revenue, payments, cash, sales by category/type, voids, discounts, labor, tips |
 | 105 | Tip Share Report | DONE | Reports | - | Standalone tip share report, by recipient/giver, mark as paid, payroll/manual settings |
 | 374 | Reports Auth Fix (14 Pages) | DONE | Reports, Auth | 104 | All 14 report pages missing `employeeId` in fetch calls causing 401. Fixed all pages + deterministic `getLocationId()` + stale location cleanup. |
+| 382 | Hourly Sales Heatmap Report | DONE | Reports | 42 | P2-R03 — 7-day heat grid (Sun–Sat × 7am–2am) with color intensity by revenue. /reports/hourly-sales page. Filters: date range, order type, employee. |
+| 383 | Server Performance Report | DONE | Reports | 42 | P2-R03 — server staff daily metrics: covers, average check, tables turned, labor %, tip %, upsell items, revenue per labor hour. |
+| 394 | Tip Adjustment Report (T-022) | DONE | Reports, Payments | 42, 250 | T-022 — /reports/tip-adjustment: date-range filter, 3 summary cards, per-row inline Datacap gratuity adjust. Disabled for SAF/offline payments. Optimistic state update. |
+| 419 | Sales Forecasting Report | DONE | Reports | 42, 382 | P3 — rolling 8-week actual vs simple moving average forecast. Per-day projected revenue + confidence band. /reports/sales-forecast. |
+| 420 | Barcode Scanner SKU Lookup (T-Barcode) | DONE | Inventory, Hardware | 03 | Barcode scanner input listener on inventory/menu pages. SKU lookup: exact match → add to cart / navigate to item. Fallback: manual search. USB HID keyboard emulation (no special driver). |
 | 106 | Interactive Floor Plan (SVG) | DONE | Floor Plan | 16, 80 | SVG floor plan with zoom, pan, status colors, seat display |
 | 107 | Table Combine/Split | DONE | Floor Plan | 106 | Drag-combine, split-all, remove-single undo, 5min window, clockwise seats from top-left |
 | 108 | Event Ticketing APIs | TODO | Events | 106 | Event CRUD, seat hold/release, ticket purchase, check-in |
@@ -293,6 +316,9 @@
 | 49 | Cash Drawer | DONE | Employees | 01, 30 | Physical Drawer model, drawer claiming via Shift.drawerId, drawer-aware expected cash, resolveDrawerForPayment() |
 | 50 | Shift Close | DONE | Employees | 49 | Shift start/close, cash count, variance, summary, three cash handling modes (drawer/purse/none) |
 | 249 | Multi-Role, Cash Handling & Crew Hub | DONE | Employees, Payments | 01, 47, 50 | EmployeeRole junction (multi-role), cash handling modes per role, Drawer management, Crew Hub (/crew), report self-access |
+| 413 | Mobile Bartender Auth Security (T-025) | DONE | Employees, Security | 249 | T-025 — removed searchParams.get('employeeId') backwards-compat bypass from mobile/tabs/page.tsx and mobile/tabs/[id]/page.tsx. checkAuth() now unconditional on mount. Session cookie required. RegisteredDevice + MobileSession infra already in place. |
+| 416 | Shift Swap Requests (T-Scheduling) | DONE | Employees | 47, 50 | Full shift swap: ShiftSwapRequest schema (requester, target, approver, status lifecycle). POST /api/schedule/swap/request, PUT /api/schedule/swap/[id]/respond, manager approval endpoint. Admin swap-request list + mobile swap request page. |
+| 417 | Scheduling Edit/Delete + Mobile View (T-Sched) | DONE | Employees | 47, 416 | Edit/delete shift on admin /scheduling page. Mobile /mobile/schedule read-only view of employee's upcoming shifts with date filter. |
 
 ### Customer Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -302,6 +328,10 @@
 | 228 | Card Token-Based Loyalty | TODO | Payments | 120, 52, 227 | Automatic customer recognition via processor card tokens, hybrid phone/token system, multi-card linking, Phase 1: token persistence verification (blocker) |
 | 53 | Online Ordering | TODO | Guest | 03, 30, 99 | Web orders (modifier override ready via ?channel=online) |
 | 54 | Order Ahead | TODO | Guest | 53 | Scheduled pickup |
+| 405 | Online Ordering Customer Routes (T-071/T-072) | DONE | Guest, Mission Control | 319, 336 | T-071/T-072 — middleware regex bypasses cloud auth for /:orderCode/:slug paths, sets x-venue-slug header. Public resolve-order-code endpoint. Full 3-step flow at /{orderCode}/{slug}/ using Next.js 15 async params. Backward-compatible onlineOrderingEnabled check. |
+| 406 | Online Ordering Phase 3+4 | DONE | Guest | 405 | Online ordering /order page: full menu browsing, cart management, checkout with Datacap payment. Phase 3: menu API integration. Phase 4: cart persistence + order creation. |
+| 407 | Online Ordering Phase 5 Checkout | DONE | Guest | 406 | Online ordering checkout page: address/pickup time form, live order summary, Datacap card entry, order confirmation with tracking number. |
+| 418 | Customer Notes Inline Edit + Order History (T-Customer) | DONE | Settings | 51 | Customer notes field inline edit (pencil icon, textarea, save/cancel). Order history list with pagination (20/page) + date range filter. Customer detail page improvements. |
 
 ### Hardware Integration
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -311,6 +341,10 @@
 | 57 | Card Reader | TODO | Hardware | 30 | Payment terminal |
 | 58 | Barcode Scanner | TODO | Hardware | 03 | Item lookup |
 | 115 | Hardware Status Dashboard | TODO | Hardware | 55, 56, 57 | Live connection status for all hardware, last ping times, alerts |
+| 388 | Print Routing Phase 3 — Tag-Based Routing | DONE | Hardware | 103, 212 | P2-H01 — print routes now support tag arrays. Items tagged "bar", "expo", "prep1" route independently. Per-item tag override from OrderItem.tags. PrintRouteResolver updated. |
+| 389 | CFD Customer-Facing Display Events (P2-H03) | DONE | Hardware, Payments | 340 | P2-H03 — pay route and order route emit cfd:order-update / cfd:payment-complete socket events. CFD listener on dedicated kiosk renders live order total and payment confirmation. |
+| 401 | Reader Health Dashboard (T-023) | DONE | Hardware | 120 | T-023 — PaymentReaderLog schema + reader-health.ts + GET /api/hardware/readers/health + /settings/hardware/health page. logReaderTransaction() wired into Datacap client.ts withPadReset. Chrome version badge on kds-screens admin. |
+| 402 | KDS Browser Version Audit (T-048) | DONE | Hardware, KDS | 102, 285 | T-048 — Chrome version extracted from UA in kds-screens heartbeat route. deviceInfo passed through in GET response. Chrome version badge on kds-screens admin page. |
 
 ### Advanced
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -331,11 +365,15 @@
 | 212 | Per-Modifier Print Routing | DONE | Menu | 103, 143 | Admin UI for modifier-level print routing (follow/also/only), printer selection per modifier |
 | 213 | Real-Time Ingredient Library | DONE | Inventory | 211, 127 | Optimistic local update + socket dispatch for cross-terminal ingredient sync |
 | 214 | Ingredient Verification Visibility | DONE | Inventory | 145, 211 | Unverified badges on ingredient rows, category header warnings, recursive reverse linking |
+| 403 | POS Ordering UI Glassmorphism Lift (T-016) | DONE | Menu, Orders | 208, 339 | T-016 — FloorPlanMenuItem blur/shadow, OrderPanel backdrop-blur + seat headers, CategoriesBar blur+border, ModifierGroupSection required/optional badges, ModifierModal Special Instructions. Glassmorphism dark theme consistency. |
+| 411 | Per-Modifier Multiplier Configuration (T-013) | DONE | Menu, Inventory | 143, 215 | T-013 — Modifier model gains liteMultiplier Decimal? + extraMultiplier Decimal?. ItemEditor inline × inputs beside Lite/Extra toggles. Deduction engine overrides location defaults with per-modifier values when set. |
+| 412 | Multi-Select Pre-Modifiers (T-042) | DONE | Menu, Orders | 04, 215 | T-042 — compound pre-modifier strings ("side,extra") stored in OrderItemModifier.preModifier. Zero schema change. Backward compatible with single tokens. Kitchen print, KDS, receipt, deduction all compound-aware. Max multiplier wins; any removal = 0. |
 
 ### Admin & Navigation
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
 | 124 | Admin Navigation | DONE | Settings | - | Standardized AdminPageHeader and AdminSubNav components across all admin pages |
+| 400 | Settings Admin UI Gaps (T-045) | DONE | Settings | 09, 124 | T-045 — filled missing settings pages: payment processor config, receipt customization, tax rate editor, kitchen display settings. Unified settings sidebar nav. |
 
 ### Additional Skills (80+)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -354,20 +392,20 @@
 |----------|------|---------|------|-------|------------|
 | Foundation | 3 | 0 | 1 | 4 | 75% |
 | Order Flow | 7 | 1 | 0 | 8 | 94% |
-| Payment | 14 | 0 | 0 | 14 | 100% |
-| Advanced Orders | 13 | 2 | 0 | 15 | 93% |
-| Table Management | 6 | 0 | 0 | 6 | 100% |
-| Bar Features | 2 | 1 | 0 | 3 | 83% |
+| Payment | 18 | 0 | 0 | 18 | 100% |
+| Advanced Orders | 18 | 2 | 0 | 20 | 95% |
+| Table Management | 8 | 0 | 0 | 8 | 100% |
+| Bar Features | 4 | 1 | 0 | 5 | 90% |
 | Kitchen Display | 4 | 1 | 2 | 7 | 71% |
 | Pricing & Discounts | 8 | 0 | 0 | 8 | 100% |
-| Inventory & Menu | 26 | 0 | 0 | 26 | 100% |
-| Menu Builder | 6 | 0 | 0 | 6 | 100% |
-| Reporting | 13 | 0 | 0 | 13 | 100% |
-| Employee Features | 6 | 0 | 0 | 6 | 100% |
-| Customer Features | 2 | 0 | 3 | 5 | 40% |
-| Hardware | 0 | 0 | 4 | 4 | 0% |
+| Inventory & Menu | 29 | 0 | 0 | 29 | 100% |
+| Menu Builder | 9 | 0 | 0 | 9 | 100% |
+| Reporting | 18 | 0 | 0 | 18 | 100% |
+| Employee Features | 9 | 0 | 0 | 9 | 100% |
+| Customer Features | 6 | 0 | 3 | 9 | 67% |
+| Hardware | 5 | 0 | 4 | 9 | 56% |
 | Advanced | 0 | 0 | 1 | 1 | 0% |
-| Admin & Navigation | 2 | 1 | 0 | 3 | 83% |
+| Admin & Navigation | 3 | 1 | 0 | 4 | 88% |
 | Additional (80-105) | 20 | 1 | 0 | 21 | 98% |
 | Canvas/Events (106-123) | 9 | 0 | 5 | 14 | 64% |
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
@@ -375,10 +413,10 @@
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| Mission Control (Phase 2) | 28 | 0 | 2 | 30 | 93% |
+| Mission Control (Phase 2) | 29 | 0 | 2 | 31 | 94% |
 | DevOps | 1 | 0 | 0 | 1 | 100% |
 | Performance Overhaul | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **215** | **7** | **18** | **240** | **92%** |
+| **TOTAL** | **253** | **7** | **18** | **278** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 

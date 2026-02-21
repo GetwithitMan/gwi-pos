@@ -1,5 +1,20 @@
 # Mission Control Changelog
 
+## 2026-02-20 — Sprint Sessions 8-14: QR Code Modal, Location Environment Tags
+
+### T-073 — QR Code Modal
+- `QRCodeCanvas` (256px, error-correction level H) added to the location detail page in Mission Control.
+- Modal actions: Download PNG (triggers browser download) and Print (opens browser print dialog with QR only).
+- Used for printing venue QR codes for customer-facing online ordering and pay-at-table.
+
+### T-075 — Location Environment Tags
+- New `LocationEnvironment` enum added to the MC schema: `DEVELOPMENT`, `STAGING`, `PRODUCTION`.
+- `EnvironmentSelector` component on the location detail page allows admins to tag each location.
+- `npx prisma db push` applied to MC database.
+- Deploy modal groups locations by environment tag for targeted rollout control.
+
+---
+
 ## 2026-02-20 — Self-Updating Sync Agent + Batch Monitoring + Auto-Reboot (Skills 399-401)
 
 ### Summary

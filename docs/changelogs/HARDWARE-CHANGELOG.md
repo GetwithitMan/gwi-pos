@@ -1,5 +1,39 @@
 # Hardware Domain Changelog
 
+## 2026-02-20 — Sprint Sessions 8-14: Print Routing Phase 3, CFD Events, Mobile Tab Sync, Pay-at-Table Sync, Reader Health, KDS Version Badge, PostCSS
+
+### P2-H01 — Print Routing Phase 3: Tag-Based Routing Arrays
+- `PrintRouteResolver` now supports tag-based routing arrays — multiple tags can match a single route rule.
+- Per-item tag override: an `OrderItem` can carry tags that override the category-level routing at print time.
+
+### P2-H03 — CFD Socket Events
+- `cfd:order-update` emitted from the order routes whenever an order's items change.
+- `cfd:payment-complete` emitted from the pay route after successful payment settlement.
+- Customer-Facing Display listens to both events to update its state machine without polling.
+
+### P2-H04 — Mobile Bartender Tab Sync
+- `socket:tabs-changed` event emitted on `/mobile/tabs` whenever a tab is opened, closed, or updated.
+- Mobile tab list performs a full refresh on reconnect to recover any missed events.
+
+### P2-H05 — Pay-at-Table Socket Sync
+- `payment:confirmed` socket event emitted from the pay route to the table's socket room after a successful payment.
+- Pay-at-table view listens and auto-dismisses the payment screen on confirmation.
+
+### T-023 — Reader Health Dashboard
+- New `PaymentReaderLog` Prisma model: records transaction outcome, response time, and error code per reader per transaction.
+- `src/lib/reader-health.ts`: computes `healthy | degraded` state per reader; aggregates success rate and avg response time.
+- New admin page at `/settings/hardware/health` showing per-reader health cards with trend indicators.
+
+### T-048 — KDS Browser Version Badge
+- KDS heartbeat payload now includes Chrome version parsed from the User-Agent string.
+- `/settings/hardware/kds-screens` admin page displays the Chrome version badge per device for at-a-glance compatibility visibility.
+
+### T-050 — PostCSS `optimize: true`
+- `postcss.config.mjs` updated to set `optimize: true`, forcing Lightning CSS in the dev pipeline.
+- Eliminates dev/prod CSS parity issues (oklch transpilation, nesting, etc.) by using the same optimizer in both environments.
+
+---
+
 ## 2026-02-20 — DC Direct Payment Reader Architecture (Skill 407)
 
 ### DC Direct Architecture Established
