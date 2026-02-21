@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { LocationSettings, DEFAULT_SETTINGS } from '@/lib/settings'
+import { LocationSettings, DEFAULT_SETTINGS, getPricingProgram } from '@/lib/settings'
 import { formatCurrency } from '@/lib/pricing'
 import { useAuthStore } from '@/stores/auth-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
@@ -189,8 +189,17 @@ export default function SettingsPage() {
     }))
   }
 
-  // Calculate example prices for display
-  // Cash price is what you enter, card price is calculated (adds the fee)
+  const updateAutoReboot = (updates: Partial<LocationSettings['autoReboot']>) => {
+    setSettings(prev => ({
+      ...prev,
+      autoReboot: { ...prev.autoReboot, ...updates },
+    }))
+  }
+
+  // T-080 Phase 4: Resolve the effective pricing program (handles backward compat)
+  const activePricingProgram = getPricingProgram(settings)
+
+  // Legacy example prices (kept for any legacy usage below)
   const exampleCashPrice = 10.00
   const discountPercent = settings.dualPricing.cashDiscountPercent || 4.0
   const exampleCardPrice = Math.round(exampleCashPrice * (1 + discountPercent / 100) * 100) / 100
@@ -1384,6 +1393,91 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Walkout Recovery */}
+            <div>
+              <h3 className="font-medium text-gray-900 mb-3">Walkout Recovery</h3>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">Enable Walkout Recovery</span>
+                    <p className="text-xs text-gray-500">Automatically retry capture on tabs flagged as walkouts</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.payments.walkoutRetryEnabled ?? true}
+                      onChange={(e) => updatePayments({ walkoutRetryEnabled: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Retry Frequency (days)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="30"
+                      value={settings.payments.walkoutRetryFrequencyDays ?? 3}
+                      onChange={(e) => updatePayments({ walkoutRetryFrequencyDays: parseInt(e.target.value) || 3 })}
+                      className="w-20 px-3 py-2 border rounded-lg"
+                    />
+                    <span className="text-gray-500">days</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    How many days between retry attempts on a walkout tab
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Max Retry Duration (days)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="365"
+                      value={settings.payments.walkoutMaxRetryDays ?? 30}
+                      onChange={(e) => updatePayments({ walkoutMaxRetryDays: parseInt(e.target.value) || 30 })}
+                      className="w-20 px-3 py-2 border rounded-lg"
+                    />
+                    <span className="text-gray-500">days</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Stop retrying after this many days from the walkout date
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Auto-Detect Idle Timeout (minutes)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="15"
+                      min="15"
+                      max="480"
+                      value={settings.payments.walkoutAutoDetectMinutes ?? 120}
+                      onChange={(e) => updatePayments({ walkoutAutoDetectMinutes: parseInt(e.target.value) || 120 })}
+                      className="w-24 px-3 py-2 border rounded-lg"
+                    />
+                    <span className="text-gray-500">minutes</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    If a tab is idle for this many minutes with a pending auth, it will be flagged as a potential walkout.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </Card>
 
@@ -1561,6 +1655,55 @@ export default function SettingsPage() {
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
             </div>
+          </div>
+        </Card>
+
+        {/* Auto-Reboot Schedule */}
+        <Card className="p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">System</h2>
+            <p className="text-sm text-gray-500">Automatic maintenance and reboot schedule</p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Enable automatic nightly reboot</span>
+                <p className="text-xs text-gray-500">Restarts the POS server automatically after midnight to clear memory and apply updates</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.autoReboot?.enabled ?? false}
+                  onChange={(e) => updateAutoReboot({ enabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {settings.autoReboot?.enabled && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reboot delay after midnight (minutes)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="5"
+                    min="0"
+                    max="240"
+                    value={settings.autoReboot?.delayMinutes ?? 30}
+                    onChange={(e) => updateAutoReboot({ delayMinutes: parseInt(e.target.value) || 30 })}
+                    className="w-20 px-3 py-2 border rounded-lg"
+                  />
+                  <span className="text-gray-500">minutes</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  System will reboot this many minutes after midnight (e.g., 30 = reboot at 12:30 AM)
+                </p>
+              </div>
+            )}
           </div>
         </Card>
 
