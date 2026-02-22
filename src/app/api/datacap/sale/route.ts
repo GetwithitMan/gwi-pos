@@ -5,10 +5,6 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 
-if (!process.env.INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') {
-  throw new Error('[Startup] INTERNAL_API_SECRET environment variable is required in production')
-}
-
 interface SaleRequest {
   locationId: string
   readerId: string

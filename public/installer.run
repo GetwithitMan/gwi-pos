@@ -434,6 +434,7 @@ DIRECT_URL=$DIRECT_URL
 NODE_ENV=production
 NEXT_PUBLIC_EVENT_PROVIDER=socket
 PORT=3005
+INTERNAL_API_SECRET=$(openssl rand -hex 32)
 ENVEOF
 
   chmod 600 "$ENV_FILE"
@@ -465,6 +466,12 @@ elif [[ "$STATION_ROLE" == "server" ]]; then
     echo "# Cloud Backoffice (NUC → Cloud event pipeline)" >> "$ENV_FILE"
     echo "BACKOFFICE_API_URL=$BACKOFFICE_API_URL" >> "$ENV_FILE"
     log "Added BACKOFFICE_API_URL to existing .env"
+  fi
+
+  # Ensure internal API secret is present (added in later installer versions)
+  if ! grep -q "^INTERNAL_API_SECRET=" "$ENV_FILE" 2>/dev/null; then
+    echo "INTERNAL_API_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
+    log "Added INTERNAL_API_SECRET to existing .env"
   fi
 
   # Determine local PG

@@ -392,10 +392,85 @@ function scheduleReconnect() {
   reconnectDelay = Math.min(reconnectDelay * 2, 60000)
 }
 
+// ── Boot self-update ────────────────────────────────────────────────────────
+// On every startup: download the latest sync-agent.js from GitHub and replace
+// the running file only if the content has changed. If it does change, exits
+// with code 0 so systemd (Restart=always) picks up the new file immediately.
+// Falls through silently on any network or credential error.
+var CREDS_FILE = '/opt/gwi-pos/.git-credentials'
+var SELF_PATH  = '/opt/gwi-pos/sync-agent.js'
+
+function checkBootUpdate(done) {
+  try {
+    if (!fs.existsSync(CREDS_FILE)) {
+      log('[Boot] No credentials file — skipping self-update check')
+      return done()
+    }
+    var creds = fs.readFileSync(CREDS_FILE, 'utf-8')
+    var m = creds.match(/https:\/\/([^:]+):x-oauth-basic@github\.com/)
+    if (!m) {
+      log('[Boot] Could not parse token from credentials — skipping self-update check')
+      return done()
+    }
+    var token = m[1]
+    var opts = {
+      hostname: 'api.github.com',
+      path: '/repos/GetwithitMan/gwi-pos/contents/public/sync-agent.js',
+      headers: {
+        'Authorization': 'token ' + token,
+        'Accept': 'application/vnd.github.raw',
+        'User-Agent': 'gwi-sync-agent-boot',
+      },
+    }
+    var req = https.get(opts, function(res) {
+      if (res.statusCode !== 200) {
+        log('[Boot] Self-update check HTTP ' + res.statusCode + ' — skipping')
+        res.resume()
+        return done()
+      }
+      var chunks = []
+      res.on('data', function(c) { chunks.push(c) })
+      res.on('end', function() {
+        try {
+          var latest = Buffer.concat(chunks).toString('utf-8')
+          var current = ''
+          try { current = fs.readFileSync(SELF_PATH, 'utf-8') } catch (e) {}
+          if (latest === current) {
+            log('[Boot] Sync agent is up to date')
+            return done()
+          }
+          log('[Boot] Sync agent update available — applying and restarting...')
+          fs.writeFileSync(SELF_PATH + '.tmp', latest, { mode: 0o755 })
+          fs.renameSync(SELF_PATH + '.tmp', SELF_PATH)
+          log('[Boot] Updated. Exiting for systemd restart...')
+          process.exit(0)
+        } catch (e) {
+          log('[Boot] Self-update apply error: ' + e.message + ' — continuing')
+          done()
+        }
+      })
+    })
+    req.on('error', function(e) {
+      log('[Boot] Self-update network error: ' + e.message + ' — continuing')
+      done()
+    })
+    req.setTimeout(15000, function() {
+      log('[Boot] Self-update timed out — continuing')
+      req.destroy()
+      done()
+    })
+  } catch (e) {
+    log('[Boot] Self-update unexpected error: ' + e.message + ' — continuing')
+    done()
+  }
+}
+
 // ── Start ──────────────────────────────────────────────────────────────────
 log('[Sync] GWI POS Sync Agent started')
 log('[Sync] MC: ' + MC_URL + '  Node: ' + NODE_ID)
-connectStream()
+checkBootUpdate(function() {
+  connectStream()
+})
 
 // Trim log periodically (every hour)
 setInterval(function() {
