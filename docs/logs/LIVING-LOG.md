@@ -5,6 +5,61 @@
 
 ---
 
+## 2026-02-21 — NUC Fleet Recovery + Sync Agent Self-Update
+
+**Session theme:** Fleet ops — diagnose and fix NUC deployment failures; add self-healing sync agent boot mechanism
+
+**Summary:** Three NUC demo stations were failing FORCE_UPDATE with "git pull failed". Root-caused via SSH to AdminDemo1 (172.16.20.58): old sync agents silently ignore unknown commands, no .git-credentials file, git in merge conflict state, and missing INTERNAL_API_SECRET env var causing npm run build to throw at module level. Fixed AdminDemo1 directly via SSH. Built full remote repair system in Mission Control (REPAIR_GIT_CREDENTIALS command, bootstrap/full-deploy injection modes, Repair Git UI button). Added boot-time self-update to sync agent so NUCs automatically stay current on every reboot. Fixed installer to generate INTERNAL_API_SECRET. Removed module-level throw from datacap/sale that was crashing all NUC builds. Fixed online ordering local preview link using wrong locationId.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `842adb3` | Include actual git error in FORCE_UPDATE failure response |
+| `a21feaa` | Sync agent boot self-update + fix NUC build failures |
+| `3e1c1e8` | Fix sync agent boot-update edge cases + add local preview link |
+
+### Commits — gwi-mission-control
+
+| Hash | Description |
+|------|-------------|
+| (deployed to Vercel) | REPAIR_GIT_CREDENTIALS command type in schema; repair-credentials API endpoint; Repair Git + Full Deploy UI in ServerActions |
+
+### Features Delivered
+
+**Skill 407 — NUC Remote Git Repair**
+- New `REPAIR_GIT_CREDENTIALS` fleet command in sync-agent.js (new agents): writes token to .git-credentials, verifies with git fetch
+- `POST /api/admin/servers/[id]/repair-credentials` (MC, super_admin only): three modes — normal (REPAIR_GIT_CREDENTIALS), bootstrap (SCHEDULE_REBOOT shell injection for old agents), full deploy (entire pipeline in background)
+- "Repair Git" + "Full Deploy" buttons in MC ServerActions per server row (super_admin only)
+
+**Skill 408 — Sync Agent Boot Self-Update**
+- `checkBootUpdate()` runs on every sync agent startup before connecting to MC
+- Downloads latest sync-agent.js from GitHub using stored .git-credentials token
+- Atomically replaces file and exits if content differs — systemd restarts with new version
+- Falls through silently on any error (no credentials, network down, timeout, empty response)
+- settled guard prevents double-start from timeout + error handler both firing
+
+**Skill 409 — Modifier Group Direct Ownership Migration**
+- Eliminated `MenuItemModifierGroup` junction table from schema
+- Added `showOnline` directly to `ModifierGroup` (data-migrated from junction rows)
+- Switched all read paths to `ownedModifierGroups`: `GET /api/menu`, `GET /api/menu/items/[id]`, `GET /api/online/menu`
+- Updated write path: `showOnline` toggle writes to `ModifierGroup` directly
+- Fixed root cause of online ordering showing items with no modifier groups
+
+### Bug Fixes
+
+| Bug | Fix |
+|-----|-----|
+| NUC `npm run build` failing with "INTERNAL_API_SECRET required in production" | Removed module-level throw from `src/app/api/datacap/sale/route.ts`; added INTERNAL_API_SECRET auto-generation to installer.run (new + backfill) |
+| Online ordering `/order?locationId=10c-1` returning no items | Wrong locationId in URL (real ID is `loc-1`); added local preview link to settings/online-ordering page showing correct URL |
+| AdminDemo1 git merge conflict blocking all deployments | Fixed via SSH: `git reset --hard HEAD`; wrote .git-credentials; full rebuild and restart |
+
+### Known Issues / Next Steps
+- Fruita Grill and Shanes Admin Demo still need physical access (one visit) to run `installer.run` with re-register option, after which self-update handles everything going forward
+- Rotate GitHub PAT shared during session (ghp_leRwO6Vy...) after off-site NUCs are fixed
+
+---
+
 ## 2026-02-20 — Pour Size Deduction Fix (Session 14)
 
 **Session theme:** T-006 — pour size multiplier flows all the way to inventory deduction

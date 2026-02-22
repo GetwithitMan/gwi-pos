@@ -331,6 +331,7 @@
 | 405 | Online Ordering Customer Routes (T-071/T-072) | DONE | Guest, Mission Control | 319, 336 | T-071/T-072 — middleware regex bypasses cloud auth for /:orderCode/:slug paths, sets x-venue-slug header. Public resolve-order-code endpoint. Full 3-step flow at /{orderCode}/{slug}/ using Next.js 15 async params. Backward-compatible onlineOrderingEnabled check. |
 | 406 | Online Ordering Phase 3+4 | DONE | Guest | 405 | Online ordering /order page: full menu browsing, cart management, checkout with Datacap payment. Phase 3: menu API integration. Phase 4: cart persistence + order creation. |
 | 407 | Online Ordering Phase 5 Checkout | DONE | Guest | 406 | Online ordering checkout page: address/pickup time form, live order summary, Datacap card entry, order confirmation with tracking number. |
+| 409 | MODIFIER-GROUP-DIRECT-OWNERSHIP | DONE | Online Ordering / Schema | 143 | Eliminated MenuItemModifierGroup junction table; migrated showOnline from junction to ModifierGroup directly; switched all read paths (menu API, item API, online menu API) to ownedModifierGroups; fixed online ordering showing no modifier groups |
 | 418 | Customer Notes Inline Edit + Order History (T-Customer) | DONE | Settings | 51 | Customer notes field inline edit (pencil icon, textarea, save/cancel). Order history list with pagination (20/page) + date range filter. Customer detail page improvements. |
 
 ### Hardware Integration
@@ -1240,6 +1241,13 @@ These skills emerged during development and are now part of the system:
 |---|------|------|---------|
 | 405 | Cloud Auth Client Fix | 2026-02-20 | Fixed login(data.employee) → login(data.data?.employee) — client auth store was getting undefined, bouncing admins back to /admin-login after every MC handoff |
 | 406 | MC Admin Venue Access | 2026-02-20 | Added Open Admin button to VenueUrlCard routing through /pos-access/{slug}; documented full JWT handoff architecture |
+
+### Infrastructure / NUC Fleet
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 407 | NUC-REMOTE-GIT-REPAIR | DONE | Infrastructure / NUC Fleet | 399 | Remote git credential repair for NUC stations; REPAIR_GIT_CREDENTIALS fleet command + MC bootstrap/full-deploy injection modes; Repair Git button in MC ServerActions (super_admin only) |
+| 408 | SYNC-AGENT-BOOT-SELF-UPDATE | DONE | Infrastructure / NUC Fleet | 399, 407 | Boot-time self-update: sync agent downloads latest version of itself from GitHub on every startup, replaces file atomically and restarts if content differs; settled guard prevents double-start |
 
 ---
 
