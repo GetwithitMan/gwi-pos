@@ -401,16 +401,20 @@ var CREDS_FILE = '/opt/gwi-pos/.git-credentials'
 var SELF_PATH  = '/opt/gwi-pos/sync-agent.js'
 
 function checkBootUpdate(done) {
+  // Guard: ensure done() is called at most once regardless of error/timeout interplay
+  var settled = false
+  function finish() { if (!settled) { settled = true; done() } }
+
   try {
     if (!fs.existsSync(CREDS_FILE)) {
       log('[Boot] No credentials file — skipping self-update check')
-      return done()
+      return finish()
     }
     var creds = fs.readFileSync(CREDS_FILE, 'utf-8')
     var m = creds.match(/https:\/\/([^:]+):x-oauth-basic@github\.com/)
     if (!m) {
       log('[Boot] Could not parse token from credentials — skipping self-update check')
-      return done()
+      return finish()
     }
     var token = m[1]
     var opts = {
@@ -426,18 +430,23 @@ function checkBootUpdate(done) {
       if (res.statusCode !== 200) {
         log('[Boot] Self-update check HTTP ' + res.statusCode + ' — skipping')
         res.resume()
-        return done()
+        return finish()
       }
       var chunks = []
       res.on('data', function(c) { chunks.push(c) })
       res.on('end', function() {
         try {
           var latest = Buffer.concat(chunks).toString('utf-8')
+          // Refuse to apply an empty file — something went wrong with the download
+          if (latest.trim().length < 100) {
+            log('[Boot] Downloaded file too small — skipping update')
+            return finish()
+          }
           var current = ''
           try { current = fs.readFileSync(SELF_PATH, 'utf-8') } catch (e) {}
           if (latest === current) {
             log('[Boot] Sync agent is up to date')
-            return done()
+            return finish()
           }
           log('[Boot] Sync agent update available — applying and restarting...')
           fs.writeFileSync(SELF_PATH + '.tmp', latest, { mode: 0o755 })
@@ -446,22 +455,23 @@ function checkBootUpdate(done) {
           process.exit(0)
         } catch (e) {
           log('[Boot] Self-update apply error: ' + e.message + ' — continuing')
-          done()
+          finish()
         }
       })
     })
     req.on('error', function(e) {
       log('[Boot] Self-update network error: ' + e.message + ' — continuing')
-      done()
+      finish()
     })
     req.setTimeout(15000, function() {
       log('[Boot] Self-update timed out — continuing')
       req.destroy()
-      done()
+      // finish() will be called by the error handler triggered by destroy,
+      // but the settled guard ensures it only runs once
     })
   } catch (e) {
     log('[Boot] Self-update unexpected error: ' + e.message + ' — continuing')
-    done()
+    finish()
   }
 }
 

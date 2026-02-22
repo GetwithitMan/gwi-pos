@@ -274,6 +274,19 @@ export default function OnlineOrderingOverviewPage() {
                 URL will appear here once your venue slug is configured
               </p>
             )}
+            {locationId && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-gray-400">Local preview:</span>
+                <a
+                  href={`/order?locationId=${locationId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-500 hover:text-blue-700 font-mono underline"
+                >
+                  /order?locationId={locationId}
+                </a>
+              </div>
+            )}
           </div>
         </div>
 
