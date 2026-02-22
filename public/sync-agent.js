@@ -136,8 +136,18 @@ function handleForceUpdate(payload) {
   } catch (e) {}
 
   step('git fetch', 'git fetch origin', true, 60)
-  if (!step('git reset', 'git reset --hard origin/main', false, 30)) {
-    return { ok: false, error: 'git pull failed', steps: steps }
+
+  // Run git reset and capture the actual error output for diagnostics
+  log('  git reset...')
+  var gitResetError = ''
+  try {
+    execSync('git reset --hard origin/main', { cwd: APP_DIR, timeout: 30000, stdio: 'pipe', encoding: 'utf-8' })
+    steps.push('git reset OK')
+  } catch (e) {
+    gitResetError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
+    steps.push('git reset FAIL: ' + gitResetError.slice(0, 100))
+    log('  FAILED: ' + gitResetError)
+    return { ok: false, error: 'git pull failed: ' + gitResetError, steps: steps }
   }
 
   // Re-copy env files in case they were updated
