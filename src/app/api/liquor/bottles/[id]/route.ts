@@ -135,6 +135,10 @@ export const PUT = withVenue(async function PUT(
       containerType,
       alcoholSubtype,
       vintage,
+      needsVerification,
+      verifiedAt,
+      verifiedBy,
+      sortOrder,
     } = body
 
     // Get existing bottle to check if metrics need recalculation
@@ -218,6 +222,10 @@ export const PUT = withVenue(async function PUT(
           ...(containerType !== undefined && { containerType }),
           ...(alcoholSubtype !== undefined && { alcoholSubtype: alcoholSubtype || null }),
           ...(vintage !== undefined && { vintage: vintage || null }),
+          ...(sortOrder !== undefined && { sortOrder }),
+          ...(needsVerification !== undefined && { needsVerification }),
+          ...(verifiedAt !== undefined && { verifiedAt: verifiedAt ? new Date(verifiedAt) : null }),
+          ...(verifiedBy !== undefined && { verifiedBy: verifiedBy || null }),
           ...metricsUpdate,
         },
         include: {
@@ -301,6 +309,10 @@ export const PUT = withVenue(async function PUT(
       currentStock: bottle.currentStock,
       lowStockAlert: bottle.lowStockAlert,
       isActive: bottle.isActive,
+      sortOrder: bottle.sortOrder,
+      needsVerification: bottle.needsVerification,
+      verifiedAt: bottle.verifiedAt,
+      verifiedBy: bottle.verifiedBy,
       inventoryItemId: existing.inventoryItemId,
       createdAt: bottle.createdAt,
       updatedAt: bottle.updatedAt,

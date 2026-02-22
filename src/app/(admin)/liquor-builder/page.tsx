@@ -64,9 +64,20 @@ function LiquorBuilderContent() {
   const [showBottleLinkPicker, setShowBottleLinkPicker] = useState(false)
   const [bottleLinkSearch, setBottleLinkSearch] = useState('')
   const [linkingBottle, setLinkingBottle] = useState(false)
+  const [expandedPickerCats, setExpandedPickerCats] = useState<Set<string>>(new Set())
   const [recipeExpanded, setRecipeExpanded] = useState(false)
   const [editingPourSize, setEditingPourSize] = useState<string>('')
   const [savingPourSize, setSavingPourSize] = useState(false)
+
+  // Inline bottle creation from picker (backward creation)
+  const [showInlineBottleForm, setShowInlineBottleForm] = useState(false)
+  const [inlineBottleName, setInlineBottleName] = useState('')
+  const [inlineBottleBrand, setInlineBottleBrand] = useState('')
+  const [inlineBottleCategoryId, setInlineBottleCategoryId] = useState('')
+  const [inlineBottleTier, setInlineBottleTier] = useState('well')
+  const [inlineBottleSizeMl, setInlineBottleSizeMl] = useState('750')
+  const [inlineBottleCost, setInlineBottleCost] = useState('')
+  const [creatingInlineBottle, setCreatingInlineBottle] = useState(false)
 
   // Spirit tier editor state
   const [spiritMode, setSpiritMode] = useState(false)
@@ -467,6 +478,50 @@ function LiquorBuilderContent() {
       }
     } finally {
       setLinkingBottle(false)
+    }
+  }
+
+  // Create bottle inline from picker (backward creation — marked unverified)
+  const handleCreateInlineBottle = async () => {
+    if (!inlineBottleName.trim() || !inlineBottleCategoryId || !inlineBottleCost) return
+    setCreatingInlineBottle(true)
+    try {
+      const res = await fetch('/api/liquor/bottles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: inlineBottleName.trim(),
+          brand: inlineBottleBrand.trim() || undefined,
+          spiritCategoryId: inlineBottleCategoryId,
+          tier: inlineBottleTier,
+          bottleSizeMl: parseInt(inlineBottleSizeMl) || 750,
+          unitCost: parseFloat(inlineBottleCost) || 0,
+          needsVerification: true,
+        }),
+      })
+      if (res.ok) {
+        const result = await res.json()
+        const bottleId = result.data?.id
+        toast.success(`Created "${inlineBottleName.trim()}" (needs verification)`)
+        // Reload bottles, then auto-link
+        await loadBottles()
+        if (bottleId) {
+          await linkDrinkToBottle(bottleId)
+        }
+        // Reset form
+        setShowInlineBottleForm(false)
+        setInlineBottleName('')
+        setInlineBottleBrand('')
+        setInlineBottleCost('')
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to create bottle')
+      }
+    } catch (error) {
+      console.error('Failed to create inline bottle:', error)
+      toast.error('Failed to create bottle')
+    } finally {
+      setCreatingInlineBottle(false)
     }
   }
 
@@ -930,7 +985,7 @@ function LiquorBuilderContent() {
                       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Linked Bottle</h3>
                       {!showBottleLinkPicker && (
                         <button
-                          onClick={() => setShowBottleLinkPicker(true)}
+                          onClick={() => { setShowBottleLinkPicker(true); setExpandedPickerCats(new Set()) }}
                           className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50"
                         >
                           Link to Bottle
@@ -971,43 +1026,161 @@ function LiquorBuilderContent() {
                               if (!grouped.has(cat)) grouped.set(cat, [])
                               grouped.get(cat)!.push(b)
                             }
-                            if (grouped.size === 0) {
-                              return <p className="text-xs text-gray-400 text-center py-4">No bottles found</p>
+                            if (grouped.size === 0 && !showInlineBottleForm) {
+                              return <p className="text-xs text-gray-400 text-center py-4">No bottles found — create one below</p>
                             }
-                            return Array.from(grouped.entries()).map(([catName, catBottles]) => (
-                              <div key={catName}>
-                                <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide px-1 mb-1">{catName}</div>
-                                <div className="space-y-0.5">
-                                  {catBottles.map((b: BottleProduct) => (
-                                    <button
-                                      key={b.id}
-                                      onClick={() => linkDrinkToBottle(b.id)}
-                                      disabled={linkingBottle}
-                                      className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50"
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-gray-800">{b.name}</span>
-                                        <div className="flex items-center gap-2">
-                                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                            b.tier === 'well' ? 'bg-gray-200 text-gray-700'
-                                            : b.tier === 'call' ? 'bg-blue-100 text-blue-700'
-                                            : b.tier === 'premium' ? 'bg-purple-100 text-purple-700'
-                                            : 'bg-amber-100 text-amber-700'
-                                          }`}>
-                                            {b.tier === 'top_shelf' ? 'TOP SHELF' : b.tier.toUpperCase()}
-                                          </span>
-                                          {b.pourCost && (
-                                            <span className="text-xs text-gray-500">{formatCurrency(Number(b.pourCost))}</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </button>
-                                  ))}
+                            return Array.from(grouped.entries()).map(([catName, catBottles]) => {
+                              const isCatExpanded = expandedPickerCats.has(catName) || bottleLinkSearch.length > 0
+                              return (
+                                <div key={catName}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedPickerCats(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(catName)) next.delete(catName)
+                                      else next.add(catName)
+                                      return next
+                                    })}
+                                    className="w-full flex items-center gap-2 px-1 py-1.5 hover:bg-gray-50 rounded transition-colors"
+                                  >
+                                    <span className="text-gray-400 text-[10px] select-none">{isCatExpanded ? '\u25BC' : '\u25B6'}</span>
+                                    <span className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">{catName}</span>
+                                    <span className="text-[10px] text-gray-300">{catBottles.length}</span>
+                                  </button>
+                                  {isCatExpanded && (
+                                    <div className="space-y-0.5 ml-3">
+                                      {catBottles.map((b: BottleProduct) => (
+                                        <button
+                                          key={b.id}
+                                          onClick={() => linkDrinkToBottle(b.id)}
+                                          disabled={linkingBottle}
+                                          className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium text-gray-800">{b.name}</span>
+                                            <div className="flex items-center gap-2">
+                                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                                b.tier === 'well' ? 'bg-gray-200 text-gray-700'
+                                                : b.tier === 'call' ? 'bg-blue-100 text-blue-700'
+                                                : b.tier === 'premium' ? 'bg-purple-100 text-purple-700'
+                                                : 'bg-amber-100 text-amber-700'
+                                              }`}>
+                                                {b.tier === 'top_shelf' ? 'TOP SHELF' : b.tier.toUpperCase()}
+                                              </span>
+                                              {b.pourCost && (
+                                                <span className="text-xs text-gray-500">{formatCurrency(Number(b.pourCost))}</span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
-                              </div>
-                            ))
+                              )
+                            })
                           })()}
                         </div>
+
+                        {/* Inline bottle creation form */}
+                        {!showInlineBottleForm ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowInlineBottleForm(true)
+                              if (categories.length > 0 && !inlineBottleCategoryId) {
+                                setInlineBottleCategoryId(categories[0].id)
+                              }
+                            }}
+                            className="w-full mt-2 px-3 py-2 text-sm font-medium text-amber-600 border border-amber-300 border-dashed rounded-lg hover:bg-amber-50 transition-colors"
+                          >
+                            + Create New Bottle
+                          </button>
+                        ) : (
+                          <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+                            <div className="text-[10px] font-bold uppercase text-amber-600 tracking-wider">Create Bottle (Unverified)</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                type="text"
+                                value={inlineBottleName}
+                                onChange={e => setInlineBottleName(e.target.value)}
+                                placeholder="Bottle name *"
+                                className="px-2 py-1.5 text-sm border rounded"
+                                autoFocus
+                              />
+                              <input
+                                type="text"
+                                value={inlineBottleBrand}
+                                onChange={e => setInlineBottleBrand(e.target.value)}
+                                placeholder="Brand"
+                                className="px-2 py-1.5 text-sm border rounded"
+                              />
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              <select
+                                value={inlineBottleCategoryId}
+                                onChange={e => setInlineBottleCategoryId(e.target.value)}
+                                className="px-2 py-1.5 text-sm border rounded"
+                              >
+                                <option value="">Category *</option>
+                                {categories.map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={inlineBottleTier}
+                                onChange={e => setInlineBottleTier(e.target.value)}
+                                className="px-2 py-1.5 text-sm border rounded"
+                              >
+                                {SPIRIT_TIERS.map(t => (
+                                  <option key={t.value} value={t.value}>{t.label}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={inlineBottleSizeMl}
+                                onChange={e => setInlineBottleSizeMl(e.target.value)}
+                                className="px-2 py-1.5 text-sm border rounded"
+                              >
+                                {BOTTLE_SIZES.map(s => (
+                                  <option key={s.value} value={s.value}>{s.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={inlineBottleCost}
+                                onChange={e => setInlineBottleCost(e.target.value)}
+                                placeholder="Unit cost ($) *"
+                                className="flex-1 px-2 py-1.5 text-sm border rounded"
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') { e.preventDefault(); handleCreateInlineBottle() }
+                                  if (e.key === 'Escape') setShowInlineBottleForm(false)
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={handleCreateInlineBottle}
+                                disabled={creatingInlineBottle || !inlineBottleName.trim() || !inlineBottleCategoryId || !inlineBottleCost}
+                                className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+                              >
+                                {creatingInlineBottle ? '...' : 'Create & Link'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setShowInlineBottleForm(false)}
+                                className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-amber-600">
+                              Created bottles are marked as unverified and need to be verified in Liquor Inventory.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

@@ -4172,6 +4172,12 @@ model BottleProduct {
   currentStock  Int     @default(0) // Number of bottles in inventory
   lowStockAlert Int? // Alert when below this many bottles
   isActive      Boolean @default(true)
+  sortOrder     Int     @default(0) // Display order within category
+
+  // Verification workflow — bottles created from menu builder need review
+  needsVerification Boolean   @default(false)
+  verifiedAt        DateTime?
+  verifiedBy        String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

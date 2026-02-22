@@ -110,6 +110,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
       orderBy: [
         { spiritCategory: { sortOrder: 'asc' } },
+        { sortOrder: 'asc' },
         { tier: 'asc' },
         { name: 'asc' },
       ],
@@ -136,6 +137,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         currentStock: bottle.currentStock,
         lowStockAlert: bottle.lowStockAlert,
         isActive: bottle.isActive,
+        sortOrder: bottle.sortOrder,
+        needsVerification: bottle.needsVerification,
+        verifiedAt: bottle.verifiedAt,
+        verifiedBy: bottle.verifiedBy,
         inventoryItemId: bottle.inventoryItemId,
         inventoryStock: bottle.inventoryItem?.currentStock ? Number(bottle.inventoryItem.currentStock) : null,
         inventoryItem: bottle.inventoryItem ? {
@@ -200,6 +205,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       containerType,
       alcoholSubtype,
       vintage,
+      needsVerification,
     } = body
 
     // Validation
@@ -311,6 +317,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })).id
 
+      // Auto-assign sortOrder
+      const maxSort = await tx.bottleProduct.aggregate({
+        _max: { sortOrder: true },
+        where: { locationId: spiritCategory.locationId, spiritCategoryId, deletedAt: null },
+      })
+      const nextSort = (maxSort._max.sortOrder ?? -1) + 1
+
       // Create BottleProduct linked to the InventoryItem
       const bottle = await tx.bottleProduct.create({
         data: {
@@ -332,6 +345,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           alcoholSubtype: alcoholSubtype || null,
           vintage: vintage || null,
           inventoryItemId,
+          sortOrder: nextSort,
+          needsVerification: needsVerification ?? false,
         },
         include: {
           spiritCategory: {
@@ -374,6 +389,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       currentStock: result.bottle.currentStock,
       lowStockAlert: result.bottle.lowStockAlert,
       isActive: result.bottle.isActive,
+      sortOrder: result.bottle.sortOrder,
+      needsVerification: result.bottle.needsVerification,
+      verifiedAt: result.bottle.verifiedAt,
+      verifiedBy: result.bottle.verifiedBy,
       inventoryItemId: result.inventoryItemId,
       createdAt: result.bottle.createdAt,
       updatedAt: result.bottle.updatedAt,

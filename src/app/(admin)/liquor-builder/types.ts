@@ -35,6 +35,10 @@ export interface BottleProduct {
   containerType?: string | null   // 'bottle' | 'can' | 'draft' | 'glass'
   alcoholSubtype?: string | null  // beer: domestic/import/craft/seltzer/na; wine: red/white/rose/sparkling/dessert
   vintage?: number | null         // wine vintage year e.g. 2021
+  sortOrder: number
+  needsVerification: boolean
+  verifiedAt?: string | null
+  verifiedBy?: string | null
   hasMenuItem: boolean
   linkedMenuItems: {
     id: string
