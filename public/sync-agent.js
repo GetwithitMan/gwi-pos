@@ -126,6 +126,15 @@ function handleForceUpdate(payload) {
     return ok || failOk
   }
 
+  // Clear any stale git lock files left by previously interrupted operations
+  try {
+    var lockFiles = [
+      path.join(APP_DIR, '.git', 'index.lock'),
+      path.join(APP_DIR, '.git', 'refs', 'remotes', 'origin', 'main.lock'),
+    ]
+    lockFiles.forEach(function(f) { try { fs.unlinkSync(f) } catch (e) {} })
+  } catch (e) {}
+
   step('git fetch', 'git fetch origin', true, 60)
   if (!step('git reset', 'git reset --hard origin/main', false, 30)) {
     return { ok: false, error: 'git pull failed', steps: steps }
