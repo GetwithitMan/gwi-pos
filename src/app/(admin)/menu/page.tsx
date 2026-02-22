@@ -20,6 +20,7 @@ import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/share
 const CATEGORY_TYPES = [
   { value: 'food', label: 'Food', color: '#22c55e', description: 'Kitchen items, appetizers, entrees' },
   { value: 'drinks', label: 'Drinks', color: '#3b82f6', description: 'Non-alcoholic beverages' },
+  { value: 'liquor', label: 'Liquor', color: '#8b5cf6', description: 'Spirits, cocktails, beer — managed here and in Liquor Builder' },
   { value: 'pizza', label: 'Pizza', color: '#ef4444', description: 'Pizza items with sectional toppings builder' },
   { value: 'entertainment', label: 'Entertainment', color: '#f97316', description: 'Pool tables, darts, games - timed billing' },
   { value: 'combos', label: 'Combos', color: '#ec4899', description: 'Bundled items' },
@@ -262,14 +263,15 @@ export default function MenuManagementPage() {
 
       if (menuResponse.ok) {
         const data = await menuResponse.json()
-        // Filter out liquor categories - they belong in Liquor Builder
-        // Drinks (soft drinks, non-alcoholic) stay in the regular menu
-        const foodCategories = data.data.categories.filter((c: Category) =>
-          c.categoryType !== 'liquor'
+        // Liquor categories are managed exclusively in the Liquor Builder — exclude them here
+        setCategories(data.data.categories.filter((c: any) => c.categoryType !== 'liquor'))
+        // Exclude liquor items (their category won't be selectable anyway, but filter defensively)
+        const liquorCategoryIds = new Set(
+          data.data.categories
+            .filter((c: any) => c.categoryType === 'liquor')
+            .map((c: any) => c.id)
         )
-        setCategories(foodCategories)
-        // Force new array reference to ensure React re-renders
-        setItems([...data.data.items])
+        setItems([...data.data.items.filter((item: any) => !liquorCategoryIds.has(item.categoryId))])
       }
 
       // Shared modifier groups are deprecated — modifiers are now item-owned
@@ -324,6 +326,19 @@ export default function MenuManagementPage() {
       loadMenuRef.current()
     }
   }, [selectedCategory])
+
+  // Auto-select item from ?item=ID URL param (e.g. deep-link from Liquor Builder)
+  useEffect(() => {
+    if (isLoading || items.length === 0) return
+    const params = new URLSearchParams(window.location.search)
+    const itemId = params.get('item')
+    if (!itemId || selectedItemForEditor?.id === itemId) return
+    const target = items.find(i => i.id === itemId)
+    if (target) {
+      setSelectedCategory(target.categoryId)
+      setSelectedItemForEditor(target)
+    }
+  }, [isLoading, items])
 
   // Real-time entertainment status updates + ingredient library via shared socket
   const selectedCategoryType = categories.find(c => c.id === selectedCategory)?.categoryType
@@ -659,9 +674,9 @@ export default function MenuManagementPage() {
               {selectedCategoryData?.name} Items
             </span>
             {selectedCategoryData?.categoryType === 'liquor' && (
-              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                → Opens in Liquor Builder
-              </span>
+              <a href="/liquor-builder" className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full hover:bg-purple-200">
+                → Bottles & Recipes in Liquor Builder
+              </a>
             )}
             {selectedCategoryData?.categoryType === 'entertainment' && (
               <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
@@ -681,10 +696,7 @@ export default function MenuManagementPage() {
               size="sm"
               className="text-blue-600 h-6 text-xs px-2"
               onClick={async () => {
-                // Route liquor categories to the Liquor Builder
-                if (selectedCategoryData?.categoryType === 'liquor') {
-                  router.push('/liquor-builder')
-                } else if (selectedCategoryData?.categoryType === 'entertainment') {
+                if (selectedCategoryData?.categoryType === 'entertainment') {
                   router.push('/timed-rentals')
                 } else {
                   // Create a new blank item and open it in ItemEditor
@@ -730,10 +742,7 @@ export default function MenuManagementPage() {
                   <button
                     key={item.id}
                     onClick={() => {
-                      // Route liquor items to the Liquor Builder
-                      if (selectedCategoryData?.categoryType === 'liquor') {
-                        router.push(`/liquor-builder?item=${item.id}`)
-                      } else if (selectedCategoryData?.categoryType === 'entertainment') {
+                      if (selectedCategoryData?.categoryType === 'entertainment') {
                         router.push(`/timed-rentals?item=${item.id}`)
                       } else {
                         setSelectedItemForEditor(item)

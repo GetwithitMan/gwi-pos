@@ -81,21 +81,6 @@ export async function processLiquorInventory(
       : []
     const allBottleMap = new Map(allBottles.map(b => [b.id, b]))
 
-    // Collect all inventory transactions to batch-create after processing
-    const transactionsToCreate: {
-      locationId: string
-      menuItemId: string
-      type: string
-      quantityBefore: number
-      quantityChange: number
-      quantityAfter: number
-      unitCost: number
-      totalCost: number
-      orderId: string
-      employeeId: string | null
-      reason: string
-    }[] = []
-
     for (const orderItem of orderItems) {
       // Skip non-liquor items or items without recipes
       if (
@@ -158,23 +143,6 @@ export async function processLiquorInventory(
         })
 
         itemCost += pourCost
-
-        // Collect transaction data for batch create (instead of individual creates)
-        const poursAsInt = Math.round(pourCount * 100) // Store as hundredths for precision
-
-        transactionsToCreate.push({
-          locationId: actualBottle.locationId,
-          menuItemId: actualBottle.id, // Using bottle as the "item"
-          type: 'sale',
-          quantityBefore: 0, // We're not tracking running total in this model
-          quantityChange: -poursAsInt, // Negative for sales
-          quantityAfter: 0,
-          unitCost: actualBottle.pourCost ? Number(actualBottle.pourCost) : 0,
-          totalCost: pourCost,
-          orderId,
-          employeeId: employeeId || null,
-          reason: `${orderItem.name} - ${pourCount} pour(s)${wasSubstituted ? ' (substituted)' : ''}`,
-        })
       }
 
       if (itemDeductions.length > 0) {
@@ -186,11 +154,6 @@ export async function processLiquorInventory(
         })
         totalCost += itemCost
       }
-    }
-
-    // Batch create all inventory transactions in one query
-    if (transactionsToCreate.length > 0) {
-      await db.inventoryTransaction.createMany({ data: transactionsToCreate })
     }
 
     return { processed: results, totalCost }

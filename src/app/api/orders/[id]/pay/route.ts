@@ -10,7 +10,6 @@ import {
 import { parseSettings } from '@/lib/settings'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { processLiquorInventory } from '@/lib/liquor-inventory'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
@@ -948,14 +947,9 @@ export const POST = withVenue(withTiming(async function POST(
         },
       })
 
-      // Process liquor inventory deductions for cocktails with recipes (fire-and-forget)
-      // This tracks pour usage and creates inventory transactions
-      processLiquorInventory(orderId, employeeId).catch(err => {
-        console.error('Background liquor inventory failed:', err)
-      })
-
-      // Deduct general food/ingredient inventory (fire-and-forget to not block payment)
-      // This processes MenuItemRecipes and ModifierInventoryLinks
+      // Deduct inventory (food + liquor) — fire-and-forget to not block payment.
+      // Handles MenuItemRecipes, RecipeIngredients (cocktails), ModifierInventoryLinks,
+      // and spirit tier substitutions (linkedBottleProduct on OrderItemModifier).
       deductInventoryForOrder(orderId, employeeId).catch(err => {
         console.error('Background inventory deduction failed:', err)
       })

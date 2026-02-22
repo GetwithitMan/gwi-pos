@@ -85,6 +85,26 @@ export const ORDER_INVENTORY_INCLUDE = {
       },
       modifiers: {
         include: {
+          // Spirit substitution: which bottle was actually used for upgrades
+          linkedBottleProduct: {
+            select: {
+              id: true,
+              spiritCategoryId: true,
+              pourSizeOz: true,
+              inventoryItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: true,
+                  department: true,
+                  storageUnit: true,
+                  costPerUnit: true,
+                  yieldCostPerUnit: true,
+                  currentStock: true,
+                },
+              },
+            },
+          },
           modifier: {
             select: {
               liteMultiplier: true,
@@ -281,13 +301,32 @@ export async function deductInventoryForOrder(
       }
 
       // Process liquor recipe ingredients (RecipeIngredient -> BottleProduct -> InventoryItem)
-      // This handles cocktails created via the Liquor Builder
+      // This handles cocktails created via the Liquor Builder.
+      // Spirit upgrades (e.g. Call/Premium/Top shelf) are reflected by OrderItemModifier.linkedBottleProductId —
+      // when set, that bottle's InventoryItem is deducted instead of the recipe's default bottle.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const recipeIngredients = (orderItem.menuItem as any)?.recipeIngredients
       if (recipeIngredients && Array.isArray(recipeIngredients)) {
+        // Build spirit substitution map: spiritCategoryId → linked bottle's inventory info
+        const spiritSubstitutions = new Map<string, { inventoryItem: InventoryItemWithStock; pourSizeOz: number | null }>()
+        for (const mod of orderItem.modifiers) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const lb = (mod as any).linkedBottleProduct
+          if (lb?.spiritCategoryId && lb.inventoryItem) {
+            spiritSubstitutions.set(lb.spiritCategoryId, {
+              inventoryItem: lb.inventoryItem as InventoryItemWithStock,
+              pourSizeOz: lb.pourSizeOz ? toNumber(lb.pourSizeOz) : null,
+            })
+          }
+        }
+
         for (const ing of recipeIngredients) {
-          // Get the linked inventory item from the bottle product
-          const inventoryItem = ing.bottleProduct?.inventoryItem
+          // Check for spirit substitution — if the customer upgraded their spirit tier,
+          // deduct from the substituted bottle's InventoryItem instead of the default.
+          const substitution = ing.bottleProduct?.spiritCategoryId
+            ? spiritSubstitutions.get(ing.bottleProduct.spiritCategoryId)
+            : undefined
+          const inventoryItem = substitution?.inventoryItem ?? ing.bottleProduct?.inventoryItem
           if (!inventoryItem) continue
 
           // Skip if this inventory item was explicitly removed with "NO" modifier
@@ -298,7 +337,12 @@ export async function deductInventoryForOrder(
           // Calculate pour quantity in oz
           // pourCount * itemQty * pourSizeOz * pourMultiplier (T-006)
           const pourCount = toNumber(ing.pourCount) || 1
-          const pourSizeOz = toNumber(ing.pourSizeOz) || toNumber(ing.bottleProduct?.pourSizeOz) || 1.5
+          // Use the substituted bottle's pour size if available (different spirit may have different pour size)
+          const pourSizeOz =
+            substitution?.pourSizeOz ??
+            toNumber(ing.pourSizeOz) ??
+            toNumber(ing.bottleProduct?.pourSizeOz) ??
+            1.5
           // T-006: apply pour size multiplier once per order item
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const pourMult = toNumber((orderItem as any).pourMultiplier) || 1

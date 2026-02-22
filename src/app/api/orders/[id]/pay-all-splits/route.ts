@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
-import { processLiquorInventory } from '@/lib/liquor-inventory'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { parseSettings } from '@/lib/settings'
@@ -169,10 +168,7 @@ export const POST = withVenue(async function POST(
       void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
     }
 
-    // Fire-and-forget: inventory deductions for the parent order
-    processLiquorInventory(parentOrderId, employeeId).catch(err => {
-      console.error('Background liquor inventory failed (pay-all-splits):', err)
-    })
+    // Fire-and-forget: inventory deductions (food + liquor) for the parent order
     deductInventoryForOrder(parentOrderId, employeeId).catch(err => {
       console.error('Background inventory deduction failed (pay-all-splits):', err)
     })
