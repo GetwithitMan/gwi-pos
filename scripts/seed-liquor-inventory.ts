@@ -15,6 +15,50 @@ function getTier(price: number): 'well' | 'call' | 'premium' | 'top_shelf' {
   return 'top_shelf'
 }
 
+// Classify beer subtype from name
+function getBeerSubtype(name: string): string {
+  const n = name.toLowerCase()
+  if (n.includes('white claw') || n.includes('truly') || n.includes('high noon') || n.includes('seltzer') || n.includes('hard seltzer')) return 'seltzer'
+  if (n.includes('0.0') || n.includes('non-alc') || n.includes('athletic') || n.includes('n/a') || n.includes('non alc')) return 'na'
+  if (n.includes('corona') || n.includes('modelo') || n.includes('dos equis') || n.includes('heineken') ||
+      n.includes('stella') || n.includes('guinness') || n.includes('newcastle') || n.includes('sapporo') ||
+      n.includes('peroni') || n.includes('tecate') || n.includes('pacifico') || n.includes('victoria') ||
+      n.includes('fosters') || n.includes('tiger') || n.includes('kirin') || n.includes('asahi')) return 'import'
+  if (n.includes('bud') || n.includes('coors') || n.includes('miller') || n.includes('michelob') ||
+      n.includes('pbr') || n.includes('pabst') || n.includes('keystone') || n.includes('natural') ||
+      n.includes('busch') || n.includes('icehouse') || n.includes('rolling rock')) return 'domestic'
+  return 'craft' // default to craft for anything else
+}
+
+// Classify wine subtype from name
+function getWineSubtype(name: string): string {
+  const n = name.toLowerCase()
+  if (n.includes('prosecco') || n.includes('champagne') || n.includes('sparkling') || n.includes('cava') ||
+      n.includes('cremant') || n.includes('brut') || n.includes('veuve') || n.includes('moët') ||
+      n.includes('moet') || n.includes('la marca') || n.includes('freixenet')) return 'sparkling'
+  if (n.includes('rosé') || n.includes('rose') || n.includes('whispering angel') || n.includes('provence')) return 'rose'
+  if (n.includes('port') || n.includes('sherry') || n.includes('moscato') || n.includes('dessert') ||
+      n.includes('ice wine') || n.includes('late harvest') || n.includes('sauterne')) return 'dessert'
+  // Red varieties
+  if (n.includes('cabernet') || n.includes('pinot noir') || n.includes('merlot') || n.includes('malbec') ||
+      n.includes('syrah') || n.includes('shiraz') || n.includes('zinfandel') || n.includes('tempranillo') ||
+      n.includes('chianti') || n.includes('barolo') || n.includes('sangiovese') || n.includes('beaujolais') ||
+      n.includes('red blend') || n.includes('apothic') || n.includes('prisoner') || n.includes('duckhorn') ||
+      n.includes('jordan') || n.includes('silver oak') || n.includes('caymus') || n.includes('bogle') ||
+      n.includes('meiomi')) return 'red'
+  // White varieties
+  if (n.includes('chardonnay') || n.includes('sauvignon blanc') || n.includes('pinot grigio') ||
+      n.includes('riesling') || n.includes('viognier') || n.includes('albariño') || n.includes('albarino') ||
+      n.includes('moscato') || n.includes('pinot gris') || n.includes('white blend') ||
+      n.includes('rombauer') || n.includes('kim crawford') || n.includes('kendall')) return 'white'
+  // Fallback for "house" wines — use name keywords
+  if (n.includes('house ') || n.includes('house_')) {
+    if (n.includes('cabernet') || n.includes('pinot noir') || n.includes('merlot')) return 'red'
+    if (n.includes('chardonnay') || n.includes('sauvignon') || n.includes('pinot grigio')) return 'white'
+  }
+  return 'red' // default
+}
+
 // Category definitions
 const CATEGORIES = [
   { name: 'Whiskey', displayName: 'Whiskey', description: 'Whiskey, Bourbon, Rye, Scotch' },
@@ -23,7 +67,15 @@ const CATEGORIES = [
   { name: 'Tequila', displayName: 'Tequila', description: 'Blanco, Reposado, Añejo tequila' },
   { name: 'Gin', displayName: 'Gin', description: 'Gin and botanical spirits' },
   { name: 'Cocktails', displayName: 'Cocktails', description: 'Mixed drinks and cocktails' },
+  { name: 'Beer', displayName: 'Beer', description: 'Domestic, import, craft bottles & cans' },
+  { name: 'Wine', displayName: 'Wine', description: 'Red, white, rosé, sparkling' },
 ]
+
+// Beer bottle/can size in ml (12oz = 355ml, 16oz = 473ml)
+const BEER_BOTTLE_ML = 355
+const BEER_POUR_OZ = 12 // served as whole unit (1 bottle/can per serve)
+const WINE_BOTTLE_ML = 750
+const WINE_POUR_OZ = 5 // standard wine pour
 
 // Bottle products grouped by category
 const BOTTLES = {
@@ -136,6 +188,74 @@ const BOTTLES = {
     { name: 'Tanqueray', price: 8.00 },
     { name: 'Tanqueray No. Ten', price: 11.00 },
     { name: 'The Botanist', price: 11.00 },
+  ],
+  Beer: [
+    // Domestic
+    { name: 'Bud Light', price: 4.00, sizeMl: 355 },
+    { name: 'Budweiser', price: 4.00, sizeMl: 355 },
+    { name: 'Coors Light', price: 4.00, sizeMl: 355 },
+    { name: 'Miller Lite', price: 4.00, sizeMl: 355 },
+    { name: 'Michelob Ultra', price: 4.50, sizeMl: 355 },
+    { name: 'Pabst Blue Ribbon', price: 3.00, sizeMl: 355 },
+    // Import
+    { name: 'Corona Extra', price: 5.00, sizeMl: 355 },
+    { name: 'Corona Light', price: 5.00, sizeMl: 355 },
+    { name: 'Modelo Especial', price: 5.00, sizeMl: 355 },
+    { name: 'Modelo Negra', price: 5.50, sizeMl: 355 },
+    { name: 'Dos Equis Lager', price: 5.00, sizeMl: 355 },
+    { name: 'Heineken', price: 5.50, sizeMl: 355 },
+    { name: 'Stella Artois', price: 5.50, sizeMl: 355 },
+    { name: 'Guinness Draught', price: 6.00, sizeMl: 440 },
+    { name: 'Newcastle Brown Ale', price: 5.50, sizeMl: 355 },
+    // Craft
+    { name: 'Blue Moon', price: 6.00, sizeMl: 355 },
+    { name: 'Shiner Bock', price: 5.00, sizeMl: 355 },
+    { name: 'Yuengling Lager', price: 5.00, sizeMl: 355 },
+    { name: 'Samuel Adams Boston Lager', price: 6.00, sizeMl: 355 },
+    { name: 'Dogfish Head 60 Min IPA', price: 7.00, sizeMl: 355 },
+    { name: 'Sierra Nevada Pale Ale', price: 6.00, sizeMl: 355 },
+    { name: 'Lagunitas IPA', price: 7.00, sizeMl: 355 },
+    { name: 'Goose Island IPA', price: 6.50, sizeMl: 355 },
+    // Hard Seltzer
+    { name: 'White Claw Black Cherry', price: 5.00, sizeMl: 355 },
+    { name: 'White Claw Mango', price: 5.00, sizeMl: 355 },
+    { name: 'Truly Wild Berry', price: 5.00, sizeMl: 355 },
+    { name: 'High Noon Watermelon', price: 6.00, sizeMl: 355 },
+    { name: 'High Noon Pineapple', price: 6.00, sizeMl: 355 },
+    // NA
+    { name: 'Heineken 0.0', price: 4.00, sizeMl: 355 },
+    { name: "Athletic Brewing Run Wild IPA", price: 5.00, sizeMl: 355 },
+  ],
+  Wine: [
+    // House Wines (well)
+    { name: 'House Cabernet Sauvignon', price: 8.00, sizeMl: 750 },
+    { name: 'House Pinot Noir', price: 8.00, sizeMl: 750 },
+    { name: 'House Merlot', price: 8.00, sizeMl: 750 },
+    { name: 'House Chardonnay', price: 8.00, sizeMl: 750 },
+    { name: 'House Sauvignon Blanc', price: 8.00, sizeMl: 750 },
+    { name: 'House Pinot Grigio', price: 8.00, sizeMl: 750 },
+    { name: 'House Rosé', price: 8.00, sizeMl: 750 },
+    { name: 'House Prosecco', price: 9.00, sizeMl: 750 },
+    // Call Reds
+    { name: 'Apothic Red', price: 10.00, sizeMl: 750 },
+    { name: "Bogle Cabernet", price: 10.00, sizeMl: 750 },
+    { name: 'Meiomi Pinot Noir', price: 12.00, sizeMl: 750 },
+    { name: 'The Prisoner Red', price: 16.00, sizeMl: 750 },
+    { name: 'Josh Cellars Cabernet', price: 11.00, sizeMl: 750 },
+    // Call Whites
+    { name: 'Kim Crawford Sauvignon Blanc', price: 11.00, sizeMl: 750 },
+    { name: 'Rombauer Chardonnay', price: 16.00, sizeMl: 750 },
+    { name: "La Marca Prosecco", price: 10.00, sizeMl: 750 },
+    { name: 'Whispering Angel Rosé', price: 16.00, sizeMl: 750 },
+    { name: 'Kendall Jackson Chardonnay', price: 11.00, sizeMl: 750 },
+    // Premium
+    { name: 'Caymus Cabernet', price: 20.00, sizeMl: 750 },
+    { name: 'Jordan Cabernet', price: 22.00, sizeMl: 750 },
+    { name: 'Silver Oak Cabernet', price: 28.00, sizeMl: 750 },
+    { name: 'Duckhorn Merlot', price: 22.00, sizeMl: 750 },
+    // Sparkling
+    { name: 'Veuve Clicquot Brut', price: 30.00, sizeMl: 750 },
+    { name: 'Moët & Chandon Brut', price: 25.00, sizeMl: 750 },
   ],
   Cocktails: [
     { name: 'Amaretto Sour', price: 9.00 },
@@ -262,10 +382,22 @@ async function main() {
       // Determine tier based on price
       const tier = getTier(bottleDef.price)
 
-      // Standard bottle defaults
-      const bottleSizeMl = 750 // Standard bottle
-      const unitCost = bottleDef.price * 0.25 // Estimate: sell price * 0.25 = cost
-      const pourSizeOz = 1.5 // Standard pour
+      // Size and pour vary by category
+      const isBeer = categoryName === 'Beer'
+      const isWine = categoryName === 'Wine'
+      const bottleSizeMl = (bottleDef as any).sizeMl || (isBeer ? BEER_BOTTLE_ML : isWine ? WINE_BOTTLE_ML : 750)
+      const pourSizeOz = isBeer ? BEER_POUR_OZ : isWine ? WINE_POUR_OZ : 1.5
+      const unitCost = bottleDef.price * (isBeer ? 0.40 : isWine ? 0.30 : 0.25)
+
+      // Container type and alcohol subtype
+      const containerType = isBeer
+        ? ((bottleDef as any).containerType || 'can')
+        : 'bottle'
+      const alcoholSubtype = isBeer
+        ? getBeerSubtype(bottleDef.name)
+        : isWine
+        ? getWineSubtype(bottleDef.name)
+        : null
 
       // Calculate metrics
       const bottleSizeOz = bottleSizeMl / 29.5735
@@ -326,6 +458,8 @@ async function main() {
           pourCost,
           currentStock: 0,
           lowStockAlert: 2,
+          containerType,
+          alcoholSubtype,
           inventoryItemId: inventoryItem.id,
         },
       })

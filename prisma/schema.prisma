@@ -4162,6 +4162,11 @@ model BottleProduct {
   poursPerBottle Int? // Auto-calculated: bottleSizeMl / pourSizeMl
   pourCost       Decimal? // Auto-calculated: unitCost / poursPerBottle
 
+  // Container & subtype classification
+  containerType  String  @default("bottle") // 'bottle' | 'can' | 'draft' | 'glass'
+  alcoholSubtype String? // beer: 'domestic'|'import'|'craft'|'seltzer'|'na'; wine: 'red'|'white'|'rose'|'sparkling'
+  vintage        Int?    // Wine vintage year e.g. 2021
+
   // Inventory - tracks bottles on hand
   currentStock  Int     @default(0) // Number of bottles in inventory
   lowStockAlert Int? // Alert when below this many bottles

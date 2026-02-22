@@ -12,11 +12,13 @@ interface RouteParams {
 type ModifierWithChild = Prisma.ModifierGetPayload<{
   include: {
     ingredient: { select: { id: true; name: true; category: true } }
+    linkedBottleProduct: { select: { id: true; name: true; pourCost: true; tier: true } }
     childModifierGroup: {
       include: {
         modifiers: {
           include: {
             ingredient: { select: { id: true; name: true; category: true } }
+            linkedBottleProduct: { select: { id: true; name: true; pourCost: true; tier: true } }
           }
         }
       }
@@ -30,6 +32,7 @@ function formatModifierGroup(group: {
   id: string
   name: string
   displayName: string | null
+  isSpiritGroup: boolean
   minSelections: number
   maxSelections: number
   isRequired: boolean
@@ -43,6 +46,7 @@ function formatModifierGroup(group: {
     id: group.id,
     name: group.name,
     displayName: group.displayName,
+    isSpiritGroup: group.isSpiritGroup,
     minSelections: group.minSelections,
     maxSelections: group.maxSelections,
     isRequired: group.isRequired,
@@ -78,6 +82,15 @@ function formatModifierGroup(group: {
         childModifierGroup: childGroup ? formatModifierGroup(childGroup, allGroups, orphanedModifierIds) : null,
         printerRouting: m.printerRouting,
         printerIds: m.printerIds,
+        // Spirit fields
+        spiritTier: m.spiritTier,
+        linkedBottleProductId: m.linkedBottleProductId,
+        linkedBottleProduct: m.linkedBottleProduct ? {
+          id: m.linkedBottleProduct.id,
+          name: m.linkedBottleProduct.name,
+          pourCost: m.linkedBottleProduct.pourCost ? Number(m.linkedBottleProduct.pourCost) : null,
+          tier: m.linkedBottleProduct.tier,
+        } : null,
       }
     }),
   }
@@ -115,6 +128,9 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
         ingredient: {
           select: { id: true, name: true, category: true },
         },
+        linkedBottleProduct: {
+          select: { id: true, name: true, pourCost: true, tier: true },
+        },
         childModifierGroup: {
           include: {
             modifiers: {
@@ -122,6 +138,9 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
               include: {
                 ingredient: {
                   select: { id: true, name: true, category: true },
+                },
+                linkedBottleProduct: {
+                  select: { id: true, name: true, pourCost: true, tier: true },
                 },
               },
             },
@@ -179,10 +198,12 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       minSelections = 0,
       maxSelections = 1,
       isRequired = false,
+      isSpiritGroup = false,
       templateId, // Optional: copy from template
       parentModifierId, // Optional: create as child group and link to this modifier
       duplicateFromGroupId, // Optional: deep copy existing group
       copyFromItemId, // Optional: source item ID for cross-item copy
+      copyFromShared = false, // Optional: true when copying from a shared modifier group (no menuItemId owner)
     } = body
 
     if (!name && !duplicateFromGroupId) {
@@ -219,11 +240,18 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
 
     // If duplicating from existing group
     if (duplicateFromGroupId) {
-      // If copying from another item, use copyFromItemId; otherwise use current menuItemId
-      const sourceItemId = copyFromItemId || menuItemId
+      // Determine where to look for the source group:
+      // - copyFromShared=true → shared group (menuItemId is null)
+      // - copyFromItemId provided → group owned by that specific item
+      // - neither → group owned by the current item (same-item copy)
+      const sourceItemId = copyFromShared ? null : (copyFromItemId || menuItemId)
 
       const sourceGroup = await db.modifierGroup.findFirst({
-        where: { id: duplicateFromGroupId, menuItemId: sourceItemId },
+        where: {
+          id: duplicateFromGroupId,
+          ...(sourceItemId !== null ? { menuItemId: sourceItemId } : { menuItemId: null }),
+          deletedAt: null,
+        },
         include: {
           modifiers: {
             where: { deletedAt: null },
@@ -451,6 +479,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
           minSelections,
           maxSelections,
           isRequired,
+          isSpiritGroup,
           sortOrder: (maxSort._max.sortOrder || 0) + 1,
           // Create modifiers from template if provided
           modifiers: templateModifiers.length > 0
@@ -500,6 +529,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       data: {
         id: group.id,
         name: group.name,
+        isSpiritGroup: group.isSpiritGroup,
         minSelections: group.minSelections,
         maxSelections: group.maxSelections,
         isRequired: group.isRequired,

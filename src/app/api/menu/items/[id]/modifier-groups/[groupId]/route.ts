@@ -13,7 +13,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
-    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline } = body
+    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline, isSpiritGroup } = body
 
     // Validate inputs
     if (name !== undefined && typeof name === 'string' && name.trim() === '') {
@@ -46,6 +46,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         allowStacking: allowStacking !== undefined ? allowStacking : undefined,
         tieredPricingConfig: tieredPricingConfig !== undefined ? (tieredPricingConfig ?? Prisma.JsonNull) : undefined,
         exclusionGroupKey: exclusionGroupKey !== undefined ? (exclusionGroupKey || null) : undefined,
+        isSpiritGroup: isSpiritGroup !== undefined ? isSpiritGroup : undefined,
       },
       include: {
         modifiers: {

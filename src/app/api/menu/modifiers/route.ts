@@ -100,6 +100,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             commissionType: mod.commissionType,
             commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
             printerIds: mod.printerIds,
+            ingredientId: mod.ingredientId,
             // Spirit fields
             spiritTier: mod.spiritTier,
             linkedBottleProductId: mod.linkedBottleProductId,

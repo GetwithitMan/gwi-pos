@@ -29,6 +29,8 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       isLabel = false,
       printerRouting = 'follow',
       printerIds,
+      spiritTier,
+      linkedBottleProductId,
     } = body
 
     // Verify group belongs to this item
@@ -77,6 +79,8 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         isLabel,
         printerRouting,
         printerIds: printerIds ? printerIds : Prisma.DbNull,
+        spiritTier: spiritTier || null,
+        linkedBottleProductId: linkedBottleProductId || null,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
       },
       include: {
@@ -147,6 +151,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       isLabel,
       printerRouting,
       printerIds,
+      spiritTier,
+      linkedBottleProductId,
     } = body
 
     if (!modifierId) {
@@ -219,6 +225,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         isLabel: isLabel !== undefined ? isLabel : undefined,
         printerRouting: printerRouting !== undefined ? printerRouting : undefined,
         printerIds: printerIds !== undefined ? (printerIds ? printerIds : Prisma.DbNull) : undefined,
+        spiritTier: spiritTier !== undefined ? (spiritTier || null) : undefined,
+        linkedBottleProductId: linkedBottleProductId !== undefined ? (linkedBottleProductId || null) : undefined,
       },
       include: {
         ingredient: {

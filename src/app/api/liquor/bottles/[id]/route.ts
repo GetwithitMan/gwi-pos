@@ -84,6 +84,9 @@ export const GET = withVenue(async function GET(
       pourSizeOz: bottle.pourSizeOz ? Number(bottle.pourSizeOz) : null,
       poursPerBottle: bottle.poursPerBottle,
       pourCost: bottle.pourCost ? Number(bottle.pourCost) : null,
+      containerType: bottle.containerType,
+      alcoholSubtype: bottle.alcoholSubtype,
+      vintage: bottle.vintage,
       currentStock: bottle.currentStock,
       lowStockAlert: bottle.lowStockAlert,
       isActive: bottle.isActive,
@@ -129,6 +132,9 @@ export const PUT = withVenue(async function PUT(
       currentStock,
       lowStockAlert,
       isActive,
+      containerType,
+      alcoholSubtype,
+      vintage,
     } = body
 
     // Get existing bottle to check if metrics need recalculation
@@ -209,6 +215,9 @@ export const PUT = withVenue(async function PUT(
           ...(currentStock !== undefined && { currentStock }),
           ...(lowStockAlert !== undefined && { lowStockAlert: lowStockAlert || null }),
           ...(isActive !== undefined && { isActive }),
+          ...(containerType !== undefined && { containerType }),
+          ...(alcoholSubtype !== undefined && { alcoholSubtype: alcoholSubtype || null }),
+          ...(vintage !== undefined && { vintage: vintage || null }),
           ...metricsUpdate,
         },
         include: {
@@ -286,6 +295,9 @@ export const PUT = withVenue(async function PUT(
       pourSizeOz: bottle.pourSizeOz ? Number(bottle.pourSizeOz) : null,
       poursPerBottle: bottle.poursPerBottle,
       pourCost: bottle.pourCost ? Number(bottle.pourCost) : null,
+      containerType: bottle.containerType,
+      alcoholSubtype: bottle.alcoholSubtype,
+      vintage: bottle.vintage,
       currentStock: bottle.currentStock,
       lowStockAlert: bottle.lowStockAlert,
       isActive: bottle.isActive,

@@ -91,6 +91,7 @@ export const GET = withVenue(async function GET(
         commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
         printerRouting: mod.printerRouting,
         printerIds: mod.printerIds,
+        ingredientId: mod.ingredientId,
         // Spirit fields
         spiritTier: mod.spiritTier,
         linkedBottleProductId: mod.linkedBottleProductId,
@@ -175,6 +176,7 @@ export const PUT = withVenue(async function PUT(
           commissionValue?: number | null
           printerRouting?: string
           printerIds?: string[] | null
+          ingredientId?: string | null
           spiritTier?: string | null
         }
 
@@ -198,6 +200,7 @@ export const PUT = withVenue(async function PUT(
               showOnline: mod.showOnline !== undefined ? mod.showOnline : undefined,
               printerRouting: mod.printerRouting !== undefined ? mod.printerRouting : undefined,
               printerIds: mod.printerIds !== undefined ? (mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull) : undefined,
+              ingredientId: mod.ingredientId !== undefined ? (mod.ingredientId || null) : undefined,
               spiritTier: mod.spiritTier !== undefined ? mod.spiritTier : undefined,
               sortOrder: i,
             }
@@ -223,6 +226,7 @@ export const PUT = withVenue(async function PUT(
               showOnline: mod.showOnline ?? true,
               printerRouting: mod.printerRouting ?? 'follow',
               printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
+              ingredientId: mod.ingredientId || null,
               spiritTier: mod.spiritTier || null,
               sortOrder: i,
             }
@@ -305,6 +309,7 @@ export const PUT = withVenue(async function PUT(
         showOnline: mod.showOnline,
         printerRouting: mod.printerRouting,
         printerIds: mod.printerIds,
+        ingredientId: mod.ingredientId,
         // Spirit fields
         spiritTier: mod.spiritTier,
         linkedBottleProductId: mod.linkedBottleProductId,

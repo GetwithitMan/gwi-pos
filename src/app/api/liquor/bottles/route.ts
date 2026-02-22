@@ -109,6 +109,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         pourSizeOz: bottle.pourSizeOz ? Number(bottle.pourSizeOz) : null,
         poursPerBottle: bottle.poursPerBottle,
         pourCost: bottle.pourCost ? Number(bottle.pourCost) : null,
+        containerType: bottle.containerType,
+        alcoholSubtype: bottle.alcoholSubtype,
+        vintage: bottle.vintage,
         currentStock: bottle.currentStock,
         lowStockAlert: bottle.lowStockAlert,
         isActive: bottle.isActive,
@@ -155,6 +158,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       pourSizeOz,
       currentStock,
       lowStockAlert,
+      containerType,
+      alcoholSubtype,
+      vintage,
     } = body
 
     // Validation
@@ -266,6 +272,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           pourCost: metrics.pourCost,
           currentStock: currentStock || 0,
           lowStockAlert: lowStockAlert || null,
+          containerType: containerType || 'bottle',
+          alcoholSubtype: alcoholSubtype || null,
+          vintage: vintage || null,
           inventoryItemId: inventoryItem.id,
         },
         include: {
@@ -303,6 +312,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       pourSizeOz: result.bottle.pourSizeOz ? Number(result.bottle.pourSizeOz) : null,
       poursPerBottle: result.bottle.poursPerBottle,
       pourCost: result.bottle.pourCost ? Number(result.bottle.pourCost) : null,
+      containerType: result.bottle.containerType,
+      alcoholSubtype: result.bottle.alcoholSubtype,
+      vintage: result.bottle.vintage,
       currentStock: result.bottle.currentStock,
       lowStockAlert: result.bottle.lowStockAlert,
       isActive: result.bottle.isActive,

@@ -172,9 +172,9 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
 
   return (
     <div className="border-b">
-      <button
+      <div
         onClick={onToggle}
-        className="w-full px-4 py-3 bg-amber-50 flex items-center justify-between hover:bg-amber-100 transition-colors"
+        className="w-full px-4 py-3 bg-amber-50 flex items-center justify-between hover:bg-amber-100 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2">
           <span className={`text-amber-600 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
@@ -198,7 +198,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
         >
           + Add Ingredient
         </Button>
-      </button>
+      </div>
 
       {isExpanded && (
         <div className="p-4 space-y-3">
