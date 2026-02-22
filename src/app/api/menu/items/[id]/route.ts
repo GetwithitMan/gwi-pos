@@ -158,6 +158,9 @@ export const PUT = withVenue(async function PUT(
       backupPrinterIds,
       // Combo print mode
       comboPrintMode,
+      // Linked bottle product (direct bottle linking)
+      linkedBottleProductId,
+      linkedPourSizeOz,
     } = body
 
     // Get old item to detect stock changes (fetch availability fields for computeIsOrderableOnline)
@@ -230,6 +233,9 @@ export const PUT = withVenue(async function PUT(
         }),
         // Combo print mode
         ...(comboPrintMode !== undefined && { comboPrintMode: comboPrintMode || null }),
+        // Linked bottle product
+        ...(linkedBottleProductId !== undefined && { linkedBottleProductId: linkedBottleProductId || null }),
+        ...(linkedPourSizeOz !== undefined && { linkedPourSizeOz: linkedPourSizeOz !== null ? new Prisma.Decimal(linkedPourSizeOz) : null }),
       }
     })
 

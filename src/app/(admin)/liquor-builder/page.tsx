@@ -16,18 +16,13 @@ import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
 import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
 import { SpiritCategory, BottleProduct } from './types'
 import { CategoryModal } from './CategoryModal'
-import { BottleModal } from './BottleModal'
 import { CreateMenuItemModal } from './CreateMenuItemModal'
-import { LiquorModifierGroupEditor } from './LiquorModifierGroupEditor'
-
-type TabType = 'bottles' | 'drinks' | 'modifiers'
 
 function LiquorBuilderContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/liquor-builder' })
   const employee = useAuthStore(s => s.employee)
-  const [activeTab, setActiveTab] = useState<TabType>('bottles')
   const [isLoading, setIsLoading] = useState(true)
   const [pendingItemId, setPendingItemId] = useState<string | null>(null)
 
@@ -38,16 +33,13 @@ function LiquorBuilderContent() {
   const [drinks, setDrinks] = useState<any[]>([])
   const [selectedDrink, setSelectedDrink] = useState<any | null>(null)
   const [modifierGroups, setModifierGroups] = useState<any[]>([])
-  const [selectedModifierGroup, setSelectedModifierGroup] = useState<any | null>(null)
 
   // Modal state
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showMenuCategoryModal, setShowMenuCategoryModal] = useState(false)
   const [editingMenuCategory, setEditingMenuCategory] = useState<{ id: string; name: string; color: string } | null>(null)
-  const [showBottleModal, setShowBottleModal] = useState(false)
   const [showCreateMenuItemModal, setShowCreateMenuItemModal] = useState(false)
   const [editingCategory, setEditingCategory] = useState<SpiritCategory | null>(null)
-  const [editingBottle, setEditingBottle] = useState<BottleProduct | null>(null)
   const [bottleForMenuItem, setBottleForMenuItem] = useState<BottleProduct | null>(null)
 
   // Drink inline editing state
@@ -68,6 +60,14 @@ function LiquorBuilderContent() {
   const [showGroupPicker, setShowGroupPicker] = useState(false)
   const [attachingGroupId, setAttachingGroupId] = useState<string | null>(null)
 
+  // Linked bottle state
+  const [showBottleLinkPicker, setShowBottleLinkPicker] = useState(false)
+  const [bottleLinkSearch, setBottleLinkSearch] = useState('')
+  const [linkingBottle, setLinkingBottle] = useState(false)
+  const [recipeExpanded, setRecipeExpanded] = useState(false)
+  const [editingPourSize, setEditingPourSize] = useState<string>('')
+  const [savingPourSize, setSavingPourSize] = useState(false)
+
   // Spirit tier editor state
   const [spiritMode, setSpiritMode] = useState(false)
   const [spiritGroupId, setSpiritGroupId] = useState<string | null>(null)
@@ -80,17 +80,18 @@ function LiquorBuilderContent() {
   }>>([])
   const [savingSpirit, setSavingSpirit] = useState(false)
 
+  // Recipe ingredients for spirit upgrade auto-detection
+  const [drinkRecipeIngredients, setDrinkRecipeIngredients] = useState<Array<{
+    bottleProductId: string
+    bottleName: string
+    spiritCategory: string
+    spiritCategoryId: string
+    tier: string
+    pourCost: number
+  }>>([])
+
   // Filter state
-  const [categoryFilter, setCategoryFilter] = useState<string>('')
-  const [tierFilter, setTierFilter] = useState<string>('')
   const [selectedMenuCategoryId, setSelectedMenuCategoryId] = useState<string>('')
-
-  // Drag and drop state
-  const [draggedBottleId, setDraggedBottleId] = useState<string | null>(null)
-  const [dragOverBottleId, setDragOverBottleId] = useState<string | null>(null)
-
-  // Flash animation for recently restored items
-  const [flashingBottleId, setFlashingBottleId] = useState<string | null>(null)
 
   // Socket ref for real-time updates
   const socketRef = useRef<any>(null)
@@ -137,11 +138,7 @@ function LiquorBuilderContent() {
   const loadData = async () => {
     setIsLoading(true)
     try {
-      const [categoriesData] = await Promise.all([loadCategories(), loadBottles(), loadDrinks(), loadModifierGroups()])
-      // Auto-select first category to reduce screen clutter
-      if (categoriesData && categoriesData.length > 0 && !categoryFilter) {
-        setCategoryFilter(categoriesData[0].id)
-      }
+      await Promise.all([loadCategories(), loadBottles(), loadDrinks(), loadModifierGroups()])
     } finally {
       setIsLoading(false)
     }
@@ -181,44 +178,17 @@ function LiquorBuilderContent() {
     const res = await fetch('/api/menu/modifiers')
     if (res.ok) {
       const data = await res.json()
-      // Filter to only liquor modifier groups
+      // Filter to only shared liquor templates (not item-owned copies, not spirit groups)
+      // Shared templates have no linkedItems (menuItemId is null)
       const liquorGroups = data.data.modifierGroups.filter((g: any) =>
-        g.modifierTypes && g.modifierTypes.includes('liquor')
+        g.modifierTypes && g.modifierTypes.includes('liquor') &&
+        !g.isSpiritGroup &&
+        (!g.linkedItems || g.linkedItems.length === 0)
       )
       setModifierGroups(liquorGroups)
-      if (liquorGroups.length > 0 && !selectedModifierGroup) {
-        setSelectedModifierGroup(liquorGroups[0])
-      }
       return liquorGroups
     }
     return []
-  }
-
-  const addModifierGroup = async () => {
-    const res = await fetch('/api/menu/modifiers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'New Group', modifierTypes: ['liquor'] }),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      const groups = await loadModifierGroups()
-      const newGroup = (groups as any[]).find((g: any) => g.id === data.data?.id)
-      setSelectedModifierGroup(newGroup || null)
-    } else {
-      toast.error('Failed to create modifier group')
-    }
-  }
-
-  const deleteModifierGroup = async (groupId: string) => {
-    const res = await fetch(`/api/menu/modifiers/${groupId}`, { method: 'DELETE' })
-    if (res.ok) {
-      toast.success('Group deleted')
-      const groups = await loadModifierGroups()
-      setSelectedModifierGroup((groups as any[])[0] || null)
-    } else {
-      toast.error('Failed to delete group')
-    }
   }
 
   // Pour size helpers
@@ -264,6 +234,33 @@ function LiquorBuilderContent() {
     setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], multiplier } }))
   }
 
+  // Load recipe ingredients for spirit upgrade auto-detection
+  const loadDrinkRecipe = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/menu/items/${itemId}/recipe`)
+      if (res.ok) {
+        const data = await res.json()
+        const recipeData = data.data ?? data
+        if (recipeData.ingredients) {
+          const ingredients = recipeData.ingredients.map((ing: any) => ({
+            bottleProductId: ing.bottleProductId,
+            bottleName: ing.bottleProduct?.name || '',
+            spiritCategory: ing.bottleProduct?.spiritCategory?.name || '',
+            spiritCategoryId: ing.bottleProduct?.spiritCategoryId || '',
+            tier: ing.bottleProduct?.tier || 'well',
+            pourCost: ing.bottleProduct?.pourCost || 0,
+          }))
+          setDrinkRecipeIngredients(ingredients)
+          if (ingredients.length > 0) setRecipeExpanded(true)
+        } else {
+          setDrinkRecipeIngredients([])
+        }
+      }
+    } catch {
+      setDrinkRecipeIngredients([])
+    }
+  }
+
   // Reload modifier groups for the selected drink (called after group edits)
   const reloadDrinkModifiers = async (itemId: string) => {
     try {
@@ -289,12 +286,31 @@ function LiquorBuilderContent() {
     setApplyPourToModifiers(selectedDrink.applyPourToModifiers || false)
     setSelectedModGroupId(null)
     setShowGroupPicker(false)
+    // Reset linked bottle picker
+    setShowBottleLinkPicker(false)
+    setBottleLinkSearch('')
+    setRecipeExpanded(false)
+    // Initialize pour size from drink data
+    const pourOz = selectedDrink.linkedPourSizeOz ?? selectedDrink.linkedBottlePourSizeOz ?? ''
+    setEditingPourSize(pourOz ? String(pourOz) : '')
     // Reset spirit state until modifiers are loaded
     setSpiritMode(false)
     setSpiritGroupId(null)
     setSpiritEntries([])
     reloadDrinkModifiersRef.current(selectedDrink.id)
+    loadDrinkRecipe(selectedDrink.id)
   }, [selectedDrink?.id])
+
+  // Auto-select newly created item after drinks list reloads
+  useEffect(() => {
+    if (pendingItemId && drinks.length > 0) {
+      const newDrink = drinks.find((d: any) => d.id === pendingItemId)
+      if (newDrink) {
+        setSelectedDrink(newDrink)
+        setPendingItemId(null)
+      }
+    }
+  }, [pendingItemId, drinks])
 
   // Update spirit state when drink modifier groups are (re)loaded
   useEffect(() => {
@@ -419,114 +435,136 @@ function LiquorBuilderContent() {
     }
   }
 
+  const linkDrinkToBottle = async (bottleId: string) => {
+    if (!selectedDrink) return
+    setLinkingBottle(true)
+    try {
+      const res = await fetch(`/api/menu/items/${selectedDrink.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linkedBottleProductId: bottleId }),
+      })
+      if (res.ok) {
+        await loadDrinks()
+        const bottle = bottles.find(b => b.id === bottleId)
+        setSelectedDrink((prev: any) => prev ? {
+          ...prev,
+          linkedBottleProductId: bottleId,
+          linkedBottleProductName: bottle?.name || null,
+          linkedBottleTier: bottle?.tier || null,
+          linkedBottlePourCost: bottle?.pourCost ? Number(bottle.pourCost) : null,
+          linkedBottleSizeMl: bottle?.bottleSizeMl || null,
+          linkedBottleSpiritCategory: bottle?.spiritCategory?.name || null,
+        } : prev)
+        setShowBottleLinkPicker(false)
+        setBottleLinkSearch('')
+        // Initialize pour size from bottle default
+        const defaultPour = bottle?.pourSizeOz ? String(Number(bottle.pourSizeOz)) : '1.5'
+        setEditingPourSize(defaultPour)
+        toast.success(`Linked to ${bottle?.name || 'bottle'}`)
+      } else {
+        toast.error('Failed to link bottle')
+      }
+    } finally {
+      setLinkingBottle(false)
+    }
+  }
+
+  const unlinkDrinkFromBottle = async () => {
+    if (!selectedDrink) return
+    setLinkingBottle(true)
+    try {
+      const res = await fetch(`/api/menu/items/${selectedDrink.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linkedBottleProductId: null, linkedPourSizeOz: null }),
+      })
+      if (res.ok) {
+        await loadDrinks()
+        setSelectedDrink((prev: any) => prev ? {
+          ...prev,
+          linkedBottleProductId: null,
+          linkedBottleProductName: null,
+          linkedBottleTier: null,
+          linkedBottlePourCost: null,
+          linkedBottlePourSizeOz: null,
+          linkedBottleUnitCost: null,
+          linkedBottleSizeMl: null,
+          linkedBottleSpiritCategory: null,
+          linkedPourSizeOz: null,
+        } : prev)
+        setEditingPourSize('')
+        toast.success('Bottle unlinked')
+      } else {
+        toast.error('Failed to unlink')
+      }
+    } finally {
+      setLinkingBottle(false)
+    }
+  }
+
+  const savePourSize = async () => {
+    if (!selectedDrink) return
+    setSavingPourSize(true)
+    try {
+      const pourOz = parseFloat(editingPourSize) || null
+      const res = await fetch(`/api/menu/items/${selectedDrink.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ linkedPourSizeOz: pourOz }),
+      })
+      if (res.ok) {
+        await loadDrinks()
+        setSelectedDrink((prev: any) => prev ? { ...prev, linkedPourSizeOz: pourOz } : prev)
+        toast.success('Pour size saved')
+      } else {
+        toast.error('Failed to save pour size')
+      }
+    } finally {
+      setSavingPourSize(false)
+    }
+  }
+
   // Refs for load functions to avoid stale closures in socket listener
   const loadBottlesRef = useRef<(() => Promise<void>) | null>(null)
   loadBottlesRef.current = loadBottles
-
-  const getTierLabel = (tier: string) => {
-    return SPIRIT_TIERS.find(t => t.value === tier)?.label || tier
-  }
-
-  const getTierColor = (tier: string) => {
-    const colors: Record<string, string> = {
-      well: 'bg-gray-100 text-gray-700',
-      call: 'bg-blue-100 text-blue-700',
-      premium: 'bg-purple-100 text-purple-700',
-      top_shelf: 'bg-amber-100 text-amber-700',
-    }
-    return colors[tier] || 'bg-gray-100 text-gray-700'
-  }
-
-  // Filter bottles
-  const filteredBottles = bottles.filter(b => {
-    if (categoryFilter && b.spiritCategoryId !== categoryFilter) return false
-    if (tierFilter && b.tier !== tierFilter) return false
-    return true
-  })
 
   // Filter drinks by selected menu category
   const filteredDrinks = selectedMenuCategoryId
     ? drinks.filter((d: any) => d.categoryId === selectedMenuCategoryId)
     : drinks
 
-  // Handle drag and drop reordering
-  const handleDragStart = (bottleId: string) => {
-    setDraggedBottleId(bottleId)
-  }
-
-  const handleDragOver = (e: React.DragEvent, bottleId: string) => {
-    e.preventDefault()
-    if (bottleId !== draggedBottleId) {
-      setDragOverBottleId(bottleId)
-    }
-  }
-
-  const handleDragEnd = () => {
-    setDraggedBottleId(null)
-    setDragOverBottleId(null)
-  }
-
-  const handleDrop = async (targetBottleId: string) => {
-    if (!draggedBottleId || draggedBottleId === targetBottleId) {
-      handleDragEnd()
-      return
-    }
-
-    const draggedBottle = filteredBottles.find(b => b.id === draggedBottleId)
-    const targetBottle = filteredBottles.find(b => b.id === targetBottleId)
-
-    // Only reorder if both have menu items
-    if (!draggedBottle?.hasMenuItem || !targetBottle?.hasMenuItem) {
-      handleDragEnd()
-      return
-    }
-
-    const draggedMenuItem = draggedBottle.linkedMenuItems[0]
-    const targetMenuItem = targetBottle.linkedMenuItems[0]
-
-    if (!draggedMenuItem || !targetMenuItem) {
-      handleDragEnd()
-      return
-    }
-
-    // Swap their positions
-    const draggedPosition = draggedMenuItem.sortOrder
-    const targetPosition = targetMenuItem.sortOrder
-
-    // Update both menu items
-    await Promise.all([
-      fetch(`/api/menu/items/${draggedMenuItem.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sortOrder: targetPosition }),
-      }),
-      fetch(`/api/menu/items/${targetMenuItem.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sortOrder: draggedPosition }),
-      }),
-    ])
-
-    handleDragEnd()
-    loadBottles()
-  }
-
   if (!hydrated) return null
 
-  // Check if this is a fresh setup (no data)
-  const isEmptySetup = categories.length === 0 && bottles.length === 0 && menuCategories.length === 0
+  // Check if this is a fresh setup (no menu categories or drinks)
+  const isEmptySetup = menuCategories.length === 0 && drinks.length === 0
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      {/* Header — Row 1: title + back */}
+      {/* Header — Row 1: title + back + inventory link */}
       <div className="bg-white border-b shrink-0">
         <div className="px-4 py-2.5 flex items-center justify-between border-b border-gray-100">
           <h1 className="text-base font-bold">🥃 Liquor Builder</h1>
-          <Link href="/menu" className="text-xs text-blue-600 hover:underline">← Back to Menu</Link>
+          <div className="flex items-center gap-3">
+            <Link href="/liquor-inventory" className="text-xs text-purple-600 hover:underline">Manage Inventory →</Link>
+            <Link href="/menu" className="text-xs text-blue-600 hover:underline">← Back to Menu</Link>
+          </div>
         </div>
         {/* Row 2: POS category pills (what shows on front-end bar tabs) */}
         <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto">
           <span className="text-[10px] uppercase text-gray-400 font-medium shrink-0 mr-1">POS Tabs:</span>
+          <button
+            onClick={() => {
+              setSelectedMenuCategoryId('')
+              setSelectedDrink(null)
+            }}
+            className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
+              !selectedMenuCategoryId ? 'bg-gray-800 text-white border-transparent shadow-sm' : 'bg-white border-gray-200 hover:border-gray-300 text-gray-600'
+            }`}
+          >
+            All
+            <span className="ml-1 opacity-60">{drinks.length}</span>
+          </button>
           {menuCategories.map(cat => {
             const isActive = selectedMenuCategoryId === cat.id
             return (
@@ -535,15 +573,10 @@ function LiquorBuilderContent() {
                 onClick={() => {
                   if (isActive) {
                     setSelectedMenuCategoryId('')
-                    setCategoryFilter('')
-                    setActiveTab('bottles')
                   } else {
                     setSelectedMenuCategoryId(cat.id)
-                    const matchingSpirit = categories.find(c => c.name.toLowerCase() === cat.name.toLowerCase())
-                    if (matchingSpirit) setCategoryFilter(matchingSpirit.id)
-                    setActiveTab(cat.name === 'Cocktails' ? 'drinks' : 'bottles')
-                    setSelectedDrink(null)
                   }
+                  setSelectedDrink(null)
                 }}
                 className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all border ${
                   isActive ? 'text-white border-transparent shadow-sm' : 'bg-white border-gray-200 hover:border-gray-300 text-gray-600'
@@ -571,16 +604,16 @@ function LiquorBuilderContent() {
         <div className="max-w-2xl mx-auto p-6">
           <div className="bg-white rounded-lg border p-6">
             <h2 className="text-xl font-bold mb-2">Getting Started</h2>
-            <p className="text-gray-600 text-sm mb-6">Set up your liquor inventory in 3 steps:</p>
+            <p className="text-gray-600 text-sm mb-6">Set up your bar menu in 3 steps:</p>
 
             <div className="space-y-4">
               {/* Step 1 */}
               <div className="flex gap-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
                 <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold shrink-0">1</div>
                 <div className="flex-1">
-                  <h3 className="font-semibold">Create Spirit Categories</h3>
-                  <p className="text-sm text-gray-600 mb-2">Tequila, Vodka, Whiskey, Rum, Gin, etc.</p>
-                  <Button size="sm" onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}>
+                  <h3 className="font-semibold">Create Menu Categories</h3>
+                  <p className="text-sm text-gray-600 mb-2">Cocktails, Beer, Wine, Spirits, etc.</p>
+                  <Button size="sm" onClick={() => { setEditingMenuCategory(null); setShowMenuCategoryModal(true); }}>
                     + Add Category
                   </Button>
                 </div>
@@ -591,7 +624,7 @@ function LiquorBuilderContent() {
                 <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">2</div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-gray-500">Add Your Bottles</h3>
-                  <p className="text-sm text-gray-400">Add bottles with cost, size, and tier (well/call/premium/top shelf)</p>
+                  <p className="text-sm text-gray-400">Go to <Link href="/liquor-inventory" className="text-purple-500 underline">Liquor Inventory</Link> to add bottles with cost, size, and tier</p>
                 </div>
               </div>
 
@@ -599,1021 +632,929 @@ function LiquorBuilderContent() {
               <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
                 <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">3</div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-500">Set Up Cocktail Recipes</h3>
-                  <p className="text-sm text-gray-400">Link bottles to cocktails for cost tracking</p>
+                  <h3 className="font-semibold text-gray-500">Create Drink Items</h3>
+                  <p className="text-sm text-gray-400">Add drinks, set prices, build recipes, and configure spirit upgrades</p>
                 </div>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        /* Main Interface */
+        /* Main Interface — Item-First Layout */
         <div className="flex flex-1 overflow-hidden">
-          {/* Left Sidebar — Inventory / Spirits */}
-          <div className="w-44 bg-white border-r flex flex-col shrink-0">
-            <div className="px-3 py-2 border-b flex items-center justify-between shrink-0">
-              <span className="text-[10px] uppercase text-gray-500 font-semibold tracking-wide">Inventory / Spirits</span>
-              <button
-                onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}
-                className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
-              >
-                + Category
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto py-1">
-              {categories.map(cat => {
-                const isCocktails = cat.name === 'Cocktails'
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => {
-                      setCategoryFilter(cat.id)
-                      if (isCocktails) {
-                        const menuCat = menuCategories.find(mc => mc.name.toLowerCase() === cat.name.toLowerCase())
-                        if (menuCat) setSelectedMenuCategoryId(menuCat.id)
-                        setActiveTab('drinks')
-                      } else {
-                        setSelectedMenuCategoryId('')
-                        setActiveTab('bottles')
-                      }
-                      setSelectedDrink(null)
-                    }}
-                    className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between transition-colors ${
-                      categoryFilter === cat.id ? 'bg-purple-100 text-purple-700 font-medium' : 'hover:bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    <span className="truncate">{cat.name}</span>
-                    <span className="text-xs text-gray-400 ml-1">{cat.bottleCount}</span>
-                  </button>
-                )
-              })}
-              {categoryFilter && (
+          {/* LEFT: Item List (w-72) */}
+          <div className="w-72 bg-white border-r flex flex-col shrink-0">
+            {/* Header row: category name */}
+            <div className="px-3 pt-2 pb-1 flex items-center justify-between border-b shrink-0">
+              <span className="text-xs font-medium text-purple-700">
+                {selectedMenuCategoryId
+                  ? `${menuCategories.find((c: any) => c.id === selectedMenuCategoryId)?.name} (${filteredDrinks.length})`
+                  : `All Drinks (${filteredDrinks.length})`
+                }
+              </span>
+              {selectedMenuCategoryId && (
                 <button
-                  onClick={() => { setCategoryFilter(''); setSelectedMenuCategoryId(''); setActiveTab('bottles') }}
-                  className="w-full text-left px-3 py-1.5 text-xs text-gray-400 hover:text-gray-600"
+                  onClick={() => { setSelectedMenuCategoryId(''); setSelectedDrink(null) }}
+                  className="text-xs text-gray-400 hover:text-gray-600"
                 >
-                  Clear filter
+                  All
                 </button>
               )}
             </div>
-            {/* Quick Stats */}
-            <div className="p-2 border-t bg-gray-50 text-xs shrink-0">
-              <div className="flex justify-between py-0.5">
-                <span className="text-gray-500">Bottles:</span>
-                <span className="font-medium">{bottles.length}</span>
-              </div>
-              <div className="flex justify-between py-0.5">
-                <span className="text-gray-500">On POS:</span>
-                <span className="font-medium">{bottles.filter(b => b.hasMenuItem).length}</span>
-              </div>
+            {/* Primary "+ New Item" button - always visible */}
+            <div className="px-3 py-2 border-b">
+              <button
+                onClick={() => {
+                  setBottleForMenuItem(null)
+                  setShowCreateMenuItemModal(true)
+                }}
+                className="w-full px-3 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <span className="text-lg leading-none">+</span> New Item
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+              {filteredDrinks.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">No items in this category</p>
+              ) : (
+                filteredDrinks.map((drink: any) => (
+                  <div
+                    key={drink.id}
+                    onClick={() => setSelectedDrink(drink)}
+                    className={`p-3 rounded cursor-pointer transition-colors ${
+                      selectedDrink?.id === drink.id
+                        ? 'bg-purple-50 border-2 border-purple-500'
+                        : !drink.isAvailable
+                        ? 'bg-gray-50 border-2 border-transparent opacity-50'
+                        : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="font-medium text-sm leading-tight">{drink.name}</div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!drink.isAvailable && (
+                          <span className="text-[9px] bg-red-100 text-red-700 px-1 rounded font-medium">86</span>
+                        )}
+                        {/* 86 toggle */}
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            await fetch(`/api/menu/items/${drink.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ isAvailable: !drink.isAvailable }),
+                            })
+                            await loadDrinks()
+                            if (selectedDrink?.id === drink.id) setSelectedDrink(null)
+                          }}
+                          title={drink.isAvailable ? '86 this item' : 'Un-86 this item'}
+                          className="text-gray-300 hover:text-orange-500 text-xs px-1 rounded"
+                        >
+                          {drink.isAvailable ? '⊘' : '✓'}
+                        </button>
+                        {/* Hide/delete */}
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            if (!confirm(`Remove "${drink.name}" from the POS?`)) return
+                            await fetch(`/api/menu/items/${drink.id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ deletedAt: new Date().toISOString() }),
+                            })
+                            await loadDrinks()
+                            if (selectedDrink?.id === drink.id) setSelectedDrink(null)
+                          }}
+                          title="Remove from POS"
+                          className="text-gray-300 hover:text-red-500 text-xs px-1 rounded"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600 mt-0.5">{formatCurrency(drink.price)}</div>
+                    {drink.hasRecipe && (
+                      <div className="text-xs text-green-600 mt-1">✓ {drink.recipeIngredientCount} bottles</div>
+                    )}
+                    {drink.linkedBottleProductName && (
+                      <div className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
+                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium text-[10px]">LINKED</span>
+                        <span className="truncate">{drink.linkedBottleProductName}</span>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
-          {/* Main Content */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Action Bar — no tabs, just context-aware actions */}
-            <div className="bg-white border-b px-3 py-2 flex items-center justify-between shrink-0">
-              <div className="text-sm font-medium text-gray-600">
-                {activeTab === 'bottles' && (
-                  <span>
-                    {categoryFilter ? categories.find(c => c.id === categoryFilter)?.name : 'All'} Inventory
-                    <span className="ml-2 text-xs text-gray-400 font-normal">({filteredBottles.length} bottles)</span>
-                  </span>
-                )}
-                {activeTab === 'drinks' && (
-                  <span>
-                    {selectedMenuCategoryId ? menuCategories.find(c => c.id === selectedMenuCategoryId)?.name : 'All'} Drinks
-                    <span className="ml-2 text-xs text-gray-400 font-normal">({filteredDrinks.length} items)</span>
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {activeTab === 'bottles' && (
-                  <>
-                    <select
-                      value={tierFilter}
-                      onChange={e => setTierFilter(e.target.value)}
-                      className="border rounded px-2 py-1 text-sm"
+          {/* CENTER: Item Editor (flex-1) */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {selectedDrink ? (
+              <>
+                {/* Item Editor Card */}
+                <div className="bg-white rounded-lg border p-5">
+                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Item Details</h3>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={editingDrinkName}
+                        onChange={e => setEditingDrinkName(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Price</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={editingDrinkPrice}
+                          onChange={e => setEditingDrinkPrice(e.target.value)}
+                          className="w-full border rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {/* 86 toggle */}
+                      <button
+                        onClick={async () => {
+                          const newAvail = !selectedDrink.isAvailable
+                          await fetch(`/api/menu/items/${selectedDrink.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ isAvailable: newAvail }),
+                          })
+                          await loadDrinks()
+                          setSelectedDrink((prev: any) => prev ? { ...prev, isAvailable: newAvail } : prev)
+                        }}
+                        className={`px-3 py-1.5 rounded text-xs font-medium border ${
+                          selectedDrink.isAvailable
+                            ? 'border-gray-300 text-gray-600 hover:border-orange-400 hover:text-orange-600'
+                            : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
+                        }`}
+                      >
+                        {selectedDrink.isAvailable ? '⊘ 86 Item' : '✓ Un-86 Item'}
+                      </button>
+                      {/* Remove from POS */}
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Remove "${selectedDrink.name}" from the POS?`)) return
+                          await fetch(`/api/menu/items/${selectedDrink.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ deletedAt: new Date().toISOString() }),
+                          })
+                          await loadDrinks()
+                          setSelectedDrink(null)
+                        }}
+                        className="px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600"
+                      >
+                        ✕ Remove
+                      </button>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleSaveDrink}
+                      disabled={savingDrink || (!editingDrinkName.trim())}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
                     >
-                      <option value="">All Tiers</option>
-                      {SPIRIT_TIERS.map(tier => (
-                        <option key={tier.value} value={tier.value}>{tier.label}</option>
-                      ))}
-                    </select>
-                    <Button size="sm" onClick={() => { setEditingBottle(null); setShowBottleModal(true); }}>
-                      + Bottle
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Content Area */}
-            <div className="flex-1 overflow-auto p-3">
-              {/* Bottles Tab */}
-              {activeTab === 'bottles' && (() => {
-                // Category-aware column labels and helpers
-                const viewCat = categories.find(c => c.id === categoryFilter)?.name || ''
-                const viewBeer = viewCat === 'Beer'
-                const viewWine = viewCat === 'Wine'
-
-                const ML_PER_OZ = LIQUOR_DEFAULTS.mlPerOz
-
-                // Format the Size cell in a human-readable way per bottle type
-                const fmtSize = (b: BottleProduct) => {
-                  const cat = b.spiritCategory?.name || ''
-                  if (cat === 'Beer') {
-                    const oz = Math.round(b.bottleSizeMl / ML_PER_OZ)
-                    const cLabel = (b as any).containerType === 'draft' ? 'Draft' : (b as any).containerType === 'bottle' ? 'Bottle' : 'Can'
-                    return `${oz} oz ${cLabel}`
-                  }
-                  if (cat === 'Wine') return `${b.bottleSizeMl} mL`
-                  return `${b.bottleSizeMl} mL`
-                }
-
-                // Subtype badge info for the Product column
-                const subtypeBadge = (b: BottleProduct) => {
-                  const cat = b.spiritCategory?.name || ''
-                  const sub = (b as any).alcoholSubtype as string | null
-                  if (!sub) return null
-                  if (cat === 'Beer') {
-                    const map: Record<string, { emoji: string; label: string; cls: string }> = {
-                      domestic: { emoji: '🇺🇸', label: 'Domestic',    cls: 'bg-blue-100 text-blue-700' },
-                      import:   { emoji: '🌍', label: 'Import',       cls: 'bg-yellow-100 text-yellow-700' },
-                      craft:    { emoji: '🍺', label: 'Craft',        cls: 'bg-orange-100 text-orange-700' },
-                      seltzer:  { emoji: '💧', label: 'Seltzer',      cls: 'bg-cyan-100 text-cyan-700' },
-                      na:       { emoji: '🚫', label: 'N/A',          cls: 'bg-gray-100 text-gray-600' },
-                    }
-                    return map[sub] ?? null
-                  }
-                  if (cat === 'Wine') {
-                    const map: Record<string, { emoji: string; label: string; cls: string }> = {
-                      red:       { emoji: '🍷', label: 'Red',       cls: 'bg-red-100 text-red-700' },
-                      white:     { emoji: '🥂', label: 'White',     cls: 'bg-yellow-100 text-yellow-700' },
-                      rose:      { emoji: '🌸', label: 'Rosé',      cls: 'bg-pink-100 text-pink-700' },
-                      sparkling: { emoji: '🍾', label: 'Sparkling', cls: 'bg-purple-100 text-purple-700' },
-                      dessert:   { emoji: '🍯', label: 'Dessert',   cls: 'bg-amber-100 text-amber-700' },
-                    }
-                    return map[sub] ?? null
-                  }
-                  return null
-                }
-
-                // Column header labels
-                const colPours = viewBeer ? 'Serves' : viewWine ? 'Glasses' : 'Pours'
-                const colPourCost = viewBeer ? 'Cost/Unit' : viewWine ? 'Cost/Glass' : 'Pour $'
-
-                return filteredBottles.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 mb-2">No bottles {categoryFilter ? 'in this category' : 'yet'}</p>
-                    <Button size="sm" onClick={() => { setEditingBottle(null); setShowBottleModal(true); }}>
-                      + Add Bottle
+                      {savingDrink ? 'Saving...' : 'Save'}
                     </Button>
                   </div>
-                ) : (
-                  <div className="space-y-6">
-                    {/* ON POS Section */}
-                    <div className="bg-white rounded-lg border-2 border-green-200 overflow-hidden">
-                      <div className="bg-green-500 text-white px-4 py-2 font-semibold flex items-center gap-2">
-                        <span>✓</span>
-                        <span>On POS Menu</span>
-                        <span className="ml-auto bg-green-600 px-2 py-0.5 rounded text-sm">
-                          {filteredBottles.filter(b => b.hasMenuItem).length} items
+                </div>
+
+                {/* Linked Bottle — direct bottle linking (like food ingredients) */}
+                {selectedDrink.linkedBottleProductId ? (() => {
+                  // Compute pour metrics
+                  const ML_PER_OZ = 29.5735
+                  const effectivePourOz = parseFloat(editingPourSize) || selectedDrink.linkedPourSizeOz || selectedDrink.linkedBottlePourSizeOz || 1.5
+                  const bottleSizeMl = selectedDrink.linkedBottleSizeMl || 750
+                  const unitCost = selectedDrink.linkedBottleUnitCost || 0
+                  const poursPerBottle = Math.floor(bottleSizeMl / (effectivePourOz * ML_PER_OZ))
+                  const computedPourCost = poursPerBottle > 0 ? unitCost / poursPerBottle : 0
+                  const sellPrice = parseFloat(editingDrinkPrice) || selectedDrink.price || 0
+                  const margin = sellPrice > 0 && computedPourCost > 0 ? ((sellPrice - computedPourCost) / sellPrice) * 100 : null
+                  const bottleDefaultPour = selectedDrink.linkedBottlePourSizeOz || 1.5
+
+                  return (
+                  <div className="bg-green-50 rounded-lg border border-green-200 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-green-700 uppercase tracking-wide">Linked Bottle</h3>
+                      <button
+                        onClick={unlinkDrinkFromBottle}
+                        disabled={linkingBottle}
+                        className="px-3 py-1 text-xs font-medium text-red-600 border border-red-200 rounded hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {linkingBottle ? 'Unlinking...' : 'Unlink'}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="font-semibold text-gray-900">{selectedDrink.linkedBottleProductName}</span>
+                      {selectedDrink.linkedBottleSpiritCategory && (
+                        <span className="text-xs text-gray-500">{selectedDrink.linkedBottleSpiritCategory}</span>
+                      )}
+                      {selectedDrink.linkedBottleTier && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                          selectedDrink.linkedBottleTier === 'well' ? 'bg-gray-200 text-gray-700'
+                          : selectedDrink.linkedBottleTier === 'call' ? 'bg-blue-100 text-blue-700'
+                          : selectedDrink.linkedBottleTier === 'premium' ? 'bg-purple-100 text-purple-700'
+                          : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {selectedDrink.linkedBottleTier === 'top_shelf' ? 'TOP SHELF' : selectedDrink.linkedBottleTier.toUpperCase()}
                         </span>
-                      </div>
-                      {filteredBottles.filter(b => b.hasMenuItem).length === 0 ? (
-                        <div className="p-8 text-center text-gray-500">
-                          No bottles on POS yet. Click a bottle below to add it.
-                        </div>
-                      ) : (
-                        <table className="w-full text-sm">
-                          <thead className="bg-green-50 text-xs border-b border-green-200">
-                            <tr>
-                              <th className="w-8 px-1"></th>
-                              <th className="px-3 py-2 text-left font-medium text-gray-700">Product</th>
-                              <th className="px-3 py-2 text-center font-medium text-gray-700">Tier</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700">Size</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700">Cost</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700">{colPours}</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700">{colPourCost}</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700">Price</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700">Profit</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700">Margin</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-700">Stock</th>
-                              <th className="px-3 py-2 text-center font-medium text-gray-700">Position</th>
-                              <th className="px-3 py-2 text-center font-medium text-gray-700">Hide</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredBottles.filter(b => b.hasMenuItem).map((bottle, idx) => {
-                              const isLowStock = bottle.lowStockAlert && bottle.currentStock <= bottle.lowStockAlert
-                              const menuItem = bottle.linkedMenuItems?.[0]
-                              const menuPrice = menuItem?.price || 0
-                              const pourCost = bottle.pourCost || 0
-                              const profit = menuPrice > 0 && pourCost > 0 ? menuPrice - pourCost : 0
-                              const margin = menuPrice > 0 && pourCost > 0 ? ((menuPrice - pourCost) / menuPrice) * 100 : 0
-                              const position = menuItem?.sortOrder || null
-
-                              const isDragging = draggedBottleId === bottle.id
-                              const isDragOver = dragOverBottleId === bottle.id
-
-                              const isFlashing = flashingBottleId === bottle.id
-
-                              return (
-                                <tr
-                                  key={bottle.id}
-                                  draggable={true}
-                                  onDragStart={() => handleDragStart(bottle.id)}
-                                  onDragOver={(e) => handleDragOver(e, bottle.id)}
-                                  onDragEnd={handleDragEnd}
-                                  onDrop={() => handleDrop(bottle.id)}
-                                  className={`cursor-pointer border-b border-green-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-green-50/50'} hover:bg-green-100 ${!bottle.isActive ? 'opacity-50' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-purple-500' : ''} ${isFlashing ? 'animate-flash-green' : ''}`}
-                                  onClick={() => { setEditingBottle(bottle); setShowBottleModal(true); }}
-                                >
-                                  <td className="px-1 py-2 text-center">
-                                    <span className="cursor-grab text-gray-400 hover:text-gray-600">⋮⋮</span>
-                                  </td>
-                                  <td className="px-3 py-2">
-                                    <div className="font-medium">{bottle.name}</div>
-                                    {bottle.brand && <div className="text-xs text-gray-500">{bottle.brand}</div>}
-                                    {(() => { const b = subtypeBadge(bottle); return b ? <span className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block ${b.cls}`}>{b.emoji} {b.label}</span> : null })()}
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                      bottle.tier === 'well' ? 'bg-gray-200 text-gray-700' :
-                                      bottle.tier === 'call' ? 'bg-blue-100 text-blue-700' :
-                                      bottle.tier === 'premium' ? 'bg-purple-100 text-purple-700' :
-                                      'bg-amber-100 text-amber-700'
-                                    }`}>
-                                      {bottle.tier === 'well' ? (viewBeer ? 'DOM' : viewWine ? 'HOUSE' : 'WELL') :
-                                       bottle.tier === 'call' ? (viewBeer ? 'IMP' : viewWine ? 'GLASS' : 'CALL') :
-                                       bottle.tier === 'premium' ? (viewBeer ? 'CRFT' : viewWine ? 'RESV' : 'PREM') :
-                                       (viewBeer ? 'PREM+' : viewWine ? 'CELLR' : 'TOP')}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-right text-gray-600">{fmtSize(bottle)}</td>
-                                  <td className="px-3 py-2 text-right text-red-600 font-medium">{formatCurrency(bottle.unitCost)}</td>
-                                  <td className="px-3 py-2 text-right text-gray-600">{bottle.poursPerBottle || '-'}</td>
-                                  <td className="px-3 py-2 text-right text-red-600">{pourCost ? formatCurrency(pourCost) : '-'}</td>
-                                  <td className="px-3 py-2 text-right font-semibold">{formatCurrency(menuPrice)}</td>
-                                  <td className="px-3 py-2 text-right">
-                                    <span className="text-green-600 font-semibold">{formatCurrency(profit)}</span>
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    <span className={`font-semibold ${
-                                      margin >= 75 ? 'text-green-600' :
-                                      margin >= 65 ? 'text-yellow-600' :
-                                      'text-red-600'
-                                    }`}>
-                                      {margin.toFixed(0)}%
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-right">
-                                    <span className={isLowStock ? 'text-red-600 font-bold' : 'text-gray-700'}>
-                                      {bottle.currentStock}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      defaultValue={position || ''}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onKeyDown={async (e) => {
-                                        if (e.key === 'Enter') {
-                                          const newPosition = parseInt((e.target as HTMLInputElement).value) || 1
-                                          await fetch(`/api/menu/items/${menuItem!.id}`, {
-                                            method: 'PUT',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ sortOrder: newPosition }),
-                                          })
-                                          loadBottles()
-                                        }
-                                      }}
-                                      onBlur={async (e) => {
-                                        const newPosition = parseInt(e.target.value) || 1
-                                        if (newPosition !== position) {
-                                          await fetch(`/api/menu/items/${menuItem!.id}`, {
-                                            method: 'PUT',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ sortOrder: newPosition }),
-                                          })
-                                          loadBottles()
-                                        }
-                                      }}
-                                      className="w-14 px-2 py-1 text-center text-sm border border-gray-300 rounded bg-white focus:border-green-500 focus:ring-1 focus:ring-green-500"
-                                      placeholder="#"
-                                    />
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        await fetch(`/api/menu/items/${menuItem!.id}`, {
-                                          method: 'PUT',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ deletedAt: new Date().toISOString() }),
-                                        })
-                                        await loadBottles()
-                                                                      }}
-                                      className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded text-xs"
-                                      title="Hide from POS"
-                                    >
-                                      ✕
-                                    </button>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
+                      )}
+                      {selectedDrink.linkedBottleSizeMl && (
+                        <span className="text-xs text-gray-400">{selectedDrink.linkedBottleSizeMl}ml</span>
                       )}
                     </div>
 
-                    {/* NOT ON POS Section */}
-                    <div className="bg-white rounded-lg border-2 border-gray-300 overflow-hidden">
-                      <div className="bg-gray-500 text-white px-4 py-2 font-semibold flex items-center gap-2">
-                        <span>○</span>
-                        <span>Not on POS</span>
-                        <span className="text-gray-300 text-sm ml-2">Out of season / Out of stock</span>
-                        <span className="ml-auto bg-gray-600 px-2 py-0.5 rounded text-sm">
-                          {filteredBottles.filter(b => !b.hasMenuItem).length} items
-                        </span>
+                    {/* POUR configuration — the "prep item" equivalent for liquor */}
+                    <div className="bg-white/70 rounded-lg border border-green-200 p-3 mb-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[10px] uppercase font-bold text-green-700 tracking-wide bg-green-200 px-1.5 py-0.5 rounded">POUR</span>
+                        <span className="text-xs text-gray-400">bottle default: {bottleDefaultPour}oz</span>
                       </div>
-                      {filteredBottles.filter(b => !b.hasMenuItem).length === 0 ? (
-                        <div className="p-6 text-center text-gray-500">
-                          All bottles are on POS!
-                        </div>
-                      ) : (
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-100 text-xs border-b border-gray-200">
-                            <tr>
-                              <th className="px-3 py-2 text-left font-medium text-gray-600">Product</th>
-                              <th className="px-3 py-2 text-center font-medium text-gray-600">Tier</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-600">Size</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-600">Cost</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-600">{colPours}</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-600">{colPourCost}</th>
-                              <th className="px-3 py-2 text-right font-medium text-gray-600">Stock</th>
-                              <th className="px-3 py-2 text-center font-medium text-gray-600">Add to POS</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredBottles.filter(b => !b.hasMenuItem).map((bottle, idx) => {
-                              const isLowStock = bottle.lowStockAlert && bottle.currentStock <= bottle.lowStockAlert
-                              const pourCost = bottle.pourCost || 0
-
-                              return (
-                                <tr
-                                  key={bottle.id}
-                                  className={`cursor-pointer border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 ${!bottle.isActive ? 'opacity-50' : ''}`}
-                                  onClick={() => { setEditingBottle(bottle); setShowBottleModal(true); }}
-                                >
-                                  <td className="px-3 py-2">
-                                    <div className="font-medium text-gray-700">{bottle.name}</div>
-                                    {bottle.brand && <div className="text-xs text-gray-400">{bottle.brand}</div>}
-                                    {(() => { const b = subtypeBadge(bottle); return b ? <span className={`text-xs px-1.5 py-0.5 rounded mt-0.5 inline-block ${b.cls}`}>{b.emoji} {b.label}</span> : null })()}
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                      bottle.tier === 'well' ? 'bg-gray-200 text-gray-700' :
-                                      bottle.tier === 'call' ? 'bg-blue-100 text-blue-700' :
-                                      bottle.tier === 'premium' ? 'bg-purple-100 text-purple-700' :
-                                      'bg-amber-100 text-amber-700'
-                                    }`}>
-                                      {bottle.tier === 'well' ? (viewBeer ? 'DOM' : viewWine ? 'HOUSE' : 'WELL') :
-                                       bottle.tier === 'call' ? (viewBeer ? 'IMP' : viewWine ? 'GLASS' : 'CALL') :
-                                       bottle.tier === 'premium' ? (viewBeer ? 'CRFT' : viewWine ? 'RESV' : 'PREM') :
-                                       (viewBeer ? 'PREM+' : viewWine ? 'CELLR' : 'TOP')}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-right text-gray-500">{fmtSize(bottle)}</td>
-                                  <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(bottle.unitCost)}</td>
-                                  <td className="px-3 py-2 text-right text-gray-500">{bottle.poursPerBottle || '-'}</td>
-                                  <td className="px-3 py-2 text-right text-gray-600">{pourCost ? formatCurrency(pourCost) : '-'}</td>
-                                  <td className="px-3 py-2 text-right">
-                                    <span className={isLowStock ? 'text-red-600 font-bold' : 'text-gray-600'}>
-                                      {bottle.currentStock}
-                                    </span>
-                                  </td>
-                                  <td className="px-3 py-2 text-center">
-                                    <button
-                                      onClick={async (e) => {
-                                        e.stopPropagation()
-                                        // First try to restore a soft-deleted menu item
-                                        const restoreRes = await fetch(`/api/liquor/bottles/${bottle.id}/restore-menu-item`, {
-                                          method: 'POST',
-                                        })
-                                        if (restoreRes.ok) {
-                                          // Set flashing state before loading data
-                                          setFlashingBottleId(bottle.id)
-                                          await loadBottles()
-                                                                        // Clear flash after animation
-                                          setTimeout(() => setFlashingBottleId(null), 2000)
-                                        } else {
-                                          // No deleted item to restore, open modal to create new one
-                                          setEditingBottle(bottle)
-                                          setShowBottleModal(true)
-                                        }
-                                      }}
-                                      className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 font-medium"
-                                    >
-                                      + Add to POS
-                                    </button>
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
-
-              {/* Drinks Tab */}
-              {activeTab === 'drinks' && (
-                <div className="flex h-full">
-                  {/* Left: Drinks List */}
-                  <div className="w-80 bg-white border-r overflow-y-auto flex flex-col">
-                    {/* Header row: category name + add button */}
-                    <div className="px-3 pt-2 pb-1 flex items-center justify-between border-b shrink-0">
-                      <span className="text-xs font-medium text-purple-700">
-                        {selectedMenuCategoryId
-                          ? `${menuCategories.find((c: any) => c.id === selectedMenuCategoryId)?.name} (${filteredDrinks.length})`
-                          : `All Drinks (${filteredDrinks.length})`
-                        }
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {selectedMenuCategoryId && (
-                          <button
-                            onClick={() => { setSelectedMenuCategoryId(''); setSelectedDrink(null) }}
-                            className="text-xs text-gray-400 hover:text-gray-600"
-                          >
-                            All
-                          </button>
-                        )}
-                        {selectedMenuCategoryId && (
-                          <button
-                            onClick={async () => {
-                              const res = await fetch('/api/menu/items', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                  name: 'New Item',
-                                  price: 0,
-                                  categoryId: selectedMenuCategoryId,
-                                }),
-                              })
-                              if (res.ok) {
-                                const newItem = await res.json()
-                                await loadDrinks()
-                                setSelectedDrink(newItem)
-                              } else {
-                                toast.error('Failed to create item')
-                              }
-                            }}
-                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                          >
-                            + Add Item
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-3 space-y-1">
-                      {filteredDrinks.length === 0 ? (
-                        <p className="text-sm text-gray-400 text-center py-4">No items in this category</p>
-                      ) : (
-                        filteredDrinks.map((drink: any) => (
-                          <div
-                            key={drink.id}
-                            onClick={() => setSelectedDrink(drink)}
-                            className={`p-3 rounded cursor-pointer transition-colors ${
-                              selectedDrink?.id === drink.id
-                                ? 'bg-purple-50 border-2 border-purple-500'
-                                : !drink.isAvailable
-                                ? 'bg-gray-50 border-2 border-transparent opacity-50'
-                                : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-1">
-                              <div className="font-medium text-sm leading-tight">{drink.name}</div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                {!drink.isAvailable && (
-                                  <span className="text-[9px] bg-red-100 text-red-700 px-1 rounded font-medium">86</span>
-                                )}
-                                {/* 86 toggle */}
-                                <button
-                                  onClick={async (e) => {
-                                    e.stopPropagation()
-                                    await fetch(`/api/menu/items/${drink.id}`, {
-                                      method: 'PUT',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ isAvailable: !drink.isAvailable }),
-                                    })
-                                    await loadDrinks()
-                                    if (selectedDrink?.id === drink.id) setSelectedDrink(null)
-                                  }}
-                                  title={drink.isAvailable ? '86 this item' : 'Un-86 this item'}
-                                  className="text-gray-300 hover:text-orange-500 text-xs px-1 rounded"
-                                >
-                                  {drink.isAvailable ? '⊘' : '✓'}
-                                </button>
-                                {/* Hide/delete */}
-                                <button
-                                  onClick={async (e) => {
-                                    e.stopPropagation()
-                                    if (!confirm(`Remove "${drink.name}" from the POS?`)) return
-                                    await fetch(`/api/menu/items/${drink.id}`, {
-                                      method: 'PUT',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ deletedAt: new Date().toISOString() }),
-                                    })
-                                    await loadDrinks()
-                                    if (selectedDrink?.id === drink.id) setSelectedDrink(null)
-                                  }}
-                                  title="Remove from POS"
-                                  className="text-gray-300 hover:text-red-500 text-xs px-1 rounded"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            </div>
-                            <div className="text-xs text-gray-600 mt-0.5">{formatCurrency(drink.price)}</div>
-                            {drink.hasRecipe && (
-                              <div className="text-xs text-green-600 mt-1">✓ {drink.recipeIngredientCount} bottles</div>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right: Drink Editor with Recipe */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                    {selectedDrink ? (
-                      <>
-                        {/* Item Editor Card */}
-                        <div className="bg-white rounded-lg border p-5">
-                          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Item Details</h3>
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
-                              <input
-                                type="text"
-                                value={editingDrinkName}
-                                onChange={e => setEditingDrinkName(e.target.value)}
-                                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Price</label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min="0"
-                                  value={editingDrinkPrice}
-                                  onChange={e => setEditingDrinkPrice(e.target.value)}
-                                  className="w-full border rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              {/* 86 toggle */}
-                              <button
-                                onClick={async () => {
-                                  const newAvail = !selectedDrink.isAvailable
-                                  await fetch(`/api/menu/items/${selectedDrink.id}`, {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ isAvailable: newAvail }),
-                                  })
-                                  await loadDrinks()
-                                  setSelectedDrink((prev: any) => prev ? { ...prev, isAvailable: newAvail } : prev)
-                                }}
-                                className={`px-3 py-1.5 rounded text-xs font-medium border ${
-                                  selectedDrink.isAvailable
-                                    ? 'border-gray-300 text-gray-600 hover:border-orange-400 hover:text-orange-600'
-                                    : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
-                                }`}
-                              >
-                                {selectedDrink.isAvailable ? '⊘ 86 Item' : '✓ Un-86 Item'}
-                              </button>
-                              {/* Remove from POS */}
-                              <button
-                                onClick={async () => {
-                                  if (!confirm(`Remove "${selectedDrink.name}" from the POS?`)) return
-                                  await fetch(`/api/menu/items/${selectedDrink.id}`, {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ deletedAt: new Date().toISOString() }),
-                                  })
-                                  await loadDrinks()
-                                  setSelectedDrink(null)
-                                }}
-                                className="px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600"
-                              >
-                                ✕ Remove
-                              </button>
-                            </div>
-                            <Button
-                              size="sm"
-                              onClick={handleSaveDrink}
-                              disabled={savingDrink || (!editingDrinkName.trim())}
-                              className="bg-purple-600 hover:bg-purple-700 text-white"
-                            >
-                              {savingDrink ? 'Saving...' : 'Save'}
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Pour Sizes / Spirit Upgrades toggle card */}
-                        <div className="bg-white rounded-lg border p-5">
-                          {/* Mode toggle */}
-                          <label className="flex items-center gap-2 cursor-pointer mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
+                          <label className="text-xs font-medium text-gray-600">Pour Size:</label>
+                          <div className="relative">
                             <input
-                              type="checkbox"
-                              checked={spiritMode}
-                              onChange={e => setSpiritMode(e.target.checked)}
-                              className="w-4 h-4 text-amber-600 rounded"
+                              type="number"
+                              step="0.25"
+                              min="0.25"
+                              value={editingPourSize}
+                              onChange={e => setEditingPourSize(e.target.value)}
+                              className="w-20 px-2 py-1.5 text-sm border rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-green-400"
+                              placeholder={String(bottleDefaultPour)}
                             />
-                            <span className="text-sm font-semibold text-gray-700">🥃 Spirit Upgrades</span>
-                            <span className="text-xs text-gray-400">(for cocktails — Well/Call/Prem/Top tiers)</span>
-                          </label>
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">oz</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-600">
+                          <span>{poursPerBottle} pours/bottle</span>
+                          <span>|</span>
+                          <span>{formatCurrency(Math.round(computedPourCost * 100) / 100)}/pour</span>
+                        </div>
+                        <button
+                          onClick={savePourSize}
+                          disabled={savingPourSize}
+                          className="ml-auto px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {savingPourSize ? 'Saving...' : 'Save Pour'}
+                        </button>
+                      </div>
+                    </div>
 
-                          {spiritMode ? (
-                            /* Spirit Tier Editor */
-                            <div className="space-y-3">
-                              <p className="text-xs text-gray-400">Assign bottles from your inventory to each tier. Guests pick their spirit on the POS.</p>
-                              {savingSpirit && <p className="text-xs text-amber-600">Saving...</p>}
-                              {(['well', 'call', 'premium', 'top_shelf'] as const).map(tier => {
-                                const tierEntries = spiritEntries.filter(e => e.tier === tier)
-                                const tierLabel = tier === 'well' ? 'WELL' : tier === 'call' ? 'CALL' : tier === 'premium' ? 'PREMIUM' : 'TOP SHELF'
-                                const tierColors: Record<string, string> = {
-                                  well: 'border-gray-300 bg-gray-50',
-                                  call: 'border-blue-200 bg-blue-50',
-                                  premium: 'border-purple-200 bg-purple-50',
-                                  top_shelf: 'border-amber-200 bg-amber-50',
-                                }
-                                const tierTextColor: Record<string, string> = {
-                                  well: 'text-gray-700',
-                                  call: 'text-blue-700',
-                                  premium: 'text-purple-700',
-                                  top_shelf: 'text-amber-700',
-                                }
-                                const addedBottleIds = new Set(tierEntries.map(e => e.bottleProductId))
-                                const availableBottles = (bottles as any[]).filter((b: any) => b.tier === tier && !addedBottleIds.has(b.id))
-                                return (
-                                  <div key={tier} className={`rounded-lg border p-3 ${tierColors[tier]}`}>
-                                    <div className={`text-xs font-bold uppercase tracking-wide mb-2 ${tierTextColor[tier]}`}>{tierLabel}</div>
-                                    {tierEntries.length === 0 && (
-                                      <p className="text-xs text-gray-400 mb-2">No bottles assigned yet</p>
-                                    )}
-                                    {tierEntries.map(entry => (
-                                      <div key={entry.id || entry.bottleProductId} className="flex items-center gap-2 mb-1.5">
-                                        <span className="flex-1 text-sm font-medium text-gray-800 truncate">{entry.bottleName}</span>
-                                        <span className="text-xs text-gray-400">+$</span>
-                                        <input
-                                          type="number"
-                                          step="0.25"
-                                          min="0"
-                                          defaultValue={entry.price}
-                                          key={`${entry.id}-${entry.price}`}
-                                          onBlur={e => {
-                                            const price = parseFloat(e.target.value) || 0
-                                            if (entry.id && price !== entry.price) {
-                                              updateSpiritEntryPrice(entry.id, price)
-                                            }
-                                          }}
-                                          className="w-16 px-2 py-1 text-sm border rounded text-right bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                          placeholder="0.00"
-                                        />
-                                        <button
-                                          onClick={() => entry.id && removeSpiritEntry(entry.id)}
-                                          className="text-gray-300 hover:text-red-500 text-lg leading-none shrink-0"
-                                          title="Remove"
-                                        >
-                                          ×
-                                        </button>
+                    {/* Cost summary */}
+                    <div className="flex items-center gap-4 text-xs text-gray-600 bg-white/60 rounded px-3 py-2">
+                      <span>Pour Cost: <strong>{formatCurrency(Math.round(computedPourCost * 100) / 100)}</strong></span>
+                      <span>Sell Price: <strong>{formatCurrency(sellPrice)}</strong></span>
+                      {margin !== null && (
+                        <span>Margin: <strong className={margin >= 70 ? 'text-green-700' : margin >= 50 ? 'text-yellow-700' : 'text-red-700'}>
+                          {Math.round(margin)}%
+                        </strong></span>
+                      )}
+                    </div>
+                  </div>
+                  )
+                })() : (
+                  <div className={`rounded-lg border-2 border-dashed p-5 transition-colors ${showBottleLinkPicker ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Linked Bottle</h3>
+                      {!showBottleLinkPicker && (
+                        <button
+                          onClick={() => setShowBottleLinkPicker(true)}
+                          className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50"
+                        >
+                          Link to Bottle
+                        </button>
+                      )}
+                    </div>
+                    {!showBottleLinkPicker ? (
+                      <p className="text-xs text-gray-400">Link this drink to a bottle from inventory for cost tracking and deductions.</p>
+                    ) : (
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <input
+                            type="text"
+                            placeholder="Search bottles..."
+                            value={bottleLinkSearch}
+                            onChange={e => setBottleLinkSearch(e.target.value)}
+                            autoFocus
+                            className="flex-1 px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                          <button
+                            onClick={() => { setShowBottleLinkPicker(false); setBottleLinkSearch('') }}
+                            className="px-2 py-2 text-gray-400 hover:text-gray-600 text-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto space-y-2">
+                          {(() => {
+                            const search = bottleLinkSearch.toLowerCase()
+                            const filtered = bottles.filter((b: BottleProduct) =>
+                              b.name.toLowerCase().includes(search) ||
+                              b.spiritCategory?.name?.toLowerCase().includes(search)
+                            )
+                            // Group by spirit category
+                            const grouped = new Map<string, BottleProduct[]>()
+                            for (const b of filtered) {
+                              const cat = b.spiritCategory?.name || 'Other'
+                              if (!grouped.has(cat)) grouped.set(cat, [])
+                              grouped.get(cat)!.push(b)
+                            }
+                            if (grouped.size === 0) {
+                              return <p className="text-xs text-gray-400 text-center py-4">No bottles found</p>
+                            }
+                            return Array.from(grouped.entries()).map(([catName, catBottles]) => (
+                              <div key={catName}>
+                                <div className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide px-1 mb-1">{catName}</div>
+                                <div className="space-y-0.5">
+                                  {catBottles.map((b: BottleProduct) => (
+                                    <button
+                                      key={b.id}
+                                      onClick={() => linkDrinkToBottle(b.id)}
+                                      disabled={linkingBottle}
+                                      className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium text-gray-800">{b.name}</span>
+                                        <div className="flex items-center gap-2">
+                                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                            b.tier === 'well' ? 'bg-gray-200 text-gray-700'
+                                            : b.tier === 'call' ? 'bg-blue-100 text-blue-700'
+                                            : b.tier === 'premium' ? 'bg-purple-100 text-purple-700'
+                                            : 'bg-amber-100 text-amber-700'
+                                          }`}>
+                                            {b.tier === 'top_shelf' ? 'TOP SHELF' : b.tier.toUpperCase()}
+                                          </span>
+                                          {b.pourCost && (
+                                            <span className="text-xs text-gray-500">{formatCurrency(Number(b.pourCost))}</span>
+                                          )}
+                                        </div>
                                       </div>
-                                    ))}
-                                    {availableBottles.length > 0 && (
-                                      <select
-                                        key={`${tier}-${tierEntries.length}`}
-                                        defaultValue=""
-                                        onChange={e => {
-                                          const bottleId = e.target.value
-                                          if (bottleId) addSpiritBottle(tier, bottleId)
-                                        }}
-                                        disabled={savingSpirit}
-                                        className="mt-1 w-full text-xs border rounded px-2 py-1.5 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                      >
-                                        <option value="">+ Add {tierLabel.charAt(0) + tierLabel.slice(1).toLowerCase()} bottle...</option>
-                                        {availableBottles.map((b: any) => (
-                                          <option key={b.id} value={b.id}>{b.name}</option>
-                                        ))}
-                                      </select>
-                                    )}
-                                    {availableBottles.length === 0 && tierEntries.length === 0 && (
-                                      <p className="text-xs text-gray-400 italic">No {tier.replace('_', ' ')} bottles in inventory</p>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Auto-detected Spirit Upgrades from Recipe */}
+                {drinkRecipeIngredients.length > 0 && (() => {
+                  // Group recipe ingredients by spirit category
+                  const recipeCategories = new Map<string, { categoryName: string; baseBottle: typeof drinkRecipeIngredients[0] }>()
+                  for (const ing of drinkRecipeIngredients) {
+                    if (ing.spiritCategory && !recipeCategories.has(ing.spiritCategory)) {
+                      recipeCategories.set(ing.spiritCategory, { categoryName: ing.spiritCategory, baseBottle: ing })
+                    }
+                  }
+
+                  if (recipeCategories.size === 0) return null
+
+                  return (
+                    <div className="bg-white rounded-lg border p-5">
+                      <h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                        Spirit Upgrades <span className="text-xs font-normal text-gray-400">(auto-detected from recipe)</span>
+                      </h3>
+                      <div className="space-y-4">
+                        {Array.from(recipeCategories.entries()).map(([catName, { baseBottle }]) => {
+                          // Find available upgrade bottles in same category at higher tiers
+                          const upgradeBottles = bottles.filter(b =>
+                            b.spiritCategory.name === catName &&
+                            b.id !== baseBottle.bottleProductId &&
+                            b.tier !== 'well'
+                          )
+                          const tierOrder = ['call', 'premium', 'top_shelf'] as const
+
+                          return (
+                            <div key={catName} className="border rounded-lg p-3 bg-amber-50/50">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm font-medium text-gray-800">{catName}</span>
+                                <span className="text-xs text-gray-400">base: {baseBottle.bottleName} ({baseBottle.tier}) — {formatCurrency(baseBottle.pourCost)}/pour</span>
+                              </div>
+                              {tierOrder.map(tier => {
+                                const tierBottles = upgradeBottles.filter(b => b.tier === tier)
+                                if (tierBottles.length === 0) return null
+                                const tierLabel = tier === 'call' ? 'Call' : tier === 'premium' ? 'Premium' : 'Top Shelf'
+                                const existingEntry = spiritEntries.find(e => e.tier === tier && tierBottles.some(b => b.id === e.bottleProductId))
+
+                                return (
+                                  <div key={tier} className="flex items-center gap-2 ml-2 mb-1.5">
+                                    <span className={`text-xs font-medium w-16 ${
+                                      tier === 'call' ? 'text-blue-600' : tier === 'premium' ? 'text-purple-600' : 'text-amber-600'
+                                    }`}>{tierLabel}:</span>
+                                    <select
+                                      value={existingEntry?.bottleProductId || ''}
+                                      onChange={e => {
+                                        const bottleId = e.target.value
+                                        if (bottleId) {
+                                          addSpiritBottle(tier, bottleId)
+                                        }
+                                      }}
+                                      className="flex-1 text-sm border rounded px-2 py-1.5"
+                                    >
+                                      <option value="">— Select {tierLabel} —</option>
+                                      {tierBottles.map(b => (
+                                        <option key={b.id} value={b.id}>
+                                          {b.name} (+{formatCurrency((b.pourCost || 0) - baseBottle.pourCost)})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {existingEntry && (
+                                      <span className="text-xs text-green-600">&#10003;</span>
                                     )}
                                   </div>
                                 )
                               })}
                             </div>
-                          ) : (
-                            /* Pour Size Buttons Editor */
-                            <>
-                              <div className="flex items-center justify-between mb-1">
-                                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Pour Size Buttons</h3>
-                                <span className="text-xs text-gray-400">Shot / Tall / Short / Double</span>
-                              </div>
-                              <p className="text-xs text-gray-400 mb-3">Enable size variants for this item. Each multiplies the base price.</p>
-                              <div className="space-y-2 mb-3">
-                                {Object.entries(DEFAULT_POUR_SIZES).map(([sizeKey, defaults]) => {
-                                  const isEnabled = enabledPourSizes[sizeKey] !== undefined
-                                  const current = enabledPourSizes[sizeKey]
-                                  return (
-                                    <div key={sizeKey} className={`p-2.5 border rounded-lg transition-colors ${isEnabled ? 'border-purple-400 bg-purple-50' : 'border-gray-200 bg-white'}`}>
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={isEnabled}
-                                          onChange={() => togglePourSize(sizeKey)}
-                                          className="w-4 h-4 text-purple-600 shrink-0"
-                                        />
-                                        {isEnabled ? (
-                                          <>
-                                            <input
-                                              type="text"
-                                              value={current?.label || ''}
-                                              onChange={e => updatePourSizeLabel(sizeKey, e.target.value)}
-                                              className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                              placeholder="Button label"
-                                            />
-                                            <div className="flex items-center gap-1 shrink-0">
-                                              <input
-                                                type="number"
-                                                step="0.25"
-                                                min="0.25"
-                                                defaultValue={current?.multiplier ?? 1}
-                                                key={`${sizeKey}-${current?.multiplier}`}
-                                                onBlur={e => {
-                                                  const num = parseFloat(e.target.value)
-                                                  if (!isNaN(num) && num > 0) updatePourSizeMultiplier(sizeKey, num)
-                                                  else e.target.value = String(current?.multiplier || 1)
-                                                }}
-                                                className="w-14 px-1 py-1 text-sm border rounded text-center focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                              />
-                                              <span className="text-xs text-purple-600">×</span>
-                                            </div>
-                                            {isEnabled && defaultPourSize === sizeKey && (
-                                              <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded shrink-0">Default</span>
-                                            )}
-                                            {isEnabled && defaultPourSize !== sizeKey && (
-                                              <button
-                                                onClick={() => setDefaultPourSize(sizeKey)}
-                                                className="text-[10px] text-purple-500 hover:text-purple-700 shrink-0"
-                                              >Set default</button>
-                                            )}
-                                          </>
-                                        ) : (
-                                          <div className="flex-1 flex items-center justify-between text-gray-400">
-                                            <span className="text-sm">{defaults.label}</span>
-                                            <span className="text-xs">{defaults.multiplier}×</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                              {Object.keys(enabledPourSizes).length > 0 && (
-                                <label className="flex items-center gap-2 cursor-pointer mt-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={applyPourToModifiers}
-                                    onChange={e => setApplyPourToModifiers(e.target.checked)}
-                                    className="w-4 h-4 text-purple-600"
-                                  />
-                                  <span className="text-xs text-gray-700">Apply multiplier to spirit upgrade charges too</span>
-                                </label>
-                              )}
-                              {Object.keys(enabledPourSizes).length > 0 && (
-                                <p className="text-xs text-gray-400 mt-1 ml-6">
-                                  Price on POS: base price × multiplier (e.g. ${(parseFloat(editingDrinkPrice) || 0).toFixed(2)} × 1.5 = ${((parseFloat(editingDrinkPrice) || 0) * 1.5).toFixed(2)} for Tall)
-                                </p>
-                              )}
-                            </>
-                          )}
-                        </div>
-
-                        {/* Modifier Groups — tap a template in the right panel to attach */}
-                        <div className="bg-white rounded-lg border overflow-hidden">
-                          <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                            <div>
-                              <h3 className="text-sm font-semibold text-gray-700">Modifier Groups</h3>
-                              <p className="text-xs text-gray-400 mt-0.5">Tap a template in the right panel → to attach</p>
-                            </div>
-                          </div>
-
-                          {/* Group list — spirit groups are managed in the Spirit Tier Editor above */}
-                          {drinkModifierGroups.filter((mg: any) => !mg.isSpiritGroup).length === 0 ? (
-                            <div className="px-4 py-6 text-center text-sm text-gray-400">
-                              <p className="mb-1 font-medium">No modifier groups yet.</p>
-                              <p className="text-xs">Tap a template in the Modifier Templates panel on the right →</p>
-                            </div>
-                          ) : (
-                            <div className="divide-y">
-                              {drinkModifierGroups.filter((mg: any) => !mg.isSpiritGroup).map((mg: any) => (
-                                <button
-                                  key={mg.id}
-                                  onClick={() => setSelectedModGroupId(selectedModGroupId === mg.id ? null : mg.id)}
-                                  className={`w-full flex items-center justify-between px-4 py-2.5 text-left text-sm transition-colors ${
-                                    selectedModGroupId === mg.id
-                                      ? 'bg-purple-50 border-l-4 border-purple-500'
-                                      : 'hover:bg-gray-50 border-l-4 border-transparent'
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-medium">{mg.name}</span>
-                                    {mg.isRequired && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Required</span>}
-                                  </div>
-                                  <div className="flex items-center gap-2 text-gray-400 text-xs">
-                                    <span>{mg.modifiers?.length ?? 0} options</span>
-                                    <span>{selectedModGroupId === mg.id ? '▲' : '▼'}</span>
-                                  </div>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Inline ModifierFlowEditor — shows when a group is selected */}
-                          {selectedModGroupId && (
-                            <div className="border-t bg-gray-50">
-                              <ModifierFlowEditor
-                                item={{ id: selectedDrink.id, name: editingDrinkName || selectedDrink.name }}
-                                selectedGroupId={selectedModGroupId}
-                                refreshKey={modGroupRefreshKey}
-                                onGroupUpdated={() => {
-                                  reloadDrinkModifiersRef.current(selectedDrink.id)
-                                  setModGroupRefreshKey(k => k + 1)
-                                }}
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Recipe Builder Card */}
-                        <RecipeBuilder
-                          menuItemId={selectedDrink.id}
-                          menuItemPrice={parseFloat(editingDrinkPrice) || selectedDrink.price}
-                          isExpanded={true}
-                          onToggle={() => {}}
-                        />
-                      </>
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-gray-400">
-                        <p>Select a drink to edit</p>
+                          )
+                        })}
                       </div>
-                    )}
-                  </div>
-                </div>
-              )}
+                    </div>
+                  )
+                })()}
 
-            </div>
-          </div>
+                {/* Pour Sizes / Spirit Upgrades toggle card */}
+                <div className="bg-white rounded-lg border p-5">
+                  {/* Mode toggle */}
+                  <label className="flex items-center gap-2 cursor-pointer mb-4">
+                    <input
+                      type="checkbox"
+                      checked={spiritMode}
+                      onChange={e => setSpiritMode(e.target.checked)}
+                      className="w-4 h-4 text-amber-600 rounded"
+                    />
+                    <span className="text-sm font-semibold text-gray-700">🥃 Spirit Upgrades</span>
+                    <span className="text-xs text-gray-400">(for cocktails — Well/Call/Prem/Top tiers)</span>
+                  </label>
 
-          {/* Right Panel — Modifier Templates */}
-          <div className="w-64 bg-white border-l flex flex-col shrink-0 overflow-hidden">
-            <div className="px-3 py-2 border-b flex items-center justify-between shrink-0">
-              <span className="text-[10px] uppercase text-gray-500 font-semibold tracking-wide">Modifier Templates</span>
-              <button
-                onClick={addModifierGroup}
-                className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
-              >
-                + New
-              </button>
-            </div>
-
-            {selectedModifierGroup ? (
-              /* Expanded editor mode */
-              <div className="flex flex-col flex-1 overflow-hidden">
-                <div className="px-3 py-2 border-b bg-purple-50 flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => setSelectedModifierGroup(null)}
-                    className="text-xs text-gray-500 hover:text-gray-700"
-                  >
-                    ← Back
-                  </button>
-                  <span className="text-xs font-medium text-purple-700 truncate">{selectedModifierGroup.name}</span>
-                </div>
-                <div className="flex-1 overflow-auto">
-                  <LiquorModifierGroupEditor
-                    key={selectedModifierGroup.id}
-                    group={selectedModifierGroup}
-                    onSaved={async () => {
-                      const groups = await loadModifierGroups()
-                      const refreshed = (groups as any[]).find((g: any) => g.id === selectedModifierGroup.id)
-                      if (refreshed) setSelectedModifierGroup(refreshed)
-                    }}
-                    onDelete={() => deleteModifierGroup(selectedModifierGroup.id)}
-                  />
-                </div>
-              </div>
-            ) : (
-              /* List mode */
-              <div className="flex-1 overflow-y-auto p-2">
-                {modifierGroups.length === 0 ? (
-                  <div className="text-center py-8 text-xs text-gray-400">
-                    <p className="mb-2">No modifier templates yet.</p>
-                    <p className="text-gray-400 mb-3">Create templates like Mixers, Garnishes, or Ice options here — then attach them to any drink.</p>
-                    <button
-                      onClick={addModifierGroup}
-                      className="text-purple-600 hover:text-purple-700 font-medium"
-                    >
-                      + Create first template
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    {activeTab === 'drinks' && selectedDrink && (
-                      <p className="text-[10px] text-purple-600 font-medium px-1 pb-1">
-                        Tap to attach to {selectedDrink.name || 'this drink'}:
-                      </p>
-                    )}
-                    {modifierGroups.map((group: any) => {
-                      const isAlreadyAdded = activeTab === 'drinks' && selectedDrink &&
-                        drinkModifierGroups.some((mg: any) => mg.name === group.name && !mg.isSpiritGroup)
-                      return (
-                        <button
-                          key={group.id}
-                          disabled={!!attachingGroupId}
-                          onClick={async () => {
-                            if (activeTab === 'drinks' && selectedDrink && !group.isSpiritGroup && !isAlreadyAdded) {
-                              // Attach template to selected drink
-                              setAttachingGroupId(group.id)
-                              try {
-                                const res = await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ duplicateFromGroupId: group.id, copyFromShared: true, name: group.name }),
-                                })
-                                if (res.ok) {
-                                  const data = await res.json()
-                                  await reloadDrinkModifiersRef.current(selectedDrink.id)
-                                  setSelectedModGroupId(data.data?.id || null)
-                                  setModGroupRefreshKey(k => k + 1)
-                                  toast.success(`Added "${group.name}"`)
-                                } else {
-                                  toast.error('Failed to attach group')
-                                }
-                              } finally {
-                                setAttachingGroupId(null)
-                              }
-                            } else {
-                              // Open editor
-                              setSelectedModifierGroup(group)
-                            }
-                          }}
-                          className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
-                            isAlreadyAdded
-                              ? 'bg-green-50 border-green-200 cursor-default'
-                              : attachingGroupId === group.id
-                              ? 'bg-blue-50 border-blue-300'
-                              : activeTab === 'drinks' && selectedDrink && !group.isSpiritGroup
-                              ? 'bg-white border-purple-200 hover:bg-purple-50 hover:border-purple-400'
-                              : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-sm truncate">{group.name}</span>
-                            {group.isSpiritGroup && <span className="text-base shrink-0 ml-1">🥃</span>}
-                          </div>
-                          <div className="flex items-center justify-between mt-0.5">
-                            <span className="text-xs text-gray-400">{group.modifiers?.length ?? 0} options</span>
-                            {isAlreadyAdded ? (
-                              <span className="text-xs text-green-600">✓ Added</span>
-                            ) : attachingGroupId === group.id ? (
-                              <span className="text-xs text-blue-600">Adding...</span>
-                            ) : activeTab === 'drinks' && selectedDrink && !group.isSpiritGroup ? (
-                              <span className="text-xs text-purple-500">+ Attach</span>
-                            ) : (
-                              <span className="text-xs text-gray-400">Edit →</span>
+                  {spiritMode ? (
+                    /* Spirit Tier Editor */
+                    <div className="space-y-3">
+                      <p className="text-xs text-gray-400">Assign bottles from your inventory to each tier. Guests pick their spirit on the POS.</p>
+                      {savingSpirit && <p className="text-xs text-amber-600">Saving...</p>}
+                      {(['well', 'call', 'premium', 'top_shelf'] as const).map(tier => {
+                        const tierEntries = spiritEntries.filter(e => e.tier === tier)
+                        const tierLabel = tier === 'well' ? 'WELL' : tier === 'call' ? 'CALL' : tier === 'premium' ? 'PREMIUM' : 'TOP SHELF'
+                        const tierColors: Record<string, string> = {
+                          well: 'border-gray-300 bg-gray-50',
+                          call: 'border-blue-200 bg-blue-50',
+                          premium: 'border-purple-200 bg-purple-50',
+                          top_shelf: 'border-amber-200 bg-amber-50',
+                        }
+                        const tierTextColor: Record<string, string> = {
+                          well: 'text-gray-700',
+                          call: 'text-blue-700',
+                          premium: 'text-purple-700',
+                          top_shelf: 'text-amber-700',
+                        }
+                        const addedBottleIds = new Set(tierEntries.map(e => e.bottleProductId))
+                        const availableBottles = (bottles as any[]).filter((b: any) => b.tier === tier && !addedBottleIds.has(b.id))
+                        return (
+                          <div key={tier} className={`rounded-lg border p-3 ${tierColors[tier]}`}>
+                            <div className={`text-xs font-bold uppercase tracking-wide mb-2 ${tierTextColor[tier]}`}>{tierLabel}</div>
+                            {tierEntries.length === 0 && (
+                              <p className="text-xs text-gray-400 mb-2">No bottles assigned yet</p>
+                            )}
+                            {tierEntries.map(entry => (
+                              <div key={entry.id || entry.bottleProductId} className="flex items-center gap-2 mb-1.5">
+                                <span className="flex-1 text-sm font-medium text-gray-800 truncate">{entry.bottleName}</span>
+                                <span className="text-xs text-gray-400">+$</span>
+                                <input
+                                  type="number"
+                                  step="0.25"
+                                  min="0"
+                                  defaultValue={entry.price}
+                                  key={`${entry.id}-${entry.price}`}
+                                  onBlur={e => {
+                                    const price = parseFloat(e.target.value) || 0
+                                    if (entry.id && price !== entry.price) {
+                                      updateSpiritEntryPrice(entry.id, price)
+                                    }
+                                  }}
+                                  className="w-16 px-2 py-1 text-sm border rounded text-right bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                  placeholder="0.00"
+                                />
+                                <button
+                                  onClick={() => entry.id && removeSpiritEntry(entry.id)}
+                                  className="text-gray-300 hover:text-red-500 text-lg leading-none shrink-0"
+                                  title="Remove"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ))}
+                            {availableBottles.length > 0 && (
+                              <select
+                                key={`${tier}-${tierEntries.length}`}
+                                defaultValue=""
+                                onChange={e => {
+                                  const bottleId = e.target.value
+                                  if (bottleId) addSpiritBottle(tier, bottleId)
+                                }}
+                                disabled={savingSpirit}
+                                className="mt-1 w-full text-xs border rounded px-2 py-1.5 bg-white text-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                              >
+                                <option value="">+ Add {tierLabel.charAt(0) + tierLabel.slice(1).toLowerCase()} bottle...</option>
+                                {availableBottles.map((b: any) => (
+                                  <option key={b.id} value={b.id}>{b.name}</option>
+                                ))}
+                              </select>
+                            )}
+                            {availableBottles.length === 0 && tierEntries.length === 0 && (
+                              <p className="text-xs text-gray-400 italic">No {tier.replace('_', ' ')} bottles in inventory</p>
                             )}
                           </div>
-                        </button>
-                      )
-                    })}
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    /* Pour Size Buttons Editor */
+                    <>
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Pour Size Buttons</h3>
+                        <span className="text-xs text-gray-400">Shot / Tall / Short / Double</span>
+                      </div>
+                      <p className="text-xs text-gray-400 mb-3">Enable size variants for this item. Each multiplies the base price.</p>
+                      <div className="space-y-2 mb-3">
+                        {Object.entries(DEFAULT_POUR_SIZES).map(([sizeKey, defaults]) => {
+                          const isEnabled = enabledPourSizes[sizeKey] !== undefined
+                          const current = enabledPourSizes[sizeKey]
+                          return (
+                            <div key={sizeKey} className={`p-2.5 border rounded-lg transition-colors ${isEnabled ? 'border-purple-400 bg-purple-50' : 'border-gray-200 bg-white'}`}>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isEnabled}
+                                  onChange={() => togglePourSize(sizeKey)}
+                                  className="w-4 h-4 text-purple-600 shrink-0"
+                                />
+                                {isEnabled ? (
+                                  <>
+                                    <input
+                                      type="text"
+                                      value={current?.label || ''}
+                                      onChange={e => updatePourSizeLabel(sizeKey, e.target.value)}
+                                      className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                      placeholder="Button label"
+                                    />
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <input
+                                        type="number"
+                                        step="0.25"
+                                        min="0.25"
+                                        defaultValue={current?.multiplier ?? 1}
+                                        key={`${sizeKey}-${current?.multiplier}`}
+                                        onBlur={e => {
+                                          const num = parseFloat(e.target.value)
+                                          if (!isNaN(num) && num > 0) updatePourSizeMultiplier(sizeKey, num)
+                                          else e.target.value = String(current?.multiplier || 1)
+                                        }}
+                                        className="w-14 px-1 py-1 text-sm border rounded text-center focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                      />
+                                      <span className="text-xs text-purple-600">×</span>
+                                    </div>
+                                    {isEnabled && defaultPourSize === sizeKey && (
+                                      <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded shrink-0">Default</span>
+                                    )}
+                                    {isEnabled && defaultPourSize !== sizeKey && (
+                                      <button
+                                        onClick={() => setDefaultPourSize(sizeKey)}
+                                        className="text-[10px] text-purple-500 hover:text-purple-700 shrink-0"
+                                      >Set default</button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <div className="flex-1 flex items-center justify-between text-gray-400">
+                                    <span className="text-sm">{defaults.label}</span>
+                                    <span className="text-xs">{defaults.multiplier}×</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {Object.keys(enabledPourSizes).length > 0 && (
+                        <label className="flex items-center gap-2 cursor-pointer mt-2">
+                          <input
+                            type="checkbox"
+                            checked={applyPourToModifiers}
+                            onChange={e => setApplyPourToModifiers(e.target.checked)}
+                            className="w-4 h-4 text-purple-600"
+                          />
+                          <span className="text-xs text-gray-700">Apply multiplier to spirit upgrade charges too</span>
+                        </label>
+                      )}
+                      {Object.keys(enabledPourSizes).length > 0 && (
+                        <p className="text-xs text-gray-400 mt-1 ml-6">
+                          Price on POS: base price × multiplier (e.g. ${(parseFloat(editingDrinkPrice) || 0).toFixed(2)} × 1.5 = ${((parseFloat(editingDrinkPrice) || 0) * 1.5).toFixed(2)} for Tall)
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Modifier Groups — tap a template in the right panel to attach (existing) */}
+                <div className="bg-white rounded-lg border overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700">Modifier Groups</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">Tap a template in the right panel to attach, then edit modifiers inline below</p>
+                    </div>
                   </div>
-                )}
+
+                  {/* Group list — spirit groups are managed in the Spirit Tier Editor above */}
+                  {drinkModifierGroups.filter((mg: any) => !mg.isSpiritGroup).length === 0 ? (
+                    <div className="px-4 py-6 text-center text-sm text-gray-400">
+                      <p className="mb-1 font-medium">No modifier groups yet.</p>
+                      <p className="text-xs">Tap a template in the Modifier Templates panel on the right →</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {drinkModifierGroups.filter((mg: any) => !mg.isSpiritGroup).map((mg: any) => {
+                        const isExpanded = selectedModGroupId === mg.id
+                        return (
+                          <div key={mg.id}>
+                            <button
+                              onClick={() => setSelectedModGroupId(isExpanded ? null : mg.id)}
+                              className={`w-full flex items-center justify-between px-4 py-2.5 text-left text-sm transition-colors ${
+                                isExpanded
+                                  ? 'bg-purple-50 border-l-4 border-purple-500'
+                                  : 'hover:bg-gray-50 border-l-4 border-transparent'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{mg.name}</span>
+                                {mg.isRequired && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Required</span>}
+                              </div>
+                              <div className="flex items-center gap-2 text-gray-400 text-xs">
+                                <span>{mg.modifiers?.length ?? 0} options</span>
+                                <span>{isExpanded ? '▲' : '▼'}</span>
+                              </div>
+                            </button>
+
+                            {/* Inline per-item modifier editing */}
+                            {isExpanded && (
+                              <div className="bg-gray-50 border-t px-4 py-3">
+                                {/* Column headers */}
+                                <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-400 px-1 mb-1.5">
+                                  <div className="col-span-5">Name</div>
+                                  <div className="col-span-3 text-right">+Charge</div>
+                                  <div className="col-span-2 text-center">Active</div>
+                                  <div className="col-span-2"></div>
+                                </div>
+
+                                <div className="space-y-1">
+                                  {(mg.modifiers || []).map((mod: any) => (
+                                    <div
+                                      key={mod.id}
+                                      className={`grid grid-cols-12 gap-2 items-center p-1.5 rounded border transition-colors ${
+                                        mod.isActive !== false ? 'bg-white border-gray-200' : 'bg-gray-100 border-gray-100 opacity-60'
+                                      }`}
+                                    >
+                                      {/* Name */}
+                                      <div className="col-span-5">
+                                        <input
+                                          type="text"
+                                          defaultValue={mod.name}
+                                          key={`${mod.id}-name-${modGroupRefreshKey}`}
+                                          onBlur={async (e) => {
+                                            const newName = e.target.value.trim()
+                                            if (newName && newName !== mod.name) {
+                                              await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers`, {
+                                                method: 'PUT',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ modifierId: mod.id, name: newName }),
+                                              })
+                                              reloadDrinkModifiersRef.current(selectedDrink.id)
+                                            }
+                                          }}
+                                          className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                        />
+                                      </div>
+
+                                      {/* Price */}
+                                      <div className="col-span-3">
+                                        <div className="relative">
+                                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                                          <input
+                                            type="number"
+                                            step="0.25"
+                                            min="0"
+                                            defaultValue={mod.price || 0}
+                                            key={`${mod.id}-price-${modGroupRefreshKey}`}
+                                            onBlur={async (e) => {
+                                              const newPrice = parseFloat(e.target.value) || 0
+                                              if (newPrice !== (mod.price || 0)) {
+                                                await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers`, {
+                                                  method: 'PUT',
+                                                  headers: { 'Content-Type': 'application/json' },
+                                                  body: JSON.stringify({ modifierId: mod.id, price: newPrice }),
+                                                })
+                                                reloadDrinkModifiersRef.current(selectedDrink.id)
+                                              }
+                                            }}
+                                            className="w-full pl-4 pr-1 py-1 text-sm border rounded text-right focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* Active toggle */}
+                                      <div className="col-span-2 flex justify-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={mod.isActive !== false}
+                                          onChange={async (e) => {
+                                            await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers`, {
+                                              method: 'PUT',
+                                              headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ modifierId: mod.id, isActive: e.target.checked }),
+                                            })
+                                            reloadDrinkModifiersRef.current(selectedDrink.id)
+                                          }}
+                                          className="w-4 h-4"
+                                          title="Active on POS"
+                                        />
+                                      </div>
+
+                                      {/* Remove */}
+                                      <div className="col-span-2 flex justify-center">
+                                        <button
+                                          onClick={async () => {
+                                            await fetch(
+                                              `/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers?modifierId=${mod.id}`,
+                                              { method: 'DELETE' }
+                                            )
+                                            reloadDrinkModifiersRef.current(selectedDrink.id)
+                                          }}
+                                          className="text-gray-300 hover:text-red-500 text-lg leading-none"
+                                          title="Remove option"
+                                        >
+                                          ×
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {/* Add option button */}
+                                <button
+                                  onClick={async () => {
+                                    const res = await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${mg.id}/modifiers`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ name: 'New Option', price: 0, isActive: true }),
+                                    })
+                                    if (res.ok) {
+                                      reloadDrinkModifiersRef.current(selectedDrink.id)
+                                      setModGroupRefreshKey(k => k + 1)
+                                    }
+                                  }}
+                                  className="mt-2 text-xs text-purple-600 hover:text-purple-800 font-medium"
+                                >
+                                  + Add Option
+                                </button>
+
+                                {/* Group-level settings (tiered pricing, etc.) */}
+                                <div className="mt-3 pt-3 border-t">
+                                  <ModifierFlowEditor
+                                    item={{ id: selectedDrink.id, name: editingDrinkName || selectedDrink.name }}
+                                    selectedGroupId={mg.id}
+                                    refreshKey={modGroupRefreshKey}
+                                    onGroupUpdated={() => {
+                                      reloadDrinkModifiersRef.current(selectedDrink.id)
+                                      setModGroupRefreshKey(k => k + 1)
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recipe Builder — collapsed by default, auto-expands if drink has recipe */}
+                <RecipeBuilder
+                  menuItemId={selectedDrink.id}
+                  menuItemPrice={parseFloat(editingDrinkPrice) || selectedDrink.price}
+                  isExpanded={recipeExpanded}
+                  onToggle={() => setRecipeExpanded(prev => !prev)}
+                />
+
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                <p>Select a drink to edit</p>
               </div>
             )}
+          </div>
+
+          {/* RIGHT: Modifier Templates — slim picker (w-64) */}
+          <div className="w-64 bg-white border-l flex flex-col shrink-0 overflow-hidden">
+            <div className="px-3 py-2 border-b shrink-0">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] uppercase text-gray-500 font-semibold tracking-wide">Modifier Templates</span>
+              </div>
+              <Link href="/liquor-modifiers" className="text-[10px] text-purple-600 hover:text-purple-700 font-medium">
+                Manage Templates →
+              </Link>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-2">
+              {modifierGroups.length === 0 ? (
+                <div className="text-center py-8 text-xs text-gray-400">
+                  <p className="mb-2">No modifier templates yet.</p>
+                  <p className="text-gray-400 mb-3">Create templates in the Modifier Templates page, then attach them here.</p>
+                  <Link href="/liquor-modifiers" className="text-purple-600 hover:text-purple-700 font-medium">
+                    Create templates →
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {selectedDrink && (
+                    <p className="text-[10px] text-purple-600 font-medium px-1 pb-1">
+                      Tap to attach to {selectedDrink.name || 'this drink'}:
+                    </p>
+                  )}
+                  {modifierGroups.map((group: any) => {
+                    const isAlreadyAdded = selectedDrink &&
+                      drinkModifierGroups.some((mg: any) => mg.name === group.name && !mg.isSpiritGroup)
+                    return (
+                      <button
+                        key={group.id}
+                        disabled={!!attachingGroupId || !selectedDrink || !!isAlreadyAdded}
+                        onClick={async () => {
+                          if (selectedDrink && !group.isSpiritGroup && !isAlreadyAdded) {
+                            setAttachingGroupId(group.id)
+                            try {
+                              const res = await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ duplicateFromGroupId: group.id, copyFromShared: true, name: group.name }),
+                              })
+                              if (res.ok) {
+                                const data = await res.json()
+                                await reloadDrinkModifiersRef.current(selectedDrink.id)
+                                setSelectedModGroupId(data.data?.id || null)
+                                setModGroupRefreshKey(k => k + 1)
+                                toast.success(`Added "${group.name}"`)
+                              } else {
+                                toast.error('Failed to attach group')
+                              }
+                            } finally {
+                              setAttachingGroupId(null)
+                            }
+                          }
+                        }}
+                        className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
+                          isAlreadyAdded
+                            ? 'bg-green-50 border-green-200 cursor-default'
+                            : attachingGroupId === group.id
+                            ? 'bg-blue-50 border-blue-300'
+                            : selectedDrink
+                            ? 'bg-white border-purple-200 hover:bg-purple-50 hover:border-purple-400'
+                            : 'bg-gray-50 border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm truncate">{group.name}</span>
+                        </div>
+                        <div className="flex items-center justify-between mt-0.5">
+                          <span className="text-xs text-gray-400">{group.modifiers?.length ?? 0} options</span>
+                          {isAlreadyAdded ? (
+                            <span className="text-xs text-green-600">✓ Added</span>
+                          ) : attachingGroupId === group.id ? (
+                            <span className="text-xs text-blue-600">Adding...</span>
+                          ) : selectedDrink ? (
+                            <span className="text-xs text-purple-500">+ Attach</span>
+                          ) : (
+                            <span className="text-xs text-gray-400">{group.modifiers?.length ?? 0} opts</span>
+                          )}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1652,65 +1593,79 @@ function LiquorBuilderContent() {
         />
       )}
 
-      {/* Bottle Modal */}
-      {showBottleModal && (
-        <BottleModal
-          bottle={editingBottle}
-          categories={categories}
-          onSave={async (data) => {
-            const method = editingBottle ? 'PUT' : 'POST'
-            const url = editingBottle ? `/api/liquor/bottles/${editingBottle.id}` : '/api/liquor/bottles'
-            const res = await fetch(url, {
-              method,
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(data),
-            })
-            if (res.ok) {
-              await loadBottles()
-              setShowBottleModal(false)
-              setEditingBottle(null)
-            }
-          }}
-          onDelete={editingBottle ? async () => {
-            if (!confirm('Delete this bottle?')) return
-            const res = await fetch(`/api/liquor/bottles/${editingBottle.id}`, { method: 'DELETE' })
-            if (res.ok) {
-              await loadBottles()
-              setShowBottleModal(false)
-              setEditingBottle(null)
-            } else {
-              const err = await res.json()
-              toast.error(err.error || 'Failed to delete')
-            }
-          } : undefined}
-          onClose={() => { setShowBottleModal(false); setEditingBottle(null); }}
-          onMenuItemChange={async () => {
-            await loadBottles()
-          }}
-        />
-      )}
-
-
       {/* Create Menu Item Modal */}
-      {showCreateMenuItemModal && bottleForMenuItem && (
+      {showCreateMenuItemModal && (
         <CreateMenuItemModal
           bottle={bottleForMenuItem}
+          menuCategories={menuCategories}
           onSave={async (data) => {
-            const res = await fetch(`/api/liquor/bottles/${bottleForMenuItem.id}/create-menu-item`, {
+            // Auto-set pour sizes based on container type
+            const containerType = (bottleForMenuItem as any)?.containerType
+            let defaultPourSizes = null
+            let defaultPourSizeKey = null
+            if (containerType === 'can' || containerType === 'bottle') {
+              // Beer — no pour sizes (single serve)
+              defaultPourSizes = null
+            } else if (containerType === 'draft') {
+              defaultPourSizes = { pint: { label: 'Pint', multiplier: 1.0 }, half_pint: { label: 'Half Pint', multiplier: 0.5 } }
+              defaultPourSizeKey = 'pint'
+            } else if (containerType === 'glass') {
+              defaultPourSizes = { glass: { label: 'Glass', multiplier: 1.0 }, bottle: { label: 'Bottle', multiplier: 1.0 } }
+              defaultPourSizeKey = 'glass'
+            } else if (bottleForMenuItem) {
+              // Spirit — default pour sizes
+              defaultPourSizes = { shot: { label: 'Shot', multiplier: 1.0 }, double: { label: 'Double', multiplier: 2.0 }, tall: { label: 'Tall', multiplier: 1.5 } }
+              defaultPourSizeKey = 'shot'
+            }
+
+            // Create the menu item
+            const res = await fetch('/api/menu/items', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(data),
+              body: JSON.stringify({
+                name: data.name,
+                price: data.price,
+                categoryId: data.categoryId,
+                pourSizes: defaultPourSizes,
+                defaultPourSize: defaultPourSizeKey,
+              }),
             })
-            if (res.ok) {
-              await loadBottles()
-              setShowCreateMenuItemModal(false)
-              setBottleForMenuItem(null)
-            } else {
+            if (!res.ok) {
               const err = await res.json()
               toast.error(err.error || 'Failed to create menu item')
+              return
             }
+            const newItem = await res.json()
+            const itemId = newItem.data?.id || newItem.id
+
+            // If a bottle was selected, create recipe ingredient
+            if (data.bottleProductId && itemId) {
+              await fetch(`/api/menu/items/${itemId}/recipe`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  ingredients: [{
+                    bottleProductId: data.bottleProductId,
+                    pourCount: 1,
+                    isSubstitutable: true,
+                    sortOrder: 0,
+                  }]
+                }),
+              })
+            }
+
+            // Reload data and auto-select new item
+            await Promise.all([loadDrinks(), loadBottles()])
+
+            // Select the new item
+            if (data.categoryId) setSelectedMenuCategoryId(data.categoryId)
+            setPendingItemId(itemId)
+
+            setShowCreateMenuItemModal(false)
+            setBottleForMenuItem(null)
+            toast.success('Item created!')
           }}
-          onClose={() => { setShowCreateMenuItemModal(false); setBottleForMenuItem(null); }}
+          onClose={() => { setShowCreateMenuItemModal(false); setBottleForMenuItem(null) }}
         />
       )}
 
@@ -1760,22 +1715,9 @@ function LiquorBuilderContent() {
 
 export default function LiquorBuilderPage() {
   return (
-    <>
-      <style jsx global>{`
-        @keyframes flash-green {
-          0%, 100% { background-color: transparent; }
-          25% { background-color: #22c55e; }
-          50% { background-color: #86efac; }
-          75% { background-color: #22c55e; }
-        }
-        .animate-flash-green {
-          animation: flash-green 0.5s ease-in-out 2;
-        }
-      `}</style>
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
-        <LiquorBuilderContent />
-      </Suspense>
-    </>
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <LiquorBuilderContent />
+    </Suspense>
   )
 }
 

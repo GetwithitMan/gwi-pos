@@ -59,6 +59,25 @@ export const ORDER_INVENTORY_INCLUDE = {
               },
             },
           },
+          // Direct bottle link on MenuItem (for simple spirit items like "Fireball Shot")
+          linkedBottleProduct: {
+            select: {
+              id: true,
+              pourSizeOz: true,
+              inventoryItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: true,
+                  department: true,
+                  storageUnit: true,
+                  costPerUnit: true,
+                  yieldCostPerUnit: true,
+                  currentStock: true,
+                },
+              },
+            },
+          },
           // Liquor recipes from Liquor Builder (RecipeIngredient -> BottleProduct -> InventoryItem)
           recipeIngredients: {
             where: { deletedAt: null },
@@ -350,6 +369,26 @@ export async function deductInventoryForOrder(
 
           // Add usage - inventory is tracked in oz for liquor items
           addUsage(inventoryItem, totalOz)
+        }
+      }
+
+      // Process direct bottle link on MenuItem (simple spirit items like "Fireball Shot")
+      // Only deduct if there are NO recipeIngredients — prevents double-counting for drinks
+      // that have both a linked bottle AND recipe ingredients.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const linkedBottle = (orderItem.menuItem as any)?.linkedBottleProduct
+      if (linkedBottle?.inventoryItem && (!recipeIngredients || recipeIngredients.length === 0)) {
+        const pourSizeOz =
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          toNumber((orderItem.menuItem as any)?.linkedPourSizeOz) ??
+          toNumber(linkedBottle.pourSizeOz) ??
+          1.5
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
+        const totalOz = pourSizeOz * itemQty * pourMult
+
+        if (!removedIngredientIds.has(linkedBottle.inventoryItem.id)) {
+          addUsage(linkedBottle.inventoryItem as InventoryItemWithStock, totalOz)
         }
       }
 

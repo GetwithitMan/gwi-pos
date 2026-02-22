@@ -67,7 +67,28 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         inventoryItem: {
           select: {
             id: true,
+            name: true,
             currentStock: true,
+            storageUnit: true,
+            costPerUnit: true,
+            parLevel: true,
+            // Prep items that use this inventory item
+            prepItemInputs: {
+              include: {
+                prepItem: {
+                  select: {
+                    id: true,
+                    name: true,
+                    outputUnit: true,
+                    batchYield: true,
+                    costPerUnit: true,
+                    currentPrepStock: true,
+                    isDailyCountItem: true,
+                    isActive: true,
+                  },
+                },
+              },
+            },
           },
         },
         linkedMenuItems: {
@@ -117,6 +138,24 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isActive: bottle.isActive,
         inventoryItemId: bottle.inventoryItemId,
         inventoryStock: bottle.inventoryItem?.currentStock ? Number(bottle.inventoryItem.currentStock) : null,
+        inventoryItem: bottle.inventoryItem ? {
+          id: bottle.inventoryItem.id,
+          name: bottle.inventoryItem.name,
+          currentStock: Number(bottle.inventoryItem.currentStock),
+          storageUnit: bottle.inventoryItem.storageUnit,
+          costPerUnit: Number(bottle.inventoryItem.costPerUnit),
+          parLevel: bottle.inventoryItem.parLevel ? Number(bottle.inventoryItem.parLevel) : null,
+          prepItems: bottle.inventoryItem.prepItemInputs.map((pi: any) => ({
+            id: pi.prepItem.id,
+            name: pi.prepItem.name,
+            outputUnit: pi.prepItem.outputUnit,
+            batchYield: Number(pi.prepItem.batchYield),
+            costPerUnit: pi.prepItem.costPerUnit ? Number(pi.prepItem.costPerUnit) : null,
+            currentPrepStock: Number(pi.prepItem.currentPrepStock),
+            isDailyCountItem: pi.prepItem.isDailyCountItem,
+            isActive: pi.prepItem.isActive,
+          })),
+        } : null,
         linkedMenuItems: bottle.linkedMenuItems.map((item) => ({
           id: item.id,
           name: item.name,
@@ -215,10 +254,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Calculate bottle metrics
     const metrics = calculateBottleMetrics(bottleSizeMl, unitCost, pourSizeOz)
 
+    // Check if a related bottle already has an InventoryItem (same brand + category = same product)
+    // This enables multiple bottle sizes (750mL + 1.75L) to share one unified inventory
+    let existingInventoryItemId: string | null = null
+    if (brand?.trim()) {
+      const relatedBottle = await db.bottleProduct.findFirst({
+        where: {
+          locationId: spiritCategory.locationId,
+          brand: brand.trim(),
+          spiritCategoryId,
+          inventoryItemId: { not: null },
+          deletedAt: null,
+        },
+        select: { inventoryItemId: true },
+      })
+      existingInventoryItemId = relatedBottle?.inventoryItemId || null
+    }
+
     // Use transaction to create both InventoryItem and BottleProduct atomically
     const result = await db.$transaction(async (tx) => {
-      // Create InventoryItem for unified stock tracking
-      const inventoryItem = await tx.inventoryItem.create({
+      // Reuse existing InventoryItem for variant bottles, or create a new one
+      const inventoryItemId = existingInventoryItemId || (await tx.inventoryItem.create({
         data: {
           locationId: spiritCategory.locationId,
           name: name.trim(),
@@ -253,7 +309,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           isActive: true,
           trackInventory: true,
         },
-      })
+      })).id
 
       // Create BottleProduct linked to the InventoryItem
       const bottle = await tx.bottleProduct.create({
@@ -275,7 +331,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           containerType: containerType || 'bottle',
           alcoholSubtype: alcoholSubtype || null,
           vintage: vintage || null,
-          inventoryItemId: inventoryItem.id,
+          inventoryItemId,
         },
         include: {
           spiritCategory: {
@@ -288,7 +344,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
 
-      return { bottle, inventoryItemId: inventoryItem.id }
+      return { bottle, inventoryItemId }
     })
 
     // Real-time cross-terminal update

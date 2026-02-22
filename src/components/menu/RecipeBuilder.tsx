@@ -15,6 +15,9 @@ interface BottleProduct {
     id: string
     name: string
   }
+  containerType?: string | null  // 'bottle' | 'can' | 'draft' | 'glass'
+  bottleSizeOz?: number | null
+  pourSizeOz?: number | null
 }
 
 interface RecipeIngredient {
@@ -27,6 +30,8 @@ interface RecipeIngredient {
   pourCost?: number
   isSubstitutable: boolean
   sortOrder: number
+  containerType?: string | null
+  pourSizeOz?: number | null
 }
 
 interface RecipeBuilderProps {
@@ -41,6 +46,9 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [showBottlePicker, setShowBottlePicker] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
 
   // Load bottles and existing recipe
   useEffect(() => {
@@ -77,6 +85,8 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
             pourCost: ing.bottleProduct?.pourCost || 0,
             isSubstitutable: ing.isSubstitutable,
             sortOrder: ing.sortOrder,
+            containerType: ing.bottleProduct?.containerType || null,
+            pourSizeOz: ing.bottleProduct?.pourSizeOz || null,
           })))
         }
       }
@@ -111,6 +121,8 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
         updated[index].spiritCategory = bottle.spiritCategory.name
         updated[index].tier = bottle.tier
         updated[index].pourCost = bottle.pourCost || 0
+        updated[index].containerType = bottle.containerType || null
+        updated[index].pourSizeOz = bottle.pourSizeOz || null
       }
     }
 
@@ -170,6 +182,68 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
     return acc
   }, {} as Record<string, BottleProduct[]>)
 
+  // IDs of bottles already in the recipe
+  const addedBottleIds = new Set(ingredients.map((ing) => ing.bottleProductId).filter(Boolean))
+
+  // Filter bottles by search query
+  const filteredBottlesByCategory = Object.entries(bottlesByCategory).reduce((acc, [cat, catBottles]) => {
+    if (!searchQuery.trim()) {
+      acc[cat] = catBottles
+    } else {
+      const q = searchQuery.toLowerCase()
+      const filtered = catBottles.filter(
+        (b) => b.name.toLowerCase().includes(q) || (b.brand && b.brand.toLowerCase().includes(q))
+      )
+      if (filtered.length > 0) acc[cat] = filtered
+    }
+    return acc
+  }, {} as Record<string, BottleProduct[]>)
+
+  const toggleCategory = (cat: string) => {
+    setExpandedCategories((prev) => ({ ...prev, [cat]: !prev[cat] }))
+  }
+
+  const addBottleFromPicker = (bottle: BottleProduct) => {
+    if (addedBottleIds.has(bottle.id)) return
+    setIngredients([
+      ...ingredients,
+      {
+        bottleProductId: bottle.id,
+        bottleProductName: bottle.name,
+        spiritCategory: bottle.spiritCategory.name,
+        tier: bottle.tier,
+        pourCount: 1,
+        pourCost: bottle.pourCost || 0,
+        isSubstitutable: true,
+        sortOrder: ingredients.length,
+        containerType: bottle.containerType || null,
+        pourSizeOz: bottle.pourSizeOz || null,
+      },
+    ])
+    setShowBottlePicker(false)
+    setSearchQuery('')
+  }
+
+  const getPortionLabel = (ing: RecipeIngredient) => {
+    const ct = ing.containerType
+    if (ct === 'can') return ing.pourCount === 1 ? 'can' : 'cans'
+    if (ct === 'draft') return ing.pourCount === 1 ? 'pint' : 'pints'
+    if (ct === 'glass') return ing.pourCount === 1 ? 'glass' : 'glasses'
+    // Default: spirits (bottle or null)
+    const ozLabel = ing.pourSizeOz ? ` (${ing.pourSizeOz}oz)` : ''
+    return ing.pourCount === 1 ? `pour${ozLabel}` : `pours${ozLabel}`
+  }
+
+  const tierColor = (tier: string) => {
+    switch (tier?.toLowerCase()) {
+      case 'well': return 'bg-gray-100 text-gray-700'
+      case 'call': return 'bg-blue-100 text-blue-700'
+      case 'premium': return 'bg-amber-100 text-amber-700'
+      case 'top shelf': return 'bg-purple-100 text-purple-700'
+      default: return 'bg-gray-100 text-gray-600'
+    }
+  }
+
   return (
     <div className="border-b">
       <div
@@ -194,7 +268,11 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
           variant="ghost"
           size="sm"
           className="text-amber-600 text-xs"
-          onClick={(e) => { e.stopPropagation(); addIngredient(); onToggle() }}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!isExpanded) onToggle()
+            setShowBottlePicker((prev) => !prev)
+          }}
         >
           + Add Ingredient
         </Button>
@@ -209,7 +287,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
               {ingredients.length === 0 ? (
                 <div className="text-center py-6 bg-amber-50/50 rounded border border-amber-200">
                   <p className="text-gray-500 text-sm mb-2">No recipe ingredients</p>
-                  <Button size="sm" variant="outline" onClick={addIngredient}>
+                  <Button size="sm" variant="outline" onClick={() => setShowBottlePicker(true)}>
                     Add First Ingredient
                   </Button>
                 </div>
@@ -243,7 +321,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
 
                           {/* Pour Count */}
                           <div className="col-span-2">
-                            <label className="block text-xs text-gray-500 mb-1">Pours</label>
+                            <label className="block text-xs text-gray-500 mb-1 capitalize">{getPortionLabel(ing)}</label>
                             <input
                               type="number"
                               step="0.5"
@@ -287,6 +365,98 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
                     )
                   })}
                 </div>
+              )}
+
+              {/* Bottle Picker Panel */}
+              {showBottlePicker && (
+                <div className="border border-amber-300 rounded-lg shadow-lg bg-white overflow-hidden">
+                  <div className="bg-amber-50 px-3 py-2 border-b border-amber-200 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-amber-900">Add Ingredient</span>
+                    <button
+                      onClick={() => { setShowBottlePicker(false); setSearchQuery('') }}
+                      className="text-amber-600 hover:text-amber-800 text-lg leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="p-3">
+                    <input
+                      type="text"
+                      placeholder="Search bottles..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full border rounded px-3 py-1.5 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                      autoFocus
+                    />
+                    <div className="max-h-64 overflow-y-auto space-y-1">
+                      {Object.keys(filteredBottlesByCategory).length === 0 ? (
+                        <p className="text-gray-400 text-sm text-center py-4">No bottles found</p>
+                      ) : (
+                        Object.entries(filteredBottlesByCategory)
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([category, catBottles]) => (
+                            <div key={category}>
+                              <button
+                                onClick={() => toggleCategory(category)}
+                                className="w-full flex items-center gap-2 px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded"
+                              >
+                                <span className={`text-xs transition-transform ${expandedCategories[category] ? 'rotate-90' : ''}`}>
+                                  ▶
+                                </span>
+                                <span>{category}</span>
+                                <span className="text-xs text-gray-400">({catBottles.length})</span>
+                              </button>
+                              {expandedCategories[category] && (
+                                <div className="ml-4 space-y-0.5">
+                                  {catBottles.map((bottle) => {
+                                    const alreadyAdded = addedBottleIds.has(bottle.id)
+                                    return (
+                                      <button
+                                        key={bottle.id}
+                                        onClick={() => addBottleFromPicker(bottle)}
+                                        disabled={alreadyAdded}
+                                        className={`w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded text-left ${
+                                          alreadyAdded
+                                            ? 'opacity-40 cursor-not-allowed bg-gray-50'
+                                            : 'hover:bg-amber-50 cursor-pointer'
+                                        }`}
+                                      >
+                                        <span className="flex-1 truncate">{bottle.name}</span>
+                                        <span className={`text-xs px-1.5 py-0.5 rounded ${tierColor(bottle.tier)}`}>
+                                          {bottle.tier}
+                                        </span>
+                                        <span className="text-xs text-gray-500 whitespace-nowrap">
+                                          {alreadyAdded ? 'Already added' : `${formatCurrency(bottle.pourCost || 0)}/pour`}
+                                        </span>
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          ))
+                      )}
+                    </div>
+                    <div className="border-t mt-2 pt-2">
+                      <button
+                        onClick={() => { addIngredient(); setShowBottlePicker(false); setSearchQuery('') }}
+                        className="text-xs text-gray-500 hover:text-gray-700 underline"
+                      >
+                        Manual entry
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Add more button when ingredients exist and picker is closed */}
+              {ingredients.length > 0 && !showBottlePicker && (
+                <button
+                  onClick={() => setShowBottlePicker(true)}
+                  className="w-full py-2 border border-dashed border-amber-300 rounded-lg text-sm text-amber-600 hover:bg-amber-50 transition-colors"
+                >
+                  + Add Ingredient
+                </button>
               )}
 
               {/* Cost Summary */}

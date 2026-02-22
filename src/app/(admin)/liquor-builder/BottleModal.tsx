@@ -84,6 +84,8 @@ export interface BottleModalProps {
   onDelete?: () => Promise<void>
   onClose: () => void
   onMenuItemChange?: () => void
+  /** Pre-fill defaults when creating a variant bottle in the same product group */
+  defaultValues?: { brand?: string; spiritCategoryId?: string; tier?: string }
 }
 
 export function BottleModal({
@@ -93,12 +95,13 @@ export function BottleModal({
   onDelete,
   onClose,
   onMenuItemChange,
+  defaultValues,
 }: BottleModalProps) {
-  // Core fields
+  // Core fields — use defaultValues for pre-filling variant bottles
   const [name, setName]                   = useState(bottle?.name || '')
-  const [brand, setBrand]                 = useState(bottle?.brand || '')
-  const [spiritCategoryId, setSpiritCategoryId] = useState(bottle?.spiritCategoryId || categories[0]?.id || '')
-  const [tier, setTier]                   = useState(bottle?.tier || 'well')
+  const [brand, setBrand]                 = useState(bottle?.brand || defaultValues?.brand || '')
+  const [spiritCategoryId, setSpiritCategoryId] = useState(bottle?.spiritCategoryId || defaultValues?.spiritCategoryId || categories[0]?.id || '')
+  const [tier, setTier]                   = useState(bottle?.tier || defaultValues?.tier || 'well')
   const [bottleSizeMl, setBottleSizeMl]   = useState(bottle?.bottleSizeMl?.toString() || '750')
   const [unitCost, setUnitCost]           = useState(bottle?.unitCost?.toString() || '')
   const [pourSizeOz, setPourSizeOz]       = useState(bottle?.pourSizeOz?.toString() || '')

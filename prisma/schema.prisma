@@ -948,6 +948,7 @@ model MenuItem {
   // This enables bottles to be the source of truth for liquor menu items
   linkedBottleProductId String?
   linkedBottleProduct   BottleProduct? @relation("LinkedBottleMenuItems", fields: [linkedBottleProductId], references: [id])
+  linkedPourSizeOz      Decimal?  // Custom pour size override for linked bottle (oz)
 
   // Modifiers that link to this item (for spirit upgrades, etc.)
   linkedModifiers Modifier[] @relation("LinkedModifierItem")
@@ -3565,8 +3566,8 @@ model InventoryItem {
   // Ingredients that link to this inventory item for deduction
   ingredientLinks  Ingredient[]   @relation("IngredientInventoryLink")
 
-  // Reverse relation from BottleProduct
-  bottleProduct BottleProduct? @relation("BottleInventoryLink")
+  // Reverse relation from BottleProduct (one-to-many: multiple bottles can share one inventory item)
+  bottleProducts BottleProduct[] @relation("BottleInventoryLink")
 
   // Daily prep count deductions
   dailyPrepCountTransactions DailyPrepCountTransaction[]
@@ -4184,13 +4185,14 @@ model BottleProduct {
   linkedMenuItems   MenuItem[] @relation("LinkedBottleMenuItems") // Menu items created from this bottle
 
   // Link to unified inventory for stock tracking
-  inventoryItemId String?        @unique
+  inventoryItemId String?
   inventoryItem   InventoryItem? @relation("BottleInventoryLink", fields: [inventoryItemId], references: [id])
 
   @@unique([locationId, name])
   @@index([locationId])
   @@index([spiritCategoryId])
   @@index([tier])
+  @@index([inventoryItemId])
 }
 
 // Recipe ingredients - what goes into a cocktail

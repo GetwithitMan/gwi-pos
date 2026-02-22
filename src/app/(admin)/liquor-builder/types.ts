@@ -44,4 +44,22 @@ export interface BottleProduct {
     sortOrder: number
     category: { id: string; name: string }
   }[]
+  inventoryItem?: {
+    id: string
+    name: string
+    currentStock: number
+    storageUnit: string
+    costPerUnit: number
+    parLevel: number | null
+    prepItems: {
+      id: string
+      name: string
+      outputUnit: string
+      batchYield: number
+      costPerUnit: number | null
+      currentPrepStock: number
+      isDailyCountItem: boolean
+      isActive: boolean
+    }[]
+  } | null
 }

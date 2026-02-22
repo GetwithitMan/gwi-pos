@@ -93,6 +93,9 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
               }
             }
           },
+          linkedBottleProduct: {
+            select: { id: true, name: true, tier: true, pourCost: true, pourSizeOz: true, unitCost: true, bottleSizeMl: true, spiritCategory: { select: { name: true } } }
+          },
           // Include ingredients to check 86 status
           ingredients: {
             where: { deletedAt: null },
@@ -228,6 +231,15 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         isLiquorItem: item.isLiquorItem,
         hasRecipe: item.hasRecipe,
         recipeIngredientCount: item.recipeIngredientCount,
+        linkedBottleProductId: item.linkedBottleProductId,
+        linkedBottleProductName: item.linkedBottleProduct?.name || null,
+        linkedBottleTier: item.linkedBottleProduct?.tier || null,
+        linkedBottlePourCost: item.linkedBottleProduct?.pourCost ? Number(item.linkedBottleProduct.pourCost) : null,
+        linkedBottlePourSizeOz: item.linkedBottleProduct?.pourSizeOz ? Number(item.linkedBottleProduct.pourSizeOz) : null,
+        linkedBottleUnitCost: item.linkedBottleProduct?.unitCost ? Number(item.linkedBottleProduct.unitCost) : null,
+        linkedBottleSizeMl: item.linkedBottleProduct?.bottleSizeMl || null,
+        linkedBottleSpiritCategory: item.linkedBottleProduct?.spiritCategory?.name || null,
+        linkedPourSizeOz: item.linkedPourSizeOz ? Number(item.linkedPourSizeOz) : null,
         totalPourCost: item.totalPourCost,
         profitMargin: item.profitMargin,
         // Pour size options
