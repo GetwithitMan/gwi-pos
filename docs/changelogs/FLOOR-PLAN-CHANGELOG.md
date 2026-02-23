@@ -1,5 +1,19 @@
 # Floor Plan Domain - Change Log
 
+## 2026-02-23 — Order Disappearance Fixes (Skill 414)
+
+### Bug 2 (CRITICAL): Fetch Callback Overwrites Wrong Table
+- Rapid table clicks triggered overlapping fetch calls; the first table's fetch response arrived after switching to a second table, overwriting the second table's order
+- Fix: `fetchLoadIdRef` counter in `FloorPlanHome.tsx` — each fetch callback checks if its loadId still matches the current ref; stale responses are discarded
+- File: `src/components/floor-plan/FloorPlanHome.tsx`
+
+### Bug 3 (HIGH): Payment Clearing Ghost
+- After payment, the floor plan still showed the table as occupied because the snapshot cache (5s TTL) was not invalidated immediately
+- Fix: Immediate `invalidateSnapshotCache()` call in `pay/route.ts` right after table status update, before the deferred cleanup chain
+- File: `src/app/api/orders/[id]/pay/route.ts`
+
+---
+
 ## 2026-02-23 — TABLE_OCCUPIED Client Recovery (Commit 2931b18)
 
 ### Bug Fix

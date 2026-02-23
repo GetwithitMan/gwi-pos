@@ -1,5 +1,24 @@
 # Orders Domain - Change Log
 
+## 2026-02-23 — Order Disappearance Fixes (Skill 414)
+
+### Bug 1 (CRITICAL): Draft Promise Race
+- Rapidly clicking between tables triggered overlapping `POST /api/orders` draft requests; stale responses overwrote the active order
+- Fix: `draftGenRef` generation counter in `useActiveOrder.ts` — stale draft POST responses are discarded if generation has changed
+- File: `src/hooks/useActiveOrder.ts`
+
+### Bug 4 (MEDIUM): Version Conflict Loads Wrong Order
+- A 409 version conflict triggered a refetch, but if the user had switched tables, the refetch loaded the wrong order
+- Fix: Active-order guard in `order-version.ts` — only refetch if the 409's `orderId` matches the currently active order
+- File: `src/lib/order-version.ts`
+
+### Bug 5 (MEDIUM): 409 Adoption Missing Version Sync
+- When `POST /api/orders` returned 409 `TABLE_OCCUPIED` and the client adopted the existing order, no version was synced, causing immediate 409 conflicts on next mutation
+- Fix: Server includes `existingOrderVersion` in 409 response; client syncs version on adoption
+- Files: `src/hooks/useActiveOrder.ts`, `src/app/api/orders/route.ts`
+
+---
+
 ## 2026-02-23 — Payment UX & Safety Wave 1 + TABLE_OCCUPIED Fix
 
 ### Send to Kitchen UX (Skill 413)

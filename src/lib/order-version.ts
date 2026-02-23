@@ -54,16 +54,24 @@ export async function handleVersionConflict(
     return false // Can't parse — not a version conflict
   }
 
-  // Refetch full order to get fresh state + correct version
-  try {
-    const freshRes = await fetch(`/api/orders/${orderId}`)
-    if (freshRes.ok) {
-      const raw = await freshRes.json()
-      const order = raw.data ?? raw
-      useOrderStore.getState().loadOrder(order)
+  // Only refetch if this order is still the active one in the store.
+  // If the user navigated away, loading a stale order would hijack their view.
+  const activeOrderId = useOrderStore.getState().currentOrder?.id
+  if (activeOrderId && activeOrderId === orderId) {
+    try {
+      const freshRes = await fetch(`/api/orders/${orderId}`)
+      if (freshRes.ok) {
+        const raw = await freshRes.json()
+        const order = raw.data ?? raw
+        // Re-check active order — it may have changed during the fetch
+        const stillActive = useOrderStore.getState().currentOrder?.id === orderId
+        if (stillActive) {
+          useOrderStore.getState().loadOrder(order)
+        }
+      }
+    } catch {
+      // Silent — at least the toast will alert the user
     }
-  } catch {
-    // Silent — at least the toast will alert the user
   }
 
   toast.error('Order was updated on another terminal. Please review and try again.')

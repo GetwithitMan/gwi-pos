@@ -1026,6 +1026,7 @@ export function FloorPlanHome({
   const isProcessingSendRef = useRef(false)
   const isSeatAddInFlightRef = useRef(false)
   const isTableSwitchInFlightRef = useRef(false)
+  const fetchLoadIdRef = useRef(0)
 
   // FIX 4: Refs for heartbeat callbacks - prevents interval restart on re-render
   const callbacksRef = useRef({
@@ -1237,9 +1238,12 @@ export function FloorPlanHome({
 
       // Background fetch replaces skeleton with real items
       // Pass knownStatus to enable parallel split-ticket fetch
+      const capturedLoadId = ++fetchLoadIdRef.current
       fetchAndMergeOrder(currentOrder.id, { knownStatus: orderStatus })
         .then(merged => {
           if (!merged) return
+          // Guard: discard stale fetch if user already tapped a different table
+          if (fetchLoadIdRef.current !== capturedLoadId) return
           const data = merged.raw
           // Use loadOrder to atomically set tableId + items in Zustand store
           // store.loadOrder handles ALL item field mapping — one path, no duplication

@@ -16,6 +16,7 @@ import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent } from '@/lib/socket-dispatch'
+import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { emitCloudEvent } from '@/lib/cloud-events'
@@ -1012,6 +1013,9 @@ export const POST = withVenue(withTiming(async function POST(
           where: { id: order.tableId },
           data: { status: 'available' },
         })
+        // Immediately invalidate snapshot cache so any floor plan request
+        // between now and dispatchFloorPlanUpdate gets fresh DB data
+        invalidateSnapshotCache(order.locationId)
       }
 
       // Clean up temporary seats then dispatch floor plan update

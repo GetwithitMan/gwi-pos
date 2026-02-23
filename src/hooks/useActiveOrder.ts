@@ -144,6 +144,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
   // Ref to track background draft creation promise (so ensureOrderInDB can await it)
   const draftPromiseRef = useRef<Promise<string | null> | null>(null)
 
+  // Generation counter: bumped on every clearOrder/startOrder to invalidate stale draft callbacks
+  const draftGenRef = useRef(0)
+
   // Convert store items to OrderPanelItemData format
   const items: OrderPanelItemData[] = useMemo(() => {
     if (!currentOrder?.items) return []
@@ -215,7 +218,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       }
     }
 
-    // Abandon any pending draft creation
+    // Abandon any pending draft creation — bump generation so stale callbacks are ignored
+    draftGenRef.current++
     draftPromiseRef.current = null
 
     store.clearOrder()
@@ -242,6 +246,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
     // Background: create draft order shell in DB (no items, lightweight)
     if (resolvedEmployeeId && resolvedLocationId) {
+      // Bump generation so any prior in-flight draft callback is discarded
+      const gen = ++draftGenRef.current
+      const draftTableId = opts.tableId || null
+
       const draftPromise = fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -250,18 +258,27 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           locationId: resolvedLocationId,
           orderType,
           orderTypeId: opts.orderTypeId,
-          tableId: opts.tableId || null,
+          tableId: draftTableId,
           tabName: opts.tabName || null,
           guestCount: opts.guestCount || 1,
           items: [],  // Empty = draft shell
           customFields: opts.customFields,
         }),
       }).then(async (res) => {
+        // Stale check: if generation changed, another startOrder/clearOrder ran — discard
+        if (draftGenRef.current !== gen) return null
+
         if (res.ok) {
           const raw = await res.json()
           const data = raw.data ?? raw
+          // Final stale check before applying
+          if (draftGenRef.current !== gen) return null
           // Store the real DB ID so ensureOrderInDB can skip creation
-          useOrderStore.getState().updateOrderId(data.id, data.orderNumber)
+          const store = useOrderStore.getState()
+          store.updateOrderId(data.id, data.orderNumber)
+          if (data.version !== undefined) {
+            store.syncServerTotals({ subtotal: 0, discountTotal: 0, taxTotal: 0, total: 0, version: data.version })
+          }
           return data.id as string
         }
         // 409 TABLE_OCCUPIED: table already has an order — adopt it instead of failing
@@ -269,7 +286,13 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           const err = await res.json().catch(() => ({}))
           const existingId = err.details?.existingOrderId
           if (existingId) {
-            useOrderStore.getState().updateOrderId(existingId, err.details?.existingOrderNumber)
+            if (draftGenRef.current !== gen) return null
+            const store = useOrderStore.getState()
+            store.updateOrderId(existingId, err.details?.existingOrderNumber)
+            // Bug 5 fix: sync version from 409 response to prevent subsequent version conflicts
+            if (err.details?.existingOrderVersion !== undefined) {
+              store.syncServerTotals({ subtotal: 0, discountTotal: 0, taxTotal: 0, total: 0, version: err.details.existingOrderVersion })
+            }
             return existingId as string
           }
         }
@@ -439,6 +462,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           if (res.status === 409 && error.details?.existingOrderId) {
             const existingId = error.details.existingOrderId
             store.updateOrderId(existingId, error.details.existingOrderNumber)
+            // Bug 5 fix: sync version from 409 response to prevent subsequent version conflicts
+            if (error.details?.existingOrderVersion !== undefined) {
+              store.syncServerTotals({ subtotal: 0, discountTotal: 0, taxTotal: 0, total: 0, version: error.details.existingOrderVersion })
+            }
             // Append local items to the existing order
             const unsavedItems = order.items.filter(item => isTempId(item.id))
             if (unsavedItems.length > 0) {

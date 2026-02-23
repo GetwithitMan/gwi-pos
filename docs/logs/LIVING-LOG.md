@@ -5,6 +5,62 @@
 
 ---
 
+## 2026-02-23 — Order Disappearance Fixes (Skill 414)
+
+**Version:** `1.0.0-beta`
+**Session theme:** Race-condition fixes — orders disappearing on rapid table clicks, ghost table state after payment
+
+**Summary:** Fixed 5 race conditions that caused orders to vanish when rapidly switching tables, ghost table state after payment, and cascading version conflicts on shared tables. Two critical bugs: draft promise race (stale POST responses overwriting active order) fixed with generation counter, and fetch callback overwriting wrong table fixed with loadId ref counter. High-severity payment ghost bug fixed by immediate snapshot cache invalidation. Two medium-severity version conflict bugs: active-order guard prevents 409 refetch from loading wrong order, and server now returns version in TABLE_OCCUPIED 409 response so adoption syncs correctly.
+
+### Changes Summary
+
+**Bug 1 (CRITICAL): Draft Promise Race**
+- `draftGenRef` generation counter — stale draft POST responses discarded if generation changed
+- File: useActiveOrder.ts
+
+**Bug 2 (CRITICAL): Fetch Callback Overwrites Wrong Table**
+- `fetchLoadIdRef` counter — stale fetch responses discarded if loadId changed
+- File: FloorPlanHome.tsx
+
+**Bug 3 (HIGH): Payment Clearing Ghost**
+- Immediate `invalidateSnapshotCache()` after table status update, before deferred cleanup
+- File: pay/route.ts
+
+**Bug 4 (MEDIUM): Version Conflict Loads Wrong Order**
+- Active-order guard — only refetch if 409's orderId matches current active order
+- File: order-version.ts
+
+**Bug 5 (MEDIUM): 409 Adoption Missing Version Sync**
+- Server includes `existingOrderVersion` in 409 response; client syncs version on adoption
+- Files: useActiveOrder.ts, orders/route.ts
+
+### Bug Fixes
+
+| Fix | Severity | Impact |
+|-----|----------|--------|
+| Draft promise race | CRITICAL | Rapid table clicks caused stale draft POST responses to overwrite the active order. Generation counter discards stale responses. |
+| Fetch callback overwrites wrong table | CRITICAL | Overlapping fetch callbacks overwrote the current table's order with a previous table's data. LoadId ref counter discards stale fetches. |
+| Payment clearing ghost | HIGH | Floor plan showed ghost occupied state after payment due to stale snapshot cache. Immediate invalidation after table status update. |
+| Version conflict loads wrong order | MEDIUM | 409 handler refetched wrong order if user had switched tables. Active-order guard checks orderId match. |
+| 409 adoption missing version sync | MEDIUM | Adopted orders had no version, causing immediate 409 on next mutation. Server now returns version in 409 response. |
+
+### Features Delivered
+
+| Feature | Skill | Summary |
+|---------|-------|---------|
+| Draft race prevention | 414 | Generation counter prevents stale draft responses |
+| Fetch callback guard | 414 | LoadId ref prevents stale table fetch overwrites |
+| Immediate cache invalidation on pay | 414 | Ghost table state eliminated |
+| Active-order 409 guard | 414 | Version conflicts on wrong table ignored |
+| 409 adoption version sync | 414 | Adopted orders get correct version from server |
+
+### Known Issues / Next Steps
+
+- Wave 2 candidates: Split payment UX, void/refund flow polish, CFD receipt display
+- Payment timing data needs dashboard visualization (future)
+
+---
+
 ## 2026-02-23 — Payment UX & Safety Wave 1
 
 **Version:** `1.0.0-beta`

@@ -39,13 +39,13 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
           deletedAt: null,
         },
-        select: { id: true, orderNumber: true },
+        select: { id: true, orderNumber: true, version: true },
       })
       if (existingOrder) {
         return apiError.conflict(
           'Table already has an active order',
           ERROR_CODES.TABLE_OCCUPIED,
-          { existingOrderId: existingOrder.id, existingOrderNumber: existingOrder.orderNumber }
+          { existingOrderId: existingOrder.id, existingOrderNumber: existingOrder.orderNumber, existingOrderVersion: existingOrder.version }
         )
       }
     }
