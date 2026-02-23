@@ -147,7 +147,9 @@ export async function middleware(request: NextRequest) {
     if (
       pathname === '/access' ||
       pathname.startsWith('/api/access/') ||
-      pathname.startsWith('/api/admin/')
+      pathname.startsWith('/api/admin/') ||
+      pathname.startsWith('/api/auth/forgot-password') ||
+      pathname.startsWith('/api/auth/reset-password')
     ) {
       return NextResponse.next()
     }
