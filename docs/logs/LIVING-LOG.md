@@ -5,6 +5,70 @@
 
 ---
 
+## 2026-02-23 — Mission Control Fleet Fixes (Cross-Repo Session)
+
+**Session theme:** Fleet ops — fix staff visibility, heartbeat validation, server hostname, decommissioned server UX
+
+**Summary:** Six Mission Control skills completed in one session. Staff users (SUB_ADMIN) couldn't see fleet data because dashboard pages checked for exact `SUPER_ADMIN` match instead of using the `isStaffRole()` helper. Heartbeat broke after NUC re-install because the extended heartbeat.sh sends batch fields as `null` but Zod `.optional()` rejects `null`. Added hostname auto-population from heartbeat + inline rename. Collapsed decommissioned servers into toggle section. Filtered decommissioned servers from locations and fleet queries.
+
+### Commits — gwi-mission-control
+
+| Hash | Description |
+|------|-------------|
+| `14a648d` | Complete server decommission: revoke credentials, expire commands, send fleet command |
+| `d45951f` | Normalize all admin emails to lowercase on create, update, and lookup |
+| `06f16eb` | Fix decommission button visibility for staff users |
+| `4bb309c` | Use isStaffRole() for all dashboard role checks |
+| `114910a` | Fix heartbeat Zod schema: accept null for batch fields |
+| `513e539` | Server hostname from heartbeat, click-to-rename, collapsed decommissioned |
+| `9b6718e` | Exclude decommissioned servers from locations list and fleet dashboard |
+
+### Deployments
+
+- **MC** all commits pushed to `main` → Vercel auto-deploy to `app.thepasspos.com`
+
+### Features Delivered
+
+**Server Decommission (MC-013)**
+- `decommissionServer()` in kill-switch.ts: revoke API key, expire pending commands, send REVOKE_CREDENTIAL fleet command, audit log
+- API key set to `revoked_{serverNodeId}_{timestamp}` (field is `String @unique`, can't be null)
+
+**Email Case Normalization (MC-014)**
+- `.toLowerCase()` on all 7 email entry points (auth, bootstrap, agents, team routes)
+- Cleaned up duplicate AdminUser records from case mismatches
+
+**Staff Role Consistency (MC-015)**
+- Replaced `admin.role === ROLES.SUPER_ADMIN` with `isStaffRole(admin.role)` in 5 dashboard pages/components
+- Fixed fleet dashboard showing zero organizations for SUB_ADMIN staff
+
+**Heartbeat Nullable Batch Fields (MC-016)**
+- Added `.nullable()` to all batch fields in heartbeat Zod schema
+- Added missing `batchNo` and `currentBatchTotal` fields
+- Fixed heartbeats failing with "expected string, received null"
+
+**Server Hostname & Rename (MC-017)**
+- Heartbeat sends `$(hostname)`, stored on ServerNode — auto-populates server names
+- `PATCH /api/admin/servers/[id]/rename` for inline click-to-rename in Infrastructure tab
+- Collapsed decommissioned servers section in ServerActions component
+- Updated installer heartbeat template for future installs
+
+**Exclude Decommissioned from Lists (MC-018)**
+- Locations page and fleet dashboard filter out decommissioned servers
+- Fixes locations showing "Offline / Never" when active server is heartbeating
+
+### NUC Changes (Live Server)
+
+- Updated `/opt/gwi-pos/heartbeat.sh` on Fruita Grill NUC (`172.16.1.254`) to send `$(hostname)`
+- Installer template (`scripts/installer.run`) also updated for future installs
+
+### Known Issues / Next Steps
+
+- POS `package.json` still says `"version": "0.1.0"` — heartbeat reports this, causing version mismatch banner vs release v1.0.29. Needs version bump in POS repo.
+- 8 servers were DECOMMISSIONED before audit logging existed (zero audit trail)
+- SupportUser table has no SUPER_ADMIN type — only SUB_ADMIN and AGENT. All staff get `sub_admin` from auth (by design)
+
+---
+
 ## 2026-02-23 — Clerk-Based Owner Access + GWI Access Gate Replacement
 
 **Session theme:** Owner auth — enable location owners to access venues via Clerk; replace GWI access gate phone+code with Clerk email+password
