@@ -1,0 +1,902 @@
+﻿Online Ordering Ideas and control center,
+
+Overview 
+payments I believe need to be made through data cap pay API that we need to develop and build that we do have a folder under the data cap section for the pay API, which is for the online payments
+
+we should make a sub menu, which will take the current in-store menu and duplicate it. Refresh it and update it for the online menu. We can link the item to automatically update when the in-store menu updates or we can also add individual items for both in-store and online that do not merge back and forth.
+
+timed menus would be nice to be able to turn items on and off. Payment requirements must be paid before sending and confirmation screen so customers know it has been paid and sent maybe even add a text message that it has been delivered to the restaurant and this is a confirmation text.
+
+online orders should have a pop-up screen on the logout screen of all stations that orders are coming in or pending or pause online ordering just a quick ability to adjust things as long as they have to roll to do it under permissions employee permission permissions
+
+online reporting can go into the daily sales, but it needs to be a separate line item online ordering sales totals should only be credit card, but make sure that the reporting is easy to identify which ones were online and which ones were off-line
+
+
+
+
+
+
+Venue Type
+checkbox decoration imageVenue Logo
+checkbox decoration imageVenue Photos
+checkbox decoration imageVenue Address
+checkbox decoration imageOpen Hours
+checkbox decoration imagePayments
+Deactivate SmartTab
+InfoOperating HoursPayments
+
+
+InfoOperating HoursPayments
+VENUE TYPE LIST
+Cafe, Restaurant
+All
+Bakery
+Bar
+Beer Garden
+Brewery
+Cafe
+Cantina
+Cocktail Bar
+Dance Club
+Dive Bar
+Live Music
+Neighborhood Bar
+Night Club
+Performance Hall
+Private Club
+Pub
+Restaurant
+Saloon
+Speakeasy
+Sports Bar
+Wine Bar
+
+Operating Hours
+THESE TIME FRAMES REPRESENT HOURS WHEN CUSTOMER ORDERING IS AVAILABLE FOR DIFFERENT DAYS OF THE WEEK.
+CLICK CLOSED IF CUSTOMER ORDERING UNAVAILABLE.
+AVAILABILITY
+
+
+OPEN HOURS
+
+
+DINE IN HOURS
+
+
+PICKUP HOURS
+* Open Hours is informational and has no impact on your menu
+
+THE TEXT BELOW WILL APPEAR IN THE SMARTTAB APP WITHIN THE OPEN HOURS SCREEN, PROVIDING YOUR GUESTS ADDITIONAL INFORMATION ABOUT YOUR HOURS OF OPERATION.
+
+
+
+Suggested tip calculation
+GENERAL SETTINGS
+ Suggest Tip on split amount
+ Suggest Tip on check total
+ Post-tax
+ Pre-tax
+ Post-discount
+ Pre-discount
+SUGGESTED TIP FOR SMARTTAB APP AND WEB MENU
+15
+20
+25
+AUTOCLOSEOUT SETTINGS
+Smarttab Auto-Closeout Tips
+20
+SmartTab Auto-Closeout Time 
+2
+ 
+:
+ 
+00
+ 
+AM
+*Available hours: 12:00 PM through 7:00 AM
+*Will be applied after main POS station reboot
+Automatically dismiss unconfirmed orders in
+ 
+120
+ minutes
+At the end of business day
+
+
+Western Omelette
+SmartTab Venue Manager
+Knowledge Base
+
+
+Logout
+SmartTab App
+SmartTab App
+Set Up
+Menu
+QR Code
+Feedback
+Feed
+ProductsOrder ConfigurationProduct Quantity Labels
+The Product Name as it appears here is taken from the POS Menu > Receipt Name
+BEVERAGES (31)
+▼
+Search / Enter Product Name
+MOBILE APP CATEGORIES
+Published Categories
+Drag and drop unpublished categories here to publish in the mobile app
+
+
+unpublished Categories
+new category
+
+
+TO ADD A NEW CATEGORY, ENTER ITS NAME AND CLICK ON '+' BUTTON. THEN DRAG AND DROP PRODUCT TILES INTO THE CATEGORY
+STAFF FAVORITES (2)
+NEW PRODUCTS (0)
+PRODUCT IMAGE FILTER
+
+
+
+
+
+
+
+
+
+
+
+
+Hold Ctrl/Control or Command key on the keyboard and click on products you wants to select
+A
+→
+Z
+$
+→
+$$
+selectAllSELECT ALL WITH NO CATEGORY
+
+
+Western Omelette
+What’s New ( v.4.1.3 ) October 2025
+Venue Management
+
+
+Menu
+Staff
+Tables
+Reports
+SmartTab App
+Events
+Health Status 
+Analytics and Predictions
+Venue Settings
+
+
+Venue Info
+Global settings
+Business hours
+Meal periods
+Tax, Gratuity & Surcharge
+Receipts And Tips
+Custom Tenders
+Card processing
+Third Party Settings
+Accounting Setup
+
+
+ORDER CONFIGURATION
+
+
+Save
+TABLESIDE ORDERING
+
+
+ENABLED
+
+
+DISABLED
+AVAILABLE ORDER TYPES
+
+
+DINE IN
+
+
+PICKUP
+PICKUP
+
+
+Enable Pickup Packaging Fee In The Amount Of
+$
+0.00
+Show on the receipt as
+Pickup Packaging fee
+Minimal amount of time required for food preparation
+10
+minutes
+Pickup interval start each
+30
+minutes
+Pickup interval duration
+10
+minutes
+default rules
+mandatory order requirements
+none beverages food
+Check if orders in the business day suit the applied rules
+All Online Orders
+Only the first Online order
+Applied to:
+
+
+DINE IN
+
+
+PICKUP
+ORDER DETAILS
+
+
+Accept item requests from customer
+ 
+Accept order instructions from customer
+Order placement
+
+
+Delayed payment through running tab
+
+
+Request location for Dine In orders
+AUTO-CLOSEOUT
+SmartTab Auto-Closeout Time 
+2
+ 
+:
+ 
+00
+ 
+AM
+*Available hours: 12:00 PM through 7:00 AM
+*Will be applied after main POS station reboot
+Automatically dismiss unconfirmed orders in
+ 
+120
+ minutes
+At the end of business day
+utensils
+Show Utensils option when submitting an order
+
+
+For Pickup orders
+Show on the receipt as
+Utensils
+Staff names
+
+
+Enable showing staff names in orders and receipts
+CUSTOMER DETAILS
+
+
+Enforce email and phone collection during the order
+LINELEAP
+
+
+Enable Line Leap integration
+ 
+Allow printer selection when redeeming the order
+
+
+LINELEAP TAB AUTO-CLOSEOUT SETTING FOR NOT REDEEMED ORDERS
+Close tabs and apply LineLeap as payment tender
+Dismiss and close not redeemed orders
+
+PRODUCT QUANTITY LABELS
+
+
+Save
+QUANTITY LABELS
+
+
+Enable For This Venue
+ALMOST GONE
+Minimum quantity
+1
+product(s)
+Maximum quantity
+5
+product(s)
+LIMITED QUANTITY
+Minimum quantity
+6
+product(s)
+Maximum quantity
+10
+
+
+Online MenuEvents
+
+
+
+
+
+
+
+
+Inherit
+MODULE COLOR
+
+
+SINGLE
+
+
+GRADIENT
+Color 1
+#ff8800
+
+
+Color 2
+#7a5ca4
+
+
+Gradient
+Radial Gradient
+EYES COLOR
+TOP LEFT OUTER COLOR
+#ff8800
+
+
+Top Left Inner color
+#7a5ca4
+
+
+Top Right Outer color
+#ff8800
+
+
+Top Right Inner color
+#7a5ca4
+
+
+Bottom Left Outer color
+#ff8800
+
+
+Bottom Left Inner color
+#7a5ca4
+
+
+BACKGROUND COLOR
+Outer color
+#FFFFFF
+
+
+WARNING. Customized QR Codes might be unscannable.
+Be sure to verify your QR Code can be scanned in real size before using it!
+qr
+Western Omelette online menu
+
+
+
+
+Venue Stats
+TIME PERIOD
+
+
+30 DAYS
+
+
+90 DAYS
+
+
+180 DAYS
+
+
+1 YEAR
+Selected date range 
+89 days selected
+11/15/2025
+Nov 2025        
+Mo        Tu        We        Th        Fr        Sa        Su
+27        28        29        30        31        1        2
+3        4        5        6        7        8        9
+10        11        12        13        14        15        16
+17        18        19        20        21        22        23
+24        25        26        27        28        29        30
+1        2        3        4        5        6        7
+02/12/2026
+Feb 2026        
+Mo        Tu        We        Th        Fr        Sa        Su
+26        27        28        29        30        31        1
+2        3        4        5        6        7        8
+9        10        11        12        13        14        15
+16        17        18        19        20        21        22
+23        24        25        26        27        28        1
+2        3        4        5        6        7        8
+24 hrs 00 min
+VIEW FEEDBACK BY
+
+
+STAFF
+
+
+ROLE
+SELECT ONE OR MULTIPLE STAFF
+No data available
+PARTICIPANTS
+
+
+TAB OPENER
+
+
+TAB CLOSER
+
+
+ANY PARTICIPATION
+Overall Rating
+5 Stars
+0 (0%)
+4 Stars
+0 (0%)
+3 Stars
+0 (0%)
+2 Stars
+0 (0%)
+1 Star
+0 (0%)
+0
+Service
+0
+Food
+0
+Beverage
+0
+Atmosphere
+Not Good
+Okay
+Very Good
+Overall rating
+Category rating
+Category selection
+customer feedback
+Search By Customer Name
+VIEW FEEDBACK BY
+
+
+STAFF
+
+
+CUSTOMER
+SHOW TAB DETAILS
+customer        Most Recent        Overall Rating        Service        Food        Beverage        Atmosphere        Records (0)        Comments
+no data
+
+
+
+Another POS system 👍
+Online
+Restaurant Settings
+Payments
+Takeout/Delivery
+QR Ordering
+Closures
+Coupons
+Status
+SkyTab Online is Enabled
+Restaurant Contact Information
+Online name *
+Western Omelette Fountain
+Phone number
++1 719-382-4100
+Email
+jas9623@icloud.com
+Timezone *
+-07:00 America/Denver
+Address Display
+Business Address
+Address
+311 N SANTA FE AVE, FOUNTAIN, CO, 80817
+User Account
+Require Sign-In/Sign-Up at Checkout
+
+
+Payment Settings
+Allow unpaid orders
+Enable this option to allow customers to place orders without immediate payment. They can pay with cash or other means on pickup.
+Allow payments by gift card
+Credit Card Settings
+Require Zip code
+Require Address
+ReCAPTCHA Status
+ReCAPTCHA is Enabled
+Enable ReCAPTCHA to enhance security by ensuring that real customers, not bots, complete the checkout process.
+Tips Settings
+Allow tips
+Tip 1 (%)
+15
+Tip 2 (%)
+18
+Tip 3 (%)
+20
+Default Tip
+Tip 2
+Tip Calculation Method
+Include taxes when calculating tip suggestions
+Save
+
+Disable Takeout/Delivery
+In order to enable Online Ordering you have to:
+Set up Menu Manager and publish your online menu.
+If you need more information on configuring the Menu Manager please click here.
+Fill out settings in Restaurant Settings, Takeout/Delivery. If you need help with these settings please click here.
+After completing these steps click "Enable Takeout/Delivery" at the top.
+Menu URL
+This is the URL your customers will use to place online orders. You can add it to your restaurant website or post on social media accounts. The address is also editable. Click Save at the bottom of the page after changes are done.
+
+
+https://online.skytab.com/s/
+westernomelettefountain
+Copy URLOpen URL
+Order Settings
+Allow Special Requests
+Preparation Time (min) *
+20
+Order Type *
+Allow Takeout
+Allow Delivery
+Restrict number of orders
+to
+every 15 minutes.
+Enter the number of orders you can fulfill every 15 minutes.
+Once your maximum has been reached, customers will not be able to place any more orders for that time.
+Online Order Surcharge Name
+Online Order Surcharge
+Type
+Flat ($)
+Amount
+e.g. 5.00
+Online Order Surcharge Tax
+None
+Email Notification
+e.g. name@mail.com (optional)
+SMS Notification
+e.g. (555) 123-4567 (optional)
+We will send restaurant-facing order notification to the contacts provided. To stop receiving notifications, clear the field and save your settings.
+Takeout Settings
+Min Order Amount ($)
+e.g. 5.00
+Max Order Amount ($)
+e.g. 5.00
+Allow ASAP Orders
+Allow Future Orders
+Future Orders
+Same Day
+Example: If set to 2 days, when a user is placing an order on Tuesday, they will be able to request their order as late as Thursday.
+Delivery Settings
+Use Delivery Service Provider for delivery
+Deliver to Addresses
+Minimum Delivery Time (min)
+e.g. 20 min
+Delivery Surcharge Name
+Delivery Surcharge
+Type
+Flat ($)
+Amount
+e.g. 5.00
+Delivery Surcharge Tax
+None
+Min Order Amount ($)
+e.g. 5.00
+Max Order Amount ($)
+e.g. 5.00
+Allow ASAP Orders
+Allow Future Orders
+Drop-off Points
+Manage pre-defined drop-off points for offices, hotels, or any other preferred locations.
+Add Drop-off Point
+Save
+
+Enable QR Ordering
+In order to enable QR Ordering you have to:
+Set up Menu Manager and publish your online menu.
+If you need more information on configuring the Menu Manager please click here.
+Fill out settings in Restaurant Settings.
+After completing these steps click "Enable QR Ordering" at the top.
+Order Settings
+Allow Special Requests
+Allow Ordering Outside Of Schedule Hours
+Dine In Surcharge Name
+Dine In Surcharge
+Type
+Flat ($)
+Amount
+e.g. 5.00
+All dine in orders placed with QR Ordering will use the POS Price and not prices from the Menu Manager.
+This only affects the Dine In (QR Ordering) order type so that your customers get the same price as when they order from the server. Takeout and Delivery order types will use the decorated Menu Manager pricing
+
+
+Add New Coupon
+General
+Active
+Name *
+Name
+Code *
+CODE
+Discount *
+0
+Percent (%)
+Max Off ($)
+0.00
+Applies to*
+Takeout
+Delivery
+Dine In
+* Required fields
+
+
+Uber Eats
+WESTERN OMELETTE 2
+
+
+Uber Eats Settings
+Send Uber Eats orders to POS
+POS integration enabled
+Restaurant is open in Uber Eats platform
+Open
+
+
+Enabling the Uber Eats Integration
+Before enabling the Uber Eats integration, you should know:
+Before enabling the Uber Eats integration, make sure your online menu is up to date and published in the Menu Manager The menu should be published after the Uber Eats integration is installed and your Uber Eats account is linked with the integration. If you need more information on configuring the Menu Manager, please click here.
+If you are using an Uber Eats tablet, your orders from the new menu will keep going only to the tablet until you enable “Send Uber Eats Orders to POS” above.
+Be aware that after enabling the Uber Eats integration, online orders will start going to the POS directly but continue to go to the tablet. However, the tablet is no longer required to accept orders.
+
+
+DoorDash
+WESTERN OMELETTE 2
+
+
+DoorDash Settings
+Restaurant is open in DoorDash platform
+Open
+Location
+
+
+POS Integration ID
+
+
+DoorDash
+WESTERN OMELETTE 2
+
+
+DoorDash Settings
+Restaurant is open in DoorDash platform
+Open
+Location
+WESTERN OMELETTE 2
+POS Integration ID
+43148454
+
+
+
+Another POS:
+
+
+Takeout & delivery
+
+
+Saved
+
+
+Publish all changes
+Toast online ordering
+Quote time strategy
+Third-party ordering
+Online ordering hours
+Availability
+Packaging preferences
+Order ready board
+Orders Hub
+Toast order sources
+Offers
+Fundraising campaigns
+Related reports
+New to Google Ads? Spend $500. Get $500
+Turn "business near me" Google searches into real online orders
+With Toast Advertising, easily launch ads in Google Search and Maps that power your Toast Online Ordering. Start small with a minimum spend of only $10 a day (Toast fees apply).
+Learn more
+Ads PLG Promo
+Toast Online Ordering
+
+
+Restaurants can save up to $36K a year in commissions* by switching to Toast Online Ordering. Own your guest relationship and maintain your margins by allowing guests to easily order pickup or delivery directly from you – commission-free.
+
+
+* Based on average monthly Online Ordering volume, assuming that customers pay 30% commission on third party ordering channels and switch all digital ordering volume to Toast.
+
+
+Upgrade now
+Quote times
+
+
+Quote times show guests when takeout and delivery orders will be ready. Quote times also control when orders are fired to the kitchen.
+
+
+Takeout
+
+
+
+
+0 h
+
+
+0 min
+Third-party ordering
+
+
+UPGRADE
+Reach more guests and ditch the tablets, all while reducing labor costs and order errors. No more double entry.
+
+
+Learn more
+Online ordering hours
+
+
+Set your online ordering hours for takeout and delivery. Toast Online Ordering, Toast Delivery Services, Grubhub, DoorDash, and Uber Eats use your Takeout & Third-party delivery hours. First-party deliveries use your First-party delivery hours.
+
+
+Changes may take up to 24 hours to be reflected on third-party platforms. These platforms may also add a buffer before closing time to accommodate driver pickups.
+
+
+Takeout & Third-party delivery
+Mon
+
+
+Open
+11:00 AM
+-
+12:45 AM
+
+
+Tue
+
+
+Open
+11:00 AM
+-
+12:45 AM
+
+
+Wed
+
+
+Open
+11:00 AM
+-
+12:45 AM
+
+
+Thu
+
+
+Open
+11:00 AM
+-
+12:45 AM
+
+
+Fri
+
+
+Open
+11:00 AM
+-
+12:45 AM
+
+
+Sat
+
+
+Open
+11:00 AM
+-
+12:45 AM
+
+
+Sun
+
+
+Open
+11:00 AM
+-
+12:45 AM
+
+
+Accept orders until
+
+
+Closing time minus prep time
+Closing time
+Overrides
+
+
+Customize your hours on specific days for takeout and/or delivery. This only affects online ordering. Hours must be in increments of 15 minutes.
+
+
+
+
+Add override
+Availability
+Online Ordering
+
+
+Enable online ordering and customize approval rules, payment methods and more
+
+
+Takeout/delivery
+
+
+Manage takeout and delivery, including throttling and delivery range
+
+
+Prep/delivery times
+
+
+Control guest facing quote times for Online Ordering
+
+
+Packaging preferences
+Packaging preferences
+
+
+Specify to your guests what default single-use items will be included in Takeout & delivery
+
+
+Order ready board
+Order ready board settings
+
+
+Displays order statuses on a screen located in a restaurant
+
+
+Orders Hub
+Order ready guest messaging
+
+
+Send guests a text message when their order is marked Order Ready
+
+
+Toast order sources
+Restaurant info
+
+
+Customize your branding and restaurant info seen by guests on your website, gift cards, and social media
+
+
+Offers
+Create offers
+
+
+Choose from pre-set offers designed to help you grow your sales
+
+
+Manage offers
+
+
+View and compare performance from active and expired offers
+
+
+Fundraising campaigns
+Create a fundraising campaign
+
+
+Add a cause and collect contributions from guests in supported ordering channels.
+
+
+Related reports
+Sales summary
+
+
+Day-to-day top numbers for sales, payments, sales categories, cash and more
+
+
+Sales analytics
+
+
+Historical sales trends and top numbers
