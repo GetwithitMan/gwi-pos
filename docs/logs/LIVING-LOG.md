@@ -5,6 +5,58 @@
 
 ---
 
+## 2026-02-23 — A+ Polish: Safety & Reliability Sprint
+
+**Version:** `1.0.0-beta`
+**Session theme:** Pre-launch hardening — optimistic concurrency, denormalization, caching, crash resilience, socket cleanup
+
+**Summary:** Multi-agent sprint completing 10 tasks across 6 domains. Added `Order.version` optimistic concurrency checking to all mutation routes (items, comp-void, discount, send, pay, split, merge, transfer, seating, close-tab, bottle-service). Walk-in table double-claim now uses DB partial unique index as storage-layer safety net. Denormalized `itemCount` and `bottleServiceCurrentSpend` on Order (Performance Wins #5 and #8 — all 10 now complete). Added 5-minute payment settings cache. Resolved orphaned socket events (4 emitters with no listeners cleaned up). Implemented crash-resilient unsent items persistence via localStorage. Updated 3 architecture docs with new guarantees.
+
+### Changes Summary
+
+**Safety: Order Version Checking**
+- All order mutation routes now validate `Order.version` before write; stale version returns 409 Conflict
+- Client receives current version in response for retry
+- Routes: items, comp-void, discount, send, pay, split, merge, transfer, seating, close-tab, bottle-service
+
+**Safety: Walk-in Table Double-Claim Lock**
+- DB partial unique index `Order_tableId_active_unique` prevents two active orders on same table at storage layer
+- Application-level 409 with `TABLE_OCCUPIED` error code
+
+**Performance: Denormalize itemCount (Win #5)**
+- `itemCount Int @default(0)` on Order model
+- Updated in items, comp-void, split, merge routes
+- Snapshot and list views read field directly (no COUNT subquery)
+
+**Performance: Denormalize bottleServiceCurrentSpend (Win #8)**
+- `bottleServiceCurrentSpend Decimal? @default(0) @db.Decimal(10,2)` on Order model
+- Updated in items, comp-void, bottle-service routes; snapshot reads field with subtotal fallback
+- Note: value equals subtotal (no JOIN was actually eliminated; provides semantic clarity)
+
+**Performance: Payment Settings Cache**
+- `src/lib/payment-settings-cache.ts` — 5min TTL in-memory cache
+- Eliminates redundant settings fetches during peak checkout volume
+
+**Real-Time: Orphaned Socket Events Resolved**
+- Identified 4 emitter-only events with no client listeners; cleaned up or connected
+
+**Reliability: Crash-Resilient Unsent Items**
+- Pending (unsent) items persisted to `localStorage` after every add/edit/remove
+- On page reload: merged back into order with "Recovered X unsaved items" toast
+- 100 KB safety valve prevents localStorage bloat
+
+**Docs: Updated Architecture Docs**
+- `POS-PERFORMANCE-AND-SCALE.md`: Wins #5, #8 marked done; caching inventory updated
+- `412-PERFORMANCE-SPEED-WINS.md`: All 10 wins now complete (wave 2 done)
+- `POS-REALTIME-AND-RESILIENCE.md`: Version checking in consistency rules; discount WEAK→MODERATE
+
+### Known Issues / Next Steps
+
+- Client-side `order.version` sending (task #3 in progress) — client must send version header on all mutations + handle 409 conflict with refresh/retry UX
+- `location:alert` and `inventory:adjustment` socket events still have no client listeners (reserved for future features)
+
+---
+
 ## 2026-02-23 — POS Forensic Audit: Safety + Speed
 
 **Session theme:** Pre-deployment hardening — fix race conditions, optimize table tap speed, socket reconnect refresh, performance speed wins (top 8)

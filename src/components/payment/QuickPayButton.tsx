@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { getOrderVersion } from '@/lib/order-version'
 import { TipPromptSelector } from './TipPromptSelector'
 import type { PaymentSettings } from '@/lib/settings'
 
@@ -111,6 +112,7 @@ export function QuickPayButton({
               // Datacap returns amounts as strings in XML responses
               amountAuthorized: parseFloat(data.amountAuthorized) || (subtotal + selectedTip),
             }],
+            version: getOrderVersion(),
           }),
         })
 

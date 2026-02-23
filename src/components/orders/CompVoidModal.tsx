@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
+import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { RemoteVoidApprovalModal } from './RemoteVoidApprovalModal'
 import type { UiModifier } from '@/types/orders'
 
@@ -122,11 +123,13 @@ export function CompVoidModal({
           reason: finalReason,
           employeeId,
           wasMade: action === 'comp' ? true : wasMade,
+          version: getOrderVersion(),
           ...(remoteApprovalCode && { remoteApprovalCode }),
         }),
       })
 
       if (!response.ok) {
+        if (await handleVersionConflict(response, orderId)) { onClose(); return }
         const data = await response.json()
         throw new Error(data.error || 'Failed to process')
       }
@@ -158,10 +161,12 @@ export function CompVoidModal({
         body: JSON.stringify({
           itemId: item.id,
           employeeId,
+          version: getOrderVersion(),
         }),
       })
 
       if (!response.ok) {
+        if (await handleVersionConflict(response, orderId)) { onClose(); return }
         const data = await response.json()
         throw new Error(data.error || 'Failed to restore')
       }
@@ -215,6 +220,7 @@ export function CompVoidModal({
           employeeId,
           wasMade: action === 'comp' ? true : wasMade,
           remoteApprovalCode: code,
+          version: getOrderVersion(),
         }),
       })
 

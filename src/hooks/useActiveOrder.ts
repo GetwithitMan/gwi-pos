@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { toast } from '@/stores/toast-store'
 import { isTempId, buildOrderItemPayload } from '@/lib/order-utils'
+import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
 
 interface UseActiveOrderOptions {
@@ -289,6 +290,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             items: [buildOrderItemPayload(item, { includeCorrelationId: true })],
+            version: getOrderVersion(),
           }),
         })
         if (res.ok) {
@@ -309,6 +311,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
               taxTotal: result.taxTotal ?? 0,
               tipTotal: result.tipTotal,
               total: result.total,
+              version: result.version,
             })
           }
         }
@@ -449,6 +452,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             taxTotal: created.taxTotal ?? 0,
             tipTotal: created.tipTotal,
             total: created.total,
+            version: created.version,
           })
         }
 
@@ -476,10 +480,12 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             items: unsavedItems.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+            version: getOrderVersion(),
           }),
         })
 
         if (!res.ok) {
+          if (await handleVersionConflict(res, order.id!)) return null
           const error = await res.json()
           store.revertLastChange(error.error || 'Failed to add items')
           return null
@@ -505,6 +511,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             taxTotal: result.taxTotal ?? 0,
             tipTotal: result.tipTotal,
             total: result.total,
+            version: result.version,
           })
         }
 
@@ -543,6 +550,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               items: toSave.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+              version: getOrderVersion(),
             }),
           })
           if (res.ok) {
@@ -562,6 +570,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
                 taxTotal: result.taxTotal ?? 0,
                 tipTotal: result.tipTotal,
                 total: result.total,
+                version: result.version,
               })
             }
           }
@@ -1038,6 +1047,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   items: unsavedItems.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+                  version: getOrderVersion(),
                 }),
               })
               if (!appendRes.ok) throw new Error('Failed to save items')
@@ -1060,6 +1070,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
                   taxTotal: result.taxTotal ?? 0,
                   tipTotal: result.tipTotal,
                   total: result.total,
+                  version: result.version,
                 })
               }
             }
@@ -1067,6 +1078,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             // Step 2: Send to kitchen (items now in DB)
             const sendBody: Record<string, unknown> = {
               employeeId: employeeId || options.employeeId,
+              version: getOrderVersion(),
             }
             if (delayedItems.length > 0 && immediateItems.length > 0) {
               sendBody.itemIds = immediateItems.map(i => {
@@ -1142,10 +1154,12 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         body: JSON.stringify({
           courseNumber,
           employeeId: options.employeeId,
+          version: getOrderVersion(),
         }),
       })
 
       if (!res.ok) {
+        if (await handleVersionConflict(res, orderId)) return
         const error = await res.json()
         toast.error(error.error || `Failed to fire course ${courseNumber}`)
         return
@@ -1190,10 +1204,11 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       const res = await fetch(`/api/orders/${orderId}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId: options.employeeId }),
+        body: JSON.stringify({ employeeId: options.employeeId, version: getOrderVersion() }),
       })
 
       if (!res.ok) {
+        if (await handleVersionConflict(res, orderId)) return
         const error = await res.json()
         toast.error(error.error || 'Failed to fire delayed items')
         return
@@ -1258,10 +1273,12 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         body: JSON.stringify({
           employeeId: options.employeeId,
           itemIds: [itemId],
+          version: getOrderVersion(),
         }),
       })
 
       if (!res.ok) {
+        if (await handleVersionConflict(res, orderId)) return
         const error = await res.json()
         toast.error(error.error || 'Failed to fire item')
         return

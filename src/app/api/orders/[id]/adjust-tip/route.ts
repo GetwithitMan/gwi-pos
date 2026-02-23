@@ -83,6 +83,7 @@ export const PATCH = withVenue(async function PATCH(
       where: { id: orderId },
       data: {
         tipTotal: newOrderTipTotal,
+        version: { increment: 1 },
       },
     })
 

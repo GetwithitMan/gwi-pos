@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { UiModifier, IngredientModification } from '@/types/orders'
-import { generateTempItemId } from '@/lib/order-utils'
+import { generateTempItemId, isTempId } from '@/lib/order-utils'
 import { toast } from '@/stores/toast-store'
 
 interface OrderItemModifier extends UiModifier {
@@ -138,6 +138,8 @@ interface Order {
   reopenReason?: string | null
   // Order status (open, split, paid, etc.)
   status?: string
+  // Optimistic concurrency control — server version for 409 conflict detection
+  version?: number
 }
 
 interface LoadedOrderData {
@@ -205,6 +207,7 @@ interface LoadedOrderData {
   notes?: string
   reopenedAt?: string | null
   reopenReason?: string | null
+  version?: number
 }
 
 interface OrderState {
@@ -229,7 +232,7 @@ interface OrderState {
   // New methods for shared order domain
   updateOrderId: (id: string, orderNumber?: number) => void
   updateItemId: (tempId: string, realId: string) => void
-  syncServerTotals: (totals: { subtotal: number; discountTotal: number; taxTotal: number; tipTotal?: number; total: number; commissionTotal?: number }) => void
+  syncServerTotals: (totals: { subtotal: number; discountTotal: number; taxTotal: number; tipTotal?: number; total: number; commissionTotal?: number; version?: number }) => void
   // Optimistic rollback
   saveSnapshot: () => void
   revertLastChange: (errorMessage: string) => void
@@ -253,6 +256,41 @@ interface OrderState {
 // Client-side tax rate estimate — overridden by syncServerTotals after API calls.
 // Set via setEstimatedTaxRate when location settings load.
 let estimatedTaxRate = 0.08
+
+// ─── Pending-item localStorage persistence (crash recovery) ───
+const PENDING_ITEMS_PREFIX = 'pos_pending_items_'
+const PENDING_ITEMS_MAX_BYTES = 100 * 1024 // 100 KB safety valve
+
+function persistPendingItems(orderId: string | undefined, items: OrderItem[]): void {
+  if (!orderId || typeof window === 'undefined') return
+  try {
+    const pending = items.filter(item => isTempId(item.id))
+    const key = PENDING_ITEMS_PREFIX + orderId
+    if (pending.length === 0) {
+      localStorage.removeItem(key)
+      return
+    }
+    const json = JSON.stringify(pending)
+    if (json.length > PENDING_ITEMS_MAX_BYTES) return // safety valve
+    localStorage.setItem(key, json)
+  } catch { /* localStorage full or unavailable — silently skip */ }
+}
+
+function recoverPendingItems(orderId: string): OrderItem[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const json = localStorage.getItem(PENDING_ITEMS_PREFIX + orderId)
+    if (!json) return []
+    const items = JSON.parse(json) as OrderItem[]
+    localStorage.removeItem(PENDING_ITEMS_PREFIX + orderId)
+    return Array.isArray(items) ? items : []
+  } catch { return [] }
+}
+
+function clearPendingItems(orderId: string | undefined): void {
+  if (!orderId || typeof window === 'undefined') return
+  try { localStorage.removeItem(PENDING_ITEMS_PREFIX + orderId) } catch { /* noop */ }
+}
 
 // Pure function to compute totals from an order — used by mutations to batch into a single set()
 function computeTotals(order: Order): { subtotal: number; taxTotal: number; total: number; commissionTotal: number } {
@@ -394,28 +432,40 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       splitLabel: item.splitLabel,
     }))
 
-    set({
-      currentOrder: {
-        id: orderData.id,
-        orderNumber: orderData.orderNumber,
-        orderType: orderData.orderType,
-        tableId: orderData.tableId,
-        tableName: orderData.tableName,
-        tabName: orderData.tabName,
-        guestCount: orderData.guestCount,
-        items,
-        subtotal: orderData.subtotal,
-        discountTotal: 0,
-        taxTotal: orderData.taxTotal,
-        tipTotal: orderData.tipTotal || 0,
-        total: orderData.total,
-        notes: orderData.notes,
-        commissionTotal: 0,
-        reopenedAt: orderData.reopenedAt || null,
-        reopenReason: orderData.reopenReason || null,
-        status: orderData.status,
-      },
-    })
+    // Recover any pending items from localStorage before setting state
+    const recovered = recoverPendingItems(orderData.id)
+    const allItems = recovered.length > 0 ? [...items, ...recovered] : items
+
+    const baseOrder: Order = {
+      id: orderData.id,
+      orderNumber: orderData.orderNumber,
+      orderType: orderData.orderType,
+      tableId: orderData.tableId,
+      tableName: orderData.tableName,
+      tabName: orderData.tabName,
+      guestCount: orderData.guestCount,
+      items: allItems,
+      subtotal: orderData.subtotal,
+      discountTotal: 0,
+      taxTotal: orderData.taxTotal,
+      tipTotal: orderData.tipTotal || 0,
+      total: orderData.total,
+      notes: orderData.notes,
+      commissionTotal: 0,
+      reopenedAt: orderData.reopenedAt || null,
+      reopenReason: orderData.reopenReason || null,
+      status: orderData.status,
+      version: orderData.version,
+    }
+
+    // Recompute totals if we recovered pending items (they affect subtotal)
+    if (recovered.length > 0) {
+      const totals = computeTotals(baseOrder)
+      set({ currentOrder: { ...baseOrder, ...totals } })
+      toast.success(`Recovered ${recovered.length} unsaved item${recovered.length > 1 ? 's' : ''} from previous session`)
+    } else {
+      set({ currentOrder: baseOrder })
+    }
   },
 
   addItem: (item) => {
@@ -430,6 +480,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const updatedOrder = { ...currentOrder, items: [...currentOrder.items, newItem] }
     const totals = computeTotals(updatedOrder)
     set({ currentOrder: { ...updatedOrder, ...totals } })
+    persistPendingItems(updatedOrder.id, updatedOrder.items)
     return newItem.id
   },
 
@@ -445,6 +496,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
     const totals = computeTotals(updatedOrder)
     set({ currentOrder: { ...updatedOrder, ...totals } })
+    persistPendingItems(updatedOrder.id, updatedOrder.items)
   },
 
   removeItem: (itemId) => {
@@ -457,6 +509,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
     const totals = computeTotals(updatedOrder)
     set({ currentOrder: { ...updatedOrder, ...totals } })
+    persistPendingItems(updatedOrder.id, updatedOrder.items)
   },
 
   updateQuantity: (itemId, quantity) => {
@@ -525,6 +578,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   clearOrder: () => {
+    const { currentOrder } = get()
+    if (currentOrder?.id) clearPendingItems(currentOrder.id)
     set({ currentOrder: null })
   },
 
@@ -547,14 +602,17 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const { currentOrder } = get()
     if (!currentOrder) return
 
+    const updatedItems = currentOrder.items.map(item =>
+      item.id === tempId ? { ...item, id: realId } : item
+    )
     set({
       currentOrder: {
         ...currentOrder,
-        items: currentOrder.items.map(item =>
-          item.id === tempId ? { ...item, id: realId } : item
-        ),
+        items: updatedItems,
       },
     })
+    // Item now has a real ID — re-persist to drop it from pending list
+    persistPendingItems(currentOrder.id, updatedItems)
   },
 
   // Overwrite client-calculated totals with server-calculated values
@@ -571,6 +629,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         total: totals.total,
         ...(totals.tipTotal !== undefined ? { tipTotal: totals.tipTotal } : {}),
         ...(totals.commissionTotal !== undefined ? { commissionTotal: totals.commissionTotal } : {}),
+        ...(totals.version !== undefined ? { version: totals.version } : {}),
       },
     })
   },

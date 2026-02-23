@@ -61,6 +61,7 @@ export const POST = withVenue(async function POST(
         reopenedAt: new Date(),
         reopenedBy: managerId,
         reopenReason: reason,
+        version: { increment: 1 },
       },
     })
 

@@ -80,7 +80,7 @@ export const POST = withVenue(async function POST(
     // Step 1: Set tab status to pending_auth immediately
     await db.order.update({
       where: { id: orderId },
-      data: { tabStatus: 'pending_auth' },
+      data: { tabStatus: 'pending_auth', version: { increment: 1 } },
     })
 
     // Step 2: CollectCardData to read chip (cardholder name)
@@ -151,6 +151,7 @@ export const POST = withVenue(async function POST(
         data: {
           tabStatus: 'auth_failed',
           tabName: declineFirstName || order.tabName,
+          version: { increment: 1 },
         },
       })
 
@@ -251,6 +252,7 @@ export const POST = withVenue(async function POST(
           preAuthCardBrand: finalCardType,
           preAuthRecordNo: recordNo,
           preAuthReaderId: resolvedReaderId,
+          version: { increment: 1 },
         },
       }),
     ])

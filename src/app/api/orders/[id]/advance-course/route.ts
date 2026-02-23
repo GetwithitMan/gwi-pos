@@ -92,7 +92,7 @@ export const POST = withVenue(async function POST(
       // Update order's current course
       await db.order.update({
         where: { id: orderId },
-        data: { currentCourse: nextCourse },
+        data: { currentCourse: nextCourse, version: { increment: 1 } },
       })
 
       // Fire-and-forget socket dispatch for cross-terminal sync

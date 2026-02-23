@@ -10,7 +10,7 @@ The POS performance audit (docs/architecture/POS-PERFORMANCE-AND-SCALE.md) ident
 
 ## Solution
 
-Implemented 8 of the 10 speed wins (deferred #5 and #8 — denormalization requiring schema migrations — to a follow-up).
+Implemented all 10 speed wins. Wins #1-4, #6-7, #9-10 in wave 1. Wins #5 and #8 (denormalization requiring schema migrations) in wave 2.
 
 ### Win #1: DB Connection Pool 5→25
 
@@ -75,12 +75,14 @@ Added `AbortController` with 5-second timeout to `PayApiClient.request()`. Previ
 
 **Net effect:** Scaling ceiling moves from ~10 terminals to ~50 terminals.
 
-## Deferred (Wave 2)
+## Wave 2 (Completed)
 
-| Win | What | Why Deferred |
-|-----|------|-------------|
-| #5 | Denormalize `itemCount` on Order | Requires schema migration + code changes across all order creation/update paths |
-| #8 | Denormalize `bottleServiceCurrentSpend` on Order | Requires schema migration + snapshot query refactor |
+Previously deferred; now implemented:
+
+| Win | What | Status |
+|-----|------|--------|
+| #5 | Denormalize `itemCount` on Order | ✅ DONE — `itemCount Int @default(0)` on Order; updated in items, comp-void, split, merge routes |
+| #8 | Denormalize `bottleServiceCurrentSpend` on Order | ✅ DONE — `bottleServiceCurrentSpend Decimal? @default(0)` on Order; updated in items, comp-void, bottle-service routes; snapshot reads field directly with subtotal fallback |
 
 ## Files Modified
 

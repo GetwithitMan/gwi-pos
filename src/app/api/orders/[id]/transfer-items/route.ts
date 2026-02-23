@@ -147,7 +147,11 @@ export const POST = withVenue(async function POST(
 
       await tx.order.update({
         where: { id: toOrderId },
-        data: destTotals,
+        data: {
+          ...destTotals,
+          itemCount: destItems.reduce((sum, i) => sum + i.quantity, 0),
+          version: { increment: 1 },
+        },
       })
 
       // Update source order totals
@@ -170,7 +174,11 @@ export const POST = withVenue(async function POST(
 
       await tx.order.update({
         where: { id: fromOrderId },
-        data: sourceTotals,
+        data: {
+          ...sourceTotals,
+          itemCount: sourceItems.reduce((sum, i) => sum + i.quantity, 0),
+          version: { increment: 1 },
+        },
       })
 
       // Create audit log

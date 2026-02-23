@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { parseSettings, mergeWithDefaults } from '@/lib/settings'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
+import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -69,6 +70,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     invalidateLocationCache(location.id)
+    invalidatePaymentSettings(location.id)
 
     console.log(`[payment-config] Credentials updated — processor=${processor} env=${environment} mid=${merchantId.slice(0, 4)}…`)
 

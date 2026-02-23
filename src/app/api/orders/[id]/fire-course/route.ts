@@ -120,7 +120,7 @@ export const POST = withVenue(async function POST(
     // Update current course on the order
     await db.order.update({
       where: { id },
-      data: { currentCourse: courseNumber },
+      data: { currentCourse: courseNumber, version: { increment: 1 } },
     })
 
     // Route order items to stations using tag-based routing engine

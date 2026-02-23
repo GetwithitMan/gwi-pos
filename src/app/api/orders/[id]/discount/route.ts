@@ -183,6 +183,7 @@ export const POST = withVenue(async function POST(
         discountTotal: totals.discountTotal,
         taxTotal: totals.taxTotal,
         total: totals.total,
+        version: { increment: 1 },
       },
     })
 
@@ -327,6 +328,7 @@ export const DELETE = withVenue(async function DELETE(
         discountTotal: totals.discountTotal,
         taxTotal: totals.taxTotal,
         total: totals.total,
+        version: { increment: 1 },
       },
     })
 

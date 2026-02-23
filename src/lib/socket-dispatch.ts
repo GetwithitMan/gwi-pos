@@ -212,8 +212,8 @@ export async function dispatchEntertainmentUpdate(
  * Dispatch location-wide alert
  *
  * Used for system alerts (sync status, hardware failures, etc.)
- * Called from health-check route. No client-side alert UI wired yet.
- * // TODO: Wire to a location-wide toast/banner component when alert UI is built
+ * Called from health-check route.
+ * Client listener: LocationAlertListener (root layout) → toast store
  */
 export async function dispatchLocationAlert(
   locationId: string,
@@ -314,8 +314,7 @@ export async function dispatchFloorPlanUpdate(
  * Dispatch inventory stock adjustment event (Skill 127)
  *
  * Called when ingredient stock is adjusted via Quick Stock Adjust page.
- * Notifies all terminals to update stock displays in real-time.
- * // TODO: Wire to inventory dashboard when built
+ * No client listener wired yet — reserved for future inventory admin dashboard.
  */
 export async function dispatchInventoryAdjustment(
   locationId: string,
@@ -356,8 +355,7 @@ export async function dispatchInventoryAdjustment(
  * Dispatch single stock level change (for POS menu item badges)
  *
  * Used for real-time stock level updates on menu items.
- * Client listener: SocketEventProvider forwards via onAny → subscribe('inventory:stock-change')
- * Drives 86'd item display on POS terminals.
+ * No client listener wired yet — reserved for future 86'd badge display on POS terminals.
  */
 export async function dispatchStockLevelChange(
   locationId: string,

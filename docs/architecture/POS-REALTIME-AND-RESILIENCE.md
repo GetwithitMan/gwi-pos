@@ -25,8 +25,10 @@ Every cross-terminal update flows through Socket.io. The table below is the comp
 | Menu | `menu:updated` | `socket-dispatch.ts:406` | `cache-invalidate.ts` | Invalidate menu cache |
 | Menu | `menu:item-changed` | `socket-dispatch.ts:477` | Online ordering | Update availability/pricing |
 | Menu | `menu:stock-changed` | `socket-dispatch.ts:512` | Online ordering | Show "Sold Out" badge |
-| Inventory | `inventory:stock-change` | `socket-dispatch.ts:372` | `useMenuSocket.ts` | Update 86'd badges |
-| Inventory | `inventory:adjustment` | `socket-dispatch.ts:335` | (Admin) | Stock adjustment log |
+| Inventory | `inventory:stock-change` | `socket-dispatch.ts:372` | _(no listener yet)_ | Reserved: future 86'd badge updates |
+| Inventory | `inventory:adjustment` | `socket-dispatch.ts:335` | _(no listener yet)_ | Reserved: future inventory admin dashboard |
+| Ingredients | `ingredient:library-update` | `socket-dispatch.ts:447` | `menu/page.tsx` | Ingredient created → updates library |
+| Alerts | `location:alert` | `socket-dispatch.ts:231` | `LocationAlertListener` | System alert → toast on all terminals |
 | Entertainment | `entertainment:session-update` | `socket-dispatch.ts:193-194` | Entertainment KDS | Timer display update |
 | Entertainment | `entertainment:status-changed` | `socket-dispatch.ts:580` | `useOrderSockets.ts:109` | Availability update |
 | Void | `void:approval-update` | `socket-dispatch.ts:265` | Modal listener | Approve/reject void |
@@ -48,12 +50,13 @@ How concurrent writes are resolved when two terminals touch the same data.
 
 | Scenario | Mechanism | Strength | Notes |
 |----------|-----------|----------|-------|
-| Two terminals add items to same order | `FOR UPDATE` row lock + atomic transaction | **STRONG** | Lock serializes; totals recomputed from DB truth |
+| Two terminals add items to same order | `FOR UPDATE` row lock + atomic transaction + version check | **STRONG** | Lock serializes; totals recomputed from DB truth; version mismatch returns 409 |
 | Terminal A sends, Terminal B adds items | Version field + status check | **MODERATE** | Send does not lock order permanently; new items permitted while `in_progress` |
-| Terminal A pays, Terminal B voids | `FOR UPDATE` on both routes | **STRONG** | Whichever acquires lock first wins; loser receives 409 |
-| Two terminals apply discounts | Last-write-wins | **WEAK** | No merge logic; last update overwrites |
+| Terminal A pays, Terminal B voids | `FOR UPDATE` on both routes + version check | **STRONG** | Whichever acquires lock first wins; loser receives 409 |
+| Two terminals apply discounts | Version check + last-write-wins | **MODERATE** | Version field prevents stale overwrites; concurrent edits rejected with 409 |
 | Split check modified by two people | Row lock on parent order | **STRONG** | Pessimistic lock per split operation |
-| Two servers claim same walk-in table | No locking | **WEAK** | Both orders persist; UI-level de-dup needed |
+| Two servers claim same walk-in table | Application-level check + DB partial unique index | **STRONG** | `POST /api/orders` rejects duplicate with 409; DB index `Order_tableId_active_unique` enforces at storage layer |
+| Any order mutation with stale data | `Order.version` field + optimistic concurrency | **STRONG** | All mutation routes check version before write; stale version returns 409 Conflict with current version for client retry |
 
 ---
 
@@ -71,10 +74,12 @@ How concurrent writes are resolved when two terminals touch the same data.
 ### Story 2: Frontend crashes mid-order
 
 1. Server-synced items (already POSTed) are safe in the database.
-2. Locally-pending items (added but not yet POSTed) are **LOST**.
-3. The order store does **not** persist to `localStorage` by default.
-4. On reopen: `GET /api/orders/[id]` returns only server-synced items.
-5. **Risk:** Unsent items are volatile. Any items added between the last successful POST and the crash are unrecoverable.
+2. Locally-pending items (added but not yet POSTed) are **persisted to `localStorage`** after every add/edit/remove. Key: `pos_pending_items_{orderId}`.
+3. On reopen: `loadOrder()` fetches server items via `GET /api/orders/[id]`, then checks `localStorage` for pending items and merges them back into the order.
+4. A toast notifies the user: "Recovered X unsaved items from previous session."
+5. Once items are successfully POSTed (temp ID replaced with real DB ID), they are removed from the pending list.
+6. Safety valve: pending items exceeding 100 KB are not persisted (prevents localStorage bloat).
+7. **Outcome:** Unsent items survive tab crashes and page reloads for the active order.
 
 ### Story 3: Socket drops and reconnects
 
@@ -94,10 +99,11 @@ How concurrent writes are resolved when two terminals touch the same data.
 
 ### Story 5: Two servers claim the same walk-in table
 
-1. Both `POST /api/orders` succeed (no uniqueness constraint on `tableId` + `status`).
-2. Floor plan renders two draft orders on the same table.
-3. No automatic winner; manual merge or void is required.
-4. **Mitigation:** Use the `order:editing` socket event as a UI-level advisory lock to warn the second server.
+1. Server A taps a walk-in table and `POST /api/orders` creates a draft order.
+2. Server B taps the same table moments later. The API checks for an existing active (draft/open/in_progress/sent/split) order on that `tableId`.
+3. The check finds Server A's order → returns **409 Conflict** with `TABLE_OCCUPIED` and the existing order ID.
+4. Server B's terminal shows "Table already has an active order" and can open the existing order instead.
+5. **Safety net:** A partial unique index (`Order_tableId_active_unique`) on the DB ensures that even under a race condition the duplicate INSERT is rejected at the storage layer.
 
 ---
 
@@ -110,7 +116,9 @@ How concurrent writes are resolved when two terminals touch the same data.
 | Floor Plan | `floor-plan:updated`, `table:status-changed` | 30 s if disconnected | -- |
 | Menu | `menu:updated`, `menu:item-changed`, `menu:stock-changed` | 60 s cache TTL | -- |
 | Entertainment | `entertainment:session-update`, `entertainment:status-changed` | 5 s UI polling | -- |
-| Inventory | `inventory:stock-change`, `inventory:adjustment` | None | -- |
+| Inventory | `inventory:stock-change`, `inventory:adjustment` | None | No client listeners yet (reserved for future) |
+| Ingredients | `ingredient:library-update` | None | -- |
+| Alerts | `location:alert` | None | -- |
 | CFD | `CFD:show-order`, `CFD:payment-started`, `CFD:tip-prompt`, `CFD:receipt-sent` | None | -- |
 | Tabs (Mobile) | `tab:closed`, `tab:items-updated` | None | -- |
 

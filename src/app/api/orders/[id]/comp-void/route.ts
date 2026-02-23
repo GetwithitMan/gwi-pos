@@ -232,10 +232,13 @@ export const POST = withVenue(async function POST(
       const txShouldAutoClose = txActiveItems.length === 0
 
       // 5. Update order with recalculated totals + increment version
+      const txItemCount = txActiveItems.reduce((sum, i) => sum + i.quantity, 0)
       await tx.order.update({
         where: { id: orderId },
         data: {
           ...txTotals,
+          itemCount: txItemCount,
+          ...(order.isBottleService ? { bottleServiceCurrentSpend: txTotals.subtotal } : {}),
           ...(txShouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
           version: { increment: 1 },
         },
@@ -430,7 +433,12 @@ export const PUT = withVenue(async function PUT(
 
     await db.order.update({
       where: { id: orderId },
-      data: totals,
+      data: {
+        ...totals,
+        itemCount: activeItems.reduce((sum, i) => sum + i.quantity, 0),
+        ...(order.isBottleService ? { bottleServiceCurrentSpend: totals.subtotal } : {}),
+        version: { increment: 1 },
+      },
     })
 
     return NextResponse.json({ data: {

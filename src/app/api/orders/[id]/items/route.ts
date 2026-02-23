@@ -348,6 +348,8 @@ export const POST = withVenue(async function POST(
           taxFromExclusive: newTaxFromExc,
           total: newTotal,
           commissionTotal: newCommissionTotal,
+          itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
+          ...(existingOrder.isBottleService ? { bottleServiceCurrentSpend: newSubtotal } : {}),
           version: { increment: 1 },
         },
         include: {

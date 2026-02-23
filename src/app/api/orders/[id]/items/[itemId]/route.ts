@@ -45,6 +45,7 @@ export const PUT = withVenue(async function PUT(
             where: { id: itemId },
             data: { seatNumber: updateData.seatNumber },
           })
+          await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
           return NextResponse.json({ data: { success: true, item: seatUpdated } })
 
         // Course Firing (Skill 12)
@@ -56,6 +57,7 @@ export const PUT = withVenue(async function PUT(
               courseStatus: 'pending',
             },
           })
+          await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
           return NextResponse.json({ data: { success: true, item: courseUpdated } })
 
         case 'fire_course':
@@ -85,6 +87,7 @@ export const PUT = withVenue(async function PUT(
             })
           }
 
+          await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
           return NextResponse.json({ data: { success: true, item: fired } })
 
         case 'mark_ready':
@@ -96,6 +99,7 @@ export const PUT = withVenue(async function PUT(
               kitchenStatus: 'ready',
             },
           })
+          await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
           return NextResponse.json({ data: { success: true, item: ready } })
 
         case 'mark_served':
@@ -107,6 +111,7 @@ export const PUT = withVenue(async function PUT(
               kitchenStatus: 'delivered',
             },
           })
+          await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
           return NextResponse.json({ data: { success: true, item: served } })
 
         // Hold & Fire (Skill 13)
@@ -118,6 +123,7 @@ export const PUT = withVenue(async function PUT(
               holdUntil: updateData.holdUntil ? new Date(updateData.holdUntil) : null,
             },
           })
+          await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
           return NextResponse.json({ data: { success: true, item: held } })
 
         case 'fire':
@@ -131,6 +137,7 @@ export const PUT = withVenue(async function PUT(
               courseStatus: item.courseNumber ? 'fired' : item.courseStatus,
             },
           })
+          await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
           return NextResponse.json({ data: { success: true, item: firedItem } })
 
         case 'release':
@@ -142,6 +149,7 @@ export const PUT = withVenue(async function PUT(
               holdUntil: null,
             },
           })
+          await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
           return NextResponse.json({ data: { success: true, item: released } })
 
         default:
@@ -165,6 +173,8 @@ export const PUT = withVenue(async function PUT(
       },
       include: { modifiers: true },
     })
+
+    await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
 
     return NextResponse.json({ data: {
       success: true,
@@ -250,6 +260,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id: itemId },
       data: { deletedAt: now, status: 'removed' },
     })
+
+    await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

@@ -8,6 +8,7 @@ import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSe
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
 import { toast } from '@/stores/toast-store'
+import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { uuid } from '@/lib/uuid'
 import { getSharedSocket } from '@/lib/shared-socket'
 
@@ -603,6 +604,7 @@ export function PaymentModal({
     })),
     employeeId,
     idempotencyKey,
+    version: getOrderVersion(),
   })
 
   const processPayments = async (payments: PendingPayment[], currentPendingPayments: PendingPayment[]) => {
@@ -626,6 +628,7 @@ export function PaymentModal({
           body: JSON.stringify(buildPayBody(payments)),
         })
         if (!res.ok) {
+          if (await handleVersionConflict(res, orderId)) { setIsProcessing(false); return }
           const data = await res.json().catch(() => ({}))
           toast.error(`Cash payment failed: ${data.error || 'Server error'}`)
           setIsProcessing(false)
@@ -656,6 +659,7 @@ export function PaymentModal({
       })
 
       if (!response.ok) {
+        if (await handleVersionConflict(response, orderId)) { setIsProcessing(false); return }
         const data = await response.json()
         throw new Error(data.error || 'Payment failed')
       }

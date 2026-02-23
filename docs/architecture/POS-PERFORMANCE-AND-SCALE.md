@@ -152,10 +152,10 @@ Ranked by impact-to-effort ratio. Start at #1 and work down.
 | 2 | **Add compound indexes:** `@@index([locationId, status, kitchenStatus])` on OrderItem, `@@index([locationId, status])` on Order | ~80% KDS speedup (200ms -> 40ms at 100+ orders) | S | Low | `prisma/schema.prisma` |
 | 3 | **Paginate KDS query** (`take: 50` + cursor-based skip) | ~70% speedup (400ms -> 120ms at 200+ orders); prevents OOM | M | Medium | KDS API route |
 | 4 | **Cache floor plan snapshot** for 5s (invalidate on table edit) | ~60% reduction in floor plan DB load (300ms -> 120ms) | M | Medium | Floorplan snapshot API route, `src/lib/snapshot.ts` |
-| 5 | **Denormalize `itemCount` on Order model** | ~20ms saved per list view x 50 calls/min = 1,000ms/min saved | M | Low | `prisma/schema.prisma` + migration |
+| 5 | ~~**Denormalize `itemCount` on Order model**~~ ✅ DONE | ~20ms saved per list view x 50 calls/min = 1,000ms/min saved | M | Low | `prisma/schema.prisma` + migration |
 | 6 | **Batch `GetOrdersByStatus`** (separate indexed queries for open vs paid) | ~30% speedup (150ms -> 100ms) on order list endpoints | M | Low | Orders API route |
 | 7 | **Socket reconnect throttling** (exponential backoff on storms) | ~80% reduction in reconnect spike latency | M | Low | `src/lib/shared-socket.ts` |
-| 8 | **Denormalize `bottleServiceCurrentSpend` on Order** | ~15-30ms per snapshot (eliminates 1 JOIN) | M | Medium | `prisma/schema.prisma` + snapshot query |
+| 8 | ~~**Denormalize `bottleServiceCurrentSpend` on Order**~~ ✅ DONE | Semantic clarity + future divergence (note: no JOIN was eliminated; value equals `subtotal`) | M | Medium | `prisma/schema.prisma` + snapshot query |
 | 9 | **Memoize `calculateOrderTotals()`** with input hash | ~20-30ms saved per interaction | S | Low | `src/lib/order-calculations.ts` |
 | 10 | **Payment processor circuit breaker** (5s timeout, not 30s) | ~50% faster failure recovery on hung payments | M | Medium | Payment API route |
 
@@ -174,14 +174,14 @@ Current state of all cached and uncached data in the system.
 | Menu items + modifiers | `src/lib/menu-cache.ts` (in-memory) | 15s | Manual on menu edit | Hits on every POS page load |
 | Location settings | `src/lib/location-cache.ts` (in-memory) | 5min | Manual on settings save | Used in tax calc, permissions |
 | Location ID | `src/lib/location-cache.ts` (in-memory) | 5min | Manual | Avoids `findFirst()` per route |
-| Floor plan snapshot | **NONE** | 0s | N/A | **Add 5s cache with edit invalidation** |
+| Floor plan snapshot | `src/lib/snapshot-cache.ts` (in-memory) | 5s | On table/section CRUD via `dispatchFloorPlanUpdate` | ✅ Win #4 — reduces queries from ~250/min to ~12/min at 50 terminals |
 | Order data | **NONE** | 0s | N/A | Correct: dynamic, changes on every interaction |
 | Prep station config | **NONE** | 0s | N/A | Small dataset, fetched on send |
-| Payment settings | **NONE** | 0s | N/A | **Opportunity: does not change mid-shift; cache for 5min** |
+| Payment settings | `src/lib/payment-settings-cache.ts` (in-memory) | 5min | On settings save | ✅ Does not change mid-shift; eliminates redundant fetches during peak checkout |
 
 **Action items:**
-1. Floor plan snapshot: Add a 5-second in-memory cache, invalidated when any table is created, moved, or deleted. This eliminates ~60% of floor plan DB queries.
-2. Payment settings: These do not change during a shift. A 5-minute TTL cache would eliminate redundant fetches during peak checkout volume.
+1. ~~Floor plan snapshot~~ ✅ DONE — 5s TTL cache with edit invalidation (Win #4).
+2. ~~Payment settings~~ ✅ DONE — 5-minute TTL cache.
 3. Order data should remain uncached. Orders change on every interaction and stale order data causes real money problems.
 
 ---

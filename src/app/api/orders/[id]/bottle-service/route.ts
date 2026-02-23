@@ -137,6 +137,7 @@ export const POST = withVenue(async function POST(
           bottleServiceTierId: tierId,
           bottleServiceDeposit: depositAmount,
           bottleServiceMinSpend: Number(tier.minimumSpend),
+          bottleServiceCurrentSpend: Number(order.subtotal) || 0,
           preAuthId: preAuthResponse.authCode,
           preAuthAmount: depositAmount,
           preAuthLast4: finalCardLast4,
@@ -204,7 +205,7 @@ export const GET = withVenue(async function GET(
     }
 
     const settings = parseSettings(order.location.settings)
-    const currentSpend = Number(order.subtotal)
+    const currentSpend = order.bottleServiceCurrentSpend != null ? Number(order.bottleServiceCurrentSpend) : Number(order.subtotal)
     const depositAmount = Number(order.bottleServiceDeposit) || 0
     const minimumSpend = Number(order.bottleServiceMinSpend) || 0
     const totalAuth = order.cards.reduce((sum, c) => sum + Number(c.authAmount), 0)

@@ -128,7 +128,7 @@ export const POST = withVenue(async function POST(
           }),
           db.order.update({
             where: { id: orderId },
-            data: { preAuthAmount: newAuthAmount },
+            data: { preAuthAmount: newAuthAmount, version: { increment: 1 } },
           }),
         ])
 

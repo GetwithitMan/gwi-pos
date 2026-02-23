@@ -31,6 +31,25 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
 
+    // Walk-in table double-claim lock: reject if an active order already exists on this table
+    if (tableId) {
+      const existingOrder = await db.order.findFirst({
+        where: {
+          tableId,
+          status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
+          deletedAt: null,
+        },
+        select: { id: true, orderNumber: true },
+      })
+      if (existingOrder) {
+        return apiError.conflict(
+          'Table already has an active order',
+          ERROR_CODES.TABLE_OCCUPIED,
+          { existingOrderId: existingOrder.id, existingOrderNumber: existingOrder.orderNumber }
+        )
+      }
+    }
+
     // Get next order number for today
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -125,6 +144,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
                   isBottleService: true,
                   bottleServiceTierId: reservation.bottleServiceTierId,
                   bottleServiceMinSpend: reservation.bottleServiceTier?.minimumSpend ?? null,
+                  bottleServiceCurrentSpend: 0,
                 },
               })
             }
@@ -356,6 +376,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         tipTotal: 0,
         total,
         commissionTotal,
+        itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
         notes: notes || null,
         customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
         businessDayDate: businessDayStart,
@@ -407,6 +428,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
                 isBottleService: true,
                 bottleServiceTierId: reservation.bottleServiceTierId,
                 bottleServiceMinSpend: reservation.bottleServiceTier?.minimumSpend ?? null,
+                bottleServiceCurrentSpend: 0,
               },
             })
           }
@@ -565,7 +587,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orders: orders.map(order => ({
         ...mapOrderForResponse(order),
         // Add summary fields for list view
-        itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+        itemCount: order.itemCount,
         paidAmount: order.payments
           .filter(p => p.status === 'completed')
           .reduce((sum, p) => sum + Number(p.totalAmount), 0),

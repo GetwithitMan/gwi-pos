@@ -208,6 +208,7 @@ export const POST = withVenue(async function POST(
           notes: order.notes
             ? `${order.notes}\n[Split ${numWays} ways]`
             : `[Split ${numWays} ways]`,
+          version: { increment: 1 },
         },
       })
 
@@ -331,6 +332,7 @@ export const POST = withVenue(async function POST(
           taxTotal: newTax,
           tipTotal: 0,
           total: newTotal,
+          itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
           parentOrderId: order.parentOrderId || order.id,
           splitIndex: nextSplitIndex,
           notes: `Split from order #${order.orderNumber}`,
@@ -382,6 +384,8 @@ export const POST = withVenue(async function POST(
           subtotal: remainingSubtotal,
           taxTotal: remainingTax,
           total: remainingTotal,
+          itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
+          version: { increment: 1 },
         },
       })
 
@@ -526,6 +530,7 @@ export const POST = withVenue(async function POST(
             taxTotal: seatTax,
             tipTotal: 0,
             total: seatTotal,
+            itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
             parentOrderId: order.id,
             splitIndex,
             notes: `Seat ${seatNumber} from order #${baseOrderNumber}`,
@@ -588,9 +593,11 @@ export const POST = withVenue(async function POST(
           subtotal: remainingSubtotal,
           taxTotal: remainingTax,
           total: remainingTotal,
+          itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
           notes: order.notes
             ? `${order.notes}\n[Split by seat: ${sortedSeats.length} seats]`
             : `[Split by seat: ${sortedSeats.length} seats]`,
+          version: { increment: 1 },
         },
       })
 
@@ -728,6 +735,7 @@ export const POST = withVenue(async function POST(
             taxTotal: tableTax,
             tipTotal: 0,
             total: tableTotal,
+            itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
             parentOrderId: order.id,
             splitIndex,
             notes: `${tableName} from order #${baseOrderNumber}`,
@@ -791,9 +799,11 @@ export const POST = withVenue(async function POST(
           subtotal: remainingSubtotal,
           taxTotal: remainingTax,
           total: remainingTotal,
+          itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
           notes: order.notes
             ? `${order.notes}\n[Split by table: ${tablesWithItems.length} tables]`
             : `[Split by table: ${tablesWithItems.length} tables]`,
+          version: { increment: 1 },
         },
       })
 

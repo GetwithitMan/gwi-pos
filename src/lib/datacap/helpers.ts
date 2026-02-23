@@ -3,6 +3,7 @@
 
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
+import { getPaymentSettingsCached } from '@/lib/payment-settings-cache'
 import { DatacapClient } from './client'
 import type { DatacapConfig } from './types'
 import { POS_PACKAGE_ID, CLOUD_URLS } from './constants'
@@ -11,17 +12,14 @@ import type { ReaderHealth } from './reader-health'
 
 /**
  * Create a DatacapClient configured for a specific location.
- * Reads payment settings from the location's settings JSON.
+ * Reads payment settings from the location's settings JSON (cached, 5min TTL).
  */
 export async function getDatacapClient(locationId: string): Promise<DatacapClient> {
-  const location = await db.location.findUnique({
-    where: { id: locationId },
-    select: { settings: true },
-  })
+  const raw = await getPaymentSettingsCached(locationId)
 
-  if (!location) throw new Error(`Location not found: ${locationId}`)
+  if (raw === null) throw new Error(`Location not found: ${locationId}`)
 
-  const settings = parseSettings(location.settings)
+  const settings = parseSettings(raw)
   const payments = settings.payments
 
   // Map MC environment to testMode (cert → testMode=true, production → testMode=false)
@@ -47,16 +45,14 @@ export async function getDatacapClient(locationId: string): Promise<DatacapClien
 /**
  * Validate that the location has Datacap configured and return the client.
  * Throws if processor is 'none'.
+ * Uses cached settings (5min TTL) — no extra DB call.
  */
 export async function requireDatacapClient(locationId: string): Promise<DatacapClient> {
-  const location = await db.location.findUnique({
-    where: { id: locationId },
-    select: { settings: true },
-  })
+  const raw = await getPaymentSettingsCached(locationId)
 
-  if (!location) throw new Error(`Location not found: ${locationId}`)
+  if (raw === null) throw new Error(`Location not found: ${locationId}`)
 
-  const settings = parseSettings(location.settings)
+  const settings = parseSettings(raw)
 
   if (settings.payments.processor === 'none') {
     throw new Error('Payment processor not configured for this location')

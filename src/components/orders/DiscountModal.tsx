@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 
 interface DiscountRule {
   id: string
@@ -132,10 +133,12 @@ export function DiscountModal({
         body: JSON.stringify({
           discountRuleId: rule.id,
           employeeId,
+          version: getOrderVersion(),
         }),
       })
 
       if (!response.ok) {
+        if (await handleVersionConflict(response, orderId)) { onClose(); return }
         const data = await response.json()
         throw new Error(data.error || 'Failed to apply discount')
       }
@@ -181,10 +184,12 @@ export function DiscountModal({
           value,
           reason: customReason || undefined,
           employeeId,
+          version: getOrderVersion(),
         }),
       })
 
       if (!response.ok) {
+        if (await handleVersionConflict(response, orderId)) { onClose(); return }
         const data = await response.json()
         throw new Error(data.error || 'Failed to apply discount')
       }

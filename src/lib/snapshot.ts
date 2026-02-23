@@ -156,7 +156,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
           where: { status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null },
           select: {
             id: true, orderNumber: true, guestCount: true, total: true, subtotal: true, createdAt: true,
-            status: true, isBottleService: true, bottleServiceTierId: true, bottleServiceMinSpend: true, bottleServiceDeposit: true,
+            status: true, isBottleService: true, bottleServiceTierId: true, bottleServiceMinSpend: true, bottleServiceDeposit: true, bottleServiceCurrentSpend: true,
             employee: { select: { displayName: true, firstName: true, lastName: true } },
             splitOrders: {
               where: { deletedAt: null },
@@ -272,7 +272,9 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
         bottleServiceMinSpend: t.orders[0].bottleServiceMinSpend !== undefined && t.orders[0].bottleServiceMinSpend !== null ? Number(t.orders[0].bottleServiceMinSpend) : null,
         bottleServiceTierName: t.orders[0].bottleServiceTierId ? (tierMap.get(t.orders[0].bottleServiceTierId)?.name ?? null) : null,
         bottleServiceTierColor: t.orders[0].bottleServiceTierId ? (tierMap.get(t.orders[0].bottleServiceTierId)?.color ?? null) : null,
-        bottleServiceCurrentSpend: t.orders[0].isBottleService ? Number(t.orders[0].subtotal) || 0 : 0,
+        bottleServiceCurrentSpend: t.orders[0].isBottleService
+          ? (t.orders[0].bottleServiceCurrentSpend != null ? Number(t.orders[0].bottleServiceCurrentSpend) : Number(t.orders[0].subtotal) || 0)
+          : 0,
         bottleServiceReAuthNeeded: t.orders[0].isBottleService
           ? (() => {
               const deposit = Number(t.orders[0].bottleServiceDeposit) || 0

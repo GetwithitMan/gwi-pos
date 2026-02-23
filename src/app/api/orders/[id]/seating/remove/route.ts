@@ -31,12 +31,20 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
         })
       }
 
-      // 4. Update Order Metadata
+      // 4. Recalculate itemCount from remaining items
+      const remainingItems = await tx.orderItem.findMany({
+        where: { orderId },
+        select: { quantity: true },
+      })
+      const newItemCount = remainingItems.reduce((sum, i) => sum + i.quantity, 0)
+
+      // 5. Update Order Metadata
       await tx.order.update({
         where: { id: orderId },
         data: {
           extraSeatCount: { decrement: 1 },
           seatVersion: { increment: 1 },
+          itemCount: newItemCount,
         },
       })
 

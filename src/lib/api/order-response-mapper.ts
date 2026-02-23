@@ -196,6 +196,7 @@ export interface MappedOrder {
   updatedAt: Date
   reopenedAt: Date | null
   reopenReason: string | null
+  version: number
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -228,5 +229,6 @@ export function mapOrderForResponse(order: any): MappedOrder {
     updatedAt: order.updatedAt,
     reopenedAt: order.reopenedAt || null,
     reopenReason: order.reopenReason || null,
+    version: order.version ?? 1,
   }
 }

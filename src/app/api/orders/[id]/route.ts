@@ -424,7 +424,7 @@ export const PATCH = withVenue(async function PATCH(
     // Lightweight update — no items, no modifiers, no employee includes
     const updatedOrder = await db.order.update({
       where: { id },
-      data: updateData,
+      data: { ...updateData, version: { increment: 1 } },
       select: {
         id: true,
         locationId: true,

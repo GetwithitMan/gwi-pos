@@ -82,13 +82,21 @@ Real-time events system using Socket.io via custom Node.js server (`server.ts`).
 |-------|-----------|-------------|-------------|
 | `void:approval-update` | Void approval API | Orders page | Void request approved/denied |
 
-### Emitted, Awaiting UI Wiring
-| Event | Emitted By | Description |
-|-------|-----------|-------------|
-| `location:alert` | Various system APIs | Location-wide alert (no client listener yet) |
-| `inventory:adjustment` | Inventory API | Stock adjustment made (no client listener yet) |
-| `inventory:stock-change` | Payment/void APIs | Inventory deducted on sale/void (no client listener yet) |
-| `ingredient:library-update` | Ingredient API | Ingredient library changed (no client listener yet) |
+### Location Alert Events
+| Event | Emitted By | Listened By | Description |
+|-------|-----------|-------------|-------------|
+| `location:alert` | Health-check route | `LocationAlertListener` (root layout) | System alert → toast on all terminals |
+
+### Ingredient Events
+| Event | Emitted By | Listened By | Description |
+|-------|-----------|-------------|-------------|
+| `ingredient:library-update` | Ingredient API | Menu builder (`menu/page.tsx`) | Ingredient created inline → updates library across terminals |
+
+### Emitted, Reserved for Future UI
+| Event | Emitted By | Future Purpose |
+|-------|-----------|----------------|
+| `inventory:adjustment` | Inventory stock-adjust API | Bulk adjustment log for future inventory admin dashboard |
+| `inventory:stock-change` | Inventory stock-adjust API | 86'd badge updates on POS terminals (no client listener yet) |
 
 ## Architecture
 

@@ -136,10 +136,12 @@ export const POST = withVenue(async function POST(
         data: {
           ...totals,
           commissionTotal,
+          itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
           guestCount: newGuestCount,
           notes: targetOrder.notes
             ? `${targetOrder.notes}\nMerged from order #${sourceOrder.orderNumber}`
             : `Merged from order #${sourceOrder.orderNumber}`,
+          version: { increment: 1 },
         },
       })
 
@@ -148,9 +150,11 @@ export const POST = withVenue(async function POST(
         where: { id: sourceOrderId },
         data: {
           status: 'voided',
+          itemCount: 0,
           notes: sourceOrder.notes
             ? `${sourceOrder.notes}\nMerged into order #${targetOrder.orderNumber}`
             : `Merged into order #${targetOrder.orderNumber}`,
+          version: { increment: 1 },
         },
       })
 

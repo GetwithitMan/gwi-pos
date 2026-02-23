@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
+import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // Category types that map to liquor/food tax-inclusive flags
@@ -153,8 +154,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
     })
 
-    // Invalidate settings cache after update
+    // Invalidate settings caches after update
     invalidateLocationCache(location.id)
+    invalidatePaymentSettings(location.id)
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: location.id, domain: 'settings', action: 'updated' })

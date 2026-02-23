@@ -5,6 +5,7 @@ import { ToastContainer } from "@/components/ui/ToastContainer";
 import { ErrorBoundary } from "@/lib/error-boundary";
 import { KioskExitZone } from "@/components/KioskExitZone";
 import { SystemReloadListener } from "@/components/SystemReloadListener";
+import { LocationAlertListener } from "@/components/LocationAlertListener";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,6 +37,7 @@ export default function RootLayout({
         </ErrorBoundary>
         <KioskExitZone />
         <SystemReloadListener />
+        <LocationAlertListener />
         <ToastContainer />
       </body>
     </html>

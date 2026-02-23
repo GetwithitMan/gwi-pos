@@ -64,6 +64,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             status: 'voided',
             tabStatus: 'closed',
             closedAt: now,
+            version: { increment: 1 },
           },
         })
         processedCount = result.count
@@ -131,6 +132,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             status: 'cancelled',
             closedAt: now,
             deletedAt: now,
+            version: { increment: 1 },
           },
         })
         processedCount = result.count
@@ -171,7 +173,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           status: { in: ['open', 'sent', 'in_progress', 'split'] },
           deletedAt: null,
         },
-        data: { employeeId: toEmployeeId },
+        data: { employeeId: toEmployeeId, version: { increment: 1 } },
       })
       processedCount = result.count
 

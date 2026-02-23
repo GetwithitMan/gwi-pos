@@ -1,6 +1,6 @@
 {
   "name": "gwi-pos",
-  "version": "0.1.0",
+  "version": "1.0.0-beta",
   "private": true,
   "scripts": {
     "dev": "dotenv -e .env.local -- tsx -r ./preload.js server.ts",

@@ -1578,6 +1578,9 @@ model Order {
   reopenedBy     String? // Employee ID who reopened
   reopenReason   String?
 
+  // Denormalized counts
+  itemCount        Int     @default(0)
+
   // Totals
   subtotal         Decimal @default(0)
   discountTotal    Decimal @default(0)
@@ -1606,10 +1609,11 @@ model Order {
   preAuthReaderId  String? // Which reader did the pre-auth
 
   // Bottle Service (Phase 10)
-  isBottleService       Boolean   @default(false)
-  bottleServiceTierId   String?   // Linked tier
-  bottleServiceDeposit  Decimal?  // Deposit amount pre-authorized
-  bottleServiceMinSpend Decimal?  // Minimum spend requirement (from tier at time of creation)
+  isBottleService              Boolean   @default(false)
+  bottleServiceTierId          String?   // Linked tier
+  bottleServiceDeposit         Decimal?  // Deposit amount pre-authorized
+  bottleServiceMinSpend        Decimal?  // Minimum spend requirement (from tier at time of creation)
+  bottleServiceCurrentSpend    Decimal?  @default(0) @db.Decimal(10, 2) // Denormalized: mirrors subtotal for bottle service orders (avoids re-computation in snapshot)
 
   // Walkout Recovery (Phase 6)
   isWalkout       Boolean   @default(false)
@@ -1670,6 +1674,10 @@ model Order {
   @@index([locationId, status, createdAt])
   @@index([locationId, createdAt])
   @@index([tableId, status, deletedAt])
+  // DB-level constraint (raw SQL migration 20260223204400_walkin_table_unique_lock):
+  // UNIQUE INDEX "Order_tableId_active_unique" ON "Order" ("tableId")
+  // WHERE tableId IS NOT NULL AND status IN ('draft','open','in_progress','sent','split') AND deletedAt IS NULL
+  // Prevents two live orders on the same walk-in table.
   @@index([locationId, status, openedAt])
   @@index([locationId, tabStatus])
   @@index([locationId, status, closedAt])
