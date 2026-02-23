@@ -23,6 +23,7 @@ function AccessGate() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showResetHelp, setShowResetHelp] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -120,14 +121,30 @@ function AccessGate() {
             </button>
           </form>
 
-          <a
-            href={MC_SIGN_IN_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 block w-full text-center text-gray-500 hover:text-gray-400 text-sm transition-colors"
-          >
-            Forgot your password?
-          </a>
+          {showResetHelp ? (
+            <div className="mt-4 px-3 py-3 bg-blue-950 border border-blue-900 rounded-lg">
+              <p className="text-blue-300 text-sm">
+                Reset your password at{' '}
+                <a
+                  href={MC_SIGN_IN_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-blue-200"
+                >
+                  app.thepasspos.com
+                </a>
+                , then come back here to sign in.
+              </p>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowResetHelp(true)}
+              className="mt-4 w-full text-center text-gray-500 hover:text-gray-400 text-sm transition-colors"
+            >
+              Forgot your password?
+            </button>
+          )}
         </div>
 
         <p className="text-center text-gray-600 text-xs mt-6">
