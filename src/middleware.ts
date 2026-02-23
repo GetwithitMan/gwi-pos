@@ -209,9 +209,11 @@ export async function middleware(request: NextRequest) {
     }
 
     // ── GWI ACCESS GATE (T-070) ─────────────────────────────────
-    // First layer: verify SMS OTP session before cloud auth check.
-    // Any visitor to *.barpos.restaurant must have completed SMS OTP.
-    if (GWI_ACCESS_SECRET) {
+    // Only for *.barpos.restaurant (demo domain). Production venues
+    // at *.ordercontrolcenter.com skip this — they only need the
+    // pos-cloud-session cookie from venue-login / cloud auth.
+    const isBarposDomain = hostname.endsWith('.barpos.restaurant')
+    if (GWI_ACCESS_SECRET && isBarposDomain) {
       const accessToken = request.cookies.get('gwi-access')?.value
       const accessPayload = accessToken
         ? await verifyAccessToken(accessToken, GWI_ACCESS_SECRET)
