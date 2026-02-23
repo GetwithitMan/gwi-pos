@@ -7,7 +7,14 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAllowlist, addToAllowlist } from '@/lib/access-allowlist'
-import { normalizePhone } from '@/lib/access-gate'
+
+/** Normalize phone to E.164 digits only */
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits[0] === '1') return `+${digits}`
+  return `+${digits}`
+}
 
 function authorize(req: NextRequest): boolean {
   const secret = process.env.INTERNAL_API_SECRET

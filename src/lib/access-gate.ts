@@ -1,95 +1,32 @@
 /**
- * GWI Access Gate — SMS OTP + Session Token (T-070)
+ * GWI Access Gate — Email-Based Session Token
  *
  * First layer of protection for *.barpos.restaurant before the existing
  * cloud session auth (pos-cloud-session) takes over.
  *
- * OTP Strategy: Time-based HMAC (stateless — no DB needed for codes)
- *   - Window: 10 minutes. Checks current + previous window (20-min grace).
- *   - Code: 6 digits derived from HMAC-SHA256(GWI_ACCESS_SECRET, phone:window)
- *
  * Session Strategy: Signed JWT stored in gwi-access httpOnly cookie
- *   - 8-hour lifetime
- *   - Contains masked phone + timestamps
+ *   - 1-hour lifetime (refreshed on each request while active)
+ *   - Contains email + timestamps
  *   - Edge-compatible (Web Crypto API, same pattern as cloud-auth.ts)
  */
 
 export interface AccessPayload {
-  phone: string // masked: +1-xxx-xxx-XXXX
+  email: string
   iat: number
   exp: number
 }
 
-/** Mask a phone number for logging: +1-xxx-xxx-1234 */
-export function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length < 10) return 'xxx-xxx-****'
-  return `+1-xxx-xxx-${digits.slice(-4)}`
-}
-
-/** Normalize phone to E.164 digits only */
-export function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits[0] === '1') return `+${digits}`
-  return `+${digits}`
-}
-
 /**
- * Generate a 6-digit HMAC OTP for a phone number.
- * Valid for the current 10-minute window.
- * Edge-compatible (Web Crypto).
- */
-export async function generateOTP(phone: string, secret: string): Promise<string> {
-  const window = Math.floor(Date.now() / (10 * 60 * 1000))
-  return _hmacCode(phone, window, secret)
-}
-
-/**
- * Verify a 6-digit OTP. Accepts current + previous window (20-min grace).
- * Edge-compatible.
- */
-export async function verifyOTP(
-  phone: string,
-  code: string,
-  secret: string
-): Promise<boolean> {
-  const window = Math.floor(Date.now() / (10 * 60 * 1000))
-  for (const w of [window, window - 1]) {
-    const expected = await _hmacCode(phone, w, secret)
-    if (expected === code.trim()) return true
-  }
-  return false
-}
-
-async function _hmacCode(phone: string, window: number, secret: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-  const data = encoder.encode(`${phone}:${window}`)
-  const signature = await crypto.subtle.sign('HMAC', key, data)
-  const bytes = new Uint8Array(signature)
-  const num =
-    ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0
-  return String(num % 1_000_000).padStart(6, '0')
-}
-
-/**
- * Sign a gwi-access JWT (8-hour lifetime).
+ * Sign a gwi-access JWT (1-hour lifetime).
  * Edge-compatible.
  */
 export async function signAccessToken(
-  phone: string,
+  email: string,
   secret: string
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const payload: AccessPayload = {
-    phone: maskPhone(phone),
+    email,
     iat: now,
     exp: now + 60 * 60, // 1 hour — refreshed on each request while active
   }

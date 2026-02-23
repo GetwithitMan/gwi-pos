@@ -166,7 +166,7 @@ export async function middleware(request: NextRequest) {
     // Refresh the session cookie on every request — resets the 1-hour
     // inactivity clock so active users stay logged in automatically.
     const { signAccessToken } = await import('@/lib/access-gate')
-    const freshToken = await signAccessToken(accessPayload.phone, GWI_ACCESS_SECRET)
+    const freshToken = await signAccessToken(accessPayload.email, GWI_ACCESS_SECRET)
     const response = NextResponse.next()
     response.cookies.set('gwi-access', freshToken, {
       httpOnly: true,
