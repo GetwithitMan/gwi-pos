@@ -52,7 +52,11 @@ const CLOUD_PARENT_DOMAINS = [
 
 const MISSION_CONTROL_URL =
   process.env.MISSION_CONTROL_URL || 'https://app.thepasspos.com'
-if (!process.env.PROVISION_API_KEY && process.env.NODE_ENV === 'production') {
+// PROVISION_API_KEY is only needed for cloud deployments (Vercel) to verify
+// pos-cloud-session JWTs. NUC stations (identified by STATION_ROLE) use
+// PIN-based auth and never serve cloud subdomain requests.
+const IS_NUC_STATION = !!process.env.STATION_ROLE
+if (!process.env.PROVISION_API_KEY && process.env.NODE_ENV === 'production' && !IS_NUC_STATION) {
   throw new Error('[Startup] PROVISION_API_KEY environment variable is required in production')
 }
 const PROVISION_API_KEY = process.env.PROVISION_API_KEY || ''
