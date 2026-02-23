@@ -143,11 +143,13 @@ export async function middleware(request: NextRequest) {
     GWI_ACCESS_SECRET
   ) {
     // Always allow: the access gate page itself, its API routes,
-    // and internal admin API routes called server-to-server (Bearer token)
+    // auth routes (forgot/reset password), and internal admin API routes
     if (
       pathname === '/access' ||
       pathname.startsWith('/api/access/') ||
-      pathname.startsWith('/api/admin/')
+      pathname.startsWith('/api/admin/') ||
+      pathname === '/api/auth/forgot-password' ||
+      pathname === '/api/auth/reset-password'
     ) {
       return NextResponse.next()
     }
