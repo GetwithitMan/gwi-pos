@@ -79,17 +79,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Calculate pour cost and margin for each item
     const cocktails = menuItems.map((item) => {
-      const ingredients = item.recipeIngredients.map((ing) => ({
+      const ingredients = item.recipeIngredients
+        .filter((ing) => ing.bottleProduct) // Only include spirit ingredients in this report
+        .map((ing) => ({
         id: ing.id,
         bottleProductId: ing.bottleProductId,
-        bottleProductName: ing.bottleProduct.name,
-        spiritCategory: ing.bottleProduct.spiritCategory.name,
-        tier: ing.bottleProduct.tier,
+        bottleProductName: ing.bottleProduct!.name,
+        spiritCategory: ing.bottleProduct!.spiritCategory.name,
+        tier: ing.bottleProduct!.tier,
         pourCount: Number(ing.pourCount),
-        pourCost: ing.bottleProduct.pourCost ? Number(ing.bottleProduct.pourCost) : 0,
+        pourCost: ing.bottleProduct!.pourCost ? Number(ing.bottleProduct!.pourCost) : 0,
         isSubstitutable: ing.isSubstitutable,
-        ingredientCost: ing.bottleProduct.pourCost
-          ? Number(ing.bottleProduct.pourCost) * Number(ing.pourCount)
+        ingredientCost: ing.bottleProduct!.pourCost
+          ? Number(ing.bottleProduct!.pourCost) * Number(ing.pourCount)
           : 0,
       }))
 

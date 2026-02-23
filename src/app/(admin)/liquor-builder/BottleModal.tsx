@@ -94,7 +94,6 @@ export function BottleModal({
   onSave,
   onDelete,
   onClose,
-  onMenuItemChange,
   defaultValues,
 }: BottleModalProps) {
   // Core fields — use defaultValues for pre-filling variant bottles
@@ -115,10 +114,6 @@ export function BottleModal({
   const [alcoholSubtype, setAlcoholSubtype] = useState(bottle?.alcoholSubtype || '')
   const [vintage, setVintage]               = useState(bottle?.vintage?.toString() || '')
 
-  // POS Menu state
-  const [showOnPOS, setShowOnPOS]   = useState(bottle?.hasMenuItem ?? false)
-  const [menuPrice, setMenuPrice]   = useState(bottle?.linkedMenuItems?.[0]?.price?.toString() || '')
-  const [savingMenu, setSavingMenu] = useState(false)
 
   // Track whether the category change is user-initiated (not first render)
   const isFirstRender = useRef(true)
@@ -237,53 +232,44 @@ export function BottleModal({
     setSaving(false)
   }
 
-  // ─── UI helpers ───────────────────────────────────────────────────────────
-  const marginPct = menuPrice && parseFloat(menuPrice) > 0 && pourCost > 0
-    ? (((parseFloat(menuPrice) - pourCost) / parseFloat(menuPrice)) * 100).toFixed(0)
-    : null
-
-  const marginColor = marginPct
-    ? parseInt(marginPct) >= 70 ? 'text-green-600' : parseInt(marginPct) >= 55 ? 'text-yellow-600' : 'text-red-500'
-    : ''
-
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <Modal isOpen={true} onClose={onClose} title={bottle ? 'Edit Bottle' : 'Add to Inventory'} size="2xl">
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit} className="space-y-2">
 
         {/* ── Name + Brand ──────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium mb-1">Product Name *</label>
+            <label className="block text-xs font-medium mb-0.5">Product Name *</label>
             <input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full border rounded px-2.5 py-1.5 text-sm"
               placeholder={isBeer ? 'e.g., Bud Light' : isWine ? 'e.g., House Cabernet' : 'e.g., Patron Silver'}
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Brand</label>
+            <label className="block text-xs font-medium mb-0.5">Brand</label>
             <input
               type="text"
               value={brand}
               onChange={e => setBrand(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full border rounded px-2.5 py-1.5 text-sm"
               placeholder={isBeer ? 'e.g., Anheuser-Busch' : isWine ? 'e.g., Josh Cellars' : 'e.g., Patron'}
             />
           </div>
         </div>
 
         {/* ── Category + Tier ───────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium mb-1">Category *</label>
+            <label className="block text-xs font-medium mb-0.5">Category *</label>
             <select
               value={spiritCategoryId}
               onChange={e => setSpiritCategoryId(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full border rounded px-2.5 py-1.5 text-sm"
               required
             >
               <option value="">Select Category</option>
@@ -293,11 +279,11 @@ export function BottleModal({
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Tier *</label>
+            <label className="block text-xs font-medium mb-0.5">Tier *</label>
             <select
               value={tier}
               onChange={e => setTier(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full border rounded px-2.5 py-1.5 text-sm"
             >
               {tierOptions.map(t => (
                 <option key={t.value} value={t.value}>{t.label} – {t.description}</option>
@@ -311,64 +297,62 @@ export function BottleModal({
         ═══════════════════════════════════════════════════════════════════ */}
         {isBeer && (
           <>
-            {/* Container Type — big tap buttons */}
-            <div>
-              <label className="block text-sm font-semibold mb-2">Container Type</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { value: 'can',    label: 'Can',    emoji: '🥫', hint: 'Canned beer' },
-                  { value: 'bottle', label: 'Bottle', emoji: '🍺', hint: 'Glass bottle' },
-                  { value: 'draft',  label: 'Draft',  emoji: '🍻', hint: 'Tap / keg' },
-                ].map(ct => (
-                  <button
-                    key={ct.value}
-                    type="button"
-                    onClick={() => setContainerType(ct.value)}
-                    className={`py-3 px-2 rounded-lg border-2 font-medium text-sm transition-all text-center ${
-                      containerType === ct.value
-                        ? 'border-amber-500 bg-amber-50 text-amber-800'
-                        : 'border-gray-200 hover:border-amber-300 text-gray-600'
-                    }`}
-                  >
-                    <div className="text-2xl mb-1">{ct.emoji}</div>
-                    <div className="font-semibold">{ct.label}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{ct.hint}</div>
-                  </button>
-                ))}
+            {/* Container Type + Beer Style — compact row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1">Container Type</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { value: 'can',    label: 'Can',    emoji: '🥫' },
+                    { value: 'bottle', label: 'Bottle', emoji: '🍺' },
+                    { value: 'draft',  label: 'Draft',  emoji: '🍻' },
+                  ].map(ct => (
+                    <button
+                      key={ct.value}
+                      type="button"
+                      onClick={() => setContainerType(ct.value)}
+                      className={`py-1.5 px-1 rounded border-2 text-xs font-medium transition-all text-center ${
+                        containerType === ct.value
+                          ? 'border-amber-500 bg-amber-50 text-amber-800'
+                          : 'border-gray-200 hover:border-amber-300 text-gray-600'
+                      }`}
+                    >
+                      {ct.emoji} {ct.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            {/* Beer Style */}
-            <div>
-              <label className="block text-sm font-semibold mb-2">Beer Style</label>
-              <div className="flex flex-wrap gap-2">
-                {BEER_STYLES.map(style => (
-                  <button
-                    key={style.value}
-                    type="button"
-                    onClick={() => setAlcoholSubtype(alcoholSubtype === style.value ? '' : style.value)}
-                    className={`px-4 py-2 rounded-full border-2 text-sm font-medium transition-all ${
-                      alcoholSubtype === style.value
-                        ? 'border-amber-500 bg-amber-500 text-white'
-                        : 'border-gray-200 hover:border-amber-300 text-gray-600'
-                    }`}
-                  >
-                    {style.emoji} {style.label}
-                  </button>
-                ))}
+              <div>
+                <label className="block text-xs font-semibold mb-1">Beer Style</label>
+                <div className="flex flex-wrap gap-1">
+                  {BEER_STYLES.map(style => (
+                    <button
+                      key={style.value}
+                      type="button"
+                      onClick={() => setAlcoholSubtype(alcoholSubtype === style.value ? '' : style.value)}
+                      className={`px-2 py-1 rounded-full border text-xs font-medium transition-all ${
+                        alcoholSubtype === style.value
+                          ? 'border-amber-500 bg-amber-500 text-white'
+                          : 'border-gray-200 hover:border-amber-300 text-gray-600'
+                      }`}
+                    >
+                      {style.emoji} {style.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             {/* Size + Cost */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label className="block text-xs font-medium mb-0.5">
                   {containerType === 'draft' ? 'Pour Size' : containerType === 'can' ? 'Can Size' : 'Bottle Size'}
                 </label>
                 <select
                   value={bottleSizeMl}
                   onChange={e => setBottleSizeMl(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2"
+                  className="w-full border rounded px-2.5 py-1.5 text-sm"
                 >
                   {availableSizes.map(size => (
                     <option key={size.value} value={size.value}>{size.label}</option>
@@ -376,8 +360,8 @@ export function BottleModal({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Your Cost per {containerType === 'draft' ? 'Pour' : containerType === 'can' ? 'Can' : 'Bottle'} ($)
+                <label className="block text-xs font-medium mb-0.5">
+                  Cost per {containerType === 'draft' ? 'Pour' : containerType === 'can' ? 'Can' : 'Bottle'} ($)
                 </label>
                 <input
                   type="number"
@@ -385,7 +369,7 @@ export function BottleModal({
                   min="0"
                   value={unitCost}
                   onChange={e => setUnitCost(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2"
+                  className="w-full border rounded px-2.5 py-1.5 text-sm"
                   placeholder="e.g., 1.60"
                   required
                 />
@@ -399,36 +383,35 @@ export function BottleModal({
         ═══════════════════════════════════════════════════════════════════ */}
         {isWine && (
           <>
-            {/* Wine Type — big tap buttons */}
+            {/* Wine Type — compact pills */}
             <div>
-              <label className="block text-sm font-semibold mb-2">Wine Type</label>
-              <div className="grid grid-cols-5 gap-2">
+              <label className="block text-xs font-semibold mb-1">Wine Type</label>
+              <div className="flex gap-1.5">
                 {WINE_TYPES.map(wt => (
                   <button
                     key={wt.value}
                     type="button"
                     onClick={() => setAlcoholSubtype(wt.value)}
-                    className={`py-3 px-1 rounded-lg border-2 font-medium text-xs transition-all text-center ${
+                    className={`flex-1 py-1.5 px-1 rounded border text-xs font-medium transition-all text-center ${
                       alcoholSubtype === wt.value
                         ? 'border-purple-500 bg-purple-50 text-purple-800'
                         : 'border-gray-200 hover:border-purple-300 text-gray-600'
                     }`}
                   >
-                    <div className="text-2xl mb-1">{wt.emoji}</div>
-                    <div className="font-semibold">{wt.label}</div>
+                    {wt.emoji} {wt.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Bottle Size + Vintage + Pour Size */}
-            <div className="grid grid-cols-3 gap-4">
+            {/* Bottle Size + Cost + Vintage + Pour Size — 4 col */}
+            <div className="grid grid-cols-4 gap-3">
               <div>
-                <label className="block text-sm font-medium mb-1">Bottle Size</label>
+                <label className="block text-xs font-medium mb-0.5">Bottle Size</label>
                 <select
                   value={bottleSizeMl}
                   onChange={e => setBottleSizeMl(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2"
+                  className="w-full border rounded px-2.5 py-1.5 text-sm"
                 >
                   {availableSizes.map(size => (
                     <option key={size.value} value={size.value}>{size.label}</option>
@@ -436,36 +419,48 @@ export function BottleModal({
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Vintage Year</label>
+                <label className="block text-xs font-medium mb-0.5">Cost per Bottle ($)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={unitCost}
+                  onChange={e => setUnitCost(e.target.value)}
+                  className="w-full border rounded px-2.5 py-1.5 text-sm"
+                  placeholder="e.g., 8.00"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-0.5">Vintage</label>
                 <input
                   type="number"
                   min="1900"
                   max={new Date().getFullYear()}
                   value={vintage}
                   onChange={e => setVintage(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder="e.g., 2022"
+                  className="w-full border rounded px-2.5 py-1.5 text-sm"
+                  placeholder="2022"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Pour Size (oz)</label>
+                <label className="block text-xs font-medium mb-0.5">Pour Size (oz)</label>
                 <input
                   type="number"
                   step="0.5"
                   min="1"
                   value={pourSizeOz}
                   onChange={e => setPourSizeOz(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder="5 oz (standard)"
+                  className="w-full border rounded px-2.5 py-1.5 text-sm"
+                  placeholder="5"
                 />
-                {/* Quick presets */}
-                <div className="flex gap-1 mt-1">
+                <div className="flex gap-0.5 mt-0.5">
                   {WINE_POUR_PRESETS.map(p => (
                     <button
                       key={p.oz}
                       type="button"
                       onClick={() => setPourSizeOz(p.oz.toString())}
-                      className={`flex-1 text-xs py-1 rounded border transition-colors ${
+                      className={`flex-1 text-[10px] py-0.5 rounded border transition-colors ${
                         pourSizeOz === p.oz.toString()
                           ? 'bg-purple-100 border-purple-400 text-purple-700 font-semibold'
                           : 'border-gray-200 text-gray-500 hover:border-gray-300'
@@ -477,21 +472,6 @@ export function BottleModal({
                 </div>
               </div>
             </div>
-
-            {/* Cost */}
-            <div>
-              <label className="block text-sm font-medium mb-1">Your Cost per Bottle ($)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={unitCost}
-                onChange={e => setUnitCost(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2"
-                placeholder="e.g., 8.00"
-                required
-              />
-            </div>
           </>
         )}
 
@@ -499,13 +479,13 @@ export function BottleModal({
             SPIRIT MODE (default)
         ═══════════════════════════════════════════════════════════════════ */}
         {!isBeer && !isWine && (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Bottle Size *</label>
+              <label className="block text-xs font-medium mb-0.5">Bottle Size *</label>
               <select
                 value={bottleSizeMl}
                 onChange={e => setBottleSizeMl(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2"
+                className="w-full border rounded px-2.5 py-1.5 text-sm"
               >
                 {availableSizes.map(size => (
                   <option key={size.value} value={size.value}>{size.label}</option>
@@ -513,37 +493,36 @@ export function BottleModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Unit Cost ($) *</label>
+              <label className="block text-xs font-medium mb-0.5">Unit Cost ($) *</label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={unitCost}
                 onChange={e => setUnitCost(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2"
+                className="w-full border rounded px-2.5 py-1.5 text-sm"
                 placeholder="e.g., 42.99"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Pour Size (oz)</label>
+              <label className="block text-xs font-medium mb-0.5">Pour Size (oz)</label>
               <input
                 type="number"
                 step="0.25"
                 min="0.25"
                 value={pourSizeOz}
                 onChange={e => setPourSizeOz(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2"
+                className="w-full border rounded px-2.5 py-1.5 text-sm"
                 placeholder={`Default: ${LIQUOR_DEFAULTS.pourSizeOz}`}
               />
-              {/* Quick presets */}
-              <div className="flex gap-1 mt-1">
+              <div className="flex gap-0.5 mt-0.5">
                 {SPIRIT_POUR_PRESETS.map(p => (
                   <button
                     key={p.oz}
                     type="button"
                     onClick={() => setPourSizeOz(p.oz.toString())}
-                    className={`flex-1 text-xs py-1 rounded border transition-colors ${
+                    className={`flex-1 text-[10px] py-0.5 rounded border transition-colors ${
                       pourSizeOz === p.oz.toString()
                         ? 'bg-blue-100 border-blue-400 text-blue-700 font-semibold'
                         : 'border-gray-200 text-gray-500 hover:border-gray-300'
@@ -558,180 +537,63 @@ export function BottleModal({
         )}
 
         {/* ── Calculated Metrics ────────────────────────────────────────── */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h4 className="font-semibold text-blue-900 mb-3">
-            {isBeer ? '📊 Cost Breakdown' : isWine ? '🍷 Pour Analysis' : '📊 Yield & Cost'}
-          </h4>
+        <div className="bg-blue-50 border border-blue-200 rounded px-3 py-2">
           {isBeer ? (
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-blue-700">Cost per Serve:</span>
-                <span className="ml-2 font-bold text-green-600 text-base">{formatCurrency(pourCost)}</span>
-              </div>
-              <div>
-                <span className="text-blue-700">Container:</span>
-                <span className="ml-2 font-bold text-blue-900">
-                  {containerType === 'can' ? 'Can' : containerType === 'bottle' ? 'Bottle' : 'Draft'} · {bottleOz} oz
-                </span>
-              </div>
+            <div className="flex items-center gap-6 text-xs">
+              <span className="text-blue-700 font-semibold">{isBeer ? 'Cost Breakdown' : 'Yield & Cost'}</span>
+              <span className="text-blue-700">Cost/Serve: <span className="font-bold text-green-600 text-sm">{formatCurrency(pourCost)}</span></span>
+              <span className="text-blue-700">Container: <span className="font-bold text-blue-900">{containerType === 'can' ? 'Can' : containerType === 'bottle' ? 'Bottle' : 'Draft'} · {bottleOz}oz</span></span>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              <div>
-                <span className="text-blue-700">{isWine ? 'Glasses / Bottle:' : 'Pours / Bottle:'}</span>
-                <span className="ml-2 font-bold text-blue-900 text-base">{poursPerBottle}</span>
-              </div>
-              <div>
-                <span className="text-blue-700">Cost per Pour:</span>
-                <span className="ml-2 font-bold text-green-600 text-base">{formatCurrency(pourCost)}</span>
-              </div>
-              <div>
-                <span className="text-blue-700">Pour Size:</span>
-                <span className="ml-2 font-bold text-blue-900 text-base">{effectivePourSizeOz} oz</span>
-              </div>
+            <div className="flex items-center gap-6 text-xs">
+              <span className="text-blue-700 font-semibold">{isWine ? 'Pour Analysis' : 'Yield & Cost'}</span>
+              <span className="text-blue-700">{isWine ? 'Glasses' : 'Pours'}/Bottle: <span className="font-bold text-blue-900 text-sm">{poursPerBottle}</span></span>
+              <span className="text-blue-700">Cost/Pour: <span className="font-bold text-green-600 text-sm">{formatCurrency(pourCost)}</span></span>
+              <span className="text-blue-700">Pour: <span className="font-bold text-blue-900">{effectivePourSizeOz}oz</span></span>
             </div>
           )}
         </div>
 
-        {/* ── Stock ─────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* ── Stock + Active ───────────────────────────────────────────── */}
+        <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Current Stock ({isBeer ? 'units on hand' : 'bottles on hand'})
+            <label className="block text-xs font-medium mb-0.5">
+              Stock ({isBeer ? 'units' : 'bottles'})
             </label>
             <input
               type="number"
               min="0"
               value={currentStock}
               onChange={e => setCurrentStock(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full border rounded px-2.5 py-1.5 text-sm"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">
-              Low Stock Alert  <span className="text-gray-400 font-normal">(alert below X {isBeer ? 'units' : 'bottles'})</span>
+            <label className="block text-xs font-medium mb-0.5">
+              Low Alert <span className="text-gray-400 font-normal">(below X)</span>
             </label>
             <input
               type="number"
               min="0"
               value={lowStockAlert}
               onChange={e => setLowStockAlert(e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full border rounded px-2.5 py-1.5 text-sm"
               placeholder="e.g., 2"
             />
           </div>
-        </div>
-
-        <div>
-          <label className="flex items-center gap-2 cursor-pointer">
+          <label className="flex items-center gap-1.5 cursor-pointer pb-0.5">
             <input
               type="checkbox"
               checked={isActive}
               onChange={e => setIsActive(e.target.checked)}
-              className="w-4 h-4"
+              className="w-3.5 h-3.5"
             />
-            <span className="text-sm font-medium">Active</span>
+            <span className="text-xs font-medium">Active</span>
           </label>
         </div>
 
-        {/* ── Show on POS Menu ──────────────────────────────────────────── */}
-        {bottle && (
-          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h4 className="font-semibold text-purple-900">Show on POS Menu</h4>
-                <p className="text-xs text-purple-600 mt-0.5">Appears as a menu item bartenders can ring up</p>
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!showOnPOS) {
-                    if (!menuPrice || parseFloat(menuPrice) <= 0) {
-                      const suggested = pourCost > 0 ? Math.ceil(pourCost / 0.25) : 0
-                      setMenuPrice(suggested.toString())
-                    }
-                    setShowOnPOS(true)
-                  } else {
-                    if (bottle.linkedMenuItems?.[0]?.id) {
-                      setSavingMenu(true)
-                      await fetch(`/api/menu/items/${bottle.linkedMenuItems[0].id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ deletedAt: new Date().toISOString() }),
-                      })
-                      setSavingMenu(false)
-                      onMenuItemChange?.()
-                    }
-                    setShowOnPOS(false)
-                    setMenuPrice('')
-                  }
-                }}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  showOnPOS ? 'bg-purple-600' : 'bg-gray-300'
-                }`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  showOnPOS ? 'translate-x-6' : 'translate-x-1'
-                }`} />
-              </button>
-            </div>
-
-            {showOnPOS && (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-purple-800 mb-1">Sell Price *</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      step="0.25"
-                      value={menuPrice}
-                      onChange={e => setMenuPrice(e.target.value)}
-                      className="flex-1 border rounded-lg px-3 py-2"
-                      placeholder="e.g., 8.00"
-                    />
-                    <button
-                      type="button"
-                      disabled={savingMenu || !menuPrice || parseFloat(menuPrice) <= 0}
-                      onClick={async () => {
-                        if (!menuPrice || parseFloat(menuPrice) <= 0) return
-                        setSavingMenu(true)
-                        if (bottle.linkedMenuItems?.[0]?.id) {
-                          await fetch(`/api/menu/items/${bottle.linkedMenuItems[0].id}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ price: parseFloat(menuPrice) }),
-                          })
-                        } else {
-                          await fetch(`/api/liquor/bottles/${bottle.id}/create-menu-item`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ price: parseFloat(menuPrice) }),
-                          })
-                        }
-                        setSavingMenu(false)
-                        onMenuItemChange?.()
-                      }}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium"
-                    >
-                      {savingMenu ? '...' : bottle.hasMenuItem ? 'Update' : 'Add to POS'}
-                    </button>
-                  </div>
-                </div>
-
-                {menuPrice && parseFloat(menuPrice) > 0 && pourCost > 0 && (
-                  <div className="text-sm text-purple-700">
-                    Margin:{' '}
-                    <span className={`font-bold ${marginColor}`}>{marginPct}%</span>
-                    {' '}(Profit: {formatCurrency(parseFloat(menuPrice) - pourCost)} per {isBeer ? 'unit' : isWine ? 'glass' : 'pour'})
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* ── Footer ────────────────────────────────────────────────────── */}
-        <div className="flex justify-between pt-4 border-t">
+        <div className="flex justify-between pt-2 border-t">
           <div>
             {onDelete && (
               <Button type="button" variant="danger" onClick={onDelete}>

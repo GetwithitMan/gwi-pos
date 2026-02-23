@@ -278,7 +278,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const pourCostAnalysis = cocktailsWithRecipes.map(cocktail => {
       const totalPourCost = cocktail.recipeIngredients.reduce((sum, ing) => {
-        const pourCost = ing.bottleProduct.pourCost ? Number(ing.bottleProduct.pourCost) : 0
+        const pourCost = ing.bottleProduct?.pourCost ? Number(ing.bottleProduct.pourCost) : 0
         return sum + (pourCost * Number(ing.pourCount))
       }, 0)
 

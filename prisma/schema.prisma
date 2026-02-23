@@ -4208,14 +4208,24 @@ model RecipeIngredient {
   location        Location      @relation(fields: [locationId], references: [id])
   menuItemId      String
   menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
-  bottleProductId String
-  bottleProduct   BottleProduct @relation(fields: [bottleProductId], references: [id])
 
-  // Pour amount
+  // Spirit link (optional — one of bottleProduct OR ingredient must be set)
+  bottleProductId String?
+  bottleProduct   BottleProduct? @relation(fields: [bottleProductId], references: [id])
+
+  // Food ingredient link (optional — alternative to bottleProduct)
+  ingredientId    String?
+  ingredient      Ingredient?    @relation(fields: [ingredientId], references: [id])
+
+  // Pour amount (for spirits)
   pourCount       Decimal  @default(1) // 1 pour, 0.5 pour, 2 pours
   pourSizeOz      Decimal? // Override location default
   isRequired      Boolean  @default(true)
   isSubstitutable Boolean  @default(true) // Can swap for different tier (premium upgrade)
+
+  // Quantity for food items (e.g., 1 each, 2 slices)
+  quantity         Decimal?
+  unit             String?  // "each", "oz", "slice", "wedge", "sprig", "dash"
 
   // For display
   sortOrder Int     @default(0)
@@ -4232,6 +4242,7 @@ model RecipeIngredient {
   @@index([locationId])
   @@index([menuItemId])
   @@index([bottleProductId])
+  @@index([ingredientId])
 }
 
 // Links ModifierGroup to SpiritCategory for spirit selection
@@ -4515,6 +4526,9 @@ model Ingredient {
 
   // Stock adjustment history
   stockAdjustments IngredientStockAdjustment[]
+
+  // Cocktail recipes that use this food ingredient
+  recipeIngredients RecipeIngredient[]
 
   // Note: No @@unique on name — soft deletes conflict with DB-level unique constraints.
   // Uniqueness enforced at API level (checks deletedAt: null) to allow re-creation after soft delete.
