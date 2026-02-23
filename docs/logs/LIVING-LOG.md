@@ -5,6 +5,64 @@
 
 ---
 
+## 2026-02-23 — Deep Dive Forensic Round 2 (Skill 417)
+
+**Version:** `1.0.0-beta`
+**Session theme:** Deep dive forensic round 2 — 4 parallel agents stress-tested all POS flows; 23 bugs found and fixed across tip lifecycle, split/parent sync, course firing, and floor plan
+
+**Summary:** 4 forensic agents ran parallel deep-dive testing across floor plan, payments, splits/discounts/comps, and items/modifiers/kitchen flows. Identified and fixed 23 bugs: 5 CRITICAL (close-tab missing inventory+tips, tip adjustment no allocation, unassigned items excluded from course 1, parent discount stale after child void, comp-void payment check outside tx), 8 HIGH (pay-all-splits missing tip allocation, void-payment no tip reversal on DB failure, partial refund no tip adjust, reopen doesn't clear paidAt/closedAt, parent itemCount stale, merge doesn't restore discounts, seat cleanup fails silently, no quantity validation on POST), 8 MEDIUM (void closed order, tip adjustment no Order.total update, panel payment race, socket skip window, fire-course no status check, delayStartedAt scope, discount exceeds price, rapid split orphans), 2 LOW (snapshot coalescing, empty course API calls).
+
+### Commits
+
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | `0ca1331` | Fix deep dive round 2: 23 bugs across tip lifecycle, splits, courses, floor plan |
+
+### Stats
+
+- **Files changed:** 17
+- **Insertions:** 417
+- **Bug severity:** 5 CRITICAL, 8 HIGH, 8 MEDIUM, 2 LOW
+
+### Bug Fixes
+
+| Fix | Severity | Impact |
+|-----|----------|--------|
+| Close-tab missing inventory deduction + tip allocation | CRITICAL | Tab closes bypassed inventory and tip pipelines — added both after capture |
+| Tip adjustment never triggers tip allocation | CRITICAL | Deferred receipt tips skipped allocation — allocateTipsForPayment added |
+| Unassigned items excluded from course 1 firing | CRITICAL | Null courseNumber items never fired — filter includes null via {in: [1, null]} |
+| Parent discount not recalculated after child void | CRITICAL | Parent discount stayed stale after child void — sum sibling discountTotals |
+| Comp-void payment check outside transaction | CRITICAL | Concurrent payment could bypass check — moved inside tx after FOR UPDATE |
+| Pay-all-splits missing tip allocation | HIGH | Tips collected but never allocated in batch — added loop per split child |
+| Void-payment no tip reversal on DB failure | HIGH | Tips remained allocated after processor void — handleTipChargeback in catch |
+| Partial refund doesn't adjust tip | HIGH | Tip unchanged on partial refund — proportional tip reduction |
+| Reopen doesn't clear paidAt/closedAt | HIGH | Reopened order retained payment timestamps — clear both on reopen |
+| Parent itemCount stale after split children voided | HIGH | Parent showed original count — sum sibling active quantities |
+| Merge/unsplit doesn't restore discounts | HIGH | Discounts lost on merge — recalculate from child splits |
+| Temp seat cleanup fire-and-forget fails silently | HIGH | Stale seats accumulate — single retry with 1s delay |
+| No quantity validation on POST items | HIGH | Zero/negative quantities accepted — quantity >= 1 check |
+| Void-payment allows voiding closed orders | MEDIUM | Void on closed order inconsistent — status check added |
+| Tip adjustment doesn't update Order.total | MEDIUM | Order total out of sync — recalculate with new tipTotal |
+| Order panel doesn't clear on payment race | MEDIUM | Paid order visible on other terminal — check Zustand store |
+| Socket 500ms skip window too fragile | MEDIUM | Own-mutation refetch under latency — increased to 2000ms |
+| Fire-course no order status validation | MEDIUM | Courses fired on paid/closed orders — block invalid statuses |
+| delayStartedAt stamped on non-sent items | MEDIUM | All items got delay reset — scoped to filterItemIds |
+| Discount exceeds item price silently | MEDIUM | Negative line items on split — cap to item price |
+| Rapid split/unsplit orphans items | MEDIUM | Orphaned items on deleted children — clean on merge |
+| Snapshot coalescing too slow | LOW | Delayed floor plan updates — counter-based with immediate refresh |
+| Empty coursing fires unnecessary API calls | LOW | No-op API calls on empty course — early return with info toast |
+
+### Features Delivered
+
+| Feature | Skill | Summary |
+|---------|-------|---------|
+| Tip lifecycle completeness | 417 | Close-tab, adjust-tip, pay-all-splits, void, and refund all properly allocate/reverse tips |
+| Split/parent sync integrity | 417 | Parent discount, itemCount, and merge operations keep parent in sync with children |
+| Course firing safety | 417 | Unassigned items fire with Course 1; status validation blocks invalid fires |
+| Floor plan resilience | 417 | Seat cleanup retry, payment race handling, faster snapshot coalescing |
+
+---
+
 ## 2026-02-23 — Chaos Test Fixes (Skill 416)
 
 **Version:** `1.0.0-beta`
