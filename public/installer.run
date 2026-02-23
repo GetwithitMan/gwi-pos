@@ -699,7 +699,7 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   fi
 
   log "Applying database migrations..."
-  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>/dev/null || npx prisma db push" || {
+  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>/dev/null || npx prisma db push --accept-data-loss" || {
     err "Database migration failed. Check DATABASE_URL and PostgreSQL status."
     exit 1
   }
