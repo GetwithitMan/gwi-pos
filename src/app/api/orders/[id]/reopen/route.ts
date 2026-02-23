@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const POST = withVenue(async function POST(
@@ -53,6 +54,17 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Cooldown guard: prevent immediate reopen after cash payment (race condition)
+    if (order.paidAt) {
+      const secondsSincePaid = (Date.now() - new Date(order.paidAt).getTime()) / 1000
+      if (secondsSincePaid < 60) {
+        return NextResponse.json(
+          { error: 'Order was recently paid. Wait 60 seconds or use manager override.', requiresManagerApproval: true },
+          { status: 403 }
+        )
+      }
+    }
+
     // Update order to open status
     const reopenedOrder = await db.order.update({
       where: { id: orderId },
@@ -64,6 +76,15 @@ export const POST = withVenue(async function POST(
         version: { increment: 1 },
       },
     })
+
+    // Revert table status to occupied if order had a table
+    if (order.tableId) {
+      await db.table.update({
+        where: { id: order.tableId },
+        data: { status: 'occupied' },
+      })
+      invalidateSnapshotCache(order.locationId)
+    }
 
     // Create audit log
     await db.auditLog.create({
@@ -88,12 +109,17 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    // Dispatch socket event for reopened order (fire-and-forget)
+    // Dispatch socket events for reopened order (fire-and-forget)
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'reopened',
       orderId,
       tableId: order.tableId || undefined,
     }, { async: true }).catch(() => {})
+
+    // Update floor plan if order had a table (fire-and-forget)
+    if (order.tableId) {
+      void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
+    }
 
     return NextResponse.json({
       data: {

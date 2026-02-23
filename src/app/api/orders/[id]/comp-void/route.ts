@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { deductInventoryForVoidedItem, restorePrepStockForVoid, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
+import { deductInventoryForVoidedItem, restorePrepStockForVoid, restoreInventoryForRestoredItem, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateSimpleOrderTotals as calculateOrderTotals, recalculatePercentDiscounts } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
@@ -124,6 +124,18 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Check for existing completed payments
+    const completedPayments = await db.payment.findFirst({
+      where: { orderId, status: 'completed', deletedAt: null },
+      select: { id: true },
+    })
+    if (completedPayments) {
+      return NextResponse.json(
+        { error: 'Cannot modify an order with existing payments. Void the payment first.' },
+        { status: 400 }
+      )
+    }
+
     const item = order.items[0]
     if (!item) {
       return NextResponse.json(
@@ -219,11 +231,8 @@ export const POST = withVenue(async function POST(
         newSubtotal += (Number(activeItem.price) + mods) * activeItem.quantity
       })
 
-      // Get existing discounts
-      const discounts = await tx.orderDiscount.findMany({
-        where: { orderId },
-      })
-      const discountTotal = discounts.reduce((sum, d) => sum + Number(d.amount), 0)
+      // Recalculate percent-based discounts against new subtotal
+      const discountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
 
       // Recalculate order totals using centralized tax engine
       const txTotals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
@@ -439,6 +448,12 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    // Fire-and-forget: reverse any inventory deduction that occurred during the original void
+    // This creates positive adjustment transactions to undo the waste deductions
+    void restoreInventoryForRestoredItem(itemId, order.locationId).catch(err => {
+      console.error('[Inventory] Failed to reverse deduction on item restore:', err)
+    })
+
     // Recalculate order totals
     const activeItems = await db.orderItem.findMany({
       where: {
@@ -454,10 +469,8 @@ export const PUT = withVenue(async function PUT(
       newSubtotal += (Number(activeItem.price) + mods) * activeItem.quantity
     })
 
-    const discounts = await db.orderDiscount.findMany({
-      where: { orderId },
-    })
-    const discountTotal = discounts.reduce((sum, d) => sum + Number(d.amount), 0)
+    // Recalculate percent-based discounts against new subtotal
+    const discountTotal = await recalculatePercentDiscounts(db, orderId, newSubtotal)
 
     const totals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
 

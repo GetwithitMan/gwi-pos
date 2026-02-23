@@ -680,10 +680,9 @@ export function PaymentModal({
         })
         if (!res.ok) {
           completePaymentTiming(cashTiming, 'error')
-          if (await handleVersionConflict(res, orderId)) { setIsProcessing(false); return }
+          if (await handleVersionConflict(res, orderId)) return
           const data = await res.json().catch(() => ({}))
           toast.error(`Cash payment failed: ${data.error || 'Server error'}`)
-          setIsProcessing(false)
           return
         }
         completePaymentTiming(cashTiming, 'success')
@@ -691,6 +690,7 @@ export function PaymentModal({
       } catch {
         completePaymentTiming(cashTiming, 'error')
         toast.error('Cash payment failed — check network connection')
+      } finally {
         setIsProcessing(false)
       }
       return
@@ -715,7 +715,7 @@ export function PaymentModal({
       })
 
       if (!response.ok) {
-        if (await handleVersionConflict(response, orderId)) { setIsProcessing(false); return }
+        if (await handleVersionConflict(response, orderId)) return
         const data = await response.json()
         throw new Error(data.error || 'Payment failed')
       }

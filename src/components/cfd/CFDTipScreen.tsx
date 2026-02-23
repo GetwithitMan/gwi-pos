@@ -17,6 +17,7 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
   const [selection, setSelection] = useState<TipSelection | null>(null)
   const [showCustom, setShowCustom] = useState(false)
   const [customInput, setCustomInput] = useState('')
+  const [confirmingTip, setConfirmingTip] = useState<{ amount: number; isPercent: boolean; tipDollars: number } | null>(null)
 
   if (!data) return null
 
@@ -32,6 +33,50 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
 
   const tipDollars = selection ? computeTipDollars(selection) : 0
   const grandTotal = data.orderTotal + tipDollars
+
+  // Max tip validation: tips > 50% of order total require confirmation
+  const submitTip = (amount: number, isPercent: boolean) => {
+    const dollars = isPercent
+      ? Math.round(data.orderTotal * amount) / 100
+      : amount
+    if (dollars > data.orderTotal * 0.5) {
+      setConfirmingTip({ amount, isPercent, tipDollars: dollars })
+    } else {
+      onTipSelected(amount, isPercent)
+    }
+  }
+
+  // --- Large tip confirmation screen ---
+  if (confirmingTip) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 p-6">
+        <div className="w-full max-w-md text-center">
+          <h2 className="text-3xl text-amber-400 mb-3">Confirm Tip Amount</h2>
+          <p className="text-white/50 text-lg mb-8">
+            Confirm <span className="text-emerald-400 font-bold">${confirmingTip.tipDollars.toFixed(2)}</span> tip
+            {' '}on <span className="text-white font-bold">${data.orderTotal.toFixed(2)}</span> order?
+          </p>
+          <div className="flex gap-4">
+            <button
+              onClick={() => setConfirmingTip(null)}
+              className="flex-1 py-5 rounded-2xl text-lg font-semibold bg-white/10 text-white/60 hover:bg-white/20 transition-colors"
+            >
+              Go Back
+            </button>
+            <button
+              onClick={() => {
+                onTipSelected(confirmingTip.amount, confirmingTip.isPercent)
+                setConfirmingTip(null)
+              }}
+              className="flex-1 py-5 rounded-2xl text-lg font-semibold bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/25"
+            >
+              Confirm Tip
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // --- Custom keypad screen ---
   if (showCustom) {
@@ -58,7 +103,7 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
 
     const handleCustomConfirm = () => {
       if (customValid && parsedCustom >= 0) {
-        onTipSelected(parsedCustom, false)
+        submitTip(parsedCustom, false)
       }
     }
 
@@ -126,7 +171,7 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
     if (selection.type === 'none') {
       onTipSelected(0, false)
     } else if (selection.type === 'preset') {
-      onTipSelected(selection.value, data.isPercent)
+      submitTip(selection.value, data.isPercent)
     }
   }
 

@@ -31,25 +31,6 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
 
-    // Walk-in table double-claim lock: reject if an active order already exists on this table
-    if (tableId) {
-      const existingOrder = await db.order.findFirst({
-        where: {
-          tableId,
-          status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
-          deletedAt: null,
-        },
-        select: { id: true, orderNumber: true, version: true },
-      })
-      if (existingOrder) {
-        return apiError.conflict(
-          'Table already has an active order',
-          ERROR_CODES.TABLE_OCCUPIED,
-          { existingOrderId: existingOrder.id, existingOrderNumber: existingOrder.orderNumber, existingOrderVersion: existingOrder.version }
-        )
-      }
-    }
-
     // Get next order number for today
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -73,44 +54,73 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         initialSeatTimestamps[i.toString()] = now
       }
 
-      // Draft shell: use default isolation to avoid deadlocks under rapid tab creation.
-      // Duplicate order numbers are harmless for drafts and self-correct on send.
+      // Atomic transaction: table lock (Bug 13) + order number lock (Bug 5) + create
       timing.start('db-draft')
-      const lastOrder = await db.order.findFirst({
-        where: { locationId, createdAt: { gte: today, lt: tomorrow } },
-        orderBy: { orderNumber: 'desc' },
-        select: { orderNumber: true },
-      })
-      const orderNumber = (lastOrder?.orderNumber || 0) + 1
+      let order: any
+      try {
+        order = await db.$transaction(async (tx) => {
+          // Lock table row to prevent concurrent double-claim
+          if (tableId) {
+            await tx.$queryRawUnsafe(`SELECT id FROM "Table" WHERE id = $1 FOR UPDATE`, tableId)
+            const existingOrder = await tx.order.findFirst({
+              where: {
+                tableId,
+                status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
+                deletedAt: null,
+              },
+              select: { id: true, orderNumber: true, version: true },
+            })
+            if (existingOrder) {
+              throw { code: 'TABLE_OCCUPIED', data: existingOrder }
+            }
+          }
 
-      const order = await db.order.create({
-        data: {
-          locationId,
-          employeeId,
-          orderNumber,
-          orderType,
-          orderTypeId: orderTypeId || null,
-          tableId: tableId || null,
-          tabName: tabName || null,
-          guestCount: initialSeatCount,
-          baseSeatCount: initialSeatCount,
-          extraSeatCount: 0,
-          seatVersion: 0,
-          seatTimestamps: initialSeatTimestamps,
-          status: 'draft',
-          subtotal: 0,
-          discountTotal: 0,
-          taxTotal: 0,
-          taxFromInclusive: 0,
-          taxFromExclusive: 0,
-          tipTotal: 0,
-          total: 0,
-          commissionTotal: 0,
-          notes: notes || null,
-          customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
-          businessDayDate: businessDayStart,
-        },
-      })
+          // Lock latest order row to prevent duplicate order numbers
+          const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
+            `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+            locationId, today, tomorrow
+          )
+          const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
+
+          return tx.order.create({
+            data: {
+              locationId,
+              employeeId,
+              orderNumber,
+              orderType,
+              orderTypeId: orderTypeId || null,
+              tableId: tableId || null,
+              tabName: tabName || null,
+              guestCount: initialSeatCount,
+              baseSeatCount: initialSeatCount,
+              extraSeatCount: 0,
+              seatVersion: 0,
+              seatTimestamps: initialSeatTimestamps,
+              status: 'draft',
+              subtotal: 0,
+              discountTotal: 0,
+              taxTotal: 0,
+              taxFromInclusive: 0,
+              taxFromExclusive: 0,
+              tipTotal: 0,
+              total: 0,
+              commissionTotal: 0,
+              notes: notes || null,
+              customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
+              businessDayDate: businessDayStart,
+            },
+          })
+        })
+      } catch (err: any) {
+        if (err?.code === 'TABLE_OCCUPIED') {
+          return apiError.conflict(
+            'Table already has an active order',
+            ERROR_CODES.TABLE_OCCUPIED,
+            { existingOrderId: err.data.id, existingOrderNumber: err.data.orderNumber, existingOrderVersion: err.data.version }
+          )
+        }
+        throw err
+      }
 
       timing.end('db-draft', 'Draft order create')
 
@@ -165,15 +175,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     // === STANDARD PATH: Full order creation with items ===
 
-    // Get order number atomically (serializable transaction prevents duplicates)
-    const { orderNumber } = await db.$transaction(async (tx) => {
-      const lastOrder = await tx.order.findFirst({
-        where: { locationId, createdAt: { gte: today, lt: tomorrow } },
-        orderBy: { orderNumber: 'desc' },
-        select: { orderNumber: true },
-      })
-      return { orderNumber: (lastOrder?.orderNumber || 0) + 1 }
-    }, { isolationLevel: 'Serializable' })
+    // Order number + table check handled atomically inside order creation transaction below
 
     // Fetch menu items to get commission settings
     const menuItemIds = items.map(item => item.menuItemId)
@@ -343,7 +345,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const totals = calculateOrderTotals(items, locationSettings, 0, 0)
     const { taxTotal, taxFromInclusive, taxFromExclusive, total } = totals
 
-    // Create the order
+    // Create the order atomically: table lock (Bug 13) + order number lock (Bug 5) + create
     // Initialize seat management (Skill 121)
     timing.start('db')
     const initialSeatCount = guestCount || 1
@@ -353,60 +355,97 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       initialSeatTimestamps[i.toString()] = now
     }
 
-    const order = await db.order.create({
-      data: {
-        locationId,
-        employeeId,
-        orderNumber,
-        orderType,
-        orderTypeId: orderTypeId || null,
-        tableId: tableId || null,
-        tabName: tabName || null,
-        guestCount: initialSeatCount,
-        baseSeatCount: initialSeatCount,     // Skill 121: Track original seat count
-        extraSeatCount: 0,                    // Skill 121: Additional seats added
-        seatVersion: 0,                       // Skill 121: Concurrency version
-        seatTimestamps: initialSeatTimestamps, // Skill 121: When each seat was created
-        status: 'open',
-        subtotal,
-        discountTotal: 0,
-        taxTotal,
-        taxFromInclusive,
-        taxFromExclusive,
-        tipTotal: 0,
-        total,
-        commissionTotal,
-        itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
-        notes: notes || null,
-        customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
-        businessDayDate: businessDayStart,
-        items: {
-          create: orderItems,
-        },
-      },
-      include: {
-        items: {
+    let order: any
+    try {
+      order = await db.$transaction(async (tx) => {
+        // Lock table row to prevent concurrent double-claim (Bug 13)
+        if (tableId) {
+          await tx.$queryRawUnsafe(`SELECT id FROM "Table" WHERE id = $1 FOR UPDATE`, tableId)
+          const existingOrder = await tx.order.findFirst({
+            where: {
+              tableId,
+              status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
+              deletedAt: null,
+            },
+            select: { id: true, orderNumber: true, version: true },
+          })
+          if (existingOrder) {
+            throw { code: 'TABLE_OCCUPIED', data: existingOrder }
+          }
+        }
+
+        // Lock latest order row to prevent duplicate order numbers (Bug 5)
+        const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
+          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+          locationId, today, tomorrow
+        )
+        const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
+
+        return tx.order.create({
+          data: {
+            locationId,
+            employeeId,
+            orderNumber,
+            orderType,
+            orderTypeId: orderTypeId || null,
+            tableId: tableId || null,
+            tabName: tabName || null,
+            guestCount: initialSeatCount,
+            baseSeatCount: initialSeatCount,     // Skill 121: Track original seat count
+            extraSeatCount: 0,                    // Skill 121: Additional seats added
+            seatVersion: 0,                       // Skill 121: Concurrency version
+            seatTimestamps: initialSeatTimestamps, // Skill 121: When each seat was created
+            status: 'open',
+            subtotal,
+            discountTotal: 0,
+            taxTotal,
+            taxFromInclusive,
+            taxFromExclusive,
+            tipTotal: 0,
+            total,
+            commissionTotal,
+            itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
+            notes: notes || null,
+            customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
+            businessDayDate: businessDayStart,
+            items: {
+              create: orderItems,
+            },
+          },
           include: {
-            modifiers: true,
-            ingredientModifications: true,
+            items: {
+              include: {
+                modifiers: true,
+                ingredientModifications: true,
+              },
+            },
+            employee: {
+              select: {
+                id: true,
+                displayName: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+            table: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
-        },
-        employee: {
-          select: {
-            id: true,
-            displayName: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        table: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-    })
+        })
+      })
+    } catch (err: any) {
+      if (err?.code === 'TABLE_OCCUPIED') {
+        return apiError.conflict(
+          'Table already has an active order',
+          ERROR_CODES.TABLE_OCCUPIED,
+          { existingOrderId: err.data.id, existingOrderNumber: err.data.orderNumber, existingOrderVersion: err.data.version }
+        )
+      }
+      throw err
+    }
 
     timing.end('db', 'Order create with items')
 
@@ -447,7 +486,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         entityType: 'order',
         entityId: order.id,
         details: {
-          orderNumber,
+          orderNumber: order.orderNumber,
           orderType,
           tableId: tableId || null,
           tabName: tabName || null,

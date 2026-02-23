@@ -251,9 +251,9 @@ export const POST = withVenue(withTiming(async function POST(
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    if (order.status === 'paid' || order.status === 'closed') {
+    if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
       return NextResponse.json(
-        { error: 'Order is already paid' },
+        { error: 'Cannot pay an order with status: ' + order.status },
         { status: 400 }
       )
     }

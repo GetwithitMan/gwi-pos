@@ -23,6 +23,27 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Validate course ordering: prior courses should be fired first
+    if (courseNumber > 1 && !body.force) {
+      const priorUnfiredItems = await db.orderItem.findMany({
+        where: {
+          orderId: id,
+          courseNumber: { lt: courseNumber },
+          kitchenStatus: 'pending',
+          isHeld: false,
+          deletedAt: null,
+          status: 'active',
+        },
+      })
+      if (priorUnfiredItems.length > 0) {
+        return NextResponse.json({
+          error: `Course ${courseNumber - 1} has unfired items. Fire it first or pass force: true to override.`,
+          unfiredCourseItems: priorUnfiredItems.length,
+          requiresForce: true,
+        }, { status: 400 })
+      }
+    }
+
     // Get the order with items for this course that haven't been sent yet
     const order = await db.order.findFirst({
       where: { id, deletedAt: null },

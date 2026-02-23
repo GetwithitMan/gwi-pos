@@ -2,6 +2,7 @@
  * Waste Path: Voided Items That Were Made
  *
  * Deducts inventory for voided order items when the food was actually prepared.
+ * Also includes restore logic for reversing deductions when items are un-voided.
  */
 
 import { Decimal } from '@prisma/client/runtime/library'
@@ -9,6 +10,73 @@ import { db } from '@/lib/db'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
+
+/**
+ * Reverse inventory deductions when a voided/comped item is restored to active.
+ * Finds all waste transactions for this item and creates positive adjustment transactions
+ * to undo them. Prevents double inventory credit on re-void.
+ */
+export async function restoreInventoryForRestoredItem(
+  orderItemId: string,
+  locationId: string,
+): Promise<{ success: boolean; itemsRestored: number }> {
+  try {
+    // Find all waste transactions that were created for this voided item
+    const wasteTransactions = await db.inventoryItemTransaction.findMany({
+      where: {
+        referenceType: 'void',
+        referenceId: orderItemId,
+        type: 'waste',
+      },
+      include: {
+        inventoryItem: {
+          select: { id: true, currentStock: true },
+        },
+      },
+    })
+
+    if (wasteTransactions.length === 0) {
+      return { success: true, itemsRestored: 0 }
+    }
+
+    // Create reversal transactions and restore stock
+    const operations = wasteTransactions.flatMap(tx => {
+      const restoreQty = Math.abs(toNumber(tx.quantityChange))
+      const currentStock = toNumber(tx.inventoryItem.currentStock)
+
+      return [
+        // Increment stock back
+        db.inventoryItem.update({
+          where: { id: tx.inventoryItemId },
+          data: { currentStock: { increment: restoreQty } },
+        }),
+        // Create adjustment transaction record
+        db.inventoryItemTransaction.create({
+          data: {
+            locationId,
+            inventoryItemId: tx.inventoryItemId,
+            type: 'adjustment',
+            quantityBefore: currentStock,
+            quantityChange: restoreQty,
+            quantityAfter: currentStock + restoreQty,
+            unitCost: toNumber(tx.unitCost),
+            totalCost: -(toNumber(tx.totalCost)),
+            reason: `Restored: item un-voided (reversal of waste txn ${tx.id})`,
+            referenceType: 'void_reversal',
+            referenceId: orderItemId,
+          },
+        }),
+      ]
+    })
+
+    await db.$transaction(operations)
+
+    return { success: true, itemsRestored: wasteTransactions.length }
+  } catch (error) {
+    console.error('[Inventory] Failed to restore inventory for restored item:', error)
+    return { success: false, itemsRestored: 0 }
+  }
+}
 
 /**
  * Void reasons that indicate food/drink was made and should still deduct inventory

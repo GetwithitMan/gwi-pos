@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
-import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive, type LocationTaxSettings } from '@/lib/order-calculations'
+import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, calculateOrderSubtotal, isItemTaxInclusive, recalculatePercentDiscounts, type LocationTaxSettings } from '@/lib/order-calculations'
 import { calculateCardPrice } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
@@ -123,11 +123,21 @@ export const POST = withVenue(async function POST(
               ingredientModifications: true,
             },
           },
+          payments: {
+            where: { deletedAt: null },
+            select: { id: true, status: true },
+          },
         },
       })
 
       if (!existingOrder) {
         throw new Error('Order not found')
+      }
+
+      // Block modifications if any completed payment exists
+      const hasCompletedPayment = existingOrder.payments?.some(p => p.status === 'completed') || false
+      if (hasCompletedPayment) {
+        throw new Error('ORDER_HAS_PAYMENTS')
       }
 
       // Promote businessDayDate to current business day when items are added
@@ -328,11 +338,15 @@ export const POST = withVenue(async function POST(
         ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
       }))
 
+      // Recalculate percent-based discounts against new subtotal
+      const newSubtotalForDiscounts = calculateOrderSubtotal(itemsForCalc)
+      const updatedDiscountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotalForDiscounts)
+
       // Use centralized calculation function (single source of truth)
       const totals = calculateOrderTotals(
         itemsForCalc,
         existingOrder.location.settings as LocationTaxSettings | null,
-        Number(existingOrder.discountTotal) || 0,
+        updatedDiscountTotal,
         Number(existingOrder.tipTotal) || 0
       )
 
@@ -468,6 +482,12 @@ export const POST = withVenue(async function POST(
       return NextResponse.json(
         { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
         { status: 409 }
+      )
+    }
+    if (message === 'ORDER_HAS_PAYMENTS') {
+      return NextResponse.json(
+        { error: 'Cannot modify an order with existing payments. Void the payment first.' },
+        { status: 400 }
       )
     }
 

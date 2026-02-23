@@ -3922,6 +3922,9 @@ CREATE INDEX "Order_locationId_createdAt_status_idx" ON "Order"("locationId", "c
 CREATE INDEX "Order_locationId_businessDayDate_idx" ON "Order"("locationId", "businessDayDate");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Order_locationId_orderNumber_key" ON "Order"("locationId", "orderNumber");
+
+-- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
 
 -- CreateIndex

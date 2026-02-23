@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { calculateOrbitRadius, findCollisionFreePosition } from '@/lib/seat-utils'
-import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -240,6 +240,8 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    let locationIdForDispatch: string | null = null
+
     const result = await db.$transaction(async (tx) => {
       // Get current order state with table info for seat positioning
       const order = await tx.order.findUnique({
@@ -259,6 +261,8 @@ export const POST = withVenue(async function POST(
       if (!['open', 'draft', 'sent', 'in_progress'].includes(order.status)) {
         throw new Error('Cannot modify seats on a closed order')
       }
+
+      locationIdForDispatch = order.table?.locationId ?? null
 
       // Optimistic locking check
       if (seatVersion !== undefined && order.seatVersion !== seatVersion) {
@@ -480,6 +484,14 @@ export const POST = withVenue(async function POST(
         throw new Error(`Unknown action: ${action}`)
       }
     })
+
+    // Dispatch socket event so other terminals know about seat changes
+    if (locationIdForDispatch) {
+      void dispatchOrderUpdated(locationIdForDispatch, {
+        orderId,
+        changes: [`seat-${result.action.toLowerCase()}`, ...(result.itemsMovedToShared ? [`items-moved-to-shared:${result.itemsMovedToShared}`] : [])],
+      }).catch(() => {})
+    }
 
     return NextResponse.json({ data: result })
 

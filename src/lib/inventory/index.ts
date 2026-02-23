@@ -52,7 +52,7 @@ export { calculateRecipeCosting, calculateIngredientCosts } from './recipe-costi
 export { ORDER_INVENTORY_INCLUDE, deductInventoryForOrder } from './order-deduction'
 
 // Void/Waste
-export { WASTE_VOID_REASONS, deductInventoryForVoidedItem } from './void-waste'
+export { WASTE_VOID_REASONS, deductInventoryForVoidedItem, restoreInventoryForRestoredItem } from './void-waste'
 
 // Prep Stock
 export { deductPrepStockForOrder, restorePrepStockForVoid } from './prep-stock'

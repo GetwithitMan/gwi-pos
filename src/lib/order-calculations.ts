@@ -413,3 +413,57 @@ export function calculateSimpleOrderTotals(
     total,
   }
 }
+
+// ============================================================================
+// DISCOUNT RECALCULATION
+// ============================================================================
+
+/**
+ * Recalculate percent-based discount amounts when the subtotal changes.
+ *
+ * Percent discounts are stored as fixed dollar amounts at the time of application.
+ * When items are added, removed, or voided, the subtotal changes but the discount
+ * amounts stay stale. This function updates them.
+ *
+ * @param tx - Prisma transaction client (or db)
+ * @param orderId - The order to recalculate discounts for
+ * @param newSubtotal - The new subtotal after item changes
+ * @returns The new total discount amount (sum of all discount amounts)
+ */
+export async function recalculatePercentDiscounts(
+  tx: { orderDiscount: { findMany: Function; update: Function } },
+  orderId: string,
+  newSubtotal: number
+): Promise<number> {
+  const discounts = await tx.orderDiscount.findMany({
+    where: { orderId, deletedAt: null },
+  })
+
+  if (discounts.length === 0) return 0
+
+  let totalDiscount = 0
+
+  for (const discount of discounts) {
+    const percent = discount.percent ? Number(discount.percent) : null
+
+    if (percent != null && percent > 0) {
+      // Recalculate amount from percentage and new subtotal
+      const newAmount = roundToCents(newSubtotal * (percent / 100))
+      // Cap: discount can't exceed remaining subtotal
+      const cappedAmount = Math.min(newAmount, Math.max(0, newSubtotal - totalDiscount))
+
+      if (cappedAmount !== Number(discount.amount)) {
+        await tx.orderDiscount.update({
+          where: { id: discount.id },
+          data: { amount: cappedAmount },
+        })
+      }
+      totalDiscount += cappedAmount
+    } else {
+      // Fixed discount — unchanged
+      totalDiscount += Number(discount.amount)
+    }
+  }
+
+  return totalDiscount
+}

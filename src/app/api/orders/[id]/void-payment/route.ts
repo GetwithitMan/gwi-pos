@@ -3,14 +3,21 @@ import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { requireDatacapClient } from '@/lib/datacap/helpers'
+import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 
 /**
- * Records a payment void in the database only.
- * IMPORTANT: Callers must first successfully call POST /api/datacap/void to void
- * the transaction in the payment processor. If the Datacap void succeeds but this
- * DB write fails, the charge is reversed at the processor but still shows as
- * "completed" in the system — reconcile manually via the Datacap portal.
+ * Voids a payment — handles both Datacap (card) and DB in a single atomic flow.
+ *
+ * For card payments:
+ *   1. Calls Datacap voidSale to reverse the charge at the processor
+ *   2. If Datacap succeeds, updates the DB
+ *   3. If Datacap fails, returns error without modifying DB
+ *   4. If Datacap succeeds but DB fails, logs a CRITICAL safety warning
+ *
+ * For cash payments:
+ *   Skips Datacap and directly updates the DB.
  */
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -18,7 +25,7 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id: orderId } = await params
-    const { paymentId, reason, notes, managerId } = await request.json()
+    const { paymentId, reason, notes, managerId, readerId } = await request.json()
 
     // Validate inputs
     if (!paymentId || !reason || !managerId) {
@@ -73,6 +80,49 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Step 1: If card payment, void at Datacap first
+    const isCardPayment = payment.paymentMethod === 'card' || payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
+    if (isCardPayment) {
+      const recordNo = payment.datacapRecordNo
+
+      if (!recordNo) {
+        return NextResponse.json(
+          { error: 'Cannot void card payment: missing transaction record number. Void manually via Datacap portal.' },
+          { status: 400 }
+        )
+      }
+
+      // Determine which reader to use: caller-provided or from payment record
+      const effectiveReaderId = readerId || payment.paymentReaderId
+
+      if (!effectiveReaderId) {
+        return NextResponse.json(
+          { error: 'Cannot void card payment: no payment reader available. Void manually via Datacap portal.' },
+          { status: 400 }
+        )
+      }
+
+      try {
+        const client = await requireDatacapClient(order.locationId)
+        const datacapResponse = await client.voidSale(effectiveReaderId, { recordNo })
+        const datacapError = parseError(datacapResponse)
+
+        if (datacapResponse.cmdStatus !== 'Approved' || datacapError) {
+          return NextResponse.json(
+            { error: `Datacap void failed: ${datacapError?.text || datacapResponse.textResponse || 'Unknown error'}. DB not modified.` },
+            { status: 502 }
+          )
+        }
+      } catch (datacapErr) {
+        const msg = datacapErr instanceof Error ? datacapErr.message : 'Datacap void request failed'
+        return NextResponse.json(
+          { error: `Datacap void failed: ${msg}. DB not modified.` },
+          { status: 502 }
+        )
+      }
+    }
+
+    // Step 2: Datacap succeeded (or cash) — update DB
     // Check if there are other valid payments
     const activePayments = order.payments.filter(
       (p) => p.id !== paymentId && p.status !== 'voided'
@@ -85,55 +135,70 @@ export const POST = withVenue(async function POST(
       newOrderStatus = 'voided'
     }
 
-    // Wrap all critical writes in a single transaction
-    const voidedPayment = await db.$transaction(async (tx) => {
-      // 1. Update payment to voided
-      const updated = await tx.payment.update({
-        where: { id: paymentId },
-        data: {
-          status: 'voided',
-          voidedAt: new Date(),
-          voidedBy: managerId,
-          voidReason: reason,
-        },
-      })
-
-      // 2. Update order status
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          status: newOrderStatus,
-        },
-      })
-
-      // 3. Create audit log
-      await tx.auditLog.create({
-        data: {
-          locationId: order.locationId,
-          employeeId: managerId,
-          action: 'payment_voided',
-          entityType: 'payment',
-          entityId: paymentId,
-          details: {
-            orderId,
-            orderNumber: order.orderNumber,
-            paymentId,
-            amount: Number(payment.amount),
-            tipAmount: Number(payment.tipAmount),
-            totalAmount: Number(payment.totalAmount),
-            paymentMethod: payment.paymentMethod,
-            reason,
-            notes: notes || null,
-            oldOrderStatus: order.status,
-            newOrderStatus,
+    let voidedPayment
+    try {
+      // Wrap all critical writes in a single transaction
+      voidedPayment = await db.$transaction(async (tx) => {
+        // 1. Update payment to voided
+        const updated = await tx.payment.update({
+          where: { id: paymentId },
+          data: {
+            status: 'voided',
+            voidedAt: new Date(),
+            voidedBy: managerId,
+            voidReason: reason,
           },
-          ipAddress: request.headers.get('x-forwarded-for'),
-          userAgent: request.headers.get('user-agent'),
-        },
-      })
+        })
 
-      return updated
-    })
+        // 2. Update order status
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            status: newOrderStatus,
+          },
+        })
+
+        // 3. Create audit log
+        await tx.auditLog.create({
+          data: {
+            locationId: order.locationId,
+            employeeId: managerId,
+            action: 'payment_voided',
+            entityType: 'payment',
+            entityId: paymentId,
+            details: {
+              orderId,
+              orderNumber: order.orderNumber,
+              paymentId,
+              amount: Number(payment.amount),
+              tipAmount: Number(payment.tipAmount),
+              totalAmount: Number(payment.totalAmount),
+              paymentMethod: payment.paymentMethod,
+              reason,
+              notes: notes || null,
+              oldOrderStatus: order.status,
+              newOrderStatus,
+            },
+            ipAddress: request.headers.get('x-forwarded-for'),
+            userAgent: request.headers.get('user-agent'),
+          },
+        })
+
+        return updated
+      })
+    } catch (dbError) {
+      // CRITICAL: Datacap voided but DB update failed
+      if (isCardPayment) {
+        console.error(
+          `[PAYMENT-SAFETY] CRITICAL: Datacap voided but DB update failed. ` +
+          `orderId=${orderId}, paymentId=${paymentId}, amount=${Number(payment.totalAmount)}, ` +
+          `method=${payment.paymentMethod}, reason=${reason}. ` +
+          `Reconcile manually via Datacap portal.`,
+          dbError
+        )
+      }
+      throw dbError
+    }
 
     // Dispatch socket events for voided payment (fire-and-forget)
     void dispatchPaymentProcessed(order.locationId, {

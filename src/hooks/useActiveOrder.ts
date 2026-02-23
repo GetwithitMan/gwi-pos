@@ -4,6 +4,7 @@ import { toast } from '@/stores/toast-store'
 import { isTempId, buildOrderItemPayload } from '@/lib/order-utils'
 import { startPaymentTiming, markRequestSent, completePaymentTiming } from '@/lib/payment-timing'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
 
 interface UseActiveOrderOptions {
@@ -147,6 +148,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
   // Generation counter: bumped on every clearOrder/startOrder to invalidate stale draft callbacks
   const draftGenRef = useRef(0)
 
+  // Bug 8: Timestamp of our last mutation — used to skip socket events from our own actions
+  const lastMutationRef = useRef<number>(0)
+
   // Convert store items to OrderPanelItemData format
   const items: OrderPanelItemData[] = useMemo(() => {
     if (!currentOrder?.items) return []
@@ -210,10 +214,15 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     if (order?.id && !isTempId(order.id)) {
       const hasSentItems = order.items.some(i => i.sentToKitchen)
       if (!hasSentItems) {
+        // Bug 10 fix: Empty drafts (0 items) get deletedAt for proper soft-delete cleanup
+        const body: Record<string, unknown> = { status: 'cancelled' }
+        if (order.items.length === 0) {
+          body.deletedAt = new Date().toISOString()
+        }
         fetch(`/api/orders/${order.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'cancelled' }),
+          body: JSON.stringify(body),
         }).catch(() => {})
       }
     }
@@ -312,6 +321,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     const store = useOrderStore.getState()
     const order = store.currentOrder
     if (!order?.id || isTempId(order.id)) return // no DB ID yet — safety net will catch it
+    lastMutationRef.current = Date.now() // Bug 8: stamp to skip own socket events
 
     const item = order.items.find(i => i.id === tempId)
     if (!item) return
@@ -661,6 +671,31 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     return () => clearInterval(interval)
   }, []) // stable — reads from store directly
 
+  // Bug 8 fix: Socket listener for cross-terminal order changes
+  // When another terminal modifies the active order, refresh from server
+  useEffect(() => {
+    const orderId = currentOrder?.id
+    if (!orderId || isTempId(orderId)) return
+
+    const socket = getSharedSocket() as { on: (e: string, cb: (...args: unknown[]) => void) => void; off: (e: string, cb?: (...args: unknown[]) => void) => void }
+
+    const onListChanged = (data: unknown) => {
+      const payload = data as { orderId?: string; trigger?: string }
+      if (payload.orderId !== orderId) return
+
+      // Skip events triggered by our own mutations (within 500ms)
+      if (Date.now() - lastMutationRef.current < 500) return
+
+      loadOrder(orderId)
+    }
+
+    socket.on('orders:list-changed', onListChanged)
+    return () => {
+      socket.off('orders:list-changed', onListChanged)
+      releaseSharedSocket()
+    }
+  }, [currentOrder?.id, loadOrder])
+
   // Remove item
   const handleRemoveItem = useCallback(async (itemId: string) => {
     const orderId = currentOrder?.id
@@ -936,6 +971,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
     sendInProgressRef.current = true
     setIsSending(true)
+    lastMutationRef.current = Date.now() // Bug 8: stamp to skip own socket events
 
     try {
       // Routing: coursing, delay, or standard (fire-and-forget) send
@@ -1116,13 +1152,17 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           const bgChain = async () => {
             let itemIdMap: Map<string, string> | null = null
 
+            // Bug 7 fix: Filter out items that have an active save in pendingSavesRef
+            // to prevent both saveItemToDb() and bgChain() from POSTing the same item
+            const safeUnsavedItems = unsavedItems.filter(item => !pendingSavesRef.current.has(item.id))
+
             // Step 1: Append unsaved items to DB (if any have temp IDs)
-            if (unsavedItems.length > 0) {
+            if (safeUnsavedItems.length > 0) {
               const appendRes = await fetch(`/api/orders/${orderId}/items`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  items: unsavedItems.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+                  items: safeUnsavedItems.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
                   version: getOrderVersion(),
                 }),
               })

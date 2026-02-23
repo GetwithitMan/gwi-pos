@@ -5,6 +5,128 @@
 
 ---
 
+## 2026-02-23 — Chaos Test Fixes (Skill 416)
+
+**Version:** `1.0.0-beta`
+**Session theme:** Comprehensive chaos testing — worst-case employee behavior simulation reveals and fixes 19 bugs across payment, order, and floor plan flows
+
+**Summary:** Ran comprehensive chaos testing simulating rapid clicks, wrong payments, card declines, and concurrent terminal operations. Identified and fixed 19 bugs: 6 critical (isProcessing orphaned after decline, items modifiable after partial payment, datacap+DB void decoupled, comp restore double inventory, order number race duplicates, failed capture hanging auth), 8 high (item duplication on send, no socket for active order, discount no recalculate, empty drafts accumulate, deleted items no dispatch, reopen no cooldown, multiple drafts same table, autosaveInFlightRef verified), 5 medium (CFD no max tip validation, course firing no ordering, quantity 0 accepted, orphaned seats no warning, cancelled order accepts payment).
+
+### Changes Summary
+
+**Bug 1 (CRITICAL): isProcessing Orphaned After Card Decline**
+- finally{} cleanup on all payment paths
+- File: PaymentModal.tsx
+
+**Bug 2 (CRITICAL): Items Modifiable After Partial Payment**
+- Payment existence check on all mutation routes
+- Files: items/, comp-void/
+
+**Bug 3 (CRITICAL): Datacap Void + DB Void Decoupled**
+- Unified route handles both atomically
+- File: void-payment/route.ts
+
+**Bug 4 (CRITICAL): Comp Restore + Re-Void Double Inventory**
+- restoreInventoryForRestoredItem() reverses deduction
+- Files: comp-void/route.ts, inventory/
+
+**Bug 5 (CRITICAL): Order Number Race (Duplicates)**
+- @@unique constraint + transactional number generation
+- Files: orders/route.ts, schema.prisma
+
+**Bug 6 (CRITICAL): Failed Capture Leaves Hanging Auth**
+- Auto-void auth on capture failure
+- File: close-tab/route.ts
+
+**Bug 7 (HIGH): Items Duplicated During Send**
+- Filter pendingSavesRef items from bgChain append
+- File: useActiveOrder.ts
+
+**Bug 8 (HIGH): No Socket Listener for Active Order**
+- orders:list-changed listener with own-mutation skip
+- File: useActiveOrder.ts
+
+**Bug 9 (HIGH): Discount Doesn't Recalculate**
+- recalculatePercentDiscounts() on subtotal changes
+- Files: order-calculations.ts, items/, comp-void/
+
+**Bug 10 (HIGH): Empty Drafts Accumulate**
+- clearOrder() soft-deletes empty drafts
+- File: useActiveOrder.ts
+
+**Bug 11 (HIGH): Deleted Items Not Dispatched**
+- Added dispatchOpenOrdersChanged on delete
+- File: items/[itemId]/route.ts
+
+**Bug 12 (HIGH): Reopen After Payment No Cooldown**
+- 60s cooldown + table status revert + cache invalidation
+- File: reopen/route.ts
+
+**Bug 13 (HIGH): Multiple Drafts Same Table**
+- Table lock (FOR UPDATE) inside creation transaction
+- File: orders/route.ts
+
+**Bug 15 (MEDIUM): No Max Tip Validation on CFD**
+- >50% tip shows confirmation screen
+- File: CFDTipScreen.tsx
+
+**Bug 17 (MEDIUM): Course Firing No Ordering**
+- Prior-course check with force override
+- File: fire-course/route.ts
+
+**Bug 18 (MEDIUM): Quantity 0 Accepted by API**
+- Validation: quantity >= 1
+- File: items/[itemId]/route.ts
+
+**Bug 19 (MEDIUM): Orphaned Seats No Warning**
+- movedItemsToShared count + socket dispatch
+- File: seating/route.ts
+
+**Bug 20 (MEDIUM): Cancelled Order Accepts Payment**
+- Added cancelled/voided to blocked statuses
+- File: pay/route.ts
+
+### Bug Fixes
+
+| Fix | Severity | Impact |
+|-----|----------|--------|
+| isProcessing orphaned after card decline | CRITICAL | Payment modal permanently locked after decline — finally{} cleanup added |
+| Items modifiable after partial payment | CRITICAL | Order total could change after partial payment — mutation routes check for existing payments |
+| Datacap void + DB void decoupled | CRITICAL | Processor void could succeed while DB void failed — unified atomic operation |
+| Comp restore + re-void double inventory | CRITICAL | Inventory deducted twice on restore→re-void — restore now reverses deduction |
+| Order number race (duplicates) | CRITICAL | Concurrent creation could produce duplicate numbers — @@unique + transactional generation |
+| Failed capture leaves hanging auth | CRITICAL | Auth hold stuck on customer card for days — auto-void on capture failure |
+| Items duplicated during send | HIGH | pendingSaves appended twice to bgChain — filtered before append |
+| No socket listener for active order | HIGH | Cross-terminal edits invisible — orders:list-changed listener added |
+| Discount doesn't recalculate | HIGH | Percentage discount stayed flat after item changes — recalculate on subtotal change |
+| Empty drafts accumulate | HIGH | Hundreds of zero-item drafts in DB — soft-delete on navigate away |
+| Deleted items not dispatched | HIGH | Item deletion invisible to other terminals — socket dispatch added |
+| Reopen after payment no cooldown | HIGH | Immediate reopen caused double-charge risk — 60s cooldown added |
+| Multiple drafts same table | HIGH | Concurrent taps created duplicate drafts — FOR UPDATE table lock |
+| No max tip validation on CFD | MEDIUM | Accidental large tips possible — >50% confirmation screen |
+| Course firing no ordering | MEDIUM | Courses fireable out of order — prior-course check added |
+| Quantity 0 accepted by API | MEDIUM | Ghost items with zero quantity — validation rejects < 1 |
+| Orphaned seats no warning | MEDIUM | Items silently moved on seat removal — count + socket added |
+| Cancelled order accepts payment | MEDIUM | Payment accepted on cancelled/voided orders — status check expanded |
+
+### Features Delivered
+
+| Feature | Skill | Summary |
+|---------|-------|---------|
+| Payment modal decline recovery | 416 | isProcessing cleanup on all payment paths |
+| Partial payment mutation lock | 416 | Item mutations blocked after any payment exists |
+| Atomic void (Datacap + DB) | 416 | Single transaction for processor + database void |
+| Inventory restore on comp unvoid | 416 | restoreInventoryForRestoredItem() reverses waste |
+| Unique order numbers | 416 | @@unique constraint + transactional generation |
+| Auto-void hanging auth | 416 | Capture failure auto-voids authorization |
+| Cross-terminal socket sync | 416 | Active order listens for orders:list-changed |
+| Discount auto-recalculation | 416 | Percentage discounts track subtotal changes |
+| Empty draft cleanup | 416 | Zero-item drafts soft-deleted on navigate |
+| CFD tip guard | 416 | >50% tip requires confirmation |
+| Course firing order enforcement | 416 | Prior-course validation with force override |
+
+---
+
 ## 2026-02-23 — Split Payment, Void & Merge Fixes (Skill 415)
 
 **Version:** `1.0.0-beta`

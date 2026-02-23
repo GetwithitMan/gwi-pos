@@ -1685,6 +1685,7 @@ model Order {
   @@index([locationId, paidAt])
   @@index([locationId, createdAt, status])
   @@index([locationId, businessDayDate])
+  @@unique([locationId, orderNumber])
 }
 
 model OrderItem {

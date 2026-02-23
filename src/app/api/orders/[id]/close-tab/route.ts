@@ -179,6 +179,27 @@ export const POST = withVenue(async function POST(
           timestamp: new Date().toISOString(),
           error: err instanceof Error ? err.message : String(err),
         })
+
+        // PAYMENT-SAFETY: Attempt to void/release the pre-auth so the hold on the
+        // customer's card doesn't linger for days. Fire-and-forget — best effort.
+        void (async () => {
+          try {
+            const voidClient = await requireDatacapClient(locationId)
+            await voidClient.voidSale(card.readerId, { recordNo: card.recordNo })
+            console.info('[PAYMENT-SAFETY] Released pre-auth after capture failure', {
+              orderId, cardRecordNo: card.recordNo, cardLast4: card.cardLast4,
+            })
+          } catch (voidErr) {
+            console.error('[PAYMENT-SAFETY] CRITICAL: Failed to release auth after capture failure', {
+              orderId,
+              cardRecordNo: card.recordNo,
+              cardLast4: card.cardLast4,
+              captureError: err instanceof Error ? err.message : String(err),
+              voidError: voidErr instanceof Error ? voidErr.message : String(voidErr),
+            })
+          }
+        })()
+
         continue
       }
     }

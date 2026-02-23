@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
@@ -15,6 +16,12 @@ export const PUT = withVenue(async function PUT(
     // Verify order exists
     const order = await db.order.findUnique({
       where: { id: orderId },
+      include: {
+        payments: {
+          where: { deletedAt: null },
+          select: { id: true, status: true },
+        },
+      },
     })
 
     if (!order) {
@@ -22,6 +29,20 @@ export const PUT = withVenue(async function PUT(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Block modifications if any completed payment exists
+    const hasCompletedPayment = order.payments?.some(p => p.status === 'completed') || false
+    if (hasCompletedPayment) {
+      return NextResponse.json(
+        { error: 'Cannot modify an order with existing payments. Void the payment first.' },
+        { status: 400 }
+      )
+    }
+
+    // Validate quantity if provided (Bug 18)
+    if (body.quantity !== undefined && body.quantity < 1) {
+      return NextResponse.json({ error: 'Quantity must be at least 1' }, { status: 400 })
     }
 
     // Verify item exists
@@ -209,7 +230,15 @@ export const DELETE = withVenue(async function DELETE(
     // Verify order exists and is in a deletable state
     const order = await db.order.findUnique({
       where: { id: orderId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        status: true,
+        locationId: true,
+        payments: {
+          where: { deletedAt: null },
+          select: { id: true, status: true },
+        },
+      },
     })
 
     if (!order) {
@@ -221,6 +250,15 @@ export const DELETE = withVenue(async function DELETE(
     if (!deletableStatuses.includes(order.status)) {
       return NextResponse.json(
         { error: `Cannot delete items on a ${order.status} order` },
+        { status: 400 }
+      )
+    }
+
+    // Block deletion if any completed payment exists
+    const hasCompletedPaymentDel = order.payments?.some(p => p.status === 'completed') || false
+    if (hasCompletedPaymentDel) {
+      return NextResponse.json(
+        { error: 'Cannot modify an order with existing payments. Void the payment first.' },
         { status: 400 }
       )
     }
@@ -262,6 +300,12 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
+
+    // Dispatch socket event so other terminals see the removal (Bug 11)
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'voided',
+      orderId: order.id,
+    }).catch(() => {})
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
