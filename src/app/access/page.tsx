@@ -29,6 +29,7 @@ function AccessGate() {
   // Forgot password state
   const [resetEmail, setResetEmail] = useState('')
   const [signInId, setSignInId] = useState('')
+  const [clientToken, setClientToken] = useState('')
   const [resetCode, setResetCode] = useState('')
   const [resetPassword, setResetPassword] = useState('')
 
@@ -74,6 +75,9 @@ function AccessGate() {
       if (data.data?.signInId) {
         setSignInId(data.data.signInId)
       }
+      if (data.data?.clientToken) {
+        setClientToken(data.data.clientToken)
+      }
       setMode('verify')
     } catch {
       setError('Connection error. Please try again.')
@@ -91,7 +95,7 @@ function AccessGate() {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signInId, code: resetCode.trim(), password: resetPassword }),
+        body: JSON.stringify({ signInId, clientToken, code: resetCode.trim(), password: resetPassword }),
       })
       const data = await res.json()
 
@@ -104,6 +108,7 @@ function AccessGate() {
       setResetCode('')
       setResetPassword('')
       setSignInId('')
+      setClientToken('')
       setMode('login')
     } catch {
       setError('Connection error. Please try again.')

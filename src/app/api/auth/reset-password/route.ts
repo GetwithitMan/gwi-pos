@@ -25,7 +25,7 @@ function getClerkFapiUrl(): string {
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
-  const { signInId, code, password } = body
+  const { signInId, code, password, clientToken } = body
 
   if (!signInId || typeof signInId !== 'string') {
     return NextResponse.json({ error: 'Missing session ID' }, { status: 400 })
@@ -44,11 +44,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
   try {
     // Step 1: Attempt with code + new password
+    // Include __client cookie from forgot-password step (Clerk FAPI is stateful)
+    const reqHeaders: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }
+    if (clientToken) {
+      reqHeaders['Cookie'] = `__client=${clientToken}`
+    }
+
     const attemptRes = await fetch(
       `${fapiUrl}/v1/client/sign_ins/${signInId}/attempt_first_factor`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: reqHeaders,
         body: new URLSearchParams({
           strategy: 'reset_password_email_code',
           code: code.trim(),
@@ -71,7 +79,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         `${fapiUrl}/v1/client/sign_ins/${signInId}/reset_password`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: reqHeaders,
           body: new URLSearchParams({
             password,
             sign_out_of_other_sessions: 'true',

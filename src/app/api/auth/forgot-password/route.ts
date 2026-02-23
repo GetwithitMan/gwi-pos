@@ -57,7 +57,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ data: { signInId } })
+    // Capture the __client cookie from Clerk's response — required for
+    // the multi-step FAPI flow (attempt_first_factor needs it)
+    const setCookieHeader = res.headers.get('set-cookie') || ''
+    const clientMatch = setCookieHeader.match(/__client=([^;]+)/)
+    const clientToken = clientMatch?.[1] ?? ''
+
+    return NextResponse.json({ data: { signInId, clientToken } })
   } catch {
     return NextResponse.json({ error: 'Failed to send reset email. Please try again.' }, { status: 500 })
   }
