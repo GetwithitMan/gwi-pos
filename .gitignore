@@ -67,3 +67,6 @@ vendor/
 epson printers/
 ePOS_SDK_JavaScript_v2.27.0h.zip
 Manual PDF.pdf
+
+# Personal Notes
+*.rtf
