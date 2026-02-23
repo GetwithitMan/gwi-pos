@@ -3,8 +3,9 @@
 import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { requestPasswordReset, completePasswordReset } from '@/lib/clerk-password-reset'
 
-type Mode = 'login' | 'picking'
+type Mode = 'login' | 'picking' | 'forgot' | 'reset'
 
 /**
  * /admin-login
@@ -14,8 +15,8 @@ type Mode = 'login' | 'picking'
  *   login   — email + password
  *   picking — multi-venue selector (owner with 2+ venues)
  *
- * Password reset is handled via Mission Control's Clerk-native sign-in page
- * where Clerk's SDK manages the full FAPI flow client-side.
+ * Password reset uses Clerk FAPI client-side (forgot → reset code → new password),
+ * all on the venue's own domain — no redirects to Mission Control.
  */
 function AdminLoginContent() {
   const [email, setEmail] = useState('')
@@ -25,6 +26,11 @@ function AdminLoginContent() {
   const [mode, setMode] = useState<Mode>('login')
   const [venues, setVenues] = useState<Array<{ slug: string; name: string; domain: string }>>([])
   const [ownerToken, setOwnerToken] = useState('')
+  const [resetEmail, setResetEmail] = useState('')
+  const [signInId, setSignInId] = useState('')
+  const [resetCode, setResetCode] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [success, setSuccess] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
   const login = useAuthStore((s) => s.login)
@@ -32,6 +38,7 @@ function AdminLoginContent() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setSuccess('')
     setLoading(true)
 
     try {
@@ -66,6 +73,38 @@ function AdminLoginContent() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleForgotSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    const result = await requestPasswordReset(resetEmail.trim().toLowerCase())
+    if (result.ok && result.signInId) {
+      setSignInId(result.signInId)
+      setMode('reset')
+    } else {
+      setError(result.error || 'Could not send reset code')
+    }
+    setLoading(false)
+  }
+
+  async function handleResetSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    const result = await completePasswordReset(signInId, resetCode, newPassword)
+    if (result.ok) {
+      setMode('login')
+      setSuccess('Password reset successfully. You can now sign in with your new password.')
+      setResetEmail('')
+      setSignInId('')
+      setResetCode('')
+      setNewPassword('')
+    } else {
+      setError(result.error || 'Could not reset password')
+    }
+    setLoading(false)
   }
 
   // ── Shared layout wrapper ──────────────────────────────────────────────
@@ -140,6 +179,135 @@ function AdminLoginContent() {
     )
   }
 
+  // ── Forgot password ─────────────────────────────────────────────────
+  if (mode === 'forgot') {
+    return (
+      <PageWrapper>
+        <div className="text-center mb-8">
+          <Logo icon={<LockIcon />} />
+          <h1 className="text-2xl font-bold text-white">Reset Password</h1>
+          <p className="text-gray-400 text-sm mt-1">Enter your email to receive a reset code</p>
+        </div>
+
+        <div className="bg-gray-800/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-8">
+          <form onSubmit={handleForgotSubmit} className="space-y-5">
+            <div>
+              <label htmlFor="reset-email" className="block text-sm font-medium text-gray-300 mb-1.5">
+                Email address
+              </label>
+              <input
+                id="reset-email"
+                type="email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                placeholder="you@example.com"
+                required
+                autoComplete="email"
+                autoFocus
+              />
+            </div>
+
+            {error && (
+              <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <p className="text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              {loading ? <><Spinner /> Sending...</> : 'Send Reset Code'}
+            </button>
+          </form>
+        </div>
+
+        <button
+          onClick={() => { setMode('login'); setError('') }}
+          className="mt-6 w-full text-center text-gray-500 hover:text-gray-300 text-sm transition-colors"
+        >
+          &larr; Back to login
+        </button>
+      </PageWrapper>
+    )
+  }
+
+  // ── Reset password ──────────────────────────────────────────────────
+  if (mode === 'reset') {
+    return (
+      <PageWrapper>
+        <div className="text-center mb-8">
+          <Logo icon={<LockIcon />} />
+          <h1 className="text-2xl font-bold text-white">Enter Reset Code</h1>
+          <p className="text-gray-400 text-sm mt-1">We sent a code to {resetEmail}</p>
+        </div>
+
+        <div className="bg-gray-800/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-8">
+          <form onSubmit={handleResetSubmit} className="space-y-5">
+            <div>
+              <label htmlFor="reset-code" className="block text-sm font-medium text-gray-300 mb-1.5">
+                Reset code
+              </label>
+              <input
+                id="reset-code"
+                type="text"
+                value={resetCode}
+                onChange={(e) => setResetCode(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-center tracking-widest text-lg"
+                placeholder="000000"
+                required
+                autoFocus
+                maxLength={6}
+                inputMode="numeric"
+                pattern="[0-9]*"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="new-password" className="block text-sm font-medium text-gray-300 mb-1.5">
+                New password
+              </label>
+              <input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                placeholder="New password"
+                required
+                autoComplete="new-password"
+                minLength={8}
+              />
+            </div>
+
+            {error && (
+              <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <p className="text-red-400 text-sm">{error}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              {loading ? <><Spinner /> Resetting...</> : 'Reset Password'}
+            </button>
+          </form>
+        </div>
+
+        <button
+          onClick={() => { setMode('login'); setError(''); setResetCode(''); setNewPassword('') }}
+          className="mt-6 w-full text-center text-gray-500 hover:text-gray-300 text-sm transition-colors"
+        >
+          &larr; Back to login
+        </button>
+      </PageWrapper>
+    )
+  }
+
   // ── Login (default) ───────────────────────────────────────────────────
   return (
     <PageWrapper>
@@ -190,6 +358,12 @@ function AdminLoginContent() {
             </div>
           )}
 
+          {success && (
+            <div className="px-4 py-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+              <p className="text-green-400 text-sm">{success}</p>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={loading}
@@ -199,9 +373,13 @@ function AdminLoginContent() {
           </button>
         </form>
 
-        <p className="mt-4 text-center text-gray-500 text-sm">
-          Forgot your password? Contact GWI support.
-        </p>
+        <button
+          type="button"
+          onClick={() => { setMode('forgot'); setError(''); setSuccess('') }}
+          className="mt-4 w-full text-center text-gray-500 hover:text-gray-300 text-sm transition-colors"
+        >
+          Forgot your password?
+        </button>
       </div>
     </PageWrapper>
   )
