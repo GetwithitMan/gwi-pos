@@ -88,6 +88,7 @@ function LiquorBuilderContent() {
     bottleName: string
     tier: string
     price: number
+    isDefault?: boolean
   }>>([])
   const [savingSpirit, setSavingSpirit] = useState(false)
 
@@ -336,6 +337,7 @@ function LiquorBuilderContent() {
           bottleName: m.linkedBottleProduct?.name || m.name,
           tier: m.spiritTier || 'call',
           price: m.price,
+          isDefault: m.isDefault || false,
         }))
       )
     } else {
@@ -357,6 +359,31 @@ function LiquorBuilderContent() {
       const data = await res.json()
       const gid = data.data?.id || null
       setSpiritGroupId(gid)
+
+      // Auto-add default WELL modifier from linked bottle or first recipe ingredient
+      const defaultWellBottleId = selectedDrink?.linkedBottleProductId || drinkRecipeIngredients[0]?.bottleProductId
+      if (gid && defaultWellBottleId) {
+        const wellBottle = bottles.find(b => b.id === defaultWellBottleId)
+        const wellBottleName = wellBottle?.name || drinkRecipeIngredients[0]?.bottleName
+        if (wellBottleName) {
+          await fetch(`/api/menu/items/${itemId}/modifier-groups/${gid}/modifiers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: wellBottleName,
+              price: 0,
+              spiritTier: 'well',
+              linkedBottleProductId: defaultWellBottleId,
+              isDefault: true,
+              allowNo: false,
+              allowLite: false,
+              allowOnSide: false,
+              allowExtra: false,
+            }),
+          })
+        }
+      }
+
       return gid
     }
     return null
@@ -417,6 +444,19 @@ function LiquorBuilderContent() {
     }
   }
 
+  const setSpiritEntryDefault = async (modifierId: string) => {
+    if (!selectedDrink || !spiritGroupId) return
+    const res = await fetch(`/api/menu/items/${selectedDrink.id}/modifier-groups/${spiritGroupId}/modifiers`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ modifierId, isDefault: true }),
+    })
+    if (res.ok) {
+      // API auto-clears other defaults (maxSelections=1), update local state
+      setSpiritEntries(prev => prev.map(e => ({ ...e, isDefault: e.id === modifierId })))
+    }
+  }
+
   const handleSaveDrink = async () => {
     if (!selectedDrink) return
     setSavingDrink(true)
@@ -456,6 +496,17 @@ function LiquorBuilderContent() {
         body: JSON.stringify({ linkedBottleProductId: bottleId }),
       })
       if (res.ok) {
+        // Auto-create recipe ingredient (1 pour of linked bottle)
+        await fetch(`/api/menu/items/${selectedDrink.id}/recipe`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bottleProductId: bottleId,
+            pourCount: 1,
+            isSubstitutable: true,
+          }),
+        })
+
         await loadDrinks()
         const bottle = bottles.find(b => b.id === bottleId)
         setSelectedDrink((prev: any) => prev ? {
@@ -472,6 +523,8 @@ function LiquorBuilderContent() {
         // Initialize pour size from bottle default
         const defaultPour = bottle?.pourSizeOz ? String(Number(bottle.pourSizeOz)) : '1.5'
         setEditingPourSize(defaultPour)
+        // Reload recipe to reflect the auto-created ingredient
+        loadDrinkRecipe(selectedDrink.id)
         toast.success(`Linked to ${bottle?.name || 'bottle'}`)
       } else {
         toast.error('Failed to link bottle')
@@ -584,10 +637,11 @@ function LiquorBuilderContent() {
   const loadBottlesRef = useRef<(() => Promise<void>) | null>(null)
   loadBottlesRef.current = loadBottles
 
-  // Filter drinks by selected menu category
-  const filteredDrinks = selectedMenuCategoryId
+  // Filter drinks by selected menu category, alphabetized
+  const filteredDrinks = (selectedMenuCategoryId
     ? drinks.filter((d: any) => d.categoryId === selectedMenuCategoryId)
     : drinks
+  ).sort((a: any, b: any) => (a.name || '').localeCompare(b.name || ''))
 
   if (!hydrated) return null
 
@@ -1305,6 +1359,17 @@ function LiquorBuilderContent() {
                             )}
                             {tierEntries.map(entry => (
                               <div key={entry.id || entry.bottleProductId} className="flex items-center gap-2 mb-1.5">
+                                {entry.isDefault ? (
+                                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-green-100 text-green-700 shrink-0">Default</span>
+                                ) : (
+                                  <button
+                                    onClick={() => entry.id && setSpiritEntryDefault(entry.id)}
+                                    className="text-[10px] uppercase px-1.5 py-0.5 rounded border border-gray-300 text-gray-400 hover:border-green-400 hover:text-green-600 hover:bg-green-50 shrink-0 transition-colors"
+                                    title="Set as default spirit"
+                                  >
+                                    Set default
+                                  </button>
+                                )}
                                 <span className="flex-1 text-sm font-medium text-gray-800 truncate">{entry.bottleName}</span>
                                 <span className="text-xs text-gray-400">+$</span>
                                 <input
@@ -1628,6 +1693,7 @@ function LiquorBuilderContent() {
                 <RecipeBuilder
                   menuItemId={selectedDrink.id}
                   menuItemPrice={parseFloat(editingDrinkPrice) || selectedDrink.price}
+                  locationId={employee?.location?.id || ''}
                   isExpanded={recipeExpanded}
                   onToggle={() => setRecipeExpanded(prev => !prev)}
                 />

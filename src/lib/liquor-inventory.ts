@@ -69,7 +69,8 @@ export async function processLiquorInventory(
     // Batch: collect all recipe bottle IDs
     const allRecipeBottleIds = orderItems
       .flatMap(oi => oi.menuItem.recipeIngredients || [])
-      .map(ri => ri.bottleProduct.id)
+      .filter(ri => ri.bottleProduct)
+      .map(ri => ri.bottleProduct!.id)
 
     const allBottleIds = [...new Set([...allLinkedBottleIds, ...allRecipeBottleIds])]
 
@@ -107,9 +108,11 @@ export async function processLiquorInventory(
         }
       }
 
-      // Process each recipe ingredient
+      // Process each recipe ingredient (spirit ingredients only for liquor deduction)
       for (const ingredient of orderItem.menuItem.recipeIngredients) {
         const defaultBottle = ingredient.bottleProduct
+        if (!defaultBottle) continue // Skip food ingredients
+
         let actualBottleId = defaultBottle.id
         let wasSubstituted = false
 
@@ -129,7 +132,8 @@ export async function processLiquorInventory(
 
         if (!actualBottle) continue
 
-        const pourCount = Number(ingredient.pourCount) * orderItem.quantity
+        const pourMultiplier = orderItem.pourMultiplier ? Number(orderItem.pourMultiplier) : 1.0
+        const pourCount = Number(ingredient.pourCount) * orderItem.quantity * pourMultiplier
         const pourCost = actualBottle.pourCost ? Number(actualBottle.pourCost) * pourCount : 0
 
         itemDeductions.push({
