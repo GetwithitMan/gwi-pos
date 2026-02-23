@@ -67,6 +67,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   if (!authenticated) {
+    console.error(`[venue-login] Auth failed for ${normalizedEmail}: clerk=${clerkValid}, hasEmployee=${!!employee}, hasLocalPw=${!!employee?.password}`)
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
 
@@ -84,9 +85,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           signal: AbortSignal.timeout(4000),
         }
       )
+      if (!venueRes.ok) {
+        console.error(`[venue-login] MC owner/venues returned ${venueRes.status} for ${normalizedEmail}`)
+      }
       if (venueRes.ok) {
         const venueData = await venueRes.json()
         const venues: Array<{ slug: string; name: string; domain: string }> = venueData.data?.venues ?? []
+        console.log(`[venue-login] MC returned ${venues.length} venues for ${normalizedEmail}, looking for slug=${venueSlug}`)
 
         if (venues.length > 1) {
           // Multi-venue owner — return venue picker data instead of a session
@@ -140,14 +145,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           })
           return response
         }
+
+        if (!hasAccess) {
+          console.error(`[venue-login] ${normalizedEmail} not authorized for venue ${venueSlug}. Available: ${venues.map(v => v.slug).join(', ') || 'none'}`)
+        }
       }
-    } catch {
-      // MC unreachable — fall through to local employee session if available
+    } catch (err) {
+      console.error('[venue-login] MC owner/venues call failed:', err)
     }
   }
 
   // ── Local employee session ───────────────────────────────────────
   if (!employee) {
+    console.error(`[venue-login] No local employee and MC access check failed for ${normalizedEmail} at ${venueSlug}`)
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
 
