@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyWithClerk } from '@/lib/clerk-verify'
 import { signAccessToken } from '@/lib/access-gate'
+import { isEmailAllowed } from '@/lib/access-allowlist'
 
 /**
  * POST /api/access/clerk-verify
  *
  * Verifies email + password against Clerk FAPI and issues a gwi-access
- * session cookie. Replaces the old phone + OTP verification flow.
+ * session cookie. Also checks the GWI Access allowlist — removing
+ * someone from the allowlist blocks future logins.
  */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
@@ -16,7 +18,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
   }
 
-  const clerkValid = await verifyWithClerk(email.trim().toLowerCase(), password)
+  const normalizedEmail = email.trim().toLowerCase()
+
+  // Check allowlist first — deleting from allowlist blocks access
+  const allowed = await isEmailAllowed(normalizedEmail)
+  if (!allowed) {
+    return NextResponse.json({ error: 'Access not authorized. Contact your administrator.' }, { status: 403 })
+  }
+
+  const clerkValid = await verifyWithClerk(normalizedEmail, password)
   if (!clerkValid) {
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
@@ -27,7 +37,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
-  const token = await signAccessToken(email.trim().toLowerCase(), secret)
+  const token = await signAccessToken(normalizedEmail, secret)
 
   const next = request.nextUrl.searchParams.get('next') || '/'
   const response = NextResponse.json({ redirect: next })

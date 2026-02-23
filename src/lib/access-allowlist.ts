@@ -85,6 +85,27 @@ export async function isPhoneAllowed(phone: string): Promise<boolean> {
   return (await getEntryByPhone(phone)) !== null
 }
 
+/** Check if an email is on the allowlist */
+export async function isEmailAllowed(email: string): Promise<boolean> {
+  return (await getEntryByEmail(email)) !== null
+}
+
+/** Return the allowlist entry for an email, or null if not found */
+export async function getEntryByEmail(email: string): Promise<AllowlistEntry | null> {
+  try {
+    await getTableReady()
+    const sql = getSql()
+    const rows = await sql`
+      SELECT id, name, email, phone, access_code, notes, added_by, created_at
+      FROM gwi_access_allowlist WHERE LOWER(email) = ${email.toLowerCase()} LIMIT 1
+    `
+    return rows.length > 0 ? (rows[0] as AllowlistEntry) : null
+  } catch (err) {
+    console.error('[gwi-access-allowlist] email check failed:', err)
+    return null
+  }
+}
+
 /** Return the allowlist entry for a phone, or null if not found */
 export async function getEntryByPhone(phone: string): Promise<AllowlistEntry | null> {
   try {
