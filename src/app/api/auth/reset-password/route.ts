@@ -19,13 +19,17 @@ function getClerkFapiUrl(): string {
  * Completes a Clerk password reset using the signInId from forgot-password
  * plus the 6-digit code the user received by email.
  *
+ * Reads the `clerk-reset-client` httpOnly cookie (set by forgot-password)
+ * and forwards it as `Cookie: __client=...` to Clerk FAPI so the multi-step
+ * sign-in session is properly associated.
+ *
  * Two-step Clerk FAPI flow:
  * 1. attempt_first_factor — submit code (+ optional password)
  * 2. reset_password — if status === 'needs_new_password', set the new password
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
-  const { signInId, code, password, clientToken } = body
+  const { signInId, code, password } = body
 
   if (!signInId || typeof signInId !== 'string') {
     return NextResponse.json({ error: 'Missing session ID' }, { status: 400 })
@@ -42,16 +46,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
+  // Read the Clerk __client token set by forgot-password as an httpOnly cookie
+  const clerkClientToken = request.cookies.get('clerk-reset-client')?.value
+
+  const reqHeaders: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+  }
+  if (clerkClientToken) {
+    reqHeaders['Cookie'] = `__client=${clerkClientToken}`
+  }
+
   try {
     // Step 1: Attempt with code + new password
-    // Include __client cookie from forgot-password step (Clerk FAPI is stateful)
-    const reqHeaders: Record<string, string> = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    }
-    if (clientToken) {
-      reqHeaders['Cookie'] = `__client=${clientToken}`
-    }
-
     const attemptRes = await fetch(
       `${fapiUrl}/v1/client/sign_ins/${signInId}/attempt_first_factor`,
       {
@@ -70,7 +76,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const status = attemptData.response?.status
 
     if (status === 'complete') {
-      return NextResponse.json({ data: { success: true } })
+      const response = NextResponse.json({ data: { success: true } })
+      response.cookies.delete('clerk-reset-client')
+      return response
     }
 
     if (status === 'needs_new_password') {
@@ -90,15 +98,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       const resetData = await resetRes.json()
       if (resetData.response?.status === 'complete') {
-        return NextResponse.json({ data: { success: true } })
+        const response = NextResponse.json({ data: { success: true } })
+        response.cookies.delete('clerk-reset-client')
+        return response
       }
 
       return NextResponse.json({ error: 'Could not set new password. Please try again.' }, { status: 400 })
     }
 
-    // Likely wrong code
+    // Likely wrong code or expired session
+    const clerkError = attemptData.errors?.[0]?.long_message
     return NextResponse.json(
-      { error: 'Invalid or expired code. Please check your email and try again.' },
+      { error: clerkError || 'Invalid or expired code. Please check your email and try again.' },
       { status: 400 }
     )
   } catch {

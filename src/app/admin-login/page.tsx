@@ -28,7 +28,6 @@ function AdminLoginContent() {
   const [venues, setVenues] = useState<Array<{ slug: string; name: string; domain: string }>>([])
   const [ownerToken, setOwnerToken] = useState('')
   const [signInId, setSignInId] = useState('')
-  const [clientToken, setClientToken] = useState('')
   const [resetEmail, setResetEmail] = useState('')
   const [resetCode, setResetCode] = useState('')
   const [resetPassword, setResetPassword] = useState('')
@@ -102,9 +101,6 @@ function AdminLoginContent() {
       if (data.data?.signInId) {
         setSignInId(data.data.signInId)
       }
-      if (data.data?.clientToken) {
-        setClientToken(data.data.clientToken)
-      }
       setMode('verify')
     } catch {
       setError('Connection error. Please try again.')
@@ -122,7 +118,7 @@ function AdminLoginContent() {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signInId, clientToken, code: resetCode.trim(), password: resetPassword }),
+        body: JSON.stringify({ signInId, code: resetCode.trim(), password: resetPassword }),
       })
       const data = await res.json()
 
@@ -135,7 +131,6 @@ function AdminLoginContent() {
       setResetCode('')
       setResetPassword('')
       setSignInId('')
-      setClientToken('')
       setMode('login')
     } catch {
       setError('Connection error. Please try again.')
