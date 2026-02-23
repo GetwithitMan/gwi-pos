@@ -711,7 +711,7 @@ export default function MenuManagementPage() {
                       }),
                     })
                     if (response.ok) {
-                      const newItem = await response.json()
+                      const { data: newItem } = await response.json()
                       loadMenu()
                       // Select the new item to open it in ItemEditor
                       setSelectedItemForEditor(newItem)
