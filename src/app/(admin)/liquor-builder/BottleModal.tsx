@@ -120,9 +120,9 @@ export function BottleModal({
 
   // ─── Derived category info ────────────────────────────────────────────────
   const selectedCategory = categories.find(c => c.id === spiritCategoryId)
-  const categoryName = selectedCategory?.name || ''
-  const isBeer  = categoryName === 'Beer'
-  const isWine  = categoryName === 'Wine'
+  const catType = selectedCategory?.categoryType || 'spirit'
+  const isBeer  = catType === 'beer'
+  const isWine  = catType === 'wine'
 
   // Tier options are relabeled based on category so they make sense to the user
   const tierOptions = isBeer

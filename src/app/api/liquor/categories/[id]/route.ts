@@ -63,6 +63,7 @@ export const GET = withVenue(async function GET(
     return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
+      categoryType: category.categoryType,
       displayName: category.displayName,
       description: category.description,
       sortOrder: category.sortOrder,
@@ -104,7 +105,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, displayName, description, sortOrder, isActive } = body
+    const { name, displayName, description, sortOrder, isActive, categoryType } = body
 
     const existing = await db.spiritCategory.findUnique({
       where: { id },
@@ -121,6 +122,7 @@ export const PUT = withVenue(async function PUT(
       where: { id },
       data: {
         ...(name !== undefined && { name: name.trim() }),
+        ...(categoryType !== undefined && { categoryType }),
         ...(displayName !== undefined && { displayName: displayName?.trim() || null }),
         ...(description !== undefined && { description: description?.trim() || null }),
         ...(sortOrder !== undefined && { sortOrder }),
@@ -139,6 +141,7 @@ export const PUT = withVenue(async function PUT(
     return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
+      categoryType: category.categoryType,
       displayName: category.displayName,
       description: category.description,
       sortOrder: category.sortOrder,

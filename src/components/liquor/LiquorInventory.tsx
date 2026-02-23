@@ -63,45 +63,35 @@ const SUBTYPE_COLORS: Record<string, string> = {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function getTierLabel(tier: string, categoryName: string): string {
-  const isBeer = categoryName === 'Beer'
-  const isWine = categoryName === 'Wine'
-  const labels = isBeer ? BEER_TIER_LABELS : isWine ? WINE_TIER_LABELS : SPIRIT_TIER_LABELS
+function getTierLabel(tier: string, categoryType: string): string {
+  const labels = categoryType === 'beer' ? BEER_TIER_LABELS : categoryType === 'wine' ? WINE_TIER_LABELS : SPIRIT_TIER_LABELS
   return labels[tier] || tier.toUpperCase()
 }
 
-function formatSize(bottle: BottleProduct, categoryName: string): string {
-  const isBeer = categoryName === 'Beer'
-  const isWine = categoryName === 'Wine'
+function formatSize(bottle: BottleProduct, categoryType: string): string {
   const ML_PER_OZ = LIQUOR_DEFAULTS.mlPerOz
 
-  if (isBeer) {
+  if (categoryType === 'beer') {
     const oz = Math.round((bottle.bottleSizeMl / ML_PER_OZ) * 10) / 10
     const container = CONTAINER_LABELS[bottle.containerType || 'can'] || ''
     return `${oz}oz ${container}`
   }
 
-  if (isWine) {
-    return `${bottle.bottleSizeMl}mL`
-  }
-
   return `${bottle.bottleSizeMl}mL`
 }
 
-function computePourInfo(bottle: BottleProduct, categoryName: string): {
+function computePourInfo(bottle: BottleProduct, categoryType: string): {
   poursPerBottle: number | null
   pourCost: number | null
 } {
-  const isBeer = categoryName === 'Beer'
-  const isWine = categoryName === 'Wine'
   const ML_PER_OZ = LIQUOR_DEFAULTS.mlPerOz
 
-  if (isBeer) {
+  if (categoryType === 'beer') {
     // Beer: 1 container = 1 serve
     return { poursPerBottle: 1, pourCost: bottle.unitCost }
   }
 
-  const defaultPour = isWine ? 5 : LIQUOR_DEFAULTS.pourSizeOz
+  const defaultPour = categoryType === 'wine' ? 5 : LIQUOR_DEFAULTS.pourSizeOz
   const pourOz = bottle.pourSizeOz || defaultPour
   const pours = bottle.bottleSizeMl > 0
     ? Math.floor(bottle.bottleSizeMl / (pourOz * ML_PER_OZ))
@@ -275,6 +265,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
         category: {
           id: '__uncategorized__',
           name: 'Uncategorized',
+          categoryType: 'spirit',
           displayName: null,
           description: null,
           sortOrder: 9999,
@@ -333,7 +324,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
     setShowCategoryModal(true)
   }
 
-  const handleSaveCategory = async (data: { name: string; displayName?: string; description?: string; isActive?: boolean }) => {
+  const handleSaveCategory = async (data: { name: string; categoryType: string; displayName?: string; description?: string; isActive?: boolean }) => {
     try {
       const url = editingCategory
         ? `/api/liquor/categories/${editingCategory.id}`
@@ -787,8 +778,9 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
           {groupedBottles.map((group, groupIdx) => {
             const isCollapsed = !expandedCategories.has(group.category.id)
             const catName = group.category.displayName || group.category.name
-            const isBeer = group.category.name === 'Beer'
-            const isWine = group.category.name === 'Wine'
+            const catType = group.category.categoryType || 'spirit'
+            const isBeer = catType === 'beer'
+            const isWine = catType === 'wine'
             const unverifiedCount = group.bottles.filter(b => b.needsVerification).length
 
             return (
@@ -839,6 +831,19 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                         title="Move down"
                       >
                         {'\u25BC'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingBottle(null)
+                          setBottleDefaults({ spiritCategoryId: group.category.id })
+                          setShowBottleModal(true)
+                          if (!expandedCategories.has(group.category.id)) {
+                            toggleCategory(group.category.id)
+                          }
+                        }}
+                        className="px-3 py-1 text-xs font-medium text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded transition-colors"
+                      >
+                        + Add Bottle
                       </button>
                       <button
                         onClick={() => handleEditCategory(group.category)}
@@ -915,9 +920,9 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                               {/* Inline summary for single-bottle products when collapsed */}
                               {!isExpanded && product.bottles.length === 1 && (() => {
                                 const b = product.bottles[0]
-                                const tl = getTierLabel(b.tier, catName)
+                                const tl = getTierLabel(b.tier, catType)
                                 const tc = TIER_COLORS[b.tier] || 'bg-gray-100 text-gray-600'
-                                const sz = formatSize(b, catName)
+                                const sz = formatSize(b, catType)
                                 return (
                                   <div className="flex items-center gap-3 text-sm" onClick={e => e.stopPropagation()}>
                                     <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${tc}`}>{tl}</span>
@@ -952,11 +957,10 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                   </button>
                                 </div>
                                 {product.bottles.map((bottle, bottleIdx) => {
-                                  const categoryName = group.category.name
-                                  const tierLabel = getTierLabel(bottle.tier, categoryName)
+                                  const tierLabel = getTierLabel(bottle.tier, catType)
                                   const tierColor = TIER_COLORS[bottle.tier] || 'bg-gray-100 text-gray-600'
-                                  const sizeStr = formatSize(bottle, categoryName)
-                                  const { poursPerBottle, pourCost } = computePourInfo(bottle, categoryName)
+                                  const sizeStr = formatSize(bottle, catType)
+                                  const { poursPerBottle, pourCost } = computePourInfo(bottle, catType)
                                   const isLowStock = bottle.lowStockAlert != null && bottle.currentStock <= bottle.lowStockAlert
                                   const isOutOfStock = bottle.currentStock <= 0
                                   const subtypeColor = bottle.alcoholSubtype
@@ -1211,10 +1215,10 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
           {showDeleted && (
             <div className="mt-2 space-y-2 p-3 bg-red-50/50 rounded-lg border border-red-100">
               {deletedBottles.map(bottle => {
-                const categoryName = bottle.spiritCategory?.name || 'Unknown'
-                const tierLabel = getTierLabel(bottle.tier, categoryName)
+                const deletedCatType = bottle.spiritCategory?.categoryType || 'spirit'
+                const tierLabel = getTierLabel(bottle.tier, deletedCatType)
                 const tierColor = TIER_COLORS[bottle.tier] || 'bg-gray-100 text-gray-600'
-                const sizeStr = formatSize(bottle, categoryName)
+                const sizeStr = formatSize(bottle, deletedCatType)
 
                 return (
                   <div

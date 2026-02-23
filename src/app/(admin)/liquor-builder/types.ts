@@ -1,6 +1,7 @@
 export interface SpiritCategory {
   id: string
   name: string
+  categoryType: string // 'spirit' | 'beer' | 'wine'
   displayName?: string | null
   description?: string | null
   sortOrder: number
@@ -18,6 +19,7 @@ export interface BottleProduct {
   spiritCategory: {
     id: string
     name: string
+    categoryType?: string
     displayName?: string | null
   }
   tier: string

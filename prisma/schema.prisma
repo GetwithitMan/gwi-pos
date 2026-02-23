@@ -4115,9 +4115,10 @@ model SpiritCategory {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
-  name        String // "Tequila", "Vodka", "Gin"
-  displayName String?
-  description String?
+  name         String // "Tequila", "Vodka", "Gin"
+  categoryType String  @default("spirit") // 'spirit' | 'beer' | 'wine'
+  displayName  String?
+  description  String?
   sortOrder   Int     @default(0)
   isActive    Boolean @default(true)
 

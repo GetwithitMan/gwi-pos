@@ -60,6 +60,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       categories.map((category) => ({
         id: category.id,
         name: category.name,
+        categoryType: category.categoryType,
         displayName: category.displayName,
         description: category.description,
         sortOrder: category.sortOrder,
@@ -92,7 +93,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, displayName, description } = body
+    const { name, displayName, description, categoryType } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -120,6 +121,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       data: {
         locationId,
         name: name.trim(),
+        categoryType: categoryType || 'spirit',
         displayName: displayName?.trim() || null,
         description: description?.trim() || null,
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
@@ -129,6 +131,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
+      categoryType: category.categoryType,
       displayName: category.displayName,
       description: category.description,
       sortOrder: category.sortOrder,

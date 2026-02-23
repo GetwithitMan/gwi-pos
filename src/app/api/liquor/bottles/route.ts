@@ -61,6 +61,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           select: {
             id: true,
             name: true,
+            categoryType: true,
             displayName: true,
           },
         },
