@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { uuid } from '@/lib/uuid'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info'
 
@@ -20,7 +21,7 @@ export const useToastStore = create<ToastStore>((set) => ({
   toasts: [],
 
   addToast: (toast) => {
-    const id = crypto.randomUUID()
+    const id = uuid()
     const duration = toast.duration ?? (toast.type === 'error' ? 5000 : 3000)
 
     set((state) => ({

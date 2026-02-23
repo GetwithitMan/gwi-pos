@@ -8,6 +8,7 @@ import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSe
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
 import { toast } from '@/stores/toast-store'
+import { uuid } from '@/lib/uuid'
 import { getSharedSocket } from '@/lib/shared-socket'
 
 export interface TabCard {
@@ -151,7 +152,7 @@ export function PaymentModal({
   const [tipAmount, setTipAmount] = useState(0)
   const [customTip, setCustomTip] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
-  const [idempotencyKey] = useState(() => crypto.randomUUID())
+  const [idempotencyKey] = useState(() => uuid())
   const [error, setError] = useState<string | null>(null)
 
   // Cash payment state

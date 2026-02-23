@@ -6,6 +6,7 @@ import {
   generateLocalOrderId,
   getNextLocalSequence,
 } from './offline-db'
+import { uuid } from './uuid'
 
 type ConnectionStatus = 'online' | 'offline' | 'degraded'
 type SyncCallback = (status: { pending: number; syncing: boolean; lastError?: string }) => void
@@ -147,7 +148,7 @@ class OfflineManagerClass {
 
     const sequence = await getNextLocalSequence(this.terminalId)
     const localId = generateLocalOrderId(this.terminalName, sequence)
-    const id = crypto.randomUUID()
+    const id = uuid()
 
     const entry: PendingOrder = {
       id,
@@ -178,7 +179,7 @@ class OfflineManagerClass {
     printerPort: number,
     ticketData: number[]
   ): Promise<string> {
-    const id = crypto.randomUUID()
+    const id = uuid()
 
     const entry: PendingPrintJob = {
       id,
@@ -206,7 +207,7 @@ class OfflineManagerClass {
     paymentData: PendingPayment['data'],
     localOrderId?: string
   ): Promise<string> {
-    const id = crypto.randomUUID()
+    const id = uuid()
 
     const entry: PendingPayment = {
       id,

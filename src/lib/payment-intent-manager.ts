@@ -2,6 +2,7 @@
 
 import { offlineDb, PaymentIntent, PaymentIntentStatus } from './offline-db'
 import { logger } from './logger'
+import { uuid } from './uuid'
 
 // ─── Backoff Configuration ────────────────────────────────────────────────
 
@@ -122,8 +123,8 @@ class PaymentIntentManagerClass {
    */
   private generateIdempotencyKey(terminalId: string, orderId: string, amountCents: number): string {
     const timestamp = Date.now()
-    const uuid = crypto.randomUUID().slice(0, 8) // Short UUID suffix for collision resistance
-    return `${terminalId}-${orderId}-${amountCents}-${timestamp}-${uuid}`
+    const suffix = uuid().slice(0, 8) // Short UUID suffix for collision resistance
+    return `${terminalId}-${orderId}-${amountCents}-${timestamp}-${suffix}`
   }
 
   /**
@@ -136,7 +137,7 @@ class PaymentIntentManagerClass {
     const idempotencyKey = this.generateIdempotencyKey(params.terminalId, params.orderId, amountCents)
 
     const intent: PaymentIntent = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       idempotencyKey,
       orderId: params.orderId,
       localOrderId: params.localOrderId,
