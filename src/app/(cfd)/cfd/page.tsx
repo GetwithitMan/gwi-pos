@@ -36,6 +36,7 @@ function CFDContent() {
   const [signatureData, setSignatureData] = useState<CFDSignatureRequestEvent | null>(null)
   const [approvedData, setApprovedData] = useState<CFDApprovedEvent | null>(null)
   const [declineReason, setDeclineReason] = useState<string>('')
+  const [disconnected, setDisconnected] = useState(false)
   const socketRef = useRef<ReturnType<typeof getSharedSocket> | null>(null)
 
   // Connect to socket and wire CFD events
@@ -49,8 +50,15 @@ function CFDContent() {
     if (socket.connected) {
       socket.emit('join', `cfd:${terminalId}`)
     }
-    const onConnect = () => socket.emit('join', `cfd:${terminalId}`)
+    const onConnect = () => {
+      socket.emit('join', `cfd:${terminalId}`)
+      setDisconnected(false)
+    }
+    const onDisconnect = () => {
+      setDisconnected(true)
+    }
     socket.on('connect', onConnect)
+    socket.on('disconnect', onDisconnect)
 
     // POS → CFD event handlers
     const onShowOrder = (data: CFDShowOrderEvent) => {
@@ -88,6 +96,7 @@ function CFDContent() {
 
     return () => {
       socket.off('connect', onConnect)
+      socket.off('disconnect', onDisconnect)
       socket.off(CFD_EVENTS.SHOW_ORDER, onShowOrder)
       socket.off(CFD_EVENTS.PAYMENT_STARTED, onPaymentStarted)
       socket.off(CFD_EVENTS.TIP_PROMPT, onTipPrompt)
@@ -129,63 +138,85 @@ function CFDContent() {
     }
   }, [screenState])
 
-  // Render current screen
-  switch (screenState) {
-    case 'idle':
-      return <CFDIdleScreen />
+  // Disconnect overlay — shown when socket drops during an active screen
+  // Note: POS-side timeout handles the case where CFD disconnects mid-tip-selection
+  // so the POS doesn't hang forever waiting for a tip response.
+  const disconnectOverlay = disconnected && screenState !== 'idle' && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+      <div className="text-center">
+        <div className="w-16 h-16 border-4 border-yellow-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-2xl text-yellow-400">Connection Lost</p>
+        <p className="text-white/50 text-lg mt-2">Reconnecting...</p>
+      </div>
+    </div>
+  )
 
-    case 'order':
-      return <CFDOrderDisplay data={orderData} />
+  // Render current screen with disconnect overlay
+  const renderScreen = () => {
+    switch (screenState) {
+      case 'idle':
+        return <CFDIdleScreen />
 
-    case 'payment':
-    case 'processing':
-      return (
-        <div className="flex flex-col items-center justify-center h-screen gap-6">
-          <div className="w-20 h-20 border-4 border-blue-400 border-t-transparent rounded-full animate-spin" />
-          <p className="text-2xl text-white/80">
-            {screenState === 'payment' ? 'Please tap or insert card' : 'Processing payment...'}
-          </p>
-        </div>
-      )
+      case 'order':
+        return <CFDOrderDisplay data={orderData} />
 
-    case 'tip':
-      return (
-        <CFDTipScreen
-          data={tipData}
-          onTipSelected={handleTipSelected}
-        />
-      )
-
-    case 'signature':
-      return (
-        <CFDSignatureScreen
-          data={signatureData}
-          onSignatureDone={handleSignatureDone}
-        />
-      )
-
-    case 'approved':
-      return (
-        <CFDApprovedScreen
-          data={approvedData}
-          onReceiptChoice={handleReceiptChoice}
-        />
-      )
-
-    case 'declined':
-      return (
-        <div className="flex flex-col items-center justify-center h-screen gap-6">
-          <div className="w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center">
-            <svg className="w-10 h-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+      case 'payment':
+      case 'processing':
+        return (
+          <div className="flex flex-col items-center justify-center h-screen gap-6">
+            <div className="w-20 h-20 border-4 border-blue-400 border-t-transparent rounded-full animate-spin" />
+            <p className="text-2xl text-white/80">
+              {screenState === 'payment' ? 'Please tap or insert card' : 'Processing payment...'}
+            </p>
           </div>
-          <p className="text-2xl text-red-400">Card Declined</p>
-          <p className="text-lg text-white/50">{declineReason || 'Please try another card'}</p>
-        </div>
-      )
+        )
 
-    default:
-      return <CFDIdleScreen />
+      case 'tip':
+        return (
+          <CFDTipScreen
+            data={tipData}
+            onTipSelected={handleTipSelected}
+          />
+        )
+
+      case 'signature':
+        return (
+          <CFDSignatureScreen
+            data={signatureData}
+            onSignatureDone={handleSignatureDone}
+          />
+        )
+
+      case 'approved':
+        return (
+          <CFDApprovedScreen
+            data={approvedData}
+            onReceiptChoice={handleReceiptChoice}
+          />
+        )
+
+      case 'declined':
+        return (
+          <div className="flex flex-col items-center justify-center h-screen gap-6">
+            <div className="w-20 h-20 rounded-full bg-red-500/20 flex items-center justify-center">
+              <svg className="w-10 h-10 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+            <p className="text-2xl text-red-400">Card Declined</p>
+            <p className="text-lg text-white/50">{declineReason || 'Please try another card'}</p>
+          </div>
+        )
+
+      default:
+        return <CFDIdleScreen />
+    }
   }
+
+  return (
+    <>
+      {disconnectOverlay}
+      {renderScreen()}
+    </>
+  )
 }

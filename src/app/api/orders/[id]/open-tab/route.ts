@@ -30,6 +30,13 @@ function normalizeCardholderName(cardholderName: string | undefined): string | u
 // 2. EMVPreAuth for configurable hold amount
 // 3. Creates OrderCard record
 // 4. Updates order with tab name from chip
+//
+// PAYMENT-SAFETY: Idempotency
+// No explicit idempotency key is needed. Card-present duplicate detection uses two stages:
+//   Stage 1 (after CollectCardData): Check if the vault's recordNo already has an open tab.
+//   Stage 2 (after EMVPreAuth): Check if the preAuth's recordNo already has an open tab.
+// If a duplicate is found, the new hold is voided and the existing tab is returned.
+// This is sufficient for card-present flows because the recordNo is unique per card vault entry.
 export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -282,6 +289,30 @@ export const POST = withVenue(async function POST(
     })
   } catch (error) {
     console.error('Failed to open tab:', error)
+
+    // PAYMENT-SAFETY: If preAuth timed out or threw, the order is stuck in 'pending_auth'.
+    // Reset to 'open' so the tab isn't permanently locked. The card MAY have been charged
+    // (ambiguous state if the timeout happened after Datacap processed but before we got the response).
+    let failedOrderId = 'unknown'
+    try {
+      const p = await params
+      failedOrderId = p.id
+      await db.order.update({
+        where: { id: failedOrderId },
+        data: { tabStatus: 'open' },
+      })
+    } catch {
+      // Best-effort reset — don't mask the original error
+    }
+
+    console.error('[PAYMENT-SAFETY] Ambiguous state', {
+      orderId: failedOrderId,
+      flow: 'open-tab',
+      reason: 'preauth_error_or_timeout',
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString(),
+    })
+
     return NextResponse.json({ error: 'Failed to open tab' }, { status: 500 })
   }
 })

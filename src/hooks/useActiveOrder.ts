@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { toast } from '@/stores/toast-store'
 import { isTempId, buildOrderItemPayload } from '@/lib/order-utils'
+import { startPaymentTiming, markRequestSent, completePaymentTiming } from '@/lib/payment-timing'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
 
@@ -988,6 +989,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       } else {
         // ═══ STANDARD SEND — FIRE-AND-FORGET (INSTANT UI) ═══
         // (sendInProgressRef already set at top of handleSendToKitchen)
+        const timing = startPaymentTiming('send', currentOrder?.id)
 
         // Wait for all in-flight saves in parallel (autosave, event saves, draft)
         {
@@ -1036,6 +1038,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           // Both API calls run in background — user sees instant response
           // Block autosave while bgChain runs to prevent duplicate item creation
           autosaveInFlightRef.current = true
+          markRequestSent(timing)
           const orderId = resolvedOrderId
           const bgChain = async () => {
             let itemIdMap: Map<string, string> | null = null
@@ -1099,9 +1102,16 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           }
 
           bgChain()
+            .then(() => { completePaymentTiming(timing, 'success') })
             .catch(err => {
+              completePaymentTiming(timing, 'error')
               console.error('[useActiveOrder] Background send failed:', err)
               toast.error('Send failed — tap Send again to retry')
+              // Revert optimistic marks on failure so items appear unsent again
+              const s = useOrderStore.getState()
+              for (const item of immediateItems) {
+                s.updateItem(item.id, { sentToKitchen: false })
+              }
             })
             .finally(() => {
               autosaveInFlightRef.current = false

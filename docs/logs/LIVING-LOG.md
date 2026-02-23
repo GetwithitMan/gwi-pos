@@ -5,6 +5,75 @@
 
 ---
 
+## 2026-02-23 — Payment UX & Safety Wave 1
+
+**Version:** `1.0.0-beta`
+**Session theme:** Payment flow UX overhaul — inline status, failure recovery, CFD tip screen, backend safety hardening
+
+**Summary:** Multi-agent sprint (Skill 413) overhauling all payment-adjacent UX flows. Replaced full-screen blockers with inline status indicators across Send, Start Tab, Pay/Close. Added 3-state Send button (Idle → Sending → Sent) with bgChain failure revert. Start Tab now shows inline "Authorizing card..." with 15s slow-reader warning. Add To Tab listens for `tab:updated` socket events for real-time increment/failure feedback. Pay/Close locks controls inline with spinner (order remains visible). Full CFD tip screen rework: order summary, preset tip buttons (% or $), custom tip with numeric keypad, confirm CTA with live total, disconnect overlay with auto-reconnect. Backend safety audit: close-tab double-capture prevention, open-tab timeout recovery (pending_auth → open), structured `[PAYMENT-SAFETY]` logs, version increment verified on all 5 payment routes. New payment-timing.ts instrumentation module for production latency monitoring.
+
+### Changes Summary
+
+**UX: Send to Kitchen — Optimistic UI**
+- 3-state button: Idle → Sending... → ✓ Sent! (1.5s green flash)
+- bgChain failure revert: items marked unsent on background failure
+- Files: useActiveOrder.ts, OrderPanelActions.tsx
+
+**UX: Start Tab — Inline Status**
+- Inline "Authorizing card..." (no full-screen blocker)
+- 15s slow-reader timeout warning, green success flash, red decline text
+- File: PaymentModal.tsx
+
+**UX: Add To Tab — Background Indicator**
+- Socket listener for tab:updated events
+- Amber "Card limit reached" on increment_failed, silent update on success
+- File: PaymentModal.tsx
+
+**UX: Pay/Close — Locked Controls**
+- Inline "Processing payment..." with spinner, controls locked, order visible
+- idempotencyKey, version check + 409 handling, double-click prevention verified
+- File: PaymentModal.tsx
+
+**CFD: Tip Screen Rework**
+- Order summary (subtotal, tax, total) at top
+- Tip preset buttons (% or $) with visual selection
+- No Tip + Custom tip with numeric keypad
+- Confirm CTA with live total, disconnect overlay with auto-reconnect
+- Files: CFDTipScreen.tsx, cfd/page.tsx, multi-surface.ts
+
+**Backend: Safety Audit**
+- close-tab: double-capture prevention guard
+- open-tab: timeout recovery (pending_auth → open)
+- Structured [PAYMENT-SAFETY] logs in all catch blocks
+- Version increment verified on all 5 payment routes
+- Files: pay/route.ts, open-tab/route.ts, auto-increment/route.ts, close-tab/route.ts
+
+**Instrumentation: Payment Timing**
+- New payment-timing.ts: 4-timestamp flow measurement
+- Wired into Send, Cash Pay, Card Pay, Start Tab
+- Structured [PAYMENT-TIMING] JSON logs with deltas
+- File: payment-timing.ts
+
+### Features Delivered
+
+| Feature | Skill | Summary |
+|---------|-------|---------|
+| Send Button Optimistic UI | 413 | 3-state Send, failure revert |
+| Inline Start Tab Status | 413 | No blocker, timeout warning, decline recovery |
+| Tab Increment Feedback | 413 | Socket-driven amber/silent indicators |
+| Locked Pay/Close Controls | 413 | Inline spinner, idempotency verified |
+| CFD Tip Screen | 413 | Full rework with presets, custom, disconnect overlay |
+| Backend Safety Guards | 413 | Double-capture, timeout recovery, structured logs |
+| Payment Timing Probes | 413 | 4-phase latency instrumentation |
+
+### Known Issues / Next Steps
+
+- Wave 2 candidates: Split payment UX, void/refund flow polish, CFD receipt display
+- Payment timing data needs dashboard visualization (future)
+- Tab increment socket events require Datacap integration testing on real hardware
+
+---
+
 ## 2026-02-23 — A+ Polish: Safety & Reliability Sprint
 
 **Version:** `1.0.0-beta`

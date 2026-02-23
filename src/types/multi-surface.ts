@@ -29,6 +29,8 @@ export interface CFDPaymentStartedEvent {
 export interface CFDTipPromptEvent {
   suggestions: number[] // dollar amounts or percentages
   isPercent: boolean
+  subtotal: number
+  tax: number
   orderTotal: number
   isUnderThreshold: boolean
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice, applyPriceRounding, calculateSurcharge } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, calculateChange, PAYMENT_METHOD_LABELS } from '@/lib/payment'
@@ -10,7 +10,8 @@ import type { DatacapResult } from '@/hooks/useDatacap'
 import { toast } from '@/stores/toast-store'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { uuid } from '@/lib/uuid'
-import { getSharedSocket } from '@/lib/shared-socket'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { startPaymentTiming, markRequestSent, markGatewayResponse, completePaymentTiming, type PaymentTimingEntry } from '@/lib/payment-timing'
 
 export interface TabCard {
   id: string
@@ -154,6 +155,7 @@ export function PaymentModal({
   const [customTip, setCustomTip] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [idempotencyKey] = useState(() => uuid())
+  const cardTimingRef = useRef<PaymentTimingEntry | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Cash payment state
@@ -177,6 +179,11 @@ export function PaymentModal({
   // Add card to tab state
   const [addingCard, setAddingCard] = useState(false)
   const [addCardError, setAddCardError] = useState<string | null>(null)
+  const [tabAuthSlow, setTabAuthSlow] = useState(false)
+  const [tabAuthSuccess, setTabAuthSuccess] = useState<string | null>(null)
+
+  // Tab increment status — background indicator (Task #6)
+  const [tabIncrementFailed, setTabIncrementFailed] = useState(false)
 
   // Fetch order data if orderTotal is 0 or not provided
   useEffect(() => {
@@ -223,6 +230,26 @@ export function PaymentModal({
         console.error('[CFD] Failed to emit cfd:show-order:', err)
       })
   }, [isOpen, orderId, locationId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for tab:updated socket events (increment status indicator)
+  useEffect(() => {
+    if (!isOpen || !orderId) return
+    setTabIncrementFailed(false)
+    const socket = getSharedSocket()
+    const onTabUpdated = (data: { orderId: string; status: string }) => {
+      if (data.orderId !== orderId) return
+      if (data.status === 'increment_failed') {
+        setTabIncrementFailed(true)
+      } else if (data.status === 'incremented') {
+        setTabIncrementFailed(false)
+      }
+    }
+    socket.on('tab:updated', onTabUpdated)
+    return () => {
+      socket.off('tab:updated', onTabUpdated)
+      releaseSharedSocket()
+    }
+  }, [isOpen, orderId])
 
   // Use fetched total if orderTotal was 0
   const effectiveOrderTotal = orderTotal > 0 ? orderTotal : (fetchedOrderTotal ?? 0)
@@ -376,42 +403,57 @@ export function PaymentModal({
   // Add another card to an open tab
   const handleAddCardToTab = async () => {
     if (!orderId || !locationId) return
+    const timing = startPaymentTiming('start_tab', orderId)
     setAddingCard(true)
     setAddCardError(null)
+    setTabAuthSlow(false)
+    setTabAuthSuccess(null)
+
+    // 15s timeout — EMV card-present needs time for chip read
+    const slowTimer = setTimeout(() => setTabAuthSlow(true), 15000)
 
     try {
-      // Use terminalId (the reader/terminal assigned to this POS station)
       if (!terminalId) {
+        clearTimeout(slowTimer)
+        completePaymentTiming(timing, 'error')
         setAddCardError('No card reader configured')
         setAddingCard(false)
         return
       }
 
+      markRequestSent(timing)
       const res = await fetch(`/api/orders/${orderId}/cards`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           readerId: terminalId,
           employeeId,
-          makeDefault: (tabCards?.length || 0) === 0, // First card is default
+          makeDefault: (tabCards?.length || 0) === 0,
         }),
       })
 
+      clearTimeout(slowTimer)
       const data = await res.json()
 
+      markGatewayResponse(timing)
       if (data.data?.approved) {
-        // Success — refresh the tab cards list
-        if (onTabCardsChanged) {
-          onTabCardsChanged()
-        }
-        toast.success(`${data.data.cardType} \u2022\u2022\u2022${data.data.cardLast4} added to tab`)
+        completePaymentTiming(timing, 'success')
+        const last4 = data.data.cardLast4 || '****'
+        const cardType = data.data.cardType || 'Card'
+        setTabAuthSuccess(`${cardType} \u2022\u2022\u2022${last4} authorized`)
+        if (onTabCardsChanged) onTabCardsChanged()
+        setTimeout(() => setTabAuthSuccess(null), 1500)
       } else {
+        completePaymentTiming(timing, 'declined')
         setAddCardError(data.data?.error?.message || data.error || 'Card declined')
       }
     } catch {
+      clearTimeout(slowTimer)
+      completePaymentTiming(timing, 'error')
       setAddCardError('Failed to add card')
     } finally {
       setAddingCard(false)
+      setTabAuthSlow(false)
     }
   }
 
@@ -554,6 +596,12 @@ export function PaymentModal({
 
   // Handle Datacap payment success
   const handleDatacapSuccess = (result: DatacapResult & { tipAmount: number }) => {
+    // Start timing — gateway already responded at this point
+    const timing = startPaymentTiming('pay_close', orderId || undefined)
+    timing.method = selectedMethod || 'credit'
+    markGatewayResponse(timing)
+    cardTimingRef.current = timing
+
     // Safety: Validate selectedMethod is a valid card type
     if (selectedMethod !== 'credit' && selectedMethod !== 'debit') {
       setError(`Invalid payment method for card transaction: ${selectedMethod}. Expected 'credit' or 'debit'.`)
@@ -618,24 +666,30 @@ export function PaymentModal({
     // Cash-only full payment — await the API before closing so failures are surfaced
     const isCashOnly = payments.every(p => p.method === 'cash') && currentPendingPayments.length === 0
     if (isCashOnly) {
+      const cashTiming = startPaymentTiming('pay_close', orderId || undefined)
+      cashTiming.method = 'cash'
       setIsProcessing(true)
       setError(null)
       try {
         if (waitForOrderReady) await waitForOrderReady()
+        markRequestSent(cashTiming)
         const res = await fetch(`/api/orders/${orderId}/pay`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(buildPayBody(payments)),
         })
         if (!res.ok) {
+          completePaymentTiming(cashTiming, 'error')
           if (await handleVersionConflict(res, orderId)) { setIsProcessing(false); return }
           const data = await res.json().catch(() => ({}))
           toast.error(`Cash payment failed: ${data.error || 'Server error'}`)
           setIsProcessing(false)
           return
         }
+        completePaymentTiming(cashTiming, 'success')
         onPaymentComplete() // no receiptData → parent skips receipt modal
       } catch {
+        completePaymentTiming(cashTiming, 'error')
         toast.error('Cash payment failed — check network connection')
         setIsProcessing(false)
       }
@@ -644,6 +698,7 @@ export function PaymentModal({
 
     setIsProcessing(true)
     setError(null)
+    const cardTiming = cardTimingRef.current
 
     try {
       // Ensure items are persisted before calling /pay
@@ -652,6 +707,7 @@ export function PaymentModal({
         await waitForOrderReady()
       }
 
+      if (cardTiming) markRequestSent(cardTiming)
       const response = await fetch(`/api/orders/${orderId}/pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -671,6 +727,7 @@ export function PaymentModal({
       setPendingPayments(payments)
 
       if (result.orderStatus === 'paid') {
+        if (cardTiming) { completePaymentTiming(cardTiming, 'success'); cardTimingRef.current = null }
         onPaymentComplete(result.receiptData)
       } else {
         // Partial payment - reset for more payments
@@ -679,6 +736,7 @@ export function PaymentModal({
         setTipAmount(0)
       }
     } catch (err) {
+      if (cardTiming) { completePaymentTiming(cardTiming, 'error'); cardTimingRef.current = null }
       setError(err instanceof Error ? err.message : 'Payment failed')
       // Reset cash state so user can retry
       setCashComplete(false)
@@ -812,6 +870,21 @@ export function PaymentModal({
           {error && (
             <div style={{ marginBottom: 16, padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 10, color: '#f87171', fontSize: 14 }}>
               {error}
+            </div>
+          )}
+
+          {/* Processing indicator — locks controls visually but keeps order summary visible */}
+          {isProcessing && (
+            <div style={{ marginBottom: 16, padding: 12, background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.25)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 18, height: 18, border: '2px solid #818cf8', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+              <span style={{ color: '#a5b4fc', fontSize: 14, fontWeight: 500 }}>Processing payment...</span>
+            </div>
+          )}
+
+          {/* Tab increment failed warning — card limit reached */}
+          {tabIncrementFailed && (
+            <div style={{ marginBottom: 16, padding: 12, background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 10, color: '#f59e0b', fontSize: 14, fontWeight: 600 }}>
+              Card limit reached — take a new card or cash.
             </div>
           )}
 
@@ -970,13 +1043,22 @@ export function PaymentModal({
                   </button>
 
                   {addingCard && (
-                    <div style={{ textAlign: 'center', padding: '16px 0', color: '#60a5fa' }}>
-                      <div style={{ width: 24, height: 24, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block', marginBottom: 8 }} />
-                      <p>Waiting for card...</p>
+                    <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 16, height: 16, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+                      <span style={{ color: tabAuthSlow ? '#f59e0b' : '#60a5fa', fontSize: 13 }}>
+                        {tabAuthSlow
+                          ? 'Reader is slow. The card has not been charged yet. Try again or use another method.'
+                          : 'Authorizing card...'}
+                      </span>
+                    </div>
+                  )}
+                  {tabAuthSuccess && (
+                    <div style={{ padding: '8px 12px', color: '#22c55e', fontSize: 13, fontWeight: 600 }}>
+                      {'\u2713'} {tabAuthSuccess}
                     </div>
                   )}
                   {addCardError && (
-                    <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, color: '#f87171', fontSize: 14 }}>
+                    <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: 8, color: '#f87171', fontSize: 14, fontWeight: 600 }}>
                       {addCardError}
                     </div>
                   )}
@@ -1457,13 +1539,22 @@ export function PaymentModal({
               </button>
             )}
             {addingCard && (
-              <div style={{ textAlign: 'center', padding: '12px 0', color: '#60a5fa', marginBottom: 8 }}>
-                <div style={{ width: 20, height: 20, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block', marginBottom: 4 }} />
-                <p style={{ fontSize: 13 }}>Adding card to tab...</p>
+              <div style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <div style={{ width: 16, height: 16, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+                <span style={{ color: tabAuthSlow ? '#f59e0b' : '#60a5fa', fontSize: 13 }}>
+                  {tabAuthSlow
+                    ? 'Reader is slow. The card has not been charged yet. Try again or use another method.'
+                    : 'Authorizing card...'}
+                </span>
+              </div>
+            )}
+            {tabAuthSuccess && (
+              <div style={{ padding: '8px 12px', color: '#22c55e', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+                {'\u2713'} {tabAuthSuccess}
               </div>
             )}
             {addCardError && (
-              <div style={{ padding: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, color: '#f87171', fontSize: 13, marginBottom: 8 }}>
+              <div style={{ padding: 10, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)', borderRadius: 8, color: '#f87171', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
                 {addCardError}
               </div>
             )}

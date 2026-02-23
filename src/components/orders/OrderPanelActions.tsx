@@ -123,6 +123,19 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   const [confirmingClear, setConfirmingClear] = useState(false)
   const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // "Sent!" flash state — briefly shows confirmation after successful send
+  const [justSent, setJustSent] = useState(false)
+  const prevIsSendingRef = useRef(false)
+
+  // Detect isSending transition (true → false) to flash "Sent!" confirmation
+  useEffect(() => {
+    if (prevIsSendingRef.current && !isSending) {
+      setJustSent(true)
+      const timer = setTimeout(() => setJustSent(false), 1500)
+      return () => clearTimeout(timer)
+    }
+    prevIsSendingRef.current = isSending
+  }, [isSending])
 
   // Auto-show payment processor when orderId becomes available after save
   useEffect(() => {
@@ -558,11 +571,13 @@ export const OrderPanelActions = memo(function OrderPanelActions({
       {(() => {
         const isBarTab = orderType === 'bar_tab'
         const handler = isBarTab ? onStartTab : onSend
-        if (!handler || !hasPendingItems) return null
+        if (!handler || (!hasPendingItems && !justSent)) return null
 
         const isNewTab = isBarTab && !hasActiveTab && !hasSentItems
         const needsCard = isNewTab && requireCardForTab
-        const label = isSending
+        const label = justSent
+          ? '✓ Sent!'
+          : isSending
           ? (needsCard ? 'Authorizing...' : 'Sending...')
           : isBarTab
           ? (isNewTab
@@ -576,21 +591,21 @@ export const OrderPanelActions = memo(function OrderPanelActions({
           <>
             <button
               onClick={hasPendingItems ? handler : undefined}
-              disabled={!hasPendingItems || isSending}
+              disabled={!hasPendingItems || isSending || justSent}
               style={{
                 width: '100%',
                 padding: '14px',
                 borderRadius: '10px',
                 border: 'none',
-                background: hasPendingItems && !isSending ? bg : 'rgba(255, 255, 255, 0.08)',
-                color: hasPendingItems && !isSending ? '#ffffff' : '#64748b',
+                background: justSent ? '#16a34a' : (hasPendingItems && !isSending ? bg : 'rgba(255, 255, 255, 0.08)'),
+                color: justSent ? '#ffffff' : (hasPendingItems && !isSending ? '#ffffff' : '#64748b'),
                 fontSize: '15px',
                 fontWeight: 700,
-                cursor: hasPendingItems && !isSending ? 'pointer' : 'not-allowed',
+                cursor: justSent ? 'default' : (hasPendingItems && !isSending ? 'pointer' : 'not-allowed'),
                 transition: 'all 0.2s ease',
-                opacity: !hasPendingItems ? 0.4 : 1,
+                opacity: !hasPendingItems && !justSent ? 0.4 : 1,
                 marginBottom: needsCard && hasPendingItems ? '2px' : '10px',
-                boxShadow: hasPendingItems && !isSending ? `0 0 20px ${glow}` : 'none',
+                boxShadow: justSent ? '0 0 20px rgba(22, 163, 74, 0.3)' : (hasPendingItems && !isSending ? `0 0 20px ${glow}` : 'none'),
               }}
             >
               {label}

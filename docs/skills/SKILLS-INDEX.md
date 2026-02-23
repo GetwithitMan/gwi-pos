@@ -1257,6 +1257,7 @@ These skills emerged during development and are now part of the system:
 | 410 | TABLE-TAP-PERFORMANCE | DONE | Orders / Performance | — | ?view=panel lightweight query (no payments/pizzaData). Parallel split-ticket fetch via Promise.all. Optimistic panel render from floor plan snapshot. Target: 2s → 600ms |
 | 411 | SOCKET-RECONNECT-REFRESH | DONE | Real-Time / Infrastructure | 110 | KDS and FloorPlan auto-refresh on socket reconnect. Hardware health page polling gated by isConnected. Skill 110 docs updated PARTIAL → DONE with all 15+ events |
 | 412 | PERFORMANCE-SPEED-WINS | DONE | Performance / Scale | — | Top 8 speed wins: DB pool 5→25, compound indexes, KDS pagination take:50, snapshot cache 5s TTL, batch business day queries, socket reconnect backoff, memoize calculateOrderTotals, payment circuit breaker 5s. Scaling ceiling ~10→~50 terminals |
+| 413 | PAYMENT-UX-SAFETY-WAVE1 | DONE | Payments / UX / Safety | 224, 409 | Payment UX overhaul: 3-state Send button, inline Start Tab status (no blocker), tab:updated socket listener, locked Pay/Close controls, CFD tip screen rework (presets + custom + disconnect overlay), backend safety (close-tab double-capture guard, open-tab timeout recovery), payment-timing instrumentation |
 
 ---
 

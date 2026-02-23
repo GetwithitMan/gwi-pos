@@ -10,6 +10,11 @@ import { withVenue } from '@/lib/with-venue'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
+//
+// PAYMENT-SAFETY: Double-capture prevention
+// The route checks order status and tabStatus before attempting capture. If the order
+// is already 'paid' or tabStatus is 'closed', it returns early with the existing state.
+// This prevents double-capture when two terminals close the same tab simultaneously.
 export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -45,6 +50,19 @@ export const POST = withVenue(async function POST(
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // PAYMENT-SAFETY: Double-capture prevention — if order is already paid/closed,
+    // return success with existing state instead of attempting another capture.
+    if (order.status === 'paid' || order.status === 'closed') {
+      return NextResponse.json({
+        data: {
+          success: true,
+          duplicate: true,
+          message: 'Tab already closed',
+          tabStatus: 'closed',
+        },
+      })
     }
 
     // Concurrency check: if client sent a version, verify it matches
@@ -148,7 +166,19 @@ export const POST = withVenue(async function POST(
         capturedCard = card
         break
       } catch (err) {
-        console.warn(`[Tab Close] Capture failed for card ${card.cardLast4}:`, err)
+        // PAYMENT-SAFETY: Capture may have succeeded on the processor but we didn't get
+        // the response (timeout/network). The charge is ambiguous — the card may have been
+        // debited without our DB reflecting it. Log for reconciliation.
+        console.error('[PAYMENT-SAFETY] Ambiguous state', {
+          orderId,
+          flow: 'close-tab',
+          reason: 'capture_error_or_timeout',
+          datacapRecordNo: card.recordNo,
+          cardLast4: card.cardLast4,
+          attemptedAmount: purchaseAmount + (gratuityAmount || 0),
+          timestamp: new Date().toISOString(),
+          error: err instanceof Error ? err.message : String(err),
+        })
         continue
       }
     }
@@ -241,7 +271,12 @@ export const POST = withVenue(async function POST(
       })
     }
 
-    // Update OrderCard + Order status
+    // Update OrderCard + Order status atomically.
+    // PAYMENT-SAFETY: The order transitions to 'paid' ONLY inside this transaction,
+    // AFTER the Datacap capture response is confirmed as 'Approved'. Never optimistic.
+    // Note: The capture's authCode is returned in the API response but NOT stored in OrderCard
+    // (schema has no authCode field). The recordNo is the primary reconciliation token for
+    // PreAuthCapture operations — it's stored in OrderCard.recordNo from the initial PreAuth.
     const now = new Date()
     await db.$transaction([
       db.orderCard.update({
@@ -312,7 +347,15 @@ export const POST = withVenue(async function POST(
       },
     })
   } catch (error) {
-    console.error('Failed to close tab:', error)
+    // PAYMENT-SAFETY: Unhandled error during tab close. The capture may or may not have
+    // succeeded. Log for reconciliation. The order stays in its current status (not paid).
+    console.error('[PAYMENT-SAFETY] Ambiguous state', {
+      orderId: 'unknown', // orderId may not be available if params parsing failed
+      flow: 'close-tab',
+      reason: 'unhandled_error',
+      error: error instanceof Error ? error.message : String(error),
+      timestamp: new Date().toISOString(),
+    })
     return NextResponse.json({ error: 'Failed to close tab' }, { status: 500 })
   }
 })

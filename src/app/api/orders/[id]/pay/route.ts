@@ -131,6 +131,13 @@ const PaymentInputSchema = z.object({
   simulate: z.boolean().optional(),
 })
 
+// PAYMENT-SAFETY: Idempotency design
+// - idempotencyKey is optional in the schema because some clients (legacy, mobile) may not send it.
+// - Server generates a fallback UUID when missing (line below: `finalIdempotencyKey`).
+// - The duplicate check only fires when the CLIENT sends a key, because a server-generated UUID
+//   is unique per request and can never match an existing payment.
+// - For true double-charge prevention, the client MUST generate a UUID on button press and resend
+//   the same key on retries. The PaymentModal already does this.
 const PaymentRequestSchema = z.object({
   payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
   employeeId: z.string().optional(),
@@ -870,7 +877,12 @@ export const POST = withVenue(withTiming(async function POST(
       newAverageTicket = newTotal / newOrders
     }
 
-    // Create default payments + update order status + loyalty points atomically
+    // PAYMENT-SAFETY: NEVER OPTIMISTIC PAID
+    // The order status transitions to 'paid' ONLY inside this atomic $transaction, AFTER
+    // all Payment records are created. For card payments, the gateway auth happens CLIENT-SIDE
+    // before this route is called — the route validates proof of authorization (datacapRecordNo +
+    // datacapRefNumber + cardLast4) in the Zod + field validation above. The updateMany uses
+    // `where: { status: { in: ['open', 'in_progress'] } }` as a DB-level guard against double-pay.
     timing.start('db-pay')
     try {
       await db.$transaction(async (tx) => {

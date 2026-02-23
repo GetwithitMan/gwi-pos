@@ -8,6 +8,12 @@ import { dispatchTabUpdated } from '@/lib/socket-dispatch'
 
 // POST - Check if tab needs auto-increment and fire IncrementalAuth if so
 // Called after adding items to a tab. Fires silently in the background.
+//
+// PAYMENT-SAFETY: Idempotency
+// No idempotency key is needed for IncrementalAuth. Datacap deduplicates by recordNo
+// within a batch window — sending the same increment twice for the same recordNo and amount
+// is a no-op on the processor side. The operation is additive (increases hold), not a charge,
+// so a double-increment only over-holds (auto-released at batch close).
 export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -172,7 +178,24 @@ export const POST = withVenue(async function POST(
         })
       }
     } catch (err) {
-      console.warn(`[Tab Auto-Increment] Error:`, err)
+      // PAYMENT-SAFETY: Ambiguous state — IncrementalAuth may have succeeded on the processor
+      // but we didn't get the response (timeout/network). The card's hold may have increased
+      // without our DB reflecting it. This is low-risk: over-holds are released at batch close,
+      // and the next auto-increment will recalculate the correct delta from the DB state.
+      console.error('[PAYMENT-SAFETY] Ambiguous state', {
+        orderId,
+        flow: 'auto-increment',
+        reason: 'incremental_auth_error_or_timeout',
+        datacapRecordNo: defaultCard.recordNo,
+        cardLast4: defaultCard.cardLast4,
+        attemptedIncrement: force
+          ? Math.max(Math.ceil(tabTotal * (1 + ((incrementTipBufferPercent ?? 25) / 100)) * 100) / 100 - totalAuthorized, 0)
+          : Math.max(Math.ceil(tabTotal * (1 + ((incrementTipBufferPercent ?? 25) / 100)) * 100) / 100 - totalAuthorized, incrementAmount),
+        currentAuthorized: totalAuthorized,
+        tabTotal,
+        error: err instanceof Error ? err.message : String(err),
+        timestamp: new Date().toISOString(),
+      })
       return NextResponse.json({
         data: {
           action: 'error',
