@@ -12,8 +12,10 @@ function getClerkFapiUrl(): string {
   if (!pk) return ''
   try {
     const base64 = pk.replace(/^pk_(test|live)_/, '')
+    // URL-safe base64 → standard base64 with proper padding (atob is strict)
     const safe = base64.replace(/-/g, '+').replace(/_/g, '/')
-    const decoded = atob(safe).replace(/\$$/, '')
+    const padded = safe.padEnd(Math.ceil(safe.length / 4) * 4, '=')
+    const decoded = atob(padded).replace(/\$$/, '')
     return `https://${decoded}`
   } catch {
     return ''
@@ -39,11 +41,14 @@ export async function requestPasswordReset(email: string): Promise<{
       credentials: 'include',
     })
 
-    if (!createRes.ok && createRes.status !== 422) {
-      return { ok: false, error: 'Account not found' }
+    const createData = await createRes.json()
+
+    // Surface the actual Clerk error message
+    if (createData.errors?.length) {
+      const msg = createData.errors[0]?.long_message || createData.errors[0]?.message
+      return { ok: false, error: msg || 'Account not found' }
     }
 
-    const createData = await createRes.json()
     const signInId = createData.response?.id
     if (!signInId) return { ok: false, error: 'Account not found' }
 
@@ -58,7 +63,9 @@ export async function requestPasswordReset(email: string): Promise<{
     )
 
     if (!prepareRes.ok) {
-      return { ok: false, error: 'Could not send reset code. Please try again.' }
+      const prepareData = await prepareRes.json().catch(() => ({}))
+      const msg = prepareData.errors?.[0]?.long_message || prepareData.errors?.[0]?.message
+      return { ok: false, error: msg || 'Could not send reset code. Please try again.' }
     }
 
     return { ok: true, signInId }
