@@ -1103,6 +1103,62 @@ SVCEOF
   systemctl restart pulse-kiosk
 
   log "Terminal kiosk configured → $SERVER_URL"
+
+  # Sudoers for terminal — allow service user to stop kiosk without password
+  cat > /etc/sudoers.d/gwi-pos << SUDEOF
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop pulse-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start pulse-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
+SUDEOF
+  chmod 440 /etc/sudoers.d/gwi-pos
+
+  # ── Terminal kiosk exit micro-service ────────────────────────────────────
+  # On terminals, the POS app runs on the server — so POST /api/system/exit-kiosk
+  # kills the server's kiosk, not the terminal's. This tiny Python HTTP server
+  # listens on localhost:3006 and handles the exit command locally.
+
+  cat > /opt/gwi-pos/exit-kiosk-server.py << 'PYEOF'
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import subprocess
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        subprocess.Popen(['sudo', 'systemctl', 'stop', 'pulse-kiosk'])
+        subprocess.Popen(['sudo', 'pkill', '-f', 'chromium'])
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST')
+        self.end_headers()
+    def log_message(self, format, *args):
+        pass  # Suppress request logging
+
+HTTPServer(('127.0.0.1', 3006), Handler).serve_forever()
+PYEOF
+
+  cat > /etc/systemd/system/pulse-exit-kiosk.service << SVCEOF
+[Unit]
+Description=GWI POS Terminal Kiosk Exit Service
+After=network.target
+
+[Service]
+User=$POSUSER
+ExecStart=/usr/bin/python3 /opt/gwi-pos/exit-kiosk-server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+  systemctl daemon-reload
+  systemctl enable pulse-exit-kiosk
+  systemctl start pulse-exit-kiosk
+  log "Terminal kiosk exit service running on localhost:3006"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
