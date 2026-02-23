@@ -57,16 +57,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     include: { role: true },
   })
 
-  if (!employee) {
-    return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
-  }
-
   // 1. Try Clerk first — same email+password as Mission Control login
   const clerkValid = await verifyWithClerk(normalizedEmail, password)
 
-  // 2. Fallback: local bcrypt password (set during provisioning or via venue-setup)
+  // 2. Fallback: local bcrypt password (only if local employee exists)
   let authenticated = clerkValid
-  if (!authenticated && employee.password) {
+  if (!authenticated && employee?.password) {
     authenticated = await verifyPassword(password, employee.password)
   }
 
@@ -74,7 +70,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
 
-  // If authenticated via Clerk, check if owner has multiple venues
+  // ── MC-authorized owner (no local Employee required) ─────────────
+  // Owners added via MC Team tab authenticate through Clerk. MC confirms
+  // their venue access and they get an admin-level session directly.
   if (clerkValid) {
     const mcUrl = process.env.MISSION_CONTROL_URL || 'https://app.thepasspos.com'
     const provisionKey = process.env.PROVISION_API_KEY || ''
@@ -89,6 +87,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (venueRes.ok) {
         const venueData = await venueRes.json()
         const venues: Array<{ slug: string; name: string; domain: string }> = venueData.data?.venues ?? []
+
         if (venues.length > 1) {
           // Multi-venue owner — return venue picker data instead of a session
           const ownerToken = await signOwnerToken(normalizedEmail, venues.map(v => v.slug), secret)
@@ -100,13 +99,58 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             },
           })
         }
+
+        // Single venue or MC-only owner — check if they have access to this venue
+        const hasAccess = venues.some(v => v.slug === venueSlug)
+        if (hasAccess && !employee) {
+          // No local Employee record — issue admin session from MC data
+          const ownerName = venueData.data?.name || normalizedEmail.split('@')[0]
+          const nameParts = ownerName.split(' ')
+          const token = await signVenueToken(
+            {
+              sub: `mc-owner-${normalizedEmail}`,
+              email: normalizedEmail,
+              name: ownerName,
+              slug: venueSlug,
+              orgId: 'venue-local',
+              role: 'Owner Manager',
+              posLocationId: location.id,
+            },
+            secret
+          )
+
+          const employeeData = {
+            id: `mc-owner-${normalizedEmail}`,
+            firstName: nameParts[0] || ownerName,
+            lastName: nameParts.slice(1).join(' ') || '',
+            displayName: ownerName,
+            role: { id: 'mc-owner', name: 'Owner Manager' },
+            location: { id: location.id, name: location.name },
+            permissions: ['admin'],
+            isDevAccess: false,
+          }
+
+          const response = NextResponse.json({ data: { employee: employeeData } })
+          response.cookies.set('pos-cloud-session', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 8 * 60 * 60,
+          })
+          return response
+        }
       }
     } catch {
-      // MC unreachable — fall through to single-venue session (safe fallback)
+      // MC unreachable — fall through to local employee session if available
     }
   }
 
-  // Single venue (or MC unavailable) — issue session as normal
+  // ── Local employee session ───────────────────────────────────────
+  if (!employee) {
+    return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
+  }
+
   // Generate a cloud-session-compatible JWT signed with PROVISION_API_KEY
   const token = await signVenueToken(
     {

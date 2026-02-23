@@ -39,7 +39,11 @@ export async function POST(request: NextRequest) {
 
   const token = await signAccessToken(normalizedEmail, secret)
 
-  const next = request.nextUrl.searchParams.get('next') || '/'
+  // Sanitize redirect — must be same-origin leading-slash path, not the access page itself
+  let next = request.nextUrl.searchParams.get('next') || '/'
+  if (!next.startsWith('/') || next === '/access' || next.startsWith('/access?')) {
+    next = '/'
+  }
   const response = NextResponse.json({ redirect: next })
   response.cookies.set('gwi-access', token, {
     httpOnly: true,

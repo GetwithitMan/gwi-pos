@@ -16,7 +16,11 @@ import { requestPasswordReset, completePasswordReset } from '@/lib/clerk-passwor
 function AccessGate() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const nextPath = searchParams.get('next') || '/settings'
+  const rawNext = searchParams.get('next') || '/settings'
+  // Sanitize: only allow same-origin paths, never redirect back to /access itself
+  const nextPath = (rawNext.startsWith('/') && rawNext !== '/access' && !rawNext.startsWith('/access?'))
+    ? rawNext
+    : '/settings'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
