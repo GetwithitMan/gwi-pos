@@ -76,6 +76,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 })
     }
 
+    // Extract email_address_id from supported first factors
+    const factors = createData.response?.supported_first_factors || []
+    const emailFactor = factors.find(
+      (f: { strategy: string }) => f.strategy === 'email_code' || f.strategy === 'reset_password_email_code'
+    )
+    const emailAddressId = emailFactor?.email_address_id
+
     // Extract __client token from step 1
     const clientToken = extractClientToken(createRes)
 
@@ -88,12 +95,19 @@ export async function POST(request: NextRequest) {
       prepareHeaders['Cookie'] = `__client=${clientToken}`
     }
 
+    const prepareBody: Record<string, string> = {
+      strategy: 'reset_password_email_code',
+    }
+    if (emailAddressId) {
+      prepareBody['email_address_id'] = emailAddressId
+    }
+
     const prepareRes = await fetch(
       `${fapiUrl}/v1/client/sign_ins/${signInId}/prepare_first_factor`,
       {
         method: 'POST',
         headers: prepareHeaders,
-        body: new URLSearchParams({ strategy: 'reset_password_email_code' }),
+        body: new URLSearchParams(prepareBody),
       },
     )
 
