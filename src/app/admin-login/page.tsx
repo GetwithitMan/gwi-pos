@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 
-type Mode = 'login' | 'picking' | 'forgot' | 'verify'
+type Mode = 'login' | 'picking'
+
+const MC_SIGN_IN_URL = 'https://app.thepasspos.com/sign-in'
 
 /**
  * /admin-login
@@ -13,41 +15,25 @@ type Mode = 'login' | 'picking' | 'forgot' | 'verify'
  * Modes:
  *   login   — email + password
  *   picking — multi-venue selector (owner with 2+ venues)
- *   forgot  — enter email to receive reset code
- *   verify  — enter code + new password to complete reset
  *
- * No Mission Control redirect — fully self-contained per venue.
+ * Password reset is handled via Mission Control's Clerk-native sign-in page
+ * where Clerk's SDK manages the full FAPI flow client-side.
  */
 function AdminLoginContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState<Mode>('login')
   const [venues, setVenues] = useState<Array<{ slug: string; name: string; domain: string }>>([])
   const [ownerToken, setOwnerToken] = useState('')
-  const [signInId, setSignInId] = useState('')
-  const [resetEmail, setResetEmail] = useState('')
-  const [resetCode, setResetCode] = useState('')
-  const [resetPassword, setResetPassword] = useState('')
   const router = useRouter()
   const searchParams = useSearchParams()
   const login = useAuthStore((s) => s.login)
 
-  // If arriving via MC reset link (?reset_sid=si_xxx), skip to verify mode
-  useEffect(() => {
-    const sid = searchParams.get('reset_sid')
-    if (sid) {
-      setSignInId(sid)
-      setMode('verify')
-    }
-  }, [searchParams])
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    setSuccessMessage('')
     setLoading(true)
 
     try {
@@ -77,61 +63,6 @@ function AdminLoginContent() {
 
       login(data.data.employee)
       router.replace('/settings')
-    } catch {
-      setError('Connection error. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleForgot(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-
-    try {
-      const res = await fetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail.trim() }),
-      })
-      const data = await res.json()
-
-      // Always move to verify — avoid email enumeration
-      if (data.data?.signInId) {
-        setSignInId(data.data.signInId)
-      }
-      setMode('verify')
-    } catch {
-      setError('Connection error. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleReset(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-
-    try {
-      const res = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signInId, code: resetCode.trim(), password: resetPassword }),
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error || 'Reset failed. Please try again.')
-        return
-      }
-
-      setSuccessMessage('Password updated. Please log in with your new password.')
-      setResetCode('')
-      setResetPassword('')
-      setSignInId('')
-      setMode('login')
     } catch {
       setError('Connection error. Please try again.')
     } finally {
@@ -211,135 +142,6 @@ function AdminLoginContent() {
     )
   }
 
-  // ── Forgot password — enter email ──────────────────────────────────────
-  if (mode === 'forgot') {
-    return (
-      <PageWrapper>
-        <div className="text-center mb-8">
-          <Logo icon={<LockIcon />} />
-          <h1 className="text-2xl font-bold text-white">Reset Password</h1>
-          <p className="text-gray-400 text-sm mt-1">Enter your email to receive a reset code</p>
-        </div>
-
-        <div className="bg-gray-800/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-8">
-          <form onSubmit={handleForgot} className="space-y-5">
-            <div>
-              <label htmlFor="reset-email" className="block text-sm font-medium text-gray-300 mb-1.5">
-                Email address
-              </label>
-              <input
-                id="reset-email"
-                type="email"
-                value={resetEmail}
-                onChange={(e) => setResetEmail(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                placeholder="you@example.com"
-                required
-                autoComplete="email"
-                autoFocus
-              />
-            </div>
-
-            {error && (
-              <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <p className="text-red-400 text-sm">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              {loading ? <><Spinner /> Sending code...</> : 'Send Reset Code'}
-            </button>
-          </form>
-        </div>
-
-        <button
-          onClick={() => { setMode('login'); setError('') }}
-          className="mt-4 w-full text-center text-gray-500 hover:text-gray-300 text-sm transition-colors"
-        >
-          &larr; Back to login
-        </button>
-      </PageWrapper>
-    )
-  }
-
-  // ── Verify — enter code + new password ────────────────────────────────
-  if (mode === 'verify') {
-    return (
-      <PageWrapper>
-        <div className="text-center mb-8">
-          <Logo icon={<LockIcon />} />
-          <h1 className="text-2xl font-bold text-white">Enter Reset Code</h1>
-          <p className="text-gray-400 text-sm mt-1">Check your email for a 6-digit code</p>
-        </div>
-
-        <div className="bg-gray-800/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-8">
-          <form onSubmit={handleReset} className="space-y-5">
-            <div>
-              <label htmlFor="reset-code" className="block text-sm font-medium text-gray-300 mb-1.5">
-                Reset code
-              </label>
-              <input
-                id="reset-code"
-                type="text"
-                inputMode="numeric"
-                value={resetCode}
-                onChange={(e) => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors text-center text-xl tracking-widest font-mono"
-                placeholder="000000"
-                maxLength={6}
-                required
-                autoFocus
-                autoComplete="one-time-code"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="new-password" className="block text-sm font-medium text-gray-300 mb-1.5">
-                New password
-              </label>
-              <input
-                id="new-password"
-                type="password"
-                value={resetPassword}
-                onChange={(e) => setResetPassword(e.target.value)}
-                className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                placeholder="Min. 8 characters"
-                required
-                minLength={8}
-                autoComplete="new-password"
-              />
-            </div>
-
-            {error && (
-              <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <p className="text-red-400 text-sm">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading || resetCode.length < 6 || resetPassword.length < 8}
-              className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              {loading ? <><Spinner /> Resetting...</> : 'Set New Password'}
-            </button>
-          </form>
-        </div>
-
-        <button
-          onClick={() => { setMode('forgot'); setError(''); setResetCode(''); setResetPassword('') }}
-          className="mt-4 w-full text-center text-gray-500 hover:text-gray-300 text-sm transition-colors"
-        >
-          &larr; Back
-        </button>
-      </PageWrapper>
-    )
-  }
-
   // ── Login (default) ───────────────────────────────────────────────────
   return (
     <PageWrapper>
@@ -350,12 +152,6 @@ function AdminLoginContent() {
       </div>
 
       <div className="bg-gray-800/50 backdrop-blur-xl border border-gray-700/50 rounded-2xl p-8">
-        {successMessage && (
-          <div className="mb-5 px-4 py-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-            <p className="text-green-400 text-sm">{successMessage}</p>
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1.5">
@@ -405,12 +201,14 @@ function AdminLoginContent() {
           </button>
         </form>
 
-        <button
-          onClick={() => { setMode('forgot'); setError(''); setSuccessMessage(''); setResetEmail(email) }}
-          className="mt-4 w-full text-center text-gray-500 hover:text-gray-400 text-sm transition-colors"
+        <a
+          href={MC_SIGN_IN_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-4 block w-full text-center text-gray-500 hover:text-gray-400 text-sm transition-colors"
         >
           Forgot your password?
-        </button>
+        </a>
       </div>
     </PageWrapper>
   )
