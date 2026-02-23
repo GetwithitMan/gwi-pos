@@ -7,6 +7,8 @@ import { z } from 'zod'
 import { calculateSplitTicketPricing, type OrderItemInput, type RoundingIncrement } from '@/lib/split-pricing'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 
 // ============================================
 // Validation Schemas
@@ -268,6 +270,7 @@ export const POST = withVenue(async function POST(
     type FractionalItemEntry = {
       originalItem: NonNullable<ReturnType<typeof itemMap.get>>
       fractionalPrice: number
+      fraction: number
       labelIndex: number
       totalFractions: number
     }
@@ -303,6 +306,7 @@ export const POST = withVenue(async function POST(
         fractionalItemsByTicket.get(f.ticketIndex)!.push({
           originalItem,
           fractionalPrice,
+          fraction: f.fraction,
           labelIndex: i + 1,
           totalFractions: N,
         })
@@ -408,29 +412,41 @@ export const POST = withVenue(async function POST(
             },
           })),
           // Fractional items (new records with split pricing)
-          ...ticketData.fractionalEntries.map(fe => ({
-            locationId: parentOrder.locationId,
-            menuItemId: fe.originalItem.menuItemId,
-            name: `${fe.originalItem.name} (${fe.labelIndex}/${fe.totalFractions})`,
-            price: fe.fractionalPrice,
-            quantity: 1,
-            itemTotal: fe.fractionalPrice,
-            specialNotes: fe.originalItem.specialNotes,
-            seatNumber: fe.originalItem.seatNumber,
-            courseNumber: fe.originalItem.courseNumber,
-            courseStatus: fe.originalItem.courseStatus,
-            kitchenStatus: fe.originalItem.kitchenStatus,
-            modifiers: {
-              create: fe.originalItem.modifiers.map(mod => ({
-                locationId: parentOrder.locationId,
-                modifierId: mod.modifierId,
-                name: mod.name,
-                price: 0, // Modifier price already baked into fractionalPrice
-                quantity: mod.quantity,
-                preModifier: mod.preModifier,
-              })),
-            },
-          })),
+          ...ticketData.fractionalEntries.map(fe => {
+            // Calculate proportional modifier prices
+            const modPrices = fe.originalItem.modifiers.map(mod =>
+              Math.round(Number(mod.price) * fe.fraction * 100) / 100
+            )
+            const totalModCost = fe.originalItem.modifiers.reduce(
+              (sum, mod, i) => sum + modPrices[i] * (mod.quantity || 1), 0
+            )
+            // Base price = fractionalPrice minus modifier costs (ensures exact sum)
+            const basePrice = Math.round((fe.fractionalPrice - totalModCost) * 100) / 100
+
+            return {
+              locationId: parentOrder.locationId,
+              menuItemId: fe.originalItem.menuItemId,
+              name: `${fe.originalItem.name} (${fe.labelIndex}/${fe.totalFractions})`,
+              price: basePrice,
+              quantity: 1,
+              itemTotal: fe.fractionalPrice,
+              specialNotes: fe.originalItem.specialNotes,
+              seatNumber: fe.originalItem.seatNumber,
+              courseNumber: fe.originalItem.courseNumber,
+              courseStatus: fe.originalItem.courseStatus,
+              kitchenStatus: fe.originalItem.kitchenStatus,
+              modifiers: {
+                create: fe.originalItem.modifiers.map((mod, i) => ({
+                  locationId: parentOrder.locationId,
+                  modifierId: mod.modifierId,
+                  name: mod.name,
+                  price: modPrices[i],
+                  quantity: mod.quantity,
+                  preModifier: mod.preModifier,
+                })),
+              },
+            }
+          }),
         ]
 
         // Create the split order
@@ -778,14 +794,22 @@ export const DELETE = withVenue(async function DELETE(
       throw new ValidationError('Order has no splits to merge')
     }
 
-    // Check if any splits have payments
-    const hasPayments = parentOrder.splitOrders.some(split => split.payments.length > 0)
-    if (hasPayments) {
-      throw new ValidationError('Cannot merge splits that have payments')
-    }
-
-    // Merge splits back in a transaction
+    // Merge splits back in a transaction with row locking to prevent race conditions
     await db.$transaction(async (tx) => {
+      // Lock parent + all children to prevent concurrent payment
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE "parentOrderId" = ${id} FOR UPDATE`
+
+      // Re-check for payments inside the lock (prevents race where payment occurs between check and delete)
+      const splits = await tx.order.findMany({
+        where: { parentOrderId: id, deletedAt: null },
+        include: { payments: { where: { status: 'completed' } } },
+      })
+      const hasPayments = splits.some(s => s.payments.length > 0)
+      if (hasPayments) {
+        throw new ValidationError('Cannot merge splits that have payments')
+      }
+
       // Delete all split orders (cascade deletes items)
       await tx.order.updateMany({
         where: { parentOrderId: id },
@@ -811,6 +835,19 @@ export const DELETE = withVenue(async function DELETE(
         data: { deletedAt: null },
       })
     })
+
+    // Fire-and-forget socket dispatches + cache invalidation
+    void emitToLocation(parentOrder.locationId, 'orders:list-changed', {
+      orderId: id,
+      trigger: 'split',
+      tableId: parentOrder.tableId || undefined,
+    }).catch(() => {})
+
+    invalidateSnapshotCache(parentOrder.locationId)
+
+    if (parentOrder.tableId) {
+      void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
+    }
 
     return NextResponse.json({ data: {
       message: 'Split tickets merged successfully',

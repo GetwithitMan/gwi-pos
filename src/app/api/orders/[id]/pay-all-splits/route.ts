@@ -168,16 +168,18 @@ export const POST = withVenue(async function POST(
       void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
     }
 
-    // Fire-and-forget: inventory deductions (food + liquor) for the parent order
-    deductInventoryForOrder(parentOrderId, employeeId).catch(err => {
-      console.error('Background inventory deduction failed (pay-all-splits):', err)
-    })
+    // Fire-and-forget: inventory deductions for each split child (parent has zero items after split)
+    for (const split of unpaidSplits) {
+      void deductInventoryForOrder(split.id, employeeId).catch(err => {
+        console.error(`[PAYMENT-SAFETY] Inventory deduction failed for split ${split.id}:`, err)
+      })
+    }
 
     // Fire-and-forget: loyalty points if customer exists and loyalty enabled
     const settings = parseSettings(parentOrder.location.settings)
     if (parentOrder.customer && settings.loyalty.enabled) {
       const earningBase = settings.loyalty.earnOnSubtotal
-        ? Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.total), 0))
+        ? Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))
         : combinedTotal
       if (earningBase >= settings.loyalty.minimumEarnAmount) {
         const pointsEarned = Math.floor(earningBase * settings.loyalty.pointsPerDollar)

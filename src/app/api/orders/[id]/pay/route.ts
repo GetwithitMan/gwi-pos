@@ -266,6 +266,20 @@ export const POST = withVenue(withTiming(async function POST(
       )
     }
 
+    // Validate parent order is still in split state when paying a split child
+    if (order.parentOrderId) {
+      const parentOrder = await db.order.findUnique({
+        where: { id: order.parentOrderId },
+        select: { status: true },
+      })
+      if (!parentOrder || parentOrder.status !== 'split') {
+        return NextResponse.json(
+          { error: 'Parent order is no longer in split state' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Get settings for rounding
     const settings = parseSettings(order.location.settings)
 
@@ -884,6 +898,9 @@ export const POST = withVenue(withTiming(async function POST(
     // before this route is called — the route validates proof of authorization (datacapRecordNo +
     // datacapRefNumber + cardLast4) in the Zod + field validation above. The updateMany uses
     // `where: { status: { in: ['open', 'in_progress'] } }` as a DB-level guard against double-pay.
+    let parentWasMarkedPaid = false
+    let parentTableId: string | null = null
+
     timing.start('db-pay')
     try {
       await db.$transaction(async (tx) => {
@@ -949,6 +966,29 @@ export const POST = withVenue(withTiming(async function POST(
             },
           })
         }
+
+        // Check if all split siblings are paid and mark parent as paid (inside transaction for atomicity)
+        if (updateData.status === 'paid' && order.parentOrderId) {
+          // Lock parent row to prevent TOCTOU race when multiple siblings pay concurrently
+          await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
+
+          const allSiblings = await tx.order.findMany({
+            where: { parentOrderId: order.parentOrderId },
+            select: { id: true, status: true },
+          })
+
+          const allSiblingsPaid = allSiblings.every(s => s.status === 'paid')
+
+          if (allSiblingsPaid) {
+            const parentResult = await tx.order.update({
+              where: { id: order.parentOrderId },
+              data: { status: 'paid', paidAt: new Date(), closedAt: new Date() },
+              select: { tableId: true },
+            })
+            parentWasMarkedPaid = true
+            parentTableId = parentResult.tableId
+          }
+        }
       })
     } catch (txError) {
       if (txError instanceof Error && txError.message === 'ORDER_ALREADY_PAID') {
@@ -960,6 +1000,17 @@ export const POST = withVenue(withTiming(async function POST(
       throw txError // Re-throw unexpected errors to the outer catch
     }
     timing.end('db-pay', 'Payment transaction')
+
+    // Dispatch socket events when parent order was auto-closed (after transaction commit)
+    if (parentWasMarkedPaid) {
+      void dispatchOpenOrdersChanged(order.locationId, {
+        trigger: 'paid',
+        orderId: order.parentOrderId!,
+        tableId: parentTableId || undefined,
+      }).catch(() => {})
+      void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
+      invalidateSnapshotCache(order.locationId)
+    }
 
     // If order is fully paid, reset entertainment items and table status
     if (updateData.status === 'paid') {
@@ -1084,29 +1135,6 @@ export const POST = withVenue(withTiming(async function POST(
           cardLast4: p.cardLast4 ?? null,
         })),
       }).catch(console.error)
-    }
-
-    // If this is a split order that was just paid, check if all siblings are paid
-    // and mark the parent as paid if so
-    if (updateData.status === 'paid' && order.parentOrderId) {
-      const allSiblings = await db.order.findMany({
-        where: { parentOrderId: order.parentOrderId },
-        select: { status: true },
-      })
-
-      const allSiblingsPaid = allSiblings.every(s => s.status === 'paid')
-
-      if (allSiblingsPaid) {
-        // Mark parent order as paid
-        await db.order.update({
-          where: { id: order.parentOrderId },
-          data: {
-            status: 'paid',
-            paidAt: new Date(),
-            closedAt: new Date(),
-          },
-        })
-      }
     }
 
     // Build receipt data inline (eliminates separate /receipt fetch)

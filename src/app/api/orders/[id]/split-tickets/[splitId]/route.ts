@@ -4,6 +4,8 @@ import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors
 import { getLocationTaxRate } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // ============================================
 // DELETE - Delete an empty split check
@@ -167,6 +169,12 @@ export const DELETE = withVenue(async function DELETE(
       trigger: 'split',
       tableId: parentOrder.tableId || undefined,
     }).catch(() => {})
+
+    // Invalidate snapshot cache so open-orders summary reflects the change
+    invalidateSnapshotCache(parentOrder.locationId)
+    if (parentOrder.tableId) {
+      void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
+    }
 
     if (merged) {
       return NextResponse.json({ data: {

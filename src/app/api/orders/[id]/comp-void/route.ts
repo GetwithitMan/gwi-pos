@@ -152,7 +152,7 @@ export const POST = withVenue(async function POST(
     const effectiveApprovedAt = remoteApproval?.approvedAt || (approvedById ? new Date() : null)
 
     // Wrap all critical writes in a single transaction
-    const { activeItems, totals, shouldAutoClose } = await db.$transaction(async (tx) => {
+    const { activeItems, totals, shouldAutoClose, parentTotals } = await db.$transaction(async (tx) => {
       // 0. Acquire row-level lock to prevent void-during-payment race condition
       const [lockedOrder] = await tx.$queryRaw<any[]>`
         SELECT "status" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE
@@ -244,7 +244,26 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return { activeItems: txActiveItems, totals: txTotals, shouldAutoClose: txShouldAutoClose }
+      // 6. If this is a split child, update parent order totals to match sum of siblings
+      let txParentTotals: { subtotal: number; taxTotal: number; total: number } | null = null
+      if (order.parentOrderId) {
+        const siblings = await tx.order.findMany({
+          where: { parentOrderId: order.parentOrderId, deletedAt: null },
+          select: { subtotal: true, taxTotal: true, total: true },
+        })
+        const parentSubtotal = siblings.reduce((sum, s) => sum + Number(s.subtotal), 0)
+        const parentTaxTotal = siblings.reduce((sum, s) => sum + Number(s.taxTotal), 0)
+        const parentTotal = siblings.reduce((sum, s) => sum + Number(s.total), 0)
+
+        await tx.order.update({
+          where: { id: order.parentOrderId },
+          data: { subtotal: parentSubtotal, taxTotal: parentTaxTotal, total: parentTotal },
+        })
+
+        txParentTotals = { subtotal: parentSubtotal, taxTotal: parentTaxTotal, total: parentTotal }
+      }
+
+      return { activeItems: txActiveItems, totals: txTotals, shouldAutoClose: txShouldAutoClose, parentTotals: txParentTotals }
     })
 
     // Fire-and-forget side effects OUTSIDE the transaction
@@ -309,6 +328,17 @@ export const POST = withVenue(async function POST(
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch order totals update:', err)
     })
+
+    // If this was a split child, also dispatch parent order totals update
+    if (order.parentOrderId && parentTotals) {
+      void dispatchOrderTotalsUpdate(order.locationId, order.parentOrderId, {
+        subtotal: parentTotals.subtotal,
+        taxTotal: parentTotals.taxTotal,
+        tipTotal: 0,
+        discountTotal: 0,
+        total: parentTotals.total,
+      }, { async: true }).catch(() => {})
+    }
 
     return NextResponse.json({ data: {
       success: true,

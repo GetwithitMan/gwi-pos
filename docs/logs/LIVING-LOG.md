@@ -5,6 +5,92 @@
 
 ---
 
+## 2026-02-23 — Split Payment, Void & Merge Fixes (Skill 415)
+
+**Version:** `1.0.0-beta`
+**Session theme:** Split payment safety — race conditions, missing sockets, stale caches, inventory gaps, fractional pricing
+
+**Summary:** Fixed 10 bugs across 5 API routes in the split payment, void, and merge flows. Four critical bugs: pay-all-splits called inventory deduction on the empty parent instead of split children; parent auto-close after last split payment ran outside the transaction (race condition with concurrent payments); no socket events when parent transitioned to paid; fractional split modifiers had price=0. Four high-severity bugs: parent totals stale after child void, missing socket/cache on unsplit merge, merge race allowing payment between check and delete, loyalty points calculated on total instead of subtotal. Two medium-severity: no parent validation before child payment, missing cache invalidation on split delete.
+
+### Changes Summary
+
+**Bug 1 (CRITICAL): Pay-All-Splits Inventory on Empty Parent**
+- Deduct inventory from each split child individually instead of the empty parent
+- File: pay-all-splits/route.ts
+
+**Bug 2 (CRITICAL): Parent Auto-Close Outside Transaction**
+- Moved inside tx with FOR UPDATE lock on parent row
+- File: pay/route.ts
+
+**Bug 3 (CRITICAL): Missing Socket When Parent → Paid**
+- Added dispatchOpenOrdersChanged + floor plan update + cache invalidation
+- File: pay/route.ts
+
+**Bug 4 (CRITICAL): Fractional Split Modifiers Price=0**
+- Proportional modifier pricing based on splitQty/originalQty fraction
+- File: split-tickets/route.ts
+
+**Bug 5 (HIGH): Parent Totals Stale After Child Void**
+- Sum sibling totals and update parent inside tx
+- File: comp-void/route.ts
+
+**Bug 6 (HIGH): Missing Socket + Cache on Unsplit Merge**
+- Added socket dispatch + invalidateSnapshotCache + floor plan update
+- File: split-tickets/route.ts
+
+**Bug 7 (HIGH): Split Merge Race**
+- FOR UPDATE locks + re-check payments inside tx
+- File: split-tickets/route.ts
+
+**Bug 8 (HIGH): Loyalty Points Uses Total Not Subtotal**
+- Changed s.total to s.subtotal in loyalty calculation
+- File: pay-all-splits/route.ts
+
+**Bug 9 (MEDIUM): No Parent Validation on Child Payment**
+- Verify parent status='split' before allowing payment
+- File: pay/route.ts
+
+**Bug 10 (MEDIUM): Missing Cache Invalidation on Split Delete**
+- Added invalidateSnapshotCache + floor plan update
+- File: split-tickets/[splitId]/route.ts
+
+### Bug Fixes
+
+| Fix | Severity | Impact |
+|-----|----------|--------|
+| Pay-all-splits inventory on empty parent | CRITICAL | No inventory deducted when paying all splits — deduction now runs per child |
+| Parent auto-close outside transaction | CRITICAL | Concurrent last-split payments could race — now locked with FOR UPDATE |
+| Missing socket when parent → paid | CRITICAL | Other terminals didn't see parent close — socket + cache added |
+| Fractional split modifiers price=0 | CRITICAL | Modifier prices zeroed on fractional splits — proportional pricing applied |
+| Parent totals stale after child void | HIGH | Parent showed stale totals after void — sibling sums recalculated |
+| Missing socket + cache on unsplit merge | HIGH | Merge invisible to other terminals — socket + cache added |
+| Split merge race | HIGH | Payment could sneak in during merge — FOR UPDATE + re-check |
+| Loyalty points uses total not subtotal | HIGH | Points inflated by tax — changed to subtotal |
+| No parent validation on child payment | MEDIUM | Could pay child of closed parent — status check added |
+| Missing cache on split delete | MEDIUM | Delete invisible to other terminals — cache invalidation added |
+
+### Features Delivered
+
+| Feature | Skill | Summary |
+|---------|-------|---------|
+| Split inventory deduction fix | 415 | Per-child inventory deduction instead of empty parent |
+| Parent auto-close transaction safety | 415 | FOR UPDATE lock prevents concurrent payment race |
+| Parent close socket dispatch | 415 | Floor plan + open orders update on parent→paid |
+| Proportional modifier pricing | 415 | Fractional splits get correct modifier prices |
+| Parent total recalculation on void | 415 | Sibling sums update parent after child void |
+| Merge socket + cache | 415 | Other terminals see unsplit immediately |
+| Merge race protection | 415 | FOR UPDATE + re-check prevents data loss |
+| Loyalty subtotal fix | 415 | Points earned on subtotal only |
+| Parent validation on child pay | 415 | Reject payment if parent not in split status |
+| Split delete cache invalidation | 415 | Other terminals see split deletion immediately |
+
+### Known Issues / Next Steps
+
+- All 10 fixes are backend-only (API routes) — no frontend changes needed
+- Consider adding integration tests for concurrent split payment scenarios
+
+---
+
 ## 2026-02-23 — Order Disappearance Fixes (Skill 414)
 
 **Version:** `1.0.0-beta`

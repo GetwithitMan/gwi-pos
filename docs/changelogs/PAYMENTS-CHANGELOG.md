@@ -1,5 +1,34 @@
 # Payments Domain Changelog
 
+## 2026-02-23 — Split Payment, Void & Merge Fixes (Skill 415)
+
+### Bug 1 (CRITICAL): Pay-All-Splits Inventory on Empty Parent
+- `deductInventoryForOrder()` was called on the empty parent after items moved to split children — no inventory deducted
+- Fix: Iterate split children and deduct inventory per child individually
+- File: `src/app/api/orders/[id]/pay-all-splits/route.ts`
+
+### Bug 2 (CRITICAL): Parent Auto-Close Outside Transaction
+- After paying last split child, parent updated to `paid` outside the tx — concurrent payments could race
+- Fix: Moved parent auto-close inside tx with `FOR UPDATE` lock on parent row
+- File: `src/app/api/orders/[id]/pay/route.ts`
+
+### Bug 3 (CRITICAL): Missing Socket When Parent → Paid
+- No socket events dispatched when last split child payment closed the parent — floor plan stale
+- Fix: Added `dispatchOpenOrdersChanged()`, floor plan update, and `invalidateSnapshotCache()`
+- File: `src/app/api/orders/[id]/pay/route.ts`
+
+### Bug 8 (HIGH): Loyalty Points Uses Total Not Subtotal
+- Loyalty points calculated on `s.total` (includes tax) instead of `s.subtotal`
+- Fix: Changed to `s.subtotal` for correct loyalty earning
+- File: `src/app/api/orders/[id]/pay-all-splits/route.ts`
+
+### Bug 9 (MEDIUM): No Parent Validation on Child Payment
+- Payment accepted on split child even if parent was closed/voided
+- Fix: Verify parent `status='split'` before processing child payment
+- File: `src/app/api/orders/[id]/pay/route.ts`
+
+---
+
 ## 2026-02-23 — Payment UX & Safety Wave 1 (Skill 413)
 
 ### UX Overhaul

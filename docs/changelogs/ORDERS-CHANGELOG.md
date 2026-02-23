@@ -1,5 +1,34 @@
 # Orders Domain - Change Log
 
+## 2026-02-23 — Split Payment, Void & Merge Fixes (Skill 415)
+
+### Bug 4 (CRITICAL): Fractional Split Modifiers Price=0
+- When splitting an item with fractional quantities, modifiers had price set to `0` instead of proportional amount
+- Fix: Proportional modifier pricing — `price * (splitQty / originalQty)` preserves correct ratios
+- File: `src/app/api/orders/[id]/split-tickets/route.ts`
+
+### Bug 5 (HIGH): Parent Totals Stale After Child Void
+- After voiding an item on a split child, parent order totals were not recalculated
+- Fix: Sum all sibling split children's totals and update parent inside the transaction
+- File: `src/app/api/orders/[id]/comp-void/route.ts`
+
+### Bug 6 (HIGH): Missing Socket + Cache on Unsplit Merge
+- Merging split children back into the parent dispatched no socket events or cache invalidation
+- Fix: Added `dispatchOpenOrdersChanged`, `invalidateSnapshotCache()`, and floor plan update
+- File: `src/app/api/orders/[id]/split-tickets/route.ts`
+
+### Bug 7 (HIGH): Split Merge Race (Payment Between Check/Delete)
+- During merge, a payment could be processed on a split child between check and delete, causing data loss
+- Fix: `FOR UPDATE` locks on all split children inside tx + re-check that no payments snuck in
+- File: `src/app/api/orders/[id]/split-tickets/route.ts`
+
+### Bug 10 (MEDIUM): Missing Cache Invalidation on Split Delete
+- Deleting a single split child did not invalidate snapshot cache or update floor plan
+- Fix: Added `invalidateSnapshotCache()` and floor plan table status update
+- File: `src/app/api/orders/[id]/split-tickets/[splitId]/route.ts`
+
+---
+
 ## 2026-02-23 — Order Disappearance Fixes (Skill 414)
 
 ### Bug 1 (CRITICAL): Draft Promise Race
