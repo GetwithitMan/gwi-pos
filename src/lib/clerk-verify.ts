@@ -53,7 +53,15 @@ export async function verifyWithClerk(email: string, password: string): Promise<
 
     const data = await res.json()
     // Successful sign-in: response.status === 'complete'
-    return data.response?.status === 'complete'
+    // Also accept 'needs_second_factor' when password was verified — Clerk's
+    // device-trust requires a second factor for new clients, but our server-to-server
+    // calls always create new clients. We only care that the password is correct.
+    const status = data.response?.status
+    if (status === 'complete') return true
+    if (status === 'needs_second_factor') {
+      return data.response?.first_factor_verification?.status === 'verified'
+    }
+    return false
   } catch {
     clearTimeout(timeout)
     return false
