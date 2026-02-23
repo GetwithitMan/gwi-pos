@@ -10,6 +10,7 @@ import {
   ChevronLeftIcon,
 } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/stores/auth-store'
+import { useEvents } from '@/lib/events'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -174,6 +175,7 @@ function ReaderCard({ reader }: { reader: ReaderHealth }) {
 export default function ReaderHealthPage() {
   const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
+  const { isConnected } = useEvents({ locationId, autoConnect: true })
 
   const [readers, setReaders] = useState<ReaderHealth[]>([])
   const [loading, setLoading] = useState(true)
@@ -201,13 +203,14 @@ export default function ReaderHealthPage() {
     fetchHealth()
   }, [fetchHealth])
 
-  // Auto-refresh every 30 seconds
+  // Auto-refresh every 30 seconds (only when socket is disconnected)
   useEffect(() => {
+    if (isConnected) return // Skip polling when socket is active
     const interval = setInterval(() => {
       fetchHealth()
     }, 30000)
     return () => clearInterval(interval)
-  }, [fetchHealth])
+  }, [fetchHealth, isConnected])
 
   // ─── Render ───────────────────────────────────────────────────────────────
 

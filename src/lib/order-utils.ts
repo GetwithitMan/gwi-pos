@@ -181,15 +181,88 @@ export interface MergedOrderData {
   total: number
 }
 
+/** Merge split ticket data into a flat items array with totals */
+function mergeSplitTickets(
+  splitRes: Response,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<{ items: any[]; subtotal: number; taxTotal: number; tipTotal: number; total: number } | null> {
+  return splitRes.json().then(rawSplit => {
+    const splitData = rawSplit.data ?? rawSplit
+    const splits = splitData.splitOrders || []
+    if (!Array.isArray(splits) || splits.length === 0) return null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items: any[] = []
+    let subtotal = 0, taxTotal = 0, tipTotal = 0, total = 0
+    for (const split of splits) {
+      const label = split.displayNumber || split.orderNumber
+      for (const item of (split.items || [])) {
+        items.push({
+          ...item,
+          menuItemId: item.menuItemId || item.id,
+          kitchenStatus: item.isSent || item.isCompleted ? 'sent' : 'pending',
+          modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; preModifier?: string }) => ({
+            ...m,
+            modifierId: m.id,
+          })),
+          splitLabel: String(label),
+        })
+      }
+      subtotal += Number(split.subtotal) || 0
+      taxTotal += Number(split.taxTotal) || 0
+      tipTotal += Number(split.tipTotal) || 0
+      total += Number(split.total) || 0
+    }
+    return { items, subtotal, taxTotal, tipTotal, total }
+  }).catch(err => {
+    console.error('[fetchAndMergeOrder] Failed to parse split tickets:', err)
+    return null
+  })
+}
+
 /**
  * Fetch an order by ID and, if it's a split parent, fetch all child split
  * tickets and merge their items/totals into a single combined view.
  *
  * Used by FloorPlanHome's orderToLoad effect and handleTableTap to avoid
  * duplicating the split-merge logic in two places.
+ *
+ * @param opts.view - API view mode (default: 'panel' for lightweight fetch)
+ * @param opts.knownStatus - If caller already knows the order status, pass it
+ *   to enable parallel fetch of split tickets (saves one sequential round-trip)
  */
-export async function fetchAndMergeOrder(orderId: string): Promise<MergedOrderData | null> {
-  const res = await fetch(`/api/orders/${orderId}`)
+export async function fetchAndMergeOrder(
+  orderId: string,
+  opts?: { view?: string; knownStatus?: string },
+): Promise<MergedOrderData | null> {
+  const view = opts?.view || 'panel'
+  const isSplit = opts?.knownStatus === 'split'
+
+  // Fast path: caller knows it's a split order — fire both fetches in parallel
+  if (isSplit) {
+    const [res, splitRes] = await Promise.all([
+      fetch(`/api/orders/${orderId}?view=${view}`),
+      fetch(`/api/orders/${orderId}/split-tickets`),
+    ])
+
+    if (!res.ok) return null
+    const raw = await res.json()
+    const data = raw.data ?? raw
+
+    const merged = splitRes.ok ? await mergeSplitTickets(splitRes) : null
+
+    return {
+      raw: data,
+      items: merged?.items ?? data.items ?? [],
+      subtotal: merged?.subtotal ?? (Number(data.subtotal) || 0),
+      taxTotal: merged?.taxTotal ?? (Number(data.taxTotal) || 0),
+      tipTotal: merged?.tipTotal ?? (Number(data.tipTotal) || 0),
+      total: merged?.total ?? (Number(data.total) || 0),
+    }
+  }
+
+  // Default path: fetch order first, then split tickets if needed
+  const res = await fetch(`/api/orders/${orderId}?view=${view}`)
   if (!res.ok) return null
 
   const raw = await res.json()
@@ -205,34 +278,13 @@ export async function fetchAndMergeOrder(orderId: string): Promise<MergedOrderDa
     try {
       const splitRes = await fetch(`/api/orders/${orderId}/split-tickets`)
       if (splitRes.ok) {
-        const rawSplit = await splitRes.json()
-        const splitData = rawSplit.data ?? rawSplit
-        const splits = splitData.splitOrders || []
-        if (Array.isArray(splits) && splits.length > 0) {
-          mergedItems = []
-          mergedSubtotal = 0
-          mergedTax = 0
-          mergedTip = 0
-          mergedTotal = 0
-          for (const split of splits) {
-            const label = split.displayNumber || split.orderNumber
-            for (const item of (split.items || [])) {
-              mergedItems.push({
-                ...item,
-                menuItemId: item.menuItemId || item.id,
-                kitchenStatus: item.isSent || item.isCompleted ? 'sent' : 'pending',
-                modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; preModifier?: string }) => ({
-                  ...m,
-                  modifierId: m.id,
-                })),
-                splitLabel: String(label),
-              })
-            }
-            mergedSubtotal += Number(split.subtotal) || 0
-            mergedTax += Number(split.taxTotal) || 0
-            mergedTip += Number(split.tipTotal) || 0
-            mergedTotal += Number(split.total) || 0
-          }
+        const merged = await mergeSplitTickets(splitRes)
+        if (merged) {
+          mergedItems = merged.items
+          mergedSubtotal = merged.subtotal
+          mergedTax = merged.taxTotal
+          mergedTip = merged.tipTotal
+          mergedTotal = merged.total
         }
       }
     } catch (err) {

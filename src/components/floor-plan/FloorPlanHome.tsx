@@ -770,6 +770,18 @@ export function FloorPlanHome({
     }
   }, []) // Empty deps - refs keep callbacks fresh
 
+  // Force data refresh on socket REconnect — may have missed events while disconnected
+  const wasEverConnectedRef = useRef(false)
+  useEffect(() => {
+    if (isConnected) {
+      if (wasEverConnectedRef.current) {
+        // Reconnected after a disconnect — refresh data
+        callbacksRef.current.loadFloorPlanData?.()
+      }
+      wasEverConnectedRef.current = true
+    }
+  }, [isConnected])
+
   // 20s fallback polling ONLY when socket is disconnected
   useEffect(() => {
     if (isConnected) return // socket working, no polling needed
@@ -928,6 +940,13 @@ export function FloorPlanHome({
 
     const loadOrder = async () => {
       try {
+        // Set order state + open panel immediately (before fetch completes)
+        setActiveOrderId(orderToLoad.id)
+        setActiveOrderNumber(String(orderToLoad.orderNumber))
+        setActiveTableId(orderToLoad.tableId || null)
+        setActiveOrderType(orderToLoad.orderType || 'bar_tab')
+        setShowOrderPanel(true)
+
         const merged = await fetchAndMergeOrder(orderToLoad.id)
         if (!merged) {
           console.error('[FloorPlanHome] Failed to load order:', orderToLoad.id)
@@ -936,13 +955,6 @@ export function FloorPlanHome({
         }
 
         const data = merged.raw
-
-        // Set order state
-        setActiveOrderId(orderToLoad.id)
-        setActiveOrderNumber(String(orderToLoad.orderNumber))
-        setActiveTableId(orderToLoad.tableId || null)
-        setActiveOrderType(orderToLoad.orderType || 'bar_tab')
-        setShowOrderPanel(true)
 
         // Load the full order into Zustand store — store.loadOrder handles all item mapping
         const store = useOrderStore.getState()
@@ -1206,9 +1218,28 @@ export function FloorPlanHome({
       // Load existing order items from this table (including split parents)
       setActiveOrderId(currentOrder.id)
       setActiveOrderNumber(String(currentOrder.orderNumber))
-      try {
-        const merged = await fetchAndMergeOrder(currentOrder.id)
-        if (merged) {
+
+      // Optimistic render: immediately populate panel header from snapshot
+      // so the panel shows order info while the full fetch runs in background
+      const store = useOrderStore.getState()
+      store.loadOrder({
+        id: currentOrder.id,
+        orderNumber: currentOrder.orderNumber,
+        orderType: 'dine_in',
+        tableId: primaryTable.id,
+        guestCount: currentOrder.guestCount || totalSeats,
+        status: orderStatus,
+        items: [],  // empty triggers loading state in panel
+        subtotal: 0,
+        taxTotal: 0,
+        total: currentOrder.total || 0,
+      })
+
+      // Background fetch replaces skeleton with real items
+      // Pass knownStatus to enable parallel split-ticket fetch
+      fetchAndMergeOrder(currentOrder.id, { knownStatus: orderStatus })
+        .then(merged => {
+          if (!merged) return
           const data = merged.raw
           // Use loadOrder to atomically set tableId + items in Zustand store
           // store.loadOrder handles ALL item field mapping — one path, no duplication
@@ -1250,10 +1281,10 @@ export function FloorPlanHome({
               return next
             })
           }
-        }
-      } catch (error) {
-        console.error('[FloorPlanHome] Failed to load order:', error)
-      }
+        })
+        .catch(error => {
+          console.error('[FloorPlanHome] Failed to load order:', error)
+        })
     } else {
       // No existing order on this table — clear any stale extra seats
       // (extra seats only persist while an order is active)

@@ -258,6 +258,7 @@ function KDSContent() {
 
     const onConnect = () => {
       setSocketConnected(true)
+      loadOrders() // Refresh data on (re)connect — may have missed events while disconnected
 
       const locationId = getLocationId()
 

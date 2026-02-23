@@ -319,6 +319,7 @@ CREATE TABLE "MenuItem" (
     "price" DECIMAL(65,30) NOT NULL,
     "priceCC" DECIMAL(65,30),
     "cost" DECIMAL(65,30),
+    "onlinePrice" DECIMAL(65,30),
     "taxRate" DECIMAL(65,30),
     "isTaxExempt" BOOLEAN NOT NULL DEFAULT false,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
@@ -368,6 +369,7 @@ CREATE TABLE "MenuItem" (
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
     "linkedBottleProductId" TEXT,
+    "linkedPourSizeOz" DECIMAL(65,30),
 
     CONSTRAINT "MenuItem_pkey" PRIMARY KEY ("id")
 );
@@ -388,6 +390,7 @@ CREATE TABLE "ModifierGroup" (
     "exclusionGroupKey" TEXT,
     "hasOnlineOverride" BOOLEAN NOT NULL DEFAULT false,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "showOnline" BOOLEAN NOT NULL DEFAULT true,
     "isSpiritGroup" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -413,6 +416,8 @@ CREATE TABLE "Modifier" (
     "allowOnSide" BOOLEAN NOT NULL DEFAULT false,
     "allowExtra" BOOLEAN NOT NULL DEFAULT false,
     "extraPrice" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "liteMultiplier" DECIMAL(65,30),
+    "extraMultiplier" DECIMAL(65,30),
     "allowedPreModifiers" JSONB,
     "extraUpsellPrice" DECIMAL(65,30),
     "ingredientId" TEXT,
@@ -437,22 +442,6 @@ CREATE TABLE "Modifier" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "Modifier_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "MenuItemModifierGroup" (
-    "id" TEXT NOT NULL,
-    "locationId" TEXT NOT NULL,
-    "menuItemId" TEXT NOT NULL,
-    "modifierGroupId" TEXT NOT NULL,
-    "sortOrder" INTEGER NOT NULL DEFAULT 0,
-    "showOnline" BOOLEAN NOT NULL DEFAULT true,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-    "syncedAt" TIMESTAMP(3),
-
-    CONSTRAINT "MenuItemModifierGroup_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -754,6 +743,8 @@ CREATE TABLE "OrderItem" (
     "name" TEXT NOT NULL,
     "price" DECIMAL(65,30) NOT NULL,
     "quantity" INTEGER NOT NULL DEFAULT 1,
+    "pourSize" TEXT,
+    "pourMultiplier" DECIMAL(65,30),
     "cardPrice" DECIMAL(65,30),
     "isTaxInclusive" BOOLEAN NOT NULL DEFAULT false,
     "categoryType" TEXT,
@@ -2174,6 +2165,7 @@ CREATE TABLE "SpiritCategory" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "categoryType" TEXT NOT NULL DEFAULT 'spirit',
     "displayName" TEXT,
     "description" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
@@ -2201,9 +2193,16 @@ CREATE TABLE "BottleProduct" (
     "pourSizeOz" DECIMAL(65,30),
     "poursPerBottle" INTEGER,
     "pourCost" DECIMAL(65,30),
+    "containerType" TEXT NOT NULL DEFAULT 'bottle',
+    "alcoholSubtype" TEXT,
+    "vintage" INTEGER,
     "currentStock" INTEGER NOT NULL DEFAULT 0,
     "lowStockAlert" INTEGER,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "needsVerification" BOOLEAN NOT NULL DEFAULT false,
+    "verifiedAt" TIMESTAMP(3),
+    "verifiedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2218,11 +2217,14 @@ CREATE TABLE "RecipeIngredient" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
     "menuItemId" TEXT NOT NULL,
-    "bottleProductId" TEXT NOT NULL,
+    "bottleProductId" TEXT,
+    "ingredientId" TEXT,
     "pourCount" DECIMAL(65,30) NOT NULL DEFAULT 1,
     "pourSizeOz" DECIMAL(65,30),
     "isRequired" BOOLEAN NOT NULL DEFAULT true,
     "isSubstitutable" BOOLEAN NOT NULL DEFAULT true,
+    "quantity" DECIMAL(65,30),
+    "unit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -3756,18 +3758,6 @@ CREATE INDEX "Modifier_linkedMenuItemId_idx" ON "Modifier"("linkedMenuItemId");
 CREATE INDEX "Modifier_locationId_linkedMenuItemId_idx" ON "Modifier"("locationId", "linkedMenuItemId");
 
 -- CreateIndex
-CREATE INDEX "MenuItemModifierGroup_locationId_idx" ON "MenuItemModifierGroup"("locationId");
-
--- CreateIndex
-CREATE INDEX "MenuItemModifierGroup_modifierGroupId_idx" ON "MenuItemModifierGroup"("modifierGroupId");
-
--- CreateIndex
-CREATE INDEX "MenuItemModifierGroup_menuItemId_idx" ON "MenuItemModifierGroup"("menuItemId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "MenuItemModifierGroup_menuItemId_modifierGroupId_key" ON "MenuItemModifierGroup"("menuItemId", "modifierGroupId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "ComboTemplate_menuItemId_key" ON "ComboTemplate"("menuItemId");
 
 -- CreateIndex
@@ -4677,9 +4667,6 @@ CREATE INDEX "SpiritCategory_sortOrder_idx" ON "SpiritCategory"("sortOrder");
 CREATE UNIQUE INDEX "SpiritCategory_locationId_name_key" ON "SpiritCategory"("locationId", "name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "BottleProduct_inventoryItemId_key" ON "BottleProduct"("inventoryItemId");
-
--- CreateIndex
 CREATE INDEX "BottleProduct_locationId_idx" ON "BottleProduct"("locationId");
 
 -- CreateIndex
@@ -4687,6 +4674,9 @@ CREATE INDEX "BottleProduct_spiritCategoryId_idx" ON "BottleProduct"("spiritCate
 
 -- CreateIndex
 CREATE INDEX "BottleProduct_tier_idx" ON "BottleProduct"("tier");
+
+-- CreateIndex
+CREATE INDEX "BottleProduct_inventoryItemId_idx" ON "BottleProduct"("inventoryItemId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "BottleProduct_locationId_name_key" ON "BottleProduct"("locationId", "name");
@@ -4699,6 +4689,9 @@ CREATE INDEX "RecipeIngredient_menuItemId_idx" ON "RecipeIngredient"("menuItemId
 
 -- CreateIndex
 CREATE INDEX "RecipeIngredient_bottleProductId_idx" ON "RecipeIngredient"("bottleProductId");
+
+-- CreateIndex
+CREATE INDEX "RecipeIngredient_ingredientId_idx" ON "RecipeIngredient"("ingredientId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "RecipeIngredient_menuItemId_bottleProductId_key" ON "RecipeIngredient"("menuItemId", "bottleProductId");
@@ -5448,15 +5441,6 @@ ALTER TABLE "Modifier" ADD CONSTRAINT "Modifier_linkedMenuItemId_fkey" FOREIGN K
 ALTER TABLE "Modifier" ADD CONSTRAINT "Modifier_linkedBottleProductId_fkey" FOREIGN KEY ("linkedBottleProductId") REFERENCES "BottleProduct"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "MenuItemModifierGroup" ADD CONSTRAINT "MenuItemModifierGroup_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "MenuItemModifierGroup" ADD CONSTRAINT "MenuItemModifierGroup_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "MenuItemModifierGroup" ADD CONSTRAINT "MenuItemModifierGroup_modifierGroupId_fkey" FOREIGN KEY ("modifierGroupId") REFERENCES "ModifierGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "ComboTemplate" ADD CONSTRAINT "ComboTemplate_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -5973,7 +5957,10 @@ ALTER TABLE "RecipeIngredient" ADD CONSTRAINT "RecipeIngredient_locationId_fkey"
 ALTER TABLE "RecipeIngredient" ADD CONSTRAINT "RecipeIngredient_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RecipeIngredient" ADD CONSTRAINT "RecipeIngredient_bottleProductId_fkey" FOREIGN KEY ("bottleProductId") REFERENCES "BottleProduct"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "RecipeIngredient" ADD CONSTRAINT "RecipeIngredient_bottleProductId_fkey" FOREIGN KEY ("bottleProductId") REFERENCES "BottleProduct"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RecipeIngredient" ADD CONSTRAINT "RecipeIngredient_ingredientId_fkey" FOREIGN KEY ("ingredientId") REFERENCES "Ingredient"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "SpiritModifierGroup" ADD CONSTRAINT "SpiritModifierGroup_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -52,6 +52,82 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ data: { ...response, paidAmount: 0 } })
     }
 
+    // Lightweight panel view — items + modifiers only (no payments, pizzaData, ingredientModifications)
+    if (view === 'panel') {
+      const order = await db.order.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          orderNumber: true,
+          status: true,
+          guestCount: true,
+          subtotal: true,
+          taxTotal: true,
+          total: true,
+          tipTotal: true,
+          discountTotal: true,
+          tableId: true,
+          orderType: true,
+          createdAt: true,
+          updatedAt: true,
+          version: true,
+          employeeId: true,
+          employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+          table: { select: { id: true, name: true } },
+          items: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              quantity: true,
+              specialNotes: true,
+              seatNumber: true,
+              courseNumber: true,
+              courseStatus: true,
+              isHeld: true,
+              kitchenStatus: true,
+              status: true,
+              createdAt: true,
+              modifiers: {
+                where: { deletedAt: null },
+                select: {
+                  id: true,
+                  name: true,
+                  price: true,
+                  depth: true,
+                  preModifier: true,
+                  modifierId: true,
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (!order) {
+        return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+      }
+
+      // Convert Decimal fields to numbers (Prisma returns Decimal objects)
+      return NextResponse.json({ data: {
+        ...order,
+        subtotal: Number(order.subtotal),
+        taxTotal: Number(order.taxTotal),
+        total: Number(order.total),
+        tipTotal: Number(order.tipTotal),
+        discountTotal: Number(order.discountTotal),
+        items: order.items.map(item => ({
+          ...item,
+          price: Number(item.price),
+          modifiers: item.modifiers.map(mod => ({
+            ...mod,
+            price: Number(mod.price),
+          })),
+        })),
+      } })
+    }
+
     const order = await db.order.findUnique({
       where: { id },
       include: {
