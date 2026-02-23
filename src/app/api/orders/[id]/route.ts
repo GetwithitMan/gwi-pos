@@ -71,6 +71,8 @@ export const GET = withVenue(async function GET(
           createdAt: true,
           updatedAt: true,
           version: true,
+          itemCount: true,
+          extraSeatCount: true,
           employeeId: true,
           employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
           table: { select: { id: true, name: true } },
@@ -88,6 +90,8 @@ export const GET = withVenue(async function GET(
               isHeld: true,
               kitchenStatus: true,
               status: true,
+              itemTotal: true,
+              menuItemId: true,
               createdAt: true,
               modifiers: {
                 where: { deletedAt: null },
@@ -97,6 +101,7 @@ export const GET = withVenue(async function GET(
                   price: true,
                   depth: true,
                   preModifier: true,
+                  quantity: true,
                   modifierId: true,
                 },
               },
@@ -120,6 +125,7 @@ export const GET = withVenue(async function GET(
         items: order.items.map(item => ({
           ...item,
           price: Number(item.price),
+          itemTotal: Number(item.itemTotal),
           modifiers: item.modifiers.map(mod => ({
             ...mod,
             price: Number(mod.price),

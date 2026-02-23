@@ -159,6 +159,7 @@
 | 343 | Socket & State Hardening | DONE | Global | 340 | 150ms event debouncing, delta open orders, conditional 30s polling, location/menu caches, connectedTerminals leak fix. |
 | 344 | Order Flow Performance (P0) | DONE | Orders/Payments | 339, 340, 341 | PaymentModal instant open, fire-and-forget cash, floor plan snapshot coalescing, draft pre-creation, 5s background autosave. |
 | 357 | POS Overhaul Phase 6 | DONE | Orders/Performance | 339-344 | React.memo (4 components), 47 atomic selectors, delta sockets, optimistic splits, ~13K dead code removed, client caching. |
+| 421 | Speed & Reconnect Optimizations | DONE | Orders/Performance | 339-344 | Enhanced ?view=panel select, OrderPanel items skeleton. Verified already implemented: snapshot header, parallel split fetch, skip animations (no Framer Motion), FloorPlan+KDS reconnect, health polling gate. Panel open <200ms. |
 
 ### POS Inventory (Non-MC)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -306,7 +307,7 @@
 | 107 | Table Combine/Split | DONE | Floor Plan | 106 | Drag-combine, split-all, remove-single undo, 5min window, clockwise seats from top-left |
 | 108 | Event Ticketing APIs | TODO | Events | 106 | Event CRUD, seat hold/release, ticket purchase, check-in |
 | 109 | Visual Pizza Builder | DONE | Menu | 106 | Two-mode pizza ordering (Quick Mode + Visual Builder), admin config, full API |
-| 110 | Real-time Events (Pusher) | TODO | KDS | - | WebSocket abstraction for instant updates (seats, orders, KDS) |
+| 110 | Real-time Events (Socket.io) | DONE | Global | - | 57 socket events across 18 domains. Socket.io via custom server. emitToLocation/emitToTags + getSharedSocket + useEvents/useOrderSockets/useMenuSocket. Delta updates, fallback polling, reconnect auto-refresh. |
 
 ### Employee Features
 | Skill | Name | Status | Domain | Dependencies | Notes |

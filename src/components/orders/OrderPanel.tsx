@@ -1440,6 +1440,31 @@ export const OrderPanel = memo(function OrderPanel({
             {renderPendingItems()}
             {renderSentItems()}
           </div>
+        ) : orderId && !orderId.startsWith('temp-') ? (
+          /* Skeleton: existing order items are loading from server */
+          <div style={{ padding: '12px 0', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {[0.7, 0.5, 0.85, 0.6].map((w, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{
+                  height: '14px',
+                  width: `${w * 100}%`,
+                  background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s linear infinite',
+                  borderRadius: '4px',
+                }} />
+                <div style={{
+                  height: '12px',
+                  width: '48px',
+                  background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 100%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s linear infinite',
+                  borderRadius: '4px',
+                  marginLeft: '12px',
+                }} />
+              </div>
+            ))}
+          </div>
         ) : (
           <div style={{
             display: 'flex',

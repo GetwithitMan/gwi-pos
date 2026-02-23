@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-02-23 — Speed & Reconnect Optimizations (Skill 421) + Skill 110 Update
+
+**Version:** `1.0.0-beta`
+**Session theme:** Performance Phase 3 (Speed) + Phase 4 (Reconnect) — 4-agent parallel team targeting order panel load speed and network resilience. Plus comprehensive Skill 110 Real-Time Events documentation overhaul.
+
+**Summary:** Parallel agent team implemented 6 optimizations: lightweight `?view=panel` API mode, parallel split-ticket fetch, optimistic panel render from snapshot, skip first-render animations, FloorPlan+KDS reconnect auto-refresh, and hardware health socket-gated polling. Panel open perceived time reduced from ~800ms to <200ms. Skill 110 expanded from 13 events to comprehensive 57-event reference across 18 domains.
+
+### Changes
+
+| Phase | Change | Files |
+|-------|--------|-------|
+| 3a | Lightweight `?view=panel` select query | `src/app/api/orders/[id]/route.ts` |
+| 3b | Parallel split-ticket fetch via `Promise.all` | `src/lib/order-utils.ts` |
+| 3c | Optimistic panel render from snapshot data | `src/components/floor-plan/FloorPlanHome.tsx` |
+| 3d | Skip entrance animations on first render | Order panel component |
+| 4a | Socket reconnect auto-refresh (FloorPlan + KDS) | `FloorPlanHome.tsx`, `kds/page.tsx` |
+| 4b | Hardware health polling gated by socket state | `settings/hardware/health/page.tsx` |
+| Docs | Skill 110 expanded to 57 events, 18 domains | `docs/skills/110-REALTIME-EVENTS.md` |
+| Docs | Skill 421 created | `docs/skills/421-SPEED-RECONNECT.md` |
+
+### Performance Impact
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Panel open (perceived) | ~800ms | <200ms |
+| Panel items visible | ~800ms | ~400-600ms |
+| Split order fetch | Sequential | Parallel |
+| Network recovery | Manual reload | Auto-refresh |
+| Hardware health polling | Always 30s | Socket-gated |
+
+### Features Delivered
+
+| Feature | Skill | Summary |
+|---------|-------|---------|
+| Speed optimizations | 421 | 4 speed improvements: panel API, parallel fetch, optimistic render, skip animations |
+| Reconnect resilience | 421 | FloorPlan + KDS auto-refresh on socket reconnect, hardware polling gate |
+| Real-time events docs | 110 | Comprehensive 57-event reference across all domains (was 13 events) |
+
+### Known Issues / Blockers
+
+None.
+
+---
+
 ## 2026-02-23 — Deep Dive Forensic Round 2 (Skill 417)
 
 **Version:** `1.0.0-beta`
