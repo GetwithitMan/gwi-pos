@@ -7,6 +7,7 @@
 
 import { db } from '@/lib/db'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { getSnapshotCache, setSnapshotCache } from '@/lib/snapshot-cache'
 
 export interface SnapshotTable {
   id: string
@@ -123,6 +124,10 @@ export interface SnapshotResult {
  * Runs 4 parallel queries: tables, sections, elements, open orders count.
  */
 export async function getFloorPlanSnapshot(locationId: string): Promise<SnapshotResult> {
+  // Check cache first — collapses 50 terminals into 1 DB query per 5s
+  const cached = getSnapshotCache(locationId)
+  if (cached) return cached
+
   // Get business day start so the open orders count matches what the panel shows
   const locationSettings = await db.location.findFirst({
     where: { id: locationId },
@@ -234,7 +239,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
 
   const tables = rawTables
 
-  return {
+  const result: SnapshotResult = {
     tables: tables.map(t => ({
       id: t.id,
       name: t.name,
@@ -339,4 +344,9 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
     })),
     openOrdersCount,
   }
+
+  // Cache the result for 5 seconds
+  setSnapshotCache(locationId, result)
+
+  return result
 }

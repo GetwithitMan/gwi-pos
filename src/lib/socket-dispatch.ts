@@ -18,6 +18,7 @@
 import type { RoutingResult } from '@/types/routing'
 import { emitToLocation, emitToTags } from '@/lib/socket-server'
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
+import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 
 interface DispatchOptions {
   /** Don't await the dispatch (fire and forget) */
@@ -288,6 +289,9 @@ export async function dispatchFloorPlanUpdate(
   locationId: string,
   options: DispatchOptions = {}
 ): Promise<boolean> {
+  // Invalidate snapshot cache so next request gets fresh data
+  invalidateSnapshotCache(locationId)
+
   const doEmit = async () => {
     try {
       await emitToLocation(locationId, 'floor-plan:updated', { locationId })

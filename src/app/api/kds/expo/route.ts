@@ -15,6 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
+    const cursor = searchParams.get('cursor')
 
     if (!locationId) {
       return NextResponse.json(
@@ -24,12 +25,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Get all open orders with full item data
+    // Cursor-based pagination: take 50 at a time for performance at 100+ open orders
     const orders = await db.order.findMany({
       where: {
         locationId,
         status: { in: ['open', 'in_progress', 'paid'] },
         items: { some: {} },
       },
+      take: 50,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
       include: {
         table: {
           select: {
@@ -157,7 +161,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
       .filter(Boolean)
 
-    return NextResponse.json({ data: { orders: expoOrders } })
+    // Cursor for next page — last order ID from the raw DB result (before filtering)
+    const nextCursor = orders.length === 50 ? orders[orders.length - 1].id : null
+
+    return NextResponse.json({ data: { orders: expoOrders, nextCursor } })
   } catch (error) {
     console.error('Failed to fetch expo orders:', error)
     return NextResponse.json(

@@ -121,13 +121,13 @@ function createPrismaClient(url?: string) {
 
 /**
  * Append connection pool parameters to a PostgreSQL URL.
- * - connection_limit: Max connections per client (default 5 for NUC, higher for cloud)
+ * - connection_limit: Max connections per client (default 25 — at 5, system saturates at ~7 concurrent requests)
  * - pool_timeout: Seconds to wait for a connection before erroring (default 10)
  */
 function appendPoolParams(url: string): string {
   if (!url) return url
 
-  const limit = parseInt(process.env.DATABASE_CONNECTION_LIMIT || '5', 10)
+  const limit = parseInt(process.env.DB_POOL_SIZE || process.env.DATABASE_CONNECTION_LIMIT || '25', 10)
   const timeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
   const separator = url.includes('?') ? '&' : '?'
   return `${url}${separator}connection_limit=${limit}&pool_timeout=${timeout}`

@@ -185,6 +185,7 @@ export const DEFAULT_LOCAL_TIMEOUT_MS = 60000   // 60s — customer has to inter
 export const DEFAULT_CLOUD_TIMEOUT_MS = 30000   // 30s — cloud should be faster
 export const PAD_RESET_TIMEOUT_MS = 5000        // 5s — pad reset is quick
 export const PARAM_DOWNLOAD_TIMEOUT_MS = 120000 // 2min — param download is slow
+export const PAYAPI_TIMEOUT_MS = 5000           // 5s — REST API calls, no card interaction
 
 // ─── Tip Defaults ────────────────────────────────────────────────────────────
 

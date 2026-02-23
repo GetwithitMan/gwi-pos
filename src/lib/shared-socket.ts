@@ -49,7 +49,8 @@ export function getSharedSocket(): Socket {
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 30000,
+      reconnectionDelayMax: 5000,
+      randomizationFactor: 0.5,
     })
   }
   refCount++

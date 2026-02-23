@@ -100,6 +100,31 @@ export function calculateItemCommission(
 // ORDER CALCULATIONS
 // ============================================================================
 
+// Memoization cache for calculateOrderTotals — avoids redundant recalculation
+// during rapid re-renders of the same order. Small fixed-size cache (max 20 entries).
+const _totalsCache = new Map<string, OrderTotals>()
+const TOTALS_CACHE_MAX = 20
+
+function buildTotalsCacheKey(
+  items: Array<OrderItemForCalculation & { commissionAmount?: number }>,
+  locationSettings: LocationTaxSettings | null,
+  discountTotal: number,
+  tipTotal: number,
+  priceRounding: PriceRoundingSettings | undefined,
+  paymentMethod: string
+): string {
+  return JSON.stringify([
+    items.map(i => [
+      i.price, i.quantity, i.status ?? 'active', i.itemTotal ?? null,
+      i.commissionAmount ?? null, i.isTaxInclusive ?? false,
+      (i.modifiers || []).map(m => [m.price, m.quantity ?? 1]),
+      (i.ingredientModifications || []).map(im => im.priceAdjustment),
+    ]),
+    locationSettings?.tax?.defaultRate ?? 0,
+    discountTotal, tipTotal, priceRounding ?? null, paymentMethod,
+  ])
+}
+
 /**
  * Calculate order subtotal from all items
  */
@@ -171,6 +196,11 @@ export function calculateOrderTotals(
   priceRounding?: PriceRoundingSettings,
   paymentMethod: 'cash' | 'card' = 'card'
 ): OrderTotals {
+  // Memoization: return cached result if inputs unchanged
+  const cacheKey = buildTotalsCacheKey(items, locationSettings, existingDiscountTotal, existingTipTotal, priceRounding, paymentMethod)
+  const cached = _totalsCache.get(cacheKey)
+  if (cached) return cached
+
   const taxRate = (locationSettings?.tax?.defaultRate ?? 0) / 100
   const commissionTotal = calculateOrderCommission(items)
 
@@ -213,7 +243,7 @@ export function calculateOrderTotals(
     roundingDelta = roundToCents(total - totalBeforeRounding)
   }
 
-  return {
+  const result: OrderTotals = {
     subtotal,
     taxTotal: totalTax,
     taxFromInclusive,
@@ -225,6 +255,15 @@ export function calculateOrderTotals(
     roundingDelta,
     commissionTotal,
   }
+
+  // Store in cache (evict oldest entries if over limit)
+  if (_totalsCache.size >= TOTALS_CACHE_MAX) {
+    const firstKey = _totalsCache.keys().next().value!
+    _totalsCache.delete(firstKey)
+  }
+  _totalsCache.set(cacheKey, result)
+
+  return result
 }
 
 // ============================================================================

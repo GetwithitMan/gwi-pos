@@ -10,6 +10,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const stationId = searchParams.get('stationId')
     const showAll = searchParams.get('showAll') === 'true' // Expo mode
+    const cursor = searchParams.get('cursor')
 
     if (!locationId) {
       return NextResponse.json(
@@ -31,6 +32,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Get orders that have been sent to kitchen (including paid orders with incomplete items)
+    // Cursor-based pagination: take 50 at a time for performance at 100+ open orders
     const orders = await db.order.findMany({
       where: {
         locationId,
@@ -38,6 +40,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         // Only orders with items (sent to kitchen)
         items: { some: {} },
       },
+      take: 50,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
       include: {
         employee: {
           select: {
@@ -194,8 +198,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }).filter(Boolean)
 
+    // Cursor for next page — last order ID from the raw DB result (before filtering)
+    const nextCursor = orders.length === 50 ? orders[orders.length - 1].id : null
+
     return NextResponse.json({ data: {
       orders: kdsOrders,
+      nextCursor,
       station: station ? {
         id: station.id,
         name: station.name,

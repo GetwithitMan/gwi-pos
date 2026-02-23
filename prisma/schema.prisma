@@ -1779,6 +1779,7 @@ model OrderItem {
   @@index([orderId, kitchenStatus])
   @@index([orderId, status])
   @@index([orderId, status, deletedAt])
+  @@index([locationId, status, kitchenStatus])
 }
 
 model OrderItemModifier {

@@ -10,6 +10,7 @@ const PAYAPI_URLS = {
 } as const
 
 const USER_AGENT = 'GWI-POS/1.0.0'
+const PAYAPI_TIMEOUT_MS = 5000  // 5s circuit breaker — fail fast if processor hangs
 
 // ─── Request Interfaces ───────────────────────────────────────────────────────
 
@@ -267,11 +268,29 @@ export class PayApiClient {
       headers['Content-Type'] = 'application/json'
     }
 
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: serializedBody,
-    })
+    // 5s circuit breaker — fail fast if processor hangs
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), PAYAPI_TIMEOUT_MS)
+
+    let res: Response
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: serializedBody,
+        signal: controller.signal,
+      })
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new PayApiError(
+          'Payment processor timed out (5s). Please retry.',
+          408
+        )
+      }
+      throw err
+    } finally {
+      clearTimeout(timer)
+    }
 
     let raw: RawPayApiResponse = {}
     try {

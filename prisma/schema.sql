@@ -3941,6 +3941,9 @@ CREATE INDEX "OrderItem_orderId_status_idx" ON "OrderItem"("orderId", "status");
 CREATE INDEX "OrderItem_orderId_status_deletedAt_idx" ON "OrderItem"("orderId", "status", "deletedAt");
 
 -- CreateIndex
+CREATE INDEX "OrderItem_locationId_status_kitchenStatus_idx" ON "OrderItem"("locationId", "status", "kitchenStatus");
+
+-- CreateIndex
 CREATE INDEX "OrderItemModifier_locationId_idx" ON "OrderItemModifier"("locationId");
 
 -- CreateIndex
