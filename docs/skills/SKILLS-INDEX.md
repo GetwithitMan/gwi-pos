@@ -1249,6 +1249,14 @@ These skills emerged during development and are now part of the system:
 | 407 | NUC-REMOTE-GIT-REPAIR | DONE | Infrastructure / NUC Fleet | 399 | Remote git credential repair for NUC stations; REPAIR_GIT_CREDENTIALS fleet command + MC bootstrap/full-deploy injection modes; Repair Git button in MC ServerActions (super_admin only) |
 | 408 | SYNC-AGENT-BOOT-SELF-UPDATE | DONE | Infrastructure / NUC Fleet | 399, 407 | Boot-time self-update: sync agent downloads latest version of itself from GitHub on every startup, replaces file atomically and restarts if content differs; settled guard prevents double-start |
 
+### Safety & Performance Audit
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 409 | ORDER-MUTATION-RACE-CONDITIONS | DONE | Orders / Safety | — | FOR UPDATE locks on pay, items, comp-void routes. Server-side idempotency key (crypto.randomUUID). Status guard in pay transaction (409 if already paid). Version increment on all 4 order mutation routes. Prevents double payment, items on paid orders, void during payment |
+| 410 | TABLE-TAP-PERFORMANCE | DONE | Orders / Performance | — | ?view=panel lightweight query (no payments/pizzaData). Parallel split-ticket fetch via Promise.all. Optimistic panel render from floor plan snapshot. Target: 2s → 600ms |
+| 411 | SOCKET-RECONNECT-REFRESH | DONE | Real-Time / Infrastructure | 110 | KDS and FloorPlan auto-refresh on socket reconnect. Hardware health page polling gated by isConnected. Skill 110 docs updated PARTIAL → DONE with all 15+ events |
+
 ---
 
 ## Next Session Priority (2026-02-11+)
