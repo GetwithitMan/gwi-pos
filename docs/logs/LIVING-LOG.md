@@ -5,6 +5,76 @@
 
 ---
 
+## 2026-02-23 — Clerk-Based Owner Access + GWI Access Gate Replacement
+
+**Session theme:** Owner auth — enable location owners to access venues via Clerk; replace GWI access gate phone+code with Clerk email+password
+
+**Summary:** Location owners added in Mission Control's Team tab were getting `clerkUserId: "pending_{email}"` but never receiving a Clerk invitation, so they couldn't authenticate. Fixed by sending Clerk instance-level invitations on team member creation and adding `pending_` reconciliation in `resolveAdminUserId()` to link placeholder records to real Clerk accounts on first login. Replaced the GWI Access gate on barpos.restaurant (phone number + 6-character code) with Clerk email+password login. Extracted `verifyWithClerk()` into a shared module for reuse across venue-login and the new access gate endpoint.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `9a7875b` | feat: replace GWI access gate phone+code with Clerk email+password login |
+
+### Commits — gwi-mission-control
+
+| Hash | Description |
+|------|-------------|
+| `4fea70c` | feat: send Clerk invitations for location owners and GWI access allowlist |
+
+### Deployments
+
+- **POS** `9a7875b` pushed to `main` → Vercel auto-deploy to `barpos.restaurant` / `*.ordercontrolcenter.com`
+- **MC** `4fea70c` pushed to `main` → Vercel auto-deploy to `app.thepasspos.com`
+
+### Features Delivered
+
+**Clerk Invitations for Location Owners (MC)**
+- `POST /api/admin/locations/[id]/team` now sends `clerk.invitations.createInvitation()` after AdminUser create/upsert
+- Owners receive email invitation → create Clerk account → can log into `{slug}.ordercontrolcenter.com`
+- Silently ignores "already invited" / "already exists" errors
+
+**Pending ClerkUserId Reconciliation (MC)**
+- `resolveAdminUserId()` in `src/lib/auth.ts` now checks for `pending_{email}` records when direct lookup fails
+- One-time reconciliation: updates the placeholder clerkUserId to the real Clerk user ID
+- Subsequent logins use the real ID directly
+
+**Clerk Invitations for GWI Access Allowlist (MC)**
+- `POST /api/admin/gwi-access/allowlist` sends Clerk invitation when email is provided in body
+- Users added to the allowlist get invited to create Clerk accounts
+
+**GWI Access Gate — Clerk Login (POS)**
+- Replaced two-step phone+code flow with single-step email+password form at `/access`
+- New `POST /api/access/clerk-verify` endpoint verifies credentials via Clerk FAPI and sets `gwi-access` cookie
+- `src/lib/access-gate.ts` rewritten: email-based JWT tokens, removed all OTP/phone functions
+- Extracted `verifyWithClerk()` to `src/lib/clerk-verify.ts` (shared by venue-login and access gate)
+- Removed dead routes: `/api/access/request`, `/api/access/verify`
+- Middleware token refresh updated to use `accessPayload.email`
+
+### Files Changed
+
+| Repo | File | Action |
+|------|------|--------|
+| POS | `src/lib/clerk-verify.ts` | New — shared Clerk FAPI verification module |
+| POS | `src/lib/access-gate.ts` | Rewrite — email-based tokens, removed OTP/phone |
+| POS | `src/app/access/page.tsx` | Rewrite — email+password form |
+| POS | `src/app/api/access/clerk-verify/route.ts` | New — Clerk verify + cookie endpoint |
+| POS | `src/app/api/auth/venue-login/route.ts` | Edit — import from shared clerk-verify |
+| POS | `src/app/api/admin/access-allowlist/route.ts` | Edit — inlined normalizePhone |
+| POS | `src/middleware.ts` | Edit — email-based token refresh |
+| POS | `src/app/api/access/request/route.ts` | Deleted — dead phone verification |
+| POS | `src/app/api/access/verify/route.ts` | Deleted — dead OTP verification |
+| MC | `src/app/api/admin/locations/[id]/team/route.ts` | Edit — send Clerk invitation |
+| MC | `src/lib/auth.ts` | Edit — pending_ reconciliation |
+| MC | `src/app/api/admin/gwi-access/allowlist/route.ts` | Edit — send Clerk invitation |
+
+### Known Issues / Next Steps
+- GWI Access allowlist POST body currently expects phone+name; MC dashboard UI for GWI Access may need updating to collect email instead of (or in addition to) phone
+- Existing gwi-access cookies with `phone` payload will fail verification after deploy — users will be redirected to `/access` to re-authenticate with email+password (expected, no data loss)
+
+---
+
 ## 2026-02-21 — NUC Fleet Recovery + Sync Agent Self-Update
 
 **Session theme:** Fleet ops — diagnose and fix NUC deployment failures; add self-healing sync agent boot mechanism
