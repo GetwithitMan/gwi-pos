@@ -99,7 +99,20 @@ export const POST = withVenue(async function POST(
 
     // Use a transaction to ensure atomic append
     const result = await db.$transaction(async (tx) => {
-      // Get existing order with current items
+      // Lock the order row to prevent concurrent modifications (FOR UPDATE)
+      const [lockedOrder] = await tx.$queryRaw<any[]>`
+        SELECT id, status FROM "Order" WHERE id = ${orderId} FOR UPDATE
+      `
+
+      if (!lockedOrder) {
+        throw new Error('Order not found')
+      }
+
+      if (!['open', 'draft', 'in_progress'].includes(lockedOrder.status)) {
+        throw new Error('ORDER_NOT_MODIFIABLE')
+      }
+
+      // Get full order data with includes (row is already locked within this tx)
       const existingOrder = await tx.order.findUnique({
         where: { id: orderId },
         include: {
@@ -115,10 +128,6 @@ export const POST = withVenue(async function POST(
 
       if (!existingOrder) {
         throw new Error('Order not found')
-      }
-
-      if (existingOrder.status !== 'open' && existingOrder.status !== 'draft') {
-        throw new Error('Cannot modify a closed order')
       }
 
       // Promote businessDayDate to current business day when items are added
@@ -329,7 +338,7 @@ export const POST = withVenue(async function POST(
 
       const { subtotal: newSubtotal, taxTotal: newTaxTotal, taxFromInclusive: newTaxFromInc, taxFromExclusive: newTaxFromExc, total: newTotal, commissionTotal: newCommissionTotal } = totals
 
-      // Update order totals
+      // Update order totals + bump version for concurrency control
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
         data: {
@@ -339,6 +348,7 @@ export const POST = withVenue(async function POST(
           taxFromExclusive: newTaxFromExc,
           total: newTotal,
           commissionTotal: newCommissionTotal,
+          version: { increment: 1 },
         },
         include: {
           employee: {
@@ -451,6 +461,12 @@ export const POST = withVenue(async function POST(
     }
     if (message === 'Cannot modify a closed order') {
       return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
+    }
+    if (message === 'ORDER_NOT_MODIFIABLE') {
+      return NextResponse.json(
+        { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
+        { status: 409 }
+      )
     }
 
     return apiError.internalError('Failed to add items to order', ERROR_CODES.INTERNAL_ERROR)

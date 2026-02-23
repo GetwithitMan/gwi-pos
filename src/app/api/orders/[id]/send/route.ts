@@ -134,13 +134,16 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Transition draft → open on first send (so Open Orders panel sees it)
+    // Always increment version for optimistic concurrency control
     timing.start('db-update')
+    const orderUpdateData: Record<string, unknown> = { version: { increment: 1 } }
     if (order.status === 'draft') {
-      await db.order.update({
-        where: { id },
-        data: { status: 'open' },
-      })
+      orderUpdateData.status = 'open'
     }
+    await db.order.update({
+      where: { id },
+      data: orderUpdateData,
+    })
 
     // Batch update regular items (single query)
     if (regularItemIds.length > 0) {

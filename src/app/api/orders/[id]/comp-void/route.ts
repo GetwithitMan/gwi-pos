@@ -153,6 +153,19 @@ export const POST = withVenue(async function POST(
 
     // Wrap all critical writes in a single transaction
     const { activeItems, totals, shouldAutoClose } = await db.$transaction(async (tx) => {
+      // 0. Acquire row-level lock to prevent void-during-payment race condition
+      const [lockedOrder] = await tx.$queryRaw<any[]>`
+        SELECT "status" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE
+      `
+
+      if (!lockedOrder) {
+        throw new Error('ORDER_NOT_FOUND')
+      }
+
+      if (['paid', 'closed', 'voided'].includes(lockedOrder.status)) {
+        throw new Error('ORDER_ALREADY_SETTLED')
+      }
+
       // 1. Update item status
       await tx.orderItem.update({
         where: { id: itemId },
@@ -307,6 +320,18 @@ export const POST = withVenue(async function POST(
       orderTotals: totals,
     } })
   } catch (error) {
+    // Handle structured errors from the transaction lock
+    if (error instanceof Error) {
+      if (error.message === 'ORDER_NOT_FOUND') {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      if (error.message === 'ORDER_ALREADY_SETTLED') {
+        return NextResponse.json(
+          { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
+          { status: 409 }
+        )
+      }
+    }
     console.error('Failed to comp/void item:', error instanceof Error ? error.message : error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to process request' },

@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -207,6 +208,7 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     const { payments, employeeId, terminalId, idempotencyKey } = validation.data
+    const finalIdempotencyKey = idempotencyKey || crypto.randomUUID()
 
     // Idempotency check using already-loaded payments (no extra query needed)
     if (idempotencyKey) {
@@ -436,7 +438,7 @@ export const POST = withVenue(withTiming(async function POST(
         totalAmount: payment.amount + (payment.tipAmount || 0),
         paymentMethod: payment.method,
         status: 'completed',
-        ...(idempotencyKey ? { idempotencyKey } : {}),
+        idempotencyKey: finalIdempotencyKey,
       }
 
       // Dual pricing: record pricing mode and discount info
@@ -870,67 +872,80 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Create default payments + update order status + loyalty points atomically
     timing.start('db-pay')
-    await db.$transaction(async (tx) => {
-      for (const record of pendingDefaultRecords) {
-        const created = await tx.payment.create({ data: record as Parameters<typeof tx.payment.create>[0]['data'] })
-        createdPayments.push(created)
+    try {
+      await db.$transaction(async (tx) => {
+        for (const record of pendingDefaultRecords) {
+          const created = await tx.payment.create({ data: record as Parameters<typeof tx.payment.create>[0]['data'] })
+          createdPayments.push(created)
 
-        // Audit log: payment processed
-        await tx.auditLog.create({
-          data: {
-            locationId: order.locationId,
-            employeeId: employeeId || null,
-            action: 'payment_processed',
-            entityType: 'payment',
-            entityId: created.id,
-            details: {
-              paymentMethod: created.paymentMethod,
-              amount: Number(created.amount),
-              tipAmount: Number(created.tipAmount),
-              orderId,
-              orderNumber: order.orderNumber,
+          // Audit log: payment processed
+          await tx.auditLog.create({
+            data: {
+              locationId: order.locationId,
+              employeeId: employeeId || null,
+              action: 'payment_processed',
+              entityType: 'payment',
+              entityId: created.id,
+              details: {
+                paymentMethod: created.paymentMethod,
+                amount: Number(created.amount),
+                tipAmount: Number(created.tipAmount),
+                orderId,
+                orderNumber: order.orderNumber,
+              },
             },
-          },
+          })
+        }
+        const orderUpdateResult = await tx.order.updateMany({
+          where: { id: orderId, status: { in: ['open', 'in_progress'] } },
+          data: { ...updateData, version: { increment: 1 } },
         })
-      }
-      await tx.order.update({
-        where: { id: orderId },
-        data: updateData,
+        if (orderUpdateResult.count === 0) {
+          throw new Error('ORDER_ALREADY_PAID')
+        }
+
+        // Audit log: order closed (when fully paid)
+        if (updateData.status === 'paid') {
+          await tx.auditLog.create({
+            data: {
+              locationId: order.locationId,
+              employeeId: employeeId || null,
+              action: 'order_closed',
+              entityType: 'order',
+              entityId: orderId,
+              details: {
+                orderNumber: order.orderNumber,
+                totalPaid: newPaidTotal,
+                paymentCount: createdPayments.length,
+                paymentMethods: [...new Set(createdPayments.map(p => p.paymentMethod))],
+              },
+            },
+          })
+        }
+
+        // Award loyalty points atomically with the payment (moved inside transaction)
+        if (pointsEarned > 0 && order.customer) {
+          await tx.customer.update({
+            where: { id: order.customer.id },
+            data: {
+              loyaltyPoints: { increment: pointsEarned },
+              totalSpent: { increment: Number(order.total) },
+              totalOrders: { increment: 1 },
+              lastVisit: new Date(),
+              averageTicket: newAverageTicket!,
+            },
+          })
+        }
       })
-
-      // Audit log: order closed (when fully paid)
-      if (updateData.status === 'paid') {
-        await tx.auditLog.create({
-          data: {
-            locationId: order.locationId,
-            employeeId: employeeId || null,
-            action: 'order_closed',
-            entityType: 'order',
-            entityId: orderId,
-            details: {
-              orderNumber: order.orderNumber,
-              totalPaid: newPaidTotal,
-              paymentCount: createdPayments.length,
-              paymentMethods: [...new Set(createdPayments.map(p => p.paymentMethod))],
-            },
-          },
-        })
+    } catch (txError) {
+      if (txError instanceof Error && txError.message === 'ORDER_ALREADY_PAID') {
+        return NextResponse.json(
+          { error: 'Order already paid or closed by another terminal' },
+          { status: 409 }
+        )
       }
-
-      // Award loyalty points atomically with the payment (moved inside transaction)
-      if (pointsEarned > 0 && order.customer) {
-        await tx.customer.update({
-          where: { id: order.customer.id },
-          data: {
-            loyaltyPoints: { increment: pointsEarned },
-            totalSpent: { increment: Number(order.total) },
-            totalOrders: { increment: 1 },
-            lastVisit: new Date(),
-            averageTicket: newAverageTicket!,
-          },
-        })
-      }
-    })
+      throw txError // Re-throw unexpected errors to the outer catch
+    }
     timing.end('db-pay', 'Payment transaction')
 
     // If order is fully paid, reset entertainment items and table status
