@@ -197,8 +197,8 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith('/api/auth/venue-setup') ||
       pathname === '/auth/owner' ||
       pathname.startsWith('/api/auth/owner-session') ||
-      pathname.startsWith('/api/auth/forgot-password') ||
-      pathname.startsWith('/api/auth/reset-password') ||
+      pathname === '/api/auth/forgot-password' ||
+      pathname === '/api/auth/reset-password' ||
       // Internal MC→POS endpoints — authenticated via x-api-key, not session cookie
       pathname.startsWith('/api/internal/')
     ) {
