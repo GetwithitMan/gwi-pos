@@ -264,6 +264,15 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           useOrderStore.getState().updateOrderId(data.id, data.orderNumber)
           return data.id as string
         }
+        // 409 TABLE_OCCUPIED: table already has an order — adopt it instead of failing
+        if (res.status === 409) {
+          const err = await res.json().catch(() => ({}))
+          const existingId = err.details?.existingOrderId
+          if (existingId) {
+            useOrderStore.getState().updateOrderId(existingId, err.details?.existingOrderNumber)
+            return existingId as string
+          }
+        }
         return null
       }).catch(() => null)
 
@@ -426,6 +435,43 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
         if (!res.ok) {
           const error = await res.json().catch(() => ({}))
+          // 409 TABLE_OCCUPIED: table already has an order — adopt it and append items
+          if (res.status === 409 && error.details?.existingOrderId) {
+            const existingId = error.details.existingOrderId
+            store.updateOrderId(existingId, error.details.existingOrderNumber)
+            // Append local items to the existing order
+            const unsavedItems = order.items.filter(item => isTempId(item.id))
+            if (unsavedItems.length > 0) {
+              const appendRes = await fetch(`/api/orders/${existingId}/items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  items: unsavedItems.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+                }),
+              })
+              if (appendRes.ok) {
+                const rawAppend = await appendRes.json()
+                const result = rawAppend.data ?? rawAppend
+                if (result.addedItems) {
+                  for (const added of result.addedItems) {
+                    if (added.correlationId) store.updateItemId(added.correlationId, added.id)
+                  }
+                }
+                if (result.subtotal !== undefined) {
+                  store.syncServerTotals({
+                    subtotal: result.subtotal,
+                    discountTotal: result.discountTotal ?? 0,
+                    taxTotal: result.taxTotal ?? 0,
+                    tipTotal: result.tipTotal,
+                    total: result.total,
+                    version: result.version,
+                  })
+                }
+              }
+            }
+            toast.info('Joined existing order on this table')
+            return existingId
+          }
           toast.error(error.error || 'Failed to create order')
           return null
         }
