@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
+import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 import { withVenue } from '@/lib/with-venue'
 
 export const POST = withVenue(async function POST(
@@ -178,6 +179,45 @@ export const POST = withVenue(async function POST(
         },
       }),
     ])
+
+    // Bug 8: Proportional tip reduction on partial/full refund (fire-and-forget)
+    const paymentTipAmount = Number(payment.tipAmount)
+    const paymentOriginalAmount = Number(payment.amount)
+    if (paymentTipAmount > 0 && paymentOriginalAmount > 0) {
+      const tipReduction = Math.round(paymentTipAmount * (refundAmount / paymentOriginalAmount) * 100) / 100
+      if (tipReduction > 0) {
+        // Update Payment.tipAmount and Order.tipTotal proportionally
+        const newTipAmount = Math.max(0, paymentTipAmount - tipReduction)
+        void (async () => {
+          try {
+            await db.payment.update({
+              where: { id: paymentId },
+              data: { tipAmount: newTipAmount, totalAmount: Number(payment.amount) - (totalAlreadyRefunded + refundAmount) + newTipAmount },
+            })
+            // Update Order.tipTotal
+            const allPayments = await db.payment.findMany({
+              where: { orderId: id, deletedAt: null, status: { not: 'voided' } },
+            })
+            const newOrderTipTotal = allPayments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
+            await db.order.update({
+              where: { id },
+              data: { tipTotal: newOrderTipTotal },
+            })
+          } catch (err) {
+            console.error('[refund-payment] Failed to adjust tip proportionally:', err)
+          }
+        })()
+
+        // Trigger tip chargeback for the proportional amount
+        void handleTipChargeback({
+          locationId: order.locationId,
+          paymentId,
+          memo: `Partial refund ($${refundAmount.toFixed(2)}): proportional tip reduction of $${tipReduction.toFixed(2)}`,
+        }).catch(err => {
+          console.warn('[refund-payment] Tip chargeback skipped or failed:', err.message)
+        })
+      }
+    }
 
     return NextResponse.json({
       data: {

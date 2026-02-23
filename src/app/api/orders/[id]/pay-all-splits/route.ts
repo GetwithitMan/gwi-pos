@@ -177,6 +177,27 @@ export const POST = withVenue(async function POST(
 
     // Fire-and-forget: loyalty points if customer exists and loyalty enabled
     const settings = parseSettings(parentOrder.location.settings)
+
+    // Fire-and-forget: tip allocation for splits that have tips
+    for (const split of unpaidSplits) {
+      const splitTipTotal = Number(split.tipTotal || 0)
+      if (splitTipTotal > 0 && split.employeeId) {
+        void allocateTipsForPayment({
+          locationId: split.locationId,
+          orderId: split.id,
+          primaryEmployeeId: split.employeeId,
+          createdPayments: [{
+            id: split.id,
+            paymentMethod: method,
+            tipAmount: splitTipTotal,
+          }],
+          totalTipsDollars: splitTipTotal,
+          tipBankSettings: settings.tipBank,
+        }).catch(err => {
+          console.error(`[PAYMENT-SAFETY] Tip allocation failed for split ${split.id}:`, err)
+        })
+      }
+    }
     if (parentOrder.customer && settings.loyalty.enabled) {
       const earningBase = settings.loyalty.earnOnSubtotal
         ? Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))

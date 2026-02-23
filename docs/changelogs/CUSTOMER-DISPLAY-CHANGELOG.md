@@ -1,5 +1,14 @@
 # Customer Display Domain Changelog
 
+## 2026-02-23 — Chaos Test Fixes (Skill 416)
+
+### Bug 15 (MEDIUM): No Max Tip Validation on CFD
+- Customer-facing display accepted any tip amount — accidental or abusive large tips possible
+- Fix: Tips exceeding 50% of order total trigger a confirmation screen asking customer to verify
+- File: `src/components/cfd/CFDTipScreen.tsx`
+
+---
+
 ## 2026-02-23 — CFD Tip Screen Rework (Skill 413)
 
 ### Full Rework

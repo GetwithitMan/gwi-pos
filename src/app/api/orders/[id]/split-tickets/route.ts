@@ -777,7 +777,9 @@ export const DELETE = withVenue(async function DELETE(
     const parentOrder = await db.order.findUnique({
       where: { id },
       include: {
+        location: true,
         splitOrders: {
+          where: { deletedAt: null },
           include: {
             items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } } } },
             payments: true,
@@ -810,22 +812,26 @@ export const DELETE = withVenue(async function DELETE(
         throw new ValidationError('Cannot merge splits that have payments')
       }
 
-      // Delete all split orders (cascade deletes items)
+      // Bug 11: Collect child discount totals before soft-deleting
+      const childDiscountTotal = splits.reduce((sum, s) => sum + Number(s.discountTotal), 0)
+
+      // Bug 21: Soft-delete child order items to prevent orphan accumulation
+      // Each split/unsplit cycle creates new item copies; without cleanup, old copies pile up
+      const childOrderIds = splits.map(s => s.id)
+      if (childOrderIds.length > 0) {
+        await tx.orderItem.updateMany({
+          where: { orderId: { in: childOrderIds }, deletedAt: null },
+          data: { deletedAt: new Date() },
+        })
+      }
+
+      // Soft-delete all split orders
       await tx.order.updateMany({
         where: { parentOrderId: id },
         data: { deletedAt: new Date(), status: 'cancelled' },
       })
 
-      // Restore parent order status
-      await tx.order.update({
-        where: { id },
-        data: {
-          status: 'open',
-          notes: parentOrder.notes?.replace(/\n?\[Split into \d+ tickets\]/, '') || null,
-        },
-      })
-
-      // Restore any soft-deleted split items
+      // Restore soft-deleted parent items
       await tx.orderItem.updateMany({
         where: {
           orderId: id,
@@ -833,6 +839,38 @@ export const DELETE = withVenue(async function DELETE(
           deletedAt: { not: null },
         },
         data: { deletedAt: null },
+      })
+
+      // Bug 11: Recalculate parent totals from restored items
+      const restoredItems = await tx.orderItem.findMany({
+        where: { orderId: id, deletedAt: null, status: 'active' },
+        include: { modifiers: true },
+      })
+
+      const parentSubtotal = restoredItems.reduce((sum, item) => {
+        const mods = item.modifiers.reduce((s, m) => s + Number(m.price), 0)
+        return sum + (Number(item.price) + mods) * item.quantity
+      }, 0)
+
+      const settings = parentOrder.location?.settings as { tax?: { defaultRate?: number } } | null
+      const taxRate = getLocationTaxRate(settings)
+      const taxableAmount = Math.max(0, parentSubtotal - childDiscountTotal)
+      const parentTaxTotal = Math.round(taxableAmount * taxRate * 100) / 100
+      const parentTotal = Math.round((taxableAmount + parentTaxTotal) * 100) / 100
+      const parentItemCount = restoredItems.reduce((sum, i) => sum + i.quantity, 0)
+
+      // Restore parent order with recalculated totals
+      await tx.order.update({
+        where: { id },
+        data: {
+          status: 'open',
+          subtotal: parentSubtotal,
+          discountTotal: childDiscountTotal,
+          taxTotal: parentTaxTotal,
+          total: parentTotal,
+          itemCount: parentItemCount,
+          notes: parentOrder.notes?.replace(/\n?\[Split into \d+ tickets\]/, '') || null,
+        },
       })
     })
 

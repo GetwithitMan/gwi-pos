@@ -987,39 +987,42 @@ export function FloorPlanHome({
     loadOrder()
   }, [orderToLoad, onOrderLoaded])
 
-  // Clear order when it's been paid (paidOrderId matches activeOrderId)
+  // Clear order when it's been paid
+  // Bug 16 fix: check store directly to avoid race when table switch batches with payment
   useEffect(() => {
     if (!paidOrderId) return
-    if (paidOrderId !== activeOrderId) return
 
-    // Clear extra seats for the table that was just paid
-    // (extra seats are temporary and should reset when ticket is closed)
-    if (activeTableId) {
-      const activeTable = tables.find(t => t.id === activeTableId)
-      // Clear extra seats for just this table
-      setExtraSeats(prev => {
-        const next = new Map(prev)
-        next.delete(activeTableId)
-        return next
-      })
+    // Check both React state AND store — React may have batched a table switch
+    const storeOrderId = useOrderStore.getState().currentOrder?.id
+    const isPaidOrderActive = paidOrderId === activeOrderId || paidOrderId === storeOrderId
+
+    if (isPaidOrderActive) {
+      // Clear extra seats for the table that was just paid
+      if (activeTableId) {
+        setExtraSeats(prev => {
+          const next = new Map(prev)
+          next.delete(activeTableId)
+          return next
+        })
+      }
+
+      // Clear the order panel state
+      clearOrderPanel()
+      setSelectedCategoryId(null)
+      setViewMode('tables')
     }
 
-    // Clear the order panel state
-    clearOrderPanel()
-    setSelectedCategoryId(null)
-    setViewMode('tables')
+    // Always refresh floor plan to show updated table status (even if user switched tables)
+    loadFloorPlanData()
 
-    // Refresh floor plan to show updated table status
-    loadFloorPlanData() // snapshot includes count
-
-    // Notify parent that we've cleared the paid order
+    // Always notify parent so paidOrderId gets cleared
     onPaidOrderCleared?.()
   }, [paidOrderId, activeOrderId, activeTableId, tables, onPaidOrderCleared, clearOrderPanel])
 
   // Refs to track previous data for change detection (prevents flashing during polling)
   // Snapshot deduplication + coalescing refs
   const snapshotInFlightRef = useRef(false)
-  const snapshotPendingRef = useRef(false)
+  const snapshotPendingCountRef = useRef(0)
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Refs to prevent double-tap race conditions
@@ -1035,9 +1038,9 @@ export function FloorPlanHome({
   })
 
   const loadFloorPlanData = async (showLoading = true) => {
-    // Coalescing: if a fetch is in flight, mark pending and let the trailing refresh handle it
+    // Coalescing: if a fetch is in flight, increment pending counter and let the trailing refresh handle it
     if (snapshotInFlightRef.current) {
-      snapshotPendingRef.current = true
+      snapshotPendingCountRef.current++
       return
     }
     if (snapshotTimerRef.current) {
@@ -1045,7 +1048,7 @@ export function FloorPlanHome({
       snapshotTimerRef.current = null
     }
     snapshotInFlightRef.current = true
-    snapshotPendingRef.current = false
+    snapshotPendingCountRef.current = 0
     if (showLoading) setLoading(true)
     try {
       const res = await fetch(`/api/floorplan/snapshot?locationId=${locationId}`)
@@ -1063,12 +1066,14 @@ export function FloorPlanHome({
     } finally {
       snapshotInFlightRef.current = false
       if (showLoading) setLoading(false)
-      // If more events arrived while fetching, do one trailing refresh after 150ms
-      if (snapshotPendingRef.current) {
-        snapshotPendingRef.current = false
+      // If more events arrived while fetching, do one trailing refresh
+      // Bug 22: If multiple events queued (>1), refresh immediately instead of waiting 150ms
+      if (snapshotPendingCountRef.current > 0) {
+        const delay = snapshotPendingCountRef.current > 1 ? 0 : 150
+        snapshotPendingCountRef.current = 0
         snapshotTimerRef.current = setTimeout(() => {
           loadFloorPlanData(false)
-        }, 150)
+        }, delay)
       }
     }
   }
@@ -1707,12 +1712,15 @@ export function FloorPlanHome({
     const orderId = activeOrderId || store.currentOrder?.id
     const hasItems = (store.currentOrder?.items.length ?? 0) > 0
     if (!hasItems && orderId && !isTempId(orderId)) {
-      // Fire-and-forget: remove temp seats and reset extraSeatCount
-      void fetch(`/api/orders/${orderId}/seating`, {
+      // Fire-and-forget with single retry: remove temp seats and reset extraSeatCount
+      const cleanup = () => fetch(`/api/orders/${orderId}/seating`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'CLEANUP' }),
-      }).catch(() => {})
+      })
+      void cleanup().catch(() => {
+        setTimeout(() => void cleanup().catch(console.error), 1000)
+      })
     }
 
     // Always clear extra seats when closing panel — they're restored from order data

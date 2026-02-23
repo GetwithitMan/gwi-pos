@@ -1,5 +1,59 @@
 # Orders Domain - Change Log
 
+## 2026-02-23 — Chaos Test Fixes (Skill 416)
+
+### Bug 5 (CRITICAL): Order Number Race (Duplicates)
+- Concurrent order creation could produce duplicate order numbers — no atomicity on number generation
+- Fix: `@@unique` constraint on order number + transactional number generation with retry on conflict
+- Files: `src/app/api/orders/route.ts`, `prisma/schema.prisma`
+
+### Bug 7 (HIGH): Items Duplicated During Send
+- Items in `pendingSavesRef` appended again to bgChain during send, creating duplicates
+- Fix: Filter `pendingSavesRef` items from bgChain append
+- File: `src/hooks/useActiveOrder.ts`
+
+### Bug 8 (HIGH): No Socket Listener for Active Order
+- Active order hook had no `orders:list-changed` listener — cross-terminal edits invisible
+- Fix: Added `orders:list-changed` listener with own-mutation skip
+- File: `src/hooks/useActiveOrder.ts`
+
+### Bug 9 (HIGH): Discount Doesn't Recalculate
+- Percentage discount stayed at original dollar amount when items added/removed/voided
+- Fix: `recalculatePercentDiscounts()` called on all subtotal-changing operations
+- Files: `src/lib/order-calculations.ts`, `src/app/api/orders/[id]/items/route.ts`, `src/app/api/orders/[id]/comp-void/route.ts`
+
+### Bug 10 (HIGH): Empty Drafts Accumulate
+- Tapping a table created a draft; navigating away left empty drafts in the database
+- Fix: `clearOrder()` soft-deletes empty drafts (zero items, no payments) on navigate away
+- File: `src/hooks/useActiveOrder.ts`
+
+### Bug 11 (HIGH): Deleted Items Not Dispatched
+- Deleting an item dispatched no socket event — other terminals showed stale data
+- Fix: Added `dispatchOpenOrdersChanged` on item delete
+- File: `src/app/api/orders/[id]/items/[itemId]/route.ts`
+
+### Bug 13 (HIGH): Multiple Drafts Same Table
+- Rapid taps from multiple terminals created multiple drafts for the same table
+- Fix: Table lock (`FOR UPDATE`) inside the creation transaction
+- File: `src/app/api/orders/route.ts`
+
+### Bug 17 (MEDIUM): Course Firing No Ordering
+- Courses could be fired in any order — kitchen confusion
+- Fix: Prior-course check ensures earlier courses are fired first, with `force` override
+- File: `src/app/api/orders/[id]/fire-course/route.ts`
+
+### Bug 18 (MEDIUM): Quantity 0 Accepted by API
+- Item update API accepted `quantity: 0`, creating ghost items
+- Fix: Validation rejects `quantity < 1`
+- File: `src/app/api/orders/[id]/items/[itemId]/route.ts`
+
+### Bug 19 (MEDIUM): Orphaned Seats No Warning
+- Removing a seat silently moved items to shared bucket — no indication to server
+- Fix: Response includes `movedItemsToShared` count + socket dispatch
+- File: `src/app/api/orders/[id]/seating/route.ts`
+
+---
+
 ## 2026-02-23 — Split Payment, Void & Merge Fixes (Skill 415)
 
 ### Bug 4 (CRITICAL): Fractional Split Modifiers Price=0

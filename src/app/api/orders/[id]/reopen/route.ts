@@ -66,10 +66,13 @@ export const POST = withVenue(async function POST(
     }
 
     // Update order to open status
+    // Bug 9: Clear paidAt and closedAt so the pay route's alreadyPaid calculation isn't confused
     const reopenedOrder = await db.order.update({
       where: { id: orderId },
       data: {
         status: 'open',
+        paidAt: null,
+        closedAt: null,
         reopenedAt: new Date(),
         reopenedBy: managerId,
         reopenReason: reason,

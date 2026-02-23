@@ -65,6 +65,14 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Bug 14: Block voiding payments on closed/cancelled orders
+    if (order.status === 'closed' || order.status === 'cancelled') {
+      return NextResponse.json(
+        { error: 'Cannot void payments on a closed/cancelled order' },
+        { status: 400 }
+      )
+    }
+
     const payment = order.payments.find((p) => p.id === paymentId)
     if (!payment) {
       return NextResponse.json(
@@ -196,6 +204,22 @@ export const POST = withVenue(async function POST(
           `Reconcile manually via Datacap portal.`,
           dbError
         )
+
+        // Bug 7: Still attempt tip chargeback even when DB update failed — the Datacap
+        // void succeeded so the customer won't be charged. Best effort.
+        if (Number(payment.tipAmount) > 0) {
+          void handleTipChargeback({
+            locationId: order.locationId,
+            paymentId,
+            memo: `Payment voided (DB failure path): ${reason}`,
+          }).catch(err => {
+            console.error(
+              `[PAYMENT-SAFETY] CRITICAL: Tip chargeback also failed after DB failure. ` +
+              `Manual reconciliation needed. paymentId=${paymentId}`,
+              err
+            )
+          })
+        }
       }
       throw dbError
     }

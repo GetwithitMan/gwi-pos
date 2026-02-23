@@ -75,12 +75,15 @@ export const POST = withVenue(withTiming(async function POST(
     })
 
     // Identify delayed items that need their timer started.
-    // ALWAYS run this regardless of filterItemIds — when a mix of immediate + delayed items
-    // are sent, filterItemIds targets the immediate ones, but delayed items still need
-    // their delayStartedAt stamped so the client can show countdown timers.
-    const delayedItems = order.items.filter(item =>
-      item.delayMinutes && item.delayMinutes > 0 && !item.isHeld && !item.delayStartedAt
-    )
+    // Bug 19 fix: Only stamp delayStartedAt on items that are part of this send request.
+    // When filterItemIds is provided, only those items are being sent — don't stamp unrelated
+    // delayed items that belong to a different batch or course.
+    const delayedItems = order.items.filter(item => {
+      if (!item.delayMinutes || item.delayMinutes <= 0 || item.isHeld || item.delayStartedAt) return false
+      // When filterItemIds is set, only stamp items in the current send scope
+      if (filterItemIds && !filterItemIds.includes(item.id)) return false
+      return true
+    })
 
     const now = new Date()
 

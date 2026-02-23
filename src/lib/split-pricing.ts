@@ -119,7 +119,10 @@ export function calculateSplitTicketPricing(
     const modifierTotal = item.modifiers?.reduce((sum, m) => sum + m.price, 0) || 0
     const basePrice = (item.price + modifierTotal) * item.quantity
     const itemDiscountAmount = item.itemDiscount || 0
-    const proportionalDiscount = proportionalDiscounts.get(item.id) || 0
+    const rawProportionalDiscount = proportionalDiscounts.get(item.id) || 0
+    // Cap discount so adjusted price doesn't go below 0 (Bug 20)
+    const maxDiscount = Math.max(0, basePrice - itemDiscountAmount)
+    const proportionalDiscount = Math.min(rawProportionalDiscount, maxDiscount)
 
     // Apply rounding to the adjusted price
     const rawAdjustedPrice = basePrice - itemDiscountAmount - proportionalDiscount

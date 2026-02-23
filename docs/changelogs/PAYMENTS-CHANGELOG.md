@@ -1,5 +1,44 @@
 # Payments Domain Changelog
 
+## 2026-02-23 — Chaos Test Fixes (Skill 416)
+
+### Bug 1 (CRITICAL): isProcessing Orphaned After Card Decline
+- Card decline left `isProcessing` flag stuck — payment modal permanently locked
+- Fix: `finally{}` cleanup on all payment paths resets `isProcessing` regardless of outcome
+- File: `src/components/payment/PaymentModal.tsx`
+
+### Bug 2 (CRITICAL): Items Modifiable After Partial Payment
+- Items could be added/removed/modified after partial payment, changing the order total
+- Fix: Payment existence check on all mutation routes rejects changes after any payment
+- Files: `src/app/api/orders/[id]/items/route.ts`, `src/app/api/orders/[id]/comp-void/route.ts`
+
+### Bug 3 (CRITICAL): Datacap Void + DB Void Decoupled
+- Datacap void could succeed while DB void failed — payment reversed at processor but still shown as paid
+- Fix: Unified route handles both Datacap + DB void atomically in a single transaction
+- File: `src/app/api/orders/[id]/void-payment/route.ts`
+
+### Bug 4 (CRITICAL): Comp Restore + Re-Void Double Inventory
+- Restoring a comped item and re-voiding deducted inventory twice (original waste + re-void)
+- Fix: `restoreInventoryForRestoredItem()` reverses the original waste deduction on restore
+- Files: `src/app/api/orders/[id]/comp-void/route.ts`, `src/lib/inventory/void-waste.ts`
+
+### Bug 6 (CRITICAL): Failed Capture Leaves Hanging Auth
+- Capture failure left authorization hold on customer's card (days until bank timeout)
+- Fix: Auto-void authorization on capture failure, releasing the hold immediately
+- File: `src/app/api/orders/[id]/close-tab/route.ts`
+
+### Bug 12 (HIGH): Reopen After Payment No Cooldown
+- Paid order could be immediately reopened — table confusion and double-charge risk
+- Fix: 60-second cooldown after payment + table status revert + cache invalidation
+- File: `src/app/api/orders/[id]/reopen/route.ts`
+
+### Bug 20 (MEDIUM): Cancelled Order Accepts Payment
+- Orders in `cancelled` or `voided` status could still accept payments
+- Fix: Added `cancelled` and `voided` to blocked status list in pay route
+- File: `src/app/api/orders/[id]/pay/route.ts`
+
+---
+
 ## 2026-02-23 — Split Payment, Void & Merge Fixes (Skill 415)
 
 ### Bug 1 (CRITICAL): Pay-All-Splits Inventory on Empty Parent

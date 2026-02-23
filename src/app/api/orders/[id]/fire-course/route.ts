@@ -45,13 +45,15 @@ export const POST = withVenue(async function POST(
     }
 
     // Get the order with items for this course that haven't been sent yet
+    // Bug 3 fix: When courseNumber === 1, also include items with null courseNumber
+    // (unassigned items default to course 1 on the client: item.courseNumber ?? 1)
     const order = await db.order.findFirst({
       where: { id, deletedAt: null },
       include: {
         items: {
           where: {
             deletedAt: null,
-            courseNumber: courseNumber,
+            courseNumber: courseNumber === 1 ? { in: [1, null] } : courseNumber,
             kitchenStatus: 'pending',
             isHeld: false,
           },
@@ -68,6 +70,14 @@ export const POST = withVenue(async function POST(
       return NextResponse.json(
         { error: 'Order not found' },
         { status: 404 }
+      )
+    }
+
+    // Bug 18 fix: Validate order status — don't fire courses on completed orders
+    if (['paid', 'closed', 'voided', 'cancelled'].includes(order.status)) {
+      return NextResponse.json(
+        { error: `Cannot fire course on ${order.status} order` },
+        { status: 400 }
       )
     }
 

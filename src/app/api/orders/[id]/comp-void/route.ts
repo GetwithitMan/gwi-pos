@@ -124,18 +124,6 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Check for existing completed payments
-    const completedPayments = await db.payment.findFirst({
-      where: { orderId, status: 'completed', deletedAt: null },
-      select: { id: true },
-    })
-    if (completedPayments) {
-      return NextResponse.json(
-        { error: 'Cannot modify an order with existing payments. Void the payment first.' },
-        { status: 400 }
-      )
-    }
-
     const item = order.items[0]
     if (!item) {
       return NextResponse.json(
@@ -176,6 +164,16 @@ export const POST = withVenue(async function POST(
 
       if (['paid', 'closed', 'voided'].includes(lockedOrder.status)) {
         throw new Error('ORDER_ALREADY_SETTLED')
+      }
+
+      // Bug 5: Check for payments INSIDE transaction after lock
+      // Prevents race where payment sneaks in between check and lock
+      const lockedPayments = await tx.payment.findFirst({
+        where: { orderId, status: 'completed', deletedAt: null },
+        select: { id: true },
+      })
+      if (lockedPayments) {
+        throw new Error('ORDER_HAS_PAYMENTS')
       }
 
       // 1. Update item status
@@ -254,22 +252,49 @@ export const POST = withVenue(async function POST(
       })
 
       // 6. If this is a split child, update parent order totals to match sum of siblings
-      let txParentTotals: { subtotal: number; taxTotal: number; total: number } | null = null
+      let txParentTotals: { subtotal: number; taxTotal: number; total: number; discountTotal: number; itemCount: number } | null = null
       if (order.parentOrderId) {
+        // Bug 4: Also select discountTotal for parent recalculation
+        // Bug 10: Include items to count active items across siblings
         const siblings = await tx.order.findMany({
           where: { parentOrderId: order.parentOrderId, deletedAt: null },
-          select: { subtotal: true, taxTotal: true, total: true },
+          select: {
+            subtotal: true,
+            taxTotal: true,
+            total: true,
+            discountTotal: true,
+            items: {
+              where: { status: 'active', deletedAt: null },
+              select: { quantity: true },
+            },
+          },
         })
         const parentSubtotal = siblings.reduce((sum, s) => sum + Number(s.subtotal), 0)
         const parentTaxTotal = siblings.reduce((sum, s) => sum + Number(s.taxTotal), 0)
         const parentTotal = siblings.reduce((sum, s) => sum + Number(s.total), 0)
+        const parentDiscountTotal = siblings.reduce((sum, s) => sum + Number(s.discountTotal), 0)
+        const parentItemCount = siblings.reduce(
+          (sum, s) => sum + s.items.reduce((iSum, i) => iSum + i.quantity, 0), 0
+        )
 
         await tx.order.update({
           where: { id: order.parentOrderId },
-          data: { subtotal: parentSubtotal, taxTotal: parentTaxTotal, total: parentTotal },
+          data: {
+            subtotal: parentSubtotal,
+            taxTotal: parentTaxTotal,
+            total: parentTotal,
+            discountTotal: parentDiscountTotal,
+            itemCount: parentItemCount,
+          },
         })
 
-        txParentTotals = { subtotal: parentSubtotal, taxTotal: parentTaxTotal, total: parentTotal }
+        txParentTotals = {
+          subtotal: parentSubtotal,
+          taxTotal: parentTaxTotal,
+          total: parentTotal,
+          discountTotal: parentDiscountTotal,
+          itemCount: parentItemCount,
+        }
       }
 
       return { activeItems: txActiveItems, totals: txTotals, shouldAutoClose: txShouldAutoClose, parentTotals: txParentTotals }
@@ -344,7 +369,7 @@ export const POST = withVenue(async function POST(
         subtotal: parentTotals.subtotal,
         taxTotal: parentTotals.taxTotal,
         tipTotal: 0,
-        discountTotal: 0,
+        discountTotal: parentTotals.discountTotal,
         total: parentTotals.total,
       }, { async: true }).catch(() => {})
     }
@@ -371,6 +396,12 @@ export const POST = withVenue(async function POST(
         return NextResponse.json(
           { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
           { status: 409 }
+        )
+      }
+      if (error.message === 'ORDER_HAS_PAYMENTS') {
+        return NextResponse.json(
+          { error: 'Cannot modify an order with existing payments. Void the payment first.' },
+          { status: 400 }
         )
       }
     }

@@ -97,6 +97,16 @@ export const POST = withVenue(async function POST(
       return apiError.badRequest('No items provided', ERROR_CODES.ORDER_EMPTY)
     }
 
+    // Bug 13 fix: Validate quantity on each item (must be >= 1)
+    for (const item of items) {
+      if (!item.quantity || item.quantity < 1) {
+        return apiError.badRequest(
+          `Invalid quantity for item "${item.name || item.menuItemId}": must be at least 1`,
+          ERROR_CODES.VALIDATION_ERROR
+        )
+      }
+    }
+
     // Use a transaction to ensure atomic append
     const result = await db.$transaction(async (tx) => {
       // Lock the order row to prevent concurrent modifications (FOR UPDATE)

@@ -683,8 +683,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       const payload = data as { orderId?: string; trigger?: string }
       if (payload.orderId !== orderId) return
 
-      // Skip events triggered by our own mutations (within 500ms)
-      if (Date.now() - lastMutationRef.current < 500) return
+      // Skip events triggered by our own mutations (within 2000ms for slow networks)
+      if (Date.now() - lastMutationRef.current < 2000) return
 
       loadOrder(orderId)
     }
@@ -982,6 +982,12 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         // Determine which courses have delays set
         const courseDelays = currentOrder.courseDelays || {}
         const pendingItems = currentOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
+
+        // Bug 23 fix: If no sendable items exist, return early with toast
+        if (pendingItems.length === 0) {
+          toast.info('No items to send — all items are already sent or held')
+          return
+        }
 
         // Group pending items by course number
         const courseGroups = new Map<number, typeof pendingItems>()

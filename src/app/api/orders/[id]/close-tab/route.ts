@@ -6,6 +6,8 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated,
 import { parseSettings } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
+import { deductInventoryForOrder } from '@/lib/inventory-calculations'
+import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Close tab by capturing against cards
@@ -331,6 +333,29 @@ export const POST = withVenue(async function POST(
           })
         ),
     ])
+
+    // Deduct inventory (food + liquor) — fire-and-forget to not block payment
+    void deductInventoryForOrder(orderId, employeeId).catch(err => {
+      console.error('Background inventory deduction failed (close-tab):', err)
+    })
+
+    // Allocate tips via the tip bank pipeline — fire-and-forget
+    if ((captureResult.tipAmount || 0) > 0 && order.employeeId) {
+      void allocateTipsForPayment({
+        locationId,
+        orderId,
+        primaryEmployeeId: order.employeeId,
+        createdPayments: [{
+          id: capturedCard.id,
+          paymentMethod: capturedCard.cardType || 'credit',
+          tipAmount: captureResult.tipAmount || 0,
+        }],
+        totalTipsDollars: captureResult.tipAmount || 0,
+        tipBankSettings: locSettings.tipBank,
+      }).catch(err => {
+        console.error('Background tip allocation failed (close-tab):', err)
+      })
+    }
 
     // Clean up temporary seats then dispatch floor plan update (chained so snapshot sees cleanup)
     void cleanupTemporarySeats(orderId)
