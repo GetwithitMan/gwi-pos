@@ -6,8 +6,8 @@
 # Provisions Ubuntu 22.04+ NUCs as POS stations.
 #
 # Roles:
-#   Server   — POS app + Chromium kiosk + heartbeat + sync agent + backups
-#   Terminal — Chromium kiosk pointing at server + optional RealVNC
+#   Server   — POS app + Chromium kiosk + heartbeat + sync agent + backups + x11vnc
+#   Terminal — Chromium kiosk pointing at server + x11vnc + optional RealVNC cloud
 #
 # Usage:
 #   curl -sSL https://gwi-pos.vercel.app/installer.run | sudo bash
@@ -186,14 +186,20 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
   fi
 fi
 
-# 4. RealVNC (optional)
+# 4. VNC password (for remote desktop access via x11vnc)
 echo ""
-echo "RealVNC Remote Access (optional — press Enter to skip)"
-read -rp "Company name (for VNC grouping): " COMPANY_NAME < /dev/tty
-read -rp "Location / terminal name: " TERMINAL_NAME < /dev/tty
-read -rp "RealVNC cloud connectivity token: " REALVNC_TOKEN < /dev/tty
+read -rsp "VNC remote access password [default: 123]: " VNC_PASSWORD < /dev/tty
+echo ""
+VNC_PASSWORD="${VNC_PASSWORD:-123}"
 
-# 5. Terminal: server URL
+# 5. RealVNC Cloud (optional — enterprise only)
+read -rp "RealVNC cloud token (enterprise only — press Enter to skip): " REALVNC_TOKEN < /dev/tty
+if [[ -n "$REALVNC_TOKEN" ]]; then
+  read -rp "Company name (for VNC grouping): " COMPANY_NAME < /dev/tty
+  read -rp "Location / terminal name: " TERMINAL_NAME < /dev/tty
+fi
+
+# 6. Terminal: server URL
 SERVER_URL=""
 if [[ "$STATION_ROLE" == "terminal" ]]; then
   echo ""
@@ -1100,17 +1106,56 @@ SVCEOF
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RealVNC Enrollment (Both Roles)
+# VNC Remote Desktop Access (Both Roles)
 # ─────────────────────────────────────────────────────────────────────────────
 
+header "Setting Up VNC Remote Access"
+
+# x11vnc: free, shares the actual X11 desktop, works with any VNC viewer
+if ! command -v x11vnc >/dev/null 2>&1; then
+  log "Installing x11vnc..."
+  apt-get install -y x11vnc >/dev/null 2>&1 || {
+    warn "Failed to install x11vnc. Remote desktop access will not be available."
+  }
+fi
+
+if command -v x11vnc >/dev/null 2>&1; then
+  # Store VNC password
+  mkdir -p /etc/x11vnc
+  x11vnc -storepasswd "$VNC_PASSWORD" /etc/x11vnc/passwd
+  chmod 644 /etc/x11vnc/passwd
+
+  # Create systemd service for persistent unattended access
+  cat > /etc/systemd/system/x11vnc.service << 'VNCSVC'
+[Unit]
+Description=x11vnc VNC Server
+After=display-manager.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/x11vnc -display :0 -auth guess -forever -loop -noxdamage -repeat -rfbauth /etc/x11vnc/passwd -rfbport 5900 -shared
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+VNCSVC
+
+  systemctl daemon-reload
+  systemctl enable x11vnc
+  systemctl start x11vnc
+  log "x11vnc: Running on port 5900 (connect via vnc://STATION_IP:5900)"
+fi
+
+# Optional: RealVNC Cloud enrollment (enterprise license only)
 if [[ -n "${REALVNC_TOKEN:-}" ]]; then
-  header "Setting Up RealVNC Remote Access"
+  log "Setting up RealVNC Cloud enrollment..."
 
   if ! command -v vncserver-x11 >/dev/null 2>&1; then
-    log "Installing RealVNC Server..."
     wget -q -O /tmp/vncserver.deb \
       "https://www.realvnc.com/download/file/vnc.files/VNC-Server-Latest-Linux-x64.deb" || {
-      warn "Failed to download RealVNC. Skipping VNC setup."
+      warn "Failed to download RealVNC. Skipping cloud enrollment."
       REALVNC_TOKEN=""
     }
 
@@ -1124,13 +1169,10 @@ if [[ -n "${REALVNC_TOKEN:-}" ]]; then
     ROLE_SUFFIX="Server"
     [[ "$STATION_ROLE" == "terminal" ]] && ROLE_SUFFIX="Terminal"
 
-    # Build friendly name: PulsePOS-CompanyName-LocationName-Role
     FRIENDLY_NAME="PulsePOS"
     [[ -n "${COMPANY_NAME:-}" ]] && FRIENDLY_NAME="$FRIENDLY_NAME-$COMPANY_NAME"
     [[ -n "${TERMINAL_NAME:-}" ]] && FRIENDLY_NAME="$FRIENDLY_NAME-$TERMINAL_NAME"
     FRIENDLY_NAME="$FRIENDLY_NAME-$ROLE_SUFFIX"
-
-    # Remove spaces and special chars from name
     FRIENDLY_NAME=$(echo "$FRIENDLY_NAME" | tr ' ' '-' | tr -cd 'A-Za-z0-9-_')
 
     log "Enrolling as: $FRIENDLY_NAME"
@@ -1138,8 +1180,6 @@ if [[ -n "${REALVNC_TOKEN:-}" ]]; then
       warn "RealVNC enrollment failed. Check your cloud token and try manually."
     }
   fi
-else
-  log "RealVNC: Skipped (no token provided)."
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1249,10 +1289,14 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   echo "    pulse-kiosk  — $(systemctl is-active pulse-kiosk 2>/dev/null || echo 'unknown')"
   echo "    pulse-sync   — $(systemctl is-active pulse-sync 2>/dev/null || echo 'unknown')"
   echo "    postgresql   — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
+  echo "    x11vnc       — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
 else
   echo -e "  ${GREEN}Server:${NC}   $SERVER_URL"
 fi
 
+if command -v x11vnc >/dev/null 2>&1; then
+  echo -e "  ${GREEN}VNC:${NC}      vnc://$(hostname -I | awk '{print $1}'):5900 (password protected)"
+fi
 if [[ -n "${REALVNC_TOKEN:-}" ]]; then
   echo -e "  ${GREEN}RealVNC:${NC}  Enrolled as $FRIENDLY_NAME"
 fi
