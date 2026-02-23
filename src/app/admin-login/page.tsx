@@ -7,6 +7,45 @@ import { requestPasswordReset, completePasswordReset } from '@/lib/clerk-passwor
 
 type Mode = 'login' | 'picking' | 'forgot' | 'reset'
 
+function PageWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {children}
+        <p className="text-center text-gray-600 text-xs mt-6">Powered by GWI Point of Sale</p>
+      </div>
+    </div>
+  )
+}
+
+function LockIcon() {
+  return (
+    <svg className="w-7 h-7 text-blue-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+    </svg>
+  )
+}
+
+function BuildingIcon() {
+  return (
+    <svg className="w-7 h-7 text-blue-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+    </svg>
+  )
+}
+
+function Logo({ icon }: { icon: React.ReactNode }) {
+  return (
+    <div className="w-14 h-14 bg-blue-600/20 border border-blue-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4">
+      {icon}
+    </div>
+  )
+}
+
+function Spinner() {
+  return <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+}
+
 /**
  * /admin-login
  *
@@ -106,38 +145,6 @@ function AdminLoginContent() {
     }
     setLoading(false)
   }
-
-  // ── Shared layout wrapper ──────────────────────────────────────────────
-  const PageWrapper = ({ children }: { children: React.ReactNode }) => (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {children}
-        <p className="text-center text-gray-600 text-xs mt-6">Powered by GWI Point of Sale</p>
-      </div>
-    </div>
-  )
-
-  const LockIcon = () => (
-    <svg className="w-7 h-7 text-blue-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-    </svg>
-  )
-
-  const BuildingIcon = () => (
-    <svg className="w-7 h-7 text-blue-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
-    </svg>
-  )
-
-  const Logo = ({ icon }: { icon: React.ReactNode }) => (
-    <div className="w-14 h-14 bg-blue-600/20 border border-blue-500/30 rounded-2xl flex items-center justify-center mx-auto mb-4">
-      {icon}
-    </div>
-  )
-
-  const Spinner = () => (
-    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-  )
 
   // ── Venue picker ───────────────────────────────────────────────────────
   if (mode === 'picking') {

@@ -23,14 +23,22 @@ function getClerkFapiUrl(): string {
   }
 }
 
-/** Extract __client token from Set-Cookie header */
+/**
+ * Extract client token from Clerk FAPI response.
+ * Production Clerk returns it in the `authorization` response header (JWT).
+ * Dev instances may return it as a `__client` Set-Cookie.
+ */
 function extractClientToken(res: Response): string | null {
+  // Production: authorization response header
+  const authHeader = res.headers.get('authorization')
+  if (authHeader) return authHeader
+
+  // Dev fallback: __client cookie
   const cookies = res.headers.getSetCookie?.() || []
   for (const cookie of cookies) {
     const match = cookie.match(/^__client=([^;]+)/)
     if (match) return match[1]
   }
-  // Fallback: check single set-cookie header
   const single = res.headers.get('set-cookie') || ''
   const match = single.match(/__client=([^;]+)/)
   return match ? match[1] : null
@@ -76,6 +84,7 @@ export async function POST(request: NextRequest) {
       'Content-Type': 'application/x-www-form-urlencoded',
     }
     if (clientToken) {
+      prepareHeaders['Authorization'] = clientToken
       prepareHeaders['Cookie'] = `__client=${clientToken}`
     }
 
