@@ -7,9 +7,9 @@
 
 ## 2026-02-23 — POS Forensic Audit: Safety + Speed
 
-**Session theme:** Pre-deployment hardening — fix race conditions, optimize table tap speed, socket reconnect refresh
+**Session theme:** Pre-deployment hardening — fix race conditions, optimize table tap speed, socket reconnect refresh, performance speed wins (top 8)
 
-**Summary:** Full forensic audit of POS codebase using 6 research agents + 5 implementation agents. Found and fixed critical double-payment race condition (two terminals could charge same order simultaneously). Added FOR UPDATE row locks across all order mutation routes (pay, items, comp-void, send). Optimized table-tap-to-order-panel from ~2s to ~600ms via lightweight API query, parallel split-ticket fetch, and optimistic panel render from snapshot. Fixed socket reconnect stale data gap in KDS and FloorPlan. Updated Skill 110 real-time events docs.
+**Summary:** Full forensic audit of POS codebase using 6 research agents + 5 implementation agents. Found and fixed critical double-payment race condition (two terminals could charge same order simultaneously). Added FOR UPDATE row locks across all order mutation routes (pay, items, comp-void, send). Optimized table-tap-to-order-panel from ~2s to ~600ms via lightweight API query, parallel split-ticket fetch, and optimistic panel render from snapshot. Fixed socket reconnect stale data gap in KDS and FloorPlan. Updated Skill 110 real-time events docs. Followed up with top 8 speed wins from the performance audit: DB pool 5→25, compound indexes, KDS pagination, snapshot caching, batch queries, socket backoff, memoization, and payment circuit breaker. Scaling ceiling moves from ~10 to ~50 terminals.
 
 ### Commits — gwi-pos
 
@@ -17,6 +17,8 @@
 |------|-------------|
 | `dbec3c6` | Fix order mutation race conditions: FOR UPDATE locks, idempotency, version increment |
 | `d1f866d` | Optimize table tap speed + socket reconnect refresh + Skill 110 docs |
+| `06acc19` | Implement top 8 speed wins from performance audit |
+| `d9d29ec` | Add 3-layer deep dive docs: architecture, real-time, performance |
 
 ### Deployments
 
@@ -41,6 +43,17 @@
 - FloorPlan: `loadFloorPlanData()` on reconnect (skips initial connect)
 - Hardware health page: 30s polling gated by `isConnected`
 - Skill 110 docs: status PARTIAL → DONE, all 15+ socket events documented
+
+**Performance Speed Wins (Skill 412)**
+- Win #1: DB connection_limit 5→25 (env-driven via `DB_POOL_SIZE`)
+- Win #2: Compound index `@@index([locationId, status, kitchenStatus])` on OrderItem
+- Win #3: KDS pagination take:50 with cursor-based paging (both main + expo routes)
+- Win #4: Floor plan snapshot cache (5s TTL, invalidated on table edits via socket-dispatch)
+- Win #6: Batch business day queries (parallel indexed queries replace OR scans)
+- Win #7: Socket reconnect throttling (5s max delay, 0.5 jitter factor)
+- Win #9: Memoize `calculateOrderTotals()` (20-entry cache with input hash)
+- Win #10: Payment processor circuit breaker (5s timeout on PayApiClient)
+- Deferred: Win #5 (denormalize itemCount) and Win #8 (denormalize bottleServiceCurrentSpend) — require schema migrations
 
 ### Forensic Audit Summary
 

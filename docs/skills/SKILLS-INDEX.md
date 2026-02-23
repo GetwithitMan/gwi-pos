@@ -1256,6 +1256,7 @@ These skills emerged during development and are now part of the system:
 | 409 | ORDER-MUTATION-RACE-CONDITIONS | DONE | Orders / Safety | — | FOR UPDATE locks on pay, items, comp-void routes. Server-side idempotency key (crypto.randomUUID). Status guard in pay transaction (409 if already paid). Version increment on all 4 order mutation routes. Prevents double payment, items on paid orders, void during payment |
 | 410 | TABLE-TAP-PERFORMANCE | DONE | Orders / Performance | — | ?view=panel lightweight query (no payments/pizzaData). Parallel split-ticket fetch via Promise.all. Optimistic panel render from floor plan snapshot. Target: 2s → 600ms |
 | 411 | SOCKET-RECONNECT-REFRESH | DONE | Real-Time / Infrastructure | 110 | KDS and FloorPlan auto-refresh on socket reconnect. Hardware health page polling gated by isConnected. Skill 110 docs updated PARTIAL → DONE with all 15+ events |
+| 412 | PERFORMANCE-SPEED-WINS | DONE | Performance / Scale | — | Top 8 speed wins: DB pool 5→25, compound indexes, KDS pagination take:50, snapshot cache 5s TTL, batch business day queries, socket reconnect backoff, memoize calculateOrderTotals, payment circuit breaker 5s. Scaling ceiling ~10→~50 terminals |
 
 ---
 
