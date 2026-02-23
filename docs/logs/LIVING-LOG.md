@@ -54,6 +54,19 @@
 - Structured [PAYMENT-TIMING] JSON logs with deltas
 - File: payment-timing.ts
 
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `e69d5b3` | Payment UX & Safety Wave 1 (15 files, 976 insertions) |
+| `2931b18` | Fix TABLE_OCCUPIED error — client adopts existing order on 409 |
+
+### Bug Fixes
+
+| Fix | Commit | Impact |
+|-----|--------|--------|
+| TABLE_OCCUPIED 409 had no client recovery | `2931b18` | Walk-in table lock (from A+ Polish `685eb61`) returned 409 but client had no handler. Now adopts existing order, appends local items, shows "Joined existing order" toast. |
+
 ### Features Delivered
 
 | Feature | Skill | Summary |
@@ -65,6 +78,7 @@
 | CFD Tip Screen | 413 | Full rework with presets, custom, disconnect overlay |
 | Backend Safety Guards | 413 | Double-capture, timeout recovery, structured logs |
 | Payment Timing Probes | 413 | 4-phase latency instrumentation |
+| TABLE_OCCUPIED Client Recovery | 413 | 409 adoption path for walk-in table lock |
 
 ### Known Issues / Next Steps
 
@@ -91,6 +105,7 @@
 **Safety: Walk-in Table Double-Claim Lock**
 - DB partial unique index `Order_tableId_active_unique` prevents two active orders on same table at storage layer
 - Application-level 409 with `TABLE_OCCUPIED` error code
+- **Client-side recovery added later** (commit `2931b18`): client now adopts existing order on 409 instead of failing — see Payment UX entry above
 
 **Performance: Denormalize itemCount (Win #5)**
 - `itemCount Int @default(0)` on Order model

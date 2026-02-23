@@ -1,5 +1,15 @@
 # Floor Plan Domain - Change Log
 
+## 2026-02-23 — TABLE_OCCUPIED Client Recovery (Commit 2931b18)
+
+### Bug Fix
+- When tapping a walk-in table that already has an active order (409 `TABLE_OCCUPIED`), the client now adopts the existing order instead of showing an error
+- `startOrder` background draft reads existing order ID from the 409 response and adopts it
+- Appends any local items to the existing order and shows "Joined existing order" toast
+- Completes the client-side handling for the walk-in table lock DB index added in A+ Polish sprint
+
+---
+
 ## Session: February 17, 2026 — Split Order Combined View in Floor Plan (Skill 370)
 
 ### Summary

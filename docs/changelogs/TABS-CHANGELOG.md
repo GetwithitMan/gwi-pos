@@ -1,5 +1,27 @@
 # Tabs & Bottle Service Domain Changelog
 
+## 2026-02-23 — Start Tab & Add To Tab UX (Skill 413)
+
+### Start Tab — Inline Status
+- Inline "Authorizing card..." text replaces full-screen modal blocker
+- 15s slow-reader timeout warning (doesn't abort)
+- Success: green "Visa ...1234 authorized" flash
+- Decline: prominent red error text with retry option
+
+### Add To Tab — Background Indicator
+- Socket listener for `tab:updated` events in PaymentModal
+- `increment_failed`: amber "Card limit reached" banner
+- `incremented`: silently update authorized amount display
+
+### Backend Safety
+- close-tab: double-capture prevention guard (returns early if already paid)
+- open-tab: timeout recovery (`pending_auth` -> `open`, prevents stuck orders)
+
+### Commit
+- `e69d5b3` — Payment UX & Safety Wave 1
+
+---
+
 ## 2026-02-20 — Card Re-Entry by Token, Real-Time TabsPanel, Speed Optimizations (Skills 382–384)
 
 ### New Features

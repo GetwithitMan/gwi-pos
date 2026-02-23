@@ -77,6 +77,15 @@ Payment flows (Send, Start Tab, Add To Tab, Pay/Close) had UX issues: full-scree
 - Structured `[PAYMENT-TIMING]` JSON logs with deltas between each phase
 - Enables performance monitoring of payment latency in production
 
+### Bugfix: TABLE_OCCUPIED Client Recovery (Commit 2931b18)
+
+**Files:** `src/hooks/useActiveOrder.ts`, `src/components/floor-plan/FloorPlanHome.tsx`
+
+- When `POST /api/orders` returns 409 `TABLE_OCCUPIED`, the client now adopts the existing order instead of failing
+- `startOrder` background draft: on 409, reads existing order ID from error response and adopts it
+- `ensureOrderInDB`: loads the existing order, appends any local items, shows "Joined existing order" toast
+- Root cause: the walk-in table lock (DB partial unique index from A+ Polish commit `685eb61`) was correct server-side, but the client had no recovery path for the 409 response
+
 ## Files Modified
 
 | File | Change |
@@ -92,3 +101,4 @@ Payment flows (Send, Start Tab, Add To Tab, Pay/Close) had UX issues: full-scree
 | `src/app/api/orders/[id]/auto-increment/route.ts` | Safety logs, version increment verification |
 | `src/app/api/orders/[id]/close-tab/route.ts` | Double-capture prevention guard |
 | `src/lib/payment-timing.ts` | New — 4-timestamp payment flow instrumentation |
+| `src/components/floor-plan/FloorPlanHome.tsx` | 409 TABLE_OCCUPIED recovery — adopt existing order |

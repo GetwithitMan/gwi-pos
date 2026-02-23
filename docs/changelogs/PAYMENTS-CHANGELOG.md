@@ -1,5 +1,43 @@
 # Payments Domain Changelog
 
+## 2026-02-23 — Payment UX & Safety Wave 1 (Skill 413)
+
+### UX Overhaul
+- **Send to Kitchen**: 3-state button (Idle -> Sending -> Sent!), bgChain failure reverts optimistic marks
+- **Start Tab**: inline "Authorizing card..." status, 15s slow-reader warning, success/decline feedback
+- **Add To Tab**: socket listener for `tab:updated`, `increment_failed` amber banner, silent success update
+- **Pay/Close**: inline "Processing payment..." with locked controls, idempotency + version verified
+
+### CFD Tip Screen Rework
+- Full rework: order summary, tip presets (% or $), custom keypad, confirm CTA, disconnect overlay
+
+### Backend Safety
+- close-tab: double-capture prevention guard (returns early if already paid)
+- open-tab: timeout recovery (`pending_auth` -> `open`, prevents stuck orders)
+- Structured `[PAYMENT-SAFETY]` logs in all payment catch blocks
+
+### Instrumentation
+- New `payment-timing.ts`: 4-timestamp flow measurement (start, apiCall, apiReturn, uiComplete)
+- Wired into Send, Cash Pay, Card Pay, Start Tab flows
+
+### Commits
+- `e69d5b3` — Payment UX & Safety Wave 1 (15 files, 976 insertions)
+
+---
+
+## 2026-02-23 — Fix TABLE_OCCUPIED Client Recovery
+
+### Bug Fix
+- When `POST /api/orders` returns 409 `TABLE_OCCUPIED`, client now adopts the existing order instead of failing
+- `startOrder` background draft: adopts existing order ID on 409
+- `ensureOrderInDB`: loads existing order, appends local items, shows "Joined existing order" toast
+- Root cause: walk-in table lock (from A+ Polish commit `685eb61`) was correct server-side but client had no recovery path
+
+### Commit
+- `2931b18` — Fix TABLE_OCCUPIED error
+
+---
+
 ## 2026-02-20 — Sprint Sessions 8-14: Pricing Programs, Tip Adjustment, Batch Close, Partial Void, Refunds, Datacap Client
 
 ### T-080 (Phases 1-6) — Pricing Programs / Surcharge Engine

@@ -1,5 +1,23 @@
 # Orders Domain - Change Log
 
+## 2026-02-23 — Payment UX & Safety Wave 1 + TABLE_OCCUPIED Fix
+
+### Send to Kitchen UX (Skill 413)
+- 3-state Send button: Idle -> Sending... -> Sent! (1.5s green flash)
+- bgChain failure revert: items marked unsent again on background send failure
+- Button disabled during send to prevent double-tap
+
+### TABLE_OCCUPIED Client Recovery (Commit 2931b18)
+- When `POST /api/orders` returns 409 `TABLE_OCCUPIED`, client adopts the existing order instead of failing
+- `ensureOrderInDB`: loads existing order, appends local items, shows "Joined existing order" toast
+- Fixes client-side handling for walk-in table lock introduced in A+ Polish sprint
+
+### Files Modified
+- `src/hooks/useActiveOrder.ts` — 3-state send status, bgChain failure revert, 409 TABLE_OCCUPIED adoption
+- `src/components/orders/OrderPanelActions.tsx` — Send button visual states
+
+---
+
 ## 2026-02-20 — Sprint Sessions 8-14: EOD Auto-Close, Stale Orders Manager, Item Discounts, Glassmorphism, Kitchen Context Lines
 
 ### T-077 — EOD Auto-Close
