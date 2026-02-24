@@ -5,6 +5,53 @@
 
 ---
 
+## 2026-02-24 — Retrofit Lifecycle + Offline UX Guardrails
+
+**Session:** Replaced per-request URL rewriting with a clean Retrofit rebuild-on-IP-change pattern (`ApiServiceHolder` singleton with `AtomicReference`), and added comprehensive offline UX guardrails — persistent disconnect banner, payment blocking when offline, kitchen send warning, dead-letter badges, and an outbox detail sheet. Two-agent parallel build (retrofit-agent on data/network layer, ux-agent on UI layer) with zero file overlap.
+
+### Commits
+
+**GWI Android Register** (`gwi-android-register`):
+- `a945e61` — Retrofit lifecycle + offline UX guardrails (15 files: 12 modified, 3 new)
+
+### Deployments
+- Android: pushed to main at https://github.com/GetwithitMan/gwi-android-register
+
+### Features Delivered
+
+**Part 1 — Retrofit Lifecycle (9 files):**
+- `ApiServiceHolder.kt` (NEW): `@Singleton` wrapper with `AtomicReference<GwiApiService?>`. Builds initial Retrofit from `getNucBaseUrl()`, then collects `nucBaseUrlFlow.filterNotNull().distinctUntilChanged()` to rebuild on IP change. `val api` getter throws `IllegalStateException("NUC not configured — device not paired")` pre-pairing.
+- `TokenProvider.kt`: Added `nucBaseUrlFlow: StateFlow<String?>` to interface. `EncryptedTokenProvider` seeds from prefs in `lazy .also {}`, emits on `setNucBaseUrl()`.
+- `AuthInterceptor.kt`: Stripped all URL rewriting logic (~30 lines removed). Now only injects `Authorization: Bearer` header (~15 lines total).
+- `NetworkModule.kt`: Removed `provideRetrofit()` and `provideGwiApiService()`. `ApiServiceHolder` is `@Singleton @Inject` — Hilt auto-provides.
+- 5 consumers mechanically updated (`apiService` → `apiHolder.api`): `OrderRepository` (14 sites), `AuthRepository` (1 site), `BootstrapWorker` (1 site), `SyncWorker` (1 site), `OutboxWorker` (8 sites). Total: 25 call sites.
+
+**Part 2 — Offline UX Guardrails (7 files):**
+- `ConnectionBanner.kt` (NEW): Full-width red-tinted banner — "NUC connection lost — orders may not sync". 8dp red dot + text. Auto-hides on reconnect.
+- `OutboxDetailSheet.kt` (NEW): `ModalBottomSheet` showing sync queue. Header with pending/failed counts. `LazyColumn` of entries with status dots (Amber=Pending, Blue=Sending, Orange=Failed, Red=Dead). "Retry All Failed" (Indigo) and "Clear Dead Letters" (outlined red) buttons.
+- `OutboxDao.kt`: 4 new queries — `getDeadLetters()`, `getAllPendingAndFailed()`, `resetFailedForRetry()`, `deleteDeadLetters()`.
+- `OrderViewModel.kt`: Connection banner with 3s delay (`connectionBannerJob`), payment blocked offline ("Cannot process payment while disconnected"), kitchen send warned offline, outbox sheet load/retry/clear methods.
+- `PosHeader.kt`: Clickable amber pending badge + red dead-letter badge with count.
+- `OrderScreen.kt`: Wired `AnimatedVisibility` connection banner, dead-letter badge, outbox detail sheet.
+
+### Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Retrofit rebuild | `AtomicReference` in `ApiServiceHolder` | Hilt `@Singleton` means Retrofit can't be re-provided after DI graph builds; atomic swap is thread-safe |
+| URL flow | `StateFlow<String?>` on `TokenProvider` | Reactive — rebuild triggers automatically on IP change without polling |
+| Pre-pairing guard | `IllegalStateException` from `api` getter | Fail-fast — surfaces misconfiguration immediately instead of silent 404s |
+| Connection banner | 3s delay before showing | Avoids flicker on brief disconnects |
+| Payment blocking | Hard block when offline | Payments require server confirmation — offline payment would create unresolvable state |
+| Kitchen send | Warning but proceeds | Outbox will queue and retry — kitchen eventually receives |
+| Dead-letter badge | Red badge in header | Persistent visibility without blocking workflow |
+
+### Known Issues / Next Steps
+- Previous session known gaps still apply: WorkManager 15-min min interval, USB/BT SDK stubs, CFD dual-screen not implemented
+- `ApiServiceHolder` uses app-scoped `CoroutineScope` (lives forever) — acceptable for singleton
+
+---
+
 ## 2026-02-24 — Android Register Rebuild: Same System as Web POS
 
 **Session:** Rebuilt the Android register data layer and UI to use the exact same POS API endpoints, socket events, and visual layout as the web POS. Previously Android created orders in Room only (disconnected from NUC). Now it calls the same REST routes and subscribes to the same Socket.io events. UI overhauled from flat split layout to full POS-matching composition with header, category bar, table floor plan, modifiers, seats, bar mode, payment, and discounts.
