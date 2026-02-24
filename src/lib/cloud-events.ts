@@ -40,6 +40,6 @@ export async function emitCloudEvent(eventType: string, payload: unknown): Promi
     console.log(`[CloudEvent] Emitted ${eventType} (${eventId})`)
   } catch (error) {
     console.error('[CloudEvent] Failed to emit', { eventType, eventId, error })
-    await queueCloudEvent(eventId, venueId, eventType, bodyString)
+    await queueCloudEvent(eventId, venueId, venueId, eventType, bodyString)
   }
 }

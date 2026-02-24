@@ -95,6 +95,7 @@ model Location {
   tipGroupMemberships    TipGroupMembership[]
   tipGroupSegments       TipGroupSegment[]
   orderOwnerships        OrderOwnership[]
+  orderOwnershipEntries  OrderOwnershipEntry[]
 
   // Tip Adjustments & Compliance (Skills 256, 259)
   tipAdjustments         TipAdjustment[]
@@ -177,6 +178,7 @@ model Location {
 
   // Modifier Group Templates (for quick item-specific group creation)
   modifierGroupTemplates ModifierGroupTemplate[]
+  modifierTemplates      ModifierTemplate[]
 
   // Hardware Management
   printers          Printer[]
@@ -201,6 +203,9 @@ model Location {
 
   // Sync Audit
   syncAuditEntries SyncAuditEntry[]
+
+  // Cloud Event Queue (multi-tenancy)
+  cloudEventQueues CloudEventQueue[]
 
   // Pizza Builder
   pizzaConfigs     PizzaConfig[]
@@ -1338,6 +1343,9 @@ model Table {
 
   // Locked items (T019) - bolted down furniture that cannot be moved
   isLocked         Boolean @default(false)
+
+  // Optimistic locking (B8) — prevents concurrent edit races
+  version Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2787,12 +2795,16 @@ model OrderOwnership {
 
 model OrderOwnershipEntry {
   id               String         @id @default(cuid())
+  locationId       String
+  location         Location       @relation(fields: [locationId], references: [id])
   orderOwnershipId String
   ownership        OrderOwnership @relation(fields: [orderOwnershipId], references: [id])
   employeeId       String
   employee         Employee       @relation(fields: [employeeId], references: [id])
   sharePercent     Float          // e.g., 50.0, 33.33
+  deletedAt        DateTime?
 
+  @@index([locationId])
   @@index([orderOwnershipId])
   @@index([employeeId])
 }
@@ -3111,6 +3123,9 @@ model Seat {
 
   // Status
   isActive Boolean @default(true)
+
+  // Optimistic locking (B8) — prevents concurrent edit races
+  version Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -4713,6 +4728,8 @@ model ModifierGroupTemplate {
 
 model ModifierTemplate {
   id         String                @id @default(cuid())
+  locationId String
+  location   Location              @relation(fields: [locationId], references: [id])
   templateId String
   template   ModifierGroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
@@ -4730,9 +4747,11 @@ model ModifierTemplate {
   sortOrder Int     @default(0)
   isDefault Boolean @default(false)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
+  @@index([locationId])
   @@index([templateId])
 }
 
@@ -6516,12 +6535,15 @@ model ServerRegistrationToken {
 model CloudEventQueue {
   id          String   @id @default(uuid())
   venueId     String
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
   eventType   String
   body        Json
   nextRetryAt DateTime @default(now())
   attempts    Int      @default(0)
   createdAt   DateTime @default(now())
 
+  @@index([locationId])
   @@index([nextRetryAt])
   @@map("cloud_event_queue")
 }

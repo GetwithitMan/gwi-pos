@@ -10,6 +10,7 @@ let workerInterval: ReturnType<typeof setInterval> | null = null
 export async function queueCloudEvent(
   eventId: string,
   venueId: string,
+  locationId: string,
   eventType: string,
   body: string,
 ): Promise<void> {
@@ -18,20 +19,23 @@ export async function queueCloudEvent(
       data: {
         id: eventId,
         venueId,
+        locationId,
         eventType,
         body: JSON.parse(body),
       },
     })
 
-    const count = await db.cloudEventQueue.count()
+    // Scope cleanup to this venue's events only (prevents cross-tenant deletion)
+    const count = await db.cloudEventQueue.count({ where: { locationId } })
     if (count > MAX_QUEUE_SIZE) {
       const oldest = await db.cloudEventQueue.findMany({
+        where: { locationId },
         orderBy: { createdAt: 'asc' },
         take: count - MAX_QUEUE_SIZE,
         select: { id: true },
       })
       await db.cloudEventQueue.deleteMany({
-        where: { id: { in: oldest.map(e => e.id) } },
+        where: { id: { in: oldest.map(e => e.id) }, locationId },
       })
     }
   } catch (error) {

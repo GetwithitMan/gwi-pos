@@ -55,6 +55,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       include: {
         order: {
           select: {
+            id: true,
             paidAt: true,
             orderType: true,
           },
@@ -308,14 +309,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // Helper function to calculate item pairings
-async function calculateItemPairings(orderItems: Array<{ order: { paidAt: Date | null }, menuItem: { id: string; name: string } }>) {
-  // Group items by order
-  const orderGroups = new Map<string, string[]>()
-
-  // We need order IDs - let's get them differently
+async function calculateItemPairings(orderItems: Array<{ order: { id: string; paidAt: Date | null }, menuItem: { id: string; name: string } }>) {
+  // Group items by order ID (B18 fix: was grouping by paidAt timestamp which
+  // merged orders paid at the same millisecond and split orders with different paidAt)
   const itemsByOrder = orderItems.reduce((acc, item) => {
-    // Use paidAt as a proxy for order grouping (not ideal but works for analysis)
-    const orderKey = item.order.paidAt?.toISOString() || 'unknown'
+    const orderKey = item.order.id
     if (!acc[orderKey]) {
       acc[orderKey] = []
     }

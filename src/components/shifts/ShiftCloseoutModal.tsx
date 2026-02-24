@@ -1370,7 +1370,7 @@ export function ShiftCloseoutModal({
                           toast.success('Closeout receipt sent to printer')
                         }
                       } catch {
-                        toast.error('Failed to print receipt')
+                        toast.error('Printer unreachable — try again when connection restores')
                       }
                     }}
                   >

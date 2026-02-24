@@ -153,7 +153,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
           orderBy: { seatNumber: 'asc' },
         },
         orders: {
-          where: { status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null },
+          where: { status: { in: ['open', 'sent', 'in_progress', 'split'] }, deletedAt: null, parentOrderId: null },
           select: {
             id: true, orderNumber: true, guestCount: true, total: true, subtotal: true, createdAt: true,
             status: true, isBottleService: true, bottleServiceTierId: true, bottleServiceMinSpend: true, bottleServiceDeposit: true, bottleServiceCurrentSpend: true,
@@ -218,7 +218,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
 
     // Open orders count — current business day only, exclude child splits
     db.order.count({
-      where: { locationId, status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null, OR: [{ businessDayDate: { gte: businessDayStart } }, { businessDayDate: null, createdAt: { gte: businessDayStart } }] },
+      where: { locationId, status: { in: ['open', 'sent', 'in_progress', 'split'] }, deletedAt: null, parentOrderId: null, OR: [{ businessDayDate: { gte: businessDayStart } }, { businessDayDate: null, createdAt: { gte: businessDayStart } }] },
     }),
   ])
 

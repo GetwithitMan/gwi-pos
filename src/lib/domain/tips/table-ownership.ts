@@ -156,6 +156,7 @@ export async function addOrderOwner(params: {
     // Add the new owner entry (placeholder percent, will be adjusted below)
     await tx.orderOwnershipEntry.create({
       data: {
+        locationId,
         orderOwnershipId: ownership.id,
         employeeId,
         sharePercent: 0,

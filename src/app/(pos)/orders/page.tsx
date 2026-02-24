@@ -47,6 +47,7 @@ import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { toast } from '@/stores/toast-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
+import { OfflineManager } from '@/lib/offline-manager'
 import { useSplitTickets } from '@/hooks/useSplitTickets'
 import { useShiftManagement } from '@/hooks/useShiftManagement'
 import { useTimedRentals } from '@/hooks/useTimedRentals'
@@ -1074,6 +1075,9 @@ export default function OrdersPage() {
       }
     } catch (err) {
       console.error('Failed to print kitchen ticket:', err)
+      // B10: Queue print job for offline retry
+      void OfflineManager.queuePrintJob(orderId, '', 0, []).catch(() => {})
+      toast.info('Print queued — will retry when printer available')
     }
   }
 
@@ -2488,7 +2492,9 @@ export default function OrdersPage() {
                   })
                   toast.success('Check sent to printer')
                 } catch {
-                  toast.error('Failed to print check')
+                  // B10: Queue print job for offline retry
+                  void OfflineManager.queuePrintJob(orderId, '', 0, []).catch(() => {})
+                  toast.info('Print queued — will retry when printer available')
                 }
               }
             }}

@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(
           select: { id: true, name: true, color: true },
         },
         orders: {
-          where: { status: 'open', deletedAt: null },
+          where: { status: { in: ['open', 'sent', 'in_progress', 'split'] }, deletedAt: null },
           include: {
             employee: {
               select: { displayName: true, firstName: true, lastName: true },
@@ -118,6 +118,7 @@ export const PUT = withVenue(async function PUT(
       shape,
       seatPattern,
       status,
+      version,
     } = body
 
     if (!locationId) {
@@ -130,11 +131,19 @@ export const PUT = withVenue(async function PUT(
     // Verify table belongs to this location
     const existing = await db.table.findFirst({
       where: { id, locationId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, version: true },
     })
 
     if (!existing) {
       return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+    }
+
+    // Optimistic locking (B8): if client sends version, reject stale writes
+    if (version !== undefined && version !== existing.version) {
+      return NextResponse.json(
+        { error: 'Table was modified by another terminal. Please refresh and try again.', code: 'VERSION_CONFLICT', currentVersion: existing.version },
+        { status: 409 }
+      )
     }
 
     // Check for duplicate table name across ALL rooms/sections in this location
@@ -175,6 +184,9 @@ export const PUT = withVenue(async function PUT(
     if (shape !== undefined) updateData.shape = shape
     if (seatPattern !== undefined) updateData.seatPattern = seatPattern
     if (status !== undefined) updateData.status = status
+
+    // Increment version on every write (optimistic locking B8)
+    updateData.version = { increment: 1 }
 
     // Update table
     const table = await db.table.update({
@@ -222,6 +234,7 @@ export const PUT = withVenue(async function PUT(
         seatPattern: table.seatPattern,
         status: table.status,
         section: table.section,
+        version: table.version,
       },
     } })
   } catch (error) {

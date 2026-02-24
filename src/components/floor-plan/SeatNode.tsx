@@ -6,6 +6,7 @@ import { FloorPlanSeat } from './use-floor-plan'
 
 interface SeatNodeProps {
   seat: FloorPlanSeat
+  tableId?: string       // Required for DB persistence of drag positions
   tableWidth: number
   tableHeight: number
   isSelected?: boolean
@@ -25,6 +26,7 @@ const SEAT_TYPE_COLORS: Record<string, string> = {
 
 export const SeatNode = memo(function SeatNode({
   seat,
+  tableId,
   tableWidth,
   tableHeight,
   isSelected = false,
@@ -77,7 +79,19 @@ export const SeatNode = memo(function SeatNode({
     isDraggingRef.current = false
     const element = e.currentTarget as HTMLElement
     element.releasePointerCapture(e.pointerId)
-  }, [])
+
+    // Persist seat position to DB (fire-and-forget)
+    if (isEditable && tableId) {
+      void fetch(`/api/tables/${tableId}/seats/${seat.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          relativeX: seat.relativeX,
+          relativeY: seat.relativeY,
+        }),
+      }).catch(console.error)
+    }
+  }, [isEditable, tableId, seat.id, seat.relativeX, seat.relativeY])
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -134,6 +148,7 @@ export const SeatNode = memo(function SeatNode({
 // Utility function to render all seats for a table
 interface RenderSeatsProps {
   seats: FloorPlanSeat[]
+  tableId?: string        // Required for DB persistence of drag positions
   tableWidth: number
   tableHeight: number
   selectedSeatNumber?: number | null
@@ -145,6 +160,7 @@ interface RenderSeatsProps {
 
 export function TableSeats({
   seats,
+  tableId,
   tableWidth,
   tableHeight,
   selectedSeatNumber,
@@ -159,6 +175,7 @@ export function TableSeats({
         <SeatNode
           key={seat.id}
           seat={seat}
+          tableId={tableId}
           tableWidth={tableWidth}
           tableHeight={tableHeight}
           isSelected={selectedSeatNumber === seat.seatNumber}

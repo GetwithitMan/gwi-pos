@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
@@ -276,6 +276,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
+    // B16 fix: Derive per-order surcharges from pricing program settings.
+    // surchargeAmount is not stored per-payment in the DB yet, so we back-derive
+    // from the current pricing program. For exact historical tracking, add a
+    // surchargeAmount field to the Payment model.
+    const pricingProgram = getPricingProgram(locationSettings)
+    const orderSurcharges = new Map<string, number>()
+    if (pricingProgram.model === 'surcharge' && pricingProgram.enabled && pricingProgram.surchargePercent) {
+      const pct = pricingProgram.surchargePercent
+      for (const order of orders) {
+        const hasCardPayment = order.payments.some(p => {
+          const method = (p.paymentMethod || '').toLowerCase()
+          return method === 'credit' || method === 'card'
+        })
+        if (hasCardPayment) {
+          const sub = Number(order.subtotal) || 0
+          orderSurcharges.set(order.id, Math.round(sub * pct) / 100)
+        }
+      }
+    }
+
     // Process orders
     orders.forEach(order => {
       const orderSubtotal = Number(order.subtotal) || 0
@@ -283,12 +303,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const orderTip = Number(order.tipTotal) || 0
       const orderDiscount = Number(order.discountTotal) || 0
       const orderCommission = Number(order.commissionTotal) || 0
+      const orderSurcharge = orderSurcharges.get(order.id) || 0
 
       adjustedGrossSales += orderSubtotal
       totalDiscounts += orderDiscount
       totalTax += orderTax
       totalTaxFromInclusive += Number(order.taxFromInclusive) || 0
       totalTaxFromExclusive += Number(order.taxFromExclusive) || 0
+      totalSurcharge += orderSurcharge
       totalTips += orderTip
       totalCommission += orderCommission
 
@@ -303,7 +325,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         }
       }
       salesByOrderType[orderTypeName].count++
-      salesByOrderType[orderTypeName].gross += orderSubtotal + orderTax + totalSurcharge
+      salesByOrderType[orderTypeName].gross += orderSubtotal + orderTax + orderSurcharge
       salesByOrderType[orderTypeName].net += orderSubtotal - orderDiscount
 
       // Track by category

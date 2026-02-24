@@ -7,6 +7,7 @@ import { SEAT_COLORS } from '@/lib/seat-utils'
 import { toast } from '@/stores/toast-store'
 import { useOrderStore } from '@/stores/order-store'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { OfflineManager } from '@/lib/offline-manager'
 
 export interface SplitCheckScreenProps {
   orderId: string
@@ -574,7 +575,10 @@ function SplitUnifiedView({
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ orderId: split.id, type: 'check' }),
-                    }).catch(() => {})
+                    }).catch(() => {
+                      // B10: Queue print job for offline retry
+                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(() => {})
+                    })
                   }
                   toast.success(`Printing ${splits.length} checks`)
                 }}
@@ -720,7 +724,11 @@ function SplitUnifiedView({
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ orderId: split.id, type: 'check' }),
-                    }).catch(() => {})
+                    }).catch(() => {
+                      // B10: Queue print job for offline retry
+                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(() => {})
+                      toast.info('Print queued — will retry when printer available')
+                    })
                     toast.success(`Printing ${split.displayNumber || `Check ${(split.splitIndex ?? idx + 1)}`}`)
                   }}
                 />

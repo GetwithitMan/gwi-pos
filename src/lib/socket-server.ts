@@ -92,6 +92,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         socket.disconnect(true)
         return
       }
+      // Store authenticated locationId on socket for later validation
+      socket.data.locationId = queryLocationId
       socket.join(`location:${queryLocationId}`)
       if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Auto-joined location:${queryLocationId} from query`)
     }
@@ -104,6 +106,17 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
         console.warn(`[Socket] Rejected subscribe to invalid room: ${channelName}`)
         return
+      }
+      // Validate location rooms against authenticated context
+      if (channelName.startsWith('location:')) {
+        const roomLocationId = channelName.slice('location:'.length)
+        if (!socket.data.locationId) {
+          // First location subscription establishes the binding
+          socket.data.locationId = roomLocationId
+        } else if (roomLocationId !== socket.data.locationId) {
+          console.warn(`[Socket] Rejected cross-location subscribe: socket bound to ${socket.data.locationId}, tried ${roomLocationId}`)
+          return
+        }
       }
       socket.join(channelName)
     })
@@ -118,6 +131,13 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      * Called when a KDS/terminal starts up
      */
     socket.on('join_station', ({ locationId, tags, terminalId, stationId }: JoinStationPayload) => {
+      // Validate locationId against authenticated context
+      if (socket.data.locationId && locationId !== socket.data.locationId) {
+        console.warn(`[Socket] Rejected join_station: socket bound to ${socket.data.locationId}, payload says ${locationId}`)
+        socket.emit('joined', { success: false, error: 'Location mismatch' })
+        return
+      }
+
       // Join location room (global alerts)
       socket.join(`location:${locationId}`)
 

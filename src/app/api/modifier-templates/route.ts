@@ -98,6 +98,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 extraPrice?: number
                 isDefault?: boolean
               }, index: number) => ({
+                locationId,
                 name: m.name,
                 price: m.price || 0,
                 allowNo: m.allowNo ?? true,

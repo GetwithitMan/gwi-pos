@@ -5,6 +5,7 @@ import { isTempId, buildOrderItemPayload } from '@/lib/order-utils'
 import { startPaymentTiming, markRequestSent, completePaymentTiming } from '@/lib/payment-timing'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { OfflineManager } from '@/lib/offline-manager'
 import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
 
 interface UseActiveOrderOptions {
@@ -509,6 +510,23 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             toast.info('Joined existing order on this table')
             return existingId
           }
+          // B9: 503 Server unavailable — queue order for offline sync
+          if (res.status === 503) {
+            try {
+              await OfflineManager.queueOrder({
+                locationId: resolvedLocationId!,
+                tableId: order.tableId || undefined,
+                orderTypeId: order.orderTypeId || undefined,
+                employeeId: resolvedEmployeeId!,
+                items: order.items.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })) as Record<string, unknown>[],
+                customFields: order.customFields,
+              })
+              toast.success('Order saved offline — will sync when connection returns')
+            } catch {
+              toast.error('Failed to save order')
+            }
+            return null
+          }
           toast.error(error.error || 'Failed to create order')
           return null
         }
@@ -543,6 +561,23 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         return created.id
       } catch (error) {
         console.error('[useActiveOrder] ensureOrderInDB create failed:', error)
+        // B9: Network failure (TypeError from fetch) — queue order for offline sync
+        if (error instanceof TypeError) {
+          try {
+            await OfflineManager.queueOrder({
+              locationId: resolvedLocationId!,
+              tableId: order.tableId || undefined,
+              orderTypeId: order.orderTypeId || undefined,
+              employeeId: resolvedEmployeeId!,
+              items: order.items.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })) as Record<string, unknown>[],
+              customFields: order.customFields,
+            })
+            toast.success('Order saved offline — will sync when connection returns')
+          } catch {
+            toast.error('Failed to save order')
+          }
+          return null
+        }
         toast.error('Failed to save order')
         return null
       }

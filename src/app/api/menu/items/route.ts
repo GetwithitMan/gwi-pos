@@ -4,6 +4,7 @@ import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/menu/items - Fetch menu items, optionally filtered by category
@@ -11,25 +12,27 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('categoryId')
-    const locationId = searchParams.get('locationId')
+    const locationId = searchParams.get('locationId') || await getLocationId()
     const includeStock = searchParams.get('includeStock') === 'true'
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     // Build filter
     const where: {
       isActive: boolean
       deletedAt: null
       categoryId?: string
-      locationId?: string
+      locationId: string
     } = {
       isActive: true,
       deletedAt: null,
+      locationId,
     }
 
     if (categoryId) {
       where.categoryId = categoryId
-    }
-    if (locationId) {
-      where.locationId = locationId
     }
 
     const items = await db.menuItem.findMany({

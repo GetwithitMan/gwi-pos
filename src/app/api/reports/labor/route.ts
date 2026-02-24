@@ -26,14 +26,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build date filter
-    const dateFilter: { clockIn?: { gte?: Date; lte?: Date } } = {}
-    if (startDate) {
-      dateFilter.clockIn = { ...dateFilter.clockIn, gte: new Date(startDate) }
-    }
-    if (endDate) {
-      dateFilter.clockIn = { ...dateFilter.clockIn, lte: new Date(endDate + 'T23:59:59') }
-    }
+    // Build date filter (B17 fix: explicit date objects, no spread operator)
+    const clockInFilter: Record<string, Date> = {}
+    if (startDate) clockInFilter.gte = new Date(startDate)
+    if (endDate) clockInFilter.lte = new Date(endDate + 'T23:59:59')
+    const dateFilter = Object.keys(clockInFilter).length > 0 ? { clockIn: clockInFilter } : {}
 
     // Build employee filter
     const employeeFilter = employeeId ? { employeeId } : {}

@@ -6,6 +6,7 @@ import { computeIsOrderableOnline } from '@/lib/online-availability'
 import { emitToLocation } from '@/lib/socket-server'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(
@@ -15,10 +16,13 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    const locationId = request.nextUrl.searchParams.get('locationId')
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     const item = await db.menuItem.findFirst({
-      where: { id, deletedAt: null, ...(locationId ? { locationId } : {}) },
+      where: { id, deletedAt: null, locationId },
       include: {
         category: {
           select: { id: true, name: true, categoryType: true },
@@ -325,9 +329,12 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
 
     // Get item info before deletion for socket dispatch
-    const locationId = request.nextUrl.searchParams.get('locationId')
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     const item = await db.menuItem.findFirst({
-      where: { id, ...(locationId ? { locationId } : {}) },
+      where: { id, locationId },
       select: { locationId: true }
     })
 

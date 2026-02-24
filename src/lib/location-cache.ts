@@ -10,6 +10,7 @@
  */
 
 import { db } from '@/lib/db'
+import { getRequestSlug } from '@/lib/request-context'
 
 // ============================================================================
 // TYPES
@@ -47,17 +48,21 @@ const CACHE_TTL = 5 * 60 * 1000
 // ============================================================================
 
 /**
- * Cached location ID for the current venue database.
- * Each venue DB has exactly one location — this avoids repeated findFirst() calls.
+ * Per-venue location ID cache.
+ * Keyed by venue slug from request context to prevent cross-tenant leaks
+ * when multiple venues share a Vercel serverless process.
+ * Map<venueSlug, { id, timestamp }>
  */
-let cachedLocationId: string | null = null
-let locationIdTimestamp = 0
+const locationIdCache = new Map<string, { id: string | null; timestamp: number }>()
 
 /**
- * Get the location ID for the current venue database (cached).
+ * Get the location ID for the current venue database (cached per-venue).
  *
  * Since each venue DB has exactly one Location row, this is safe to cache.
  * Eliminates ~30 redundant db.location.findFirst() calls across pizza/liquor/menu routes.
+ *
+ * The cache is keyed by the venue slug from AsyncLocalStorage request context,
+ * preventing the old singleton bug where venue A's locationId was returned to venue B.
  *
  * @returns The location ID, or null if no location exists
  *
@@ -67,9 +72,11 @@ let locationIdTimestamp = 0
  */
 export async function getLocationId(): Promise<string | null> {
   const now = Date.now()
+  const cacheKey = getRequestSlug() || '__default__'
 
-  if (cachedLocationId && (now - locationIdTimestamp) < CACHE_TTL) {
-    return cachedLocationId
+  const cached = locationIdCache.get(cacheKey)
+  if (cached && cached.id && (now - cached.timestamp) < CACHE_TTL) {
+    return cached.id
   }
 
   // Use deterministic ordering so seed data (e.g. 'loc-1') is preferred
@@ -80,10 +87,10 @@ export async function getLocationId(): Promise<string | null> {
     orderBy: { id: 'asc' },
   })
 
-  cachedLocationId = location?.id ?? null
-  locationIdTimestamp = now
+  const id = location?.id ?? null
+  locationIdCache.set(cacheKey, { id, timestamp: now })
 
-  return cachedLocationId
+  return id
 }
 
 // ============================================================================
@@ -147,8 +154,7 @@ export function invalidateLocationCache(locationId: string): void {
  */
 export function invalidateAllLocationCaches(): void {
   cache.clear()
-  cachedLocationId = null
-  locationIdTimestamp = 0
+  locationIdCache.clear()
 }
 
 /**

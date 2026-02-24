@@ -283,7 +283,7 @@ export default function DailyReportPage() {
                     toast.success('Daily report sent to printer')
                   }
                 } catch {
-                  toast.error('Failed to print daily report')
+                  toast.error('Printer unreachable — try again when connection restores')
                 } finally {
                   setPrintingThermal(false)
                 }

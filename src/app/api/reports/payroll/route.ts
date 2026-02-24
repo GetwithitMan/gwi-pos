@@ -275,15 +275,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    // Calculate pending: total credits - total payouts = still pending
+    // Calculate pending: all-time credits + all-time debits (debits are negative amountCents)
+    // Result > 0 means employee still has unredeemed banked tips
     const pendingByEmployee: Record<string, number> = {}
     bankedPendingEntries.forEach(entry => {
       if (!pendingByEmployee[entry.employeeId]) pendingByEmployee[entry.employeeId] = 0
-      pendingByEmployee[entry.employeeId] += entry.amountCents
+      pendingByEmployee[entry.employeeId] += entry.amountCents // CREDIT: positive
     })
     allPayoutEntries.forEach(entry => {
       if (!pendingByEmployee[entry.employeeId]) pendingByEmployee[entry.employeeId] = 0
-      pendingByEmployee[entry.employeeId] += entry.amountCents
+      pendingByEmployee[entry.employeeId] += entry.amountCents // DEBIT: negative (reduces balance)
     })
 
     Object.entries(pendingByEmployee).forEach(([empId, balanceCents]) => {
@@ -311,7 +312,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       emp.overtimePay = Math.round(emp.overtimeHours * emp.hourlyRate * 1.5 * 100) / 100
       emp.totalWages = Math.round((emp.regularPay + emp.overtimePay) * 100) / 100
 
-      // Net tips (declared - given + received + banked collected)
+      // Net tips = declared (from shifts) - tip shares given + tip shares received + banked payouts
+      // B15 investigation: No overlap between declaredTips and bankedTipsCollected confirmed.
+      // - declaredTips: manual cash/card tips declared at shift close (Shift.tipsDeclared)
+      // - bankedTipsCollected: PAYOUT_CASH/PAYOUT_PAYROLL debits from tip ledger (separate transactions)
+      // - tipSharesGiven: ROLE_TIPOUT debits (amount given to other roles)
+      // - tipSharesReceived: ROLE_TIPOUT credits (amount received from other roles)
+      // These four sources are distinct: shift declarations, ledger payouts, and ledger tip-outs.
       emp.netTips = Math.round((
         emp.declaredTips -
         emp.tipSharesGiven +
