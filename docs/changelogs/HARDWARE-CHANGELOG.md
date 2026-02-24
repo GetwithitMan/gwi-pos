@@ -1,5 +1,11 @@
 # Hardware Domain Changelog
 
+## 2026-02-23 — Bugfix Sprint C+D: Printer Health & Failover Logging
+- **BUG 23**: Printer health record updated on every print attempt — both success and failure outcomes tracked for reliability monitoring (`print/kitchen/route.ts`)
+- **BUG 24**: Failover print events logged to AuditLog — when primary printer fails and backup is used, the failover event is recorded for visibility (`print/kitchen/route.ts`)
+
+---
+
 ## 2026-02-20 — Sprint Sessions 8-14: Print Routing Phase 3, CFD Events, Mobile Tab Sync, Pay-at-Table Sync, Reader Health, KDS Version Badge, PostCSS
 
 ### P2-H01 — Print Routing Phase 3: Tag-Based Routing Arrays

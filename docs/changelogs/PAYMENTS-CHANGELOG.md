@@ -1,5 +1,15 @@
 # Payments Domain Changelog
 
+## Bugfix Sprint C+D: Payment Edge Cases (2026-02-23)
+- **#384**: Online checkout now calculates tax from location settings — was hardcoded 0% (`online/checkout/route.ts`)
+- **EDGE-6**: Pre-auth expiry tracking — `preAuthExpiresAt` field added to Order model (`schema.prisma`, `open-tab/route.ts`)
+- **EDGE-7**: pending_auth recovery — auto-recover stale tabs, close-tab validation rejects expired auth, new `/api/system/recovery/pending-auth` endpoint (`open-tab/route.ts`, `close-tab/route.ts`, `system/recovery/pending-auth/route.ts`)
+
+## Bugfix Sprint A+B: Auth Hardening (2026-02-23)
+- **B13**: Soft auth bypass removed from `api-auth.ts` — unauthenticated requests now properly return 401
+
+---
+
 ## Wave 5: Email Receipts & 2FA (2026-02-23)
 - **W5-9**: Email receipt option after payment — ReceiptModal with Resend delivery
 - **W5-11**: 2FA thresholds for large refunds and voids — remote SMS approval enforcement

@@ -1,5 +1,10 @@
 # KDS Domain Changelog
 
+## Bugfix Sprint C+D: KDS Audit Trail (2026-02-23)
+- **BUG 20**: Full audit trail for KDS actions — bump, un-bump, complete, serve, and resend all logged to AuditLog (`kds/route.ts`, `kds/expo/route.ts`)
+
+---
+
 ## Wave 3: Staff UX & Transfers (2026-02-23)
 - **W3-14**: Manager Dashboard v1 — real-time open orders, clocked-in staff, aging highlights
 

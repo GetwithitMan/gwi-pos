@@ -5,6 +5,95 @@
 
 ---
 
+## 2026-02-23 — Bugfix Sprint C+D: Payment Edges, KDS Audit, PWA, Multi-Tenant Hardening
+
+**Session:** 12 fixes — online tax, pre-auth expiry, pending_auth recovery, KDS audit trail, printer health, failover logging, PWA manifest + service worker, offline disconnect banner, 8 locationId bypass hardening, cascade onDelete rules
+
+### Commits
+- `7eb5ba2` — Bugfix Sprint C+D: payment edges, KDS audit, PWA, multi-tenant hardening (21 files, 454 insertions, 5 new files)
+
+### Features Delivered
+- **Online tax calculation** — Checkout now derives tax from location settings instead of hardcoded 0%
+- **Pre-auth expiry tracking** — preAuthExpiresAt field on Order model for tab expiry awareness
+- **pending_auth recovery** — Auto-recover stale tabs, close-tab validation, new `/api/system/recovery/pending-auth` endpoint
+- **KDS audit trail** — All bump/un-bump/complete/serve/resend actions logged to AuditLog
+- **Printer health tracking** — Health record updated on every print attempt (success or failure)
+- **Failover audit logging** — Failover print events logged to AuditLog for visibility
+- **PWA manifest** — Standalone mode, black theme, app-like experience
+- **Service worker** — Cache-first for static assets, network-first for API calls
+- **Offline disconnect banner** — Visual indicator when network is lost, auto-dismisses on reconnect
+- **Cascade safety** — 5 onDelete rules changed from Cascade to Restrict (OrderItem, OrderCard, OrderItemModifier, OrderItemIngredient, OrderItemPizza)
+
+### Bug Fixes
+
+| ID | Area | Fix |
+|----|------|-----|
+| #384 | Payments | Online checkout tax calculated from location settings (was hardcoded 0%) |
+| EDGE-6 | Payments | Pre-auth expiry tracking via preAuthExpiresAt on Order |
+| EDGE-7 | Payments | pending_auth recovery — auto-recover stale tabs, close-tab validation, recovery endpoint |
+| BUG 20 | KDS | Audit trail for bump/un-bump/complete/serve/resend |
+| BUG 23 | Print | Printer health updated on every print attempt |
+| BUG 24 | Print | Failover events logged to AuditLog |
+| #635 | PWA | PWA manifest added (standalone, black theme) |
+| #636 | PWA | Service worker + registration component |
+| — | PWA | Offline disconnect banner component |
+| — | Multi-Tenant | 8 locationId bypass routes hardened (employees/[id], inventory/stock-adjust, integrations/test, categories/[id], upload, inventory/transactions, tickets, monitoring/errors) |
+| — | Schema | 5 cascade onDelete rules changed from Cascade to Restrict |
+
+### Bugs Investigated and Closed (NOT bugs)
+- **#416** (payroll tips 4x) — NOT A BUG, distinct data sources confirmed
+- **#454** (split tips as payment) — NOT A BUG, correctly separated
+- **BUG 25** (printer fallback) — WORKING AS DESIGNED
+
+---
+
+## 2026-02-23 — Bugfix Sprint A+B: Multi-Tenant Isolation, Floor Plan, Offline Wiring
+
+**Session:** 16 fixes — location cache isolation, CloudEventQueue locationId, schema locationId gaps, menu route hardening, socket room validation, snapshot status fix, seat persistence, optimistic locking, offline order/print wiring, soft auth removal, report fixes
+
+### Commits
+- `d53ebbb` — Bugfix Sprint A+B: 16 fixes across multi-tenant isolation, floor plan, offline wiring, auth, and reports (23 files, 226 insertions)
+
+### Features Delivered
+- **Location cache isolation** — Cache keyed by venue slug instead of singleton
+- **CloudEventQueue scoping** — locationId field added, cleanup scoped per location
+- **Schema locationId gaps filled** — ModifierTemplate + OrderOwnershipEntry now have locationId + deletedAt
+- **Menu route hardening** — GET routes require locationId (no longer optional)
+- **Socket room validation** — Room subscriptions validated against authenticated locationId
+- **Snapshot status fix** — Floor plan snapshot includes 'sent' and 'in_progress' order statuses
+- **Seat persistence** — Drag positions saved to DB via API call
+- **Optimistic locking** — Table/Seat version field prevents concurrent edit conflicts
+- **Offline order wiring** — Order creation routed to OfflineManager.queueOrder() when offline
+- **Offline print wiring** — Print jobs queued offline on failure
+- **Auth hardening** — Soft auth bypass removed from api-auth.ts
+
+### Bug Fixes
+
+| ID | Area | Fix |
+|----|------|-----|
+| B1 | Multi-Tenant | Location cache keyed by venue slug instead of singleton |
+| B2 | Multi-Tenant | CloudEventQueue adds locationId field, scoped cleanup |
+| B3 | Multi-Tenant | ModifierTemplate + OrderOwnershipEntry add locationId + deletedAt |
+| B4 | Multi-Tenant | Menu GET routes require locationId |
+| B5 | Multi-Tenant | Socket room subscriptions validated against authenticated locationId |
+| B6 | Floor Plan | Snapshot + table GET include 'sent' and 'in_progress' statuses |
+| B7 | Floor Plan | Seat drag positions persisted to DB |
+| B8 | Floor Plan | Table/Seat optimistic locking with version field |
+| B9 | Offline | Offline order creation wired to OfflineManager.queueOrder() |
+| B10 | Offline | Print jobs queued offline on failure |
+| B11 | Offline | Already implemented — markForOfflineCapture confirmed |
+| B12 | Offline | Already implemented — socket reconnect already re-joins rooms |
+| B13 | Auth | Soft auth bypass removed from api-auth.ts |
+| B16 | Reports | Daily report surcharge derivation from pricing program |
+| B17 | Reports | Labor report date filter refactored |
+| B18 | Reports | Product mix pairing grouped by orderId instead of timestamp |
+
+### Bugs Investigated and Closed (NOT bugs)
+- **#509-511** (socket/CFD rooms) — ALREADY FIXED
+- **B14** (PIN rate limiting) — ALREADY FIXED in Wave 1
+
+---
+
 ## 2026-02-23 — Wave 5: Owner Setup & Advanced Analytics
 
 **Session:** Wave 5 implementation — setup wizard, CSV import, report exports, daypart/trends analytics, customer VIP, email receipts, security hardening, command palette, quick-service mode

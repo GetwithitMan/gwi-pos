@@ -1,5 +1,12 @@
 # Floor Plan Domain - Change Log
 
+## 2026-02-23 — Bugfix Sprint A+B: Floor Plan Fixes (B6-B8)
+- **B6**: Snapshot + table GET now include 'sent' and 'in_progress' order statuses — tables with active orders correctly show as occupied on the floor plan (`snapshot.ts`, `tables/[id]/route.ts`)
+- **B7**: Seat drag positions persisted to DB via API call — dragging a seat on the floor plan now saves the new position instead of only updating local state (`SeatNode.tsx`)
+- **B8**: Table/Seat optimistic locking with version field — concurrent edits to the same table or seat return a version conflict error instead of silently overwriting (`schema.prisma`, `tables/[id]/route.ts`)
+
+---
+
 ## 2026-02-23 — Order Disappearance Fixes (Skill 414)
 
 ### Bug 2 (CRITICAL): Fetch Callback Overwrites Wrong Table

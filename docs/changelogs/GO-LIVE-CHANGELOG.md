@@ -1,5 +1,52 @@
 # Go-Live & Launch Readiness -- Changelog
 
+## 2026-02-23 — Bugfix Sprint C+D: Multi-Tenant Hardening & Cascade Safety
+
+### 8 locationId Bypass Routes Hardened
+Routes that previously allowed requests without locationId validation are now enforced:
+- `employees/[id]` — Employee lookups scoped to location
+- `inventory/stock-adjust` — Stock adjustments require locationId
+- `integrations/test` — Integration tests scoped to location
+- `categories/[id]` — Category lookups scoped to location
+- `upload` — File uploads scoped to location
+- `inventory/transactions` — Inventory transaction queries require locationId
+- `tickets` — Ticket operations scoped to location
+- `monitoring/errors` — Error logs scoped to location
+
+### 5 Cascade onDelete Rules Changed to Restrict
+Prevents accidental data loss when parent records are deleted:
+- `OrderItem` — onDelete changed from Cascade to Restrict
+- `OrderCard` — onDelete changed from Cascade to Restrict
+- `OrderItemModifier` — onDelete changed from Cascade to Restrict
+- `OrderItemIngredient` — onDelete changed from Cascade to Restrict
+- `OrderItemPizza` — onDelete changed from Cascade to Restrict
+
+---
+
+## 2026-02-23 — Bugfix Sprint A+B: Multi-Tenant Isolation (B1-B5)
+
+### Location Cache Isolation (B1)
+- Location cache was a singleton — all venues shared the same cached data
+- Fix: Cache keyed by venue slug, each venue gets its own cache entry (`location-cache.ts`)
+
+### CloudEventQueue Scoping (B2)
+- CloudEventQueue had no locationId — events from all locations mixed together, cleanup was global
+- Fix: locationId field added to CloudEventQueue model and event creation, cleanup scoped per location (`schema.prisma`, `cloud-event-queue.ts`)
+
+### Schema locationId Gaps (B3)
+- ModifierTemplate and OrderOwnershipEntry lacked locationId and deletedAt fields
+- Fix: Both models now include locationId (with index) and deletedAt for soft delete support (`schema.prisma`)
+
+### Menu Route Hardening (B4)
+- Menu GET routes accepted requests without locationId, returning cross-venue data
+- Fix: locationId is now required — requests without it return 400 (`menu/items/route.ts`, `menu/items/[id]/route.ts`)
+
+### Socket Room Validation (B5)
+- Socket room subscriptions were not validated against the authenticated user's locationId
+- Fix: Room join requests validated — users can only subscribe to rooms matching their authenticated locationId (`socket-server.ts`)
+
+---
+
 ## Session: 2026-02-09
 
 ### Domain Created

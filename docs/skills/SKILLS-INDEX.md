@@ -539,6 +539,14 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-23 — Bugfix Sprints A-D, Skill 427)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 427 | Bugfix Sprints A-D: Multi-Tenant, Floor Plan, Offline, Payments, KDS, PWA | DONE | Security / Floor Plan / Offline / Payments / KDS / Print / PWA / Reports | 426 | 28 bugs addressed across 4 sprints (A through D): 16 confirmed fixed, 5 already fixed, 5 not bugs, 2 confirmed implemented. Sprint A+B (d53ebbb, 23 files, 226 ins): location cache keyed by venue slug, CloudEventQueue locationId, schema locationId gaps (ModifierTemplate, OrderOwnershipEntry), menu route locationId required, socket room validation, snapshot status fix, seat drag persistence, optimistic locking (version field), offline order/print wiring, soft auth bypass removed, report fixes (surcharge, labor date, product mix grouping). Sprint C+D (7eb5ba2, 21 files, 454 ins, 5 new): online tax from location settings, pre-auth expiry tracking, pending_auth recovery endpoint, KDS audit trail, printer health on every attempt, failover AuditLog, PWA manifest + service worker, offline disconnect banner, 8 locationId bypass routes hardened, 5 cascade onDelete rules changed to Restrict. |
+
+---
+
 ## Recently Completed (2026-02-23 — Wave 5: Owner Setup & Advanced Analytics, Skill 426)
 
 | Skill | Name | Status | Domain | Dependencies | Notes |

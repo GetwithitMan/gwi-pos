@@ -1,5 +1,12 @@
 # Reports Domain Changelog
 
+## Bugfix Sprint A+B: Report Fixes (2026-02-23)
+- **B16**: Daily report surcharge derivation now pulls from pricing program instead of flat value (`daily/route.ts`)
+- **B17**: Labor report date filter refactored — correct timezone-aware date boundary handling (`labor/route.ts`)
+- **B18**: Product mix pairing grouped by orderId instead of timestamp — eliminates false pairings across concurrent orders (`product-mix/route.ts`)
+
+---
+
 ## Wave 5: Owner Analytics (2026-02-23)
 - **W5-4**: CSV export added to sales, shift, tips, voids, employees, hourly, liquor reports
 - **W5-5**: Email report MVP — daily report email via Resend API
