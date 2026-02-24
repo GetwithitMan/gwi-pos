@@ -539,6 +539,22 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-24 — Pilot Readiness: UX Fixes + Checklist, Skill 429)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 429 | Pilot Readiness: Bar Tab, Duplicate Adds, Seat Fixes + Checklist | DONE | Orders / UX / Planning | 428 | 3 user-reported UX bugs fixed + pilot checklist built. Bar tab cancel: clear savedOrderId on card decline, revert to temp ID, isTempId guard on onStartTab. Duplicate adds: isTempId filter in sendItemsToTab, lastMutationRef stamp on autosave, 30s TTL modifier-defaults cache. Seats disappearing: baseSeatCount: true in panel view select. Pilot readiness checklist (~200 testable items) organized by service phases. API route audit: 146+ routes verified as real implementations. Commit 743e618, 7 files. |
+
+---
+
+## Recently Completed (2026-02-24 — Wave 7: Online Safety, Combos, Tips, Crash Guards, Skill 428)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 428 | Wave 7: Online Safety, Combos/Timed Rentals, Tips & Reports, Crash Guards | DONE | Online / Combos / Tips / Payments / Error Handling | 427 | 40 bugs fixed across 5 domains, 17 task groups. Online (O1-O4): server-side modifier pricing, deletedAt + enabled checks, rate limiter, soft-cancel, onlinePrice, system employee. Combos (C1-C4): deletedAt + 86 checks, combo inventory expansion, minimumCharge, pourMultiplier + spirit substitutions. Tips (T1-T4): ledger-only payroll formula (fixes double-count #416/#423), cash payout deduction, break deduction, batch adjust-tip, atomic transfers in $transaction, server-side netTips. Payments (P1-P2): close-tab Payment record, walkout atomic guard, MGR_REFUNDS permission, refund caps, chargeback reflection. Crash (E1-E3): instrumentation.ts, 4 error.tsx boundaries, socket try/catch. Commit 743e618, 38 files, +3257/-418. |
+
+---
+
 ## Recently Completed (2026-02-23 — Bugfix Sprints A-D, Skill 427)
 
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -1311,6 +1327,13 @@ These skills emerged during development and are now part of the system:
 | 415 | SPLIT-PAYMENT-VOID-FIXES | DONE | Payments / Orders / Safety | 413, 414 | 10 bug fixes across split payment, void, and merge flows: pay-all-splits inventory on empty parent, parent auto-close race (FOR UPDATE), missing socket on parent→paid, fractional modifier pricing, stale parent totals after void, missing socket on merge, merge race with concurrent payment, loyalty uses total not subtotal, no parent validation on child payment, missing cache on split delete |
 | 416 | CHAOS-TEST-FIXES | DONE | Payments / Orders / Floor Plan / Safety | 413, 414, 415 | 19 bug fixes from chaos testing: isProcessing orphaned after decline, items modifiable after partial payment, datacap+DB void decoupled, comp restore double inventory, order number race, failed capture hanging auth, item duplication on send, no socket for active order, discount no recalculate, empty drafts accumulate, deleted items no dispatch, reopen no cooldown, multiple drafts same table, CFD no max tip, course firing no ordering, quantity 0 accepted, orphaned seats no warning, cancelled order accepts payment |
 | 417 | DEEP-DIVE-ROUND2-FIXES | DONE | Payments / Orders / Floor Plan / Safety | 415, 416 | 23 bug fixes from deep dive round 2: tip lifecycle (close-tab inventory+tips, tip adjustment allocation, pay-all-splits tips, void tip reversal, partial refund tip adjust), split/parent sync (parent discount recalc, parent itemCount, merge discount restore, rapid split orphans, discount cap), course firing (null items in course 1, status validation, delayStartedAt scoping, empty course guard), floor plan (seat cleanup retry, payment race panel clear, counter-based coalescing, socket skip window) |
+
+### Wave 7 + Pilot Readiness (2026-02-24)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 428 | WAVE7-ONLINE-COMBOS-TIPS-CRASH | DONE | Online / Combos / Tips / Payments / Error Handling | 427 | 40 bugs across 5 domains (17 task groups): online ordering safety (server-side pricing, deletedAt, rate limiter, soft-cancel), combo/rental correctness (inventory expansion, minimumCharge, pourMultiplier), tip ledger-only payroll formula (fixes double-count), payment safety (atomic walkout guard, refund caps, MGR_REFUNDS), crash guards (instrumentation.ts, 4 error.tsx, socket try/catch). 38 files, +3257/-418. |
+| 429 | PILOT-READINESS-UX-FIXES | DONE | Orders / UX / Planning | 428 | 3 UX bug fixes: bar tab cancel (clear savedOrderId on decline), duplicate adds (isTempId filter + lastMutationRef + modifier cache), seats disappearing (baseSeatCount in select). Pilot readiness checklist (~200 items). API route audit (146+ verified). |
 
 ---
 

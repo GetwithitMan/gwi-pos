@@ -1,5 +1,22 @@
 # INVENTORY Domain Changelog
 
+## 2026-02-24 — Combo Inventory & Void Expansion (`743e618`)
+
+### Combo Inventory Expansion
+- Deduction engine walks `ComboTemplate` -> `components` -> `MenuItems` for full ingredient deduction
+- `isCombo` guard prevents double-counting when combo and its components share ingredients
+
+### Void/Waste Combo Expansion
+- Void and waste paths expanded to reverse combo component deductions
+
+### pourMultiplier on Voids
+- `pourMultiplier` applied during void deduction to reverse the correct quantity
+
+### Spirit Substitution
+- `modifier.linkedBottleProduct` used to identify spirit substitutions for accurate inventory reversal
+
+---
+
 ## 2026-02-20 — Sprint Sessions 8-14: Pour Multipliers, Prep Explosion, UOM Warnings, Seed Data
 
 ### T-006 — Pour Size Multiplier in Deduction Engine

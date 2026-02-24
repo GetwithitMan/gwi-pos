@@ -1,5 +1,15 @@
 # Payments Domain Changelog
 
+## 2026-02-24 — Payment Hardening & Permission Guards (`743e618`)
+- **close-tab**: Payment record created inside atomic transaction; `tipTotal ?? 0` null-coalesce fix
+- **walkout-retry**: Atomic guard via `updateMany` status filter prevents double-retry; Payment record written in same transaction
+- **refund**: `MGR_REFUNDS` permission check enforced; refund cap added (amount must not exceed original minus already-refunded)
+- **partial-reversal**: Permission check added; amount cap prevents reversal exceeding original charge
+- **auth-only**: Permission check added to auth-only payment route
+- **chargebacks**: `needsReconciliation` flag set on chargeback; `AuditLog` entry created for audit trail
+
+---
+
 ## Bugfix Sprint C+D: Payment Edge Cases (2026-02-23)
 - **#384**: Online checkout now calculates tax from location settings — was hardcoded 0% (`online/checkout/route.ts`)
 - **EDGE-6**: Pre-auth expiry tracking — `preAuthExpiresAt` field added to Order model (`schema.prisma`, `open-tab/route.ts`)

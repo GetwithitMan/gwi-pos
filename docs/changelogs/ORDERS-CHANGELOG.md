@@ -1,5 +1,52 @@
 # Orders Domain - Change Log
 
+## 2026-02-24 — Online Checkout, Combos, Bar Tab & Order Fixes (`743e618`)
+
+### Online Checkout
+- Server-side modifier pricing, `deletedAt` filters, `onlineSettings.enabled` check, `onlinePrice` support, quantity validation
+- Dedicated system employee for online orders
+- Soft-cancel on payment failure (order not abandoned)
+- Rate limiter added to checkout endpoint
+
+### Online Menu
+- `deletedAt` filters applied to online menu queries
+- `onlineSettings.enabled` check gates menu visibility
+- `onlinePrice` included in menu response payload
+
+### Combos
+- `deletedAt` filters on combo queries
+- 86/availability checks enforced on combo components
+
+### Combo Inventory Deduction Expansion
+- `order-deduction.ts` expanded to walk `ComboTemplate` components for inventory deduction
+
+### Void/Waste Combo Expansion
+- `void-waste.ts` expanded to handle combo item voids
+- `pourMultiplier` applied during void/waste deduction
+- Spirit substitution via `modifier.linkedBottleProduct`
+
+### Bar Tab Cancel Fix
+- Clear `savedOrderId` on card decline to prevent stale tab references
+
+### Duplicate Adds Fix
+- `isTempId` filter prevents duplicate item creation
+- `lastMutationRef` guards against re-processed mutations
+- Modifier cache prevents redundant modifier fetches
+
+### Seats Disappearing Fix
+- `baseSeatCount` preserved in panel select to prevent seat loss on panel switch
+
+### Batch Adjust-Tip
+- Recalculates total, increments version, writes ledger entry, dispatches socket event
+
+### Timed Sessions
+- `minimumCharge` enforcement on timed session settlement
+
+### Comp/Void
+- Entertainment status toggle on comp/void (sets `available` or `in_use`)
+
+---
+
 ## 2026-02-23 — Wave 1 Go-Live Safety (Skill 422)
 
 ### K1 (HIGH): Voided Items Stay on KDS

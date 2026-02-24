@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-02-24 — Global Error Boundaries & Socket Safety (`743e618`)
+
+### instrumentation.ts
+- `unhandledRejection` and `uncaughtException` handlers added for server-side crash capture
+
+### Error Boundaries (4 error.tsx files)
+- Global boundary: neutral styling, generic recovery
+- POS boundary: blue theme, POS-specific context
+- Admin boundary: orange theme, admin-specific context
+- KDS boundary: auto-retry after 5 seconds for unattended screens
+
+### Socket Handler Safety
+- `try/catch` wrapped around all 12 `socket.on()` handlers to prevent single-handler crashes from tearing down the connection
+
+---
+
 ## Session 1: Foundation - 2026-02-07
 
 ### Completed

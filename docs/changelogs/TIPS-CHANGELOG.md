@@ -1,5 +1,25 @@
 # Tips & Tip Bank Domain Changelog
 
+## 2026-02-24 — Payroll Formula, Atomic Transfers & Shift Close (`743e618`)
+
+### Payroll Formula
+- Ledger-only calculation: `DIRECT_TIP + TIP_GROUP` credits used as basis
+- `bankedTipsCollected` excluded from `netTips` to prevent double-counting
+
+### totalTipOuts Sign Fix
+- `Math.abs` applied to DEBIT sum so `totalTipOuts` is always a positive value
+
+### Batch Adjust-Tip
+- Mirrors single-tip-adjust behavior: recalculates total, increments version, writes ledger entry, dispatches socket event
+
+### Atomic Tip Transfers
+- `$transaction` with balance check under lock prevents overdraw race conditions
+
+### Shift Close
+- Server-side `netTips` computation; client-submitted values are untrusted and overwritten
+
+---
+
 ## 2026-02-11 — Skills 287-288: Tip Group Admin UI & Segment Timeline
 
 ### Skills Completed

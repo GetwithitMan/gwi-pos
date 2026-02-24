@@ -1,5 +1,19 @@
 # Entertainment Domain - Change Log
 
+## 2026-02-24 — Minimum Charge, Status Toggle & Per-Minute Settlement (`743e618`)
+
+### minimumCharge Enforcement
+- Timed sessions enforce `minimumCharge` at settlement -- if elapsed cost is below minimum, the minimum is charged instead
+
+### Void / Un-Void Status Toggle
+- Void sets `entertainmentStatus` to `available`, freeing the entertainment item
+- Un-void restores `entertainmentStatus` to `in_use`
+
+### Per-Minute Pricing Settlement
+- Per-minute pricing calculation integrated into the pay route for accurate timed-session billing
+
+---
+
 ## Session: February 5, 2026 (Domain Creation)
 
 ### Domain Initialization

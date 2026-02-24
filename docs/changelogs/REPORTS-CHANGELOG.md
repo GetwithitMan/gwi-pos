@@ -1,5 +1,11 @@
 # Reports Domain Changelog
 
+## 2026-02-24 — Daily Report & Employee Shift Fixes (`743e618`)
+- **Daily report**: `cashPayoutsToday` sourced from `PAYOUT_CASH` ledger entries; subtracted from `cashDue` for accurate drawer reconciliation
+- **Employee shift report**: `breakMinutes` query added; `shiftHours` calculated as gross hours minus `breaks / 60`
+
+---
+
 ## Bugfix Sprint A+B: Report Fixes (2026-02-23)
 - **B16**: Daily report surcharge derivation now pulls from pricing program instead of flat value (`daily/route.ts`)
 - **B17**: Labor report date filter refactored — correct timezone-aware date boundary handling (`labor/route.ts`)

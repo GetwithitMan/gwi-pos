@@ -5,6 +5,59 @@
 
 ---
 
+## 2026-02-24 — Wave 7 + Pilot Readiness: Online Safety, Combos, Tips, Payments, Crash Guards, UX Fixes
+
+**Session:** 40 bug fixes across 5 domains (17 task groups) via 5-agent team, plus 3 user-reported UX bug fixes and comprehensive pilot readiness checklist. Managed as agent team manager with isolated worktrees per agent.
+
+### Commits
+- `743e618` — Wave 7 + Pilot Readiness: 40 bug fixes across 5 domains, 3 UX fixes, pilot checklist (38 files, +3257/-418)
+
+### Features Delivered
+- **Online ordering safety** — Server-side modifier pricing, deletedAt + enabled checks, sliding window rate limiter, soft-cancel on payment failure, onlinePrice support, dedicated system employee
+- **Combo/rental correctness** — Combo inventory expansion (ComboTemplate walk), 86/availability checks, minimumCharge enforcement, pourMultiplier + spirit substitutions on voids
+- **Tip ledger-only payroll formula** — declaredTips sourced from ledger credits only (not Shift model), bankedTipsCollected excluded from netTips, atomic tip transfers in $transaction
+- **Payment safety** — close-tab Payment record in atomic tx, walkout atomic guard, MGR_REFUNDS permission, refund/reversal caps, chargeback reflection
+- **Crash guards** — instrumentation.ts (unhandledRejection/uncaughtException), 4 error.tsx boundaries (global/POS/admin/KDS auto-retry), all 12 socket handlers wrapped in try/catch
+- **Bar tab cancel fix** — Clear savedOrderId on card decline, revert to temp ID
+- **Duplicate adds fix** — isTempId filter in sendItemsToTab, lastMutationRef stamp, modifier cache
+- **Seats disappearing fix** — baseSeatCount in panel view select
+- **Pilot readiness checklist** — ~200 testable items organized by service phases, go/no-go criteria, sign-off lines
+
+### Bug Fixes
+
+| ID | Area | Fix |
+|----|------|-----|
+| #381 | Inventory | pourMultiplier applied on voids |
+| #382 | Inventory | Spirit substitution via linkedBottleProduct on voids |
+| #384-388 | Online | Server-side pricing, deletedAt, enabled check, rate limit, soft-cancel |
+| #410-413 | Tips | Batch adjust-tip: recalc total, version, ledger, socket |
+| #415 | Tips | totalTipOuts sign fix (Math.abs on DEBIT sum) |
+| #416, #423 | Tips | Payroll ledger-only formula, bankedTipsCollected excluded |
+| #417 | Tips | Server-side netTips at shift close |
+| #418-421 | Tips | Atomic tip transfers in $transaction |
+| #426 | Reports | Cash payout deduction in daily reconciliation |
+| #427 | Reports | Break deduction in employee shift report |
+| #455-457 | Payments | close-tab Payment record + tipTotal ?? fix |
+| #459-461 | Payments | Walkout retry atomic guard |
+| #470-473 | Payments | MGR_REFUNDS, refund caps, chargeback reflection |
+| #477-483 | Crash | instrumentation.ts, 4 error.tsx, socket try/catch |
+| UX-1 | Orders | Bar tab cancel clears savedOrderId on decline |
+| UX-2 | Orders | Duplicate adds: isTempId filter + lastMutationRef + modifier cache |
+| UX-3 | Orders | Seats disappearing: baseSeatCount in panel select |
+
+### Skills Created
+- **Skill 428** — Wave 7: Online Safety, Combos/Timed Rentals, Tips & Reports, Crash Guards
+- **Skill 429** — Pilot Readiness: Bar Tab, Duplicate Adds, Seat Fixes + Checklist
+
+### Changelogs Updated
+ORDERS, PAYMENTS, TIPS, REPORTS, ERROR-REPORTING, INVENTORY, ENTERTAINMENT
+
+### Known Issues / Blockers
+- None. All Wave 7 + Pilot Readiness work verified.
+- Next: Wave 8 — Staff UX & Workflows (bartender/server experience, transfer/merge, bar modifiers, search, Pay Cash Instead)
+
+---
+
 ## 2026-02-23 — Bugfix Sprint C+D: Payment Edges, KDS Audit, PWA, Multi-Tenant Hardening
 
 **Session:** 12 fixes — online tax, pre-auth expiry, pending_auth recovery, KDS audit trail, printer health, failover logging, PWA manifest + service worker, offline disconnect banner, 8 locationId bypass hardening, cascade onDelete rules
