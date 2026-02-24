@@ -55,6 +55,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       locationId,
       name,
       category = 'FIXED_STATION',
+      platform = 'BROWSER',
       staticIp,
       receiptPrinterId,
       roleSkipRules,
@@ -73,6 +74,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!['FIXED_STATION', 'HANDHELD'].includes(category)) {
       return NextResponse.json(
         { error: 'Category must be FIXED_STATION or HANDHELD' },
+        { status: 400 }
+      )
+    }
+
+    // Validate platform
+    if (!['BROWSER', 'ANDROID', 'IOS'].includes(platform)) {
+      return NextResponse.json(
+        { error: 'Platform must be BROWSER, ANDROID, or IOS' },
         { status: 400 }
       )
     }
@@ -106,6 +115,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId,
         name,
         category,
+        platform,
         staticIp: staticIp || null,
         receiptPrinterId: receiptPrinterId || null,
         roleSkipRules: roleSkipRules || {},

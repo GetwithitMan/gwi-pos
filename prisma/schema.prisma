@@ -5028,6 +5028,12 @@ model Terminal {
   lastKnownIp       String? // Last IP address seen
   deviceInfo        Json?   // User agent, screen size, model, etc.
 
+  // Native Platform Support
+  platform    String  @default("BROWSER")  // "BROWSER" | "ANDROID" | "IOS"
+  appVersion  String?                       // e.g. "1.0.0"
+  osVersion   String?                       // e.g. "Android 14"
+  pushToken   String?                       // FCM token for push notifications
+
   // Local Receipt Printer
   // The physical receipt printer attached to or near this terminal
   receiptPrinterId String?
@@ -5079,6 +5085,7 @@ model Terminal {
   @@index([deviceToken])
   @@index([backupTerminalId])
   @@index([paymentReaderId])
+  @@index([platform])
 }
 
 // Payment Reader - Datacap Direct card reader devices

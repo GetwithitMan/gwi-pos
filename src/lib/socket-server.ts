@@ -19,6 +19,7 @@
 import type { Server as HTTPServer } from 'http'
 import type { Server as SocketServer, Socket } from 'socket.io'
 import { MOBILE_EVENTS } from '@/types/multi-surface'
+import { db } from '@/lib/db'
 
 // Dynamic import for socket.io (optional dependency)
 let io: typeof import('socket.io').Server | null = null
@@ -82,6 +83,33 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   socketServer.on('connection', (socket: Socket) => {
     const clientIp = socket.handshake.address
     if (process.env.DEBUG_SOCKETS) console.log(`[Socket] New connection from ${clientIp} (${socket.id})`)
+
+    // ===== Native client auth via deviceToken =====
+    const deviceToken = socket.handshake.auth?.deviceToken as string | undefined
+    if (deviceToken && typeof deviceToken === 'string') {
+      void (async () => {
+        try {
+          const terminal = await db.terminal.findFirst({
+            where: { deviceToken, deletedAt: null },
+            select: { id: true, locationId: true, name: true, platform: true },
+          })
+          if (!terminal) {
+            console.warn(`[Socket] Invalid deviceToken from ${clientIp}, disconnecting`)
+            socket.disconnect(true)
+            return
+          }
+          socket.data.terminalId = terminal.id
+          socket.data.terminalName = terminal.name
+          socket.data.platform = terminal.platform
+          socket.data.locationId = terminal.locationId
+          socket.join(`location:${terminal.locationId}`)
+          if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Native client authenticated: ${terminal.name} (${terminal.platform})`)
+        } catch (err) {
+          console.error(`[Socket] deviceToken auth error:`, err)
+          socket.disconnect(true)
+        }
+      })()
+    }
 
     // Auto-join location room from handshake query (used by SocketEventProvider)
     const queryLocationId = socket.handshake.query?.locationId as string | undefined
