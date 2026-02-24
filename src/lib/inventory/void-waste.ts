@@ -209,30 +209,30 @@ export async function deductInventoryForVoidedItem(
         },
         modifiers: {
           include: {
-            // BUG #382: Include linkedBottleProduct for spirit substitutions on void
-            linkedBottleProduct: {
-              select: {
-                id: true,
-                spiritCategoryId: true,
-                pourSizeOz: true,
-                inventoryItem: {
-                  select: {
-                    id: true,
-                    name: true,
-                    category: true,
-                    department: true,
-                    storageUnit: true,
-                    costPerUnit: true,
-                    yieldCostPerUnit: true,
-                    currentStock: true,
-                  },
-                },
-              },
-            },
             modifier: {
               select: {
                 liteMultiplier: true,
                 extraMultiplier: true,
+                // BUG #382: Include linkedBottleProduct for spirit substitutions on void
+                linkedBottleProduct: {
+                  select: {
+                    id: true,
+                    spiritCategoryId: true,
+                    pourSizeOz: true,
+                    inventoryItem: {
+                      select: {
+                        id: true,
+                        name: true,
+                        category: true,
+                        department: true,
+                        storageUnit: true,
+                        costPerUnit: true,
+                        yieldCostPerUnit: true,
+                        currentStock: true,
+                      },
+                    },
+                  },
+                },
                 inventoryLink: {
                   include: {
                     inventoryItem: {
@@ -520,7 +520,7 @@ export async function deductInventoryForVoidedItem(
       const spiritSubstitutions = new Map<string, { inventoryItem: InventoryItemWithStock; pourSizeOz: number | null }>()
       for (const mod of orderItem.modifiers) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const lb = (mod as any).linkedBottleProduct
+        const lb = (mod as any).modifier?.linkedBottleProduct
         if (lb?.spiritCategoryId && lb.inventoryItem) {
           spiritSubstitutions.set(lb.spiritCategoryId, {
             inventoryItem: lb.inventoryItem as InventoryItemWithStock,
