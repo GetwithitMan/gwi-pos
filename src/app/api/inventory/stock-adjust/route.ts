@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { dispatchInventoryAdjustment, dispatchStockLevelChange } from '@/lib/socket-dispatch'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -117,10 +118,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { ingredientId, operation, quantity, reason, employeeId, locationId } = body
+    const { ingredientId, operation, quantity, reason, employeeId, locationId: bodyLocationId } = body
+
+    // Resolve locationId — body → fallback to cached location
+    const locationId = bodyLocationId || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
     // Auth check — require inventory.adjust_prep_stock permission
-    if (locationId && employeeId) {
+    if (employeeId) {
       const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
@@ -287,7 +294,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { adjustments, employeeId, locationId } = body
+    const { adjustments, employeeId, locationId: bodyLocationId } = body
 
     if (!adjustments || !Array.isArray(adjustments)) {
       return NextResponse.json(
@@ -303,11 +310,15 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       )
     }
 
-    // Auth check — require inventory.adjust_prep_stock permission
-    if (locationId) {
-      const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    // Resolve locationId — body → fallback to cached location
+    const locationId = bodyLocationId || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
     }
+
+    // Auth check — require inventory.adjust_prep_stock permission
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get employee info for audit trail
     const employee = await db.employee.findUnique({

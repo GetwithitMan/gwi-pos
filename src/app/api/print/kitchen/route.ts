@@ -269,6 +269,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // Send to printer — with backup printer failover
         let result = await sendToPrinter(printer.ipAddress, printer.port, document)
 
+        // BUG 23: Fire-and-forget printer health update after print attempt
+        void db.printer.update({
+          where: { id: printer.id },
+          data: { lastPingAt: new Date(), lastPingOk: result.success }
+        }).catch(console.error)
+
         if (!result.success) {
           // W1-PR2: Try backup printer — PrintRoute first, then item-level backupPrinterIds
           const routeForPrinter = routeForPrinterMap.get(printerId) ?? null
@@ -289,6 +295,30 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             const backupPrinter = allPrinters.find(p => p.id === backupPrinterId)
             if (backupPrinter) {
               const backupResult = await sendToPrinter(backupPrinter.ipAddress, backupPrinter.port, document)
+
+              // BUG 23: Fire-and-forget printer health update for backup printer
+              void db.printer.update({
+                where: { id: backupPrinter.id },
+                data: { lastPingAt: new Date(), lastPingOk: backupResult.success }
+              }).catch(console.error)
+
+              // BUG 24: Fire-and-forget audit log for printer failover
+              void db.auditLog.create({
+                data: {
+                  locationId: order.locationId,
+                  employeeId: null,
+                  action: 'printer_failover',
+                  entityType: 'printer',
+                  entityId: printer.id,
+                  details: {
+                    primaryPrinterId: printer.id,
+                    backupPrinterId: backupPrinter.id,
+                    orderId: order.id,
+                    reason: 'primary_print_failed'
+                  }
+                }
+              }).catch(console.error)
+
               if (backupResult.success) {
                 // Log the failover print job
                 void db.printJob.create({

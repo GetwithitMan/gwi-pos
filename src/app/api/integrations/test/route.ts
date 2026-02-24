@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
-  const { service, employeeId, locationId } = await request.json()
+  const { service, employeeId, locationId: bodyLocationId } = await request.json()
+
+  // Resolve locationId — body → fallback to cached location
+  const locationId = bodyLocationId || await getLocationId()
+  if (!locationId) {
+    return NextResponse.json({ error: 'Location required' }, { status: 400 })
+  }
 
   // Auth check — require settings.integrations permission
-  if (locationId) {
-    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_INTEGRATIONS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
-  }
+  const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_INTEGRATIONS)
+  if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   try {
     if (service === 'twilio') {

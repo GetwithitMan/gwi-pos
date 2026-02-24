@@ -1702,7 +1702,7 @@ model OrderItem {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
   orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
 
@@ -1805,7 +1805,7 @@ model OrderItemModifier {
   locationId  String
   location    Location  @relation(fields: [locationId], references: [id])
   orderItemId String
-  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
   modifierId  String? // Optional: null for combo component selections
   modifier    Modifier? @relation(fields: [modifierId], references: [id])
 
@@ -4761,7 +4761,7 @@ model OrderItemIngredient {
   locationId  String
   location    Location  @relation(fields: [locationId], references: [id])
   orderItemId String
-  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
   ingredientId   String
   ingredientName String // Snapshot at time of order
@@ -5587,7 +5587,7 @@ model OrderItemPizza {
   locationId  String
   location    Location  @relation(fields: [locationId], references: [id])
   orderItemId String    @unique
-  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
   // Size selection
   sizeId String
@@ -6144,7 +6144,7 @@ model OrderCard {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
   orderId    String
-  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   // Reader that processed this card
   readerId String

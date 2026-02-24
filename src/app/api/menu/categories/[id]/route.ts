@@ -4,6 +4,7 @@ import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const PUT = withVenue(async function PUT(
@@ -14,16 +15,19 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const body = await request.json()
     const { name, color, categoryType, categoryShow, printerIds, showOnline } = body
-    const locationId = body.locationId || request.nextUrl.searchParams.get('locationId')
+
+    // Resolve locationId — body → query param → fallback to cached location
+    const locationId = body.locationId || request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
     // Verify the category belongs to this location before updating
-    if (locationId) {
-      const existing = await db.category.findFirst({
-        where: { id, locationId },
-      })
-      if (!existing) {
-        return NextResponse.json({ error: 'Category not found' }, { status: 404 })
-      }
+    const existing = await db.category.findFirst({
+      where: { id, locationId },
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
     }
 
     const category = await db.category.update({

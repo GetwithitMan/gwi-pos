@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List inventory transactions with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId')
+    const queryLocationId = searchParams.get('locationId')
     const inventoryItemId = searchParams.get('inventoryItemId')
     const type = searchParams.get('type')
     const startDate = searchParams.get('startDate')
@@ -15,14 +16,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = searchParams.get('limit')
     const skip = searchParams.get('skip') // Offset pagination support
 
-    // Either locationId or inventoryItemId required
-    if (!locationId && !inventoryItemId) {
-      return NextResponse.json({ error: 'Location ID or Inventory item ID required' }, { status: 400 })
+    // Resolve locationId — query param → fallback to cached location
+    const locationId = queryLocationId || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
     }
 
     const where: Record<string, unknown> = {}
 
-    if (locationId) where.locationId = locationId
+    where.locationId = locationId
     if (inventoryItemId) where.inventoryItemId = inventoryItemId
     if (type) where.type = type
 

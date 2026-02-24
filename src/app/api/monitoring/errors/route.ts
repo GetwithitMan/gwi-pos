@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const runtime = 'nodejs'
@@ -36,7 +37,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
 
     // Filters
-    const locationId = searchParams.get('locationId')
+    const queryLocationId = searchParams.get('locationId')
     const severity = searchParams.get('severity')
     const errorType = searchParams.get('errorType')
     const status = searchParams.get('status')
@@ -44,6 +45,12 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const groupId = searchParams.get('groupId')
+
+    // Resolve locationId — query param → fallback to cached location
+    const locationId = queryLocationId || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
     // Pagination
     const limit = parseInt(searchParams.get('limit') || '50')
@@ -56,7 +63,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     // Build where clause
     const where: Prisma.ErrorLogWhereInput = {}
 
-    if (locationId) where.locationId = locationId
+    where.locationId = locationId
     if (severity) where.severity = severity
     if (errorType) where.errorType = errorType
     if (status) where.status = status

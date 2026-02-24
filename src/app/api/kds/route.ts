@@ -386,6 +386,36 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
           })
         }
       }
+
+      // BUG 20: Fire-and-forget audit trail for KDS actions
+      if (action === 'bump_order') {
+        void db.auditLog.create({
+          data: {
+            locationId,
+            employeeId: body.employeeId || null,
+            action: 'kds_bump',
+            entityType: 'order',
+            entityId: orderId,
+            details: { action, stationId: body.stationId }
+          }
+        }).catch(err => console.error('[AuditLog] KDS audit failed:', err))
+      } else {
+        const auditAction = action === 'complete' ? 'kds_complete'
+          : action === 'uncomplete' ? 'kds_uncomplete'
+          : 'kds_resend'
+        for (const iid of itemIds) {
+          void db.auditLog.create({
+            data: {
+              locationId,
+              employeeId: body.employeeId || null,
+              action: auditAction,
+              entityType: 'order_item',
+              entityId: iid,
+              details: { action, stationId: body.stationId }
+            }
+          }).catch(err => console.error('[AuditLog] KDS audit failed:', err))
+        }
+      }
     }
 
     return NextResponse.json({ data: {

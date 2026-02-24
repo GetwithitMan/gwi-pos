@@ -67,6 +67,14 @@ export const POST = withVenue(async function POST(
       })
     }
 
+    // EDGE-7: Reject orders stuck in pending_auth — card authorization is incomplete
+    if (order.tabStatus === 'pending_auth') {
+      return NextResponse.json({
+        error: 'Cannot close tab while card authorization is in progress. Please wait or retry opening the tab.',
+        tabStatus: 'pending_auth',
+      }, { status: 400 })
+    }
+
     // Concurrency check: if client sent a version, verify it matches
     if (version != null && order.version !== version) {
       return NextResponse.json({

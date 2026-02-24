@@ -7,6 +7,8 @@ import { KioskExitZone } from "@/components/KioskExitZone";
 import { SystemReloadListener } from "@/components/SystemReloadListener";
 import { LocationAlertListener } from "@/components/LocationAlertListener";
 import { IdleTimerProvider } from "@/components/IdleTimerProvider";
+import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
+import { OfflineDisconnectBanner } from "@/components/OfflineDisconnectBanner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,6 +23,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "GWI POS",
   description: "Point of Sale System",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({
@@ -40,6 +43,8 @@ export default function RootLayout({
         <SystemReloadListener />
         <LocationAlertListener />
         <IdleTimerProvider />
+        <ServiceWorkerRegistration />
+        <OfflineDisconnectBanner />
         <ToastContainer />
       </body>
     </html>

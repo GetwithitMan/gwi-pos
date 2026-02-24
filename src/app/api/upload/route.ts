@@ -4,6 +4,7 @@ import path from 'path'
 import crypto from 'crypto'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'menu-items')
@@ -16,11 +17,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Auth check — require menu.edit_items permission
     const employeeId = formData.get('employeeId') as string | null
-    const locationId = formData.get('locationId') as string | null
-    if (locationId) {
-      const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    const formLocationId = formData.get('locationId') as string | null
+
+    // Resolve locationId — form data → fallback to cached location
+    const locationId = formLocationId || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
     }
+
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const file = formData.get('file') as File | null
 

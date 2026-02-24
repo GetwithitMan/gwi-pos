@@ -84,6 +84,24 @@ export const POST = withVenue(async function POST(
     }
     const client = await requireDatacapClient(locationId)
 
+    // EDGE-7: Auto-recover stale pending_auth (stuck > 5 minutes)
+    if (order.tabStatus === 'pending_auth') {
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+      if (order.updatedAt < fiveMinAgo) {
+        await db.order.update({
+          where: { id: orderId },
+          data: { tabStatus: 'open', version: { increment: 1 } },
+        })
+        console.warn('[EDGE-7] Auto-recovered stale pending_auth', { orderId, staleAt: order.updatedAt.toISOString() })
+      } else {
+        // Still within 5-minute window — another terminal may be processing
+        return NextResponse.json({
+          error: 'Tab authorization is already in progress on another terminal',
+          tabStatus: 'pending_auth',
+        }, { status: 409 })
+      }
+    }
+
     // Step 1: Set tab status to pending_auth immediately
     await db.order.update({
       where: { id: orderId },
@@ -257,6 +275,7 @@ export const POST = withVenue(async function POST(
           preAuthAmount: preAuthAmount,
           preAuthLast4: finalCardLast4,
           preAuthCardBrand: finalCardType,
+          preAuthExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Pre-auths expire in ~24h
           preAuthRecordNo: recordNo,
           preAuthReaderId: resolvedReaderId,
           version: { increment: 1 },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List/search tickets
@@ -7,28 +8,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const eventId = searchParams.get('eventId')
-    const locationId = searchParams.get('locationId')
+    const queryLocationId = searchParams.get('locationId')
     const status = searchParams.get('status')
     const customerId = searchParams.get('customerId')
     const search = searchParams.get('search') // Search by name, email, ticket number
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    if (!eventId && !locationId) {
-      return NextResponse.json(
-        { error: 'Either eventId or locationId is required' },
-        { status: 400 }
-      )
+    // Resolve locationId — query param → fallback to cached location
+    const locationId = queryLocationId || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
     }
 
     const whereClause: Record<string, unknown> = {}
 
+    // Always filter by locationId for multi-tenant isolation
+    whereClause.locationId = locationId
+
     if (eventId) {
       whereClause.eventId = eventId
-    }
-
-    if (locationId) {
-      whereClause.locationId = locationId
     }
 
     if (status) {

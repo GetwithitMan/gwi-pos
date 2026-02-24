@@ -278,6 +278,34 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
           })
         }
       }
+
+      // BUG 20: Fire-and-forget audit trail for expo KDS actions
+      if (action === 'bump_order') {
+        void db.auditLog.create({
+          data: {
+            locationId,
+            employeeId: body.employeeId || null,
+            action: 'kds_bump',
+            entityType: 'order',
+            entityId: body.orderId || orderId,
+            details: { action, stationId: body.stationId }
+          }
+        }).catch(err => console.error('[AuditLog] Expo audit failed:', err))
+      } else {
+        const auditAction = action === 'serve' || status === 'served' ? 'kds_serve' : 'kds_status_update'
+        for (const iid of itemIds) {
+          void db.auditLog.create({
+            data: {
+              locationId,
+              employeeId: body.employeeId || null,
+              action: auditAction,
+              entityType: 'order_item',
+              entityId: iid,
+              details: { action, status, stationId: body.stationId }
+            }
+          }).catch(err => console.error('[AuditLog] Expo audit failed:', err))
+        }
+      }
     }
 
     return NextResponse.json({ data: { success: true } })

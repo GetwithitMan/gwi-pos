@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, getDbForVenue } from '@/lib/db'
 import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 
 // ─── Request Body Shape ───────────────────────────────────────────────────────
 
@@ -128,7 +129,19 @@ export async function POST(request: NextRequest) {
     })
 
     const tip = typeof body.tip === 'number' && body.tip >= 0 ? Math.round(body.tip * 100) / 100 : 0
-    const total = subtotal // Online orders: no tax computed server-side for now (location tax rules vary)
+
+    // ── 2b. Fetch location settings for tax rate ────────────────────────────────
+    const locationRec = await venueDb.location.findFirst({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const locSettings = locationRec?.settings as Record<string, unknown> | null
+
+    // Calculate tax using the same pattern as other routes (split, seating, sync)
+    const taxRate = getLocationTaxRate(locSettings as { tax?: { defaultRate?: number } })
+    const taxTotal = calculateTax(subtotal, taxRate)
+    const taxFromExclusive = taxTotal // Online orders use exclusive tax (added on top)
+    const total = subtotal + taxTotal
     const chargeAmount = total + tip // Total charged to card includes tip
 
     // ── 3. Find an employee to attach to the order ─────────────────────────────
@@ -174,11 +187,6 @@ export async function POST(request: NextRequest) {
 
     // ── 5. Compute business day ────────────────────────────────────────────────
 
-    const locationRec = await venueDb.location.findFirst({
-      where: { id: locationId },
-      select: { settings: true },
-    })
-    const locSettings = locationRec?.settings as Record<string, unknown> | null
     const dayStartTime =
       (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const businessDayStart = getCurrentBusinessDay(dayStartTime).start
@@ -202,9 +210,9 @@ export async function POST(request: NextRequest) {
         status: 'open',
         subtotal,
         discountTotal: 0,
-        taxTotal: 0,
+        taxTotal,
         taxFromInclusive: 0,
-        taxFromExclusive: 0,
+        taxFromExclusive,
         tipTotal: tip,
         total: chargeAmount,
         commissionTotal: 0,
@@ -317,6 +325,7 @@ export async function POST(request: NextRequest) {
         orderId: order.id,
         orderNumber: order.orderNumber,
         subtotal,
+        tax: taxTotal,
         tip,
         total: chargeAmount,
         prepTime: prepTimeMinutes,

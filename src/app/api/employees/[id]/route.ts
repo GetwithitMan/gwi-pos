@@ -4,6 +4,7 @@ import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get employee details
@@ -123,8 +124,14 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const body = await request.json()
 
+    // Resolve locationId — body → fallback to cached location
+    const locationId = body.locationId || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
+
     // Auth check — require staff.edit_profile permission
-    const auth = await requirePermission(body.requestingEmployeeId, body.locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
+    const auth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const {
