@@ -1685,7 +1685,8 @@ model Order {
   @@index([locationId, paidAt])
   @@index([locationId, createdAt, status])
   @@index([locationId, businessDayDate])
-  @@unique([locationId, orderNumber])
+  // TODO: Re-add @@unique([locationId, orderNumber]) after cleaning duplicate orderNumbers in production DB
+  // @@unique([locationId, orderNumber])
 }
 
 model OrderItem {
