@@ -539,6 +539,14 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-23 — Wave 4: Manager Control & Owner Visibility, Skill 425)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 425 | Wave 4: Manager Control & Owner Visibility | DONE | Approvals / Dashboard / Alerts / Audit / Reports | 424 | 9 items (W4-4 already done): configurable void/discount approval thresholds with 403 enforcement, per-role discount limits (defaultMaxDiscountPercent), item deletion audit logging, Dashboard v2 with per-employee performance metrics and risk highlighting, real-time alert system (checkAndDispatchAlerts + socket + AuditLog), audit log browser (538 lines, filters, pagination, CSV export), CSV export on daily/labor/payroll/product-mix reports, flash report with day-over-day comparison, speed-of-service API + report page, food cost variance UI with color-coded table. 16 files changed, 2,574 insertions, 6 new files. |
+
+---
+
 ## Recently Completed (2026-02-23 — Wave 3: Staff UX & Transfers, Skill 424)
 
 | Skill | Name | Status | Domain | Dependencies | Notes |

@@ -1,5 +1,12 @@
 # Payments Domain Changelog
 
+## Wave 4: Manager Control & Approvals (2026-02-23)
+- **W4-1**: Configurable void/discount approval thresholds — location settings + 403 enforcement in discount and comp-void routes
+- **W4-2**: Per-role discount limits — `defaultMaxDiscountPercent` caps non-managers, manager override logged to AuditLog
+- **W4-3**: Item deletion auditing — `item_removed_before_send` logged to AuditLog before item removal
+
+---
+
 ## Wave 3: Staff UX & Transfers (2026-02-23)
 - **W3-1**: Card decline preserves tab — verified flow, increased close-tab capture threshold
 - **W3-3**: Increment failure toast fires outside modal via socket listener

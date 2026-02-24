@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-02-23 — Wave 4: Manager Control & Owner Visibility
+
+**Session:** Wave 4 implementation — configurable approvals, dashboard v2, alerts, audit browser, report exports, speed-of-service, variance UI
+
+### Commits
+- `8a735d0` — Wave 4: Manager Control & Owner Visibility — 9 items across approvals, dashboard, alerts, audit, and reporting (16 files, 2,574 insertions)
+
+### Features Delivered
+- **Configurable approvals** — Location-level void/discount approval thresholds with 403 enforcement
+- **Per-role discount limits** — Non-managers capped by configurable max percentage
+- **Item deletion auditing** — Pre-send item removals logged to AuditLog
+- **Dashboard v2** — Per-employee performance metrics with risk highlighting (void %, discount frequency)
+- **Real-time alert system** — Threshold-based alerts dispatched via socket, displayed on dashboard, persisted to AuditLog
+- **Audit log browser** — Full admin page with filters, pagination, expandable details, CSV export
+- **CSV export** — Added to daily, labor, payroll, product-mix reports
+- **Flash report** — Yesterday's key metrics with day-over-day comparison
+- **Speed-of-service** — API + report page with avg times by employee and day
+- **Food cost variance** — Color-coded variance table with summary cards and CSV export
+
+### Bug Fixes
+| ID | Fix |
+|----|-----|
+| W4-4 | Already implemented — login/logout/login_failed auditing confirmed present |
+
+---
+
 ## 2026-02-23 — Wave 3: Frontline Usability & Transfers (Skill 424)
 
 **Session**: Agent team deployment → 14 frontline UX fixes + new features

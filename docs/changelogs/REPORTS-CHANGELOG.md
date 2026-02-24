@@ -1,5 +1,11 @@
-# REPORTS Domain Changelog
+# Reports Domain Changelog
 
-## Sessions
+## Wave 4: Manager Reporting (2026-02-23)
+- **W4-8**: CSV export added to daily, labor, payroll, product-mix report pages
+- **W4-8**: Flash report page — yesterday's key metrics with day-over-day comparison at `/admin/reports/flash`
+- **W4-9**: Speed-of-service API + report page — avg order-to-send, send-to-complete, seat-to-pay times
+- **W4-10**: Food cost/variance UI — color-coded variance table at `/admin/reports/variance`
 
-_No sessions logged yet. This changelog was created during the 2026-02-09 codebase audit._
+---
+
+_Changelog created 2026-02-23._
