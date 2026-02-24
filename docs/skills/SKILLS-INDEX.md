@@ -1335,6 +1335,14 @@ These skills emerged during development and are now part of the system:
 | 428 | WAVE7-ONLINE-COMBOS-TIPS-CRASH | DONE | Online / Combos / Tips / Payments / Error Handling | 427 | 40 bugs across 5 domains (17 task groups): online ordering safety (server-side pricing, deletedAt, rate limiter, soft-cancel), combo/rental correctness (inventory expansion, minimumCharge, pourMultiplier), tip ledger-only payroll formula (fixes double-count), payment safety (atomic walkout guard, refund caps, MGR_REFUNDS), crash guards (instrumentation.ts, 4 error.tsx, socket try/catch). 38 files, +3257/-418. |
 | 429 | PILOT-READINESS-UX-FIXES | DONE | Orders / UX / Planning | 428 | 3 UX bug fixes: bar tab cancel (clear savedOrderId on decline), duplicate adds (isTempId filter + lastMutationRef + modifier cache), seats disappearing (baseSeatCount in select). Pilot readiness checklist (~200 items). API route audit (146+ verified). |
 
+### Android Register — Same System as Web POS (2026-02-24)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 430 | ANDROID-SERVER-FIRST-DATA-LAYER | DONE | Android / Orders / Sync | — | OrderRepository rewritten: optimistic Room → same POS API endpoints → server response back to Room → outbox fallback. 12 new Retrofit endpoints matching web POS (createOrder, addItems, sendToKitchen, payOrder, open/closeTab, compVoid, discount, voidPayment). Full OrderDtos with Moshi @JsonClass. OutboxWorker routes per-action-type to correct POS endpoint (replaces bulk sync/outbox). Commits: 0a92356 |
+| 431 | ANDROID-SOCKET-EVENT-PARITY | DONE | Android / Real-Time | 430 | SocketManager subscribes to 11 POS events via SharedFlow channels: order:created, orders:list-changed, orders:totals-update, payment:processed, floor-plan:updated, tab:updated, tab:closed, kds:item-status, kds:order-bumped, entertainment events. Joins location room on connect. OrderViewModel reacts to socket events for real-time sync. Connection state tracking with auto-refresh on reconnect. Commits: 0a92356 |
+| 432 | ANDROID-POS-UI-FULL-REBUILD | DONE | Android / UI | 430, 431 | Full UI rebuild matching web POS: POS dark theme (Color.kt/Type.kt/Theme.kt), PosHeader (44dp, tabs, badge), CategoryBar (food/bar split), MenuItemCard (glassmorphic), MenuGrid (adaptive 160dp), OrderPanel (360dp), TableFloorPlan + TableCard (status glow), ModifierSheet (grouped chips, validation), OpenOrdersPanel (320dp server orders), SearchOverlay, SeatSelector, OrderItemControls (Hold/Note/Void/Resend), BarModePanel (pour sizes), PaymentSheet (card/cash/tip), DiscountSheet, NewTabDialog. 17 new components, OrderScreen composition shell. Commits: 01e1ea0, 0ed7cee |
+
 ---
 
 ## Next Session Priority (2026-02-11+)

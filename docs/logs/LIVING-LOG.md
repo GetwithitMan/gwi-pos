@@ -5,6 +5,76 @@
 
 ---
 
+## 2026-02-24 — Android Register Rebuild: Same System as Web POS
+
+**Session:** Rebuilt the Android register data layer and UI to use the exact same POS API endpoints, socket events, and visual layout as the web POS. Previously Android created orders in Room only (disconnected from NUC). Now it calls the same REST routes and subscribes to the same Socket.io events. UI overhauled from flat split layout to full POS-matching composition with header, category bar, table floor plan, modifiers, seats, bar mode, payment, and discounts.
+
+### Commits
+
+**GWI Android Register** (`gwi-android-register`):
+- `0a92356` — Phase 1-2: Server-first data layer + POS-matching UI shell (+2,358/-577 lines, 22 files)
+- `01e1ea0` — Phase 3-4: Interactive features, bar mode, payment, discounts (+1,767 lines, 15 files, 11 new components)
+- `0ed7cee` — Fix: OpenOrdersPanel server ID for active highlight, auto-close on select
+
+### Deployments
+- Android: pushed to main at https://github.com/GetwithitMan/gwi-android-register
+
+### Features Delivered
+
+**Phase 1 — Server-First Data Layer (Skills 430-431):**
+- OrderRepository rewritten: optimistic Room write → call same POS API endpoint → update from server response → fallback to outbox on error
+- GwiApiService: 12 new Retrofit endpoints matching web POS routes (createOrder, addItems, sendToKitchen, payOrder, open/closeTab, compVoid, discount, voidPayment, getOpenOrders, getOrder, updateOrder)
+- OrderDtos: full request/response DTOs matching POS API contract (Moshi @JsonClass)
+- OutboxWorker rewritten: routes each action type (CREATE_ORDER, ADD_ITEMS, SEND_TO_KITCHEN, etc.) to correct POS endpoint instead of bulk sync/outbox
+- SocketManager: subscribes to 11 POS events (order:created, orders:list-changed, orders:totals-update, payment:processed, floor-plan:updated, tab:updated, tab:closed, kds:item-status, kds:order-bumped, entertainment events) with SharedFlow channels
+- Joins location room on connect (same as web POS)
+- OrderViewModel: server-first open orders fetch, socket event reactivity, category splitting (food vs bar), connection state tracking with auto-refresh on reconnect
+
+**Phase 2 — POS-Matching UI Shell (Skill 432):**
+- Color.kt: PosColors object — all POS surface/accent/text/border/glass/status colors
+- Type.kt: PosTypography object — 15 named text styles
+- Theme.kt: dark-only POS color scheme (removed dynamic/light themes)
+- PosHeader: 44dp header with employee name, TABLES/TAKEOUT/DELIVERY/BAR tab pills, open orders badge, connection indicator
+- CategoryBar: two-row LazyRow — food (orange) / bar (blue) split by categoryType + "New Tab" button
+- MenuItemCard: glassmorphic card (110dp min, 14dp corners, semi-transparent bg + border, 86'd overlay, ripple)
+- MenuGrid: LazyVerticalGrid adaptive 160dp
+- OrderPanel: 360dp fixed-width with item list, modifiers, totals, Send/Pay/Print buttons
+- OrderScreen: composition shell wiring all components
+
+**Phase 3 — Interactive Features (Skill 432):**
+- TableFloorPlan + TableCard: grid with status-colored glow borders (green/indigo/orange/amber), tap to open/create order
+- ModifierSheet: ModalBottomSheet with grouped chips, min/max validation, required/optional badges, FlowRow
+- OpenOrdersPanel: sliding 320dp panel showing all server orders with order#, tab/table, type, items, age, pre-auth
+- SearchOverlay: full-screen search with real-time MenuDao query
+- SeatSelector: numbered seat buttons above menu, items assigned to selected seat
+- OrderItemControls: long-press expandable action row with Hold/Note/Course/Void/Resend chips
+
+**Phase 4 — Bar Mode, Payment, Discounts (Skill 432):**
+- BarModePanel: pour size selector (Shot/Double/Tall/Short) with multipliers
+- NewTabDialog: tab name + optional pre-auth checkbox
+- PaymentSheet: card/cash toggle, tip with quick % buttons (15/18/20/25), cash tendered with change calculation
+- DiscountSheet: percentage/dollar toggle, quick presets, live discount preview
+
+### Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Data layer | Server-first, Room as cache | NUC is single source of truth — Room is resilience layer only |
+| API surface | Same endpoints as web POS | Every order mutation calls same route web uses |
+| Socket model | Same rooms/events as web POS | joins location:{id}, listens to all order/payment/floor events |
+| Outbox routing | Per-action-type to correct endpoint | Replaces bulk sync/outbox with CREATE_ORDER → POST /api/orders, etc. |
+| UI composition | Components take primitives + callbacks | Enables parallel agent work, no ViewModel coupling |
+| Theme | Always dark, POS colors | Matches web POS exactly, removed Material You dynamic |
+
+### Known Issues / Next Steps
+- Glassmorphism fallback: BlurEffect API 31+, semi-transparent on 26-30
+- WorkManager 15-min min interval (need foreground service for sub-minute outbox flush)
+- USB/BT payment reader bridges are stubs
+- CFD dual-screen (Presentation API) not implemented
+- Room migration needed for any LocalOrderItemEntity status fields
+
+---
+
 ## 2026-02-24 — Native Android Register: Full 4-Phase Implementation
 
 **Session:** Built the complete native Android register system across 3 repos (POS, Mission Control, Android). 4 phases: backend API routes, Mission Control dashboard, full Kotlin Android app, integration testing. Managed as agent team manager across 4 sequential teams (~15 agents total).
