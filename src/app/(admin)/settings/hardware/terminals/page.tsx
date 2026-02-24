@@ -246,6 +246,7 @@ export default function TerminalsPage() {
           terminal={editingTerminal}
           printers={printers}
           roles={roles}
+          locationId={locationId!}
           onClose={() => {
             setShowAddModal(false)
             setEditingTerminal(null)
@@ -469,12 +470,14 @@ function TerminalModal({
   terminal,
   printers,
   roles,
+  locationId,
   onClose,
   onSave,
 }: {
   terminal: Terminal | null
   printers: Printer[]
   roles: Role[]
+  locationId: string
   onClose: () => void
   onSave: () => void
 }) {
@@ -516,6 +519,7 @@ function TerminalModal({
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          locationId,
           name: name.trim(),
           category,
           staticIp: staticIp.trim() || null,
