@@ -1,5 +1,13 @@
 # KDS Domain Changelog
 
+## Wave 2: Correctness Under Load (2026-02-23)
+- **K1**: Paid orders auto-cleanup — 2-hour window filter on both KDS and expo routes
+- **K2**: Expo KDS voided item filtering — added `status: { not: 'voided' }` and `deletedAt: null`
+- **K3**: Entertainment session lazy auto-expiry on KDS poll
+- **O2**: Print resend retry — `dispatchPrintWithRetry` wired into KDS resend
+
+---
+
 ## 2026-02-23 — Wave 1 Go-Live Safety (Skill 422)
 
 ### K1 (HIGH): Voided Items Stay on KDS

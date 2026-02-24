@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-02-23 — Wave 2: Correctness Under Load (Skill 423)
+
+**Session**: Forensic audit → agent team deployment → 14 correctness fixes
+
+**Commits (gwi-pos)**:
+- `[TBD]` — Wave 2: Correctness Under Load — 14 fixes across splits, KDS, store, offline queues, and reports
+
+**Features Delivered**:
+- Loyalty double-credit prevention (transaction-scoped + server idempotency)
+- Split payment rounding precision (`Math.round` pipeline)
+- Inventory deduction audit trail for failed deductions
+- KDS paid order auto-cleanup (2-hour window)
+- Expo KDS voided item filtering
+- Entertainment session lazy auto-expiry
+- Tax rate Zustand reactivity (module-level → store state)
+- Single `set()` pattern for quantity updates
+- Print retry utility with audit logging
+- localStorage persistence failure toast warnings
+- Product Mix waste tracking (voided/comped items)
+- Reopen route total recalculation
+
+**Bug Fixes**:
+
+| ID | Area | Fix |
+|----|------|-----|
+| W2-P1 | Splits | Loyalty update moved inside transaction + server-side idempotency key |
+| W2-P2 | Splits | `Math.round(x * 100) / 100` on all Decimal→Number conversions |
+| W2-P3/O1 | Splits | Inventory deduction failures now create audit log entries |
+| W2-P4 | Splits | Split ticket subtotal double-discount investigated and fixed |
+| W2-K1 | KDS | Paid orders limited to 2-hour window via OR clause |
+| W2-K2 | KDS | Expo KDS filters voided and deleted items |
+| W2-K3 | KDS | Entertainment sessions auto-expire via lazy check |
+| W2-S1 | Store | Tax rate moved into Zustand store state for reactivity |
+| W2-S3 | Store | `updateQuantity` inlined to single `set()` call |
+| W2-O2 | Offline | Print retry utility (1 retry after 3s + audit log) |
+| W2-O3 | Offline | localStorage persistence failures show toast warnings |
+| W2-R1 | Reports | Product Mix includes waste section for voided/comped items |
+| W2-R2 | Reopen | Reopen route recalculates totals from active items |
+
+**Known Issues**: None from this wave.
+
+---
+
 ## 2026-02-23 — Wave 1 Go-Live Safety (Skill 422)
 
 **Version:** `1.0.0-beta`

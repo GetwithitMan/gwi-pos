@@ -539,6 +539,14 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-23 — Wave 2: Correctness Under Load, Skill 423)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 423 | Wave 2: Correctness Under Load | DONE | Splits / KDS / Store / Offline / Reports | 422 | 14 fixes for splits/loyalty, KDS clutter, store hardening, offline queues, and reporting. Loyalty idempotency (transaction-scoped + server UUID), split rounding (Math.round pipeline), inventory deduction audit trail, KDS 2-hour paid order cleanup, expo voided item filter, entertainment lazy expiry, tax rate Zustand reactivity, single set() pattern, print retry utility, localStorage toast warnings, Product Mix waste tracking, reopen total recalculation. 8 files changed, 1 new file. |
+
+---
+
 ## Recently Completed (2026-02-23 — Wave 1 Go-Live Safety, Skill 422)
 
 | Skill | Name | Status | Domain | Dependencies | Notes |

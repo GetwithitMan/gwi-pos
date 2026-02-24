@@ -1,5 +1,13 @@
 # Payments Domain Changelog
 
+## Wave 2: Correctness Under Load (2026-02-23)
+- **P1**: Loyalty update moved inside `db.$transaction` + server-side idempotency key generation
+- **P2**: Pay-all-splits rounding fix — `Math.round(x * 100) / 100` on all totals
+- **P3/O1**: Inventory deduction failures logged to AuditLog for manager visibility
+- **P4**: Split ticket subtotal double-discount fix
+
+---
+
 ## 2026-02-23 — Wave 1 Go-Live Safety (Skill 422)
 
 ### P1 (CRITICAL): Void Doesn't Reverse Card Charge
