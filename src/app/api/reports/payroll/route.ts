@@ -128,6 +128,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       shifts,
       tipSharesGivenEntries,
       tipSharesReceivedEntries,
+      grossTipLedgerEntries,
       bankedPendingEntries,
       bankedCollectedEntries,
       allPayoutEntries,
@@ -142,7 +143,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         orderBy: { clockIn: 'asc' },
       }),
-      // 2. Closed shifts (tips data)
+      // 2. Closed shifts (shift metadata only — tips come from ledger)
       db.shift.findMany({
         where: {
           locationId,
@@ -174,7 +175,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ...(employeeId ? { employeeId } : {}),
         },
       }),
-      // 4a. Banked tips PENDING (all time)
+      // 4. Gross tips from ledger — DIRECT_TIP + TIP_GROUP credits in period
+      // This replaces Shift.tipsDeclared as the canonical source of truth (BUG #416 fix)
+      db.tipLedgerEntry.findMany({
+        where: {
+          locationId,
+          sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
+          type: 'CREDIT',
+          deletedAt: null,
+          createdAt: { gte: periodStart, lte: periodEnd },
+          ...(employeeId ? { employeeId } : {}),
+        },
+      }),
+      // 5a. Banked tips PENDING (all time — for current balance)
       db.tipLedgerEntry.findMany({
         where: {
           locationId,
@@ -184,7 +197,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ...(employeeId ? { employeeId } : {}),
         },
       }),
-      // 4b. Banked tips COLLECTED (this period)
+      // 5b. Banked tips COLLECTED (this period — informational)
       db.tipLedgerEntry.findMany({
         where: {
           locationId,
@@ -195,7 +208,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ...(employeeId ? { employeeId } : {}),
         },
       }),
-      // 4c. All-time payouts (for net pending calculation)
+      // 5c. All-time payouts (for net pending calculation)
       db.tipLedgerEntry.findMany({
         where: {
           locationId,
@@ -205,7 +218,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ...(employeeId ? { employeeId } : {}),
         },
       }),
-      // 5. Commission from orders (businessDayDate OR-fallback)
+      // 6. Commission from orders (businessDayDate OR-fallback)
       db.order.findMany({
         where: {
           locationId,
@@ -244,22 +257,24 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     })
 
-    // Process shifts
+    // Process shifts (metadata only — tip values come from ledger)
     shifts.forEach(shift => {
       if (!employeePayroll[shift.employeeId]) return
-
-      const tips = Number(shift.tipsDeclared || 0)
-      const commission = 0 // Calculated separately from orders
-
-      employeePayroll[shift.employeeId].declaredTips += tips
 
       employeePayroll[shift.employeeId].shifts.push({
         id: shift.id,
         date: shift.startedAt.toISOString().split('T')[0],
         hours: 0, // Calculated from time entries
-        tips,
-        commission,
+        tips: 0, // Now sourced from ledger below
+        commission: 0, // Calculated separately from orders
       })
+    })
+
+    // Ledger-only: grossTips from DIRECT_TIP + TIP_GROUP credits in period (BUG #416 fix)
+    // Replaces Shift.tipsDeclared to eliminate double-counting
+    grossTipLedgerEntries.forEach(entry => {
+      if (!employeePayroll[entry.employeeId]) return
+      employeePayroll[entry.employeeId].declaredTips += Math.abs(entry.amountCents) / 100
     })
 
     // Process tip shares
@@ -312,18 +327,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       emp.overtimePay = Math.round(emp.overtimeHours * emp.hourlyRate * 1.5 * 100) / 100
       emp.totalWages = Math.round((emp.regularPay + emp.overtimePay) * 100) / 100
 
-      // Net tips = declared (from shifts) - tip shares given + tip shares received + banked payouts
-      // B15 investigation: No overlap between declaredTips and bankedTipsCollected confirmed.
-      // - declaredTips: manual cash/card tips declared at shift close (Shift.tipsDeclared)
-      // - bankedTipsCollected: PAYOUT_CASH/PAYOUT_PAYROLL debits from tip ledger (separate transactions)
+      // Net tips — ledger-only formula (BUG #416/#423 fix)
+      // - declaredTips: now sourced from DIRECT_TIP + TIP_GROUP ledger credits (not Shift.tipsDeclared)
       // - tipSharesGiven: ROLE_TIPOUT debits (amount given to other roles)
       // - tipSharesReceived: ROLE_TIPOUT credits (amount received from other roles)
-      // These four sources are distinct: shift declarations, ledger payouts, and ledger tip-outs.
+      // bankedTipsCollected is informational only — NOT included in netTips to prevent double-count
       emp.netTips = Math.round((
         emp.declaredTips -
         emp.tipSharesGiven +
-        emp.tipSharesReceived +
-        emp.bankedTipsCollected
+        emp.tipSharesReceived
       ) * 100) / 100
 
       // Gross pay

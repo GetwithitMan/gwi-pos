@@ -33,9 +33,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Walkout retry not found or already resolved' }, { status: 404 })
     }
 
-    // Get the order card to retry against
+    // Get the order card to retry against (include card info for Payment record)
     const orderCard = await db.orderCard.findFirst({
       where: { id: retry.orderCardId, deletedAt: null },
+      select: { id: true, readerId: true, recordNo: true, cardType: true, cardLast4: true },
     })
 
     if (!orderCard) {
@@ -66,23 +67,61 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const now = new Date()
 
       if (approved) {
-        // Update retry as collected
+        // BUG #459 FIX: Atomic guard — use updateMany with status filter to prevent double-charge.
+        // If another request already collected this retry, the updateMany matches 0 rows.
+        const { count: updatedCount } = await db.walkoutRetry.updateMany({
+          where: { id: walkoutRetryId, status: 'pending' },
+          data: {
+            status: 'collected',
+            collectedAt: now,
+            lastRetryAt: now,
+            retryCount: retry.retryCount + 1,
+          },
+        })
+
+        if (updatedCount === 0) {
+          // Another request already collected — this is a duplicate
+          return NextResponse.json({
+            data: { success: true, duplicate: true, status: 'collected', amount: Number(retry.amount) },
+          })
+        }
+
+        // BUG #459 FIX: Update OrderCard, Order status, and create Payment record
+        const captureAmount = Number(retry.amount)
         await db.$transaction([
-          db.walkoutRetry.update({
-            where: { id: walkoutRetryId },
-            data: {
-              status: 'collected',
-              collectedAt: now,
-              lastRetryAt: now,
-              retryCount: retry.retryCount + 1,
-            },
-          }),
           db.orderCard.update({
             where: { id: orderCard.id },
             data: {
               status: 'captured',
-              capturedAmount: Number(retry.amount),
+              capturedAmount: captureAmount,
               capturedAt: now,
+            },
+          }),
+          // Update order status to 'paid' so it no longer appears as open/walkout
+          db.order.update({
+            where: { id: retry.orderId },
+            data: {
+              status: 'paid',
+              tabStatus: 'closed',
+              paidAt: now,
+              closedAt: now,
+            },
+          }),
+          // Create Payment record for reconciliation and reports
+          db.payment.create({
+            data: {
+              locationId,
+              orderId: retry.orderId,
+              employeeId: employeeId || null,
+              amount: captureAmount,
+              tipAmount: 0,
+              totalAmount: captureAmount,
+              paymentMethod: orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+              cardBrand: orderCard.cardType || 'unknown',
+              cardLast4: orderCard.cardLast4,
+              authCode: response.authCode || null,
+              datacapRecordNo: orderCard.recordNo,
+              status: 'completed',
             },
           }),
         ])
@@ -91,7 +130,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           data: {
             success: true,
             status: 'collected',
-            amount: Number(retry.amount),
+            amount: captureAmount,
             authCode: response.authCode,
           },
         })

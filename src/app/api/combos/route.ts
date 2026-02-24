@@ -17,6 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         locationId,
         itemType: 'combo',
+        deletedAt: null,
       },
       include: {
         category: {
@@ -30,18 +31,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const comboTemplates = await prisma.comboTemplate.findMany({
       where: {
         menuItemId: { in: combos.map(c => c.id) },
+        deletedAt: null,
       },
       include: {
         components: {
+          where: { deletedAt: null },
           include: {
             menuItem: {
               select: {
                 id: true,
                 name: true,
                 price: true,
+                isAvailable: true,
+                isActive: true,
               },
             },
             options: {
+              where: { deletedAt: null },
               orderBy: { sortOrder: 'asc' },
             },
           },
@@ -93,6 +99,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             id: c.menuItem.id,
             name: c.menuItem.name,
             price: Number(c.menuItem.price),
+            isAvailable: c.menuItem.isAvailable,
+            isActive: c.menuItem.isActive,
             modifierGroups: (itemModifierMap[c.menuItem.id] || []).map(mg => ({
               modifierGroup: {
                 id: mg.id,

@@ -10,13 +10,15 @@
  *     header set by middleware.ts (which only runs on authenticated routes).
  *     Instead we accept locationId in the POST body and use the db proxy
  *     which routes to the correct database via masterClient.
- *   - employeeId is required by the Order schema. We look for an employee
- *     whose displayName starts with 'Online' or 'System', falling back to
- *     the first active employee. This is a soft constraint: online orders
- *     must be linked to a real employee record in this venue's DB.
+ *   - employeeId is required by the Order schema. We find or create a
+ *     dedicated "Online Order" employee — never fall back to random staff.
  *   - We compute the total server-side from fresh DB prices — never trust
- *     client-sent prices.
- *   - On payment decline the order is hard-deleted (it was never seen by staff).
+ *     client-sent prices (items or modifiers).
+ *   - Modifier ownership is validated: each modifier must belong to a
+ *     ModifierGroup owned by the ordered MenuItem.
+ *   - On payment decline the order is soft-deleted (not hard-deleted).
+ *   - Rate limited per IP+location to prevent abuse.
+ *   - Online ordering must be enabled in location settings.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -24,6 +26,7 @@ import { db, getDbForVenue } from '@/lib/db'
 import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 
 // ─── Request Body Shape ───────────────────────────────────────────────────────
 
@@ -55,6 +58,12 @@ interface CheckoutBody {
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  // Extract client IP for rate limiting
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    'unknown'
+
   let body: CheckoutBody
 
   try {
@@ -67,13 +76,26 @@ export async function POST(request: NextRequest) {
 
   const { locationId, slug, token, items, customerName, customerEmail } = body
 
+  if (!locationId) {
+    return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+  }
+
+  // ── 1a. Rate limit (BUG #388) ─────────────────────────────────────────────
+
+  const rateCheck = checkOnlineRateLimit(ip, locationId, 'checkout')
+  if (!rateCheck.allowed) {
+    const resp = NextResponse.json(
+      { error: 'Too many requests. Please try again shortly.' },
+      { status: 429 }
+    )
+    resp.headers.set('Retry-After', String(rateCheck.retryAfterSeconds ?? 60))
+    return resp
+  }
+
   // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
   // Falls back to db proxy (NUC local mode).
   const venueDb = slug ? getDbForVenue(slug) : db
 
-  if (!locationId) {
-    return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
-  }
   if (!token) {
     return NextResponse.json({ error: 'Payment token is required' }, { status: 400 })
   }
@@ -87,8 +109,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Customer email is required' }, { status: 400 })
   }
 
+  // ── 1b. Validate item quantities (BUG #391) ──────────────────────────────
+
+  for (const item of items) {
+    if (!Number.isInteger(item.quantity) || item.quantity < 1) {
+      return NextResponse.json(
+        { error: 'Each item quantity must be a positive integer' },
+        { status: 400 }
+      )
+    }
+  }
+
   try {
-    // ── 2. Fetch menu items server-side to compute authoritative total ─────────
+    // ── 1c. Check online ordering is enabled (BUG #394) ─────────────────────
+
+    const locationRec = await venueDb.location.findFirst({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const locSettings = locationRec?.settings as Record<string, unknown> | null
+    const onlineSettings = locSettings?.onlineOrdering as Record<string, unknown> | null
+
+    if (!onlineSettings?.enabled) {
+      return NextResponse.json(
+        { error: 'Online ordering is not currently available' },
+        { status: 503 }
+      )
+    }
+
+    // ── 2. Fetch menu items server-side (BUG #386: deletedAt filter) ─────────
 
     const menuItemIds = items.map(i => i.menuItemId)
     const menuItems = await venueDb.menuItem.findMany({
@@ -97,11 +146,13 @@ export async function POST(request: NextRequest) {
         locationId,
         isActive: true,
         showOnline: true,
+        deletedAt: null,
       },
       select: {
         id: true,
         name: true,
         price: true,
+        onlinePrice: true,
       },
     })
 
@@ -117,12 +168,82 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Compute total from DB prices (never trust client)
+    // ── 2b. Fetch and validate modifiers from DB (BUG #383, #390) ────────────
+
+    const allModifierIds = items
+      .flatMap(item => item.modifiers.map(m => m.modifierId))
+      .filter(Boolean)
+
+    const modifierMap = new Map<
+      string,
+      { id: string; name: string; price: unknown; modifierGroup: { menuItemId: string | null } }
+    >()
+
+    if (allModifierIds.length > 0) {
+      const dbModifiers = await venueDb.modifier.findMany({
+        where: {
+          id: { in: allModifierIds },
+          locationId,
+          isActive: true,
+          showOnline: true,
+          deletedAt: null,
+          modifierGroup: {
+            deletedAt: null,
+            showOnline: true,
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          modifierGroup: {
+            select: { menuItemId: true },
+          },
+        },
+      })
+      for (const m of dbModifiers) {
+        modifierMap.set(m.id, m)
+      }
+    }
+
+    // Validate each modifier exists in DB and belongs to the correct menu item
+    for (const item of items) {
+      for (const mod of item.modifiers) {
+        if (!mod.modifierId) {
+          return NextResponse.json(
+            { error: 'Each modifier must include a valid modifierId' },
+            { status: 400 }
+          )
+        }
+        const dbMod = modifierMap.get(mod.modifierId)
+        if (!dbMod) {
+          return NextResponse.json(
+            { error: `Modifier ${mod.modifierId} is not available for online ordering` },
+            { status: 422 }
+          )
+        }
+        // BUG #390: Validate modifier belongs to this menu item's modifier group
+        if (dbMod.modifierGroup.menuItemId !== item.menuItemId) {
+          return NextResponse.json(
+            { error: `Modifier ${mod.modifierId} does not belong to the selected item` },
+            { status: 422 }
+          )
+        }
+      }
+    }
+
+    // ── 2c. Compute total from DB prices (never trust client) ────────────────
+
     let subtotal = 0
     const lineItems = items.map(item => {
       const mi = menuItemMap.get(item.menuItemId)!
-      const basePrice = Number(mi.price)
-      const modsTotal = item.modifiers.reduce((sum, mod) => sum + (mod.price || 0), 0)
+      // BUG #385: Use onlinePrice when set, otherwise fall back to base price
+      const basePrice = mi.onlinePrice != null ? Number(mi.onlinePrice) : Number(mi.price)
+      // BUG #383: Use DB modifier prices, not client-supplied
+      const modsTotal = item.modifiers.reduce((sum, mod) => {
+        const dbMod = modifierMap.get(mod.modifierId)
+        return sum + (dbMod ? Number(dbMod.price) : 0)
+      }, 0)
       const lineTotal = (basePrice + modsTotal) * item.quantity
       subtotal += lineTotal
       return { item, mi, basePrice, modsTotal, lineTotal }
@@ -130,46 +251,78 @@ export async function POST(request: NextRequest) {
 
     const tip = typeof body.tip === 'number' && body.tip >= 0 ? Math.round(body.tip * 100) / 100 : 0
 
-    // ── 2b. Fetch location settings for tax rate ────────────────────────────────
-    const locationRec = await venueDb.location.findFirst({
-      where: { id: locationId },
-      select: { settings: true },
-    })
-    const locSettings = locationRec?.settings as Record<string, unknown> | null
+    // ── 2d. Fetch location settings for tax rate ─────────────────────────────
 
-    // Calculate tax using the same pattern as other routes (split, seating, sync)
     const taxRate = getLocationTaxRate(locSettings as { tax?: { defaultRate?: number } })
     const taxTotal = calculateTax(subtotal, taxRate)
     const taxFromExclusive = taxTotal // Online orders use exclusive tax (added on top)
     const total = subtotal + taxTotal
     const chargeAmount = total + tip // Total charged to card includes tip
 
-    // ── 3. Find an employee to attach to the order ─────────────────────────────
-    // Order.employeeId is required. Find a system/online employee, or fall
-    // back to the first active employee at this location.
+    // ── 3. Find or create a dedicated online employee (BUG #398) ─────────────
 
-    const systemEmployee = await venueDb.employee.findFirst({
+    let systemEmployee = await venueDb.employee.findFirst({
       where: {
         locationId,
         isActive: true,
+        deletedAt: null,
+        OR: [
+          { displayName: 'Online Order' },
+          { firstName: 'Online' },
+          { firstName: 'System' },
+        ],
       },
-      orderBy: [
-        // Prefer employees named 'Online' or 'System'
-        { firstName: 'asc' },
-      ],
-      select: { id: true, firstName: true, displayName: true },
+      select: { id: true },
     })
 
     if (!systemEmployee) {
-      return NextResponse.json(
-        { error: 'This location is not configured for online ordering yet' },
-        { status: 503 }
-      )
+      // Create a dedicated system employee for online orders
+      const role = await venueDb.role.findFirst({
+        where: { locationId },
+        select: { id: true },
+      })
+      if (!role) {
+        return NextResponse.json(
+          { error: 'This location is not configured for online ordering yet' },
+          { status: 503 }
+        )
+      }
+      systemEmployee = await venueDb.employee.create({
+        data: {
+          locationId,
+          roleId: role.id,
+          firstName: 'Online',
+          lastName: 'Order',
+          displayName: 'Online Order',
+          pin: 'SYSTEM-NO-LOGIN',
+          isActive: true,
+        },
+        select: { id: true },
+      })
     }
 
     const employeeId = systemEmployee.id
 
-    // ── 4. Generate order number ──────────────────────────────────────────────
+    // ── 4. Resolve order type (BUG #397) ────────────────────────────────────
+
+    let orderType = 'takeout'
+    let orderTypeId: string | null = null
+
+    const allowedOrderTypes = (onlineSettings?.orderTypes as string[] | undefined) ?? ['takeout']
+    const requestedType = body.orderType && allowedOrderTypes.includes(body.orderType)
+      ? body.orderType
+      : 'takeout'
+
+    const dbOrderType = await venueDb.orderType.findFirst({
+      where: { locationId, slug: requestedType, isActive: true },
+      select: { id: true, slug: true },
+    })
+    if (dbOrderType) {
+      orderType = dbOrderType.slug
+      orderTypeId = dbOrderType.id
+    }
+
+    // ── 5. Generate order number ──────────────────────────────────────────────
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
@@ -185,13 +338,13 @@ export async function POST(request: NextRequest) {
       return { orderNumber: (lastOrder?.orderNumber || 0) + 1 }
     }, { isolationLevel: 'Serializable' })
 
-    // ── 5. Compute business day ────────────────────────────────────────────────
+    // ── 6. Compute business day ────────────────────────────────────────────────
 
     const dayStartTime =
       (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
-    // ── 6. Create the Order ───────────────────────────────────────────────────
+    // ── 7. Create the Order ───────────────────────────────────────────────────
 
     const now = new Date().toISOString()
     const seatTimestamps: Record<string, string> = { '1': now }
@@ -201,7 +354,8 @@ export async function POST(request: NextRequest) {
         locationId,
         employeeId,
         orderNumber,
-        orderType: 'takeout',
+        orderType,
+        orderTypeId,
         guestCount: 1,
         baseSeatCount: 1,
         extraSeatCount: 0,
@@ -236,13 +390,16 @@ export async function POST(request: NextRequest) {
             commissionAmount: 0,
             modifiers: item.modifiers.length > 0
               ? {
-                  create: item.modifiers.map(mod => ({
-                    locationId,
-                    modifierId: mod.modifierId && mod.modifierId.length >= 20 ? mod.modifierId : null,
-                    name: mod.name,
-                    price: mod.price,
-                    quantity: 1,
-                  })),
+                  create: item.modifiers.map(mod => {
+                    const dbMod = modifierMap.get(mod.modifierId)
+                    return {
+                      locationId,
+                      modifierId: mod.modifierId.length >= 20 ? mod.modifierId : null,
+                      name: dbMod?.name ?? mod.name,
+                      price: dbMod ? Number(dbMod.price) : 0,
+                      quantity: 1,
+                    }
+                  }),
                 }
               : undefined,
           })),
@@ -251,7 +408,7 @@ export async function POST(request: NextRequest) {
       select: { id: true, orderNumber: true },
     })
 
-    // ── 7. Charge the card via Datacap PayAPI ─────────────────────────────────
+    // ── 8. Charge the card via Datacap PayAPI ─────────────────────────────────
 
     let payApiResult
     try {
@@ -261,8 +418,11 @@ export async function POST(request: NextRequest) {
         invoiceNo: order.orderNumber.toString(),
       })
     } catch (payErr) {
-      // Payment error — delete the order (staff never saw it)
-      await venueDb.order.delete({ where: { id: order.id } }).catch(() => {})
+      // Payment error — soft-delete the order (BUG #389: never hard-delete)
+      await venueDb.order.update({
+        where: { id: order.id },
+        data: { status: 'cancelled', deletedAt: new Date() },
+      }).catch(() => {})
       console.error('[checkout] PayAPI error:', payErr)
       return NextResponse.json(
         { error: 'Payment processing failed. Please try again.' },
@@ -270,11 +430,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ── 8. Handle payment result ───────────────────────────────────────────────
+    // ── 9. Handle payment result ───────────────────────────────────────────────
 
     if (payApiResult.status !== 'Approved') {
-      // Declined — delete the order, return 402
-      await venueDb.order.delete({ where: { id: order.id } }).catch(() => {})
+      // Declined — soft-delete the order (BUG #389), return 402
+      await venueDb.order.update({
+        where: { id: order.id },
+        data: { status: 'cancelled', deletedAt: new Date() },
+      }).catch(() => {})
       return NextResponse.json(
         {
           error: 'Payment declined. Please try a different card.',
@@ -284,7 +447,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ── 9. Payment approved — update order status + create Payment record ──────
+    // ── 10. Payment approved — update order status + create Payment record ────
 
     await venueDb.$transaction([
       // Mark order as 'received' (online-specific status: paid but not yet served)
@@ -315,10 +478,10 @@ export async function POST(request: NextRequest) {
       }),
     ])
 
-    // ── 10. Return success ─────────────────────────────────────────────────────
+    // ── 11. Return success ─────────────────────────────────────────────────────
 
     const prepTimeMinutes =
-      (locSettings?.onlineOrdering as Record<string, unknown> | null)?.prepTime as number | undefined ?? 20
+      (onlineSettings?.prepTime as number | undefined) ?? 20
 
     return NextResponse.json({
       data: {

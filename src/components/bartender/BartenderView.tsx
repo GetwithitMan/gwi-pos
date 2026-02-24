@@ -9,6 +9,7 @@ import { getDualPrices } from '@/lib/pricing'
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
+import { isTempId } from '@/lib/order-utils'
 import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useOrderEditing } from '@/hooks/useOrderEditing'
@@ -933,7 +934,6 @@ export function BartenderView({
     sendInProgressRef.current = true
 
     // Read items fresh from the store at call time to avoid stale closure
-    // (e.g., item deleted after useCallback was last created)
     const freshItems = useOrderStore.getState().currentOrder?.items || []
     const unsavedItems = freshItems.filter(i => !i.sentToKitchen)
     if (unsavedItems.length === 0) {
@@ -941,11 +941,15 @@ export function BartenderView({
       return
     }
 
-    const itemsPayload = unsavedItems.map(item => ({
+    // Only POST items not yet in DB (temp IDs). Items already saved by autosave
+    // have real IDs and must NOT be re-POSTed (causes duplicates).
+    const itemsToCreate = unsavedItems.filter(i => isTempId(i.id))
+    const itemsPayload = itemsToCreate.map(item => ({
       menuItemId: item.menuItemId,
       name: item.name,
       price: item.price,
       quantity: item.quantity,
+      correlationId: item.id, // temp ID as correlation key for ID mapping
       modifiers: item.modifiers?.map(m => ({
         modifierId: m.id,
         name: m.name,
@@ -959,18 +963,21 @@ export function BartenderView({
     setSelectedTabId(null)
     loadedTabIdRef.current = null
 
-    // Fire-and-forget: append items then send to kitchen in background
+    // Fire-and-forget: append new items (if any) then send to kitchen in background
     void (async () => {
       try {
-        const appendRes = await fetch(`/api/orders/${orderId}/items`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: itemsPayload }),
-        })
+        // Only POST if there are items not yet in DB
+        if (itemsPayload.length > 0) {
+          const appendRes = await fetch(`/api/orders/${orderId}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: itemsPayload }),
+          })
 
-        if (!appendRes.ok) {
-          const errorData = await appendRes.json().catch(() => ({}))
-          throw new Error(errorData.error || 'Failed to add items')
+          if (!appendRes.ok) {
+            const errorData = await appendRes.json().catch(() => ({}))
+            throw new Error(errorData.error || 'Failed to add items')
+          }
         }
 
         const sendRes = await fetch(`/api/orders/${orderId}/send`, { method: 'POST' })

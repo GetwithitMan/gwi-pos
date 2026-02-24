@@ -11,9 +11,10 @@ export const GET = withVenue(async function GET(
 
     // Find the combo template for this menu item
     const template = await db.comboTemplate.findFirst({
-      where: { menuItemId: id },
+      where: { menuItemId: id, deletedAt: null },
       include: {
         components: {
+          where: { deletedAt: null },
           orderBy: { sortOrder: 'asc' },
           include: {
             menuItem: {
@@ -21,13 +22,16 @@ export const GET = withVenue(async function GET(
                 id: true,
                 name: true,
                 price: true,
+                isAvailable: true,
+                isActive: true,
               },
             },
             options: {
+              where: { deletedAt: null },
               orderBy: { sortOrder: 'asc' },
               include: {
                 menuItem: {
-                  select: { id: true, name: true, price: true }
+                  select: { id: true, name: true, price: true, isAvailable: true, isActive: true }
                 }
               }
             },
@@ -85,6 +89,8 @@ export const GET = withVenue(async function GET(
             id: c.menuItem.id,
             name: c.menuItem.name,
             price: Number(c.menuItem.price),
+            isAvailable: c.menuItem.isAvailable,
+            isActive: c.menuItem.isActive,
             modifierGroups: (itemModifierMap[c.menuItem.id] || []).map(mg => ({
               modifierGroup: {
                 id: mg.id,

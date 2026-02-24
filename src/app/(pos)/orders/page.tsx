@@ -2513,7 +2513,10 @@ export default function OrdersPage() {
 
               // Use store's current order ID (always fresh) — savedOrderId may be stale
               // after hiding a tab (React state update hasn't flushed yet)
-              const existingOrderId = store.currentOrder?.id || null
+              const rawOrderId = store.currentOrder?.id || null
+              // Treat temp IDs as "no existing order" — they haven't been persisted yet
+              // (e.g., after a card-first tab flow was cancelled and the shell was reverted)
+              const existingOrderId = rawOrderId && !isTempId(rawOrderId) ? rawOrderId : null
 
               // ── Existing tab with saved order → optimistic clear, background work ──
               if (existingOrderId) {
@@ -3441,7 +3444,14 @@ export default function OrdersPage() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ status: 'cancelled' }),
                 }).catch(() => {})
+                // Revert store order ID to temp so ensureOrderInDB creates a fresh order on retry
+                // (keeps items in store so user doesn't lose their work)
+                const store = useOrderStore.getState()
+                if (store.currentOrder?.id === cardTabOrderId) {
+                  store.updateOrderId(`temp_${Date.now()}`, undefined)
+                }
               }
+              setSavedOrderId(null)
               setCardTabOrderId(null)
             }
           }}
@@ -3454,7 +3464,14 @@ export default function OrdersPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: 'cancelled' }),
               }).catch(() => {})
+              // Revert store order ID to temp so ensureOrderInDB creates a fresh order on retry
+              // (keeps items in store so user doesn't lose their work)
+              const store = useOrderStore.getState()
+              if (store.currentOrder?.id === cardTabOrderId) {
+                store.updateOrderId(`temp_${Date.now()}`, undefined)
+              }
             }
+            setSavedOrderId(null)
             setCardTabOrderId(null)
           }}
           showDiscountModal={showDiscountModal}

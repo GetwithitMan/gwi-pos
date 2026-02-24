@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { allocateTipsForPayment } from '@/lib/domain/tips'
+import { getLocationSettings } from '@/lib/location-cache'
+import { parseSettings } from '@/lib/settings'
 
 interface TipAdjustment {
   orderId: string
@@ -34,6 +37,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const results: { orderId: string; success: boolean; error?: string }[] = []
     let totalTips = 0
     const dispatchInfos: { locationId: string; orderId: string; subtotal: number; taxTotal: number; tipTotal: number; discountTotal: number; total: number; commissionTotal: number }[] = []
+    const allocationInfos: { locationId: string; orderId: string; employeeId: string; paymentId: string; paymentMethod: string; tipAmount: number }[] = []
 
     // Process each adjustment in a transaction
     await db.$transaction(async (tx) => {
@@ -84,9 +88,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           0
         )
 
+        // Recalculate Order.total to include new tip total (BUG #410 fix)
+        const newOrderTotal = Number(order.subtotal) + Number(order.taxTotal) - Number(order.discountTotal) + newOrderTipTotal
+
         await tx.order.update({
           where: { id: adj.orderId },
-          data: { tipTotal: newOrderTipTotal },
+          data: {
+            tipTotal: newOrderTipTotal,
+            total: newOrderTotal,
+            version: { increment: 1 },
+          },
         })
 
         // Audit log
@@ -119,11 +130,41 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           taxTotal: Number(order.taxTotal),
           tipTotal: newOrderTipTotal,
           discountTotal: Number(order.discountTotal),
-          total: Number(order.total),
+          total: newOrderTotal,
           commissionTotal: Number(order.commissionTotal || 0),
         })
+
+        // Collect info for tip allocation (BUG #412 fix)
+        if (adj.tipAmount > 0 && order.employeeId) {
+          allocationInfos.push({
+            locationId: order.locationId,
+            orderId: adj.orderId,
+            employeeId: order.employeeId,
+            paymentId: adj.paymentId,
+            paymentMethod: payment.paymentMethod,
+            tipAmount: adj.tipAmount,
+          })
+        }
       }
     })
+
+    // Fire-and-forget tip allocations (BUG #412 fix — mirror single adjust-tip)
+    for (const alloc of allocationInfos) {
+      void (async () => {
+        const settings = await getLocationSettings(alloc.locationId)
+        const locSettings = parseSettings(settings)
+        return allocateTipsForPayment({
+          locationId: alloc.locationId,
+          orderId: alloc.orderId,
+          primaryEmployeeId: alloc.employeeId,
+          createdPayments: [{ id: alloc.paymentId, paymentMethod: alloc.paymentMethod, tipAmount: alloc.tipAmount }],
+          totalTipsDollars: alloc.tipAmount,
+          tipBankSettings: locSettings.tipBank,
+        })
+      })().catch(err => {
+        console.error('Background tip allocation failed (batch-adjust-tip):', err)
+      })
+    }
 
     // Fire-and-forget socket dispatches for cross-terminal sync
     for (const info of dispatchInfos) {

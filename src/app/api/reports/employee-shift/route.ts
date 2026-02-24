@@ -131,7 +131,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationIdToUse = shift?.locationId || locationId!
 
     // Fetch all shift data in parallel (all queries are independent)
-    const [orders, voidedOrders, voidLogs, tipOutsReceived, tipOutsGiven] = await Promise.all([
+    const [orders, voidedOrders, voidLogs, tipOutsReceived, tipOutsGiven, shiftTimeEntries] = await Promise.all([
       // Completed/paid orders for this employee
       db.order.findMany({
         where: {
@@ -207,6 +207,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           deletedAt: null,
           createdAt: { gte: shiftStart, lte: shiftEnd },
         },
+      }),
+      // Time clock entries for break deduction (BUG #427)
+      db.timeClockEntry.findMany({
+        where: {
+          employeeId: employee.id,
+          locationId: locationIdToUse,
+          clockIn: { gte: shiftStart, lte: shiftEnd },
+        },
+        select: { breakMinutes: true },
       }),
     ])
 
@@ -491,7 +500,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // LABOR
     // ============================================
 
-    const shiftHours = (shiftEnd.getTime() - shiftStart.getTime()) / (1000 * 60 * 60)
+    const shiftHoursGross = (shiftEnd.getTime() - shiftStart.getTime()) / (1000 * 60 * 60)
+    const breakMinutes = shiftTimeEntries.reduce((sum, e) => sum + (e.breakMinutes || 0), 0)
+    const shiftHours = Math.max(0, shiftHoursGross - breakMinutes / 60)
     const hourlyRate = Number(employee.hourlyRate) || 0
     const laborCost = shiftHours * hourlyRate
 
@@ -623,7 +634,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         laborCost: round(laborCost),
         checks: checkCount,
         avgCheck: round(avgCheck),
-        tips: round(totalTips + paymentsByType.credit.tips),
+        tips: round(totalTips),
         discounts: round(totalDiscounts),
         voids: round(totalVoids),
         cashDue: round(cashDue),

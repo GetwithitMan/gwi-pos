@@ -164,6 +164,25 @@ export async function deductInventoryForVoidedItem(
                 },
               },
             },
+            // Direct bottle link on MenuItem (for simple spirit items like "Fireball Shot")
+            linkedBottleProduct: {
+              select: {
+                id: true,
+                pourSizeOz: true,
+                inventoryItem: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category: true,
+                    department: true,
+                    storageUnit: true,
+                    costPerUnit: true,
+                    yieldCostPerUnit: true,
+                    currentStock: true,
+                  },
+                },
+              },
+            },
             // Liquor recipes from Liquor Builder (RecipeIngredient -> BottleProduct -> InventoryItem)
             recipeIngredients: {
               where: { deletedAt: null },
@@ -190,8 +209,30 @@ export async function deductInventoryForVoidedItem(
         },
         modifiers: {
           include: {
+            // BUG #382: Include linkedBottleProduct for spirit substitutions on void
+            linkedBottleProduct: {
+              select: {
+                id: true,
+                spiritCategoryId: true,
+                pourSizeOz: true,
+                inventoryItem: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category: true,
+                    department: true,
+                    storageUnit: true,
+                    costPerUnit: true,
+                    yieldCostPerUnit: true,
+                    currentStock: true,
+                  },
+                },
+              },
+            },
             modifier: {
-              include: {
+              select: {
+                liteMultiplier: true,
+                extraMultiplier: true,
                 inventoryLink: {
                   include: {
                     inventoryItem: {
@@ -225,6 +266,26 @@ export async function deductInventoryForVoidedItem(
                         costPerUnit: true,
                         yieldCostPerUnit: true,
                         currentStock: true,
+                      },
+                    },
+                    prepItem: {
+                      include: {
+                        ingredients: {
+                          include: {
+                            inventoryItem: {
+                              select: {
+                                id: true,
+                                name: true,
+                                category: true,
+                                department: true,
+                                storageUnit: true,
+                                costPerUnit: true,
+                                yieldCostPerUnit: true,
+                                currentStock: true,
+                              },
+                            },
+                          },
+                        },
                       },
                     },
                   },
@@ -301,14 +362,135 @@ export async function deductInventoryForVoidedItem(
       }
     }
 
-    // Process recipe ingredients
-    if (orderItem.menuItem?.recipe) {
+    // Combo expansion: if this voided item is a combo, expand to its component menu items
+    // and process each component's recipe for waste deduction
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const isCombo = (orderItem.menuItem as any)?.itemType === 'combo'
+    if (isCombo) {
+      const comboTemplate = await db.comboTemplate.findFirst({
+        where: { menuItemId: orderItem.menuItemId, deletedAt: null },
+        include: {
+          components: {
+            where: { deletedAt: null, menuItemId: { not: null } },
+            select: { menuItemId: true },
+          },
+        },
+      })
+      const componentMenuItemIds = comboTemplate?.components.map(c => c.menuItemId!) || []
+      if (componentMenuItemIds.length > 0) {
+        const componentMenuItems = await db.menuItem.findMany({
+          where: { id: { in: componentMenuItemIds }, deletedAt: null },
+          include: {
+            recipe: {
+              include: {
+                ingredients: {
+                  include: {
+                    inventoryItem: {
+                      select: {
+                        id: true, name: true, category: true, department: true,
+                        storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                      },
+                    },
+                    prepItem: {
+                      include: {
+                        ingredients: {
+                          include: {
+                            inventoryItem: {
+                              select: {
+                                id: true, name: true, category: true, department: true,
+                                storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            recipeIngredients: {
+              where: { deletedAt: null },
+              include: {
+                bottleProduct: {
+                  include: {
+                    inventoryItem: {
+                      select: {
+                        id: true, name: true, category: true, department: true,
+                        storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            linkedBottleProduct: {
+              select: {
+                id: true, pourSizeOz: true,
+                inventoryItem: {
+                  select: {
+                    id: true, name: true, category: true, department: true,
+                    storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                  },
+                },
+              },
+            },
+          },
+        })
+
+        for (const compMenuItem of componentMenuItems) {
+          // Process food recipes
+          if (compMenuItem.recipe) {
+            for (const ing of compMenuItem.recipe.ingredients) {
+              const ingQty = toNumber(ing.quantity) * itemQty
+              if (ing.inventoryItem) {
+                addUsage(ing.inventoryItem, ingQty)
+              } else if (ing.prepItem) {
+                const exploded = explodePrepItem(ing.prepItem as PrepItemWithIngredients, ingQty, ing.unit)
+                for (const exp of exploded) {
+                  addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
+                }
+              }
+            }
+          }
+
+          // Process liquor recipe ingredients
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const compRecipeIngs = (compMenuItem as any)?.recipeIngredients
+          if (compRecipeIngs && Array.isArray(compRecipeIngs)) {
+            for (const ing of compRecipeIngs) {
+              const inventoryItem = ing.bottleProduct?.inventoryItem
+              if (!inventoryItem) continue
+              const pourCount = toNumber(ing.pourCount) || 1
+              const pourSizeOz = toNumber(ing.pourSizeOz) || toNumber(ing.bottleProduct?.pourSizeOz) || 1.5
+              const totalOz = pourCount * pourSizeOz * itemQty
+              addUsage(inventoryItem, totalOz)
+            }
+          }
+
+          // Process direct bottle link
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const linkedBottle = (compMenuItem as any)?.linkedBottleProduct
+          if (linkedBottle?.inventoryItem && (!compRecipeIngs || compRecipeIngs.length === 0)) {
+            const pourSizeOz = toNumber(linkedBottle.pourSizeOz) || 1.5
+            const totalOz = pourSizeOz * itemQty
+            addUsage(linkedBottle.inventoryItem as InventoryItemWithStock, totalOz)
+          }
+        }
+      }
+    }
+
+    // Process recipe ingredients (skip for combos — handled above)
+    if (!isCombo && orderItem.menuItem?.recipe) {
+      // BUG #381: apply pour multiplier (matches paid path)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
       for (const ing of orderItem.menuItem.recipe.ingredients) {
         if (ing.inventoryItem && removedIngredientIds.has(ing.inventoryItem.id)) {
           continue
         }
 
-        const ingQty = toNumber(ing.quantity) * itemQty
+        const ingQty = toNumber(ing.quantity) * itemQty * pourMult
 
         if (ing.inventoryItem) {
           addUsage(ing.inventoryItem, ingQty)
@@ -328,13 +510,32 @@ export async function deductInventoryForVoidedItem(
     }
 
     // Process liquor recipe ingredients (RecipeIngredient -> BottleProduct -> InventoryItem)
-    // This handles cocktails created via the Liquor Builder
+    // This handles cocktails created via the Liquor Builder (skip for combos — handled above)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const recipeIngredients = (orderItem.menuItem as any)?.recipeIngredients
-    if (recipeIngredients && Array.isArray(recipeIngredients)) {
+    if (!isCombo && recipeIngredients && Array.isArray(recipeIngredients)) {
+      // BUG #382: Build spirit substitution map (matches paid path)
+      // When a customer upgrades their spirit tier, the modifier's linkedBottleProduct
+      // tells us which bottle was actually used instead of the recipe's default.
+      const spiritSubstitutions = new Map<string, { inventoryItem: InventoryItemWithStock; pourSizeOz: number | null }>()
+      for (const mod of orderItem.modifiers) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const lb = (mod as any).linkedBottleProduct
+        if (lb?.spiritCategoryId && lb.inventoryItem) {
+          spiritSubstitutions.set(lb.spiritCategoryId, {
+            inventoryItem: lb.inventoryItem as InventoryItemWithStock,
+            pourSizeOz: lb.pourSizeOz ? toNumber(lb.pourSizeOz) : null,
+          })
+        }
+      }
+
       for (const ing of recipeIngredients) {
-        // Get the linked inventory item from the bottle product
-        const inventoryItem = ing.bottleProduct?.inventoryItem
+        // Check for spirit substitution — if the customer upgraded their spirit tier,
+        // deduct from the substituted bottle's InventoryItem instead of the default.
+        const substitution = ing.bottleProduct?.spiritCategoryId
+          ? spiritSubstitutions.get(ing.bottleProduct.spiritCategoryId)
+          : undefined
+        const inventoryItem = substitution?.inventoryItem ?? ing.bottleProduct?.inventoryItem
         if (!inventoryItem) continue
 
         // Skip if this inventory item was explicitly removed with "NO" modifier
@@ -343,13 +544,40 @@ export async function deductInventoryForVoidedItem(
         }
 
         // Calculate pour quantity in oz
-        // pourCount * itemQty * (pourSizeOz or location default 1.5oz)
         const pourCount = toNumber(ing.pourCount) || 1
-        const pourSizeOz = toNumber(ing.pourSizeOz) || toNumber(ing.bottleProduct?.pourSizeOz) || 1.5
-        const totalOz = pourCount * pourSizeOz * itemQty
+        // Use the substituted bottle's pour size if available
+        const pourSizeOz =
+          substitution?.pourSizeOz ??
+          toNumber(ing.pourSizeOz) ??
+          toNumber(ing.bottleProduct?.pourSizeOz) ??
+          1.5
+        // BUG #381: apply pour multiplier (matches paid path)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
+        const totalOz = pourCount * pourSizeOz * itemQty * pourMult
 
         // Add usage - inventory is tracked in oz for liquor items
         addUsage(inventoryItem, totalOz)
+      }
+    }
+
+    // Process direct bottle link on MenuItem (simple spirit items like "Fireball Shot")
+    // Only deduct if there are NO recipeIngredients — prevents double-counting
+    // (skip for combos — handled above)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const linkedBottle = (orderItem.menuItem as any)?.linkedBottleProduct
+    if (!isCombo && linkedBottle?.inventoryItem && (!recipeIngredients || recipeIngredients.length === 0)) {
+      const pourSizeOz =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        toNumber((orderItem.menuItem as any)?.linkedPourSizeOz) ??
+        toNumber(linkedBottle.pourSizeOz) ??
+        1.5
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
+      const totalOz = pourSizeOz * itemQty * pourMult
+
+      if (!removedIngredientIds.has(linkedBottle.inventoryItem.id)) {
+        addUsage(linkedBottle.inventoryItem as InventoryItemWithStock, totalOz)
       }
     }
 
@@ -357,8 +585,19 @@ export async function deductInventoryForVoidedItem(
     for (const mod of orderItem.modifiers) {
       const modQty = (mod.quantity || 1) * itemQty
 
+      // BUG #381: per-modifier liteMultiplier/extraMultiplier overrides (matches paid path)
       const preModifier = mod.preModifier
-      const multiplier = getModifierMultiplier(preModifier, multiplierSettings || undefined)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const perModSettings: typeof multiplierSettings = { ...multiplierSettings } as any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const modRecord = (mod.modifier as any)
+      if (modRecord?.liteMultiplier !== null && modRecord?.liteMultiplier !== undefined) {
+        (perModSettings as any).multiplierLite = Number(modRecord.liteMultiplier)
+      }
+      if (modRecord?.extraMultiplier !== null && modRecord?.extraMultiplier !== undefined) {
+        (perModSettings as any).multiplierExtra = Number(modRecord.extraMultiplier)
+      }
+      const multiplier = getModifierMultiplier(preModifier, perModSettings || undefined)
 
       if (multiplier === 0) continue
 

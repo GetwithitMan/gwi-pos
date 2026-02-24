@@ -47,20 +47,50 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       matchedOrderId = matchingPayments[0].orderId
     }
 
-    const chargebackCase = await db.chargebackCase.create({
-      data: {
-        locationId,
-        orderId: matchedOrderId,
-        paymentId: matchedPaymentId,
-        cardLast4,
-        cardBrand,
-        amount,
-        chargebackDate: new Date(chargebackDate),
-        reason,
-        reasonCode,
-        responseDeadline: responseDeadline ? new Date(responseDeadline) : null,
-        notes,
-      },
+    // BUG #473 FIX: Use a transaction to create chargeback AND mark matched Payment/Order
+    const chargebackCase = await db.$transaction(async (tx) => {
+      const cbCase = await tx.chargebackCase.create({
+        data: {
+          locationId,
+          orderId: matchedOrderId,
+          paymentId: matchedPaymentId,
+          cardLast4,
+          cardBrand,
+          amount,
+          chargebackDate: new Date(chargebackDate),
+          reason,
+          reasonCode,
+          responseDeadline: responseDeadline ? new Date(responseDeadline) : null,
+          notes,
+        },
+      })
+
+      // Mark matched payment as needing reconciliation
+      if (matchedPaymentId) {
+        await tx.payment.update({
+          where: { id: matchedPaymentId },
+          data: { needsReconciliation: true },
+        })
+      }
+
+      // Create audit log for chargeback
+      await tx.auditLog.create({
+        data: {
+          locationId,
+          action: 'chargeback_created',
+          details: {
+            chargebackCaseId: cbCase.id,
+            amount,
+            cardLast4,
+            matchedPaymentId,
+            matchedOrderId,
+            reason,
+            reasonCode,
+          },
+        },
+      })
+
+      return cbCase
     })
 
     return NextResponse.json({

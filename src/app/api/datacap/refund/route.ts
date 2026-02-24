@@ -35,9 +35,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return Response.json({ error: 'Payment reader not found' }, { status: 404 })
     }
 
-    const auth = await requirePermission(employeeId, reader.locationId, PERMISSIONS.POS_CARD_PAYMENTS)
+    // BUG #470 FIX: Require MGR_REFUNDS permission instead of basic card payment permission
+    const auth = await requirePermission(employeeId, reader.locationId, PERMISSIONS.MGR_REFUNDS)
     if (!auth.authorized) {
       return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+    }
+
+    // BUG #470 FIX: Cap refund amount — look up original payment by datacapRecordNo
+    const originalPayment = await db.payment.findFirst({
+      where: { datacapRecordNo: recordNo, locationId: reader.locationId, deletedAt: null },
+      select: { id: true, amount: true, refundedAmount: true },
+    })
+    if (originalPayment) {
+      const maxRefundable = Number(originalPayment.amount) - Number(originalPayment.refundedAmount || 0)
+      if (amount > maxRefundable) {
+        return Response.json(
+          { error: `Refund amount $${amount.toFixed(2)} exceeds maximum refundable $${maxRefundable.toFixed(2)}` },
+          { status: 400 }
+        )
+      }
     }
 
     await validateReader(readerId, reader.locationId)

@@ -662,6 +662,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       if (toSave.length === 0) return
 
       autosaveInFlightRef.current = true
+      lastMutationRef.current = Date.now() // suppress own socket events during autosave
       const promise = (async () => {
         try {
           const res = await fetch(`/api/orders/${order.id}/items`, {

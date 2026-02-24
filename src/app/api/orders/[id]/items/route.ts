@@ -163,13 +163,58 @@ export const POST = withVenue(async function POST(
         console.warn('[BusinessDay] Failed to promote businessDayDate on item add:', promoErr)
       }
 
-      // Fetch menu items to get commission settings
+      // Fetch menu items to get commission settings + availability
       const menuItemIds = items.map(item => item.menuItemId)
       const menuItemsWithCommission = await tx.menuItem.findMany({
         where: { id: { in: menuItemIds } },
-        select: { id: true, commissionType: true, commissionValue: true, itemType: true, category: { select: { categoryType: true } } },
+        select: { id: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, category: { select: { categoryType: true } } },
       })
       const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
+
+      // Validate menu item availability (86 check)
+      for (const mi of menuItemsWithCommission) {
+        if (mi.deletedAt) {
+          throw new Error(`ITEM_DELETED:${mi.name}`)
+        }
+        if (!mi.isActive) {
+          throw new Error(`ITEM_INACTIVE:${mi.name}`)
+        }
+        if (!mi.isAvailable) {
+          throw new Error(`ITEM_86D:${mi.name}`)
+        }
+      }
+
+      // For combo items, validate component availability
+      const comboMenuItems = menuItemsWithCommission.filter(mi => mi.itemType === 'combo')
+      if (comboMenuItems.length > 0) {
+        const comboTemplates = await tx.comboTemplate.findMany({
+          where: {
+            menuItemId: { in: comboMenuItems.map(c => c.id) },
+            deletedAt: null,
+          },
+          include: {
+            components: {
+              where: { deletedAt: null },
+              include: {
+                menuItem: {
+                  select: { id: true, name: true, isAvailable: true, isActive: true },
+                },
+              },
+            },
+          },
+        })
+
+        for (const template of comboTemplates) {
+          for (const comp of template.components) {
+            if (comp.menuItem && !comp.menuItem.isAvailable) {
+              throw new Error(`COMBO_COMPONENT_86D:${comp.menuItem.name}`)
+            }
+            if (comp.menuItem && !comp.menuItem.isActive) {
+              throw new Error(`COMBO_COMPONENT_INACTIVE:${comp.menuItem.name}`)
+            }
+          }
+        }
+      }
 
       // Derive tax-inclusive flags + dual pricing settings
       const locSettings = existingOrder.location.settings
@@ -497,6 +542,34 @@ export const POST = withVenue(async function POST(
     if (message === 'ORDER_HAS_PAYMENTS') {
       return NextResponse.json(
         { error: 'Cannot modify an order with existing payments. Void the payment first.' },
+        { status: 400 }
+      )
+    }
+    if (message.startsWith('ITEM_86D:')) {
+      const itemName = message.replace('ITEM_86D:', '')
+      return NextResponse.json(
+        { error: `"${itemName}" is currently 86'd (unavailable)` },
+        { status: 400 }
+      )
+    }
+    if (message.startsWith('ITEM_INACTIVE:') || message.startsWith('ITEM_DELETED:')) {
+      const itemName = message.split(':')[1]
+      return NextResponse.json(
+        { error: `"${itemName}" is no longer available` },
+        { status: 400 }
+      )
+    }
+    if (message.startsWith('COMBO_COMPONENT_86D:')) {
+      const itemName = message.replace('COMBO_COMPONENT_86D:', '')
+      return NextResponse.json(
+        { error: `Combo component "${itemName}" is currently 86'd (unavailable)` },
+        { status: 400 }
+      )
+    }
+    if (message.startsWith('COMBO_COMPONENT_INACTIVE:')) {
+      const itemName = message.replace('COMBO_COMPONENT_INACTIVE:', '')
+      return NextResponse.json(
+        { error: `Combo component "${itemName}" is no longer available` },
         { status: 400 }
       )
     }

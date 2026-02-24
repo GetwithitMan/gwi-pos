@@ -5,6 +5,12 @@
  *   Returns active, online-orderable menu items grouped by category.
  *   No authentication required — this is a public endpoint.
  *
+ * Security:
+ *   - Rate limited per IP+location (BUG #388)
+ *   - Online ordering must be enabled in location settings (BUG #394)
+ *   - Soft-deleted categories and items filtered out (BUG #387)
+ *   - onlinePrice returned when set (BUG #385)
+ *
  * Architectural note:
  *   This route does NOT use withVenue() because it is a public route.
  *   In the multi-tenant model, withVenue() reads x-venue-slug set by
@@ -18,6 +24,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, getDbForVenue } from '@/lib/db'
 import { computeIsOrderableOnline, getStockStatus } from '@/lib/online-availability'
+import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,17 +39,50 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // ── Rate limit (BUG #388) ───────────────────────────────────────────────
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') ||
+      'unknown'
+
+    const rateCheck = checkOnlineRateLimit(ip, locationId, 'menu')
+    if (!rateCheck.allowed) {
+      const resp = NextResponse.json(
+        { error: 'Too many requests. Please try again shortly.' },
+        { status: 429 }
+      )
+      resp.headers.set('Retry-After', String(rateCheck.retryAfterSeconds ?? 60))
+      return resp
+    }
+
     // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
     // Falls back to db proxy (NUC local mode where DATABASE_URL already points
     // to the venue database).
     const venueDb = slug ? getDbForVenue(slug) : db
 
+    // ── Check online ordering is enabled (BUG #394) ─────────────────────────
+    const locationRec = await venueDb.location.findFirst({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const locSettings = locationRec?.settings as Record<string, unknown> | null
+    const onlineSettings = locSettings?.onlineOrdering as Record<string, unknown> | null
+
+    if (!onlineSettings?.enabled) {
+      return NextResponse.json(
+        { error: 'Online ordering is not currently available' },
+        { status: 503 }
+      )
+    }
+
     // Fetch all active categories that are shown online for this location
+    // BUG #387: filter deletedAt: null on categories and items
     const categories = await venueDb.category.findMany({
       where: {
         locationId,
         isActive: true,
         showOnline: true,
+        deletedAt: null,
       },
       orderBy: { sortOrder: 'asc' },
       select: {
@@ -55,6 +95,7 @@ export async function GET(request: NextRequest) {
           where: {
             isActive: true,
             showOnline: true,
+            deletedAt: null,
           },
           orderBy: { sortOrder: 'asc' },
           select: {
@@ -63,6 +104,7 @@ export async function GET(request: NextRequest) {
             displayName: true,
             description: true,
             price: true,
+            onlinePrice: true,
             imageUrl: true,
             showOnline: true,
             isAvailable: true,
@@ -130,7 +172,8 @@ export async function GET(request: NextRequest) {
             id: item.id,
             name: item.displayName ?? item.name,
             description: item.description,
-            price: Number(item.price),
+            // BUG #385: Return onlinePrice when set, otherwise base price
+            price: item.onlinePrice != null ? Number(item.onlinePrice) : Number(item.price),
             imageUrl: item.imageUrl,
             stockStatus: getStockStatus({
               trackInventory: item.trackInventory,

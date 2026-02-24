@@ -100,6 +100,7 @@ export const POST = withVenue(async function POST(
       }
 
       // Success — close the tab
+      // BUG #461 FIX: Create Payment record for same_card retry capture
       await db.$transaction([
         db.orderCard.update({
           where: { id: capturedCard.id },
@@ -114,6 +115,22 @@ export const POST = withVenue(async function POST(
             closedAt: now,
             captureDeclinedAt: null,
             lastCaptureError: null,
+          },
+        }),
+        db.payment.create({
+          data: {
+            locationId,
+            orderId,
+            employeeId,
+            amount: purchaseAmount,
+            tipAmount: 0,
+            totalAmount: purchaseAmount,
+            paymentMethod: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+            cardBrand: capturedCard.cardType || 'unknown',
+            cardLast4: capturedCard.cardLast4,
+            authCode: captureResponse.authCode || null,
+            datacapRecordNo: capturedCard.recordNo,
+            status: 'completed',
           },
         }),
         // Void remaining authorized cards

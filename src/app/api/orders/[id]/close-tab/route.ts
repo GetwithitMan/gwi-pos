@@ -302,21 +302,22 @@ export const POST = withVenue(async function POST(
       })
     }
 
-    // Update OrderCard + Order status atomically.
+    // Update OrderCard + Order status + Payment record atomically.
     // PAYMENT-SAFETY: The order transitions to 'paid' ONLY inside this transaction,
     // AFTER the Datacap capture response is confirmed as 'Approved'. Never optimistic.
-    // Note: The capture's authCode is returned in the API response but NOT stored in OrderCard
-    // (schema has no authCode field). The recordNo is the primary reconciliation token for
-    // PreAuthCapture operations — it's stored in OrderCard.recordNo from the initial PreAuth.
+    // BUG #455 FIX: Create a Payment record so close-tab payments appear in reports/reconciliation.
+    // BUG #456 FIX: Use explicit conditional for tipTotal — 0 is a valid tip amount, not falsy.
     const now = new Date()
+    const finalTipAmount = captureResult.tipAmount ?? 0
+    const totalCaptured = purchaseAmount + finalTipAmount
     await db.$transaction([
       db.orderCard.update({
         where: { id: capturedCard.id },
         data: {
           status: 'captured',
-          capturedAmount: purchaseAmount + (captureResult.tipAmount || 0),
+          capturedAmount: totalCaptured,
           capturedAt: now,
-          tipAmount: captureResult.tipAmount || 0,
+          tipAmount: finalTipAmount,
         },
       }),
       db.order.update({
@@ -326,9 +327,27 @@ export const POST = withVenue(async function POST(
           tabStatus: 'closed',
           paidAt: now,
           closedAt: now,
-          tipTotal: captureResult.tipAmount || Number(order.tipTotal),
-          total: purchaseAmount + (captureResult.tipAmount || 0),
+          tipTotal: finalTipAmount,
+          total: totalCaptured,
           version: { increment: 1 },
+        },
+      }),
+      // BUG #455: Create Payment record for close-tab capture
+      db.payment.create({
+        data: {
+          locationId,
+          orderId,
+          employeeId,
+          amount: purchaseAmount,
+          tipAmount: finalTipAmount,
+          totalAmount: totalCaptured,
+          paymentMethod: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+          cardBrand: capturedCard.cardType || 'unknown',
+          cardLast4: capturedCard.cardLast4,
+          authCode: response.authCode || null,
+          datacapRecordNo: capturedCard.recordNo,
+          entryMethod: 'Chip', // Tab was opened with card present
+          status: 'completed',
         },
       }),
       // Void any remaining authorized cards
@@ -348,7 +367,7 @@ export const POST = withVenue(async function POST(
     })
 
     // Allocate tips via the tip bank pipeline — fire-and-forget
-    if ((captureResult.tipAmount || 0) > 0 && order.employeeId) {
+    if (finalTipAmount > 0 && order.employeeId) {
       void allocateTipsForPayment({
         locationId,
         orderId,
@@ -356,9 +375,9 @@ export const POST = withVenue(async function POST(
         createdPayments: [{
           id: capturedCard.id,
           paymentMethod: capturedCard.cardType || 'credit',
-          tipAmount: captureResult.tipAmount || 0,
+          tipAmount: finalTipAmount,
         }],
-        totalTipsDollars: captureResult.tipAmount || 0,
+        totalTipsDollars: finalTipAmount,
         tipBankSettings: locSettings.tipBank,
       }).catch(err => {
         console.error('Background tip allocation failed (close-tab):', err)
@@ -376,8 +395,8 @@ export const POST = withVenue(async function POST(
     // Dispatch mobile tab:closed for phone sync (fire-and-forget)
     dispatchTabClosed(locationId, {
       orderId,
-      total: purchaseAmount + (captureResult.tipAmount || 0),
-      tipAmount: captureResult.tipAmount || 0,
+      total: totalCaptured,
+      tipAmount: finalTipAmount,
     })
 
     // Dispatch open orders changed so all terminals refresh (fire-and-forget)
@@ -390,8 +409,8 @@ export const POST = withVenue(async function POST(
           cardType: capturedCard.cardType,
           cardLast4: capturedCard.cardLast4,
           purchaseAmount,
-          tipAmount: captureResult.tipAmount || 0,
-          totalAmount: purchaseAmount + (captureResult.tipAmount || 0),
+          tipAmount: finalTipAmount,
+          totalAmount: totalCaptured,
           authCode: response.authCode,
         },
         tipMode,

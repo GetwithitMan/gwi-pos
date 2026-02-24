@@ -73,6 +73,13 @@ export const PUT = withVenue(async function PUT(
       const elapsedMs = endedAt.getTime() - startedAt.getTime() - (session.pausedMinutes * 60000)
       const totalMinutes = Math.ceil(elapsedMs / 60000)
 
+      // Fetch the linked menu item to get minimumCharge
+      const menuItem = await db.menuItem.findUnique({
+        where: { id: session.menuItemId },
+        select: { minimumCharge: true, ratePerMinute: true, incrementMinutes: true, graceMinutes: true },
+      })
+      const minimumCharge = menuItem?.minimumCharge ? Number(menuItem.minimumCharge) : 0
+
       // Calculate total charge based on rate type
       let totalCharge = 0
       const rateAmount = Number(session.rateAmount)
@@ -91,6 +98,11 @@ export const PUT = withVenue(async function PUT(
         default:
           // Default to per hour
           totalCharge = Math.ceil(totalMinutes / 60) * rateAmount
+      }
+
+      // BUG #377: Enforce minimum charge
+      if (minimumCharge > 0 && totalCharge < minimumCharge) {
+        totalCharge = minimumCharge
       }
 
       // Update session

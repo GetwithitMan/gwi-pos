@@ -103,25 +103,33 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
     // Handle channel subscribe/unsubscribe from SocketEventProvider
     socket.on('subscribe', (channelName: string) => {
-      if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
-        console.warn(`[Socket] Rejected subscribe to invalid room: ${channelName}`)
-        return
-      }
-      // Validate location rooms against authenticated context
-      if (channelName.startsWith('location:')) {
-        const roomLocationId = channelName.slice('location:'.length)
-        if (!socket.data.locationId) {
-          // First location subscription establishes the binding
-          socket.data.locationId = roomLocationId
-        } else if (roomLocationId !== socket.data.locationId) {
-          console.warn(`[Socket] Rejected cross-location subscribe: socket bound to ${socket.data.locationId}, tried ${roomLocationId}`)
+      try {
+        if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
+          console.warn(`[Socket] Rejected subscribe to invalid room: ${channelName}`)
           return
         }
+        // Validate location rooms against authenticated context
+        if (channelName.startsWith('location:')) {
+          const roomLocationId = channelName.slice('location:'.length)
+          if (!socket.data.locationId) {
+            // First location subscription establishes the binding
+            socket.data.locationId = roomLocationId
+          } else if (roomLocationId !== socket.data.locationId) {
+            console.warn(`[Socket] Rejected cross-location subscribe: socket bound to ${socket.data.locationId}, tried ${roomLocationId}`)
+            return
+          }
+        }
+        socket.join(channelName)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'subscribe', socketId: socket.id, error: String(err) }))
       }
-      socket.join(channelName)
     })
     socket.on('unsubscribe', (channelName: string) => {
-      socket.leave(channelName)
+      try {
+        socket.leave(channelName)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'unsubscribe', socketId: socket.id, error: String(err) }))
+      }
     })
 
     // ==================== Room Management ====================
@@ -131,64 +139,72 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      * Called when a KDS/terminal starts up
      */
     socket.on('join_station', ({ locationId, tags, terminalId, stationId }: JoinStationPayload) => {
-      // Validate locationId against authenticated context
-      if (socket.data.locationId && locationId !== socket.data.locationId) {
-        console.warn(`[Socket] Rejected join_station: socket bound to ${socket.data.locationId}, payload says ${locationId}`)
-        socket.emit('joined', { success: false, error: 'Location mismatch' })
-        return
-      }
-
-      // Join location room (global alerts)
-      socket.join(`location:${locationId}`)
-
-      // Join terminal-specific room (direct messages)
-      socket.join(`terminal:${terminalId}`)
-
-      // Subscribe to specific prep tags (pizza, bar, kitchen, expo)
-      tags.forEach((tag: string) => {
-        socket.join(`tag:${tag}`)
-      })
-
-      // If station-specific, join that room too
-      if (stationId) {
-        socket.join(`station:${stationId}`)
-      }
-
-      // Clean up any previous entry for this socket (reconnection with new terminalId)
-      for (const [existingId, info] of connectedTerminals.entries()) {
-        if (info.socketId === socket.id) {
-          connectedTerminals.delete(existingId)
-          break
+      try {
+        // Validate locationId against authenticated context
+        if (socket.data.locationId && locationId !== socket.data.locationId) {
+          console.warn(`[Socket] Rejected join_station: socket bound to ${socket.data.locationId}, payload says ${locationId}`)
+          socket.emit('joined', { success: false, error: 'Location mismatch' })
+          return
         }
+
+        // Join location room (global alerts)
+        socket.join(`location:${locationId}`)
+
+        // Join terminal-specific room (direct messages)
+        socket.join(`terminal:${terminalId}`)
+
+        // Subscribe to specific prep tags (pizza, bar, kitchen, expo)
+        tags.forEach((tag: string) => {
+          socket.join(`tag:${tag}`)
+        })
+
+        // If station-specific, join that room too
+        if (stationId) {
+          socket.join(`station:${stationId}`)
+        }
+
+        // Clean up any previous entry for this socket (reconnection with new terminalId)
+        for (const [existingId, info] of connectedTerminals.entries()) {
+          if (info.socketId === socket.id) {
+            connectedTerminals.delete(existingId)
+            break
+          }
+        }
+
+        // Store locationId on socket data for event handlers
+        socket.data.locationId = locationId
+
+        // Track connection
+        connectedTerminals.set(terminalId, {
+          socketId: socket.id,
+          locationId,
+          tags,
+          connectedAt: new Date(),
+        })
+
+        if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} joined rooms:`, {
+          location: `location:${locationId}`,
+          tags: tags.map(t => `tag:${t}`),
+          station: stationId ? `station:${stationId}` : null,
+        })
+
+        // Acknowledge successful join
+        socket.emit('joined', { success: true, rooms: socket.rooms.size })
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'join_station', socketId: socket.id, terminalId, error: String(err) }))
       }
-
-      // Store locationId on socket data for event handlers
-      socket.data.locationId = locationId
-
-      // Track connection
-      connectedTerminals.set(terminalId, {
-        socketId: socket.id,
-        locationId,
-        tags,
-        connectedAt: new Date(),
-      })
-
-      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} joined rooms:`, {
-        location: `location:${locationId}`,
-        tags: tags.map(t => `tag:${t}`),
-        station: stationId ? `station:${stationId}` : null,
-      })
-
-      // Acknowledge successful join
-      socket.emit('joined', { success: true, rooms: socket.rooms.size })
     })
 
     /**
      * Leave station rooms (cleanup)
      */
     socket.on('leave_station', ({ terminalId }: { terminalId: string }) => {
-      connectedTerminals.delete(terminalId)
-      // Socket.io automatically cleans up room memberships on disconnect
+      try {
+        connectedTerminals.delete(terminalId)
+        // Socket.io automatically cleans up room memberships on disconnect
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'leave_station', socketId: socket.id, error: String(err) }))
+      }
     })
 
     // ==================== Order Editing Awareness ====================
@@ -199,21 +215,29 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      * to the location room so other terminals can show a conflict banner.
      */
     socket.on('order:editing', (data: { orderId: string; terminalId: string; terminalName: string; locationId: string }) => {
-      if (typeof data.locationId === 'string' && typeof data.orderId === 'string') {
-        socketServer.to(`location:${data.locationId}`).except(socket.id).emit('order:editing', {
-          orderId: data.orderId,
-          terminalId: data.terminalId,
-          terminalName: data.terminalName,
-        })
+      try {
+        if (typeof data.locationId === 'string' && typeof data.orderId === 'string') {
+          socketServer.to(`location:${data.locationId}`).except(socket.id).emit('order:editing', {
+            orderId: data.orderId,
+            terminalId: data.terminalId,
+            terminalName: data.terminalName,
+          })
+        }
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'order:editing', socketId: socket.id, error: String(err) }))
       }
     })
 
     socket.on('order:editing-released', (data: { orderId: string; terminalId: string; locationId: string }) => {
-      if (typeof data.locationId === 'string' && typeof data.orderId === 'string') {
-        socketServer.to(`location:${data.locationId}`).except(socket.id).emit('order:editing-released', {
-          orderId: data.orderId,
-          terminalId: data.terminalId,
-        })
+      try {
+        if (typeof data.locationId === 'string' && typeof data.orderId === 'string') {
+          socketServer.to(`location:${data.locationId}`).except(socket.id).emit('order:editing-released', {
+            orderId: data.orderId,
+            terminalId: data.terminalId,
+          })
+        }
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'order:editing-released', socketId: socket.id, error: String(err) }))
       }
     })
 
@@ -221,20 +245,32 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
     // Phone → relay tab close request to all terminals in location
     socket.on(MOBILE_EVENTS.TAB_CLOSE_REQUEST, (data: { orderId: string; locationId: string; employeeId: string; tipMode: string }) => {
-      if (typeof data.locationId !== 'string') return
-      socketServer.to(`location:${data.locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_CLOSE_REQUEST, data)
+      try {
+        if (typeof data.locationId !== 'string') return
+        socketServer.to(`location:${data.locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_CLOSE_REQUEST, data)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'TAB_CLOSE_REQUEST', socketId: socket.id, error: String(err) }))
+      }
     })
 
     // Phone → relay transfer request to all terminals in location
     socket.on(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, (data: { orderId: string; locationId: string; employeeId: string }) => {
-      if (typeof data.locationId !== 'string') return
-      socketServer.to(`location:${data.locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, data)
+      try {
+        if (typeof data.locationId !== 'string') return
+        socketServer.to(`location:${data.locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, data)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'TAB_TRANSFER_REQUEST', socketId: socket.id, error: String(err) }))
+      }
     })
 
     // Phone → relay manager alert to all terminals in location (fire-and-forget, no response needed)
     socket.on(MOBILE_EVENTS.TAB_ALERT_MANAGER, (data: { orderId: string; locationId: string; employeeId: string }) => {
-      if (typeof data.locationId !== 'string') return
-      socketServer.to(`location:${data.locationId}`).emit(MOBILE_EVENTS.TAB_ALERT_MANAGER, data)
+      try {
+        if (typeof data.locationId !== 'string') return
+        socketServer.to(`location:${data.locationId}`).emit(MOBILE_EVENTS.TAB_ALERT_MANAGER, data)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'TAB_ALERT_MANAGER', socketId: socket.id, error: String(err) }))
+      }
     })
 
     // ==================== Direct Terminal Messages ====================
@@ -247,7 +283,11 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       event: string
       data: unknown
     }) => {
-      socketServer.to(`terminal:${terminalId}`).emit(event, data)
+      try {
+        socketServer.to(`terminal:${terminalId}`).emit(event, data)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'terminal_message', socketId: socket.id, targetTerminal: terminalId, error: String(err) }))
+      }
     })
 
     // ==================== Sync Events ====================
@@ -259,19 +299,27 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       terminalId: string
       stats: { pushed: number; pulled: number; conflicts: number }
     }) => {
-      socketServer.to(`terminal:${terminalId}`).emit('sync:completed', stats)
+      try {
+        socketServer.to(`terminal:${terminalId}`).emit('sync:completed', stats)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'sync_completed', socketId: socket.id, error: String(err) }))
+      }
     })
 
     // ==================== Connection Lifecycle ====================
 
     socket.on('disconnect', (reason: string) => {
-      // Clean up terminal tracking
-      for (const [terminalId, info] of connectedTerminals.entries()) {
-        if (info.socketId === socket.id) {
-          connectedTerminals.delete(terminalId)
-          if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} disconnected: ${reason}`)
-          break
+      try {
+        // Clean up terminal tracking
+        for (const [terminalId, info] of connectedTerminals.entries()) {
+          if (info.socketId === socket.id) {
+            connectedTerminals.delete(terminalId)
+            if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} disconnected: ${reason}`)
+            break
+          }
         }
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'disconnect', socketId: socket.id, error: String(err) }))
       }
     })
 

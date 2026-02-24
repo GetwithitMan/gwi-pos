@@ -265,8 +265,146 @@ export async function deductInventoryForOrder(
       }
     }
 
+    // Expand combo items to their component menu items for inventory deduction
+    // Combo wrappers typically have no recipe; their components do.
+    const comboOrderItems = order.items.filter(
+      (oi) => (oi.menuItem as any)?.itemType === 'combo'
+    )
+    if (comboOrderItems.length > 0) {
+      const comboMenuItemIds = comboOrderItems.map(oi => oi.menuItemId)
+      const comboTemplates = await db.comboTemplate.findMany({
+        where: { menuItemId: { in: comboMenuItemIds }, deletedAt: null },
+        include: {
+          components: {
+            where: { deletedAt: null, menuItemId: { not: null } },
+            select: { menuItemId: true },
+          },
+        },
+      })
+      const componentMenuItemIds = comboTemplates.flatMap(t =>
+        t.components.map(c => c.menuItemId!)
+      )
+
+      if (componentMenuItemIds.length > 0) {
+        const componentMenuItems = await db.menuItem.findMany({
+          where: { id: { in: componentMenuItemIds }, deletedAt: null },
+          include: {
+            recipe: {
+              include: {
+                ingredients: {
+                  include: {
+                    inventoryItem: {
+                      select: {
+                        id: true, name: true, category: true, department: true,
+                        storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                      },
+                    },
+                    prepItem: {
+                      include: {
+                        ingredients: {
+                          include: {
+                            inventoryItem: {
+                              select: {
+                                id: true, name: true, category: true, department: true,
+                                storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            linkedBottleProduct: {
+              select: {
+                id: true, pourSizeOz: true,
+                inventoryItem: {
+                  select: {
+                    id: true, name: true, category: true, department: true,
+                    storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                  },
+                },
+              },
+            },
+            recipeIngredients: {
+              where: { deletedAt: null },
+              include: {
+                bottleProduct: {
+                  include: {
+                    inventoryItem: {
+                      select: {
+                        id: true, name: true, category: true, department: true,
+                        storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        })
+        const componentMap = new Map(componentMenuItems.map(mi => [mi.id, mi]))
+
+        // Build a map of combo menuItemId -> component menuItemIds
+        const comboComponentMap = new Map<string, string[]>()
+        for (const t of comboTemplates) {
+          comboComponentMap.set(t.menuItemId, t.components.map(c => c.menuItemId!))
+        }
+
+        // Process each combo order item's components
+        for (const comboItem of comboOrderItems) {
+          const componentIds = comboComponentMap.get(comboItem.menuItemId) || []
+          for (const compId of componentIds) {
+            const compMenuItem = componentMap.get(compId)
+            if (!compMenuItem) continue
+            const compQty = comboItem.quantity
+
+            // Process recipe ingredients for this component
+            if (compMenuItem.recipe) {
+              for (const ing of compMenuItem.recipe.ingredients) {
+                const ingQty = toNumber(ing.quantity) * compQty
+                if (ing.inventoryItem) {
+                  addUsage(ing.inventoryItem, ingQty)
+                } else if (ing.prepItem) {
+                  const exploded = explodePrepItem(ing.prepItem as PrepItemWithIngredients, ingQty, ing.unit)
+                  for (const exp of exploded) {
+                    addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
+                  }
+                }
+              }
+            }
+
+            // Process liquor recipe ingredients for this component
+            const compRecipeIngs = (compMenuItem as any)?.recipeIngredients
+            if (compRecipeIngs && Array.isArray(compRecipeIngs)) {
+              for (const ing of compRecipeIngs) {
+                const inventoryItem = ing.bottleProduct?.inventoryItem
+                if (!inventoryItem) continue
+                const pourCount = toNumber(ing.pourCount) || 1
+                const pourSizeOz = toNumber(ing.pourSizeOz) || toNumber(ing.bottleProduct?.pourSizeOz) || 1.5
+                const totalOz = pourCount * pourSizeOz * compQty
+                addUsage(inventoryItem, totalOz)
+              }
+            }
+
+            // Process direct bottle link
+            const linkedBottle = (compMenuItem as any)?.linkedBottleProduct
+            if (linkedBottle?.inventoryItem && (!compRecipeIngs || compRecipeIngs.length === 0)) {
+              const pourSizeOz = toNumber(linkedBottle.pourSizeOz) || 1.5
+              const totalOz = pourSizeOz * compQty
+              addUsage(linkedBottle.inventoryItem as InventoryItemWithStock, totalOz)
+            }
+          }
+        }
+      }
+    }
+
     // Process each order item
     for (const orderItem of order.items) {
+      // Skip combo wrapper items — their components were already processed above
+      if ((orderItem.menuItem as any)?.itemType === 'combo') continue
       const itemQty = orderItem.quantity
 
       // Build a set of inventory item IDs that have "NO" modifiers on this order item

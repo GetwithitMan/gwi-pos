@@ -89,26 +89,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // ── Check sufficient balance ──────────────────────────────────────────
     const amountCents = dollarsToCents(amount)
 
-    const fromBalance = await getLedgerBalance(fromEmployeeId)
-    const currentBalanceCents = fromBalance?.currentBalanceCents ?? 0
-
-    if (currentBalanceCents < amountCents) {
-      return NextResponse.json(
-        {
-          error: 'Insufficient tip bank balance',
-          currentBalanceCents,
-          currentBalanceDollars: centsToDollars(currentBalanceCents),
-          requestedAmountCents: amountCents,
-          requestedAmountDollars: amount,
-        },
-        { status: 400 }
-      )
-    }
-
-    // ── Look up employee names ────────────────────────────────────────────
+    // ── Look up employee names (read-only, outside transaction) ──────────
     const [fromEmployee, toEmployee] = await Promise.all([
       db.employee.findUnique({
         where: { id: fromEmployeeId, deletedAt: null },
@@ -137,31 +120,58 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const fromName = fromEmployee.displayName || `${fromEmployee.firstName} ${fromEmployee.lastName}`
     const toName = toEmployee.displayName || `${toEmployee.firstName} ${toEmployee.lastName}`
 
-    // ── Create paired ledger entries (with idempotency — Skill 284) ─────
-    // Generate a unique transfer ID for idempotency keys
+    // ── Atomic transfer: balance check + DEBIT + CREDIT in one tx (BUG #418-421 fix) ──
     const transferId = crypto.randomUUID()
 
-    // DEBIT from sender
-    const debitEntry = await postToTipLedger({
-      locationId,
-      employeeId: fromEmployeeId,
-      amountCents,
-      type: 'DEBIT',
-      sourceType: 'MANUAL_TRANSFER',
-      memo: memo || `Transfer to ${toName}`,
-      idempotencyKey: `transfer:${transferId}:DEBIT`,
+    const result = await db.$transaction(async (tx) => {
+      // Check balance under transaction lock (prevents race condition)
+      const fromLedger = await tx.tipLedger.findUnique({
+        where: { employeeId: fromEmployeeId },
+        select: { currentBalanceCents: true },
+      })
+      const currentBalanceCents = fromLedger?.currentBalanceCents ?? 0
+
+      if (currentBalanceCents < amountCents) {
+        return { ok: false as const, currentBalanceCents }
+      }
+
+      // DEBIT from sender (inside tx — Skill 284)
+      const debit = await postToTipLedger({
+        locationId,
+        employeeId: fromEmployeeId,
+        amountCents,
+        type: 'DEBIT',
+        sourceType: 'MANUAL_TRANSFER',
+        memo: memo || `Transfer to ${toName}`,
+        idempotencyKey: `transfer:${transferId}:DEBIT`,
+      }, tx)
+
+      // CREDIT to receiver (inside tx — Skill 284)
+      const credit = await postToTipLedger({
+        locationId,
+        employeeId: toEmployeeId,
+        amountCents,
+        type: 'CREDIT',
+        sourceType: 'MANUAL_TRANSFER',
+        memo: `Transfer from ${fromName}`,
+        idempotencyKey: `transfer:${transferId}:CREDIT`,
+      }, tx)
+
+      return { ok: true as const, debit, credit }
     })
 
-    // CREDIT to receiver
-    const creditEntry = await postToTipLedger({
-      locationId,
-      employeeId: toEmployeeId,
-      amountCents,
-      type: 'CREDIT',
-      sourceType: 'MANUAL_TRANSFER',
-      memo: `Transfer from ${fromName}`,
-      idempotencyKey: `transfer:${transferId}:CREDIT`,
-    })
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          error: 'Insufficient tip bank balance',
+          currentBalanceCents: result.currentBalanceCents,
+          currentBalanceDollars: centsToDollars(result.currentBalanceCents),
+          requestedAmountCents: amountCents,
+          requestedAmountDollars: amount,
+        },
+        { status: 400 }
+      )
+    }
 
     // ── Return success ────────────────────────────────────────────────────
     return NextResponse.json({
@@ -171,10 +181,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         toEmployeeId,
         amountCents,
         amount,
-        debitEntryId: debitEntry.id,
-        creditEntryId: creditEntry.id,
-        fromNewBalanceCents: debitEntry.newBalanceCents,
-        toNewBalanceCents: creditEntry.newBalanceCents,
+        debitEntryId: result.debit.id,
+        creditEntryId: result.credit.id,
+        fromNewBalanceCents: result.debit.newBalanceCents,
+        toNewBalanceCents: result.credit.newBalanceCents,
       },
     })
   } catch (error) {

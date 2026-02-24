@@ -213,7 +213,26 @@ export const PUT = withVenue(async function PUT(
       const variance = effectiveActualCash - expectedCash
 
       // Update shift + process tip distribution atomically
+      // Server-side computation of grossTips/tipOutTotal/netTips (BUG #417/#421 fix)
       const updatedShift = await db.$transaction(async (tx) => {
+        const serverGrossTips = summary.totalTips
+        let actualTipOutTotal = 0
+
+        // Process tip distribution first to get actual tip-out totals
+        if (tipDistribution) {
+          actualTipOutTotal = await processTipDistribution(
+            tx,
+            shift.locationId,
+            shift.employeeId,
+            id,
+            tipDistribution,
+            summary.salesData
+          )
+        }
+
+        // Server-side netTips = gross - tipOuts (never trust client values)
+        const serverNetTips = Math.round((serverGrossTips - actualTipOutTotal) * 100) / 100
+
         const closed = await tx.shift.update({
           where: { id },
           data: {
@@ -227,9 +246,9 @@ export const PUT = withVenue(async function PUT(
             cardSales: summary.cardSales,
             tipsDeclared: tipsDeclared || summary.totalTips,
             notes: notes || shift.notes,
-            grossTips: tipDistribution?.grossTips || tipsDeclared || summary.totalTips,
-            tipOutTotal: tipDistribution?.tipOutTotal || 0,
-            netTips: tipDistribution?.netTips || tipsDeclared || summary.totalTips,
+            grossTips: serverGrossTips,
+            tipOutTotal: actualTipOutTotal,
+            netTips: serverNetTips,
           },
           include: {
             employee: {
@@ -243,17 +262,6 @@ export const PUT = withVenue(async function PUT(
             },
           },
         })
-
-        if (tipDistribution) {
-          await processTipDistribution(
-            tx,
-            shift.locationId,
-            shift.employeeId,
-            closed.id,
-            tipDistribution,
-            summary.salesData
-          )
-        }
 
         // Audit log: shift closed
         await tx.auditLog.create({
@@ -273,6 +281,9 @@ export const PUT = withVenue(async function PUT(
               variance,
               tipsDeclared: tipsDeclared || summary.totalTips,
               hasTipDistribution: !!tipDistribution,
+              serverGrossTips,
+              actualTipOutTotal,
+              serverNetTips,
             },
           },
         })
@@ -556,6 +567,7 @@ async function calculateShiftSummary(
 }
 
 // Helper function to process tip distribution
+// Returns the actual total tip-out amount (server-computed, BUG #417/#421 fix)
 async function processTipDistribution(
   tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
   locationId: string,
@@ -569,7 +581,9 @@ async function processTipDistribution(
     customShares: { toEmployeeId: string; amount: number }[]
   },
   salesData?: { totalSales: number; foodSales: number; barSales: number; netSales: number }
-) {
+): Promise<number> {
+  let actualTipOutTotal = 0
+
   // Get all currently clocked-in employees to determine if recipients are on shift
   const activeShifts = await tx.shift.findMany({
     where: {
@@ -588,12 +602,14 @@ async function processTipDistribution(
   })
 
   const activeEmployeeIds = new Set(activeShifts.map(s => s.employeeId))
-  const activeEmployeesByRole = new Map<string, string>()
 
-  // Map roleId to first active employee with that role (for role-based tip-outs)
+  // Map roleId to ALL active employees with that role, excluding sender (BUG #408 fix)
+  const activeEmployeesByRole = new Map<string, string[]>()
   activeShifts.forEach(s => {
-    if (s.employee.roleId && !activeEmployeesByRole.has(s.employee.roleId)) {
-      activeEmployeesByRole.set(s.employee.roleId, s.employee.id)
+    if (s.employee.roleId && s.employee.id !== fromEmployeeId) {
+      const existing = activeEmployeesByRole.get(s.employee.roleId) || []
+      existing.push(s.employee.id)
+      activeEmployeesByRole.set(s.employee.roleId, existing)
     }
   })
 
@@ -649,68 +665,80 @@ async function processTipDistribution(
 
     if (effectiveAmount <= 0) continue
 
-    // Find an active employee with this role, or get any employee with this role
-    let toEmployeeId = activeEmployeesByRole.get(tipOut.toRoleId)
-    let status: 'pending' | 'banked' = 'pending'
+    // Find ALL active employees with this role (BUG #408 fix)
+    let recipients = activeEmployeesByRole.get(tipOut.toRoleId) || []
+    let bankStatus: 'pending' | 'banked' = 'pending'
 
-    if (!toEmployeeId) {
-      // No active employee with this role - find any employee with this role for banking
-      const employeeWithRole = await tx.employee.findFirst({
+    if (recipients.length === 0) {
+      // No active employees with this role — find ALL employees with this role for banking
+      const employeesWithRole = await tx.employee.findMany({
         where: {
           locationId,
           roleId: tipOut.toRoleId,
           isActive: true,
+          id: { not: fromEmployeeId },
         },
         select: { id: true },
       })
 
-      if (employeeWithRole) {
-        toEmployeeId = employeeWithRole.id
-        status = 'banked'
-      } else {
-        // No employees with this role - skip this tip-out
+      if (employeesWithRole.length === 0) {
         console.warn(`No employees found with role ${tipOut.toRoleId} for tip-out`)
         continue
       }
+
+      recipients = employeesWithRole.map(e => e.id)
+      bankStatus = 'banked'
     }
 
-    // Create TipShare record (using effectiveAmount which may be recalculated for sales-based rules)
-    const tipShare = await tx.tipShare.create({
-      data: {
+    // Split amount evenly among all recipients, handle rounding (BUG #408 fix)
+    const totalCents = dollarsToCents(effectiveAmount)
+    const perPersonCents = Math.floor(totalCents / recipients.length)
+    const remainderCents = totalCents - (perPersonCents * recipients.length)
+
+    for (let i = 0; i < recipients.length; i++) {
+      const recipientCents = perPersonCents + (i === 0 ? remainderCents : 0)
+      if (recipientCents <= 0) continue
+      const recipientDollars = recipientCents / 100
+
+      // Create TipShare record per recipient
+      const tipShare = await tx.tipShare.create({
+        data: {
+          locationId,
+          shiftId,
+          fromEmployeeId,
+          toEmployeeId: recipients[i],
+          amount: recipientDollars,
+          shareType: 'role_tipout',
+          ruleId: tipOut.ruleId,
+          status: bankStatus,
+        },
+      })
+
+      // Post paired ledger entries INSIDE the transaction (Skill 284)
+      await postToTipLedger({
         locationId,
+        employeeId: fromEmployeeId,
+        amountCents: recipientCents,
+        type: 'DEBIT',
+        sourceType: 'ROLE_TIPOUT',
+        sourceId: tipShare.id,
         shiftId,
-        fromEmployeeId,
-        toEmployeeId,
-        amount: effectiveAmount,
-        shareType: 'role_tipout',
-        ruleId: tipOut.ruleId,
-        status,
-      },
-    })
+        memo: `Role tip-out to ${tipOut.toRoleId}`,
+      }, tx)
 
-    // Post paired ledger entries INSIDE the transaction (Skill 284)
-    const tipAmountCents = dollarsToCents(effectiveAmount)
-    await postToTipLedger({
-      locationId,
-      employeeId: fromEmployeeId,
-      amountCents: tipAmountCents,
-      type: 'DEBIT',
-      sourceType: 'ROLE_TIPOUT',
-      sourceId: tipShare.id,
-      shiftId,
-      memo: `Role tip-out to ${tipOut.toRoleId}`,
-    }, tx)
+      await postToTipLedger({
+        locationId,
+        employeeId: recipients[i],
+        amountCents: recipientCents,
+        type: 'CREDIT',
+        sourceType: 'ROLE_TIPOUT',
+        sourceId: tipShare.id,
+        shiftId,
+        memo: `Role tip-out from shift close`,
+      }, tx)
+    }
 
-    await postToTipLedger({
-      locationId,
-      employeeId: toEmployeeId,
-      amountCents: tipAmountCents,
-      type: 'CREDIT',
-      sourceType: 'ROLE_TIPOUT',
-      sourceId: tipShare.id,
-      shiftId,
-      memo: `Role tip-out from shift close`,
-    }, tx)
+    actualTipOutTotal += effectiveAmount
   }
 
   // Process custom shares
@@ -756,5 +784,9 @@ async function processTipDistribution(
       shiftId,
       memo: `Custom tip share received`,
     }, tx)
+
+    actualTipOutTotal += share.amount
   }
+
+  return Math.round(actualTipOutTotal * 100) / 100
 }

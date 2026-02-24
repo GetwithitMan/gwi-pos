@@ -72,6 +72,7 @@ export const GET = withVenue(async function GET(
           updatedAt: true,
           version: true,
           itemCount: true,
+          baseSeatCount: true,
           extraSeatCount: true,
           employeeId: true,
           employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },

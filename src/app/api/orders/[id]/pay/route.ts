@@ -24,6 +24,7 @@ import { triggerCashDrawer } from '@/lib/cash-drawer'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient } from '@/lib/datacap/helpers'
+import { calculateCharge, type EntertainmentPricing } from '@/lib/entertainment-pricing'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -167,7 +168,7 @@ export const POST = withVenue(withTiming(async function POST(
         payments: true,
         location: true,
         customer: true,
-        items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } } } },
+        items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } }, menuItem: { select: { id: true, itemType: true } } } },
         employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
         table: { select: { id: true, name: true } },
       },
@@ -288,6 +289,70 @@ export const POST = withVenue(withTiming(async function POST(
     const locSettingsRaw = order.location.settings as Record<string, unknown> | null
     const dayStartTime = (locSettingsRaw?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+
+    // BUG #380: Settle per-minute entertainment pricing before calculating totals.
+    // For timed_rental items with per-minute pricing, the order item's price was set to
+    // the base price at ordering time. At payment, compute the actual charge from elapsed time.
+    const perMinuteItems = order.items.filter(
+      (item: any) => item.menuItem?.itemType === 'timed_rental' && item.blockTimeStartedAt && !item.blockTimeExpiresAt
+    )
+    if (perMinuteItems.length > 0) {
+      const now = new Date()
+      for (const item of perMinuteItems) {
+        const startedAt = new Date(item.blockTimeStartedAt!)
+        const elapsedMinutes = Math.max(1, Math.ceil((now.getTime() - startedAt.getTime()) / 60000))
+
+        // Fetch the menu item's pricing config
+        const mi = await db.menuItem.findUnique({
+          where: { id: item.menuItemId },
+          select: { ratePerMinute: true, minimumCharge: true, incrementMinutes: true, graceMinutes: true, price: true },
+        })
+        if (!mi) continue
+
+        const ratePerMinute = mi.ratePerMinute ? Number(mi.ratePerMinute) : 0
+        if (ratePerMinute <= 0) continue // Not per-minute pricing
+
+        const pricing: EntertainmentPricing = {
+          ratePerMinute,
+          minimumCharge: mi.minimumCharge ? Number(mi.minimumCharge) : 0,
+          incrementMinutes: mi.incrementMinutes ?? 15,
+          graceMinutes: mi.graceMinutes ?? 5,
+        }
+
+        const breakdown = calculateCharge(elapsedMinutes, pricing)
+        const settledPrice = breakdown.totalCharge
+
+        // Update the order item's price to the settled per-minute charge
+        await db.orderItem.update({
+          where: { id: item.id },
+          data: {
+            price: settledPrice,
+            itemTotal: settledPrice * item.quantity,
+          },
+        })
+
+        // Recalculate the order total from all active items
+        const activeItems = await db.orderItem.findMany({
+          where: { orderId, status: 'active', deletedAt: null },
+          include: { modifiers: true },
+        })
+        let newSubtotal = 0
+        for (const ai of activeItems) {
+          const modTotal = ai.modifiers.reduce((s, m) => s + Number(m.price), 0)
+          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
+        }
+        await db.order.update({
+          where: { id: orderId },
+          data: {
+            subtotal: newSubtotal,
+            total: newSubtotal + Number(order.taxTotal),
+          },
+        })
+        // Refresh order reference for accurate total below
+        ;(order as any).subtotal = newSubtotal
+        ;(order as any).total = newSubtotal + Number(order.taxTotal)
+      }
+    }
 
     // Calculate how much is already paid
     const alreadyPaid = order.payments

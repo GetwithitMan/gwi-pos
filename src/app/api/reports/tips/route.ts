@@ -236,7 +236,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
-    // Calculate employee summaries
+    // Calculate employee summaries — ALL monetary values from TipLedger (single source of truth)
     const employeeSummaries = new Map<string, {
       employeeId: string
       employeeName: string
@@ -248,51 +248,59 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       shiftCount: number
     }>()
 
-    // Process shifts for gross tips
-    shifts.forEach(shift => {
-      const empId = shift.employee.id
-      const empName = shift.employee.displayName ||
-        `${shift.employee.firstName} ${shift.employee.lastName}`
-
-      const existing = employeeSummaries.get(empId) || {
+    // Helper to get or initialize an employee summary entry
+    type EmpInfo = { displayName: string | null; firstName: string; lastName: string; role?: { name: string } | null }
+    const getOrCreateSummary = (empId: string, employee: EmpInfo) => {
+      const existing = employeeSummaries.get(empId)
+      if (existing) return existing
+      const empName = employee.displayName || `${employee.firstName} ${employee.lastName}`
+      const fresh = {
         employeeId: empId,
         employeeName: empName,
-        roleName: shift.employee.role?.name || 'Unknown',
+        roleName: employee.role?.name || 'Unknown',
         grossTips: 0,
         tipOutsGiven: 0,
         tipOutsReceived: 0,
         netTips: 0,
         shiftCount: 0,
       }
+      employeeSummaries.set(empId, fresh)
+      return fresh
+    }
 
-      existing.grossTips += Number(shift.grossTips || 0)
-      existing.netTips += Number(shift.netTips || 0)
-      existing.tipOutsGiven += Number(shift.tipOutTotal || 0)
+    // Process shifts for shiftCount only (monetary values come from ledger)
+    shifts.forEach(shift => {
+      const existing = getOrCreateSummary(shift.employee.id, shift.employee)
       existing.shiftCount += 1
-
-      employeeSummaries.set(empId, existing)
     })
 
-    // Process tip-out CREDIT entries for tipOutsReceived
-    const tipOutCredits = tipOutEntries.filter(e => e.type === 'CREDIT')
-    tipOutCredits.forEach(entry => {
-      const empId = entry.employee.id
-      const empName = entry.employee.displayName ||
-        `${entry.employee.firstName} ${entry.employee.lastName}`
+    // Ledger-only: grossTips from CREDIT DIRECT_TIP + TIP_GROUP entries
+    bankedEntries
+      .filter(e => e.type === 'CREDIT' && (e.sourceType === 'DIRECT_TIP' || e.sourceType === 'TIP_GROUP'))
+      .forEach(entry => {
+        const existing = getOrCreateSummary(entry.employee.id, entry.employee)
+        existing.grossTips += entry.amountCents / 100
+      })
 
-      const existing = employeeSummaries.get(empId) || {
-        employeeId: empId,
-        employeeName: empName,
-        roleName: entry.employee.role?.name || 'Unknown',
-        grossTips: 0,
-        tipOutsGiven: 0,
-        tipOutsReceived: 0,
-        netTips: 0,
-        shiftCount: 0,
-      }
+    // Ledger-only: tipOutsGiven from DEBIT ROLE_TIPOUT entries (amountCents is negative, use abs)
+    tipOutEntries
+      .filter(e => e.type === 'DEBIT')
+      .forEach(entry => {
+        const existing = getOrCreateSummary(entry.employee.id, entry.employee)
+        existing.tipOutsGiven += Math.abs(entry.amountCents) / 100
+      })
 
-      existing.tipOutsReceived += entry.amountCents / 100
-      employeeSummaries.set(empId, existing)
+    // Ledger-only: tipOutsReceived from CREDIT ROLE_TIPOUT entries
+    tipOutEntries
+      .filter(e => e.type === 'CREDIT')
+      .forEach(entry => {
+        const existing = getOrCreateSummary(entry.employee.id, entry.employee)
+        existing.tipOutsReceived += entry.amountCents / 100
+      })
+
+    // Compute netTips from ledger-only values
+    employeeSummaries.forEach(emp => {
+      emp.netTips = emp.grossTips - emp.tipOutsGiven + emp.tipOutsReceived
     })
 
     // Derive banked/collected/paidOut totals from ledger entries
@@ -304,13 +312,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Current banked = sum of ledger balances (what hasn't been paid out yet)
     const totalCurrentBanked = ledgerBalances.reduce((sum, l) => sum + Math.max(0, l.currentBalanceCents), 0) / 100
 
-    // Calculate totals — tip-outs use DEBIT amountCents (positive stored values)
+    // Calculate totals — DEBIT amountCents are stored as negative, use Math.abs
     const totalTipOuts = tipOutEntries
       .filter(e => e.type === 'DEBIT')
-      .reduce((sum, e) => sum + e.amountCents, 0) / 100
+      .reduce((sum, e) => sum + Math.abs(e.amountCents), 0) / 100
 
     const summary = {
-      totalGrossTips: shifts.reduce((sum, s) => sum + Number(s.grossTips || 0), 0),
+      totalGrossTips: Array.from(employeeSummaries.values()).reduce((sum, emp) => sum + emp.grossTips, 0),
       totalTipOuts,
       totalBanked: totalCurrentBanked,
       totalCollected: totalPayouts, // payouts = collected/distributed
@@ -332,7 +340,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       tipShares: tipSharePairs.map(pair => {
         const fromEmp = pair.debitEntry.employee
         const toEmp = pair.creditEntry?.employee || pair.debitEntry.employee
-        const amount = pair.debitEntry.amountCents / 100
+        const amount = Math.abs(pair.debitEntry.amountCents) / 100
         return {
           id: pair.id,
           from: empName(fromEmp),

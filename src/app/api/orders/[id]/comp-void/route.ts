@@ -81,7 +81,10 @@ export const POST = withVenue(async function POST(
         location: true,
         items: {
           where: { id: itemId },
-          include: { modifiers: true },
+          include: {
+            modifiers: true,
+            menuItem: { select: { id: true, itemType: true } },
+          },
         },
       },
     })
@@ -455,6 +458,33 @@ export const POST = withVenue(async function POST(
 
     // Fire-and-forget side effects OUTSIDE the transaction
 
+    // BUG #378: Reset entertainment status when voiding a timed_rental item
+    if (item.menuItem?.itemType === 'timed_rental') {
+      void db.menuItem.update({
+        where: { id: item.menuItem.id },
+        data: {
+          entertainmentStatus: 'available',
+          currentOrderId: null,
+          currentOrderItemId: null,
+        },
+      }).then(() => {
+        // Also reset the floor plan element linked to this menu item
+        return db.floorPlanElement.updateMany({
+          where: { linkedMenuItemId: item.menuItem!.id, deletedAt: null },
+          data: {
+            status: 'available',
+            currentOrderId: null,
+            sessionStartedAt: null,
+            sessionExpiresAt: null,
+          },
+        })
+      }).then(() => {
+        return dispatchFloorPlanUpdate(order.locationId, { async: true })
+      }).catch(err => {
+        console.error('[CompVoid] Failed to reset entertainment status:', err)
+      })
+    }
+
     // Deduct inventory for voids where food was made
     const normalizedReason = reason.toLowerCase().replace(/\s+/g, '_')
     const shouldDeductInventory = action === 'comp'
@@ -585,7 +615,10 @@ export const PUT = withVenue(async function PUT(
         location: true,
         items: {
           where: { id: itemId },
-          include: { modifiers: true },
+          include: {
+            modifiers: true,
+            menuItem: { select: { id: true, itemType: true } },
+          },
         },
       },
     })
@@ -632,6 +665,30 @@ export const PUT = withVenue(async function PUT(
     void restoreInventoryForRestoredItem(itemId, order.locationId).catch(err => {
       console.error('[Inventory] Failed to reverse deduction on item restore:', err)
     })
+
+    // BUG #379: Restore entertainment status when un-voiding a timed_rental item
+    if (item.menuItem?.itemType === 'timed_rental') {
+      void db.menuItem.update({
+        where: { id: item.menuItem.id },
+        data: {
+          entertainmentStatus: 'in_use',
+          currentOrderId: orderId,
+          currentOrderItemId: itemId,
+        },
+      }).then(() => {
+        return db.floorPlanElement.updateMany({
+          where: { linkedMenuItemId: item.menuItem!.id, deletedAt: null },
+          data: {
+            status: 'in_use',
+            currentOrderId: orderId,
+          },
+        })
+      }).then(() => {
+        return dispatchFloorPlanUpdate(order.locationId, { async: true })
+      }).catch(err => {
+        console.error('[CompVoid] Failed to restore entertainment status:', err)
+      })
+    }
 
     // Recalculate order totals
     const activeItems = await db.orderItem.findMany({

@@ -131,6 +131,15 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
   const defaultOrderTypeRef = useRef(defaultOrderType)
   defaultOrderTypeRef.current = defaultOrderType
 
+  // Modifier-defaults cache: avoids redundant fetches on rapid clicks
+  // Map<menuItemId, { mods, allSatisfied, fetchedAt }>
+  const modifierDefaultsCacheRef = useRef<Map<string, {
+    mods: EngineModifier[]
+    allSatisfied: boolean
+    fetchedAt: number
+  }>>(new Map())
+  const MOD_CACHE_TTL = 30_000 // 30s
+
   // Pending item state for modal coordination
   const [pendingItem, setPendingItem] = useState<PendingItem | null>(null)
 
@@ -428,41 +437,65 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
 
     // 3. Item with modifiers → check defaults, possibly open modal
     if (item.hasModifiers && onOpenModifiers) {
-      // Try auto-fill with defaults first
-      try {
-        const res = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
-        if (res.ok) {
-          const { data: groups } = await res.json()
-          if (groups && groups.length > 0) {
-            const defaultMods: EngineModifier[] = []
-            let allRequiredSatisfied = true
+      // Check modifier-defaults cache first (avoids fetch on rapid clicks)
+      const cached = modifierDefaultsCacheRef.current.get(item.id)
+      if (cached && Date.now() - cached.fetchedAt < MOD_CACHE_TTL) {
+        if (cached.allSatisfied && cached.mods.length > 0) {
+          addItemDirectly({
+            menuItemId: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: quantityMultiplierRef.current,
+            modifiers: cached.mods,
+            categoryType: item.categoryType,
+          })
+          return
+        }
+        // Cached but defaults don't satisfy → open modal (fall through below)
+      } else {
+        // Try auto-fill with defaults first (fetch + cache)
+        try {
+          const res = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
+          if (res.ok) {
+            const { data: groups } = await res.json()
+            if (groups && groups.length > 0) {
+              const defaultMods: EngineModifier[] = []
+              let allRequiredSatisfied = true
 
-            for (const group of groups) {
-              const defaults = (group.modifiers || []).filter((m: { isDefault?: boolean }) => m.isDefault)
-              defaults.forEach((m: { id: string; name: string; price?: number }) => {
-                defaultMods.push({ id: m.id, name: m.name, price: Number(m.price || 0), depth: 0 })
+              for (const group of groups) {
+                const defaults = (group.modifiers || []).filter((m: { isDefault?: boolean }) => m.isDefault)
+                defaults.forEach((m: { id: string; name: string; price?: number }) => {
+                  defaultMods.push({ id: m.id, name: m.name, price: Number(m.price || 0), depth: 0 })
+                })
+                if (group.isRequired && group.minSelections > 0 && defaults.length < group.minSelections) {
+                  allRequiredSatisfied = false
+                }
+              }
+
+              // Cache the result for rapid follow-up clicks
+              modifierDefaultsCacheRef.current.set(item.id, {
+                mods: defaultMods,
+                allSatisfied: allRequiredSatisfied,
+                fetchedAt: Date.now(),
               })
-              if (group.isRequired && group.minSelections > 0 && defaults.length < group.minSelections) {
-                allRequiredSatisfied = false
+
+              // Defaults satisfy all requirements → add directly, skip modal
+              if (allRequiredSatisfied && defaultMods.length > 0) {
+                addItemDirectly({
+                  menuItemId: item.id,
+                  name: item.name,
+                  price: item.price,
+                  quantity: quantityMultiplierRef.current,
+                  modifiers: defaultMods,
+                  categoryType: item.categoryType,
+                })
+                return
               }
             }
-
-            // Defaults satisfy all requirements → add directly, skip modal
-            if (allRequiredSatisfied && defaultMods.length > 0) {
-              addItemDirectly({
-                menuItemId: item.id,
-                name: item.name,
-                price: item.price,
-                quantity: quantityMultiplierRef.current,
-                modifiers: defaultMods,
-                categoryType: item.categoryType,
-              })
-              return
-            }
           }
+        } catch (e) {
+          console.error('Failed to check modifier defaults:', e)
         }
-      } catch (e) {
-        console.error('Failed to check modifier defaults:', e)
       }
 
       // Defaults don't cover requirements → open modifier modal
