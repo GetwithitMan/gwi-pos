@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const POST = withVenue(async function POST(
@@ -11,7 +13,7 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id } = await params
-    const { paymentId, refundAmount, refundReason, notes, managerId, readerId } =
+    const { paymentId, refundAmount, refundReason, notes, managerId, readerId, remoteApprovalCode, approvedById } =
       await request.json()
 
     // Validate required fields
@@ -102,6 +104,18 @@ export const POST = withVenue(async function POST(
         { error: `Refund amount exceeds remaining refundable balance. Already refunded: $${totalAlreadyRefunded.toFixed(2)}, remaining: $${(Number(payment.amount) - totalAlreadyRefunded).toFixed(2)}` },
         { status: 400 }
       )
+    }
+
+    // W5-11: 2FA enforcement for large refunds
+    const locationSettings = parseSettings(await getLocationSettings(order.locationId))
+    const securitySettings = locationSettings.security
+    if (securitySettings.require2FAForLargeRefunds && refundAmount > securitySettings.refund2FAThreshold) {
+      if (!remoteApprovalCode && !approvedById) {
+        return NextResponse.json(
+          { error: `Manager approval required for refund over $${securitySettings.refund2FAThreshold}`, requiresApproval: true },
+          { status: 403 }
+        )
+      }
     }
 
     // Process Datacap refund for card payments

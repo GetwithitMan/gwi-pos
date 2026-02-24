@@ -90,6 +90,8 @@ export const GET = withVenue(async function GET(
       take: 5,
     })
 
+    const tags = (customer.tags ?? []) as string[]
+
     return NextResponse.json({ data: {
       id: customer.id,
       firstName: customer.firstName,
@@ -99,7 +101,8 @@ export const GET = withVenue(async function GET(
       email: customer.email,
       phone: customer.phone,
       notes: customer.notes,
-      tags: customer.tags,
+      tags,
+      isBanned: tags.includes('banned'),
       loyaltyPoints: customer.loyaltyPoints,
       totalSpent: Number(customer.totalSpent),
       totalOrders: customer.totalOrders,

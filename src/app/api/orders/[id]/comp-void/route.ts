@@ -144,6 +144,23 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // W5-11: 2FA enforcement for large voids — requires remote SMS approval specifically
+    const securitySettings = settings.security
+    if (action === 'void' && securitySettings.require2FAForLargeVoids) {
+      const itemForCheck = order.items[0]
+      if (itemForCheck) {
+        const modsTotalCheck = itemForCheck.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
+        const itemTotalCheck = (Number(itemForCheck.price) + modsTotalCheck) * itemForCheck.quantity
+
+        if (itemTotalCheck > securitySettings.void2FAThreshold && !remoteApprovalCode) {
+          return NextResponse.json(
+            { error: `Remote manager approval required for void over $${securitySettings.void2FAThreshold}`, requiresRemoteApproval: true },
+            { status: 403 }
+          )
+        }
+      }
+    }
+
     if (order.status !== 'open' && order.status !== 'in_progress') {
       return NextResponse.json(
         { error: 'Cannot modify a closed order' },

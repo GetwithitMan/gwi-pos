@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { hasPermission, isAdmin, PERMISSIONS } from '@/lib/auth-utils'
+import { CommandPalette, useCommandPalette } from './CommandPalette'
 
 // SVG Icons as components for reuse
 const Icons = {
@@ -365,6 +366,7 @@ interface AdminNavProps {
 export function AdminNav({ forceOpen, onClose, permissions = [], onAction }: AdminNavProps) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
+  const commandPalette = useCommandPalette()
 
   const [expandedSections, setExpandedSections] = useState<string[]>(['POS', 'Menu & Products', 'Reports'])
   const [expandedSubItems, setExpandedSubItems] = useState<string[]>([])
@@ -449,6 +451,9 @@ export function AdminNav({ forceOpen, onClose, permissions = [], onAction }: Adm
         />
       )}
 
+      {/* Command Palette */}
+      <CommandPalette isOpen={commandPalette.isOpen} onClose={commandPalette.close} />
+
       {/* Sidebar */}
       <nav
         className={`fixed top-0 left-0 bottom-0 w-72 bg-white shadow-lg z-50 transform transition-transform duration-200 ${
@@ -476,6 +481,20 @@ export function AdminNav({ forceOpen, onClose, permissions = [], onAction }: Adm
               </svg>
             </button>
           </div>
+
+          {/* Search Button */}
+          <button
+            onClick={() => commandPalette.setIsOpen(true)}
+            className="mx-3 mt-3 mb-1 flex items-center gap-2 w-[calc(100%-24px)] px-3 py-2 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 hover:text-gray-700 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <span className="flex-1 text-left">Search...</span>
+            <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-gray-400 bg-white border border-gray-200 rounded">
+              ⌘K
+            </kbd>
+          </button>
 
           {/* Navigation */}
           <div className="flex-1 overflow-y-auto py-2">

@@ -136,6 +136,43 @@ interface Employee {
   displayName: string | null
 }
 
+function exportShiftCSV(report: EmployeeShiftReport) {
+  const rows: string[][] = []
+  rows.push(['Section', 'Metric', 'Value'])
+  rows.push(['Employee', 'Name', `"${report.employee.name}"`])
+  rows.push(['Employee', 'Role', report.employee.role])
+  rows.push(['Shift', 'Clock In', report.shift.clockIn])
+  rows.push(['Shift', 'Clock Out', report.shift.clockOut])
+  rows.push(['Shift', 'Hours', report.shift.hours.toFixed(2)])
+  rows.push(['Summary', 'Total Sales', report.summary.totalSales.toFixed(2)])
+  rows.push(['Summary', 'Checks', String(report.summary.checks)])
+  rows.push(['Summary', 'Avg Check', report.summary.avgCheck.toFixed(2)])
+  rows.push(['Summary', 'Tips', report.summary.tips.toFixed(2)])
+  rows.push(['Summary', 'Discounts', report.summary.discounts.toFixed(2)])
+  rows.push(['Summary', 'Voids', report.summary.voids.toFixed(2)])
+  rows.push(['Summary', 'Cash Due', report.summary.cashDue.toFixed(2)])
+  rows.push(['Summary', 'CC Tips', report.summary.creditTips.toFixed(2)])
+  rows.push(['Revenue', 'Net Sales', report.revenue.netSales.toFixed(2)])
+  rows.push(['Revenue', 'Gross Sales', report.revenue.grossSales.toFixed(2)])
+  rows.push(['Revenue', 'Total Collected', report.revenue.totalCollected.toFixed(2)])
+  rows.push(['Payments', 'Cash', report.payments.cash.amount.toFixed(2)])
+  rows.push(['Payments', 'Credit', report.payments.credit.amount.toFixed(2)])
+  rows.push(['Payments', 'Total', report.payments.totalPayments.toFixed(2)])
+  rows.push(['Cash', 'Cash Received', report.cash.cashReceived.toFixed(2)])
+  rows.push(['Cash', 'Cash Due', report.cash.cashDue.toFixed(2)])
+  report.revenueGroups.forEach(g => {
+    rows.push(['Revenue Group', `"${g.name}"`, g.net.toFixed(2)])
+  })
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `shift-report-${report.employee.name.replace(/\s+/g, '-')}-${new Date(report.shift.clockIn).toISOString().split('T')[0]}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function EmployeeShiftReportContent() {
   const searchParams = useSearchParams()
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/shift' })
@@ -265,9 +302,14 @@ function EmployeeShiftReportContent() {
               Load Report
             </Button>
             {report && (
-              <Button variant="outline" onClick={() => window.print()}>
-                Print
-              </Button>
+              <>
+                <Button variant="outline" onClick={() => exportShiftCSV(report)}>
+                  Export CSV
+                </Button>
+                <Button variant="outline" onClick={() => window.print()}>
+                  Print
+                </Button>
+              </>
             )}
           </div>
         }

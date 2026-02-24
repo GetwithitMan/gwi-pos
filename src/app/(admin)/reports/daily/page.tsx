@@ -193,6 +193,9 @@ export default function DailyReportPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [printingThermal, setPrintingThermal] = useState(false)
+  const [emailSending, setEmailSending] = useState(false)
+  const [showEmailPrompt, setShowEmailPrompt] = useState(false)
+  const [emailAddress, setEmailAddress] = useState('')
 
   useEffect(() => {
     if (employee?.location?.id) {
@@ -248,6 +251,13 @@ export default function DailyReportPage() {
             >
               Export CSV
             </Button>
+            <Button
+              variant="outline"
+              disabled={!report || emailSending}
+              onClick={() => setShowEmailPrompt(true)}
+            >
+              {emailSending ? 'Sending...' : 'Email Report'}
+            </Button>
             <Button variant="outline" onClick={() => window.print()}>
               Print Report
             </Button>
@@ -284,6 +294,65 @@ export default function DailyReportPage() {
           </div>
         }
       />
+
+      {/* Email Prompt Modal */}
+      {showEmailPrompt && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+            <h3 className="text-lg font-semibold mb-4">Email Daily Report</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Send the daily report for {selectedDate} via email.
+            </p>
+            <input
+              type="email"
+              placeholder="recipient@example.com"
+              value={emailAddress}
+              onChange={(e) => setEmailAddress(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setShowEmailPrompt(false); setEmailAddress('') }}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={!emailAddress || emailSending}
+                onClick={async () => {
+                  if (!emailAddress || !employee?.location?.id) return
+                  setEmailSending(true)
+                  try {
+                    const res = await fetch('/api/reports/email', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        reportType: 'daily',
+                        reportDate: selectedDate,
+                        recipientEmail: emailAddress,
+                        locationId: employee.location.id,
+                      }),
+                    })
+                    if (res.ok) {
+                      toast.success('Report emailed successfully')
+                    } else {
+                      const err = await res.json()
+                      toast.error(err.error || 'Failed to send email')
+                    }
+                  } catch {
+                    toast.error('Failed to send report email')
+                  } finally {
+                    setEmailSending(false)
+                    setShowEmailPrompt(false)
+                    setEmailAddress('')
+                  }
+                }}
+              >
+                {emailSending ? 'Sending...' : 'Send Email'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-6xl mx-auto print:p-0 print:max-w-none">
         <WebReportBanner

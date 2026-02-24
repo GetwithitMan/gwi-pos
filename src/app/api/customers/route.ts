@@ -57,25 +57,29 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     return NextResponse.json({ data: {
-      customers: customers.map(c => ({
-        id: c.id,
-        firstName: c.firstName,
-        lastName: c.lastName,
-        displayName: c.displayName,
-        name: c.displayName || `${c.firstName} ${c.lastName}`,
-        email: c.email,
-        phone: c.phone,
-        notes: c.notes,
-        tags: c.tags,
-        loyaltyPoints: c.loyaltyPoints,
-        totalSpent: Number(c.totalSpent),
-        totalOrders: c.totalOrders,
-        averageTicket: Number(c.averageTicket),
-        lastVisit: c.lastVisit?.toISOString() || null,
-        marketingOptIn: c.marketingOptIn,
-        birthday: c.birthday?.toISOString() || null,
-        createdAt: c.createdAt.toISOString(),
-      })),
+      customers: customers.map(c => {
+        const tags = (c.tags ?? []) as string[]
+        return {
+          id: c.id,
+          firstName: c.firstName,
+          lastName: c.lastName,
+          displayName: c.displayName,
+          name: c.displayName || `${c.firstName} ${c.lastName}`,
+          email: c.email,
+          phone: c.phone,
+          notes: c.notes,
+          tags,
+          isBanned: tags.includes('banned'),
+          loyaltyPoints: c.loyaltyPoints,
+          totalSpent: Number(c.totalSpent),
+          totalOrders: c.totalOrders,
+          averageTicket: Number(c.averageTicket),
+          lastVisit: c.lastVisit?.toISOString() || null,
+          marketingOptIn: c.marketingOptIn,
+          birthday: c.birthday?.toISOString() || null,
+          createdAt: c.createdAt.toISOString(),
+        }
+      }),
       total,
       limit,
       offset,

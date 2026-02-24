@@ -32,6 +32,47 @@ interface SalesReport {
   byEmployee: { id: string; name: string; orders: number; gross: number }[]
 }
 
+function exportSalesCSV(report: SalesReport, startDate: string, endDate: string) {
+  const rows: string[][] = []
+  rows.push(['Section', 'Field', 'Value'])
+  rows.push(['Summary', 'Orders', String(report.summary.orderCount)])
+  rows.push(['Summary', 'Items Sold', String(report.summary.itemCount)])
+  rows.push(['Summary', 'Gross Sales', report.summary.grossSales.toFixed(2)])
+  rows.push(['Summary', 'Discounts', report.summary.discounts.toFixed(2)])
+  rows.push(['Summary', 'Net Sales', report.summary.netSales.toFixed(2)])
+  rows.push(['Summary', 'Tax', report.summary.tax.toFixed(2)])
+  rows.push(['Summary', 'Tips', report.summary.tips.toFixed(2)])
+  rows.push(['Summary', 'Total', report.summary.total.toFixed(2)])
+  rows.push(['Summary', 'Cash Sales', report.summary.cashSales.toFixed(2)])
+  rows.push(['Summary', 'Card Sales', report.summary.cardSales.toFixed(2)])
+  rows.push(['Summary', 'Avg Order Value', report.summary.averageOrderValue.toFixed(2)])
+  report.byDay.forEach(d => {
+    rows.push(['Daily', d.date, ''])
+    rows.push(['Daily', 'Orders', String(d.orders)])
+    rows.push(['Daily', 'Gross', d.gross.toFixed(2)])
+    rows.push(['Daily', 'Net', d.net.toFixed(2)])
+    rows.push(['Daily', 'Tax', d.tax.toFixed(2)])
+    rows.push(['Daily', 'Tips', d.tips.toFixed(2)])
+  })
+  report.byCategory.forEach(c => {
+    rows.push(['Category', `"${c.name}"`, c.gross.toFixed(2)])
+  })
+  report.byItem.forEach(item => {
+    rows.push(['Item', `"${item.name}"`, `${item.quantity},${item.gross.toFixed(2)}`])
+  })
+  report.byEmployee.forEach(emp => {
+    rows.push(['Employee', `"${emp.name}"`, `${emp.orders},${emp.gross.toFixed(2)}`])
+  })
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `sales-report-${startDate}-to-${endDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 type TabType = 'summary' | 'daily' | 'hourly' | 'categories' | 'items' | 'employees'
 
 export default function SalesReportPage() {
@@ -106,9 +147,18 @@ export default function SalesReportPage() {
         subtitle={employee?.location?.name}
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
         actions={
-          <Button variant="ghost" onClick={() => router.push('/reports/commission')}>
-            Commission Report
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              disabled={!report}
+              onClick={() => report && exportSalesCSV(report, startDate, endDate)}
+            >
+              Export CSV
+            </Button>
+            <Button variant="ghost" onClick={() => router.push('/reports/commission')}>
+              Commission Report
+            </Button>
+          </div>
         }
       />
 

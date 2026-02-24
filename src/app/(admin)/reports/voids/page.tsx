@@ -45,6 +45,46 @@ interface Employee {
   lastName: string
 }
 
+function exportVoidsCSV(logs: VoidLog[], summary: Summary | null, startDate: string, endDate: string) {
+  const rows: string[][] = []
+  rows.push(['Date', 'Order #', 'Type', 'Item', 'Amount', 'Reason', 'Employee'])
+  logs.forEach(log => {
+    rows.push([
+      new Date(log.createdAt).toLocaleString(),
+      String(log.orderNumber),
+      log.isComp ? 'COMP' : 'VOID',
+      `"${log.itemName || 'Full Order'}"`,
+      log.amount.toFixed(2),
+      `"${log.reason}"`,
+      `"${log.employeeName}"`,
+    ])
+  })
+  if (summary) {
+    rows.push([])
+    rows.push(['Summary'])
+    rows.push(['Total Voids', String(summary.totalVoids), summary.voidAmount.toFixed(2)])
+    rows.push(['Total Comps', String(summary.totalComps), summary.compAmount.toFixed(2)])
+    rows.push([])
+    rows.push(['By Employee', 'Voids', 'Comps', 'Amount'])
+    summary.byEmployee.forEach(e => {
+      rows.push([`"${e.name}"`, String(e.voids), String(e.comps), e.amount.toFixed(2)])
+    })
+    rows.push([])
+    rows.push(['By Reason', 'Count', 'Amount'])
+    summary.byReason.forEach(r => {
+      rows.push([`"${r.reason}"`, String(r.count), r.amount.toFixed(2)])
+    })
+  }
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `voids-report-${startDate}-to-${endDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function VoidReportsPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/voids' })
   const employee = useAuthStore(s => s.employee)
@@ -137,6 +177,15 @@ export default function VoidReportsPage() {
       <AdminPageHeader
         title="Void / Comp Report"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
+        actions={
+          <Button
+            variant="outline"
+            disabled={logs.length === 0}
+            onClick={() => exportVoidsCSV(logs, summary, startDate, endDate)}
+          >
+            Export CSV
+          </Button>
+        }
       />
 
       {/* Filters */}

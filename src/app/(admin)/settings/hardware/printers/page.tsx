@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { PrinterSettingsEditor } from '@/components/hardware/PrinterSettingsEditor'
@@ -67,6 +68,44 @@ export default function PrintersPage() {
   const [hardwareSettingsPrinter, setHardwareSettingsPrinter] = useState<Printer | null>(null)
   const [visualEditorPrinter, setVisualEditorPrinter] = useState<Printer | null>(null)
   const [globalReceiptSettings, setGlobalReceiptSettings] = useState<GlobalReceiptSettings>(DEFAULT_GLOBAL_RECEIPT_SETTINGS)
+  const [batchTesting, setBatchTesting] = useState(false)
+
+  const handleBatchTest = async () => {
+    if (printers.length === 0) {
+      toast.error('No printers configured')
+      return
+    }
+
+    setBatchTesting(true)
+    let responding = 0
+    const total = printers.length
+
+    try {
+      const results = await Promise.allSettled(
+        printers.map(async (printer) => {
+          const res = await fetch(`/api/hardware/printers/${printer.id}/ping`, { method: 'POST' })
+          const data = await res.json()
+          return data.data?.success ?? false
+        })
+      )
+
+      responding = results.filter(
+        (r) => r.status === 'fulfilled' && r.value === true
+      ).length
+
+      if (responding === total) {
+        toast.success(`All ${total} printer${total !== 1 ? 's' : ''} responding`)
+      } else {
+        toast.warning(`${responding}/${total} printers responding`)
+      }
+
+      fetchPrinters()
+    } catch {
+      toast.error('Batch test failed')
+    } finally {
+      setBatchTesting(false)
+    }
+  }
 
   const fetchPrinters = useCallback(async () => {
     if (!locationId) return
@@ -318,12 +357,23 @@ export default function PrintersPage() {
           { label: 'Hardware', href: '/settings/hardware' },
         ]}
         actions={
-          <button
-            onClick={handleAddPrinter}
-            className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
-          >
-            + Add Printer
-          </button>
+          <div className="flex items-center gap-2">
+            {printers.length > 0 && (
+              <button
+                onClick={handleBatchTest}
+                disabled={batchTesting}
+                className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+              >
+                {batchTesting ? 'Testing...' : 'Test All Printers'}
+              </button>
+            )}
+            <button
+              onClick={handleAddPrinter}
+              className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+            >
+              + Add Printer
+            </button>
+          </div>
         }
       />
 

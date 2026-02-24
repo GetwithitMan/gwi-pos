@@ -109,6 +109,45 @@ const TIER_BAR_COLORS: Record<string, string> = {
   top_shelf: 'bg-amber-500',
 }
 
+function exportLiquorCSV(report: LiquorReport, startDate: string, endDate: string) {
+  const rows: string[][] = []
+  rows.push(['Section', 'Field', 'Value'])
+  rows.push(['Summary', 'Total Pours', String(report.summary.totalPours)])
+  rows.push(['Summary', 'Pour Cost', report.summary.totalPourCost.toFixed(2)])
+  rows.push(['Summary', 'Spirit Revenue', report.summary.totalSpiritRevenue.toFixed(2)])
+  rows.push(['Summary', 'Gross Margin', `${report.summary.grossMargin}%`])
+  rows.push(['Summary', 'Bottles Used', String(report.summary.uniqueBottlesUsed)])
+  rows.push([])
+  rows.push(['Tier', 'Drinks', 'Revenue', 'Orders'])
+  report.byTier.forEach(t => {
+    rows.push([t.label, String(t.count), t.revenue.toFixed(2), String(t.orderCount)])
+  })
+  rows.push([])
+  rows.push(['Category', 'Pours', 'Cost', 'Revenue', 'Margin'])
+  report.byCategory.forEach(c => {
+    rows.push([`"${c.categoryName}"`, String(c.totalPours), c.totalCost.toFixed(2), c.totalRevenue.toFixed(2), `${c.margin}%`])
+  })
+  rows.push([])
+  rows.push(['Bottle', 'Category', 'Tier', 'Pours', 'Cost'])
+  report.byBottle.forEach(b => {
+    rows.push([`"${b.name}"`, `"${b.category}"`, b.tier, String(b.totalPours), b.totalCost.toFixed(2)])
+  })
+  rows.push([])
+  rows.push(['Pour Cost Analysis'])
+  rows.push(['Cocktail', 'Sell Price', 'Pour Cost', 'Margin'])
+  report.pourCostAnalysis.forEach(p => {
+    rows.push([`"${p.name}"`, p.sellPrice.toFixed(2), p.pourCost.toFixed(2), `${p.margin}%`])
+  })
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `liquor-report-${startDate}-to-${endDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function LiquorReportPage() {
   const router = useRouter()
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/liquor' })
@@ -171,9 +210,18 @@ export default function LiquorReportPage() {
         title="Liquor & Spirits Report"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
         actions={
-          <Button variant="outline" onClick={() => router.push('/liquor-builder')}>
-            Liquor Builder
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              disabled={!report}
+              onClick={() => report && exportLiquorCSV(report, startDate, endDate)}
+            >
+              Export CSV
+            </Button>
+            <Button variant="outline" onClick={() => router.push('/liquor-builder')}>
+              Liquor Builder
+            </Button>
+          </div>
         }
       />
 

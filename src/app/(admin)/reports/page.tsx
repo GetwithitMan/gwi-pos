@@ -182,6 +182,28 @@ export default function ReportsHubPage() {
           ),
         },
         {
+          name: 'Daypart Analysis',
+          href: '/reports/daypart',
+          description: 'Revenue and orders by time of day: morning, lunch, dinner, late night',
+          permission: PERMISSIONS.REPORTS_SALES,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Trends & Comparison',
+          href: '/reports/trends',
+          description: 'Day-over-day and week-over-week comparison with delta metrics',
+          permission: PERMISSIONS.REPORTS_SALES,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          ),
+        },
+        {
           name: 'Sales Forecasting',
           href: '/reports/forecasting',
           description: 'Day-of-week revenue patterns and projected sales for the next 7–14 days',
@@ -334,6 +356,17 @@ export default function ReportsHubPage() {
           icon: (
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Cash-Flow & Liabilities',
+          href: '/reports/cash-liabilities',
+          description: 'Cash on hand, house accounts, gift cards, tip payouts, and over/short',
+          permission: PERMISSIONS.REPORTS_SALES,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
           ),
         },

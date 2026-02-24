@@ -7,7 +7,9 @@ import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settin
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { BusinessDaySettings } from '@/lib/settings'
+import type { BusinessDaySettings, SecuritySettings } from '@/lib/settings'
+
+const IDLE_LOCK_OPTIONS = [0, 1, 3, 5, 10, 15, 30] as const
 
 export default function SecuritySettingsPage() {
   const { employee } = useRequireAuth()
@@ -17,6 +19,7 @@ export default function SecuritySettingsPage() {
   const [isDirty, setIsDirty] = useState(false)
 
   const [businessDay, setBusinessDay] = useState<BusinessDaySettings | null>(null)
+  const [security, setSecurity] = useState<SecuritySettings | null>(null)
 
   useUnsavedWarning(isDirty)
 
@@ -27,6 +30,7 @@ export default function SecuritySettingsPage() {
         setIsLoading(true)
         const data = await loadSettingsApi(controller.signal)
         setBusinessDay(data.settings.businessDay)
+        setSecurity(data.settings.security)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load settings')
@@ -44,11 +48,12 @@ export default function SecuritySettingsPage() {
   }, [loadSettings])
 
   const handleSave = async () => {
-    if (!businessDay) return
+    if (!businessDay || !security) return
     try {
       setIsSaving(true)
-      const data = await saveSettingsApi({ businessDay }, employee?.id)
+      const data = await saveSettingsApi({ businessDay, security }, employee?.id)
       setBusinessDay(data.settings.businessDay)
+      setSecurity(data.settings.security)
       setIsDirty(false)
       toast.success('Security settings saved')
     } catch (err) {
@@ -63,7 +68,12 @@ export default function SecuritySettingsPage() {
     setIsDirty(true)
   }
 
-  if (isLoading || !businessDay) {
+  const updateSecurity = <K extends keyof SecuritySettings>(key: K, value: SecuritySettings[K]) => {
+    setSecurity(prev => prev ? { ...prev, [key]: value } : prev)
+    setIsDirty(true)
+  }
+
+  if (isLoading || !businessDay || !security) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
         <AdminPageHeader
@@ -82,7 +92,7 @@ export default function SecuritySettingsPage() {
     <div className="p-6 max-w-5xl mx-auto">
       <AdminPageHeader
         title="Security Settings"
-        subtitle="PIN lockout, business day boundaries, and security configuration"
+        subtitle="PIN lockout, screen lock, buddy-punch detection, and 2FA configuration"
         breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         actions={
           <div className="flex items-center gap-3">
@@ -148,7 +158,103 @@ export default function SecuritySettingsPage() {
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 2: Business Day
+            Card 2: Screen Lock & Buddy Punch
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Screen Lock & Time Clock</h2>
+          <p className="text-sm text-gray-500 mb-5">Control idle lockout and buddy-punch detection for time clock events.</p>
+
+          <div className="space-y-0">
+            <ToggleRow
+              label="Require PIN After Each Payment"
+              description="Lock screen after processing a payment, requiring PIN re-entry"
+              checked={security.requirePinAfterPayment}
+              onChange={v => updateSecurity('requirePinAfterPayment', v)}
+              border
+            />
+
+            <div className="flex items-center justify-between py-3 border-b border-gray-100">
+              <div>
+                <div className="text-sm text-gray-700">Lock Screen After Idle</div>
+                <div className="text-xs text-gray-400">Require PIN re-entry after period of inactivity (0 = disabled)</div>
+              </div>
+              <select
+                value={security.idleLockMinutes}
+                onChange={e => updateSecurity('idleLockMinutes', Number(e.target.value))}
+                className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                {IDLE_LOCK_OPTIONS.map(min => (
+                  <option key={min} value={min}>
+                    {min === 0 ? 'Disabled' : `${min} min`}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <ToggleRow
+              label="Enable Buddy-Punch Detection"
+              description="Alert managers when an employee clocks in from a different device/IP than their previous clock event"
+              checked={security.enableBuddyPunchDetection}
+              onChange={v => updateSecurity('enableBuddyPunchDetection', v)}
+              border
+            />
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 3: 2FA for High-Value Actions
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Remote Approval (2FA)</h2>
+          <p className="text-sm text-gray-500 mb-5">Require remote manager approval (via SMS) for high-value voids and refunds.</p>
+
+          <div className="space-y-0">
+            <ToggleRow
+              label="Require Remote Approval for Large Refunds"
+              description="Refunds above the threshold require SMS manager approval"
+              checked={security.require2FAForLargeRefunds}
+              onChange={v => updateSecurity('require2FAForLargeRefunds', v)}
+              border
+            />
+
+            {security.require2FAForLargeRefunds && (
+              <NumberRow
+                label="Refund Approval Threshold"
+                description="Refunds above this dollar amount require remote approval"
+                value={security.refund2FAThreshold}
+                onChange={v => updateSecurity('refund2FAThreshold', v)}
+                suffix="$"
+                min={1}
+                max={10000}
+                step={25}
+              />
+            )}
+
+            <ToggleRow
+              label="Require Remote Approval for Large Voids"
+              description="Voids above the threshold require SMS manager approval (not just local PIN)"
+              checked={security.require2FAForLargeVoids}
+              onChange={v => updateSecurity('require2FAForLargeVoids', v)}
+              border
+            />
+
+            {security.require2FAForLargeVoids && (
+              <NumberRow
+                label="Void Approval Threshold"
+                description="Voids above this dollar amount require remote SMS approval"
+                value={security.void2FAThreshold}
+                onChange={v => updateSecurity('void2FAThreshold', v)}
+                suffix="$"
+                min={1}
+                max={10000}
+                step={25}
+              />
+            )}
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 4: Business Day
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Business Day</h2>
@@ -207,7 +313,7 @@ export default function SecuritySettingsPage() {
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 3: Coming Soon
+            Card 5: Coming Soon
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 opacity-60">
           <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">

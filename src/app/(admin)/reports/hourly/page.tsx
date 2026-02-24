@@ -41,6 +41,30 @@ function formatCurrency(value: number): string {
   }).format(value)
 }
 
+function exportHourlyCSV(report: HourlyReport) {
+  const rows: string[][] = []
+  rows.push(['Hour', 'Orders', 'Revenue', 'Avg Order', 'Tips'])
+  report.hours.forEach(h => {
+    rows.push([
+      h.label, String(h.orderCount), h.revenue.toFixed(2),
+      h.avgOrderValue.toFixed(2), h.tipTotal.toFixed(2),
+    ])
+  })
+  if (report.summary) {
+    rows.push([])
+    rows.push(['Totals', String(report.summary.totalOrders), report.summary.totalRevenue.toFixed(2), report.summary.avgOrderValue.toFixed(2), ''])
+    rows.push(['Peak Hour', report.summary.peakHourLabel, report.summary.peakRevenue.toFixed(2)])
+  }
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `hourly-report-${report.date}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function HourlySalesPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/hourly' })
   const employee = useAuthStore(s => s.employee)
@@ -98,6 +122,15 @@ export default function HourlySalesPage() {
       <AdminPageHeader
         title="Hourly Sales"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
+        actions={
+          <button
+            disabled={!report}
+            onClick={() => report && exportHourlyCSV(report)}
+            className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 font-medium disabled:opacity-50"
+          >
+            Export CSV
+          </button>
+        }
       />
 
       <div className="max-w-7xl mx-auto">

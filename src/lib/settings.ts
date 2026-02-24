@@ -160,6 +160,16 @@ export interface AlertSettings {
   cashDrawerAlertEnabled: boolean     // Alert on cash drawer events (default: true)
 }
 
+export interface SecuritySettings {
+  requirePinAfterPayment: boolean      // Require PIN re-entry after each payment (default: false)
+  idleLockMinutes: number              // Lock screen after N minutes idle, 0 = disabled (default: 0)
+  enableBuddyPunchDetection: boolean   // Alert on suspicious clock events from different IPs (default: false)
+  require2FAForLargeRefunds: boolean   // Require remote manager approval for refunds above threshold (default: false)
+  refund2FAThreshold: number           // Refunds above this amount need 2FA ($) (default: 100)
+  require2FAForLargeVoids: boolean     // Require remote manager approval for voids above threshold (default: false)
+  void2FAThreshold: number             // Voids above this amount need remote 2FA ($) (default: 200)
+}
+
 export interface BusinessDaySettings {
   dayStartTime: string         // HH:MM format, default "04:00"
   enforceClockOut: boolean     // Force clock-out by day boundary (default: true)
@@ -462,6 +472,7 @@ export interface LocationSettings {
   receiptDisplay: GlobalReceiptSettings  // Controls WHAT features are available in the Visual Editor
   approvals: ApprovalSettings
   alerts: AlertSettings
+  security: SecuritySettings
   localDataRetention?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | '60days' | '90days'
 }
 
@@ -656,6 +667,15 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     overtimeWarningMinutes: 30,
     cashDrawerAlertEnabled: true,
   },
+  security: {
+    requirePinAfterPayment: false,
+    idleLockMinutes: 0,
+    enableBuddyPunchDetection: false,
+    require2FAForLargeRefunds: false,
+    refund2FAThreshold: 100,
+    require2FAForLargeVoids: false,
+    void2FAThreshold: 200,
+  },
   localDataRetention: 'monthly',
 }
 
@@ -742,6 +762,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     alerts: {
       ...DEFAULT_SETTINGS.alerts,
       ...(partial.alerts || {}),
+    },
+    security: {
+      ...DEFAULT_SETTINGS.security,
+      ...(partial.security || {}),
     },
     localDataRetention: partial.localDataRetention ?? DEFAULT_SETTINGS.localDataRetention,
   }

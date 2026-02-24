@@ -65,6 +65,8 @@ export const PUT = withVenue(async function PUT(
     // Get loyalty settings
     const settings = parseSettings(order.location.settings)
 
+    const customerTags = customer ? ((customer.tags ?? []) as string[]) : []
+
     return NextResponse.json({ data: {
       success: true,
       customerId: customerId || null,
@@ -76,7 +78,8 @@ export const PUT = withVenue(async function PUT(
         loyaltyPoints: customer.loyaltyPoints,
         totalSpent: Number(customer.totalSpent),
         totalOrders: customer.totalOrders,
-        tags: customer.tags,
+        tags: customerTags,
+        isBanned: customerTags.includes('banned'),
         notes: customer.notes,
       } : null,
       loyaltyEnabled: settings.loyalty.enabled,
@@ -122,6 +125,8 @@ export const GET = withVenue(async function GET(
 
     const settings = parseSettings(order.location.settings)
 
+    const orderCustomerTags = order.customer ? ((order.customer.tags ?? []) as string[]) : []
+
     return NextResponse.json({ data: {
       customerId: order.customerId,
       customer: order.customer ? {
@@ -132,7 +137,8 @@ export const GET = withVenue(async function GET(
         loyaltyPoints: order.customer.loyaltyPoints,
         totalSpent: Number(order.customer.totalSpent),
         totalOrders: order.customer.totalOrders,
-        tags: order.customer.tags,
+        tags: orderCustomerTags,
+        isBanned: orderCustomerTags.includes('banned'),
         notes: order.customer.notes,
       } : null,
       loyaltyEnabled: settings.loyalty.enabled,

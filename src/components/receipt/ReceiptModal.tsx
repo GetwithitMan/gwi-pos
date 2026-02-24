@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Receipt, type ReceiptData } from './Receipt'
 import { Modal } from '@/components/ui/modal'
 import { toast } from '@/stores/toast-store'
@@ -29,10 +30,18 @@ export function ReceiptModal({
   const [error, setError] = useState<string | null>(null)
   const receiptRef = useRef<HTMLDivElement>(null)
 
+  // Email receipt state
+  const [showEmailForm, setShowEmailForm] = useState(false)
+  const [emailAddress, setEmailAddress] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
+
   useEffect(() => {
     if (!isOpen || !orderId) {
       setReceiptData(null)
       setIsLoading(true)
+      setShowEmailForm(false)
+      setEmailAddress('')
+      setSendingEmail(false)
       return
     }
 
@@ -66,6 +75,34 @@ export function ReceiptModal({
 
     fetchReceipt()
   }, [isOpen, orderId, locationId, preloadedData])
+
+  const handleSendEmail = async () => {
+    if (!emailAddress.trim() || !orderId) return
+    setSendingEmail(true)
+    try {
+      const response = await fetch('/api/receipts/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          email: emailAddress.trim(),
+          locationId,
+        }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to send email receipt')
+        return
+      }
+      toast.success(`Receipt sent to ${emailAddress.trim()}`)
+      setShowEmailForm(false)
+      setEmailAddress('')
+    } catch {
+      toast.error('Failed to send email receipt')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
 
   const handlePrint = () => {
     // Create a new window with just the receipt content
@@ -169,10 +206,53 @@ export function ReceiptModal({
           )}
         </div>
 
+        {/* Email Receipt Form */}
+        {showEmailForm && (
+          <div className="px-4 py-3 border-t bg-blue-50">
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder="customer@email.com"
+                value={emailAddress}
+                onChange={(e) => setEmailAddress(e.target.value)}
+                className="flex-1"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSendEmail() }}
+              />
+              <Button
+                variant="primary"
+                onClick={handleSendEmail}
+                disabled={sendingEmail || !emailAddress.trim()}
+                className="whitespace-nowrap"
+              >
+                {sendingEmail ? 'Sending...' : 'Send'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => { setShowEmailForm(false); setEmailAddress('') }}
+                disabled={sendingEmail}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="p-4 border-t bg-gray-50 flex gap-2">
           <Button variant="outline" className="flex-1" onClick={onClose}>
             Close
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => setShowEmailForm(!showEmailForm)}
+            disabled={isLoading || !receiptData}
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            Email
           </Button>
           <Button
             variant="primary"

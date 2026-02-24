@@ -2985,6 +2985,28 @@ export default function OrdersPage() {
           onSearchSelect={handleSearchSelect}
           onScanComplete={handleScanComplete}
           cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
+          onQuickServiceOrder={() => {
+            // Find first active non-dine-in order type (prefer takeout)
+            const takeout = orderTypes.find(ot => ot.slug === 'takeout' && ot.isActive)
+            const fallback = orderTypes.find(ot => ot.slug !== 'dine_in' && ot.slug !== 'bar_tab' && ot.isActive)
+            const quickType = takeout || fallback
+            const slug = quickType?.slug || 'takeout'
+
+            // Ensure we're in floor-plan view for the order panel
+            if (viewMode !== 'floor-plan') {
+              setViewMode('floor-plan')
+            }
+
+            // Clear any existing order and start a new tableless one
+            clearOrder()
+            startOrder(slug, {
+              locationId: employee?.location?.id,
+              orderTypeId: quickType?.id,
+            })
+
+            // Trigger the quick order type flow (opens the order panel)
+            quickOrderTypeRef.current?.(slug)
+          }}
         />
         {viewMode === 'floor-plan' && (
           <FloorPlanHome

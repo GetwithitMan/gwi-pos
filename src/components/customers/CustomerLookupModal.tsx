@@ -181,16 +181,32 @@ export function CustomerLookupModal({
               {customers.map(customer => (
                 <button
                   key={customer.id}
-                  onClick={() => handleSelect(customer)}
+                  onClick={() => {
+                    if (customer.tags.includes('banned')) {
+                      if (!confirm('WARNING: This customer is BANNED. Are you sure you want to attach them to this order?')) {
+                        return
+                      }
+                    }
+                    handleSelect(customer)
+                  }}
                   className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                    customer.id === currentCustomerId
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:bg-gray-50'
+                    customer.tags.includes('banned')
+                      ? 'border-red-300 bg-red-50 hover:bg-red-100'
+                      : customer.id === currentCustomerId
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:bg-gray-50'
                   }`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="font-medium">{customer.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{customer.name}</span>
+                        {customer.tags.includes('banned') && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">
+                            BANNED
+                          </span>
+                        )}
+                      </div>
                       {customer.phone && (
                         <div className="text-sm text-gray-500">{customer.phone}</div>
                       )}
@@ -212,7 +228,7 @@ export function CustomerLookupModal({
 
                   {customer.tags.length > 0 && (
                     <div className="flex gap-1 mt-2 flex-wrap">
-                      {customer.tags.map(tag => (
+                      {customer.tags.filter(t => t !== 'banned').map(tag => (
                         <span
                           key={tag}
                           className={`px-2 py-0.5 rounded-full text-xs font-medium ${TAG_COLORS[tag] || 'bg-gray-100 text-gray-700'}`}

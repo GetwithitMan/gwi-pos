@@ -65,6 +65,33 @@ interface TipsReport {
 
 type TabType = 'summary' | 'shares' | 'banked'
 
+function exportTipsCSV(report: TipsReport, startDate: string, endDate: string) {
+  const rows: string[][] = []
+  rows.push(['Employee', 'Role', 'Shifts', 'Gross Tips', 'Given', 'Received', 'Net Tips'])
+  report.byEmployee.forEach(emp => {
+    rows.push([
+      `"${emp.employeeName}"`, emp.roleName, String(emp.shiftCount),
+      emp.grossTips.toFixed(2), emp.tipOutsGiven.toFixed(2),
+      emp.tipOutsReceived.toFixed(2), (emp.netTips + emp.tipOutsReceived).toFixed(2),
+    ])
+  })
+  rows.push([])
+  rows.push(['Summary'])
+  rows.push(['Gross Tips', report.summary.totalGrossTips.toFixed(2)])
+  rows.push(['Tip-Outs', report.summary.totalTipOuts.toFixed(2)])
+  rows.push(['Banked', report.summary.totalBanked.toFixed(2)])
+  rows.push(['Collected', report.summary.totalCollected.toFixed(2)])
+  rows.push(['Paid Out', report.summary.totalPaidOut.toFixed(2)])
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `tips-report-${startDate}-to-${endDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function TipsReportPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/tips' })
   const employee = useAuthStore(s => s.employee)
@@ -146,9 +173,18 @@ export default function TipsReportPage() {
         title="Tips Report"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
         actions={
-          <Link href="/settings/tip-outs">
-            <Button variant="outline">Configure Tip-Outs</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              disabled={!report}
+              onClick={() => report && exportTipsCSV(report, startDate, endDate)}
+            >
+              Export CSV
+            </Button>
+            <Link href="/settings/tip-outs">
+              <Button variant="outline">Configure Tip-Outs</Button>
+            </Link>
+          </div>
         }
       />
 

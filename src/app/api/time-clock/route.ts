@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { assignEmployeeToTemplateGroup } from '@/lib/domain/tips/tip-group-templates'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitCloudEvent } from '@/lib/cloud-events'
+import { dispatchLocationAlert } from '@/lib/socket-dispatch'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List time clock entries
@@ -147,6 +150,81 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       action: "clock_in",
       clockTime: entry.clockIn.toISOString(),
     }).catch(console.error)
+
+    // W5-10: Device/IP logging for buddy-punch prevention (fire-and-forget)
+    const clockInIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
+    const clockInUa = request.headers.get('user-agent') || 'unknown'
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId,
+        action: 'clock_in',
+        entityType: 'time_clock',
+        entityId: entry.id,
+        details: {
+          ipAddress: clockInIp,
+          userAgent: clockInUa,
+          deviceFingerprint: `${clockInIp}|${clockInUa}`,
+        },
+      },
+    }).catch(console.error)
+
+    // W5-10: Buddy-punch detection — check for recent clock events from different IP
+    void (async () => {
+      try {
+        const settings = parseSettings(await getLocationSettings(locationId))
+        if (!settings.security.enableBuddyPunchDetection) return
+
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000)
+        const recentAuditLogs = await db.auditLog.findMany({
+          where: {
+            locationId,
+            employeeId,
+            action: { in: ['clock_in', 'clock_out'] },
+            entityType: 'time_clock',
+            createdAt: { gte: oneHourAgo },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        })
+
+        const previousIps = recentAuditLogs
+          .filter(log => {
+            const details = log.details as Record<string, unknown> | null
+            return details?.ipAddress && details.ipAddress !== clockInIp && details.ipAddress !== 'unknown'
+          })
+          .map(log => (log.details as Record<string, unknown>).ipAddress as string)
+
+        if (previousIps.length > 0) {
+          const empName = entry.employee.displayName || `${entry.employee.firstName} ${entry.employee.lastName}`
+          void dispatchLocationAlert(locationId, {
+            type: 'warning',
+            title: 'Buddy Punch Warning',
+            message: `${empName} clocked in from ${clockInIp}, previous event from ${previousIps[0]}`,
+            dismissable: true,
+          }, { async: true })
+
+          void db.auditLog.create({
+            data: {
+              locationId,
+              employeeId,
+              action: 'alert_buddy_punch_warning',
+              entityType: 'alert',
+              entityId: entry.id,
+              details: {
+                alertType: 'warning',
+                title: 'Buddy Punch Warning',
+                currentIp: clockInIp,
+                previousIp: previousIps[0],
+                employeeName: empName,
+              },
+            },
+          }).catch(console.error)
+        }
+      } catch (err) {
+        console.error('[time-clock] Buddy-punch detection failed:', err)
+      }
+    })()
 
     // If a tip group template was selected, assign the employee to its runtime group.
     // Wrapped in try/catch so clock-in still succeeds even if group assignment fails.
@@ -306,6 +384,26 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // Fire-and-forget socket dispatch for real-time clock updates
     void emitToLocation(entry.locationId, 'employee:clock-changed', { employeeId: entry.employeeId }).catch(() => {})
+
+    // W5-10: Device/IP logging for clock-out (fire-and-forget)
+    if (action === 'clockOut') {
+      const clockOutIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
+      const clockOutUa = request.headers.get('user-agent') || 'unknown'
+      void db.auditLog.create({
+        data: {
+          locationId: entry.locationId,
+          employeeId: entry.employeeId,
+          action: 'clock_out',
+          entityType: 'time_clock',
+          entityId: entry.id,
+          details: {
+            ipAddress: clockOutIp,
+            userAgent: clockOutUa,
+            deviceFingerprint: `${clockOutIp}|${clockOutUa}`,
+          },
+        },
+      }).catch(console.error)
+    }
 
     // Emit cloud event for clock-out (fire-and-forget)
     if (action === 'clockOut' && updated.clockOut) {

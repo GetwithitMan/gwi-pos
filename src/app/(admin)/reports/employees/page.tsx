@@ -61,6 +61,35 @@ interface EmployeeReport {
   byDay: DailyData[]
 }
 
+function exportEmployeesCSV(report: EmployeeReport, startDate: string, endDate: string) {
+  const rows: string[][] = []
+  rows.push(['Employee', 'Role', 'Orders', 'Sales', 'Tips', 'Commission', 'Avg Ticket', 'Items', 'Hours', 'Sales/Hr', 'Cash Amount', 'Card Amount', 'Cash Received', 'Cash Owed', 'Purse Balance'])
+  report.byEmployee.forEach(emp => {
+    rows.push([
+      `"${emp.name}"`, emp.role, String(emp.orders), emp.sales.toFixed(2),
+      emp.tips.toFixed(2), emp.commission.toFixed(2), emp.avgTicket.toFixed(2),
+      String(emp.itemsSold), emp.hoursWorked.toFixed(1), emp.salesPerHour.toFixed(2),
+      emp.cashAmount.toFixed(2), emp.cardAmount.toFixed(2),
+      emp.cashReceived.toFixed(2), emp.cashOwed.toFixed(2), emp.purseBalance.toFixed(2),
+    ])
+  })
+  rows.push([])
+  rows.push(['Summary'])
+  rows.push(['Total Employees', String(report.summary.totalEmployees)])
+  rows.push(['Total Orders', String(report.summary.totalOrders)])
+  rows.push(['Total Sales', report.summary.totalSales.toFixed(2)])
+  rows.push(['Total Tips', report.summary.totalTips.toFixed(2)])
+  rows.push(['Total Commission', report.summary.totalCommission.toFixed(2)])
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `employee-report-${startDate}-to-${endDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function EmployeeReportsPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/employees' })
   const employee = useAuthStore(s => s.employee)
@@ -114,6 +143,15 @@ export default function EmployeeReportsPage() {
       <AdminPageHeader
         title="Employee Reports"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
+        actions={
+          <Button
+            variant="outline"
+            disabled={!report}
+            onClick={() => report && exportEmployeesCSV(report, startDate, endDate)}
+          >
+            Export CSV
+          </Button>
+        }
       />
 
       <div className="max-w-7xl mx-auto">

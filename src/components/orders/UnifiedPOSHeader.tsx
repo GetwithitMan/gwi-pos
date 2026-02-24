@@ -68,6 +68,7 @@ export interface UnifiedPOSHeaderProps {
   onSearchSelect: (item: SearchMenuItem) => void
   cardPriceMultiplier?: number
   onScanComplete?: (sku: string) => void
+  onQuickServiceOrder?: () => void
 }
 
 export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
@@ -107,6 +108,7 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   onSearchSelect,
   cardPriceMultiplier,
   onScanComplete,
+  onQuickServiceOrder,
 }: UnifiedPOSHeaderProps) {
   const [showEmployeeMenu, setShowEmployeeMenu] = useState(false)
   const [showGearMenu, setShowGearMenu] = useState(false)
@@ -304,6 +306,31 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
           )
         })}
       </div>
+
+      {/* ── Quick Order ── */}
+      {onQuickServiceOrder && (
+        <>
+          <div style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.08)', flexShrink: 0 }} />
+          <button
+            onClick={onQuickServiceOrder}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              height: '30px', padding: '0 10px',
+              background: 'rgba(16, 185, 129, 0.2)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              borderRadius: '6px',
+              color: '#6ee7b7',
+              fontSize: '12px', fontWeight: 600,
+              cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            }}
+          >
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+            </svg>
+            Quick Order
+          </button>
+        </>
+      )}
 
       {/* ── Gear Dropdown ── */}
       {canCustomize && (

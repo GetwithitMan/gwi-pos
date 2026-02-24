@@ -16,6 +16,48 @@ import { toast } from '@/stores/toast-store'
 // Common customer tags
 const CUSTOMER_TAGS = ['VIP', 'Regular', 'First-Timer', 'Staff', 'Family', 'Business', 'Birthday Club']
 
+// VIP tier definitions
+const VIP_TIERS = [
+  { tag: 'vip_silver', label: 'Silver', color: 'bg-gray-200 text-gray-800', minSpent: 500 },
+  { tag: 'vip_gold', label: 'Gold', color: 'bg-amber-100 text-amber-800', minSpent: 2000 },
+  { tag: 'vip_platinum', label: 'Platinum', color: 'bg-purple-100 text-purple-800', minSpent: 5000 },
+] as const
+
+const VIP_TIER_TAGS: string[] = VIP_TIERS.map(t => t.tag)
+
+function getVipTier(tags: string[]): typeof VIP_TIERS[number] | null {
+  for (const tier of [...VIP_TIERS].reverse()) {
+    if (tags.includes(tier.tag)) return tier
+  }
+  return null
+}
+
+function getSuggestedTier(totalSpent: number): typeof VIP_TIERS[number] | null {
+  for (const tier of [...VIP_TIERS].reverse()) {
+    if (totalSpent >= tier.minSpent) return tier
+  }
+  return null
+}
+
+function isBirthdayUpcoming(birthday: string | null, withinDays = 7): number | null {
+  if (!birthday) return null
+  const now = new Date()
+  const bday = new Date(birthday)
+  // Set birthday to this year
+  const thisYearBday = new Date(now.getFullYear(), bday.getMonth(), bday.getDate())
+  // If birthday already passed this year, check next year
+  if (thisYearBday < now) {
+    thisYearBday.setFullYear(now.getFullYear() + 1)
+  }
+  const diffMs = thisYearBday.getTime() - now.getTime()
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+  return diffDays <= withinDays ? diffDays : null
+}
+
+function isBanned(tags: string[]): boolean {
+  return tags.includes('banned')
+}
+
 interface Customer {
   id: string
   firstName: string
@@ -290,8 +332,22 @@ export default function CustomersPage() {
       Family: 'bg-pink-100 text-pink-800',
       Business: 'bg-gray-100 text-gray-800',
       'Birthday Club': 'bg-red-100 text-red-800',
+      vip_silver: 'bg-gray-200 text-gray-800',
+      vip_gold: 'bg-amber-100 text-amber-800',
+      vip_platinum: 'bg-purple-100 text-purple-800',
+      banned: 'bg-red-600 text-white',
     }
     return colors[tag] || 'bg-gray-100 text-gray-700'
+  }
+
+  const getTagDisplayName = (tag: string) => {
+    const names: Record<string, string> = {
+      vip_silver: 'VIP Silver',
+      vip_gold: 'VIP Gold',
+      vip_platinum: 'VIP Platinum',
+      banned: 'BANNED',
+    }
+    return names[tag] || tag
   }
 
   if (!hydrated || !employee) {
@@ -374,7 +430,7 @@ export default function CustomersPage() {
             {customers.map(customer => (
               <Card
                 key={customer.id}
-                className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+                className={`p-4 hover:shadow-md transition-shadow cursor-pointer ${isBanned(customer.tags) ? 'border-red-300 bg-red-50/50' : ''}`}
                 onClick={() => {
                   setOrderPage(1)
                   setOrderDateFilter({ startDate: '', endDate: '' })
@@ -384,7 +440,23 @@ export default function CustomersPage() {
               >
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <h3 className="font-medium text-gray-900">{customer.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-medium text-gray-900">{customer.name}</h3>
+                      {(() => {
+                        const tier = getVipTier(customer.tags)
+                        if (tier) return (
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${tier.color}`}>
+                            {tier.label}
+                          </span>
+                        )
+                        return null
+                      })()}
+                      {isBanned(customer.tags) && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">
+                          BANNED
+                        </span>
+                      )}
+                    </div>
                     {customer.email && (
                       <p className="text-sm text-gray-500">{customer.email}</p>
                     )}
@@ -402,14 +474,25 @@ export default function CustomersPage() {
                   </div>
                 </div>
 
+                {/* Birthday indicator */}
+                {(() => {
+                  const daysUntil = isBirthdayUpcoming(customer.birthday)
+                  if (daysUntil !== null) return (
+                    <div className="mb-2 text-xs font-medium text-pink-600 bg-pink-50 px-2 py-1 rounded">
+                      {daysUntil === 0 ? 'Birthday today!' : daysUntil === 1 ? 'Birthday tomorrow!' : `Birthday in ${daysUntil} days`}
+                    </div>
+                  )
+                  return null
+                })()}
+
                 {customer.tags.length > 0 && (
                   <div className="flex gap-1 flex-wrap mb-2">
-                    {customer.tags.map(tag => (
+                    {customer.tags.filter(tag => tag !== 'banned').map(tag => (
                       <span
                         key={tag}
                         className={`px-2 py-0.5 rounded-full text-xs font-medium ${getTagColor(tag)}`}
                       >
-                        {tag}
+                        {getTagDisplayName(tag)}
                       </span>
                     ))}
                   </div>
@@ -508,6 +591,55 @@ export default function CustomersPage() {
             />
           </div>
 
+          {/* VIP Tier Selector */}
+          <div>
+            <Label>VIP Tier</Label>
+            {(() => {
+              const suggested = getSuggestedTier(editingCustomer?.totalSpent || 0)
+              const currentTier = getVipTier(formData.tags)
+              return (
+                <div className="mt-2">
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                        !currentTier ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                      onClick={() => setFormData(prev => ({
+                        ...prev,
+                        tags: prev.tags.filter(t => !VIP_TIER_TAGS.includes(t)),
+                      }))}
+                    >
+                      None
+                    </button>
+                    {VIP_TIERS.map(tier => (
+                      <button
+                        key={tier.tag}
+                        type="button"
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                          currentTier?.tag === tier.tag
+                            ? 'bg-blue-600 text-white'
+                            : `${tier.color} hover:opacity-80`
+                        }`}
+                        onClick={() => setFormData(prev => ({
+                          ...prev,
+                          tags: [...prev.tags.filter(t => !VIP_TIER_TAGS.includes(t)), tier.tag],
+                        }))}
+                      >
+                        {tier.label} (${tier.minSpent.toLocaleString()}+)
+                      </button>
+                    ))}
+                  </div>
+                  {suggested && (!currentTier || VIP_TIERS.indexOf(suggested) > VIP_TIERS.indexOf(currentTier)) && editingCustomer && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Suggested: {suggested.label} (based on {formatCurrency(editingCustomer.totalSpent)} total spent)
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
+          </div>
+
           <div>
             <Label>Tags</Label>
             <div className="flex gap-2 flex-wrap mt-2">
@@ -526,6 +658,26 @@ export default function CustomersPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Ban Toggle */}
+          <div className="flex items-center gap-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+            <input
+              type="checkbox"
+              id="banned"
+              checked={formData.tags.includes('banned')}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setFormData(prev => ({ ...prev, tags: [...prev.tags, 'banned'] }))
+                } else {
+                  setFormData(prev => ({ ...prev, tags: prev.tags.filter(t => t !== 'banned') }))
+                }
+              }}
+              className="w-4 h-4 accent-red-600"
+            />
+            <Label htmlFor="banned" className="!mb-0 text-red-700">
+              Ban this customer (will show warning when attaching to orders)
+            </Label>
           </div>
 
           <div>
@@ -594,9 +746,25 @@ export default function CustomersPage() {
         ) : (
           <div className="space-y-6">
             {/* Customer Info */}
+            {isBanned(viewingCustomer.tags) && (
+              <div className="p-3 bg-red-100 border border-red-300 rounded-lg text-red-800 font-bold text-center">
+                This customer is BANNED
+              </div>
+            )}
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-xl font-bold">{viewingCustomer.name}</h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-bold">{viewingCustomer.name}</h3>
+                  {(() => {
+                    const tier = getVipTier(viewingCustomer.tags)
+                    if (tier) return (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${tier.color}`}>
+                        {tier.label}
+                      </span>
+                    )
+                    return null
+                  })()}
+                </div>
                 {viewingCustomer.email && (
                   <p className="text-gray-600">{viewingCustomer.email}</p>
                 )}
@@ -604,9 +772,18 @@ export default function CustomersPage() {
                   <p className="text-gray-600">{viewingCustomer.phone}</p>
                 )}
                 {viewingCustomer.birthday && (
-                  <p className="text-sm text-gray-500">
+                  <div className="text-sm text-gray-500">
                     Birthday: {formatDate(viewingCustomer.birthday)}
-                  </p>
+                    {(() => {
+                      const daysUntil = isBirthdayUpcoming(viewingCustomer.birthday)
+                      if (daysUntil !== null) return (
+                        <span className="ml-2 text-pink-600 font-medium">
+                          {daysUntil === 0 ? 'Today!' : daysUntil === 1 ? 'Tomorrow!' : `In ${daysUntil} days`}
+                        </span>
+                      )
+                      return null
+                    })()}
+                  </div>
                 )}
               </div>
               <div className="text-right">
@@ -616,21 +793,43 @@ export default function CustomersPage() {
                 <p className="text-sm text-gray-500">
                   {viewingCustomer.totalOrders} orders
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm font-medium text-gray-700">
                   Avg: {formatCurrency(viewingCustomer.averageTicket)}
                 </p>
+              </div>
+            </div>
+
+            {/* Customer Stats */}
+            <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg">
+              <div className="text-center">
+                <p className="text-xs text-gray-500">Customer Since</p>
+                <p className="text-sm font-medium">{formatDate(viewingCustomer.createdAt)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-500">Visit Frequency</p>
+                <p className="text-sm font-medium">
+                  {(() => {
+                    const months = Math.max(1, Math.floor((Date.now() - new Date(viewingCustomer.createdAt).getTime()) / (1000 * 60 * 60 * 24 * 30)))
+                    const freq = viewingCustomer.totalOrders / months
+                    return freq >= 1 ? `${freq.toFixed(1)}/mo` : `${(freq * 4).toFixed(1)}/wk`
+                  })()}
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-gray-500">Avg Check</p>
+                <p className="text-sm font-medium">{formatCurrency(viewingCustomer.averageTicket)}</p>
               </div>
             </div>
 
             {/* Tags */}
             {viewingCustomer.tags.length > 0 && (
               <div className="flex gap-2 flex-wrap">
-                {viewingCustomer.tags.map(tag => (
+                {viewingCustomer.tags.filter(tag => tag !== 'banned').map(tag => (
                   <span
                     key={tag}
                     className={`px-3 py-1 rounded-full text-sm font-medium ${getTagColor(tag)}`}
                   >
-                    {tag}
+                    {getTagDisplayName(tag)}
                   </span>
                 ))}
               </div>
@@ -814,8 +1013,6 @@ export default function CustomersPage() {
               {viewingCustomer.lastVisit
                 ? `Last visit: ${formatDate(viewingCustomer.lastVisit)}`
                 : 'No visits recorded'}
-              {' | '}
-              Customer since: {formatDate(viewingCustomer.createdAt)}
             </div>
 
             {/* Actions */}
