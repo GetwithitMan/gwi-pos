@@ -5,6 +5,63 @@
 
 ---
 
+## 2026-02-23 — Wave 1 Go-Live Safety (Skill 422)
+
+**Version:** `1.0.0-beta`
+**Session theme:** Pre-go-live safety audit — 17 critical fixes across payments, KDS, printing, security, and store stability before first real venue deployment.
+
+**Summary:** 5-agent parallel team identified and fixed 17 issues from a comprehensive safety audit: 4 CRITICAL payment bugs (void not reversing card charges, simulated mode unguarded in prod, invisible charges on DB failure, reopen+repay double-charges), 7 HIGH (split parent race, KDS void/resend/un-bump sync, PIN brute-force, session timeout, auth hardening), and 6 MEDIUM (print error reporting, backup printer, cash drawer, toast memory leak, previousOrder logout clear).
+
+### Commits
+
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | `8f0f2ef` | Wave 1 Go-Live Safety: 17 fixes across payments, KDS, print, security, stores |
+
+### Stats
+
+- **Files changed:** 25
+- **Insertions:** 982
+- **New files:** 6
+- **Bug severity:** 4 CRITICAL, 7 HIGH, 6 MEDIUM
+
+### Bug Fixes
+
+| Fix | ID | Severity | Impact |
+|-----|-----|----------|--------|
+| Void doesn't reverse card charge | P1 | CRITICAL | Datacap voidSale/emvReturn after DB void |
+| Simulated mode unguarded in prod | P2 | CRITICAL | NODE_ENV=production blocks simulated |
+| Invisible charge on DB failure | P3 | CRITICAL | Auto-void at Datacap on DB write failure |
+| Reopen+repay double-charges | P4 | CRITICAL | forceReopen guard + void old payments |
+| Split parent race condition | P5 | HIGH | FOR UPDATE lock before sibling check |
+| Voided items stay on KDS | K1 | HIGH | kds:item-status socket dispatch |
+| Resent items don't reappear on KDS | K2 | HIGH | kds:item-status on resend |
+| Un-bump doesn't sync across KDS | K3 | HIGH | Socket dispatch on bump/serve/status |
+| Direct print always returns 200 | PR1 | MEDIUM | Real failure status returned |
+| Backup printer reads wrong field | PR2 | MEDIUM | Use PrintRoute backupPrinterIds |
+| Cash drawer returns 200 on failure | PR3 | MEDIUM | HTTP 500 on failure |
+| No PIN brute-force protection | S1 | HIGH | Rate limiter (5/employee, 10/IP) |
+| No session timeout | S2 | HIGH | 30min auto-logout, 25min warning |
+| Auth in editable localStorage | S3 | HIGH | httpOnly signed JWT cookies |
+| Toast timer memory leak | ST1 | MEDIUM | Store+clear timeout IDs, cap at 25 |
+| previousOrder not cleared on logout | ST2 | MEDIUM | Clear in clearOrder + all 3 logout paths |
+
+### Features Delivered
+
+| Feature | Skill | Summary |
+|---------|-------|---------|
+| Payment safety | 422 | Void reversal, simulated guard, auto-void on failure, reopen guard, split lock |
+| KDS reliability | 422 | Void/resend/un-bump socket events sync all KDS screens |
+| Print reliability | 422 | Error reporting, backup printer fix, cash drawer failure detection |
+| Security hardening | 422 | PIN rate limiting, 30min idle timeout, httpOnly JWT auth |
+| Store stability | 422 | Toast timer leak fix, previousOrder cleared on all logout paths |
+
+### Known Issues / Blockers
+
+None.
+
+---
+
 ## 2026-02-23 — Speed & Reconnect Optimizations (Skill 421) + Skill 110 Update
 
 **Version:** `1.0.0-beta`

@@ -539,6 +539,14 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-23 — Wave 1 Go-Live Safety, Skill 422)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 422 | WAVE1-GOLIVE-SAFETY | DONE | Payments / KDS / Print / Security / Stores | 120, 202, 102, 103 | Pre-go-live safety audit: 17 fixes (4 CRITICAL, 7 HIGH, 6 MEDIUM). Void reverses card charge, simulated mode prod guard, auto-void on DB failure, reopen guard, split parent lock, KDS void/resend/un-bump sockets, print failure reporting, backup printer fix, PIN rate limiter, idle timeout, httpOnly JWT auth, toast timer leak fix, previousOrder logout clear. 25 files changed, 982 insertions, 6 new files. |
+
+---
+
 ## Recently Completed (2026-02-20 — Self-Updating Sync Agent + Batch Monitoring, Skills 399-401)
 
 | Skill | Name | Status | Domain | Dependencies | Notes |

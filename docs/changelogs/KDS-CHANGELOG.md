@@ -1,5 +1,24 @@
 # KDS Domain Changelog
 
+## 2026-02-23 — Wave 1 Go-Live Safety (Skill 422)
+
+### K1 (HIGH): Voided Items Stay on KDS
+- Voided items remained visible on KDS until next full refresh — no socket event dispatched on void
+- Fix: Added `kds:item-status` socket dispatch with `voided` status after item void
+- File: `src/app/api/orders/[id]/comp-void/route.ts`
+
+### K2 (HIGH): Resent Items Don't Reappear on KDS
+- Previously bumped items resent to kitchen were invisible on all KDS screens — no socket event on resend
+- Fix: Added `kds:item-status` socket dispatch on resend so items reappear on KDS
+- File: `src/app/api/kds/route.ts`
+
+### K3 (HIGH): Un-Bump Doesn't Sync Across KDS
+- Un-bumping on one KDS screen didn't notify other screens — item showed different states on different displays
+- Fix: Socket dispatch for bump, serve, and status change events so all KDS screens stay in sync
+- File: `src/app/api/kds/expo/route.ts`
+
+---
+
 ## 2026-02-10 — KDS Browser Compatibility Fix (Chrome 108 oklch)
 
 ### Problem

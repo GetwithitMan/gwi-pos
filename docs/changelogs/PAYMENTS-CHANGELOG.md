@@ -1,5 +1,34 @@
 # Payments Domain Changelog
 
+## 2026-02-23 — Wave 1 Go-Live Safety (Skill 422)
+
+### P1 (CRITICAL): Void Doesn't Reverse Card Charge
+- Voiding an order only marked DB as voided — actual card charge at Datacap was never reversed
+- Fix: Call Datacap `voidSale` (same-batch) or `emvReturn` (settled) after DB void
+- File: `src/app/api/orders/[id]/comp-void/route.ts`
+
+### P2 (CRITICAL): Simulated Mode Unguarded in Production
+- `settings.payments.processor = 'simulated'` could accidentally run in production — all payments appear to succeed without charging
+- Fix: `NODE_ENV === 'production'` guard blocks simulated mode entirely
+- File: `src/lib/datacap/client.ts`
+
+### P3 (CRITICAL): Invisible Charge on DB Failure
+- Card payment succeeds at Datacap but DB write fails — customer charged with no POS record
+- Fix: Auto-void at Datacap if DB write fails; charge reversed automatically
+- Files: `src/app/api/orders/[id]/pay/route.ts`, `src/components/payment/DatacapPaymentProcessor.tsx`
+
+### P4 (CRITICAL): Reopen+Repay Double-Charges
+- Reopening a paid order and repaying could double-charge — original payment not voided on reopen
+- Fix: `forceReopen` guard voids all existing payments before allowing reopen
+- File: `src/app/api/orders/[id]/reopen/route.ts`
+
+### P5 (HIGH): Split Parent Race Condition
+- Two concurrent payments on last two split children could both skip parent auto-close — no lock on parent
+- Fix: `FOR UPDATE` lock on parent order row before sibling payment status check
+- File: `src/app/api/orders/[id]/pay/route.ts`
+
+---
+
 ## 2026-02-23 — Chaos Test Fixes (Skill 416)
 
 ### Bug 1 (CRITICAL): isProcessing Orphaned After Card Decline

@@ -1,5 +1,29 @@
 # Orders Domain - Change Log
 
+## 2026-02-23 — Wave 1 Go-Live Safety (Skill 422)
+
+### K1 (HIGH): Voided Items Stay on KDS
+- Voided items remained visible on KDS until next full refresh — no socket event dispatched
+- Fix: Added `kds:item-status` socket dispatch with `voided` status after item void
+- File: `src/app/api/orders/[id]/comp-void/route.ts`
+
+### K2 (HIGH): Resent Items Don't Reappear on KDS
+- Previously bumped items resent to kitchen were invisible on all KDS screens — no socket event
+- Fix: Added `kds:item-status` socket dispatch on resend
+- File: `src/app/api/kds/route.ts`
+
+### K3 (HIGH): Un-Bump Doesn't Sync Across KDS
+- Un-bumping on one KDS screen didn't notify others — item showed different states on different screens
+- Fix: Socket dispatch for bump, serve, and status change events syncs all KDS screens
+- File: `src/app/api/kds/expo/route.ts`
+
+### ST2 (MEDIUM): previousOrder Not Cleared on Logout
+- `previousOrder` in order Zustand store not cleared on logout — next employee could see stale data
+- Fix: Clear `previousOrder` in `clearOrder()` and all 3 logout paths (manual, idle timeout, session expired)
+- File: `src/stores/order-store.ts`
+
+---
+
 ## 2026-02-23 — Chaos Test Fixes (Skill 416)
 
 ### Bug 5 (CRITICAL): Order Number Race (Duplicates)
