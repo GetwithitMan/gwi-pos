@@ -11,6 +11,7 @@
 
 ### Commits
 - `17f619a` — Wave 5: Owner Setup & Advanced Analytics — 13 items across setup, reports, customer, security, and navigation (36 files, 4,321 insertions)
+- `0dcba2c` — Update docs: Skill 426, SKILLS-INDEX, LIVING-LOG, REPORTS + PAYMENTS changelogs for Wave 5
 
 ### Features Delivered
 - **Getting-started checklist** — Setup progress page with 6-step completion tracking
@@ -37,6 +38,8 @@
 
 ### Commits
 - `8a735d0` — Wave 4: Manager Control & Owner Visibility — 9 items across approvals, dashboard, alerts, audit, and reporting (16 files, 2,574 insertions)
+- `b6d7370` — Update docs: Skill 425, SKILLS-INDEX, LIVING-LOG, PAYMENTS + REPORTS changelogs for Wave 4
+- `a33aa15` — Fix deploy: remove @@unique([locationId, orderNumber]) — production DB has duplicate orderNumbers
 
 ### Features Delivered
 - **Configurable approvals** — Location-level void/discount approval thresholds with 403 enforcement
@@ -62,7 +65,8 @@
 **Session**: Agent team deployment → 14 frontline UX fixes + new features
 
 **Commits (gwi-pos)**:
-- `[TBD]` — Wave 3: Staff UX & Transfers — 14 items across payments, bartender, transfers, combo, and dashboard
+- `00cdc11` — Wave 3: Staff UX & Transfers — 14 items across payments, bartender, transfers, combo, and dashboard
+- `5fb8d29` — Update docs: Skill 424, SKILLS-INDEX, LIVING-LOG, KDS + PAYMENTS changelogs for Wave 3
 
 **Features Delivered**:
 - Card decline "Pay Cash Instead" button on decline overlay
@@ -107,7 +111,8 @@
 **Session**: Forensic audit → agent team deployment → 14 correctness fixes
 
 **Commits (gwi-pos)**:
-- `[TBD]` — Wave 2: Correctness Under Load — 14 fixes across splits, KDS, store, offline queues, and reports
+- `4a313c1` — Wave 2: Correctness Under Load — 14 fixes across splits, KDS, store, offline queues, and reports
+- `873503a` — Update docs: Skill 423, SKILLS-INDEX, LIVING-LOG, KDS + PAYMENTS changelogs for Wave 2
 
 **Features Delivered**:
 - Loyalty double-credit prevention (transaction-scoped + server idempotency)
@@ -157,6 +162,7 @@
 | Repo | Hash | Description |
 |------|------|-------------|
 | gwi-pos | `8f0f2ef` | Wave 1 Go-Live Safety: 17 fixes across payments, KDS, print, security, stores |
+| gwi-pos | `7ab1b85` | Update docs: Skill 422, SKILLS-INDEX, LIVING-LOG, 3 changelogs for Wave 1 Go-Live Safety |
 
 ### Stats
 
