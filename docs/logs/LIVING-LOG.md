@@ -5,6 +5,81 @@
 
 ---
 
+## 2026-02-24 — Native Android Register: Full 4-Phase Implementation
+
+**Session:** Built the complete native Android register system across 3 repos (POS, Mission Control, Android). 4 phases: backend API routes, Mission Control dashboard, full Kotlin Android app, integration testing. Managed as agent team manager across 4 sequential teams (~15 agents total).
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `21d24da` — Phase 1: Prisma schema (Terminal: platform/appVersion/osVersion/pushToken), 5 new API routes (pair-native, heartbeat-native, bootstrap, delta, outbox), socket.io deviceToken auth, terminal platform field
+- `aa2dcee` — Phase 2: Hardware limit check (20 terminals) on pair-native route
+- `f68b01f` — Phase 4: 5 vitest test suites for all new API routes (34 tests, 875 lines)
+
+**GWI Mission Control** (`gwi-mission-control`):
+- `5403b3b` — Phase 2: RELOAD_ANDROID_TERMINAL + WIPE_ANDROID_TERMINAL command types, AndroidTerminalCard.tsx component, location detail page integration
+
+**GWI Android Register** (`gwi-android-register`) — **NEW REPO**:
+- `81c74ac` — Phase 3: Full Android app — 63 files, 4,895 lines (Kotlin + Jetpack Compose)
+- `42561d8` — Phase 3: UI polish — dark theme, improved repositories (+643/-571 across 10 files)
+- `44ac2a4` — Phase 4: Integration test plan (60+ QA test cases, 318 lines)
+
+### Deployments
+- POS: pushed to main (auto-deploys to barpos.restaurant)
+- Mission Control: pushed to main (auto-deploys to app.thepasspos.com)
+- Android: new repo created at https://github.com/GetwithitMan/gwi-android-register
+
+### Features Delivered
+
+**Phase 1 — Backend (POS Repo):**
+- `POST /api/hardware/terminals/pair-native` — Native app pairing with Bearer token auth (not cookies)
+- `POST /api/hardware/terminals/heartbeat-native` — Native heartbeat with Bearer token
+- `GET /api/sync/bootstrap` — Full offline data download (menu, employees, tables, order types, settings, readers, printers)
+- `GET /api/sync/delta?since=` — Incremental sync for records updated after timestamp
+- `POST /api/sync/outbox` — Idempotent batch order push with row-locked orderNumber generation
+- Socket.io `deviceToken` auth for native clients (coexists with browser cookie auth)
+- Terminal model: `platform`, `appVersion`, `osVersion`, `pushToken` fields + `@@index([platform])`
+
+**Phase 2 — Mission Control:**
+- `RELOAD_ANDROID_TERMINAL` / `WIPE_ANDROID_TERMINAL` command types
+- `AndroidTerminalCard.tsx` — shows Android terminals with status, version, IP, actions
+- Hardware limit enforcement: 20 terminals per location on pair-native
+
+**Phase 3 — Android App (54 Kotlin files):**
+- Data layer: 11 Room entities, 8 DAOs, AppDatabase
+- Network: Retrofit API service, DTOs, AuthInterceptor, EncryptedTokenProvider (AES-256-GCM)
+- Payment: DatacapClient (HTTP XML to local IP readers), PaymentManager (orchestrator with CFD events)
+- Socket: SocketManager (socket.io-client-java), CfdEvents/PosEvents/MobileEvents constants
+- Sync: BootstrapWorker, SyncWorker, OutboxWorker (WorkManager), ConnectivityMonitor
+- Repositories: AuthRepository (pairing + PIN login), OrderRepository (offline-first + outbox)
+- UI: PairingScreen, PinLoginScreen (numeric keypad), OrderScreen (split POS layout), AppNavigation
+- DI: Hilt modules for Database, Network, Workers
+
+**Phase 4 — Testing & Verification:**
+- `tsc --noEmit` clean on both POS and Mission Control repos (zero regressions)
+- Socket auth compatibility verified: deviceToken auth doesn't affect browser terminals
+- 5 vitest test suites: pair-native (9), heartbeat-native (6), bootstrap (5), delta (6), outbox (8)
+- Integration test plan: 60+ manual QA test cases across 10 sections
+
+### Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Real-time | Socket.io (reuse existing rooms) | `socket.io-client-java` on Android, same room architecture |
+| Payments | Hybrid: IP direct + NUC proxy fallback | Android calls IP readers directly via HTTP XML |
+| CFD | Native Compose screens + socket events | Listens to existing CFD socket events |
+| Data model | Extend existing Terminal model | Added `platform` field, no new models needed |
+| Auth | Bearer token (not cookies) | Native apps don't use httpOnly cookies |
+| Offline | Room DB + WorkManager outbox | Mirrors existing web Dexie + offline-manager pattern |
+
+### Known Issues / Next Steps
+- WorkManager minimum periodic interval is 15 minutes — sub-minute sync needs foreground service or coroutine polling
+- USB/BT payment reader support: PAX/Sunmi SDK bridges are stubs, need hardware for implementation
+- CFD dual-screen (Android `Presentation` API) not yet implemented
+- Full QA requires real hardware: Android tablet + NUC + Datacap IP reader
+
+---
+
 ## 2026-02-24 — Wave 7 + Pilot Readiness: Online Safety, Combos, Tips, Payments, Crash Guards, UX Fixes
 
 **Session:** 40 bug fixes across 5 domains (17 task groups) via 5-agent team, plus 3 user-reported UX bug fixes and comprehensive pilot readiness checklist. Managed as agent team manager with isolated worktrees per agent.
