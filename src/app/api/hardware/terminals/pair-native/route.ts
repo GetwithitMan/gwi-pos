@@ -10,21 +10,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { pairingCode, deviceFingerprint, deviceInfo, appVersion, osVersion, pushToken } = body
-    const locationId = body.locationId
     const platform = VALID_PLATFORMS.includes(body.platform) ? body.platform : 'ANDROID'
-
-    if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
-    }
 
     if (!pairingCode) {
       return NextResponse.json({ error: 'Pairing code is required' }, { status: 400 })
     }
 
-    // Find terminal with this pairing code
+    // Find terminal by pairing code — locationId is derived from the terminal record
+    // (no need for the client to send locationId separately)
     const terminal = await db.terminal.findFirst({
       where: {
-        locationId,
         pairingCode,
         deletedAt: null,
       },
@@ -40,6 +35,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Hardware limit check — count active paired terminals for this location
+    const locationId = terminal.locationId
     const activeTerminalCount = await db.terminal.count({
       where: {
         locationId,
