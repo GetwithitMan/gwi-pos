@@ -91,11 +91,12 @@ export default function TerminalsPage() {
         method: 'POST',
       })
       if (res.ok) {
-        const data = await res.json()
+        const json = await res.json()
+        const result = json.data || json
         setPairingCode({
-          code: data.pairingCode,
+          code: result.pairingCode,
           terminalId,
-          expiresAt: data.expiresAt,
+          expiresAt: result.expiresAt,
         })
       }
     } catch (error) {
