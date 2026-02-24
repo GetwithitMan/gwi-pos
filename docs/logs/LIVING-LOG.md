@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-02-23 — Wave 5: Owner Setup & Advanced Analytics
+
+**Session:** Wave 5 implementation — setup wizard, CSV import, report exports, daypart/trends analytics, customer VIP, email receipts, security hardening, command palette, quick-service mode
+
+### Commits
+- `17f619a` — Wave 5: Owner Setup & Advanced Analytics — 13 items across setup, reports, customer, security, and navigation (36 files, 4,321 insertions)
+
+### Features Delivered
+- **Getting-started checklist** — Setup progress page with 6-step completion tracking
+- **CSV menu import** — Bulk import with file upload, preview, and column mapping
+- **Batch printer testing** — Test all printers from hardware page
+- **CSV export** — Added to 7 more report pages (sales, shift, tips, voids, employees, hourly, liquor)
+- **Email reports** — Send daily report via email using Resend API
+- **Cash-flow & liability report** — Consolidated view of drawers, house accounts, gift cards, tip payouts
+- **Daypart analytics** — Revenue/orders by time-of-day segments with configurable boundaries
+- **Trends report** — Day-over-day and week-over-week comparison with delta indicators
+- **Customer VIP tiers** — Silver/Gold/Platinum with auto-suggest based on spend
+- **Banned customer flag** — Block from reservations/house accounts with POS warning
+- **Email receipts** — Post-payment option to email receipt via Resend
+- **Buddy-punch prevention** — IP/device logging on clock events with suspicious activity alerts
+- **2FA for large refunds/voids** — Configurable thresholds with remote SMS approval
+- **Command palette** — Cmd+K fuzzy search across all admin pages
+- **Quick-service mode** — Counter-service ordering without floor plan
+
+---
+
 ## 2026-02-23 — Wave 4: Manager Control & Owner Visibility
 
 **Session:** Wave 4 implementation — configurable approvals, dashboard v2, alerts, audit browser, report exports, speed-of-service, variance UI

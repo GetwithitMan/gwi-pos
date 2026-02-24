@@ -1,5 +1,11 @@
 # Payments Domain Changelog
 
+## Wave 5: Email Receipts & 2FA (2026-02-23)
+- **W5-9**: Email receipt option after payment — ReceiptModal with Resend delivery
+- **W5-11**: 2FA thresholds for large refunds and voids — remote SMS approval enforcement
+
+---
+
 ## Wave 4: Manager Control & Approvals (2026-02-23)
 - **W4-1**: Configurable void/discount approval thresholds — location settings + 403 enforcement in discount and comp-void routes
 - **W4-2**: Per-role discount limits — `defaultMaxDiscountPercent` caps non-managers, manager override logged to AuditLog
