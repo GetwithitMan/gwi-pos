@@ -12,6 +12,63 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
 
+function exportDailyCSV(report: DailyReport) {
+  const rows: string[][] = []
+  rows.push(['Section', 'Metric', 'Value'])
+
+  // Revenue
+  rows.push(['Revenue', 'Adjusted Gross Sales', report.revenue.adjustedGrossSales.toFixed(2)])
+  rows.push(['Revenue', 'Discounts', report.revenue.discounts.toFixed(2)])
+  rows.push(['Revenue', 'Net Sales', report.revenue.netSales.toFixed(2)])
+  rows.push(['Revenue', 'Sales Tax', report.revenue.salesTax.toFixed(2)])
+  rows.push(['Revenue', 'Surcharge', report.revenue.surcharge.toFixed(2)])
+  rows.push(['Revenue', 'Gross Sales', report.revenue.grossSales.toFixed(2)])
+  rows.push(['Revenue', 'Tips', report.revenue.tips.toFixed(2)])
+  rows.push(['Revenue', 'Refunds', report.revenue.refunds.toFixed(2)])
+  rows.push(['Revenue', 'Total Collected', report.revenue.totalCollected.toFixed(2)])
+
+  // Payments
+  rows.push(['Payments', 'Cash', report.payments.cash.amount.toFixed(2)])
+  rows.push(['Payments', 'Credit', report.payments.credit.amount.toFixed(2)])
+  rows.push(['Payments', 'Gift', report.payments.gift.amount.toFixed(2)])
+  rows.push(['Payments', 'House Account', report.payments.houseAccount.amount.toFixed(2)])
+  rows.push(['Payments', 'Total', report.payments.totalPayments.toFixed(2)])
+
+  // Sales by Category
+  report.salesByCategory.forEach(cat => {
+    rows.push(['Category', `"${cat.name}"`, cat.net.toFixed(2)])
+  })
+
+  // Labor
+  rows.push(['Labor', 'FOH Hours', report.labor.frontOfHouse.hours.toFixed(1)])
+  rows.push(['Labor', 'FOH Cost', report.labor.frontOfHouse.cost.toFixed(2)])
+  rows.push(['Labor', 'BOH Hours', report.labor.backOfHouse.hours.toFixed(1)])
+  rows.push(['Labor', 'BOH Cost', report.labor.backOfHouse.cost.toFixed(2)])
+  rows.push(['Labor', 'Total Hours', report.labor.total.hours.toFixed(1)])
+  rows.push(['Labor', 'Total Cost', report.labor.total.cost.toFixed(2)])
+  rows.push(['Labor', 'Labor % of Sales', report.labor.total.percentOfSales.toFixed(1)])
+
+  // Stats
+  rows.push(['Stats', 'Checks', String(report.stats.checks)])
+  rows.push(['Stats', 'Avg Check', report.stats.avgCheck.toFixed(2)])
+  rows.push(['Stats', 'Covers', String(report.stats.covers)])
+  rows.push(['Stats', 'Avg Cover', report.stats.avgCover.toFixed(2)])
+
+  // Voids
+  rows.push(['Voids', 'Total Count', String(report.voids.total.count)])
+  rows.push(['Voids', 'Total Amount', report.voids.total.amount.toFixed(2)])
+  rows.push(['Voids', '% of Sales', report.voids.percentOfSales.toFixed(1)])
+
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `daily-report-${report.reportDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 interface DailyReport {
   reportDate: string
   generatedAt: string
@@ -184,6 +241,13 @@ export default function DailyReportPage() {
               onChange={(e) => setSelectedDate(e.target.value)}
               className="px-3 py-2 border rounded-lg"
             />
+            <Button
+              variant="outline"
+              disabled={!report}
+              onClick={() => report && exportDailyCSV(report)}
+            >
+              Export CSV
+            </Button>
             <Button variant="outline" onClick={() => window.print()}>
               Print Report
             </Button>

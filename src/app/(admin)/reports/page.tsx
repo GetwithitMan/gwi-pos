@@ -110,6 +110,17 @@ export default function ReportsHubPage() {
           ),
         },
         {
+          name: 'Flash Report',
+          href: '/reports/flash',
+          description: 'Quick morning summary: yesterday vs previous day key metrics',
+          permission: PERMISSIONS.REPORTS_SALES,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          ),
+        },
+        {
           name: 'Employee Shift Report',
           href: '/reports/shift',
           description: 'Individual employee shift: sales, tips, cash due',
@@ -266,6 +277,22 @@ export default function ReportsHubPage() {
       ],
     },
     {
+      title: 'Performance',
+      reports: [
+        {
+          name: 'Speed of Service',
+          href: '/reports/speed-of-service',
+          description: 'Avg order-to-send, send-to-complete, seat-to-pay times by employee and day',
+          permission: PERMISSIONS.REPORTS_VIEW,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          ),
+        },
+      ],
+    },
+    {
       title: 'Operations',
       reports: [
         {
@@ -325,6 +352,17 @@ export default function ReportsHubPage() {
     {
       title: 'Inventory & Liquor',
       reports: [
+        {
+          name: 'Food Cost / Variance',
+          href: '/reports/variance',
+          description: 'Actual vs theoretical usage, shrinkage, variance by item',
+          permission: PERMISSIONS.REPORTS_INVENTORY,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          ),
+        },
         {
           name: 'Liquor & Spirits',
           href: '/reports/liquor',

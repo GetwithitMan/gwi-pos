@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { parseSettings } from '@/lib/settings'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -13,6 +16,7 @@ interface ApplyDiscountRequest {
   name?: string
   reason?: string
   employeeId?: string
+  approvedById?: string  // Manager ID if approval required
 }
 
 // POST - Apply a discount to an order
@@ -46,6 +50,10 @@ export const POST = withVenue(async function POST(
         { status: 400 }
       )
     }
+
+    // Parse location settings for approval rules (W4-1, W4-2)
+    const settings = parseSettings(order.location.settings)
+    const approvalSettings = settings.approvals
 
     let discountName: string
     let discountAmount: number
@@ -133,10 +141,52 @@ export const POST = withVenue(async function POST(
         discountAmount = body.value
       }
 
-      // Manual discounts over a threshold might require approval
-      // This could be made configurable in location settings
-      if (discountAmount > 50 || (discountPercent && discountPercent > 20)) {
+      // Use configurable threshold from location settings (W4-1)
+      if (discountPercent && discountPercent > approvalSettings.discountApprovalThreshold) {
         requiresApproval = true
+      }
+    }
+
+    // W4-1: Check location-level discount approval requirement
+    if (approvalSettings.requireDiscountApproval) {
+      requiresApproval = true
+    }
+
+    // W4-2: Per-role discount limit — check if employee has manager.discounts permission
+    if (body.employeeId && discountPercent) {
+      const emp = await db.employee.findUnique({
+        where: { id: body.employeeId, deletedAt: null },
+        include: { role: true },
+      })
+      if (emp) {
+        const perms = (emp.role?.permissions as string[]) || []
+        const hasMgrDiscount = hasPermission(perms, PERMISSIONS.MGR_DISCOUNTS)
+
+        if (!hasMgrDiscount && discountPercent > approvalSettings.defaultMaxDiscountPercent) {
+          return NextResponse.json(
+            { error: 'Discount exceeds your limit. Manager approval required.', requiresApproval: true, maxPercent: approvalSettings.defaultMaxDiscountPercent },
+            { status: 403 }
+          )
+        }
+      }
+    }
+
+    // W4-1: Enforce approval — if required but not provided, block
+    if (requiresApproval && !body.approvedById) {
+      return NextResponse.json(
+        { error: 'Manager approval required', requiresApproval: true },
+        { status: 403 }
+      )
+    }
+
+    // W4-1: Validate approver has manager.discounts permission
+    if (body.approvedById) {
+      const approverAuth = await requirePermission(body.approvedById, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+      if (!approverAuth.authorized) {
+        return NextResponse.json(
+          { error: 'Approver does not have discount permission' },
+          { status: 403 }
+        )
       }
     }
 
@@ -172,6 +222,28 @@ export const POST = withVenue(async function POST(
         reason: body.reason || null,
       },
     })
+
+    // W4-1: Log manager override to AuditLog when approval was provided
+    if (body.approvedById) {
+      void db.auditLog.create({
+        data: {
+          locationId: order.locationId,
+          employeeId: body.approvedById,
+          action: 'discount_override',
+          entityType: 'order',
+          entityId: orderId,
+          details: {
+            discountId: discount.id,
+            discountName,
+            discountAmount,
+            discountPercent,
+            requestedBy: body.employeeId || null,
+            approvedBy: body.approvedById,
+            reason: body.reason || null,
+          },
+        },
+      }).catch(err => console.error('[AuditLog] Failed to log discount override:', err))
+    }
 
     // Update order totals
     const newDiscountTotal = currentDiscountTotal + discountAmount

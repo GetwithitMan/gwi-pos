@@ -266,6 +266,7 @@ export const DELETE = withVenue(async function DELETE(
     // Verify item exists and belongs to this order
     const item = await db.orderItem.findFirst({
       where: { id: itemId, orderId },
+      include: { menuItem: { select: { name: true } } },
     })
 
     if (!item) {
@@ -287,6 +288,25 @@ export const DELETE = withVenue(async function DELETE(
         { status: 400 }
       )
     }
+
+    // W4-3: Audit log for item deletion before send (fire-and-forget)
+    const employeeId = request.nextUrl.searchParams.get('employeeId') || null
+    void db.auditLog.create({
+      data: {
+        locationId: order.locationId,
+        employeeId,
+        action: 'item_removed_before_send',
+        entityType: 'order',
+        entityId: orderId,
+        details: {
+          itemId: item.id,
+          menuItemName: item.menuItem?.name || item.name,
+          quantity: item.quantity,
+          amount: Number(item.itemTotal),
+          sentToKitchen: false,
+        },
+      },
+    }).catch(err => console.error('[AuditLog] Failed to log item removal:', err))
 
     // Soft delete modifiers and the item (preserve audit trail)
     const now = new Date()

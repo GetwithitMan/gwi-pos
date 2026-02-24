@@ -60,6 +60,36 @@ interface LaborReport {
   byRole: RoleLaborData[]
 }
 
+function exportLaborCSV(report: LaborReport, startDate: string, endDate: string) {
+  const header = [
+    'Employee', 'Role', 'Shifts', 'Regular Hours', 'Overtime Hours',
+    'Total Hours', 'Break Minutes', 'Hourly Rate', 'Labor Cost',
+  ].join(',')
+
+  const rows = report.byEmployee.map((emp) =>
+    [
+      `"${emp.name}"`,
+      `"${emp.role}"`,
+      emp.shifts,
+      emp.regularHours.toFixed(1),
+      emp.overtimeHours.toFixed(1),
+      emp.totalHours.toFixed(1),
+      emp.breakMinutes,
+      emp.hourlyRate.toFixed(2),
+      emp.laborCost.toFixed(2),
+    ].join(',')
+  )
+
+  const csv = [header, ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `labor-report-${startDate}-to-${endDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function laborPercentColor(percent: number | null): string {
   if (percent === null) return 'text-gray-400'
   if (percent < 30) return 'text-green-600'
@@ -148,6 +178,14 @@ export default function LaborReportPage() {
               <Button variant="primary" onClick={loadReport} disabled={isLoading}>
                 {isLoading ? 'Loading...' : 'Apply Filters'}
               </Button>
+              {report && report.byEmployee.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => exportLaborCSV(report, startDate, endDate)}
+                >
+                  Export CSV
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

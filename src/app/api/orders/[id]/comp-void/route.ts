@@ -10,6 +10,7 @@ import { emitCloudEvent } from '@/lib/cloud-events'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings } from '@/lib/settings'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -119,6 +120,30 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // W4-1: Enforce configurable void approval from location settings
+    const settings = parseSettings(order.location.settings)
+    const approvalSettings = settings.approvals
+
+    if (action === 'void' && approvalSettings.requireVoidApproval) {
+      // Calculate item total to check against threshold
+      const itemForCheck = order.items[0]
+      if (itemForCheck) {
+        const modsTotalCheck = itemForCheck.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
+        const itemTotalCheck = (Number(itemForCheck.price) + modsTotalCheck) * itemForCheck.quantity
+
+        // If threshold is 0, all voids require approval; otherwise only above threshold
+        const needsApproval = approvalSettings.voidApprovalThreshold === 0
+          || itemTotalCheck > approvalSettings.voidApprovalThreshold
+
+        if (needsApproval && !approvedById && !remoteApprovalCode) {
+          return NextResponse.json(
+            { error: 'Manager approval required for void', requiresApproval: true },
+            { status: 403 }
+          )
+        }
+      }
+    }
+
     if (order.status !== 'open' && order.status !== 'in_progress') {
       return NextResponse.json(
         { error: 'Cannot modify a closed order' },
@@ -208,6 +233,49 @@ export const POST = withVenue(async function POST(
           remoteApprovalId: remoteApproval?.id || null,
         },
       })
+
+      // 2b. W4-1: Log void/comp to AuditLog (in addition to VoidLog)
+      await tx.auditLog.create({
+        data: {
+          locationId: order.locationId,
+          employeeId,
+          action: action === 'void' ? 'item_voided' : 'item_comped',
+          entityType: 'order',
+          entityId: orderId,
+          details: {
+            itemId,
+            itemName: item.name,
+            quantity: item.quantity,
+            amount: itemTotal,
+            reason,
+            wasMade: itemWasMade,
+            approvedBy: effectiveApprovedById,
+            remoteApproval: !!remoteApproval,
+          },
+        },
+      })
+
+      // W4-1: Log manager override if approval was provided
+      if (effectiveApprovedById && effectiveApprovedById !== employeeId) {
+        await tx.auditLog.create({
+          data: {
+            locationId: order.locationId,
+            employeeId: effectiveApprovedById,
+            action: 'manager_override',
+            entityType: 'order',
+            entityId: orderId,
+            details: {
+              overrideType: action,
+              itemId,
+              itemName: item.name,
+              amount: itemTotal,
+              requestedBy: employeeId,
+              approvedBy: effectiveApprovedById,
+              reason,
+            },
+          },
+        })
+      }
 
       // 3. If remote approval was used, mark it as used
       if (remoteApproval) {

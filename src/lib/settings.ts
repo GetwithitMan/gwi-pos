@@ -151,6 +151,15 @@ export interface AutoRebootSettings {
   delayMinutes: number
 }
 
+export interface AlertSettings {
+  enabled: boolean
+  largeVoidThreshold: number          // Dollar amount — void above this triggers alert (default: 50)
+  largeDiscountThreshold: number      // Dollar amount — discount above this triggers alert (default: 50)
+  frequentDiscountLimit: number       // Per employee per day — above this triggers alert (default: 10)
+  overtimeWarningMinutes: number      // Minutes before overtime to warn (default: 30)
+  cashDrawerAlertEnabled: boolean     // Alert on cash drawer events (default: true)
+}
+
 export interface BusinessDaySettings {
   dayStartTime: string         // HH:MM format, default "04:00"
   enforceClockOut: boolean     // Force clock-out by day boundary (default: true)
@@ -423,6 +432,16 @@ export const DEFAULT_LAYOUT_SETTINGS: POSLayoutSettings = {
   coursingDefaultDelay: 0,
 }
 
+export interface ApprovalSettings {
+  requireVoidApproval: boolean           // Require manager approval for voids (default: false)
+  requireDiscountApproval: boolean       // Require manager approval for ALL discounts (default: false)
+  discountApprovalThreshold: number      // % above which manager approval is required (default: 20)
+  voidApprovalThreshold: number          // $ above which void needs approval (0 = all voids) (default: 0)
+  requireRefundApproval: boolean         // Require manager approval for refunds (default: true)
+  requireDrawerOpenApproval: boolean     // Require manager approval to open drawer (default: false)
+  defaultMaxDiscountPercent: number      // Cap for non-managers (e.g., 10 = servers can only give up to 10% off) (default: 100)
+}
+
 export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
@@ -441,6 +460,8 @@ export interface LocationSettings {
   businessDay: BusinessDaySettings
   autoReboot: AutoRebootSettings
   receiptDisplay: GlobalReceiptSettings  // Controls WHAT features are available in the Visual Editor
+  approvals: ApprovalSettings
+  alerts: AlertSettings
   localDataRetention?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | '60days' | '90days'
 }
 
@@ -618,6 +639,23 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     delayMinutes: 15,
   },
   receiptDisplay: DEFAULT_GLOBAL_RECEIPT_SETTINGS,
+  approvals: {
+    requireVoidApproval: false,
+    requireDiscountApproval: false,
+    discountApprovalThreshold: 20,
+    voidApprovalThreshold: 0,
+    requireRefundApproval: true,
+    requireDrawerOpenApproval: false,
+    defaultMaxDiscountPercent: 100,
+  },
+  alerts: {
+    enabled: true,
+    largeVoidThreshold: 50,
+    largeDiscountThreshold: 50,
+    frequentDiscountLimit: 10,
+    overtimeWarningMinutes: 30,
+    cashDrawerAlertEnabled: true,
+  },
   localDataRetention: 'monthly',
 }
 
@@ -697,6 +735,14 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ...(partial.autoReboot || {}),
     },
     receiptDisplay: mergeGlobalReceiptSettings(partial.receiptDisplay),
+    approvals: {
+      ...DEFAULT_SETTINGS.approvals,
+      ...(partial.approvals || {}),
+    },
+    alerts: {
+      ...DEFAULT_SETTINGS.alerts,
+      ...(partial.alerts || {}),
+    },
     localDataRetention: partial.localDataRetention ?? DEFAULT_SETTINGS.localDataRetention,
   }
 }

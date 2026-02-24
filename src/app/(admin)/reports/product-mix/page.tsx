@@ -70,6 +70,35 @@ interface ReportData {
   }
 }
 
+function exportProductMixCSV(report: ReportData) {
+  const header = [
+    'Item', 'Category', 'Quantity', 'Revenue', 'Cost',
+    'Profit', 'Margin %', '% of Sales',
+  ].join(',')
+
+  const rows = report.items.map((item) =>
+    [
+      `"${item.name}"`,
+      `"${item.categoryName}"`,
+      item.quantity,
+      item.revenue.toFixed(2),
+      item.cost.toFixed(2),
+      item.profit.toFixed(2),
+      item.profitMargin.toFixed(1),
+      item.revenuePercent.toFixed(1),
+    ].join(',')
+  )
+
+  const csv = [header, ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `product-mix-${report.dateRange.start}-to-${report.dateRange.end}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function ProductMixReportPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/product-mix' })
   const employee = useAuthStore(s => s.employee)
@@ -189,6 +218,14 @@ export default function ProductMixReportPage() {
           >
             90 Days
           </button>
+          {report && report.items.length > 0 && (
+            <button
+              onClick={() => exportProductMixCSV(report)}
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-medium"
+            >
+              Export CSV
+            </button>
+          )}
         </div>
       </div>
 

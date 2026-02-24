@@ -74,6 +74,42 @@ interface PayrollReport {
   }
 }
 
+function exportPayrollCSV(report: PayrollReport) {
+  const header = [
+    'Employee', 'Role', 'Regular Hours', 'OT Hours', 'Total Hours',
+    'Regular Pay', 'OT Pay', 'Total Wages', 'Declared Tips',
+    'Tip-Outs Given', 'Tip-Outs Received', 'Net Tips', 'Commission', 'Gross Pay',
+  ].join(',')
+
+  const rows = report.employees.map((emp) =>
+    [
+      `"${emp.employeeName}"`,
+      `"${emp.role}"`,
+      emp.regularHours.toFixed(1),
+      emp.overtimeHours.toFixed(1),
+      emp.totalHours.toFixed(1),
+      emp.regularPay.toFixed(2),
+      emp.overtimePay.toFixed(2),
+      emp.totalWages.toFixed(2),
+      emp.declaredTips.toFixed(2),
+      emp.tipSharesGiven.toFixed(2),
+      emp.tipSharesReceived.toFixed(2),
+      emp.netTips.toFixed(2),
+      emp.commissionTotal.toFixed(2),
+      emp.grossPay.toFixed(2),
+    ].join(',')
+  )
+
+  const csv = [header, ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `payroll-${report.filters.startDate}-to-${report.filters.endDate}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function PayrollReportPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/reports/payroll' })
   const employee = useAuthStore(s => s.employee)
@@ -170,6 +206,14 @@ export default function PayrollReportPage() {
               <Button variant="primary" onClick={loadReport} disabled={isLoading}>
                 {isLoading ? 'Loading...' : 'Generate Report'}
               </Button>
+              {report && report.employees.length > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={() => exportPayrollCSV(report)}
+                >
+                  Export CSV
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
