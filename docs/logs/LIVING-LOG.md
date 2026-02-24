@@ -11,6 +11,17 @@
 
 ### Commits
 - `743e618` — Wave 7 + Pilot Readiness: 40 bug fixes across 5 domains, 3 UX fixes, pilot checklist (38 files, +3257/-418)
+- `7cf933d` — Docs: Skills 428-429, SKILLS-INDEX, LIVING-LOG, 7 changelogs (13 files, +6520)
+- `0562286` — Fix deploy: pre-push SQL migration for required columns on existing tables
+- `c8ae857` — Fix deploy: move linkedBottleProduct include from OrderItemModifier to Modifier relation
+
+### Deployments
+- **14 consecutive ERROR deployments fixed** — Production had been broken since Sprint A+B (`d53ebbb`)
+- **Root cause 1:** `prisma db push` fails adding NOT NULL columns to tables with existing rows (OrderOwnershipEntry: 6 rows, cloud_event_queue: 18 rows, ModifierTemplate)
+- **Fix 1:** `scripts/vercel-build.js` now runs raw SQL via `@neondatabase/serverless` before `prisma db push` — adds columns as nullable, backfills from related tables, sets NOT NULL
+- **Root cause 2:** `void-waste.ts` included `linkedBottleProduct` directly on `OrderItemModifier` (snapshot field, no Prisma relation). Must go through `Modifier` relation.
+- **Fix 2:** Moved include to `modifier: { select: { linkedBottleProduct: { ... } } }` and updated access path
+- **Production READY:** `dpl_4z2BFQr59kMR21DJDfsEzeRGn6dD` (commit `c8ae857`) deployed to barpos.restaurant + *.ordercontrolcenter.com
 
 ### Features Delivered
 - **Online ordering safety** — Server-side modifier pricing, deletedAt + enabled checks, sliding window rate limiter, soft-cancel on payment failure, onlinePrice support, dedicated system employee
@@ -53,7 +64,7 @@
 ORDERS, PAYMENTS, TIPS, REPORTS, ERROR-REPORTING, INVENTORY, ENTERTAINMENT
 
 ### Known Issues / Blockers
-- None. All Wave 7 + Pilot Readiness work verified.
+- None. All Wave 7 + Pilot Readiness work verified. Production deployment restored after 14 consecutive ERROR deployments.
 - Next: Wave 8 — Staff UX & Workflows (bartender/server experience, transfer/merge, bar modifiers, search, Pay Cash Instead)
 
 ---
