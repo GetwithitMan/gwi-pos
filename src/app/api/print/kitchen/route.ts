@@ -270,12 +270,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         let result = await sendToPrinter(printer.ipAddress, printer.port, document)
 
         if (!result.success) {
-          // Try backup printer if available (from PrintRoute or printer's backupPrinterIds)
+          // W1-PR2: Try backup printer — PrintRoute first, then item-level backupPrinterIds
           const routeForPrinter = routeForPrinterMap.get(printerId) ?? null
-          const backupPrinterId: string | null =
-            routeForPrinter?.backupPrinterId ??
-            ((printer.printSettings as unknown as { backupPrinterId?: string })?.backupPrinterId) ??
-            null
+          let backupPrinterId: string | null = routeForPrinter?.backupPrinterId ?? null
+
+          // Fall back to item-level backupPrinterIds if no route-level backup
+          if (!backupPrinterId) {
+            for (const item of items) {
+              const itemBackupIds = item.menuItem?.backupPrinterIds as string[] | null
+              if (itemBackupIds && itemBackupIds.length > 0) {
+                backupPrinterId = itemBackupIds[0]
+                break
+              }
+            }
+          }
 
           if (backupPrinterId) {
             const backupPrinter = allPrinters.find(p => p.id === backupPrinterId)

@@ -7,6 +7,8 @@ import { calculateSimpleOrderTotals as calculateOrderTotals, recalculatePercentD
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
+import { getDatacapClient } from '@/lib/datacap/helpers'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 interface CompVoidRequest {
@@ -152,7 +154,7 @@ export const POST = withVenue(async function POST(
     const effectiveApprovedAt = remoteApproval?.approvedAt || (approvedById ? new Date() : null)
 
     // Wrap all critical writes in a single transaction
-    const { activeItems, totals, shouldAutoClose, parentTotals } = await db.$transaction(async (tx) => {
+    const { activeItems, totals, shouldAutoClose, parentTotals, cardPayments } = await db.$transaction(async (tx) => {
       // 0. Acquire row-level lock to prevent void-during-payment race condition
       const [lockedOrder] = await tx.$queryRaw<any[]>`
         SELECT "status" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE
@@ -166,15 +168,19 @@ export const POST = withVenue(async function POST(
         throw new Error('ORDER_ALREADY_SETTLED')
       }
 
-      // Bug 5: Check for payments INSIDE transaction after lock
-      // Prevents race where payment sneaks in between check and lock
-      const lockedPayments = await tx.payment.findFirst({
+      // W1-P1: Collect card payment info for potential Datacap reversal
+      // Instead of blocking voids on paid orders, allow the void and attempt card reversal afterward
+      const txCardPayments = await tx.payment.findMany({
         where: { orderId, status: 'completed', deletedAt: null },
-        select: { id: true },
+        select: {
+          id: true,
+          datacapRecordNo: true,
+          paymentReaderId: true,
+          totalAmount: true,
+          cardLast4: true,
+          paymentMethod: true,
+        },
       })
-      if (lockedPayments) {
-        throw new Error('ORDER_HAS_PAYMENTS')
-      }
 
       // 1. Update item status
       await tx.orderItem.update({
@@ -297,7 +303,69 @@ export const POST = withVenue(async function POST(
         }
       }
 
-      return { activeItems: txActiveItems, totals: txTotals, shouldAutoClose: txShouldAutoClose, parentTotals: txParentTotals }
+      return { activeItems: txActiveItems, totals: txTotals, shouldAutoClose: txShouldAutoClose, parentTotals: txParentTotals, cardPayments: txCardPayments }
+    })
+
+    // W1-P1: Attempt Datacap reversal for card payments (outside transaction)
+    let cardReversalWarning: string | null = null
+    if (cardPayments.length > 0) {
+      const reversiblePayments = cardPayments.filter(
+        (p) => ['credit', 'debit'].includes(p.paymentMethod) && p.datacapRecordNo && p.paymentReaderId
+      )
+      if (reversiblePayments.length > 0) {
+        try {
+          const datacapClient = await getDatacapClient(order.locationId)
+          for (const payment of reversiblePayments) {
+            try {
+              if (shouldAutoClose) {
+                // All items voided — void the entire sale
+                const result = await datacapClient.voidSale(payment.paymentReaderId!, { recordNo: payment.datacapRecordNo! })
+                if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
+                  await db.payment.update({ where: { id: payment.id }, data: { status: 'voided' } })
+                  console.log(`[CompVoid] Datacap void succeeded for payment ${payment.id} (card ***${payment.cardLast4})`)
+                } else {
+                  cardReversalWarning = `Card reversal declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
+                  console.warn(`[CompVoid] Datacap void declined for payment ${payment.id}: ${result.textResponse}`)
+                }
+              } else {
+                // Partial void — refund only the voided item amount
+                const result = await datacapClient.emvReturn(payment.paymentReaderId!, {
+                  amount: itemTotal,
+                  recordNo: payment.datacapRecordNo!,
+                  cardPresent: false,
+                  invoiceNo: orderId,
+                })
+                if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
+                  await db.payment.update({
+                    where: { id: payment.id },
+                    data: { refundedAmount: { increment: itemTotal }, refundedAt: new Date() },
+                  })
+                  console.log(`[CompVoid] Datacap partial refund of $${itemTotal.toFixed(2)} succeeded for payment ${payment.id}`)
+                } else {
+                  cardReversalWarning = `Card refund declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
+                  console.warn(`[CompVoid] Datacap partial refund declined for payment ${payment.id}: ${result.textResponse}`)
+                }
+              }
+            } catch (reversalErr) {
+              const msg = reversalErr instanceof Error ? reversalErr.message : 'Unknown error'
+              cardReversalWarning = `Card reversal error for ***${payment.cardLast4}: ${msg}. DB void completed but manual refund may be required.`
+              console.error(`[CompVoid] Datacap reversal failed for payment ${payment.id}:`, reversalErr)
+            }
+          }
+        } catch (clientErr) {
+          cardReversalWarning = `Could not initialize payment processor: ${clientErr instanceof Error ? clientErr.message : 'Unknown error'}. Manual card refund may be required.`
+          console.error('[CompVoid] Failed to create Datacap client:', clientErr)
+        }
+      }
+    }
+
+    // W1-K1: Dispatch KDS event so voided items disappear from KDS screens
+    void emitToLocation(order.locationId, 'kds:item-status', {
+      orderId,
+      itemId,
+      status: newStatus,
+    }).catch(err => {
+      console.error('[CompVoid] Failed to dispatch KDS void event:', err)
     })
 
     // Fire-and-forget side effects OUTSIDE the transaction
@@ -385,6 +453,7 @@ export const POST = withVenue(async function POST(
         newStatus,
       },
       orderTotals: totals,
+      ...(cardReversalWarning ? { cardReversalWarning } : {}),
     } })
   } catch (error) {
     // Handle structured errors from the transaction lock
@@ -396,12 +465,6 @@ export const POST = withVenue(async function POST(
         return NextResponse.json(
           { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
           { status: 409 }
-        )
-      }
-      if (error.message === 'ORDER_HAS_PAYMENTS') {
-        return NextResponse.json(
-          { error: 'Cannot modify an order with existing payments. Void the payment first.' },
-          { status: 400 }
         )
       }
     }

@@ -49,27 +49,35 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (!printer) {
-      return NextResponse.json({
-        data: { success: false, reason: 'No receipt printer configured' },
-      })
+      // W1-PR3: Return 404 when no printer configured
+      return NextResponse.json(
+        { data: { success: false, reason: 'No receipt printer configured' } },
+        { status: 404 }
+      )
     }
 
     const result = await sendToPrinter(printer.ipAddress, printer.port, ESCPOS.DRAWER_KICK)
 
     if (!result.success) {
-      return NextResponse.json({
-        data: { success: false, error: result.error ?? 'Printer did not acknowledge' },
-      })
+      // W1-PR3: Return 500 on printer failure
+      return NextResponse.json(
+        { data: { success: false, error: result.error ?? 'Printer did not acknowledge' } },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('[CashDrawer API] Unexpected error:', error)
-    return NextResponse.json({
-      data: {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+    // W1-PR3: Return 500 on unexpected errors
+    return NextResponse.json(
+      {
+        data: {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        },
       },
-    })
+      { status: 500 }
+    )
   }
 })

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { hasPermission, isAdmin, PERMISSIONS } from '@/lib/auth-utils'
 import { useAuthStore } from '@/stores/auth-store'
+import { useOrderStore } from '@/stores/order-store'
 
 const CLOUD_PARENT_DOMAINS = [
   '.ordercontrolcenter.com',
@@ -209,6 +210,7 @@ export function SettingsNav() {
   const pathname = usePathname()
   const employee = useAuthStore(s => s.employee)
   const logout = useAuthStore(s => s.logout)
+  const clearOrder = useOrderStore(s => s.clearOrder)
   const permissions = employee?.permissions || []
   const userIsAdmin = isAdmin(permissions)
 
@@ -223,9 +225,10 @@ export function SettingsNav() {
     } catch {
       // Cookie clear failed — redirect anyway
     }
+    clearOrder()
     logout()
     window.location.href = MISSION_CONTROL_URL
-  }, [logout])
+  }, [logout, clearOrder])
 
   // Auto-expand section that contains the active page
   const getActiveSection = () => {

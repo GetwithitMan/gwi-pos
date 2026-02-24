@@ -293,6 +293,15 @@ export class DatacapClient {
       this._lastTranCode.set(reader.id, tranCodeMatch[1])
     }
 
+    // W1-P2: Guard simulated mode in production at the reader level
+    // (Config-level guard exists in validateDatacapConfig, but reader.communicationMode can override)
+    if (mode === 'simulated' && process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'Simulated payment mode is not allowed in production. ' +
+        'Configure reader communicationMode to "local" or "cloud".'
+      )
+    }
+
     // Simulated mode — no network calls
     if (mode === 'simulated') {
       // Extract tranCode and simScenario from XML for simulator

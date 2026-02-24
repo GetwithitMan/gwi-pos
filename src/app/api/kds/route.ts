@@ -333,6 +333,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         }, { async: true }).catch(err => {
           console.error('Failed to dispatch order bumped:', err)
         })
+      } else if (action === 'resend') {
+        // W1-K2: Dispatch resend event so all KDS screens re-show the resent items
+        for (const iid of itemIds) {
+          dispatchItemStatus(locationId, {
+            orderId,
+            itemId: iid,
+            status: 'resent',
+            stationId: body.stationId || '',
+            updatedBy: body.employeeId || firstItemForDispatch.order.employeeId || '',
+          }, { async: true }).catch(err => {
+            console.error('Failed to dispatch resend status:', err)
+          })
+        }
       }
     }
 

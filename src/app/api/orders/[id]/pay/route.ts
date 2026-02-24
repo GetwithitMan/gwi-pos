@@ -23,6 +23,7 @@ import { emitCloudEvent } from '@/lib/cloud-events'
 import { triggerCashDrawer } from '@/lib/cash-drawer'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { getDatacapClient } from '@/lib/datacap/helpers'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -904,6 +905,13 @@ export const POST = withVenue(withTiming(async function POST(
     timing.start('db-pay')
     try {
       await db.$transaction(async (tx) => {
+        // W1-P5: Lock parent row FIRST to prevent split payment race condition.
+        // Two siblings paying concurrently must serialize here so "all siblings paid?"
+        // check is always consistent.
+        if (order.parentOrderId) {
+          await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
+        }
+
         for (const record of pendingDefaultRecords) {
           const created = await tx.payment.create({ data: record as Parameters<typeof tx.payment.create>[0]['data'] })
           createdPayments.push(created)
@@ -967,11 +975,10 @@ export const POST = withVenue(withTiming(async function POST(
           })
         }
 
-        // Check if all split siblings are paid and mark parent as paid (inside transaction for atomicity)
+        // W1-P5: Check if all split siblings are paid and mark parent as paid.
+        // Parent row was already locked at the top of this transaction, so the
+        // sibling status read is guaranteed to be serialized.
         if (updateData.status === 'paid' && order.parentOrderId) {
-          // Lock parent row to prevent TOCTOU race when multiple siblings pay concurrently
-          await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
-
           const allSiblings = await tx.order.findMany({
             where: { parentOrderId: order.parentOrderId },
             select: { id: true, status: true },
@@ -997,6 +1004,60 @@ export const POST = withVenue(withTiming(async function POST(
           { status: 409 }
         )
       }
+
+      // W1-P3: If DB transaction failed but card was already charged at Datacap,
+      // attempt automatic void to prevent invisible charges (customer charged, no POS record).
+      const cardRecordsToVoid = pendingDefaultRecords.filter(
+        (r: any) => (r.paymentMethod === 'credit' || r.paymentMethod === 'debit') && r.datacapRecordNo
+      )
+      if (cardRecordsToVoid.length > 0 && terminalId) {
+        // Fire-and-forget void attempts — log results but don't block error response
+        void (async () => {
+          try {
+            const terminal = await db.terminal.findUnique({
+              where: { id: terminalId },
+              select: { paymentReaderId: true },
+            })
+            if (!terminal?.paymentReaderId) {
+              console.error('[CRITICAL-PAYMENT] Cannot auto-void: no reader bound to terminal', {
+                terminalId, orderId, records: cardRecordsToVoid.map((r: any) => r.datacapRecordNo),
+              })
+              return
+            }
+            const client = await getDatacapClient(order.locationId)
+            for (const record of cardRecordsToVoid) {
+              const recordNo = (record as any).datacapRecordNo
+              try {
+                const voidResult = await client.voidSale(terminal.paymentReaderId!, { recordNo })
+                const voided = voidResult.cmdStatus === 'Approved'
+                console.error(`[CRITICAL-PAYMENT] Auto-void ${voided ? 'SUCCEEDED' : 'FAILED'} for recordNo=${recordNo}`, {
+                  orderId,
+                  amount: (record as any).amount,
+                  voidResult: { cmdStatus: voidResult.cmdStatus, textResponse: voidResult.textResponse },
+                })
+              } catch (voidErr) {
+                console.error(`[CRITICAL-PAYMENT] Auto-void EXCEPTION for recordNo=${recordNo}`, {
+                  orderId, amount: (record as any).amount, error: voidErr,
+                })
+              }
+            }
+          } catch (lookupErr) {
+            console.error('[CRITICAL-PAYMENT] Auto-void lookup failed', {
+              orderId, terminalId, error: lookupErr,
+            })
+          }
+        })()
+
+        // Return specific error so client knows reversal was attempted
+        return NextResponse.json(
+          {
+            error: 'Payment approved but recording failed — automatic reversal attempted. Check Datacap portal to confirm.',
+            datacapRecordNos: cardRecordsToVoid.map((r: any) => r.datacapRecordNo),
+          },
+          { status: 500 }
+        )
+      }
+
       throw txError // Re-throw unexpected errors to the outer catch
     }
     timing.end('db-pay', 'Payment transaction')

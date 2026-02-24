@@ -580,7 +580,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   clearOrder: () => {
     const { currentOrder } = get()
     if (currentOrder?.id) clearPendingItems(currentOrder.id)
-    set({ currentOrder: null })
+    set({ currentOrder: null, _previousOrder: null })
   },
 
   // Update order's DB ID without resetting items (after creating in DB)

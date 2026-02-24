@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { useOrderStore } from '@/stores/order-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { Modal } from '@/components/ui/modal'
 
@@ -11,6 +12,7 @@ export default function CrewHubPage() {
   const employee = useAuthStore(s => s.employee)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const logout = useAuthStore(s => s.logout)
+  const clearOrder = useOrderStore(s => s.clearOrder)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [clockStatus, setClockStatus] = useState<{
     clockedIn: boolean
@@ -189,6 +191,7 @@ export default function CrewHubPage() {
   }
 
   const handleLogout = () => {
+    clearOrder()
     logout()
     router.push('/login')
   }

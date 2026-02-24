@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { useOrderStore } from '@/stores/order-store'
 
 /** Cloud venue parent domains (must match middleware.ts) */
 const CLOUD_PARENT_DOMAINS = [
@@ -21,6 +22,7 @@ export function useRequireAuth() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const logout = useAuthStore(s => s.logout)
   const login = useAuthStore(s => s.login)
+  const clearOrder = useOrderStore(s => s.clearOrder)
   const validatedRef = useRef(false)
 
   useEffect(() => {
@@ -66,6 +68,7 @@ export function useRequireAuth() {
           }
 
           // Local mode or cloud refresh failed — force re-login
+          clearOrder()
           logout()
           router.push('/login')
         }
@@ -73,7 +76,7 @@ export function useRequireAuth() {
       .catch(() => {
         // Network error — don't force logout, let user retry
       })
-  }, [isAuthenticated, employee, locationId, logout, login, router])
+  }, [isAuthenticated, employee, locationId, logout, login, clearOrder, router])
 
   return { employee, isAuthenticated }
 }

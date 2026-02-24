@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import net from 'net'
+import { sendToPrinter } from '@/lib/printer-connection'
 import { withVenue } from '@/lib/with-venue'
 
 // Maximum recommended print buffer size (16KB)
@@ -46,8 +46,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       console.warn(`[DirectPrint] ${warning}`)
     }
 
-    // Send to printer via TCP
-    await sendToPrinter(printerIp, printerPort, buffer)
+    // W1-PR1: Send to printer via shared sendToPrinter and check result
+    const result = await sendToPrinter(printerIp, printerPort, buffer)
+
+    if (!result.success) {
+      return NextResponse.json(
+        {
+          error: `Print failed: ${result.error || 'Unknown error'}`,
+          code: 'PRINT_ERROR',
+        },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({ data: {
       success: true,
@@ -66,42 +76,3 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
   }
 })
-
-function sendToPrinter(ip: string, port: number, data: Buffer): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = new net.Socket()
-    const timeout = 10000 // 10 second timeout
-
-    const timer = setTimeout(() => {
-      socket.destroy()
-      reject(new Error(`Connection timeout to ${ip}:${port}`))
-    }, timeout)
-
-    socket.on('error', (err) => {
-      clearTimeout(timer)
-      socket.destroy()
-      reject(new Error(`Printer connection error: ${err.message}`))
-    })
-
-    socket.on('close', () => {
-      clearTimeout(timer)
-    })
-
-    socket.connect(port, ip, () => {
-      socket.write(data, (err) => {
-        if (err) {
-          clearTimeout(timer)
-          socket.destroy()
-          reject(new Error(`Write error: ${err.message}`))
-        } else {
-          // Give printer a moment to receive the data
-          setTimeout(() => {
-            clearTimeout(timer)
-            socket.destroy()
-            resolve()
-          }, 100)
-        }
-      })
-    })
-  })
-}

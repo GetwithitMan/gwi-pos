@@ -11,7 +11,7 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id: orderId } = await params
-    const { reason, notes, managerId } = await request.json()
+    const { reason, notes, managerId, forceReopen } = await request.json()
 
     // Validate inputs
     if (!reason || !managerId) {
@@ -34,9 +34,22 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Insufficient permissions to reopen orders' }, { status: 403 })
     }
 
-    // Get the order
+    // Get the order with its payments
     const order = await db.order.findUnique({
       where: { id: orderId },
+      include: {
+        payments: {
+          where: { status: 'completed' },
+          select: {
+            id: true,
+            paymentMethod: true,
+            amount: true,
+            totalAmount: true,
+            datacapRecordNo: true,
+            cardLast4: true,
+          },
+        },
+      },
     })
 
     if (!order) {
@@ -63,6 +76,40 @@ export const POST = withVenue(async function POST(
           { status: 403 }
         )
       }
+    }
+
+    // W1-P4: Warn about card payments before reopening — prevents accidental double-charge
+    const cardPayments = order.payments.filter(
+      p => p.paymentMethod === 'credit' || p.paymentMethod === 'debit'
+    )
+    if (cardPayments.length > 0 && !forceReopen) {
+      return NextResponse.json(
+        {
+          error: 'Order has completed card payments. Reopening will void these payments. Send forceReopen: true to confirm.',
+          requiresCardPaymentWarning: true,
+          cardPayments: cardPayments.map(p => ({
+            id: p.id,
+            method: p.paymentMethod,
+            amount: Number(p.amount),
+            cardLast4: p.cardLast4,
+          })),
+        },
+        { status: 409 }
+      )
+    }
+
+    // W1-P4: Mark all existing completed payments as voided so the pay route's
+    // alreadyPaid calculation starts fresh (old payments were for the previous close).
+    if (order.payments.length > 0) {
+      await db.payment.updateMany({
+        where: {
+          orderId,
+          status: 'completed',
+        },
+        data: {
+          status: 'voided',
+        },
+      })
     }
 
     // Update order to open status
@@ -106,6 +153,8 @@ export const POST = withVenue(async function POST(
           notes: notes || null,
           closedAt: order.closedAt,
           total: Number(order.total),
+          paymentsVoided: order.payments.length,
+          cardPaymentsVoided: cardPayments.length,
         },
         ipAddress: request.headers.get('x-forwarded-for'),
         userAgent: request.headers.get('user-agent'),
@@ -132,6 +181,7 @@ export const POST = withVenue(async function POST(
           status: reopenedOrder.status,
           reopenedAt: reopenedOrder.reopenedAt,
         },
+        paymentsVoided: order.payments.length,
       },
     })
   } catch (error) {

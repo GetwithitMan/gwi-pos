@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CreditCardIcon, ArrowPathIcon, CheckBadgeIcon, XCircleIcon } from '@heroicons/react/24/outline'
 import { useDatacap, DatacapResult } from '@/hooks/useDatacap'
@@ -26,6 +26,9 @@ interface DatacapPaymentProcessorProps {
   onSuccess: (result: DatacapResult & { tipAmount: number }) => void
   onPartialApproval?: (result: DatacapResult & { tipAmount: number; remainingBalance: number }) => void
   onCancel: () => void
+  /** W1-P3: Called when server confirms card was charged but DB recording failed.
+   *  Parent should show a critical error and instruct staff to check Datacap portal. */
+  onRecordingFailed?: (error: string, datacapRecordNos?: string[]) => void
 }
 
 export function DatacapPaymentProcessor({
@@ -41,6 +44,7 @@ export function DatacapPaymentProcessor({
   onSuccess,
   onPartialApproval,
   onCancel,
+  onRecordingFailed,
 }: DatacapPaymentProcessorProps) {
   const [tipAmount, setTipAmount] = useState(0)
   const [customTip, setCustomTip] = useState('')
@@ -48,6 +52,9 @@ export function DatacapPaymentProcessor({
   const [partialResult, setPartialResult] = useState<(DatacapResult & { tipAmount: number }) | null>(null)
   const [isVoiding, setIsVoiding] = useState(false)
   const [voidError, setVoidError] = useState<string | null>(null)
+
+  // W1-P3: Track last approved recordNo for void-on-failure safety
+  const lastApprovedRecordNoRef = useRef<string | null>(null)
 
   const {
     reader,
@@ -111,7 +118,7 @@ export function DatacapPaymentProcessor({
       paymentMethod: 'credit',
     })
 
-    await processPayment({
+    const result = await processPayment({
       orderId,
       amount: totalToCharge,
       purchaseAmount: amount, // Pre-tip amount for accurate partial approval detection
@@ -119,8 +126,41 @@ export function DatacapPaymentProcessor({
       tipMode: externalTipMode || 'none',
     })
 
+    // W1-P3: Track recordNo from approved transactions for void-on-failure safety
+    if (result?.approved && result.recordNo) {
+      lastApprovedRecordNoRef.current = result.recordNo
+    }
+
     // Success is handled via onSuccess callback
   }
+
+  // W1-P3: Client-side void for when the pay API records a "recording failed" error.
+  // The server also attempts auto-void, but this is a defense-in-depth layer.
+  const voidLastApproval = useCallback(async () => {
+    const recordNo = lastApprovedRecordNoRef.current
+    if (!recordNo) return
+
+    try {
+      const res = await fetch('/api/datacap/void', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          readerId: readerId || reader?.id,
+          recordNo,
+          employeeId,
+        }),
+      })
+      const data = await res.json()
+      if (data.data?.approved) {
+        lastApprovedRecordNoRef.current = null
+      } else {
+        console.error('[DatacapPaymentProcessor] Client-side void failed:', data.data?.error)
+      }
+    } catch (err) {
+      console.error('[DatacapPaymentProcessor] Client-side void request failed:', err)
+    }
+  }, [locationId, readerId, reader?.id, employeeId])
 
   // Void a partial authorization and restart the payment flow
   const handleVoidPartial = async () => {

@@ -2,9 +2,24 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
+import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
+import { setSessionCookie } from '@/lib/auth-session'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
+    // ── Rate limiting (W1-S1) ──────────────────────────────────
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown'
+
+    const rateCheck = checkLoginRateLimit(ip)
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: rateCheck.reason },
+        { status: 429 }
+      )
+    }
+
     const { pin, locationId } = await request.json()
 
     if (!pin || pin.length < 4) {
@@ -41,6 +56,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!matchedEmployee) {
+      // Record failure for rate limiting — no employee ID since PIN didn't match
+      recordLoginFailure(ip)
+
+      // Log failed attempt
+      if (locationId) {
+        void db.auditLog.create({
+          data: {
+            locationId,
+            action: 'login_failed',
+            entityType: 'auth',
+            details: { reason: 'invalid_pin', ip },
+            ipAddress: ip,
+          },
+        }).catch(console.error)
+      }
+
       return NextResponse.json(
         { error: 'Invalid PIN' },
         { status: 401 }
@@ -80,6 +111,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         action: 'login',
         entityType: 'employee',
         entityId: matchedEmployee.id,
+        ipAddress: ip,
       },
     })
 
@@ -100,6 +132,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Check for dev access (Super Admin or has dev.access permission)
     const isDevAccess = permissions.includes('all') || permissions.includes('dev.access')
+
+    // ── Set signed httpOnly session cookie (W1-S3) ─────────────
+    await setSessionCookie({
+      employeeId: matchedEmployee.id,
+      locationId: matchedEmployee.locationId,
+      roleId: matchedEmployee.role.id,
+      roleName: matchedEmployee.role.name,
+      permissions,
+    })
+
+    // Clear rate limit state on success
+    recordLoginSuccess(ip, matchedEmployee.id)
 
     return NextResponse.json({ data: {
       employee: {

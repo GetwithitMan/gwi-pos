@@ -38,6 +38,7 @@ interface AuthState {
   // Actions
   login: (employee: Employee) => void
   logout: () => void
+  serverLogout: () => Promise<void> // Clears httpOnly cookie + local state
   setLocation: (locationId: string) => void
   setWorkingRole: (role: AvailableRole) => void
   clockIn: (data?: { entryId?: string; clockInTime?: string }) => void
@@ -63,7 +64,10 @@ export const useAuthStore = create<AuthState>()(
           workingRole: null, // Reset on login — will be set if multi-role
         }),
 
-      logout: () =>
+      logout: () => {
+        // Fire-and-forget: clear the httpOnly session cookie on the server.
+        // Local state clears immediately for instant UX; cookie cleanup is async.
+        void fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
         set({
           employee: null,
           isAuthenticated: false,
@@ -71,7 +75,24 @@ export const useAuthStore = create<AuthState>()(
           clockInTime: null,
           entryId: null,
           workingRole: null,
-        }),
+        })
+      },
+
+      serverLogout: async () => {
+        try {
+          await fetch('/api/auth/logout', { method: 'POST' })
+        } catch {
+          // Clear local state even if server call fails
+        }
+        set({
+          employee: null,
+          isAuthenticated: false,
+          clockedIn: false,
+          clockInTime: null,
+          entryId: null,
+          workingRole: null,
+        })
+      },
 
       setLocation: (locationId) =>
         set({ locationId }),

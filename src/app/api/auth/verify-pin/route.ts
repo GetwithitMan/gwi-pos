@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
+import { checkLoginRateLimit, recordLoginFailure } from '@/lib/auth-rate-limiter'
 
 /**
  * POST /api/auth/verify-pin
@@ -14,6 +15,18 @@ import { withVenue } from '@/lib/with-venue'
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
+    // Rate limiting (shares limits with login route)
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown'
+    const rateCheck = checkLoginRateLimit(ip)
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: rateCheck.reason },
+        { status: 429 }
+      )
+    }
+
     const { pin, locationId } = await request.json()
 
     if (!pin || pin.length < 4) {
@@ -61,6 +74,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!matchedEmployee) {
+      recordLoginFailure(ip)
       return NextResponse.json(
         { error: 'Invalid PIN' },
         { status: 401 }

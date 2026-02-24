@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -234,6 +235,42 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             completedAt: new Date(),
           },
         })
+      }
+    }
+
+    // W1-K3: Dispatch socket events so all KDS screens sync
+    const firstItem = await db.orderItem.findUnique({
+      where: { id: itemIds[0] },
+      select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
+    })
+
+    if (firstItem?.order) {
+      const locationId = firstItem.order.locationId
+      const orderId = firstItem.orderId
+
+      if (action === 'bump_order') {
+        dispatchOrderBumped(locationId, {
+          orderId: body.orderId || orderId,
+          stationId: body.stationId || '',
+          bumpedBy: body.employeeId || firstItem.order.employeeId || '',
+          allItemsServed: true,
+        }, { async: true }).catch(err => {
+          console.error('[Expo] Failed to dispatch order bumped:', err)
+        })
+      } else {
+        // serve, update_status — dispatch item status for each item
+        const newStatus = action === 'serve' || status === 'served' ? 'completed' : (status || 'active')
+        for (const iid of itemIds) {
+          dispatchItemStatus(locationId, {
+            orderId,
+            itemId: iid,
+            status: newStatus,
+            stationId: body.stationId || '',
+            updatedBy: body.employeeId || firstItem.order.employeeId || '',
+          }, { async: true }).catch(err => {
+            console.error('[Expo] Failed to dispatch item status:', err)
+          })
+        }
       }
     }
 
