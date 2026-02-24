@@ -83,7 +83,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         // Conditionally include seats
         ...(includeSeats ? {
           seats: {
-            where: { isActive: true, deletedAt: null, isTemporary: false },
+            where: { isActive: true, deletedAt: null },
             select: {
               id: true,
               label: true,
@@ -92,6 +92,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               relativeY: true,
               angle: true,
               seatType: true,
+              isTemporary: true,
             },
             orderBy: { seatNumber: 'asc' },
           },

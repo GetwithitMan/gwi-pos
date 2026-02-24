@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
 import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
+import { TabTransferModal } from './TabTransferModal'
 import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
 import { toast } from '@/stores/toast-store'
 
@@ -234,6 +235,7 @@ export function OpenOrdersPanel({
   const [hasMoreClosed, setHasMoreClosed] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [bulkProcessing, setBulkProcessing] = useState(false)
+  const [tabTransferOrder, setTabTransferOrder] = useState<OpenOrder | null>(null)
 
   const dark = isExpanded || forceDark
 
@@ -800,6 +802,16 @@ export function OpenOrdersPanel({
             >
               Open
             </button>
+            {order.orderType === 'bar_tab' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setTabTransferOrder(order) }}
+                className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  dark ? 'bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30' : 'bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border border-cyan-200'
+                }`}
+              >
+                Transfer
+              </button>
+            )}
           </div>
         )}
         {viewMode === 'open' && isPaidOrClosed && (
@@ -1202,6 +1214,21 @@ export function OpenOrdersPanel({
             currentOrderId={currentOrderId}
           />
         )}
+        {tabTransferOrder && locationId && employeeId && (
+          <TabTransferModal
+            isOpen={true}
+            onClose={() => setTabTransferOrder(null)}
+            tabId={tabTransferOrder.id}
+            tabName={tabTransferOrder.tabName}
+            currentEmployeeId={employeeId}
+            currentEmployeeName={tabTransferOrder.employee.name}
+            locationId={locationId}
+            onTransferComplete={() => {
+              setTabTransferOrder(null)
+              loadOrders()
+            }}
+          />
+        )}
       </>
     )
   }
@@ -1233,6 +1260,21 @@ export function OpenOrdersPanel({
         {ordersList}
       </div>
       {closedOrderModal}
+      {tabTransferOrder && locationId && employeeId && (
+        <TabTransferModal
+          isOpen={true}
+          onClose={() => setTabTransferOrder(null)}
+          tabId={tabTransferOrder.id}
+          tabName={tabTransferOrder.tabName}
+          currentEmployeeId={employeeId}
+          currentEmployeeName={tabTransferOrder.employee.name}
+          locationId={locationId}
+          onTransferComplete={() => {
+            setTabTransferOrder(null)
+            loadOrders()
+          }}
+        />
+      )}
     </>
   )
 }

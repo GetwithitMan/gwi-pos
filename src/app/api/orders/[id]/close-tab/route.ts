@@ -223,8 +223,8 @@ export const POST = withVenue(async function POST(
         where: { id: orderId },
         select: { captureRetryCount: true },
       })
-      const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 3
-      const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? true
+      const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 5
+      const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? false
       if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
         await db.order.update({
           where: { id: orderId },
@@ -267,8 +267,8 @@ export const POST = withVenue(async function POST(
         where: { id: orderId },
         select: { captureRetryCount: true },
       })
-      const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 3
-      const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? true
+      const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 5
+      const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? false
       if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
         await db.order.update({
           where: { id: orderId },

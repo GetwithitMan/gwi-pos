@@ -232,14 +232,16 @@ export function PaymentModal({
   }, [isOpen, orderId, locationId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for tab:updated socket events (increment status indicator)
+  // W3-3: Listener active even when modal is closed so toast fires immediately
   useEffect(() => {
-    if (!isOpen || !orderId) return
+    if (!orderId) return
     setTabIncrementFailed(false)
     const socket = getSharedSocket()
     const onTabUpdated = (data: { orderId: string; status: string }) => {
       if (data.orderId !== orderId) return
       if (data.status === 'increment_failed') {
         setTabIncrementFailed(true)
+        toast.error('Card limit reached — take a new card or cash.', 10000)
       } else if (data.status === 'incremented') {
         setTabIncrementFailed(false)
       }
@@ -249,7 +251,7 @@ export function PaymentModal({
       socket.off('tab:updated', onTabUpdated)
       releaseSharedSocket()
     }
-  }, [isOpen, orderId])
+  }, [orderId])
 
   // Use fetched total if orderTotal was 0
   const effectiveOrderTotal = orderTotal > 0 ? orderTotal : (fetchedOrderTotal ?? 0)
@@ -370,6 +372,19 @@ export function PaymentModal({
       // All card payments go through Datacap (simulated or real)
       setStep('datacap_card')
     }
+  }
+
+  // W3-12: Cash Exact — skip cash entry screen, process immediately
+  const handleCashExact = () => {
+    setSelectedMethod('cash')
+    setTipAmount(0)
+    const payment: PendingPayment = {
+      method: 'cash',
+      amount: cashTotal,
+      tipAmount: 0,
+      amountTendered: cashTotal,
+    }
+    processPayments([...pendingPayments, payment], pendingPayments)
   }
 
   // Close tab by capturing against a pre-authed card
@@ -1103,6 +1118,36 @@ export function PaymentModal({
                 </button>
               )}
 
+              {/* W3-12: Cash Exact — one-tap cash payment, skip entry screen */}
+              {paymentSettings.acceptCash && cashTotal > 0 && (
+                <button
+                  onClick={handleCashExact}
+                  disabled={isProcessing}
+                  style={{
+                    width: '100%',
+                    height: 56,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '0 20px',
+                    borderRadius: 12,
+                    border: '2px solid rgba(34, 197, 94, 0.5)',
+                    background: 'rgba(34, 197, 94, 0.2)',
+                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                    textAlign: 'left' as const,
+                    opacity: isProcessing ? 0.5 : 1,
+                  }}
+                >
+                  <span style={{ fontSize: 22, color: '#22c55e', fontWeight: 900 }}>$</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ color: '#22c55e', fontSize: 16, fontWeight: 700 }}>
+                      Cash Exact {formatCurrency(cashTotal)}
+                    </div>
+                    <div style={{ color: '#4ade80', fontSize: 12 }}>No change, skip to done</div>
+                  </div>
+                </button>
+              )}
+
               {paymentSettings.acceptCredit && (
                 <button
                   onClick={() => handleSelectMethod('credit')}
@@ -1567,6 +1612,7 @@ export function PaymentModal({
               employeeId={employeeId}
               locationId={locationId}
               onSuccess={handleDatacapSuccess}
+              onPayCashInstead={() => { setSelectedMethod('cash'); setTipAmount(0); setStep('cash') }}
               onPartialApproval={(result) => {
                 const partialPayment: PendingPayment = {
                   method: selectedMethod === 'debit' ? 'debit' : 'credit',

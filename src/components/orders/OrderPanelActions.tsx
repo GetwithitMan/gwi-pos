@@ -63,6 +63,8 @@ interface OrderPanelActionsProps {
   onSplit?: () => void
   onQuickSplitEvenly?: (numWays: number) => void
   orderType?: string  // 'bar_tab', 'dine_in', etc. — table orders show Send instead of Start Tab
+  onTransferItems?: () => void
+  onMergeOrders?: () => void
 }
 
 export const OrderPanelActions = memo(function OrderPanelActions({
@@ -111,6 +113,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   onSplit,
   onQuickSplitEvenly,
   orderType,
+  onTransferItems,
+  onMergeOrders,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
@@ -900,6 +904,50 @@ export const OrderPanelActions = memo(function OrderPanelActions({
           </button>
         )}
       </div>
+
+      {/* Transfer / Merge row */}
+      {hasItems && (onTransferItems || onMergeOrders) && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+          {onTransferItems && (
+            <button
+              onClick={onTransferItems}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid rgba(6, 182, 212, 0.3)',
+                background: 'rgba(6, 182, 212, 0.1)',
+                color: '#22d3ee',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              Transfer
+            </button>
+          )}
+          {onMergeOrders && (
+            <button
+              onClick={onMergeOrders}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid rgba(251, 191, 36, 0.3)',
+                background: 'rgba(251, 191, 36, 0.1)',
+                color: '#fbbf24',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              Merge
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Secondary actions */}
       {hasItems && (onDiscount || onClear || onCancelOrder || onSplit || onQuickSplitEvenly) && (

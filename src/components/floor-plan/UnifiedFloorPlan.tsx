@@ -1100,6 +1100,8 @@ export function UnifiedFloorPlan({
           onMarkAvailable={() => {
             if (infoPanelTableId) handleUpdateStatus(infoPanelTableId, 'available')
           }}
+          locationId={locationId}
+          employeeId={employeeId}
         />
       )}
     </div>

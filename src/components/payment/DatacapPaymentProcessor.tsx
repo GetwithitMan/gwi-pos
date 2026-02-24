@@ -26,6 +26,7 @@ interface DatacapPaymentProcessorProps {
   onSuccess: (result: DatacapResult & { tipAmount: number }) => void
   onPartialApproval?: (result: DatacapResult & { tipAmount: number; remainingBalance: number }) => void
   onCancel: () => void
+  onPayCashInstead?: () => void
   /** W1-P3: Called when server confirms card was charged but DB recording failed.
    *  Parent should show a critical error and instruct staff to check Datacap portal. */
   onRecordingFailed?: (error: string, datacapRecordNos?: string[]) => void
@@ -44,6 +45,7 @@ export function DatacapPaymentProcessor({
   onSuccess,
   onPartialApproval,
   onCancel,
+  onPayCashInstead,
   onRecordingFailed,
 }: DatacapPaymentProcessorProps) {
   const [tipAmount, setTipAmount] = useState(0)
@@ -468,6 +470,14 @@ export function DatacapPaymentProcessor({
             >
               Try Again
             </button>
+            {onPayCashInstead && (
+              <button
+                onClick={() => { cancelTransaction(); onPayCashInstead() }}
+                className="mt-3 px-8 py-3 bg-emerald-700 text-white rounded-xl font-bold"
+              >
+                Pay Cash Instead
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

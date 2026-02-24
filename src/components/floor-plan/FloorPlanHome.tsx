@@ -2596,6 +2596,8 @@ export function FloorPlanHome({
           onMarkAvailable={() => {
             if (infoPanelTableId) handleUpdateStatus(infoPanelTableId, 'available')
           }}
+          locationId={locationId}
+          employeeId={employeeId}
         />
       )}
 

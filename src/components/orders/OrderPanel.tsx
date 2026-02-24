@@ -151,6 +151,8 @@ export interface OrderPanelProps {
   onAddSplit?: () => void
   cardPriceMultiplier?: number
   onQuickSplitEvenly?: (numWays: number) => void
+  onTransferItems?: () => void
+  onMergeOrders?: () => void
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -274,6 +276,8 @@ export const OrderPanel = memo(function OrderPanel({
   onAddSplit,
   cardPriceMultiplier,
   onQuickSplitEvenly,
+  onTransferItems,
+  onMergeOrders,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -1569,6 +1573,8 @@ export const OrderPanel = memo(function OrderPanel({
           onSplit={onItemSplit ? () => onItemSplit('') : undefined}
           onQuickSplitEvenly={onQuickSplitEvenly}
           orderType={orderType}
+          onTransferItems={onTransferItems}
+          onMergeOrders={onMergeOrders}
         />
       </div>
 

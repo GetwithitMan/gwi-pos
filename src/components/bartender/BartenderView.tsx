@@ -39,6 +39,8 @@ import {
   getItemSettingsKey,
   getItemCustomizationsKey,
   getItemOrderKey,
+  COMMON_BAR_MODIFIERS,
+  HOT_MODIFIER_CONFIG,
 } from '@/components/bartender/bartender-settings'
 
 // ============================================================================
@@ -274,6 +276,15 @@ export function BartenderView({
 
   // Tab creation (shared POST logic between "New Tab" modal and quick-tab button)
 
+  // W3-10: Search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // W3-11: Hot modifier cache — menuItemId → matching common bar modifiers
+  const [hotModifierCache, setHotModifierCache] = useState<Record<string, { id: string; name: string; price: number }[]>>({})
+  const hotModifierFetchedCats = useRef<Set<string>>(new Set()) // categories already fetched
+
   // Spirit tier popup state
   const [spiritPopupItem, setSpiritPopupItem] = useState<MenuItem | null>(null)
   const [selectedSpiritTier, setSelectedSpiritTier] = useState<string | null>(null)
@@ -404,6 +415,16 @@ export function BartenderView({
   }, [orderedMenuItems, menuPage, itemsPerPage, itemSettings.useScrolling])
 
 
+  // W3-10: Search-filtered items — when search is active, filter across all items regardless of category
+  const searchFilteredItems = useMemo(() => {
+    if (!searchQuery.trim()) return null // null = not searching
+    const query = searchQuery.toLowerCase().trim()
+    return allMenuItems.filter(item => item.name.toLowerCase().includes(query))
+  }, [searchQuery, allMenuItems])
+
+  // Items to actually display — search results override category/paginated items
+  const finalDisplayedItems = searchFilteredItems ?? displayedMenuItems
+
   // ---------------------------------------------------------------------------
   // DATA LOADING
   // ---------------------------------------------------------------------------
@@ -435,6 +456,58 @@ export function BartenderView({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId])
+
+  // W3-11: Fetch hot modifiers for liquor items in current category
+  const fetchHotModifiersForCategory = useCallback(async (categoryId: string, items: MenuItem[]) => {
+    if (hotModifierFetchedCats.current.has(categoryId)) return
+
+    // Only fetch for items that have non-spirit modifiers and are likely liquor items (have pour sizes)
+    const liquorItems = items.filter(i => i.hasOtherModifiers && i.pourSizes && Object.keys(i.pourSizes).length > 0)
+    if (liquorItems.length === 0) return
+
+    hotModifierFetchedCats.current.add(categoryId)
+
+    // Batch fetch modifier groups for up to 20 items
+    const itemsToFetch = liquorItems.slice(0, 20)
+    const newCache: Record<string, { id: string; name: string; price: number }[]> = {}
+
+    await Promise.all(itemsToFetch.map(async (item) => {
+      try {
+        const res = await fetch(`/api/menu/items/${item.id}/modifiers?channel=pos`)
+        if (!res.ok) return
+        const data = await res.json()
+        const groups = data.data?.modifierGroups || []
+
+        // Find modifiers matching COMMON_BAR_MODIFIERS (skip spirit groups)
+        const matches: { id: string; name: string; price: number }[] = []
+        for (const group of groups) {
+          if (group.isSpiritGroup) continue
+          for (const mod of (group.modifiers || [])) {
+            const nameLower = mod.name.toLowerCase().trim()
+            if (COMMON_BAR_MODIFIERS.includes(nameLower as typeof COMMON_BAR_MODIFIERS[number])) {
+              matches.push({ id: mod.id, name: mod.name, price: Number(mod.price || 0) })
+            }
+          }
+        }
+        if (matches.length > 0) {
+          newCache[item.id] = matches
+        }
+      } catch {
+        // Silently skip failed fetches
+      }
+    }))
+
+    if (Object.keys(newCache).length > 0) {
+      setHotModifierCache(prev => ({ ...prev, ...newCache }))
+    }
+  }, [])
+
+  // Trigger hot modifier fetch when category changes
+  useEffect(() => {
+    if (selectedCategoryId && menuItems.length > 0) {
+      void fetchHotModifiersForCategory(selectedCategoryId, menuItems)
+    }
+  }, [selectedCategoryId, menuItems, fetchHotModifiersForCategory])
 
   // Items from FloorPlanHome are automatically available via Zustand store
   // No mount-time sync needed — the store IS the source of truth
@@ -774,7 +847,12 @@ export function BartenderView({
   const handleCategoryClick = useCallback((categoryId: string) => {
     setSelectedCategoryId(categoryId)
     filterMenuItemsByCategory(categoryId)
-  }, [filterMenuItemsByCategory])
+    // W3-10: Clear search when switching categories
+    if (searchQuery) {
+      setSearchQuery('')
+      setIsSearchExpanded(false)
+    }
+  }, [filterMenuItemsByCategory, searchQuery])
 
   const handleMenuItemTap = useCallback((item: MenuItem) => {
     // Convert local MenuItem to EngineMenuItem and delegate to engine
@@ -1013,9 +1091,57 @@ export function BartenderView({
     <div className="flex-1 min-h-0 bg-slate-900 flex flex-col overflow-hidden">
       {/* Header removed — now rendered by UnifiedPOSHeader in orders/page.tsx */}
 
-      {/* BAR / FOOD / ENT sub-navigation */}
-      <div className="flex-shrink-0 bg-slate-800/50 border-b border-white/10 px-4 py-2 flex justify-center">
+      {/* BAR / FOOD / ENT sub-navigation + Search */}
+      <div className="flex-shrink-0 bg-slate-800/50 border-b border-white/10 px-4 py-2 flex items-center justify-center gap-3">
         <ModeSelector value={menuSection} onChange={setMenuSection} />
+
+        {/* W3-10: Search input */}
+        <div className="flex items-center">
+          {isSearchExpanded ? (
+            <div className="flex items-center gap-1 bg-slate-700/80 rounded-lg px-2 py-1 border border-white/10">
+              <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search menu..."
+                className="bg-transparent text-white text-sm outline-none w-40 placeholder:text-slate-500"
+                autoFocus
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => { setSearchQuery(''); searchInputRef.current?.focus() }}
+                  className="text-slate-400 hover:text-white"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={() => { setSearchQuery(''); setIsSearchExpanded(false) }}
+                className="text-slate-400 hover:text-white ml-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setIsSearchExpanded(true); setTimeout(() => searchInputRef.current?.focus(), 100) }}
+              className="p-1.5 rounded-lg bg-slate-700/50 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+              title="Search menu items"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ====== MAIN CONTENT (row-reverse: OrderPanel left, Menu center, Tabs right) ====== */}
@@ -1571,20 +1697,35 @@ export function BartenderView({
                 </div>
               )}
 
+              {/* W3-10: Search results indicator */}
+              {searchQuery.trim() && (
+                <div className="flex-shrink-0 mb-2 flex items-center gap-2 text-sm">
+                  <span className="text-slate-400">
+                    {searchFilteredItems?.length ?? 0} result{(searchFilteredItems?.length ?? 0) !== 1 ? 's' : ''} for &ldquo;{searchQuery.trim()}&rdquo;
+                  </span>
+                  <button
+                    onClick={() => { setSearchQuery(''); setIsSearchExpanded(false) }}
+                    className="text-indigo-400 hover:text-indigo-300 text-xs font-medium"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+
               {isLoadingMenu ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500">Loading...</div>
-              ) : menuItems.length === 0 ? (
+              ) : finalDisplayedItems.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center text-slate-500">
-                  {selectedCategoryId ? 'No items in this category' : 'Select a category'}
+                  {searchQuery.trim() ? 'No items match your search' : selectedCategoryId ? 'No items in this category' : 'Select a category'}
                 </div>
               ) : (
                 <>
                   {/* Items Grid - Dynamic based on settings */}
                   <div
-                    className={`flex-1 grid gap-2 min-h-0 ${itemSettings.useScrolling ? 'overflow-y-auto content-start scrollbar-hide' : 'auto-rows-fr'}`}
+                    className={`flex-1 grid gap-2 min-h-0 ${itemSettings.useScrolling || searchQuery.trim() ? 'overflow-y-auto content-start scrollbar-hide' : 'auto-rows-fr'}`}
                     style={{ gridTemplateColumns: `repeat(${effectiveItemsPerRow}, 1fr)` }}
                   >
-                    {displayedMenuItems.map(item => {
+                    {finalDisplayedItems.map(item => {
                       const customization = itemCustomizations[item.id] || {}
                       const isHighlighted = customization.highlight && customization.highlight !== 'none'
                       const isFavorite = favorites.some(f => f.menuItemId === item.id)
@@ -1764,6 +1905,46 @@ export function BartenderView({
                             </div>
                           )}
 
+                          {/* W3-11: Hot modifier buttons for liquor items — warm amber/orange palette */}
+                          {hotModifierCache[item.id] && hotModifierCache[item.id].length > 0 && !isEditingItems && (
+                            <div className="mt-auto pt-1 flex gap-0.5 flex-wrap">
+                              {hotModifierCache[item.id].map(mod => {
+                                const config = HOT_MODIFIER_CONFIG[mod.name.toLowerCase().trim()]
+                                if (!config) return null
+                                return (
+                                  <div
+                                    key={mod.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      engine.addItemDirectly({
+                                        menuItemId: item.id,
+                                        name: item.name,
+                                        price: item.price,
+                                        modifiers: [{ id: mod.id, name: mod.name, price: mod.price }],
+                                      })
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.stopPropagation()
+                                        engine.addItemDirectly({
+                                          menuItemId: item.id,
+                                          name: item.name,
+                                          price: item.price,
+                                          modifiers: [{ id: mod.id, name: mod.name, price: mod.price }],
+                                        })
+                                      }
+                                    }}
+                                    className={`flex-1 min-w-[40px] flex items-center justify-center px-1 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${config.color} text-white hover:brightness-110`}
+                                  >
+                                    {config.label}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+
                           {isFavorite && !isEditingItems && (
                             <span className="absolute top-1 right-1 text-amber-400 text-xs">⭐</span>
                           )}
@@ -1789,8 +1970,8 @@ export function BartenderView({
                       items
                     </div>
 
-                    {/* Pagination - Center */}
-                    {totalMenuPages > 1 && (
+                    {/* Pagination - Center (hidden during search) */}
+                    {totalMenuPages > 1 && !searchQuery.trim() && (
                       <div className="flex items-center gap-2">
                         {Array.from({ length: totalMenuPages }, (_, i) => i + 1).map(page => (
                           <button

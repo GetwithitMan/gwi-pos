@@ -170,7 +170,7 @@ export default function OrdersPage() {
   } = usePizzaBuilder()
 
   // Settings loaded from API via custom hook
-  const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings, taxInclusiveLiquor, taxInclusiveFood, requireCardForTab } = useOrderSettings()
+  const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings, taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab } = useOrderSettings()
   const { settings: displaySettings, menuItemClass, gridColsClass, orderPanelClass, categorySize, categoryColorMode, categoryButtonBgColor, categoryButtonTextColor, showPriceOnMenuItems, updateSetting, updateSettings } = usePOSDisplay()
 
   // POS Layout (Bar/Food mode, favorites, category order)
@@ -2211,6 +2211,24 @@ export default function OrdersPage() {
       return
     }
 
+    // Check if this is a combo item — reopen combo builder
+    if (menuItem.itemType === 'combo') {
+      setSelectedComboItem(menuItem)
+      setComboSelections({})
+      setShowComboModal(true)
+      // Load combo template
+      try {
+        const response = await fetch(`/api/combos/${menuItem.id}`)
+        if (response.ok) {
+          const data = await response.json()
+          setComboTemplate(data.data?.template)
+        }
+      } catch (error) {
+        console.error('Failed to load combo template:', error)
+      }
+      return
+    }
+
     if (menuItem.modifierGroupCount && menuItem.modifierGroupCount > 0) {
       setSelectedItem(menuItem)
       setEditingOrderItem({
@@ -3081,7 +3099,7 @@ export default function OrdersPage() {
               setShowPaymentModal(true)
             }}
             onOpenModifiers={handleOpenModifiersShared as any}
-            requireNameWithoutCard={false}
+            requireNameWithoutCard={!allowNameOnlyTab && !requireCardForTab}
             refreshTrigger={tabsRefreshTrigger}
             initialCategories={categories}
             initialMenuItems={menuItems}
@@ -3178,6 +3196,13 @@ export default function OrdersPage() {
           setEditingPizzaItem={setEditingPizzaItem}
           inlinePizzaCallbackRef={inlinePizzaCallbackRef}
           onAddPizzaToOrder={handleAddPizzaToOrder}
+          showComboModal={showComboModal}
+          setShowComboModal={setShowComboModal}
+          selectedComboItem={selectedComboItem}
+          setSelectedComboItem={setSelectedComboItem}
+          comboTemplate={comboTemplate}
+          setComboTemplate={setComboTemplate}
+          onComboConfirm={handleAddComboToOrderWithSelections}
           showEntertainmentStart={showEntertainmentStart}
           setShowEntertainmentStart={setShowEntertainmentStart}
           entertainmentItem={entertainmentItem}

@@ -13,6 +13,7 @@ import { useOrderStore } from '@/stores/order-store'
 import type { OrderItem, MenuItem, PizzaOrderConfig, SelectedModifier } from '@/types'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import type { DatacapResult } from '@/hooks/useDatacap'
+import type { ComboTemplate } from '@/hooks/useComboBuilder'
 
 const PaymentModal = lazy(() => import('@/components/payment/PaymentModal').then(m => ({ default: m.PaymentModal })))
 const DiscountModal = lazy(() => import('@/components/orders/DiscountModal').then(m => ({ default: m.DiscountModal })))
@@ -29,6 +30,7 @@ const TimedRentalStartModal = lazy(() => import('@/components/entertainment/Time
 const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentOverlay'))
 const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow').then(m => ({ default: m.CardFirstTabFlow })))
 const TabNamePromptModal = lazy(() => import('@/components/tabs/TabNamePromptModal').then(m => ({ default: m.TabNamePromptModal })))
+const ComboStepFlow = lazy(() => import('@/components/modifiers/ComboStepFlow').then(m => ({ default: m.ComboStepFlow })))
 
 export interface OrderPageModalsProps {
   // Employee
@@ -89,6 +91,15 @@ export interface OrderPageModalsProps {
   setEditingPizzaItem: (v: { id: string; pizzaConfig?: PizzaOrderConfig } | null) => void
   inlinePizzaCallbackRef: React.MutableRefObject<((config: PizzaOrderConfig) => void) | null>
   onAddPizzaToOrder: (config: PizzaOrderConfig) => void
+
+  // Combo builder
+  showComboModal: boolean
+  setShowComboModal: (v: boolean) => void
+  selectedComboItem: MenuItem | null
+  setSelectedComboItem: (v: MenuItem | null) => void
+  comboTemplate: ComboTemplate | null
+  setComboTemplate: (v: ComboTemplate | null) => void
+  onComboConfirm: (selections: Record<string, Record<string, string[]>>) => void
 
   // Entertainment
   showEntertainmentStart: boolean
@@ -289,6 +300,13 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     setEditingPizzaItem,
     inlinePizzaCallbackRef,
     onAddPizzaToOrder,
+    showComboModal,
+    setShowComboModal,
+    selectedComboItem,
+    setSelectedComboItem,
+    comboTemplate,
+    setComboTemplate,
+    onComboConfirm,
     showEntertainmentStart,
     setShowEntertainmentStart,
     entertainmentItem,
@@ -472,6 +490,24 @@ export function OrderPageModals(props: OrderPageModalsProps) {
               setSelectedPizzaItem(null)
               setEditingPizzaItem(null)
               inlinePizzaCallbackRef.current = null
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* Combo Builder Modal */}
+      {showComboModal && selectedComboItem && comboTemplate && (
+        <Suspense fallback={null}>
+          <ComboStepFlow
+            item={selectedComboItem}
+            template={comboTemplate}
+            onConfirm={(selections) => {
+              onComboConfirm(selections)
+            }}
+            onCancel={() => {
+              setShowComboModal(false)
+              setSelectedComboItem(null)
+              setComboTemplate(null)
             }}
           />
         </Suspense>

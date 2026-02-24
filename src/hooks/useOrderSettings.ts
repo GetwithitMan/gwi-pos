@@ -78,6 +78,7 @@ interface SettingsCache {
   taxInclusiveFood: boolean
   receiptSettings: Partial<ReceiptSettings>
   requireCardForTab: boolean
+  allowNameOnlyTab: boolean
   pricingProgram: PricingProgram
 }
 
@@ -104,6 +105,7 @@ export function useOrderSettings() {
     cachedSettings?.receiptSettings ?? {}
   )
   const [requireCardForTab, setRequireCardForTab] = useState(cachedSettings?.requireCardForTab ?? false)
+  const [allowNameOnlyTab, setAllowNameOnlyTab] = useState(cachedSettings?.allowNameOnlyTab ?? true)
   const [pricingProgram, setPricingProgram] = useState<PricingProgram>(
     cachedSettings?.pricingProgram ?? DEFAULT_PRICING_PROGRAM
   )
@@ -115,7 +117,7 @@ export function useOrderSettings() {
     priceRounding?: PriceRoundingSettings
     tax?: { defaultRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean }
     receipts?: Partial<ReceiptSettings>
-    barTabs?: { requireCardForTab?: boolean }
+    barTabs?: { requireCardForTab?: boolean; allowNameOnlyTab?: boolean }
     pricingProgram?: PricingProgram
   }) => {
     const effectiveDualPricing = settings.dualPricing || DEFAULT_DUAL_PRICING
@@ -131,6 +133,7 @@ export function useOrderSettings() {
       taxInclusiveFood: false,
       receiptSettings: settings.receipts || {},
       requireCardForTab: settings.barTabs?.requireCardForTab ?? false,
+      allowNameOnlyTab: settings.barTabs?.allowNameOnlyTab ?? true,
       pricingProgram: derivedPricingProgram,
     }
 
@@ -162,6 +165,7 @@ export function useOrderSettings() {
     setTaxInclusiveFood(result.taxInclusiveFood)
     setReceiptSettings(result.receiptSettings)
     setRequireCardForTab(result.requireCardForTab)
+    setAllowNameOnlyTab(result.allowNameOnlyTab)
     setPricingProgram(result.pricingProgram)
   }
 
@@ -178,7 +182,7 @@ export function useOrderSettings() {
           taxInclusiveFood: cachedSettings.taxInclusiveFood,
         },
         receipts: cachedSettings.receiptSettings,
-        barTabs: { requireCardForTab: cachedSettings.requireCardForTab },
+        barTabs: { requireCardForTab: cachedSettings.requireCardForTab, allowNameOnlyTab: cachedSettings.allowNameOnlyTab },
         pricingProgram: cachedSettings.pricingProgram,
       })
       setIsLoading(false)
@@ -199,7 +203,7 @@ export function useOrderSettings() {
             taxInclusiveFood: result.taxInclusiveFood,
           },
           receipts: result.receiptSettings,
-          barTabs: { requireCardForTab: result.requireCardForTab },
+          barTabs: { requireCardForTab: result.requireCardForTab, allowNameOnlyTab: result.allowNameOnlyTab },
           pricingProgram: result.pricingProgram,
         })
       }
@@ -249,6 +253,7 @@ export function useOrderSettings() {
     taxInclusiveFood,
     receiptSettings,
     requireCardForTab,
+    allowNameOnlyTab,
     pricingProgram,
     isLoading,
     reloadSettings: forceReload,

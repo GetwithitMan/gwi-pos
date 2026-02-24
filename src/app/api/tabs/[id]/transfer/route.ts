@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 interface TransferRequest {
@@ -125,6 +126,12 @@ export const POST = withVenue(async function POST(
         },
       },
     })
+
+    // Dispatch socket event (fire-and-forget)
+    void dispatchOpenOrdersChanged(tab.locationId, {
+      trigger: 'transferred',
+      orderId: tabId,
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

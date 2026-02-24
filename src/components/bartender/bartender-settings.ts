@@ -106,6 +106,20 @@ export function isLightColor(hexColor: string): boolean {
   return luminance > 0.5
 }
 
+// Common bar modifier names for hot buttons (W3-11)
+export const COMMON_BAR_MODIFIERS = ['neat', 'rocks', 'up', 'dirty', 'dry', 'wet', 'twist'] as const
+
+// Hot modifier button display config — warm amber/orange palette
+export const HOT_MODIFIER_CONFIG: Record<string, { label: string; color: string }> = {
+  neat: { label: 'Neat', color: 'bg-amber-700' },
+  rocks: { label: 'Rocks', color: 'bg-amber-600' },
+  up: { label: 'Up', color: 'bg-orange-700' },
+  dirty: { label: 'Dirty', color: 'bg-orange-600' },
+  dry: { label: 'Dry', color: 'bg-amber-800' },
+  wet: { label: 'Wet', color: 'bg-orange-800' },
+  twist: { label: 'Twist', color: 'bg-amber-500' },
+}
+
 // Local storage keys
 export const getFavoritesKey = (employeeId: string) => `bartender_favorites_${employeeId}`
 export const getCategorySettingsKey = (employeeId: string) => `bartender_category_settings_${employeeId}`
