@@ -64,21 +64,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    // IP affinity check for fixed stations
-    // If a static IP is configured, the pairing device must match
-    if (terminal.category === 'FIXED_STATION' && terminal.staticIp) {
-      if (clientIp !== terminal.staticIp && clientIp !== 'unknown') {
-        return NextResponse.json(
-          {
-            error: `This terminal is configured for IP ${terminal.staticIp}. Your device IP (${clientIp}) does not match.`,
-            code: 'IP_MISMATCH',
-            expectedIp: terminal.staticIp,
-            actualIp: clientIp,
-          },
-          { status: 403 }
-        )
-      }
-    }
+    // IP affinity is NOT checked during pairing — the pairing code is the
+    // authentication. Static IP enforcement happens on subsequent heartbeats
+    // and API requests after the device is paired.
 
     // Generate secure device token
     const deviceToken = crypto.randomBytes(32).toString('hex')
