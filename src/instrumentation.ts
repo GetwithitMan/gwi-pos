@@ -9,8 +9,8 @@
  */
 
 export async function register() {
-  // Only install on the server (Node.js runtime)
-  if (typeof window !== 'undefined') return
+  // Only install on the Node.js runtime — Edge Runtime does not support process.on
+  if (process.env.NEXT_RUNTIME !== 'nodejs') return
 
   process.on('unhandledRejection', (reason: unknown) => {
     const error = reason instanceof Error ? reason : new Error(String(reason))
