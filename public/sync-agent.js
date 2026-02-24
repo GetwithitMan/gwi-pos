@@ -158,7 +158,9 @@ function handleForceUpdate(payload) {
     return { ok: false, error: 'npm install failed', steps: steps }
   }
   step('prisma generate', 'npx prisma generate', true, 60)
+  step('pre-migrate', 'node scripts/nuc-pre-migrate.js', true, 60)
   step('prisma migrate', 'npx prisma migrate deploy', true, 60)
+  step('prisma db push', 'npx prisma db push --accept-data-loss', true, 120)
   if (!step('build', 'npm run build', false, 300)) {
     return { ok: false, error: 'build failed', steps: steps }
   }

@@ -698,6 +698,9 @@ if [[ "$STATION_ROLE" == "server" ]]; then
     exit 1
   fi
 
+  log "Running pre-migrate backfill..."
+  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" || log_warn "Pre-migrate backfill had warnings (non-fatal)"
+
   log "Applying database migrations..."
   sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>/dev/null || npx prisma db push --accept-data-loss" || {
     err "Database migration failed. Check DATABASE_URL and PostgreSQL status."
