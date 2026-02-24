@@ -1,5 +1,10 @@
 # KDS Domain Changelog
 
+## Wave 3: Staff UX & Transfers (2026-02-23)
+- **W3-14**: Manager Dashboard v1 — real-time open orders, clocked-in staff, aging highlights
+
+---
+
 ## Wave 2: Correctness Under Load (2026-02-23)
 - **K1**: Paid orders auto-cleanup — 2-hour window filter on both KDS and expo routes
 - **K2**: Expo KDS voided item filtering — added `status: { not: 'voided' }` and `deletedAt: null`

@@ -539,6 +539,14 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-23 — Wave 3: Staff UX & Transfers, Skill 424)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 424 | Wave 3: Staff UX & Transfers | DONE | Payments / Orders / Floor Plan / Bar / Manager | 423 | 14 items: payment UX, bartender speed, transfer/merge UI, combo wiring, manager dashboard. Card decline preserves tab, increment failure toast outside modal, Cash Exact one-tap, Pay Cash Instead on decline, tab name bypass, bartender search, hot modifier buttons, Transfer Items button, TabTransferModal (313 lines), table transfer on floor plan, MergeOrdersModal (328 lines), seat hydration fix, combo builder wired, Manager Dashboard v1 (402 lines). 18 files changed, 3 new files. |
+
+---
+
 ## Recently Completed (2026-02-23 — Wave 2: Correctness Under Load, Skill 423)
 
 | Skill | Name | Status | Domain | Dependencies | Notes |

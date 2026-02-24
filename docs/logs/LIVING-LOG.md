@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-02-23 — Wave 3: Frontline Usability & Transfers (Skill 424)
+
+**Session**: Agent team deployment → 14 frontline UX fixes + new features
+
+**Commits (gwi-pos)**:
+- `[TBD]` — Wave 3: Staff UX & Transfers — 14 items across payments, bartender, transfers, combo, and dashboard
+
+**Features Delivered**:
+- Card decline "Pay Cash Instead" button on decline overlay
+- Cash Exact one-tap payment on method selection screen
+- Increment failure toast notification (visible without opening payment modal)
+- Bartender view search box (expandable, filters all items)
+- Hot modifier buttons for common bar modifiers (Neat/Rocks/Up etc.)
+- Tab name bypass setting wired to location config
+- Transfer Items and Merge Orders buttons in order panel
+- TabTransferModal for bartender-to-bartender tab reassignment
+- Table transfer entry point on floor plan
+- MergeOrdersModal for combining two orders
+- Combo builder (ComboStepFlow) wired into ordering flow
+- Seat hydration fix for virtual/temporary seats on refresh
+- Manager Dashboard v1 with open orders, clocked-in staff, aging highlights
+
+**Bug Fixes**:
+
+| ID | Area | Fix |
+|----|------|-----|
+| W3-1 | Payment | Card decline preserves tab, close-tab capture retry threshold increased |
+| W3-3 | Payment | Increment failure fires toast even when modal is closed |
+| W3-12 | Payment | Cash Exact one-tap on method selection screen |
+| W3-13 | Payment | "Pay Cash Instead" on decline overlay |
+| W3-5 | Bartender | Tab name bypass wired to location setting |
+| W3-10 | Bartender | Search input added to bartender header |
+| W3-11 | Bartender | Hot modifier quick-tap buttons for liquor items |
+| W3-6 | Transfers | Transfer Items button in OrderPanelActions |
+| W3-7 | Transfers | TabTransferModal + socket dispatch in API |
+| W3-8 | Transfers | Table transfer on floor plan via TableInfoPanel |
+| W3-9 | Transfers | MergeOrdersModal for order consolidation |
+| W3-2 | Floor Plan | Virtual seat hydration on page refresh |
+| W3-4 | Ordering | Combo builder wired into OrderPageModals |
+| W3-14 | Manager | Dashboard v1 with real-time open orders and staff view |
+
+**Known Issues**: None from this wave.
+
+---
+
 ## 2026-02-23 — Wave 2: Correctness Under Load (Skill 423)
 
 **Session**: Forensic audit → agent team deployment → 14 correctness fixes

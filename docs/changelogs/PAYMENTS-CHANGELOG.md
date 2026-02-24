@@ -1,5 +1,13 @@
 # Payments Domain Changelog
 
+## Wave 3: Staff UX & Transfers (2026-02-23)
+- **W3-1**: Card decline preserves tab — verified flow, increased close-tab capture threshold
+- **W3-3**: Increment failure toast fires outside modal via socket listener
+- **W3-12**: Cash Exact one-tap on method selection screen
+- **W3-13**: "Pay Cash Instead" button on decline overlay
+
+---
+
 ## Wave 2: Correctness Under Load (2026-02-23)
 - **P1**: Loyalty update moved inside `db.$transaction` + server-side idempotency key generation
 - **P2**: Pay-all-splits rounding fix — `Math.round(x * 100) / 100` on all totals
