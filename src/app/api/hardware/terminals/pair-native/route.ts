@@ -39,6 +39,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Pairing code has expired' }, { status: 400 })
     }
 
+    // Hardware limit check — count active paired terminals for this location
+    const activeTerminalCount = await db.terminal.count({
+      where: {
+        locationId,
+        isPaired: true,
+        deletedAt: null,
+      },
+    })
+
+    // Default limit: 20 terminals per location (Mission Control subscriptionLimits can override)
+    const TERMINAL_LIMIT = 20
+    if (activeTerminalCount >= TERMINAL_LIMIT) {
+      return NextResponse.json(
+        {
+          error: 'Hardware limit reached. Maximum number of terminals for this location has been exceeded.',
+          code: 'LIMIT_EXCEEDED',
+          current: activeTerminalCount,
+          limit: TERMINAL_LIMIT,
+        },
+        { status: 403 }
+      )
+    }
+
     // Get client IP
     const clientIp =
       request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
