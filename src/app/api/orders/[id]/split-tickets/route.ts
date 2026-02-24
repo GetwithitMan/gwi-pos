@@ -464,7 +464,7 @@ export const POST = withVenue(async function POST(
             guestCount: 1, // Each split gets 1 guest by default
             tabName: parentOrder.tabName ? `${parentOrder.tabName} (${ticketData.ticketIndex})` : null,
             status: 'open',
-            subtotal: ticketData.pricing.subtotal - ticketData.pricing.discountTotal,
+            subtotal: ticketData.pricing.subtotal,
             discountTotal: ticketData.pricing.discountTotal,
             taxTotal: ticketData.pricing.taxAmount,
             total: ticketData.pricing.total,

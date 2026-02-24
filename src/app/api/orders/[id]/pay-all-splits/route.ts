@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
@@ -43,6 +44,9 @@ export const POST = withVenue(async function POST(
 
     const { method, employeeId, terminalId, idempotencyKey, cardBrand, cardLast4, authCode, datacapRecordNo, datacapRefNumber, datacapSequenceNo, entryMethod, amountAuthorized } = validation.data
 
+    // W2-P1: Generate server-side idempotency key if client didn't provide one
+    const effectiveIdempotencyKey = idempotencyKey || crypto.randomUUID()
+
     // Fetch parent order with its split children
     const parentOrder = await db.order.findUnique({
       where: { id: parentOrderId },
@@ -70,18 +74,16 @@ export const POST = withVenue(async function POST(
     }
 
     // Idempotency check — if any split already has a payment with this key, it's a duplicate
-    if (idempotencyKey) {
-      const existingPayment = parentOrder.splitOrders
-        .flatMap(s => s.payments)
-        .find(p => p.idempotencyKey === idempotencyKey)
-      if (existingPayment) {
-        return NextResponse.json({ data: {
-          success: true,
-          duplicate: true,
-          parentOrderId,
-          message: 'Duplicate payment detected — already processed',
-        } })
-      }
+    const existingPayment = parentOrder.splitOrders
+      .flatMap(s => s.payments)
+      .find(p => p.idempotencyKey === effectiveIdempotencyKey)
+    if (existingPayment) {
+      return NextResponse.json({ data: {
+        success: true,
+        duplicate: true,
+        parentOrderId,
+        message: 'Duplicate payment detected — already processed',
+      } })
     }
 
     // Find unpaid split children
@@ -94,8 +96,11 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Calculate combined total
-    const combinedTotal = unpaidSplits.reduce((sum, s) => sum + Number(s.total), 0)
+    // Calculate combined total (W2-P2: round to avoid floating-point drift)
+    const combinedTotal = Math.round(unpaidSplits.reduce((sum, s) => sum + Number(s.total), 0) * 100) / 100
+
+    // Parse settings before tx — needed for loyalty inside tx and tips outside
+    const settings = parseSettings(parentOrder.location.settings)
 
     // Process all payments atomically
     const now = new Date()
@@ -103,7 +108,8 @@ export const POST = withVenue(async function POST(
     await db.$transaction(async (tx) => {
       // Create a payment and mark each unpaid split as paid
       for (const split of unpaidSplits) {
-        const splitTotal = Number(split.total)
+        // W2-P2: Round each split total to avoid floating-point imprecision
+        const splitTotal = Math.round(Number(split.total) * 100) / 100
 
         await tx.payment.create({
           data: {
@@ -125,7 +131,7 @@ export const POST = withVenue(async function POST(
             ...(datacapSequenceNo && { datacapSequenceNo }),
             ...(entryMethod && { entryMethod }),
             ...(amountAuthorized && { amountAuthorized }),
-            ...(idempotencyKey && { idempotencyKey }),
+            idempotencyKey: effectiveIdempotencyKey,
           },
         })
 
@@ -155,6 +161,27 @@ export const POST = withVenue(async function POST(
           data: { status: 'available' },
         })
       }
+
+      // W2-P1: Loyalty points INSIDE transaction to prevent double-credit on retry
+      if (parentOrder.customer && settings.loyalty.enabled) {
+        const earningBase = settings.loyalty.earnOnSubtotal
+          ? Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))
+          : combinedTotal
+        if (earningBase >= settings.loyalty.minimumEarnAmount) {
+          const pointsEarned = Math.floor(earningBase * settings.loyalty.pointsPerDollar)
+          if (pointsEarned > 0) {
+            await tx.customer.update({
+              where: { id: parentOrder.customer.id },
+              data: {
+                loyaltyPoints: { increment: pointsEarned },
+                totalSpent: { increment: combinedTotal },
+                totalOrders: { increment: 1 },
+                lastVisit: new Date(),
+              },
+            })
+          }
+        }
+      }
     })
 
     // Fire-and-forget socket events
@@ -172,11 +199,19 @@ export const POST = withVenue(async function POST(
     for (const split of unpaidSplits) {
       void deductInventoryForOrder(split.id, employeeId).catch(err => {
         console.error(`[PAYMENT-SAFETY] Inventory deduction failed for split ${split.id}:`, err)
+        // W2-P3: Log failed deduction for manager visibility
+        void db.auditLog.create({
+          data: {
+            locationId: split.locationId,
+            employeeId,
+            action: 'inventory_deduction_failed',
+            entityType: 'order',
+            entityId: split.id,
+            details: { error: String(err), splitId: split.id, parentOrderId },
+          },
+        }).catch(() => {})
       })
     }
-
-    // Fire-and-forget: loyalty points if customer exists and loyalty enabled
-    const settings = parseSettings(parentOrder.location.settings)
 
     // Fire-and-forget: tip allocation for splits that have tips
     for (const split of unpaidSplits) {
@@ -196,27 +231,6 @@ export const POST = withVenue(async function POST(
         }).catch(err => {
           console.error(`[PAYMENT-SAFETY] Tip allocation failed for split ${split.id}:`, err)
         })
-      }
-    }
-    if (parentOrder.customer && settings.loyalty.enabled) {
-      const earningBase = settings.loyalty.earnOnSubtotal
-        ? Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))
-        : combinedTotal
-      if (earningBase >= settings.loyalty.minimumEarnAmount) {
-        const pointsEarned = Math.floor(earningBase * settings.loyalty.pointsPerDollar)
-        if (pointsEarned > 0) {
-          void db.customer.update({
-            where: { id: parentOrder.customer.id },
-            data: {
-              loyaltyPoints: { increment: pointsEarned },
-              totalSpent: { increment: combinedTotal },
-              totalOrders: { increment: 1 },
-              lastVisit: new Date(),
-            },
-          }).catch(err => {
-            console.error('Background loyalty points failed (pay-all-splits):', err)
-          })
-        }
       }
     }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchPrintWithRetry } from '@/lib/print-retry'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
@@ -19,6 +20,43 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
+    // W2-K3: Lazy expiry for entertainment sessions
+    // Auto-complete expired entertainment items on each KDS poll
+    const expiredItems = await db.orderItem.findMany({
+      where: {
+        order: { locationId },
+        blockTimeExpiresAt: { lte: new Date() },
+        kitchenStatus: { not: 'delivered' },
+        isCompleted: false,
+        deletedAt: null,
+      },
+      select: { id: true, orderId: true },
+    })
+
+    if (expiredItems.length > 0) {
+      await db.orderItem.updateMany({
+        where: { id: { in: expiredItems.map(i => i.id) } },
+        data: {
+          kitchenStatus: 'delivered',
+          isCompleted: true,
+          completedAt: new Date(),
+        },
+      })
+
+      // Fire-and-forget: notify KDS screens of the status change
+      for (const item of expiredItems) {
+        dispatchItemStatus(locationId, {
+          orderId: item.orderId,
+          itemId: item.id,
+          status: 'completed',
+          stationId: '',
+          updatedBy: 'system',
+        }, { async: true }).catch(err => {
+          console.error('[KDS] Failed to dispatch entertainment expiry:', err)
+        })
+      }
+    }
+
     // Get the station info if specified
     let station = null
     if (stationId) {
@@ -36,7 +74,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
-        status: { in: ['open', 'in_progress', 'paid'] },
+        // W2-K1: Paid orders only shown for 2 hours to prevent KDS clutter
+        OR: [
+          { status: { in: ['open', 'in_progress'] } },
+          { status: 'paid', paidAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) } },
+        ],
         // Only orders with items (sent to kitchen)
         items: { some: {} },
       },
@@ -284,19 +326,16 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       // Get order ID to trigger reprint
       const firstItem = await db.orderItem.findUnique({
         where: { id: itemIds[0] },
-        select: { orderId: true },
+        select: { orderId: true, order: { select: { locationId: true } } },
       })
 
       if (firstItem?.orderId) {
-        // Print the resend items to kitchen (fire-and-forget)
-        void fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            orderId: firstItem.orderId,
-            itemIds, // Only reprint these specific items
-          }),
-        }).catch(err => console.error('[KDS] Failed to print resend ticket:', err))
+        // W2-O2: Print resend items with retry + audit trail
+        void dispatchPrintWithRetry(
+          `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`,
+          { orderId: firstItem.orderId, itemIds },
+          { locationId: firstItem.order!.locationId, employeeId: body.employeeId || null, orderId: firstItem.orderId }
+        )
       }
     }
 

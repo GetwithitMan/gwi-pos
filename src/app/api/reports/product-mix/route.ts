@@ -78,6 +78,63 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
+    // W2-R1: Voided/comped items for waste tracking
+    const wasteItems = await db.orderItem.findMany({
+      where: {
+        order: {
+          locationId,
+          OR: [
+            { paidAt: dateFilter },
+            { createdAt: dateFilter },
+          ],
+        },
+        status: { in: ['voided', 'comped'] },
+        ...(categoryId ? { menuItem: { categoryId } } : {}),
+      },
+      include: {
+        menuItem: {
+          select: {
+            id: true,
+            name: true,
+            categoryId: true,
+            category: { select: { id: true, name: true } },
+            price: true,
+            cost: true,
+          },
+        },
+      },
+    })
+
+    // Aggregate waste data
+    const wasteMap = new Map<string, { name: string, categoryName: string, quantity: number, lostRevenue: number, lostCost: number, status: string }>()
+    for (const item of wasteItems) {
+      const key = `${item.menuItemId}-${item.status}`
+      const lostRevenue = Number(item.itemTotal)
+      const lostCost = item.menuItem.cost ? Number(item.menuItem.cost) * item.quantity : 0
+      if (wasteMap.has(key)) {
+        const existing = wasteMap.get(key)!
+        existing.quantity += item.quantity
+        existing.lostRevenue += lostRevenue
+        existing.lostCost += lostCost
+      } else {
+        wasteMap.set(key, {
+          name: item.menuItem.name,
+          categoryName: item.menuItem.category.name,
+          quantity: item.quantity,
+          lostRevenue,
+          lostCost,
+          status: item.status || 'voided',
+        })
+      }
+    }
+
+    const wasteData = {
+      totalItems: wasteItems.reduce((sum, i) => sum + i.quantity, 0),
+      totalLostRevenue: wasteItems.reduce((sum, i) => sum + Number(i.itemTotal), 0),
+      totalLostCost: wasteItems.reduce((sum, i) => sum + (i.menuItem.cost ? Number(i.menuItem.cost) * i.quantity : 0), 0),
+      items: Array.from(wasteMap.values()).sort((a, b) => b.lostRevenue - a.lostRevenue),
+    }
+
     // Calculate totals
     let totalRevenue = 0
     let totalCost = 0
@@ -235,6 +292,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         bottomPerformers,
       },
       pairings,
+      waste: wasteData,
       dateRange: {
         start: dateFilter.gte,
         end: dateFilter.lte || new Date(),

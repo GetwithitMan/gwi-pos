@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { calculateSimpleOrderTotals, getLocationTaxRate } from '@/lib/order-calculations'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { withVenue } from '@/lib/with-venue'
 
@@ -112,6 +113,37 @@ export const POST = withVenue(async function POST(
       })
     }
 
+    // W2-R2: Recalculate order totals from active items (payments were voided, totals are stale)
+    const activeItems = await db.orderItem.findMany({
+      where: {
+        orderId,
+        deletedAt: null,
+        status: { not: 'voided' },
+      },
+      select: {
+        itemTotal: true,
+        modifierTotal: true,
+        quantity: true,
+      },
+    })
+
+    const recalcSubtotal = activeItems.reduce(
+      (sum, item) => sum + Number(item.itemTotal) + Number(item.modifierTotal || 0),
+      0
+    )
+
+    // Use canonical order calculation utility for tax + total
+    const locationSettings = await db.location.findUnique({
+      where: { id: order.locationId },
+      select: { settings: true },
+    })
+    const locSettings = (locationSettings?.settings as Record<string, unknown>) || {}
+    const recalcTotals = calculateSimpleOrderTotals(
+      recalcSubtotal,
+      Number(order.discountTotal) || 0,
+      { tax: { defaultRate: ((locSettings?.tax as Record<string, unknown>)?.defaultRate as number) ?? 0 } }
+    )
+
     // Update order to open status
     // Bug 9: Clear paidAt and closedAt so the pay route's alreadyPaid calculation isn't confused
     const reopenedOrder = await db.order.update({
@@ -120,6 +152,10 @@ export const POST = withVenue(async function POST(
         status: 'open',
         paidAt: null,
         closedAt: null,
+        subtotal: recalcTotals.subtotal,
+        taxTotal: recalcTotals.taxTotal,
+        total: recalcTotals.total,
+        tipTotal: 0,
         reopenedAt: new Date(),
         reopenedBy: managerId,
         reopenReason: reason,

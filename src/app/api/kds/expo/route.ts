@@ -30,7 +30,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
-        status: { in: ['open', 'in_progress', 'paid'] },
+        // W2-K1: Paid orders only shown for 2 hours to prevent KDS clutter
+        OR: [
+          { status: { in: ['open', 'in_progress'] } },
+          { status: 'paid', paidAt: { gte: new Date(Date.now() - 2 * 60 * 60 * 1000) } },
+        ],
         items: { some: {} },
       },
       take: 50,
@@ -54,6 +58,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           where: {
             // Only show items that have been sent to kitchen and not yet served
             kitchenStatus: { not: 'delivered' },
+            status: { not: 'voided' },    // W2-K2: Hide voided items
+            deletedAt: null,               // W2-K2: Hide deleted items
           },
           include: {
             sourceTable: {

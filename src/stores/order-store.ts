@@ -250,12 +250,9 @@ interface OrderState {
   startItemDelayTimers: (itemIds: string[]) => void
   markItemDelayFired: (itemId: string) => void
   // Tax rate (from location settings)
+  estimatedTaxRate: number
   setEstimatedTaxRate: (rate: number) => void
 }
-
-// Client-side tax rate estimate — overridden by syncServerTotals after API calls.
-// Set via setEstimatedTaxRate when location settings load.
-let estimatedTaxRate = 0.08
 
 // ─── Pending-item localStorage persistence (crash recovery) ───
 const PENDING_ITEMS_PREFIX = 'pos_pending_items_'
@@ -271,9 +268,14 @@ function persistPendingItems(orderId: string | undefined, items: OrderItem[]): v
       return
     }
     const json = JSON.stringify(pending)
-    if (json.length > PENDING_ITEMS_MAX_BYTES) return // safety valve
+    if (json.length > PENDING_ITEMS_MAX_BYTES) {
+      toast.warning('Order too large to save locally — items may be lost if browser closes')
+      return
+    }
     localStorage.setItem(key, json)
-  } catch { /* localStorage full or unavailable — silently skip */ }
+  } catch {
+    toast.warning('Could not save order data locally — items may be lost if browser closes')
+  }
 }
 
 function recoverPendingItems(orderId: string): OrderItem[] {
@@ -293,7 +295,7 @@ function clearPendingItems(orderId: string | undefined): void {
 }
 
 // Pure function to compute totals from an order — used by mutations to batch into a single set()
-function computeTotals(order: Order): { subtotal: number; taxTotal: number; total: number; commissionTotal: number } {
+function computeTotals(order: Order, taxRate: number): { subtotal: number; taxTotal: number; total: number; commissionTotal: number } {
   let subtotal = 0
   let commissionTotal = 0
 
@@ -317,7 +319,7 @@ function computeTotals(order: Order): { subtotal: number; taxTotal: number; tota
 
   const afterDiscount = subtotal - order.discountTotal
   // Client-side estimate only — server totals via syncServerTotals are authoritative
-  const taxTotal = Math.round(afterDiscount * estimatedTaxRate * 100) / 100
+  const taxTotal = Math.round(afterDiscount * taxRate * 100) / 100
   const total = Math.round((afterDiscount + taxTotal) * 100) / 100
 
   return {
@@ -331,6 +333,7 @@ function computeTotals(order: Order): { subtotal: number; taxTotal: number; tota
 export const useOrderStore = create<OrderState>((set, get) => ({
   currentOrder: null,
   _previousOrder: null,
+  estimatedTaxRate: 0.08,
 
   startOrder: (orderType, options = {}) => {
     set({
@@ -460,7 +463,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     // Recompute totals if we recovered pending items (they affect subtotal)
     if (recovered.length > 0) {
-      const totals = computeTotals(baseOrder)
+      const totals = computeTotals(baseOrder, get().estimatedTaxRate)
       set({ currentOrder: { ...baseOrder, ...totals } })
       toast.success(`Recovered ${recovered.length} unsaved item${recovered.length > 1 ? 's' : ''} from previous session`)
     } else {
@@ -478,7 +481,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     const updatedOrder = { ...currentOrder, items: [...currentOrder.items, newItem] }
-    const totals = computeTotals(updatedOrder)
+    const totals = computeTotals(updatedOrder, get().estimatedTaxRate)
     set({ currentOrder: { ...updatedOrder, ...totals } })
     persistPendingItems(updatedOrder.id, updatedOrder.items)
     return newItem.id
@@ -494,7 +497,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         item.id === itemId ? { ...item, ...updates } : item
       ),
     }
-    const totals = computeTotals(updatedOrder)
+    const totals = computeTotals(updatedOrder, get().estimatedTaxRate)
     set({ currentOrder: { ...updatedOrder, ...totals } })
     persistPendingItems(updatedOrder.id, updatedOrder.items)
   },
@@ -507,21 +510,37 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       ...currentOrder,
       items: currentOrder.items.filter((item) => item.id !== itemId),
     }
-    const totals = computeTotals(updatedOrder)
+    const totals = computeTotals(updatedOrder, get().estimatedTaxRate)
     set({ currentOrder: { ...updatedOrder, ...totals } })
     persistPendingItems(updatedOrder.id, updatedOrder.items)
   },
 
   updateQuantity: (itemId, quantity) => {
-    const { currentOrder } = get()
+    const { currentOrder, estimatedTaxRate } = get()
     if (!currentOrder) return
 
     if (quantity <= 0) {
-      get().removeItem(itemId)
+      // Inline removeItem logic — single set()
+      const updatedOrder = {
+        ...currentOrder,
+        items: currentOrder.items.filter((item) => item.id !== itemId),
+      }
+      const totals = computeTotals(updatedOrder, estimatedTaxRate)
+      set({ currentOrder: { ...updatedOrder, ...totals } })
+      persistPendingItems(updatedOrder.id, updatedOrder.items)
       return
     }
 
-    get().updateItem(itemId, { quantity })
+    // Inline updateItem logic — single set()
+    const updatedOrder = {
+      ...currentOrder,
+      items: currentOrder.items.map((item) =>
+        item.id === itemId ? { ...item, quantity } : item
+      ),
+    }
+    const totals = computeTotals(updatedOrder, estimatedTaxRate)
+    set({ currentOrder: { ...updatedOrder, ...totals } })
+    persistPendingItems(updatedOrder.id, updatedOrder.items)
   },
 
   setGuestCount: (count) => {
@@ -565,7 +584,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     if (!currentOrder) return
 
     const updatedOrder = { ...currentOrder, discountTotal: amount }
-    const totals = computeTotals(updatedOrder)
+    const totals = computeTotals(updatedOrder, get().estimatedTaxRate)
     set({ currentOrder: { ...updatedOrder, ...totals } })
   },
 
@@ -573,7 +592,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const { currentOrder } = get()
     if (!currentOrder) return
 
-    const totals = computeTotals(currentOrder)
+    const totals = computeTotals(currentOrder, get().estimatedTaxRate)
     set({ currentOrder: { ...currentOrder, ...totals } })
   },
 
@@ -807,6 +826,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
   // Set estimated tax rate from location settings (for client-side UX before server sync)
   setEstimatedTaxRate: (rate) => {
-    estimatedTaxRate = rate
+    const { currentOrder } = get()
+    if (currentOrder) {
+      const totals = computeTotals(currentOrder, rate)
+      set({ estimatedTaxRate: rate, currentOrder: { ...currentOrder, ...totals } })
+    } else {
+      set({ estimatedTaxRate: rate })
+    }
   },
 }))
