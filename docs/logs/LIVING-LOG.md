@@ -5,6 +5,94 @@
 
 ---
 
+## 2026-02-25 — Phase 9b: Complete Forensic Audit (31 Items)
+
+**Session:** Completed all 31 remaining forensic audit items from Phase 9 across 5 parallel workstreams (security, resilience, data integrity, socket, UX). Managed as agent team lead — 5 agents in isolated worktrees, all code merged to main, TypeScript clean, pushed.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `04f0348` — Security hardening: rate limiting, socket auth, simulated payment guard, PIN change, file validation (Items 1-7)
+- `8b348fa` — Resilience hardening: error boundaries, polling fallback, retry utilities (Items 8-14)
+- `bb66e84` — UX polish + data integrity: session draft save, offline banner, empty states, skeletons, focus traps, cash validation, sync badge, timezone, soft-delete, financial precision (Items 15-19, 25-31)
+- `4657351` — Socket consolidation: useEvents→useSocket migration, location-scoped tags, leaked listener fix (Items 20-24)
+
+### Deployments
+- POS: pushed to main → Vercel auto-deploy
+
+### Features Delivered
+
+**Security (Items 1-7):**
+- In-memory rate limiter (`src/lib/rate-limiter.ts`) applied to PIN login (10/15min), SMS (5/15min), error log (30/min)
+- WebSocket `socketServer.use()` auth middleware — validates session cookie or native deviceToken
+- Simulated payment guard — blocks payments in production when processor is `simulated`
+- `requiresPinChange` field on Employee — set true on default PIN, cleared on PIN update
+- Magic bytes file validation (`src/lib/file-validation.ts`) — JPEG/PNG/GIF/WebP
+
+**Resilience (Items 8-14):**
+- `SilentErrorBoundary` wrapping OpenOrdersPanel, OrderPanel, FloorPlanHome, KDS ticket cards
+- OpenOrdersPanel error banner + retry button on fetch failure
+- 30s polling fallback when socket disconnected, auto-refresh on reconnect (false→true)
+- OrderTypeSelector fetch error with retry button
+- Send-to-kitchen ref-based debounce lock
+- `withPrismaRetry()` — catches P1001/P1008, retries 2x with exponential backoff
+
+**Data Integrity (Items 15-19):**
+- Timezone-aware date boundaries using Intl API (`src/lib/timezone.ts`) — 4 report routes updated
+- Soft-delete filter on `GET /api/orders/[id]` — `deletedAt: null` on all queries
+- `softDeleteOrder()` cascade helper (`src/lib/soft-delete.ts`) — Order + items + payments + discounts
+- Financial precision — `roundToCents()` wrapping `parseFloat` in 8 payment routes
+- Order reopen guard — checks ALL payment types, returns detailed 409 breakdown
+
+**Socket (Items 20-24):**
+- Migrated 14 files from `useEvents()` to direct `useSocket()` hook (`src/hooks/useSocket.ts`)
+- Fixed `table:status-changed` field mismatch — `{ newStatus }` → `{ status }` (real bug, delta patching was silently broken)
+- `NEXT_PUBLIC_EVENT_PROVIDER` default changed to `'socket'` with console.warn fallback
+- Location-scoped tag rooms: `tag:{name}` → `tag:{locationId}:{name}`
+- Leaked `once()` listeners cross-cleaned on connect/error/timeout
+
+**UX (Items 25-31):**
+- Draft order persistence to localStorage before logout — auto-restore on next login
+- Enhanced offline banner — socket disconnect (amber) vs browser offline (red)
+- Empty states for inventory items, menu categories, menu items
+- CSS-only shimmer skeletons (`src/components/ui/Skeleton.tsx`) for inventory, menu, reservations
+- Modal focus traps — Tab/Shift+Tab cycling, auto-focus, `aria-modal`
+- Cash input validation — max=9999.99, blocked e/E/+/- keys on 6 input fields
+- Pending sync badge in POS header — polls every 10s, amber badge with count
+
+### New Utilities Created
+
+| File | Purpose |
+|------|---------|
+| `src/lib/rate-limiter.ts` | Reusable in-memory rate limiter factory |
+| `src/lib/prisma-retry.ts` | P1001/P1008 retry wrapper with exponential backoff |
+| `src/lib/timezone.ts` | Timezone-aware date ranges using Intl API |
+| `src/lib/soft-delete.ts` | Cascade soft-delete for orders + children |
+| `src/lib/file-validation.ts` | Magic bytes checker (JPEG/PNG/GIF/WebP) |
+| `src/lib/currency-input-utils.ts` | Cash input key blocking + validation props |
+| `src/lib/draft-order-persistence.ts` | Draft order save/restore via localStorage |
+| `src/components/ui/SilentErrorBoundary.tsx` | Reusable error boundary with retry |
+| `src/components/ui/Skeleton.tsx` | CSS-only shimmer skeleton components |
+| `src/components/PendingSyncBadge.tsx` | Amber sync queue badge for POS header |
+| `src/hooks/useSocket.ts` | Thin wrapper over getSharedSocket/release |
+
+### Schema Changes
+- `Employee.requiresPinChange Boolean @default(false)` — already synced to Neon
+
+### Bug Fixes
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| `table:status-changed` field mismatch — clients destructured `{ newStatus }` but server sent `{ status }` | Rename destructure to match server payload | `4657351` |
+| Reports using server UTC instead of venue timezone for "today" boundaries | `getLocationDateRange()` with Intl API | `bb66e84` |
+| `GET /api/orders/[id]` returning soft-deleted orders/items | Added `deletedAt: null` to all findFirst/include | `bb66e84` |
+| `parseFloat` on currency strings losing precision | Wrapped with `roundToCents()` in 8 routes | `bb66e84` |
+
+### Known Issues / Blockers
+- None — all 31 forensic audit items complete. Phase 9 forensic audit is fully resolved.
+
+---
+
 ## 2026-02-25 — Android UI Audit: Web vs Android Parity (P0→P1→P2)
 
 **Session:** Full bartender-workflow audit comparing web POS and Android register UIs side-by-side. Two agent teams independently traced identical 17-step workflows. Cross-compared findings, then fixed all gaps in 3 priority rounds. Managed as agent team lead — all code written by parallel agents with cross-agent wiring fixes.
