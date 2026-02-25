@@ -63,7 +63,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       const summaryOrders = await batchBusinessDayQuery({
         where: {
           locationId,
-          status: { in: ['open', 'sent', 'in_progress', 'split'] },
+          status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
           deletedAt: null,
           ...(employeeId ? { employeeId } : {}),
           ...(orderType ? { orderType } : {}),
@@ -241,7 +241,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const orders = await batchBusinessDayQuery({
       where: {
         locationId,
-        status: { in: ['open', 'sent', 'in_progress', 'split'] },
+        status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
         deletedAt: null,
         ...(employeeId ? { employeeId } : {}),
         ...(orderType ? { orderType } : {}),
