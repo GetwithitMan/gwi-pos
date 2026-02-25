@@ -107,6 +107,85 @@ async function runPrePushMigrations() {
     console.log('[vercel-build]   Done — ModifierTemplate.deletedAt added')
   }
 
+  // --- updatedAt backfill for tables with existing rows ---
+  // Prisma @updatedAt doesn't set a default, so adding NOT NULL updatedAt
+  // to tables with data fails. Add as nullable, backfill with now(), set NOT NULL.
+  // Can't parameterize identifiers (table names) so each table is inline.
+  async function needsColumn(table, column) {
+    const [col] = await sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = ${table} AND column_name = ${column}
+    `
+    return !col
+  }
+
+  if (await needsColumn('OrderOwnershipEntry', 'updatedAt')) {
+    console.log('[vercel-build]   Adding updatedAt to OrderOwnershipEntry...')
+    await sql`ALTER TABLE "OrderOwnershipEntry" ADD COLUMN "updatedAt" TIMESTAMPTZ`
+    await sql`UPDATE "OrderOwnershipEntry" SET "updatedAt" = NOW() WHERE "updatedAt" IS NULL`
+    await sql`ALTER TABLE "OrderOwnershipEntry" ALTER COLUMN "updatedAt" SET NOT NULL`
+    console.log('[vercel-build]   Done — OrderOwnershipEntry.updatedAt backfilled')
+  }
+
+  if (await needsColumn('PaymentReaderLog', 'updatedAt')) {
+    console.log('[vercel-build]   Adding updatedAt to PaymentReaderLog...')
+    await sql`ALTER TABLE "PaymentReaderLog" ADD COLUMN "updatedAt" TIMESTAMPTZ`
+    await sql`UPDATE "PaymentReaderLog" SET "updatedAt" = NOW() WHERE "updatedAt" IS NULL`
+    await sql`ALTER TABLE "PaymentReaderLog" ALTER COLUMN "updatedAt" SET NOT NULL`
+    console.log('[vercel-build]   Done — PaymentReaderLog.updatedAt backfilled')
+  }
+
+  if (await needsColumn('TipLedgerEntry', 'updatedAt')) {
+    console.log('[vercel-build]   Adding updatedAt to TipLedgerEntry...')
+    await sql`ALTER TABLE "TipLedgerEntry" ADD COLUMN "updatedAt" TIMESTAMPTZ`
+    await sql`UPDATE "TipLedgerEntry" SET "updatedAt" = NOW() WHERE "updatedAt" IS NULL`
+    await sql`ALTER TABLE "TipLedgerEntry" ALTER COLUMN "updatedAt" SET NOT NULL`
+    console.log('[vercel-build]   Done — TipLedgerEntry.updatedAt backfilled')
+  }
+
+  if (await needsColumn('TipTransaction', 'updatedAt')) {
+    console.log('[vercel-build]   Adding updatedAt to TipTransaction...')
+    await sql`ALTER TABLE "TipTransaction" ADD COLUMN "updatedAt" TIMESTAMPTZ`
+    await sql`UPDATE "TipTransaction" SET "updatedAt" = NOW() WHERE "updatedAt" IS NULL`
+    await sql`ALTER TABLE "TipTransaction" ALTER COLUMN "updatedAt" SET NOT NULL`
+    console.log('[vercel-build]   Done — TipTransaction.updatedAt backfilled')
+  }
+
+  if (await needsColumn('cloud_event_queue', 'updatedAt')) {
+    console.log('[vercel-build]   Adding updatedAt to cloud_event_queue...')
+    await sql`ALTER TABLE "cloud_event_queue" ADD COLUMN "updatedAt" TIMESTAMPTZ`
+    await sql`UPDATE "cloud_event_queue" SET "updatedAt" = NOW() WHERE "updatedAt" IS NULL`
+    await sql`ALTER TABLE "cloud_event_queue" ALTER COLUMN "updatedAt" SET NOT NULL`
+    console.log('[vercel-build]   Done — cloud_event_queue.updatedAt backfilled')
+  }
+
+  // --- Deduplicate Order.orderNumber before unique constraint ---
+  // Schema adds @@unique([locationId, orderNumber]). If duplicate pairs exist,
+  // db push will fail. Append "-dupN" to duplicates (keep the newest).
+  const dupes = await sql`
+    SELECT "locationId", "orderNumber", COUNT(*) as cnt
+    FROM "Order"
+    GROUP BY "locationId", "orderNumber"
+    HAVING COUNT(*) > 1
+  `
+  if (dupes.length > 0) {
+    console.log(`[vercel-build]   Deduplicating ${dupes.length} duplicate orderNumber groups...`)
+    for (const { locationId, orderNumber } of dupes) {
+      // Get all orders with this duplicate pair, newest first
+      const orders = await sql`
+        SELECT id FROM "Order"
+        WHERE "locationId" = ${locationId} AND "orderNumber" = ${orderNumber}
+        ORDER BY "createdAt" DESC
+      `
+      // Skip the first (newest) — renumber the rest
+      for (let i = 1; i < orders.length; i++) {
+        const newNum = `${orderNumber}-dup${i}`
+        await sql`UPDATE "Order" SET "orderNumber" = ${newNum} WHERE id = ${orders[i].id}`
+      }
+    }
+    console.log('[vercel-build]   Done — duplicate orderNumbers resolved')
+  }
+
   console.log('[vercel-build] Pre-push migrations complete')
 }
 

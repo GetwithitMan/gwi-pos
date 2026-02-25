@@ -180,22 +180,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const [employee, lastOrder] = await Promise.all([
-      db.employee.findUnique({
-        where: { id: employeeId },
-        include: { location: true },
-      }),
-      // If locationId provided, skip waiting for employee to get it
-      locationId
-        ? db.order.findFirst({
-            where: {
-              locationId,
-              createdAt: { gte: today, lt: tomorrow },
-            },
-            orderBy: { orderNumber: 'desc' },
-          })
-        : null,
-    ])
+    const employee = await db.employee.findUnique({
+      where: { id: employeeId },
+      include: { location: true },
+    })
 
     if (!employee) {
       return NextResponse.json(
@@ -226,17 +214,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Create the tab atomically with order number generation (serializable prevents duplicates)
+    // Create the tab atomically with order number lock + create in one transaction
     const tab = await db.$transaction(async (tx) => {
-      const resolvedLastOrder = lastOrder ?? await tx.order.findFirst({
-        where: {
-          locationId: resolvedLocationId,
-          createdAt: { gte: today, lt: tomorrow },
-        },
-        orderBy: { orderNumber: 'desc' },
-        select: { orderNumber: true },
-      })
-      const orderNumber = (resolvedLastOrder?.orderNumber || 0) + 1
+      // Lock latest order row to prevent duplicate order numbers
+      const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
+        `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+        resolvedLocationId, today, tomorrow
+      )
+      const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
       return tx.order.create({
         data: {
@@ -255,7 +240,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         },
       })
-    }, { isolationLevel: 'Serializable' })
+    })
 
     return NextResponse.json({ data: {
       id: tab.id,

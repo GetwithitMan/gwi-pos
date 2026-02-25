@@ -73,7 +73,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Create the order with items in a serializable transaction (prevents duplicate order numbers)
+    // Create the order with items atomically (order number lock + create in one tx)
     const order = await db.$transaction(async (tx) => {
       // Generate order number (sequential per location per day)
       const today = new Date()
@@ -81,18 +81,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const tomorrow = new Date(today)
       tomorrow.setDate(tomorrow.getDate() + 1)
 
-      const lastOrder = await tx.order.findFirst({
-        where: {
-          locationId,
-          createdAt: {
-            gte: today,
-            lt: tomorrow,
-          },
-        },
-        orderBy: { orderNumber: 'desc' },
-      })
-
-      const orderNumber = (lastOrder?.orderNumber || 0) + 1
+      // Lock latest order row to prevent duplicate order numbers
+      const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
+        `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+        locationId, today, tomorrow
+      )
+      const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
       // Calculate totals from items
       let subtotal = 0
@@ -175,7 +169,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       return newOrder
-    }, { isolationLevel: 'Serializable' })
+    })
 
     // Fetch the complete order with items
     const completeOrder = await db.order.findUnique({

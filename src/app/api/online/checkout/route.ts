@@ -322,90 +322,88 @@ export async function POST(request: NextRequest) {
       orderTypeId = dbOrderType.id
     }
 
-    // ── 5. Generate order number ──────────────────────────────────────────────
+    // ── 5. Generate order number + 6. Compute business day ─────────────────────
 
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const { orderNumber } = await venueDb.$transaction(async (tx) => {
-      const lastOrder = await tx.order.findFirst({
-        where: { locationId, createdAt: { gte: today, lt: tomorrow } },
-        orderBy: { orderNumber: 'desc' },
-        select: { orderNumber: true },
-      })
-      return { orderNumber: (lastOrder?.orderNumber || 0) + 1 }
-    }, { isolationLevel: 'Serializable' })
-
-    // ── 6. Compute business day ────────────────────────────────────────────────
-
     const dayStartTime =
       (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
-    // ── 7. Create the Order ───────────────────────────────────────────────────
+    // ── 7. Create the Order (atomic: order number lock + create in one tx) ────
 
     const now = new Date().toISOString()
     const seatTimestamps: Record<string, string> = { '1': now }
 
-    const order = await venueDb.order.create({
-      data: {
-        locationId,
-        employeeId,
-        orderNumber,
-        orderType,
-        orderTypeId,
-        guestCount: 1,
-        baseSeatCount: 1,
-        extraSeatCount: 0,
-        seatVersion: 0,
-        seatTimestamps,
-        status: 'open',
-        subtotal,
-        discountTotal: 0,
-        taxTotal,
-        taxFromInclusive: 0,
-        taxFromExclusive,
-        tipTotal: tip,
-        total: chargeAmount,
-        commissionTotal: 0,
-        notes: [
-          `Online Order`,
-          `Customer: ${customerName}`,
-          `Email: ${customerEmail}`,
-          body.customerPhone ? `Phone: ${body.customerPhone}` : null,
-          body.notes ? `Notes: ${body.notes}` : null,
-        ].filter(Boolean).join('\n'),
-        businessDayDate: businessDayStart,
-        // Create order items inline
-        items: {
-          create: lineItems.map(({ item, mi, basePrice, modsTotal, lineTotal }) => ({
-            locationId,
-            menuItemId: mi.id,
-            name: mi.name,
-            price: basePrice + modsTotal,
-            quantity: item.quantity,
-            itemTotal: lineTotal,
-            commissionAmount: 0,
-            modifiers: item.modifiers.length > 0
-              ? {
-                  create: item.modifiers.map(mod => {
-                    const dbMod = modifierMap.get(mod.modifierId)
-                    return {
-                      locationId,
-                      modifierId: mod.modifierId.length >= 20 ? mod.modifierId : null,
-                      name: dbMod?.name ?? mod.name,
-                      price: dbMod ? Number(dbMod.price) : 0,
-                      quantity: 1,
-                    }
-                  }),
-                }
-              : undefined,
-          })),
+    const order = await venueDb.$transaction(async (tx) => {
+      // Lock latest order row to prevent duplicate order numbers
+      const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
+        `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+        locationId, today, tomorrow
+      )
+      const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
+
+      return tx.order.create({
+        data: {
+          locationId,
+          employeeId,
+          orderNumber,
+          orderType,
+          orderTypeId,
+          guestCount: 1,
+          baseSeatCount: 1,
+          extraSeatCount: 0,
+          seatVersion: 0,
+          seatTimestamps,
+          status: 'open',
+          subtotal,
+          discountTotal: 0,
+          taxTotal,
+          taxFromInclusive: 0,
+          taxFromExclusive,
+          tipTotal: tip,
+          total: chargeAmount,
+          commissionTotal: 0,
+          notes: [
+            `Online Order`,
+            `Customer: ${customerName}`,
+            `Email: ${customerEmail}`,
+            body.customerPhone ? `Phone: ${body.customerPhone}` : null,
+            body.notes ? `Notes: ${body.notes}` : null,
+          ].filter(Boolean).join('\n'),
+          businessDayDate: businessDayStart,
+          // Create order items inline
+          items: {
+            create: lineItems.map(({ item, mi, basePrice, modsTotal, lineTotal }) => ({
+              locationId,
+              menuItemId: mi.id,
+              name: mi.name,
+              price: basePrice + modsTotal,
+              quantity: item.quantity,
+              itemTotal: lineTotal,
+              commissionAmount: 0,
+              modifiers: item.modifiers.length > 0
+                ? {
+                    create: item.modifiers.map(mod => {
+                      const dbMod = modifierMap.get(mod.modifierId)
+                      return {
+                        locationId,
+                        modifierId: mod.modifierId.length >= 20 ? mod.modifierId : null,
+                        name: dbMod?.name ?? mod.name,
+                        price: dbMod ? Number(dbMod.price) : 0,
+                        quantity: 1,
+                      }
+                    }),
+                  }
+                : undefined,
+            })),
+          },
         },
-      },
-      select: { id: true, orderNumber: true },
+        select: { id: true, orderNumber: true },
+      })
     })
 
     // ── 8. Charge the card via Datacap PayAPI ─────────────────────────────────
