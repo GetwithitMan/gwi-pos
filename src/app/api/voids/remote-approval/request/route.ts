@@ -12,6 +12,10 @@ import {
   isTwilioConfigured,
 } from '@/lib/twilio'
 import { withVenue } from '@/lib/with-venue'
+import { createRateLimiter } from '@/lib/rate-limiter'
+
+// 5 SMS per manager phone per 15 minutes
+const smsLimiter = createRateLimiter({ maxAttempts: 5, windowMs: 15 * 60 * 1000 })
 
 interface RequestBody {
   locationId: string
@@ -92,6 +96,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Manager does not have a phone number on file' },
         { status: 400 }
+      )
+    }
+
+    // Rate limit: 5 SMS per manager phone per 15 minutes
+    const smsCheck = smsLimiter.check(`sms:${manager.phone}`)
+    if (!smsCheck.allowed) {
+      return NextResponse.json(
+        { error: `Too many SMS requests to this manager. Try again in ${smsCheck.retryAfter} seconds.` },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(smsCheck.retryAfter) },
+        }
       )
     }
 

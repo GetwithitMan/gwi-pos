@@ -20,6 +20,7 @@ import type { Server as HTTPServer } from 'http'
 import type { Server as SocketServer, Socket } from 'socket.io'
 import { MOBILE_EVENTS } from '@/types/multi-surface'
 import { db } from '@/lib/db'
+import { verifySessionToken, POS_SESSION_COOKIE } from '@/lib/auth-session'
 
 // Dynamic import for socket.io (optional dependency)
 let io: typeof import('socket.io').Server | null = null
@@ -80,35 +81,77 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     transports: ['websocket', 'polling'],
   })
 
+  // ==================== Authentication Middleware ====================
+  // Validate session cookie or deviceToken before allowing connection.
+  // On NUC (POS_LOCATION_ID set), local connections are trusted.
+  socketServer.use(async (socket, next) => {
+    try {
+      // Path 1: Native device token (phones/iPads)
+      const deviceToken = socket.handshake.auth?.deviceToken as string | undefined
+      if (deviceToken && typeof deviceToken === 'string') {
+        const terminal = await db.terminal.findFirst({
+          where: { deviceToken, deletedAt: null },
+          select: { id: true, locationId: true, name: true, platform: true },
+        })
+        if (!terminal) {
+          return next(new Error('Invalid device token'))
+        }
+        socket.data.terminalId = terminal.id
+        socket.data.terminalName = terminal.name
+        socket.data.platform = terminal.platform
+        socket.data.locationId = terminal.locationId
+        socket.data.authenticated = true
+        return next()
+      }
+
+      // Path 2: POS session cookie (browser terminals)
+      const cookieHeader = socket.handshake.headers?.cookie
+      if (cookieHeader) {
+        const cookies = cookieHeader.split(';').reduce<Record<string, string>>((acc, c) => {
+          const [k, ...v] = c.trim().split('=')
+          if (k) acc[k] = v.join('=')
+          return acc
+        }, {})
+        const token = cookies[POS_SESSION_COOKIE]
+        if (token) {
+          const session = await verifySessionToken(token)
+          if (session) {
+            socket.data.employeeId = session.employeeId
+            socket.data.locationId = session.locationId
+            socket.data.authenticated = true
+            return next()
+          }
+        }
+      }
+
+      // Path 3: NUC local network — trust all connections from the local server
+      if (process.env.POS_LOCATION_ID) {
+        socket.data.locationId = process.env.POS_LOCATION_ID
+        socket.data.authenticated = true
+        return next()
+      }
+
+      // Path 4: Development mode — allow unauthenticated
+      if (process.env.NODE_ENV === 'development') {
+        socket.data.authenticated = false
+        return next()
+      }
+
+      return next(new Error('Authentication required'))
+    } catch (err) {
+      console.error('[Socket] Auth middleware error:', err)
+      return next(new Error('Authentication error'))
+    }
+  })
+
   socketServer.on('connection', (socket: Socket) => {
     const clientIp = socket.handshake.address
-    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] New connection from ${clientIp} (${socket.id})`)
+    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] New connection from ${clientIp} (${socket.id}) authenticated=${socket.data.authenticated}`)
 
-    // ===== Native client auth via deviceToken =====
-    const deviceToken = socket.handshake.auth?.deviceToken as string | undefined
-    if (deviceToken && typeof deviceToken === 'string') {
-      void (async () => {
-        try {
-          const terminal = await db.terminal.findFirst({
-            where: { deviceToken, deletedAt: null },
-            select: { id: true, locationId: true, name: true, platform: true },
-          })
-          if (!terminal) {
-            console.warn(`[Socket] Invalid deviceToken from ${clientIp}, disconnecting`)
-            socket.disconnect(true)
-            return
-          }
-          socket.data.terminalId = terminal.id
-          socket.data.terminalName = terminal.name
-          socket.data.platform = terminal.platform
-          socket.data.locationId = terminal.locationId
-          socket.join(`location:${terminal.locationId}`)
-          if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Native client authenticated: ${terminal.name} (${terminal.platform})`)
-        } catch (err) {
-          console.error(`[Socket] deviceToken auth error:`, err)
-          socket.disconnect(true)
-        }
-      })()
+    // If device token auth happened in middleware, join location room
+    if (socket.data.terminalId && socket.data.locationId) {
+      socket.join(`location:${socket.data.locationId}`)
+      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Native client authenticated: ${socket.data.terminalName} (${socket.data.platform})`)
     }
 
     // Auto-join location room from handshake query (used by SocketEventProvider)
@@ -121,7 +164,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         return
       }
       // Store authenticated locationId on socket for later validation
-      socket.data.locationId = queryLocationId
+      if (!socket.data.locationId) socket.data.locationId = queryLocationId
       socket.join(`location:${queryLocationId}`)
       if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Auto-joined location:${queryLocationId} from query`)
     }

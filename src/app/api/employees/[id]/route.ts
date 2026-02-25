@@ -202,6 +202,7 @@ export const PUT = withVenue(async function PUT(
         )
       }
       updateData.pin = await hashPin(pin)
+      updateData.requiresPinChange = false // Clear forced change after explicit update
     }
 
     // Handle role change

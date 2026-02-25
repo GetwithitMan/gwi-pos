@@ -23,7 +23,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: rateCheck.reason },
-        { status: 429 }
+        {
+          status: 429,
+          headers: rateCheck.retryAfterSeconds
+            ? { 'Retry-After': String(rateCheck.retryAfterSeconds) }
+            : undefined,
+        }
       )
     }
 
@@ -54,6 +59,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         pin: true,
         firstName: true,
         lastName: true,
+        requiresPinChange: true,
         role: {
           select: {
             id: true,
@@ -88,6 +94,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         firstName: matchedEmployee.firstName,
         lastName: matchedEmployee.lastName,
         role: matchedEmployee.role.name,
+        requiresPinChange: matchedEmployee.requiresPinChange ?? false,
       },
       verified: true,
     } })

@@ -16,7 +16,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!rateCheck.allowed) {
       return NextResponse.json(
         { error: rateCheck.reason },
-        { status: 429 }
+        {
+          status: 429,
+          headers: rateCheck.retryAfterSeconds
+            ? { 'Retry-After': String(rateCheck.retryAfterSeconds) }
+            : undefined,
+        }
       )
     }
 
@@ -163,6 +168,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         permissions,
         isDevAccess,
         availableRoles,
+        requiresPinChange: matchedEmployee.requiresPinChange ?? false,
       },
     } })
   } catch (error) {

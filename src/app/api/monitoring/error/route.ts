@@ -9,6 +9,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchAlert } from '@/lib/alert-service'
 import { withVenue } from '@/lib/with-venue'
+import { createRateLimiter } from '@/lib/rate-limiter'
+
+// 30 requests per minute per IP to prevent log flooding
+const errorLogLimiter = createRateLimiter({ maxAttempts: 30, windowMs: 60 * 1000 })
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,6 +23,21 @@ export const dynamic = 'force-dynamic'
 
 export const POST = withVenue(async function POST(req: NextRequest) {
   try {
+    // Rate limit: 30 req/min per IP to prevent log flooding
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || req.headers.get('x-real-ip')
+      || 'unknown'
+    const rateCheck = errorLogLimiter.check(ip)
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(rateCheck.retryAfter) },
+        }
+      )
+    }
+
     const body = await req.json()
 
     // Validate required fields

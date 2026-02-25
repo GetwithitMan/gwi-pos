@@ -285,6 +285,18 @@ export const POST = withVenue(withTiming(async function POST(
     // Get settings for rounding
     const settings = parseSettings(order.location.settings)
 
+    // SIMULATED_DEFAULTS guard: block simulated payments in production
+    if (process.env.NODE_ENV === 'production' && settings.payments.processor === 'simulated') {
+      console.error(
+        `[PAY] BLOCKED: Location ${order.locationId} is using simulated payment processor in production. ` +
+        'Configure a real Datacap merchantId before processing payments.'
+      )
+      return NextResponse.json(
+        { error: 'Payment processor not configured for production. Contact your administrator.' },
+        { status: 503 }
+      )
+    }
+
     // Compute current business day start for promotion on pay
     const locSettingsRaw = order.location.settings as Record<string, unknown> | null
     const dayStartTime = (locSettingsRaw?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'

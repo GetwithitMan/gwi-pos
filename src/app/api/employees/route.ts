@@ -133,6 +133,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Hash the new PIN and check against existing
     const hashedPin = await hashPin(pin)
 
+    // Flag employees provisioned with common default PINs for forced change on first login
+    const DEFAULT_PINS = ['1234', '0000', '1111']
+    const requiresPinChange = DEFAULT_PINS.includes(pin)
+
     // Create the employee
     const employee = await db.employee.create({
       data: {
@@ -148,6 +152,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         hireDate: hireDate ? new Date(hireDate) : undefined,
         color: color || null,
         isActive: true,
+        requiresPinChange,
       },
       include: {
         role: {

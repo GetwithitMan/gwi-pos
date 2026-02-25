@@ -373,8 +373,9 @@ model Employee {
   zipCode  String?
 
   // Authentication
-  pin      String // 4-6 digit PIN (hashed)
-  password String? // Optional password for admin access (hashed)
+  pin               String  // 4-6 digit PIN (hashed)
+  password          String? // Optional password for admin access (hashed)
+  requiresPinChange Boolean @default(false) // True when provisioned with default PIN
 
   // Employment
   hourlyRate Decimal?

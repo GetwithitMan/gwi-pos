@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { validateMagicBytes } from '@/lib/file-validation'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'menu-items')
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
@@ -42,6 +43,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Image must be under 5MB' }, { status: 400 })
     }
 
+    // Validate magic bytes match claimed Content-Type (prevents spoofed uploads)
+    const fileBytes = await file.arrayBuffer()
+    const buffer = Buffer.from(fileBytes)
+    if (!validateMagicBytes(buffer, file.type)) {
+      return NextResponse.json(
+        { error: 'File content does not match declared type. Upload a valid image file.' },
+        { status: 400 }
+      )
+    }
+
     // Generate unique filename
     const ext = file.name.split('.').pop() || 'jpg'
     const filename = `${crypto.randomUUID()}.${ext}`
@@ -49,9 +60,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Ensure directory exists
     await mkdir(UPLOAD_DIR, { recursive: true })
 
-    // Write file
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
+    // Write file (buffer already read above for magic bytes validation)
     await writeFile(path.join(UPLOAD_DIR, filename), buffer)
 
     const url = `/uploads/menu-items/${filename}`
