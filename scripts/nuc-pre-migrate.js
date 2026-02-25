@@ -146,6 +146,131 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED ModifierTemplate.deletedAt:`, err.message)
     }
 
+    // --- updatedAt backfills (add column if missing, backfill NULLs either way) ---
+    const updatedAtTables = [
+      'OrderOwnershipEntry', 'PaymentReaderLog', 'TipLedgerEntry',
+      'TipTransaction', 'cloud_event_queue',
+    ]
+    for (const table of updatedAtTables) {
+      try {
+        const exists = await columnExists(prisma, table, 'updatedAt')
+        if (!exists) {
+          console.log(`${PREFIX}   Adding updatedAt to ${table}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ADD COLUMN "updatedAt" TIMESTAMPTZ`)
+        }
+        await prisma.$executeRawUnsafe(`UPDATE "${table}" SET "updatedAt" = NOW() WHERE "updatedAt" IS NULL`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "updatedAt" SET NOT NULL`)
+        if (!exists) console.log(`${PREFIX}   Done — ${table}.updatedAt backfilled`)
+      } catch (err) {
+        console.error(`${PREFIX}   FAILED ${table}.updatedAt:`, err.message)
+      }
+    }
+
+    // --- Order deduplication + partial unique index ---
+    try {
+      const dupes = await prisma.$queryRawUnsafe(`
+        SELECT "locationId", "orderNumber", COUNT(*) as cnt
+        FROM "Order" WHERE "parentOrderId" IS NULL
+        GROUP BY "locationId", "orderNumber" HAVING COUNT(*) > 1
+      `)
+      if (dupes.length > 0) {
+        console.log(`${PREFIX}   Deduplicating ${dupes.length} duplicate orderNumber groups...`)
+        const [maxRow] = await prisma.$queryRawUnsafe(`SELECT COALESCE(MAX("orderNumber"), 0) as mx FROM "Order"`)
+        let nextNum = Math.max(Number(maxRow.mx), 900000) + 1000
+        for (const { locationId, orderNumber } of dupes) {
+          const orders = await prisma.$queryRawUnsafe(`
+            SELECT id FROM "Order"
+            WHERE "locationId" = $1 AND "orderNumber" = $2 AND "parentOrderId" IS NULL
+            ORDER BY "createdAt" DESC
+          `, locationId, Number(orderNumber))
+          for (let i = 1; i < orders.length; i++) {
+            nextNum++
+            await prisma.$executeRawUnsafe(`UPDATE "Order" SET "orderNumber" = $1 WHERE id = $2`, nextNum, orders[i].id)
+          }
+        }
+        console.log(`${PREFIX}   Done — duplicate orderNumbers resolved`)
+      }
+
+      const [plainIdx] = await prisma.$queryRawUnsafe(`SELECT indexname FROM pg_indexes WHERE tablename = 'Order' AND indexname = 'Order_locationId_orderNumber_key'`)
+      if (plainIdx) {
+        console.log(`${PREFIX}   Dropping plain unique index...`)
+        await prisma.$executeRawUnsafe(`DROP INDEX "Order_locationId_orderNumber_key"`)
+      }
+      const [partialIdx] = await prisma.$queryRawUnsafe(`SELECT indexname FROM pg_indexes WHERE tablename = 'Order' AND indexname = 'Order_locationId_orderNumber_unique'`)
+      if (!partialIdx) {
+        console.log(`${PREFIX}   Creating partial unique index...`)
+        await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX "Order_locationId_orderNumber_unique" ON "Order" ("locationId", "orderNumber") WHERE "parentOrderId" IS NULL`)
+        console.log(`${PREFIX}   Done`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED order dedup/index:`, err.message)
+    }
+
+    // --- Int → Decimal(10,2) conversions (tip fields) ---
+    async function isIntegerColumn(table, column) {
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`,
+        table, column
+      )
+      return rows.length > 0 && rows[0].data_type === 'integer'
+    }
+
+    const decimalConversions = [
+      ['TipLedger', 'currentBalanceCents'],
+      ['TipLedgerEntry', 'amountCents'],
+      ['TipTransaction', 'amountCents'],
+      ['TipTransaction', 'ccFeeAmountCents'],
+      ['TipDebt', 'originalAmountCents'],
+      ['TipDebt', 'remainingCents'],
+      ['CashTipDeclaration', 'amountCents'],
+    ]
+    for (const [table, column] of decimalConversions) {
+      try {
+        if (await isIntegerColumn(table, column)) {
+          console.log(`${PREFIX}   Converting ${table}.${column} INT → DECIMAL(10,2)...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "${column}" TYPE DECIMAL(10,2)`)
+          console.log(`${PREFIX}   Done`)
+        }
+      } catch (err) {
+        console.error(`${PREFIX}   FAILED ${table}.${column}:`, err.message)
+      }
+    }
+
+    // --- String → Enum casts ---
+    async function isTextColumn(table, column) {
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = $1 AND column_name = $2`,
+        table, column
+      )
+      return rows.length > 0 && (rows[0].data_type === 'text' || rows[0].data_type === 'character varying')
+    }
+
+    async function ensureEnumType(typeName, values) {
+      const [existing] = await prisma.$queryRawUnsafe(`SELECT typname FROM pg_type WHERE typname = $1`, typeName)
+      if (!existing) {
+        const valuesStr = values.map(v => `'${v}'`).join(', ')
+        await prisma.$executeRawUnsafe(`CREATE TYPE "${typeName}" AS ENUM (${valuesStr})`)
+      }
+    }
+
+    const enumCasts = [
+      ['Payment', 'paymentMethod', 'PaymentMethod', ['cash', 'card', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty', 'loyalty_points']],
+      ['TipLedgerEntry', 'type', 'TipLedgerEntryType', ['CREDIT', 'DEBIT']],
+      ['TipTransaction', 'sourceType', 'TipTransactionSourceType', ['CARD', 'CASH', 'ADJUSTMENT']],
+    ]
+    for (const [table, column, enumName, values] of enumCasts) {
+      try {
+        if (await isTextColumn(table, column)) {
+          console.log(`${PREFIX}   Converting ${table}.${column} TEXT → ${enumName} enum...`)
+          await ensureEnumType(enumName, values)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "${table}" ALTER COLUMN "${column}" TYPE "${enumName}" USING ("${column}"::text::"${enumName}")`)
+          console.log(`${PREFIX}   Done`)
+        }
+      } catch (err) {
+        console.error(`${PREFIX}   FAILED ${table}.${column}:`, err.message)
+      }
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()
@@ -154,5 +279,6 @@ async function runPrePushMigrations() {
 
 runPrePushMigrations().catch((err) => {
   console.error(`${PREFIX} Fatal error:`, err.message)
-  process.exit(1)
+  // Exit 0 so sync agent continues — prisma db push will report the real error
+  process.exit(0)
 })

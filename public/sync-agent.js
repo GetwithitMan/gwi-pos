@@ -164,7 +164,12 @@ function handleForceUpdate(payload) {
   if (!step('build', 'npm run build', false, 300)) {
     return { ok: false, error: 'build failed', steps: steps }
   }
-  if (!step('restart', 'sudo systemctl restart pulse-pos', false, 30)) {
+  // Try current service name (thepasspos), fall back to legacy (pulse-pos)
+  log('  restart...')
+  var restartOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
+  if (!restartOk) restartOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
+  steps.push('restart' + (restartOk ? ' OK' : ' FAIL'))
+  if (!restartOk) {
     return { ok: false, error: 'restart failed', steps: steps }
   }
 
@@ -176,8 +181,9 @@ function handleForceUpdate(payload) {
       log('[Update] Sync agent self-updated from repo')
       // Restart pulse-sync 15s after ACK is sent (gives time for ACK delivery)
       setTimeout(function() {
-        log('[Update] Restarting pulse-sync with updated version...')
-        run('sudo systemctl restart pulse-sync', APP_DIR, 30)
+        log('[Update] Restarting sync agent with updated version...')
+        var syncOk = run('sudo systemctl restart thepasspos-sync', APP_DIR, 30)
+        if (!syncOk) run('sudo systemctl restart pulse-sync', APP_DIR, 30)
       }, 15000)
     }
   } catch (e) {
@@ -270,6 +276,26 @@ async function processCommand(dataStr) {
         log('[Sync] UPDATE_PAYMENT_CONFIG error: ' + err.message)
         result = { ok: false, error: err.message }
       }
+    } else if (cmd.type === 'RE_PROVISION') {
+      // Re-provision = full update cycle (same as FORCE_UPDATE)
+      result = handleForceUpdate(cmd.payload || {})
+    } else if (cmd.type === 'RELOAD_TERMINALS') {
+      // Restart POS service to force all connected terminals to reconnect
+      log('[Sync] RELOAD_TERMINALS — restarting POS service...')
+      var rlOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
+      if (!rlOk) rlOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
+      result = { ok: rlOk }
+    } else if (cmd.type === 'RELOAD_TERMINAL') {
+      // Single terminal reload — same effect as RELOAD_TERMINALS on NUC
+      log('[Sync] RELOAD_TERMINAL — restarting POS service...')
+      var rtOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
+      if (!rtOk) rtOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
+      result = { ok: rtOk }
+    } else if (cmd.type === 'RESTART_KIOSK') {
+      log('[Sync] RESTART_KIOSK — restarting kiosk service...')
+      var rkOk = run('sudo systemctl restart thepasspos-kiosk', APP_DIR, 30)
+      if (!rkOk) rkOk = run('sudo systemctl restart pulse-kiosk', APP_DIR, 30)
+      result = { ok: rkOk }
     } else if (cmd.type === 'KILL_SWITCH') {
       log('[Sync] KILL_SWITCH received — acknowledged')
       result = { ok: true }
