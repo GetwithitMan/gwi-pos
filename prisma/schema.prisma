@@ -2630,6 +2630,7 @@ model TipLedgerEntry {
   orderId        String?
   idempotencyKey String?   @unique // Skill 274: dedup guard (e.g. "tip-ledger:{orderId}:{paymentId}:{employeeId}")
   createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
   syncedAt       DateTime?
 
@@ -2659,6 +2660,7 @@ model TipTransaction {
   ccFeeAmountCents  Int       @default(0)
   idempotencyKey    String?   @unique // Skill 274: dedup guard (e.g. "tip-txn:{orderId}:{paymentId}")
   createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
   deletedAt         DateTime?
   syncedAt          DateTime?
 
@@ -2760,6 +2762,7 @@ model TipGroupSegment {
   memberCount Int
   splitJson   Json      // { "emp1": 0.5, "emp2": 0.5 }
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
   syncedAt    DateTime?
 
@@ -2828,6 +2831,8 @@ model OrderOwnershipEntry {
   employeeId       String
   employee         Employee       @relation(fields: [employeeId], references: [id])
   sharePercent     Float          // e.g., 50.0, 33.33
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
   deletedAt        DateTime?
 
   @@index([locationId])
@@ -2850,6 +2855,7 @@ model TipAdjustment {
   contextJson     Json?    // Structured before/after state
   autoRecalcRan   Boolean  @default(false)
   createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
   deletedAt       DateTime?
   syncedAt        DateTime?
 
@@ -2876,6 +2882,7 @@ model CashTipDeclaration {
   overrideReason String?
   overrideBy     String?
   createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
   deletedAt      DateTime?
   syncedAt       DateTime?
 
@@ -3927,6 +3934,7 @@ model InventoryItemTransaction {
   employeeId      String?
 
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   syncedAt  DateTime?
 
@@ -5245,6 +5253,7 @@ model PaymentReaderLog {
   errorCode    String?
   tranType     String?       // sale, void, preauth, etc.
   createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   syncedAt     DateTime?
 
   @@index([locationId])
@@ -6217,6 +6226,7 @@ model DailyPrepCountTransaction {
   totalCost       Decimal?
 
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   syncedAt  DateTime?
 
@@ -6558,6 +6568,7 @@ model PerformanceLog {
   employeeId String?
 
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   syncedAt  DateTime?
 
@@ -6583,6 +6594,7 @@ model HealthCheck {
   details String? // Additional details (JSON)
 
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   syncedAt  DateTime?
 
@@ -6639,6 +6651,7 @@ model CloudEventQueue {
   nextRetryAt DateTime @default(now())
   attempts    Int      @default(0)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([locationId])
   @@index([nextRetryAt])
