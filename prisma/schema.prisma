@@ -2830,7 +2830,7 @@ model OrderOwnershipEntry {
   ownership        OrderOwnership @relation(fields: [orderOwnershipId], references: [id])
   employeeId       String
   employee         Employee       @relation(fields: [employeeId], references: [id])
-  sharePercent     Float          // e.g., 50.0, 33.33
+  sharePercent     Decimal        @db.Decimal(6, 2) // e.g., 50.00, 33.33 — Decimal for financial precision
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   deletedAt        DateTime?

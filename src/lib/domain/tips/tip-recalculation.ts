@@ -375,7 +375,7 @@ export async function recalculateOrderAllocations(params: {
   // Build ownership split: employeeId -> fraction (0 to 1)
   const ownerSplits: Record<string, number> = {}
   for (const owner of ownership.owners) {
-    ownerSplits[owner.employeeId] = owner.sharePercent / 100
+    ownerSplits[owner.employeeId] = Number(owner.sharePercent) / 100
   }
   const ownerIds = Object.keys(ownerSplits)
 

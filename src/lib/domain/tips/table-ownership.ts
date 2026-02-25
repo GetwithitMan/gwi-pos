@@ -196,7 +196,7 @@ export async function addOrderOwner(params: {
 
       // Calculate proportional adjustment for existing owners
       const currentTotal = existingEntries.reduce(
-        (sum, e) => sum + e.sharePercent,
+        (sum, e) => sum + Number(e.sharePercent),
         0
       )
 
@@ -215,7 +215,7 @@ export async function addOrderOwner(params: {
               data: { sharePercent: adjustedPercent },
             })
           } else {
-            const ratio = entry.sharePercent / currentTotal
+            const ratio = Number(entry.sharePercent) / currentTotal
             const adjustedPercent =
               Math.round(remainingPercent * ratio * 100) / 100
             allocated += adjustedPercent
@@ -548,7 +548,7 @@ function mapToOwnershipInfo(ownership: {
   owners: Array<{
     id: string
     employeeId: string
-    sharePercent: number
+    sharePercent: number | { toNumber(): number } // Prisma.Decimal or number
     employee: {
       firstName: string
       lastName: string
@@ -566,7 +566,7 @@ function mapToOwnershipInfo(ownership: {
       firstName: o.employee.firstName,
       lastName: o.employee.lastName,
       displayName: o.employee.displayName,
-      sharePercent: o.sharePercent,
+      sharePercent: Number(o.sharePercent),
     })),
   }
 }
@@ -582,7 +582,7 @@ function mapToOwnershipInfoMinimal(ownership: {
   owners: Array<{
     id: string
     employeeId: string
-    sharePercent: number
+    sharePercent: number | { toNumber(): number } // Prisma.Decimal or number
   }>
 }): OwnershipInfo {
   return {
@@ -595,7 +595,7 @@ function mapToOwnershipInfoMinimal(ownership: {
       firstName: '',
       lastName: '',
       displayName: null,
-      sharePercent: o.sharePercent,
+      sharePercent: Number(o.sharePercent),
     })),
   }
 }
