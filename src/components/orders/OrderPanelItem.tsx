@@ -953,17 +953,18 @@ export const OrderPanelItem = memo(function OrderPanelItem({
               </>
             ) : (
               <>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: hasItemDiscount ? '#4ade80' : '#e2e8f0' }}>
-                  ${hasItemDiscount ? (totalPrice - totalItemDiscount).toFixed(2) : totalPrice.toFixed(2)}
-                </div>
-                {hasItemDiscount && (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
-                    <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 500 }}>
-                      -{totalItemDiscount.toFixed(2)}
-                    </span>
-                    <span style={{ fontSize: '10px', color: '#64748b', textDecoration: 'line-through' }}>
-                      {totalPrice.toFixed(2)}
-                    </span>
+                {hasItemDiscount ? (
+                  <>
+                    <div style={{ fontSize: '11px', color: '#64748b', textDecoration: 'line-through', textAlign: 'right' }}>
+                      ${totalPrice.toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#4ade80' }}>
+                      ${(totalPrice - totalItemDiscount).toFixed(2)}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
+                    ${totalPrice.toFixed(2)}
                   </div>
                 )}
                 {item.quantity > 1 && !hasItemDiscount && (
