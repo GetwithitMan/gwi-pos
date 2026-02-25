@@ -31,6 +31,9 @@
     "build:all": "npm run build && npm run ws:build",
     "load-test": "npx tsx scripts/load-test.ts"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "dependencies": {
     "@csstools/postcss-oklab-function": "^5.0.1",
     "@dnd-kit/core": "^6.3.1",
