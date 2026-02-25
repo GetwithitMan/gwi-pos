@@ -13,48 +13,73 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
     const category = searchParams.get('category') // Filter by category
 
-    const terminals = await db.terminal.findMany({
-      where: {
-        locationId,
-        deletedAt: null,
-        ...(category && { category }),
-      },
-      include: {
-        receiptPrinter: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-            printerRole: true,
-          },
-        },
-        backupTerminal: {
-          select: {
-            id: true,
-            name: true,
-            isOnline: true,
-            lastSeenAt: true,
-          },
-        },
-      },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-    })
-
-    // Scale include is separate — gracefully degrade if Scale table doesn't exist yet (pre-migration)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let terminalsWithScales: any[] = terminals.map((t) => ({ ...t, scale: null }))
+    let terminals
     try {
-      const withScales = await db.terminal.findMany({
-        where: { locationId, deletedAt: null, scaleId: { not: null } },
-        select: { id: true, scale: { select: { id: true, name: true, portPath: true, isConnected: true } } },
+      terminals = await db.terminal.findMany({
+        where: {
+          locationId,
+          deletedAt: null,
+          ...(category && { category }),
+        },
+        include: {
+          receiptPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          backupTerminal: {
+            select: {
+              id: true,
+              name: true,
+              isOnline: true,
+              lastSeenAt: true,
+            },
+          },
+          scale: {
+            select: {
+              id: true,
+              name: true,
+              portPath: true,
+              isConnected: true,
+            },
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       })
-      const scaleMap = new Map(withScales.map((t) => [t.id, t.scale]))
-      terminalsWithScales = terminals.map((t) => ({ ...t, scale: scaleMap.get(t.id) ?? null }))
     } catch {
-      // Scale table not yet migrated — terminals still work without scale data
+      // Fallback for un-migrated databases without Scale table
+      terminals = await db.terminal.findMany({
+        where: {
+          locationId,
+          deletedAt: null,
+          ...(category && { category }),
+        },
+        include: {
+          receiptPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          backupTerminal: {
+            select: {
+              id: true,
+              name: true,
+              isOnline: true,
+              lastSeenAt: true,
+            },
+          },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      })
     }
 
-    return NextResponse.json({ data: { terminals: terminalsWithScales } })
+    return NextResponse.json({ data: { terminals } })
   } catch (error) {
     console.error('Failed to fetch terminals:', error)
     return NextResponse.json({ error: 'Failed to fetch terminals' }, { status: 500 })
@@ -125,18 +150,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Build create data — scaleId only if Scale table exists (post-migration)
-    const createData: Record<string, unknown> = {
-      locationId,
-      name,
-      category,
-      platform,
-      staticIp: staticIp || null,
-      receiptPrinterId: receiptPrinterId || null,
-      roleSkipRules: roleSkipRules || {},
-    }
-
-    // Only set scaleId if provided and Scale table exists
+    // Validate scale if provided (skip if table doesn't exist)
     const cleanScaleId = scaleId || null
     if (cleanScaleId) {
       try {
@@ -146,25 +160,67 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         if (!scale) {
           return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
         }
-        createData.scaleId = cleanScaleId
       } catch {
-        // Scale table not yet migrated — skip scaleId
+        // Scale table doesn't exist on un-migrated DB — ignore scaleId
       }
     }
 
-    const terminal = await db.terminal.create({
-      data: createData as Parameters<typeof db.terminal.create>[0]['data'],
-      include: {
-        receiptPrinter: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-            printerRole: true,
+    let terminal
+    try {
+      terminal = await db.terminal.create({
+        data: {
+          locationId,
+          name,
+          category,
+          platform,
+          staticIp: staticIp || null,
+          receiptPrinterId: receiptPrinterId || null,
+          roleSkipRules: roleSkipRules || {},
+          scaleId: cleanScaleId,
+        },
+        include: {
+          receiptPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          scale: {
+            select: {
+              id: true,
+              name: true,
+              portPath: true,
+              isConnected: true,
+            },
           },
         },
-      },
-    })
+      })
+    } catch (createErr) {
+      // Fallback for un-migrated databases without Scale table/column
+      terminal = await db.terminal.create({
+        data: {
+          locationId,
+          name,
+          category,
+          platform,
+          staticIp: staticIp || null,
+          receiptPrinterId: receiptPrinterId || null,
+          roleSkipRules: roleSkipRules || {},
+        },
+        include: {
+          receiptPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+        },
+      })
+    }
 
     return NextResponse.json({ data: { terminal } })
   } catch (error) {

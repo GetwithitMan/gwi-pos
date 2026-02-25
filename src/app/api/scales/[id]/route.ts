@@ -16,9 +16,18 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
-    const scale = await db.scale.findFirst({
-      where: { id, locationId, deletedAt: null },
-    })
+    let scale
+    try {
+      scale = await db.scale.findFirst({
+        where: { id, locationId, deletedAt: null },
+      })
+    } catch {
+      // Scale table doesn't exist on un-migrated DB
+      return NextResponse.json(
+        { error: 'Scale feature not available - database migration required' },
+        { status: 503 }
+      )
+    }
 
     if (!scale) {
       return NextResponse.json({ error: 'Scale not found' }, { status: 404 })
@@ -62,9 +71,18 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
-    const existing = await db.scale.findFirst({
-      where: { id, locationId, deletedAt: null },
-    })
+    let existing
+    try {
+      existing = await db.scale.findFirst({
+        where: { id, locationId, deletedAt: null },
+      })
+    } catch {
+      // Scale table doesn't exist on un-migrated DB
+      return NextResponse.json(
+        { error: 'Scale feature not available - database migration required' },
+        { status: 503 }
+      )
+    }
     if (!existing) {
       return NextResponse.json({ error: 'Scale not found' }, { status: 404 })
     }
@@ -118,9 +136,18 @@ export const DELETE = withVenue(async function DELETE(
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
-    const existing = await db.scale.findFirst({
-      where: { id, locationId, deletedAt: null },
-    })
+    let existing
+    try {
+      existing = await db.scale.findFirst({
+        where: { id, locationId, deletedAt: null },
+      })
+    } catch {
+      // Scale table doesn't exist on un-migrated DB
+      return NextResponse.json(
+        { error: 'Scale feature not available - database migration required' },
+        { status: 503 }
+      )
+    }
     if (!existing) {
       return NextResponse.json({ error: 'Scale not found' }, { status: 404 })
     }

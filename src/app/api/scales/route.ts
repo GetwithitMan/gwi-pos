@@ -12,10 +12,16 @@ export const GET = withVenue(async function GET() {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
-    const scales = await db.scale.findMany({
-      where: { locationId, deletedAt: null },
-      orderBy: { name: 'asc' },
-    })
+    let scales
+    try {
+      scales = await db.scale.findMany({
+        where: { locationId, deletedAt: null },
+        orderBy: { name: 'asc' },
+      })
+    } catch {
+      // Scale table doesn't exist on un-migrated DB — return empty array
+      return NextResponse.json({ data: [] })
+    }
 
     return NextResponse.json({
       data: scales.map((s) => ({
@@ -24,11 +30,6 @@ export const GET = withVenue(async function GET() {
       })),
     })
   } catch (error) {
-    // Gracefully return empty array if Scale table doesn't exist yet (pre-migration)
-    const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('P2021')) {
-      return NextResponse.json({ data: [] })
-    }
     console.error('Failed to fetch scales:', error)
     return NextResponse.json({ error: 'Failed to fetch scales' }, { status: 500 })
   }
@@ -66,13 +67,30 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const { maxCapacity, ...rest } = parsed.data
 
-    const scale = await db.scale.create({
-      data: {
-        locationId,
-        ...rest,
-        ...(maxCapacity !== undefined && { maxCapacity }),
-      },
-    })
+    let scale
+    try {
+      scale = await db.scale.create({
+        data: {
+          locationId,
+          ...rest,
+          ...(maxCapacity !== undefined && { maxCapacity }),
+        },
+      })
+    } catch (createErr) {
+      // Scale table doesn't exist on un-migrated DB
+      const msg = createErr instanceof Error ? createErr.message : ''
+      if (msg.includes('Unique constraint')) {
+        return NextResponse.json(
+          { error: 'A scale with this name or port already exists at this location' },
+          { status: 400 }
+        )
+      }
+      console.error('Failed to create scale:', createErr)
+      return NextResponse.json(
+        { error: 'Scale feature not available - database migration required' },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
       data: {
@@ -82,12 +100,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Failed to create scale:', error)
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
-      return NextResponse.json(
-        { error: 'A scale with this name or port already exists at this location' },
-        { status: 400 }
-      )
-    }
     return NextResponse.json({ error: 'Failed to create scale' }, { status: 500 })
   }
 })

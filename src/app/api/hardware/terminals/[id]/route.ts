@@ -11,59 +11,91 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    const terminal = await db.terminal.findUnique({
-      where: { id },
-      include: {
-        receiptPrinter: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-            printerRole: true,
+    let terminal
+    try {
+      terminal = await db.terminal.findUnique({
+        where: { id },
+        include: {
+          receiptPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          paymentReader: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              port: true,
+              serialNumber: true,
+              communicationMode: true,
+              isOnline: true,
+              lastSeenAt: true,
+            },
+          },
+          backupPaymentReader: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              isOnline: true,
+            },
+          },
+          scale: {
+            select: {
+              id: true,
+              name: true,
+              portPath: true,
+              isConnected: true,
+            },
           },
         },
-        paymentReader: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-            port: true,
-            serialNumber: true,
-            communicationMode: true,
-            isOnline: true,
-            lastSeenAt: true,
+      })
+    } catch {
+      // Fallback for un-migrated databases without Scale table
+      terminal = await db.terminal.findUnique({
+        where: { id },
+        include: {
+          receiptPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          paymentReader: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              port: true,
+              serialNumber: true,
+              communicationMode: true,
+              isOnline: true,
+              lastSeenAt: true,
+            },
+          },
+          backupPaymentReader: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              isOnline: true,
+            },
           },
         },
-        backupPaymentReader: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-            isOnline: true,
-          },
-        },
-      },
-    })
+      })
+    }
 
     if (!terminal || terminal.deletedAt) {
       return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
     }
 
-    // Attach scale data separately — gracefully degrade if Scale table doesn't exist yet
-    let scale = null
-    try {
-      if ((terminal as Record<string, unknown>).scaleId) {
-        const scaleResult = await db.scale.findFirst({
-          where: { id: (terminal as Record<string, unknown>).scaleId as string, deletedAt: null },
-          select: { id: true, name: true, portPath: true, isConnected: true },
-        })
-        scale = scaleResult
-      }
-    } catch {
-      // Scale table not yet migrated
-    }
-
-    return NextResponse.json({ data: { terminal: { ...terminal, scale } } })
+    return NextResponse.json({ data: { terminal } })
   } catch (error) {
     console.error('Failed to fetch terminal:', error)
     return NextResponse.json({ error: 'Failed to fetch terminal' }, { status: 500 })
@@ -180,8 +212,8 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
-    // Validate scale if provided — gracefully skip if Scale table not yet migrated
-    let scaleValidated = false
+    // Validate scale if provided (skip if table doesn't exist)
+    let scaleAvailable = true
     if (scaleId) {
       try {
         const scale = await db.scale.findFirst({
@@ -190,9 +222,9 @@ export const PUT = withVenue(async function PUT(
         if (!scale) {
           return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
         }
-        scaleValidated = true
       } catch {
-        // Scale table not yet migrated — skip scaleId
+        // Scale table doesn't exist on un-migrated DB — ignore scaleId
+        scaleAvailable = false
       }
     }
 
@@ -204,84 +236,94 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
-    const terminal = await db.terminal.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(category !== undefined && { category }),
-        ...(staticIp !== undefined && { staticIp: staticIp || null }),
-        ...(receiptPrinterId !== undefined && { receiptPrinterId: receiptPrinterId || null }),
-        ...(roleSkipRules !== undefined && { roleSkipRules }),
-        ...(forceAllPrints !== undefined && { forceAllPrints }),
-        ...(isActive !== undefined && { isActive }),
-        ...(sortOrder !== undefined && { sortOrder }),
-        ...(backupTerminalId !== undefined && { backupTerminalId: backupTerminalId || null }),
-        ...(failoverEnabled !== undefined && { failoverEnabled }),
-        ...(failoverTimeout !== undefined && { failoverTimeout }),
-        // Payment reader binding
-        ...(paymentReaderId !== undefined && { paymentReaderId: paymentReaderId || null }),
-        ...(paymentProvider !== undefined && { paymentProvider }),
-        ...(backupPaymentReaderId !== undefined && { backupPaymentReaderId: backupPaymentReaderId || null }),
-        ...(readerFailoverTimeout !== undefined && { readerFailoverTimeout }),
-        // Scale binding — only if validated (Scale table exists)
-        ...(scaleId !== undefined && scaleValidated && { scaleId: scaleId || null }),
-        ...(scaleId === '' && scaleValidated && { scaleId: null }),
-      },
-      include: {
-        receiptPrinter: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-            printerRole: true,
-          },
-        },
-        backupTerminal: {
-          select: {
-            id: true,
-            name: true,
-            isOnline: true,
-            lastSeenAt: true,
-          },
-        },
-        paymentReader: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-            port: true,
-            serialNumber: true,
-            communicationMode: true,
-            isOnline: true,
-            lastSeenAt: true,
-          },
-        },
-        backupPaymentReader: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-            isOnline: true,
-          },
+    const baseData = {
+      ...(name !== undefined && { name }),
+      ...(category !== undefined && { category }),
+      ...(staticIp !== undefined && { staticIp: staticIp || null }),
+      ...(receiptPrinterId !== undefined && { receiptPrinterId: receiptPrinterId || null }),
+      ...(roleSkipRules !== undefined && { roleSkipRules }),
+      ...(forceAllPrints !== undefined && { forceAllPrints }),
+      ...(isActive !== undefined && { isActive }),
+      ...(sortOrder !== undefined && { sortOrder }),
+      ...(backupTerminalId !== undefined && { backupTerminalId: backupTerminalId || null }),
+      ...(failoverEnabled !== undefined && { failoverEnabled }),
+      ...(failoverTimeout !== undefined && { failoverTimeout }),
+      // Payment reader binding
+      ...(paymentReaderId !== undefined && { paymentReaderId: paymentReaderId || null }),
+      ...(paymentProvider !== undefined && { paymentProvider }),
+      ...(backupPaymentReaderId !== undefined && { backupPaymentReaderId: backupPaymentReaderId || null }),
+      ...(readerFailoverTimeout !== undefined && { readerFailoverTimeout }),
+    }
+    const baseInclude = {
+      receiptPrinter: {
+        select: {
+          id: true,
+          name: true,
+          ipAddress: true,
+          printerRole: true,
         },
       },
-    })
-
-    // Attach scale data separately — gracefully degrade if Scale table doesn't exist yet
-    let scale = null
-    try {
-      if ((terminal as Record<string, unknown>).scaleId) {
-        const scaleResult = await db.scale.findFirst({
-          where: { id: (terminal as Record<string, unknown>).scaleId as string, deletedAt: null },
-          select: { id: true, name: true, portPath: true, isConnected: true },
-        })
-        scale = scaleResult
-      }
-    } catch {
-      // Scale table not yet migrated
+      backupTerminal: {
+        select: {
+          id: true,
+          name: true,
+          isOnline: true,
+          lastSeenAt: true,
+        },
+      },
+      paymentReader: {
+        select: {
+          id: true,
+          name: true,
+          ipAddress: true,
+          port: true,
+          serialNumber: true,
+          communicationMode: true,
+          isOnline: true,
+          lastSeenAt: true,
+        },
+      },
+      backupPaymentReader: {
+        select: {
+          id: true,
+          name: true,
+          ipAddress: true,
+          isOnline: true,
+        },
+      },
     }
 
-    return NextResponse.json({ data: { terminal: { ...terminal, scale } } })
+    let terminal
+    try {
+      terminal = await db.terminal.update({
+        where: { id },
+        data: {
+          ...baseData,
+          // Scale binding
+          ...(scaleAvailable && scaleId !== undefined && { scaleId: scaleId || null }),
+        },
+        include: {
+          ...baseInclude,
+          scale: {
+            select: {
+              id: true,
+              name: true,
+              portPath: true,
+              isConnected: true,
+            },
+          },
+        },
+      })
+    } catch {
+      // Fallback for un-migrated databases without Scale table/column
+      terminal = await db.terminal.update({
+        where: { id },
+        data: baseData,
+        include: baseInclude,
+      })
+    }
+
+    return NextResponse.json({ data: { terminal } })
   } catch (error) {
     console.error('Failed to update terminal:', error)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
