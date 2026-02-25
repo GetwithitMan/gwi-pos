@@ -678,6 +678,7 @@ model Location {
 
   // C-SCHEMA-1: Added reverse relations
   timedSessions TimedSession[]
+  auditLogs     AuditLog[]
 
   @@index([organizationId])
 }
@@ -728,6 +729,11 @@ model Customer {
 
   // C-SCHEMA-1: Added reverse relations
   couponRedemptions CouponRedemption[]
+
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  cardProfiles       CardProfile[]
+  errorLogs          ErrorLog[]           @relation("ErrorLogCustomer")
 
   @@unique([locationId, email])
   @@unique([locationId, phone])
@@ -894,7 +900,7 @@ model Employee {
 
   // Payroll & Scheduling
   payStubs            PayStub[]
-  scheduledShifts     ScheduledShift[]
+  scheduledShifts     ScheduledShift[]     @relation("ScheduledShiftEmployee")
   availabilityEntries AvailabilityEntry[]
 
   // Remote void approval relations
@@ -945,6 +951,18 @@ model Employee {
   refundLogsApproved           RefundLog[]               @relation("RefundLogApprover")
   itemDiscountsApplied         OrderItemDiscount[]       @relation("ItemDiscountAppliedBy")
   registeredDevices            RegisteredDevice[]        @relation("RegisteredDeviceEmployee")
+
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  tipTransactions       TipTransaction[]       @relation("TipTransactionEmployee")
+  invTransactions       InventoryTransaction[] @relation("InvTxnEmployee")
+  invCountsStarted     InventoryCount[]       @relation("InvCountStartedBy")
+  invCountsCompleted   InventoryCount[]       @relation("InvCountCompletedBy")
+  invCountsReviewed    InventoryCount[]       @relation("InvCountReviewedBy")
+  invItemTransactions  InventoryItemTransaction[] @relation("InvItemTxnEmployee")
+  scheduledShiftsOriginal ScheduledShift[]     @relation("ScheduledShiftOriginal")
+  performanceLogs      PerformanceLog[]       @relation("PerformanceLogEmployee")
+  syncAuditEntries     SyncAuditEntry[]       @relation("SyncAuditEmployee")
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -1096,6 +1114,10 @@ model Shift {
   // C-SCHEMA-1: Added reverse relations
   payments Payment[] @relation("PaymentShift")
 
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  tipLedgerEntries   TipLedgerEntry[]     @relation("TipLedgerShift")
+
   @@index([employeeId])
   @@index([startedAt])
   @@index([timeClockEntryId])
@@ -1197,6 +1219,10 @@ model PrepStation {
   // KDS screens that display this station
   kdsScreens KDSScreenStation[]
 
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  printRoutes        PrintRoute[]
+
   @@unique([locationId, name])
   @@index([locationId])
 }
@@ -1283,6 +1309,11 @@ model Category {
   printRules PrintRule[]
 
   // @@index([locationId]) — removed: redundant with compound indexes below
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  upsellTriggers     UpsellConfig[]       @relation("UpsellTriggerCategory")
+  upsellSuggestions  UpsellConfig[]       @relation("UpsellSuggestionCategory")
+
   @@index([prepStationId])
   @@index([sortOrder])
   @@index([categoryType])
@@ -1374,7 +1405,9 @@ model MenuItem {
   // Entertainment tracking (Skill 94-97)
   entertainmentStatus String? // 'available', 'in_use', 'maintenance'
   currentOrderId      String? // Links to order currently using this item
+  currentOrder       Order?    @relation("MenuItemCurrentOrder", fields: [currentOrderId], references: [id])
   currentOrderItemId  String? // Links to specific order item
+  currentOrderItem   OrderItem? @relation("MenuItemCurrentOrderItem", fields: [currentOrderItemId], references: [id])
   blockTimeMinutes    Int? // If set, sells in blocks (30, 60, 90 mins)
   maxConcurrentUses   Int?    @default(1) // For items with multiple units
   currentUseCount     Int?    @default(0) // Current number in use
@@ -1447,6 +1480,10 @@ model MenuItem {
   timedSessions         TimedSession[]         @relation("TimedSessionMenuItem")
   inventoryTransactions InventoryTransaction[]
   stockAlerts           StockAlert[]
+
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  coupons            Coupon[]             @relation("CouponFreeItem")
 
   @@unique([locationId, sku])
   // @@index([locationId]) — removed: redundant with compound indexes below
@@ -1613,6 +1650,10 @@ model Modifier {
   // Inventory link (Skill 115)
   inventoryLink ModifierInventoryLink?
 
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  ingredientSwaps    OrderItemIngredient[] @relation("IngredientSwapModifier")
+
   @@index([locationId])
   @@index([modifierGroupId])
   @@index([childModifierGroupId])
@@ -1751,9 +1792,14 @@ model Section {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  tables            Table[]
+  tables            Table[]              @relation("TableSection")
   assignments       SectionAssignment[]
   floorPlanElements FloorPlanElement[]
+
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  defaultForTables   Table[]              @relation("TableDefaultSection")
+  scheduledShifts    ScheduledShift[]      @relation("ScheduledShiftSection")
 
   @@index([locationId])
 }
@@ -1787,7 +1833,7 @@ model Table {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
   sectionId  String?
-  section    Section? @relation(fields: [sectionId], references: [id])
+  section    Section? @relation("TableSection", fields: [sectionId], references: [id])
 
   name         String // "Table 1", "Bar 3", "Patio A"
   abbreviation String? // Short display name for floor plan: "T1", "B3", "PA"
@@ -1817,6 +1863,7 @@ model Table {
   defaultPosX      Int? // Admin-defined default X position
   defaultPosY      Int? // Admin-defined default Y position
   defaultSectionId String? // Admin-defined default section
+  defaultSection   Section? @relation("TableDefaultSection", fields: [defaultSectionId], references: [id])
 
   // Locked items (T019) - bolted down furniture that cannot be moved
   isLocked Boolean @default(false)
@@ -1840,6 +1887,10 @@ model Table {
   entertainmentWaitlist EntertainmentWaitlist[]
 
   // @@index([locationId]) — removed: redundant with compound indexes below
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  errorLogs          ErrorLog[]           @relation("ErrorLogTable")
+
   @@index([sectionId])
   // @@index([status]) — removed: redundant with @@index([locationId, status]) (all queries include locationId)
   @@index([locationId, status])
@@ -1892,6 +1943,7 @@ model FloorPlanElement {
   // Status (for entertainment)
   status           FloorPlanElementStatus @default(available)
   currentOrderId   String? // Active order using this element
+  currentOrder     Order?  @relation("FloorPlanCurrentOrder", fields: [currentOrderId], references: [id])
   sessionStartedAt DateTime?
   sessionExpiresAt DateTime?
 
@@ -2093,6 +2145,7 @@ model Order {
   preAuthExpiresAt DateTime? // When the hold expires
   preAuthRecordNo  String? // Datacap RecordNo token for capture/increment
   preAuthReaderId  String? // Which reader did the pre-auth
+  preAuthReader    PaymentReader? @relation("OrderPreAuthReader", fields: [preAuthReaderId], references: [id])
 
   // Bottle Service (Phase 10)
   isBottleService           Boolean            @default(false)
@@ -2163,6 +2216,18 @@ model Order {
   // Only enforces uniqueness on root orders — split orders share parent's orderNumber.
 
   // @@index([locationId]) — removed: redundant with compound indexes below
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  menuItemsInUse      MenuItem[]             @relation("MenuItemCurrentOrder")
+  floorPlanElements    FloorPlanElement[]     @relation("FloorPlanCurrentOrder")
+  tipLedgerEntries     TipLedgerEntry[]       @relation("TipLedgerOrder")
+  tipTransactions      TipTransaction[]       @relation("TipTransactionOrder")
+  tickets              Ticket[]               @relation("TicketOrder")
+  invTransactions      InventoryTransaction[] @relation("InvTxnOrder")
+  printJobs            PrintJob[]             @relation("PrintJobOrder")
+  chargebackCases      ChargebackCase[]       @relation("ChargebackOrder")
+  errorLogs            ErrorLog[]             @relation("ErrorLogOrder")
+
   @@index([employeeId])
   @@index([tableId])
   @@index([customerId])
@@ -2291,6 +2356,13 @@ model OrderItem {
 
   // Item-level discounts (P2-D01)
   itemDiscounts OrderItemDiscount[]
+
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  menuItemCurrentUse  MenuItem[]             @relation("MenuItemCurrentOrderItem")
+  voidLogs            VoidLog[]              @relation("VoidLogItem")
+  remoteVoidApprovals RemoteVoidApproval[]   @relation("RemoteVoidItem")
+  seatCurrentItems    Seat[]                 @relation("SeatCurrentItem")
 
   @@index([locationId])
   @@index([orderId])
@@ -2452,6 +2524,14 @@ model Payment {
   tipDebts        TipDebt[]        @relation("TipDebtSourcePayment")
   digitalReceipts DigitalReceipt[]
 
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  tipTransactions    TipTransaction[]     @relation("TipTransactionPayment")
+  tickets            Ticket[]             @relation("TicketPayment")
+  chargebackCases    ChargebackCase[]     @relation("ChargebackPayment")
+  errorLogs          ErrorLog[]           @relation("ErrorLogPayment")
+  syncAuditEntries   SyncAuditEntry[]     @relation("SyncAuditPayment")
+
   @@index([orderId])
   @@index([processedAt])
   @@index([employeeId])
@@ -2476,9 +2556,12 @@ model SyncAuditEntry {
   orderId      String
   order        Order   @relation(fields: [orderId], references: [id])
   paymentId    String? // If payment was created
+  payment      Payment? @relation("SyncAuditPayment", fields: [paymentId], references: [id])
   terminalId   String
+  terminal     Terminal @relation("SyncAuditTerminal", fields: [terminalId], references: [id])
   terminalName String
   employeeId   String?
+  employee     Employee? @relation("SyncAuditEmployee", fields: [employeeId], references: [id])
 
   // Amount
   amount Decimal
@@ -2529,6 +2612,7 @@ model Coupon {
   discountType  String // 'percent' | 'fixed' | 'free_item'
   discountValue Decimal // Percent or dollar amount
   freeItemId    String? // If discountType is 'free_item'
+  freeItem      MenuItem? @relation("CouponFreeItem", fields: [freeItemId], references: [id])
 
   // Restrictions
   minimumOrder    Decimal? // Minimum order total
@@ -2753,6 +2837,7 @@ model UpsellConfig {
   triggerItemId     String?
   triggerItem       MenuItem? @relation("TriggerItem", fields: [triggerItemId], references: [id])
   triggerCategoryId String?
+  triggerCategory   Category? @relation("UpsellTriggerCategory", fields: [triggerCategoryId], references: [id])
   triggerCondition  Json?
 
   // Suggestion
@@ -2760,6 +2845,7 @@ model UpsellConfig {
   suggestionItemId     String?
   suggestionItem       MenuItem? @relation("SuggestionItem", fields: [suggestionItemId], references: [id])
   suggestionCategoryId String?
+  suggestionCategory   Category? @relation("UpsellSuggestionCategory", fields: [suggestionCategoryId], references: [id])
 
   // Display
   promptText  String
@@ -2831,6 +2917,7 @@ model VoidLog {
 
   voidType VoidType
   itemId   String? // If item void
+  item     OrderItem? @relation("VoidLogItem", fields: [itemId], references: [id])
   amount   Decimal
   reason   String
   wasMade  Boolean  @default(false) // Was the item already made? For waste/loss tracking
@@ -2871,6 +2958,7 @@ model RemoteVoidApproval {
   orderId       String
   order         Order    @relation(fields: [orderId], references: [id])
   orderItemId   String? // If voiding specific item
+  orderItem     OrderItem? @relation("RemoteVoidItem", fields: [orderItemId], references: [id])
   requestedById String
   requestedBy   Employee @relation("VoidRequester", fields: [requestedById], references: [id])
   voidReason    String
@@ -2902,6 +2990,7 @@ model RemoteVoidApproval {
 
   // Terminal tracking for socket notifications
   requestingTerminalId String?
+  requestingTerminal   Terminal? @relation("RemoteVoidTerminal", fields: [requestingTerminalId], references: [id])
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2923,6 +3012,7 @@ model RemoteVoidApproval {
 model AuditLog {
   id         String    @id @default(cuid())
   locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   employeeId String?
   employee   Employee? @relation(fields: [employeeId], references: [id])
 
@@ -3124,7 +3214,9 @@ model TipLedgerEntry {
   memo           String?
   adjustmentId   String?
   shiftId        String?
+  shift          Shift?   @relation("TipLedgerShift", fields: [shiftId], references: [id])
   orderId        String?
+  order          Order?   @relation("TipLedgerOrder", fields: [orderId], references: [id])
   idempotencyKey String?            @unique // Skill 274: dedup guard (e.g. "tip-ledger:{orderId}:{paymentId}:{employeeId}")
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
@@ -3146,14 +3238,19 @@ model TipTransaction {
   locationId        String
   location          Location                 @relation(fields: [locationId], references: [id])
   orderId           String
+  order             Order    @relation("TipTransactionOrder", fields: [orderId], references: [id])
   paymentId         String?
+  payment           Payment? @relation("TipTransactionPayment", fields: [paymentId], references: [id])
   tipGroupId        String?
+  tipGroup          TipGroup? @relation("TipTransactionGroup", fields: [tipGroupId], references: [id])
   segmentId         String?
+  segment           TipGroupSegment? @relation(fields: [segmentId], references: [id])
   amountCents       Decimal                  @db.Decimal(10, 2)
   sourceType        TipTransactionSourceType
   kind              String                   @default("tip") // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
   collectedAt       DateTime
   primaryEmployeeId String?
+  primaryEmployee   Employee? @relation("TipTransactionEmployee", fields: [primaryEmployeeId], references: [id])
   ccFeeAmountCents  Decimal                  @default(0) @db.Decimal(10, 2)
   idempotencyKey    String?                  @unique // Skill 274: dedup guard (e.g. "tip-txn:{orderId}:{paymentId}")
   createdAt         DateTime                 @default(now())
@@ -3204,6 +3301,7 @@ model TipGroup {
   ownerId           String // Current owner (for approvals)
   owner             Employee          @relation("TipGroupOwner", fields: [ownerId], references: [id])
   registerId        String? // Terminal/register
+  register          Terminal? @relation("TipGroupRegister", fields: [registerId], references: [id])
   templateId        String? // Links to admin-defined TipGroupTemplate (null = ad-hoc group)
   template          TipGroupTemplate? @relation(fields: [templateId], references: [id])
   startedAt         DateTime          @default(now())
@@ -3220,6 +3318,10 @@ model TipGroup {
 
   // C-SCHEMA-1: Added reverse relations
   clockEntries TimeClockEntry[] @relation("ClockEntryTipGroup")
+
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  tipTransactions    TipTransaction[]     @relation("TipTransactionGroup")
 
   @@index([locationId])
   @@index([status])
@@ -3267,6 +3369,10 @@ model TipGroupSegment {
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
   syncedAt    DateTime?
+
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  tipTransactions    TipTransaction[]
 
   @@index([groupId])
   @@index([startedAt])
@@ -3668,6 +3774,7 @@ model Seat {
   // Status tracking
   status             SeatStatus @default(available)
   currentOrderItemId String? // Currently active order item at this seat
+  currentOrderItem   OrderItem? @relation("SeatCurrentItem", fields: [currentOrderItemId], references: [id])
 
   // Historical tracking
   lastOccupiedAt DateTime? // When seat was last occupied
@@ -3873,7 +3980,9 @@ model Ticket {
   purchasedAt     DateTime?
   purchaseChannel String? // pos, online, phone, comp
   orderId         String? // Link to POS Order for F&B
+  order           Order?  @relation("TicketOrder", fields: [orderId], references: [id])
   paymentId       String? // Payment reference
+  payment         Payment? @relation("TicketPayment", fields: [paymentId], references: [id])
 
   // Check-in
   checkedInAt DateTime?
@@ -3963,7 +4072,9 @@ model InventoryTransaction {
 
   // Reference
   orderId       String? // If from a sale
+  order         Order?   @relation("InvTxnOrder", fields: [orderId], references: [id])
   employeeId    String? // Who made the change
+  employee      Employee? @relation("InvTxnEmployee", fields: [employeeId], references: [id])
   vendorName    String? // If purchase
   invoiceNumber String? // If purchase
   reason        String? // For adjustments/waste
@@ -4365,8 +4476,11 @@ model InventoryCount {
 
   // Who did it
   startedById   String?
+  startedBy     Employee? @relation("InvCountStartedBy", fields: [startedById], references: [id])
   completedById String?
+  completedBy   Employee? @relation("InvCountCompletedBy", fields: [completedById], references: [id])
   reviewedById  String?
+  reviewedBy    Employee? @relation("InvCountReviewedBy", fields: [reviewedById], references: [id])
 
   // Totals
   expectedValue Decimal?
@@ -4448,6 +4562,7 @@ model InventoryItemTransaction {
 
   // Who did it
   employeeId String?
+  employee   Employee? @relation("InvItemTxnEmployee", fields: [employeeId], references: [id])
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -5343,6 +5458,7 @@ model OrderItemIngredient {
 
   // For swaps - what was it replaced with?
   swappedToModifierId   String?
+  swappedToModifier     Modifier? @relation("IngredientSwapModifier", fields: [swappedToModifierId], references: [id])
   swappedToModifierName String?
 
   createdAt DateTime @default(now())
@@ -5660,6 +5776,12 @@ model Terminal {
   // C-SCHEMA-1: Reverse relations
   processedPayments Payment[] @relation("PaymentTerminal")
 
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  remoteVoidApprovals RemoteVoidApproval[] @relation("RemoteVoidTerminal")
+  tipGroupRegisters   TipGroup[]           @relation("TipGroupRegister")
+  syncAuditEntries    SyncAuditEntry[]     @relation("SyncAuditTerminal")
+
   @@unique([locationId, name])
   @@index([locationId])
   @@index([category])
@@ -5768,6 +5890,10 @@ model PaymentReader {
   processedPayments Payment[]   @relation("PaymentReaderPayments")
   orderCards        OrderCard[] @relation("OrderCardReader")
 
+
+  // C-SCHEMA-1: Reverse relations (batch 2)
+  preAuthOrders      Order[]              @relation("OrderPreAuthReader")
+
   @@unique([locationId, name])
   @@index([locationId])
   @@index([isActive])
@@ -5870,6 +5996,7 @@ model PrintRoute {
   categoryIds Json? // Array of category IDs this route handles
   itemTypes   Json? // Array of item types (food, liquor, etc.)
   stationId   String? // Specific station
+  station     PrepStation? @relation(fields: [stationId], references: [id])
 
   // Target printer
   printerId String?
@@ -5900,6 +6027,7 @@ model PrintJob {
 
   jobType   String // "kitchen_ticket" | "receipt" | "reference"
   orderId   String?
+  order     Order? @relation("PrintJobOrder", fields: [orderId], references: [id])
   printerId String
   printer   Printer @relation(fields: [printerId], references: [id])
 
@@ -6452,7 +6580,7 @@ model ScheduledShift {
   scheduleId String
   schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee @relation("ScheduledShiftEmployee", fields: [employeeId], references: [id])
 
   // Shift timing
   date      DateTime // Date of the shift
@@ -6468,6 +6596,7 @@ model ScheduledShift {
 
   // Section assignment (if applicable)
   sectionId String?
+  section   Section? @relation("ScheduledShiftSection", fields: [sectionId], references: [id])
 
   // Status tracking
   status ScheduledShiftStatus @default(scheduled)
@@ -6479,6 +6608,7 @@ model ScheduledShift {
 
   // Trade/swap tracking
   originalEmployeeId String? // If swapped, who was originally scheduled
+  originalEmployee   Employee? @relation("ScheduledShiftOriginal", fields: [originalEmployeeId], references: [id])
   swappedAt          DateTime?
   swapApprovedBy     String? // Manager who approved swap
 
@@ -6867,7 +6997,9 @@ model ChargebackCase {
 
   // Auto-matched order/payment (if found)
   orderId   String?
+  order     Order?   @relation("ChargebackOrder", fields: [orderId], references: [id])
   paymentId String?
+  payment   Payment? @relation("ChargebackPayment", fields: [paymentId], references: [id])
 
   // Card info for matching
   cardLast4 String
@@ -6929,6 +7061,7 @@ model CardProfile {
 
   // Link to Customer record (future: merge via phone number)
   customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -7052,9 +7185,13 @@ model ErrorLog {
 
   // Business Context (CRITICAL PATH)
   orderId    String? // Link to order if order-related
+  order      Order?    @relation("ErrorLogOrder", fields: [orderId], references: [id])
   tableId    String? // Link to table if applicable
+  table      Table?    @relation("ErrorLogTable", fields: [tableId], references: [id])
   paymentId  String? // Link to payment if payment-related
+  payment    Payment?  @relation("ErrorLogPayment", fields: [paymentId], references: [id])
   customerId String? // Link to customer if applicable
+  customer   Customer? @relation("ErrorLogCustomer", fields: [customerId], references: [id])
 
   // Technical Context
   userAgent    String? // Browser user agent
@@ -7115,6 +7252,7 @@ model PerformanceLog {
   stackTrace String? // Where was this called from
   path       String? // URL or code path
   employeeId String?
+  employee   Employee? @relation("PerformanceLogEmployee", fields: [employeeId], references: [id])
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
