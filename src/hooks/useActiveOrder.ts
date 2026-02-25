@@ -1208,7 +1208,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
                   version: getOrderVersion(),
                 }),
               })
-              if (!appendRes.ok) throw new Error('Failed to save items')
+              if (!appendRes.ok) {
+                const errBody = await appendRes.json().catch(() => ({}))
+                throw new Error(errBody.error || `Failed to save items (${appendRes.status})`)
+              }
               const rawAppend = await appendRes.json()
               const result = rawAppend.data ?? rawAppend
               itemIdMap = new Map<string, string>()
@@ -1261,7 +1264,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             .catch(err => {
               completePaymentTiming(timing, 'error')
               console.error('[useActiveOrder] Background send failed:', err)
-              toast.error('Send failed — tap Send again to retry')
+              const msg = err instanceof Error ? err.message : 'Send failed'
+              toast.error(msg.length > 100 ? 'Send failed — tap Send again to retry' : msg)
               // Revert optimistic marks on failure so items appear unsent again
               const s = useOrderStore.getState()
               for (const item of immediateItems) {

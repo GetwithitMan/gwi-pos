@@ -614,6 +614,7 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    return apiError.internalError('Failed to add items to order', ERROR_CODES.INTERNAL_ERROR)
+    const detail = process.env.NODE_ENV !== 'production' && error instanceof Error ? `: ${error.message}` : ''
+    return apiError.internalError(`Failed to add items to order${detail}`, ERROR_CODES.INTERNAL_ERROR)
   }
 })
