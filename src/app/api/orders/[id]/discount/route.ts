@@ -81,6 +81,62 @@ export const POST = withVenue(async function POST(
         )
       }
 
+      // Toggle behavior: if this rule is already applied, remove it instead of stacking
+      const alreadyApplied = order.discounts.find(d => d.discountRuleId === rule.id)
+      if (alreadyApplied) {
+        // Soft delete the existing discount
+        await db.orderDiscount.update({
+          where: { id: alreadyApplied.id },
+          data: { deletedAt: new Date() },
+        })
+
+        // Recalculate order totals without this discount
+        const newDiscountTotal = order.discounts
+          .filter(d => d.id !== alreadyApplied.id)
+          .reduce((sum, d) => sum + Number(d.amount), 0)
+
+        const totals = calculateOrderTotals(
+          Number(order.subtotal),
+          newDiscountTotal,
+          order.location.settings as { tax?: { defaultRate?: number } }
+        )
+
+        await db.order.update({
+          where: { id: orderId },
+          data: {
+            discountTotal: totals.discountTotal,
+            taxTotal: totals.taxTotal,
+            total: totals.total,
+            version: { increment: 1 },
+          },
+        })
+
+        // Socket dispatches for cross-terminal sync
+        void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          tipTotal: Number(order.tipTotal),
+          discountTotal: totals.discountTotal,
+          total: totals.total,
+          commissionTotal: Number(order.commissionTotal || 0),
+        }, { async: true }).catch(() => {})
+        void dispatchOpenOrdersChanged(order.locationId, {
+          trigger: 'created',
+          orderId,
+        }, { async: true }).catch(() => {})
+
+        return NextResponse.json({ data: {
+          toggled: 'off',
+          removedDiscountId: alreadyApplied.id,
+          orderTotals: {
+            subtotal: totals.subtotal,
+            discountTotal: totals.discountTotal,
+            taxTotal: totals.taxTotal,
+            total: totals.total,
+          },
+        } })
+      }
+
       // Check max per order
       if (rule.maxPerOrder) {
         const existingCount = order.discounts.filter(

@@ -183,6 +183,14 @@ export function DiscountModal({
       const rawResult = await response.json()
       const result = rawResult.data ?? rawResult
 
+      // Server toggled the discount OFF (was already applied)
+      if (result.toggled === 'off') {
+        onDiscountApplied(result.orderTotals)
+        toast.success('Discount removed')
+        onClose()
+        return
+      }
+
       if (isItemDiscount) {
         // Per-item endpoint returns { discount, newItemTotal, newOrderTotal }
         // Signal parent to refresh order data
@@ -190,6 +198,7 @@ export function DiscountModal({
       } else {
         onDiscountApplied(result.orderTotals)
       }
+      toast.success('Discount applied')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply discount')
