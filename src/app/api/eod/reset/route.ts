@@ -238,6 +238,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
+    const requestingEmployeeId = searchParams.get('employeeId') || searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
       return NextResponse.json(
@@ -245,6 +246,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require manager.close_day permission
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MGR_CLOSE_DAY)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Check for items that would be reset
     const occupiedTablesWithoutOrders = await db.table.count({

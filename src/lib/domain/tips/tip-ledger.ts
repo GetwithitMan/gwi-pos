@@ -99,7 +99,7 @@ export async function getOrCreateLedger(
 
   // Try to find existing ledger
   const existing = await client.tipLedger.findUnique({
-    where: { employeeId },
+    where: { locationId_employeeId: { locationId, employeeId } },
     select: { id: true, currentBalanceCents: true },
   })
 
@@ -288,7 +288,7 @@ export async function postToTipLedger(
 export async function getLedgerBalance(
   employeeId: string
 ): Promise<LedgerBalance | null> {
-  const ledger = await db.tipLedger.findUnique({
+  const ledger = await db.tipLedger.findFirst({
     where: { employeeId },
     select: {
       id: true,
@@ -367,7 +367,7 @@ export async function getLedgerEntries(
 export async function recalculateBalance(
   employeeId: string
 ): Promise<{ calculatedCents: number; cachedCents: number; fixed: boolean }> {
-  const ledger = await db.tipLedger.findUnique({
+  const ledger = await db.tipLedger.findFirst({
     where: { employeeId },
     select: { id: true, currentBalanceCents: true },
   })

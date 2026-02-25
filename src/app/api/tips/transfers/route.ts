@@ -125,7 +125,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const result = await db.$transaction(async (tx) => {
       // Check balance under transaction lock (prevents race condition)
-      const fromLedger = await tx.tipLedger.findUnique({
+      const fromLedger = await tx.tipLedger.findFirst({
         where: { employeeId: fromEmployeeId },
         select: { currentBalanceCents: true },
       })

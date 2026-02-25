@@ -121,6 +121,7 @@ const getCourseColor = (courseNumber: number): string => {
   return COURSE_COLORS[courseNumber] || '#6B7280'
 }
 
+// TODO: KDSContent is ~900 lines. Consider extracting KDSOrderCard, KDSHeader, KDSItemRow into separate components.
 function KDSContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -763,13 +764,7 @@ function KDSContent() {
                             ? 'bg-green-900/20'
                             : 'hover:bg-gray-750 cursor-pointer'
                         }`}
-                        onClick={() => {
-                          if (item.isCompleted) {
-                            handleUncompleteItem(item.id)
-                          } else {
-                            handleBumpItem(item.id)
-                          }
-                        }}
+                        onClick={() => item.isCompleted ? handleUncompleteItem(item.id) : handleBumpItem(item.id)}
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1">

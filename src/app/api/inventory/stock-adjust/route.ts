@@ -137,9 +137,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Get current ingredient with cost data
-    const ingredient = await db.ingredient.findUnique({
-      where: { id: ingredientId },
+    // Get current ingredient with cost data (scoped to location)
+    const ingredient = await db.ingredient.findFirst({
+      where: { id: ingredientId, locationId, deletedAt: null },
       select: {
         id: true,
         locationId: true,
@@ -346,7 +346,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     // Batch-fetch all ingredients BEFORE the loop to avoid N+1 queries
     const ingredientIds = adjustments.map((adj: { ingredientId: string }) => adj.ingredientId)
     const ingredientsList = await db.ingredient.findMany({
-      where: { id: { in: ingredientIds } },
+      where: { id: { in: ingredientIds }, locationId, deletedAt: null },
       select: {
         id: true,
         locationId: true,

@@ -54,6 +54,7 @@ export function CategoryModal({
   const [description, setDescription] = useState(category?.description || '')
   const [isActive, setIsActive] = useState(category?.isActive ?? true)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const hasBottles = category && category.bottleCount > 0
 
@@ -61,8 +62,14 @@ export function CategoryModal({
     e.preventDefault()
     if (!name.trim()) return
     setSaving(true)
-    await onSave({ name, categoryType, displayName: displayName || undefined, description: description || undefined, isActive })
-    setSaving(false)
+    setSaveError(null)
+    try {
+      await onSave({ name, categoryType, displayName: displayName || undefined, description: description || undefined, isActive })
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save category')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -140,6 +147,11 @@ export function CategoryModal({
               <span>Active</span>
             </label>
           </div>
+          {saveError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {saveError}
+            </div>
+          )}
           <div className="flex justify-between pt-4 border-t">
             <div>
               {onDelete && (

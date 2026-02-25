@@ -321,18 +321,20 @@ export default function ManagerDashboardPage() {
       setAlerts(prev => [newAlert, ...prev].slice(0, 50))
     }
 
+    const onConnect = () => refreshRef.current()
+
     socket.on('orders:list-changed', debouncedRefresh)
     socket.on('order:totals-updated', debouncedRefresh)
     socket.on('employee:clock-changed', debouncedRefresh)
     socket.on('location:alert', onAlert)
-    socket.on('connect', () => refreshRef.current())
+    socket.on('connect', onConnect)
 
     return () => {
       socket.off('orders:list-changed', debouncedRefresh)
       socket.off('order:totals-updated', debouncedRefresh)
       socket.off('employee:clock-changed', debouncedRefresh)
       socket.off('location:alert', onAlert)
-      socket.off('connect')
+      socket.off('connect', onConnect)
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
       releaseSharedSocket()
     }

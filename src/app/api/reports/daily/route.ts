@@ -63,15 +63,21 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.order.findMany({
         where: {
           locationId,
+          deletedAt: null,
           status: { in: ['completed', 'closed', 'paid'] },
           OR: [
             { businessDayDate: { gte: startOfDay, lte: endOfDay } },
             { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
           ],
         },
+        take: 10000,
         include: {
           items: {
+            where: { deletedAt: null },
             include: {
+              modifiers: {
+                select: { price: true },
+              },
               menuItem: {
                 select: {
                   category: { select: { id: true } },
@@ -109,14 +115,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.order.findMany({
         where: {
           locationId,
+          deletedAt: null,
           status: 'voided',
           OR: [
             { businessDayDate: { gte: startOfDay, lte: endOfDay } },
             { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
           ],
         },
+        take: 10000,
         include: {
           items: {
+            where: { deletedAt: null },
             include: {
               menuItem: {
                 select: {
@@ -133,6 +142,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           locationId,
           createdAt: { gte: startOfDay, lte: endOfDay },
         },
+        take: 10000,
       }),
       // Time clock entries for labor
       db.timeClockEntry.findMany({
@@ -140,6 +150,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           locationId,
           clockIn: { gte: startOfDay, lte: endOfDay },
         },
+        take: 10000,
         include: {
           employee: {
             select: {
@@ -155,6 +166,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           locationId,
           createdAt: { gte: startOfDay, lte: endOfDay },
         },
+        take: 10000,
       }),
       // Gift card transactions
       db.giftCardTransaction.findMany({
@@ -162,6 +174,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           locationId,
           createdAt: { gte: startOfDay, lte: endOfDay },
         },
+        take: 10000,
       }),
       // Tips BANKED today (Skill 273)
       db.tipLedgerEntry.findMany({
@@ -172,6 +185,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           deletedAt: null,
           createdAt: { gte: startOfDay, lte: endOfDay },
         },
+        take: 10000,
         include: {
           employee: {
             select: {
@@ -192,6 +206,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           deletedAt: null,
           createdAt: { gte: startOfDay, lte: endOfDay },
         },
+        take: 10000,
         include: {
           employee: {
             select: {
@@ -211,6 +226,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           deletedAt: null,
           createdAt: { gte: startOfDay, lte: endOfDay },
         },
+        take: 10000,
         include: {
           employee: {
             select: {
@@ -224,7 +240,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
       // Categories for grouping
       db.category.findMany({
-        where: { locationId },
+        where: { locationId, deletedAt: null },
         select: { id: true, name: true, categoryType: true },
       }),
     ])
@@ -335,7 +351,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       // Track by category + weight-based sales
       order.items.forEach(item => {
-        const itemTotal = Number(item.price) * item.quantity
+        const itemBaseTotal = Number(item.price) * item.quantity
+        // Include modifier prices in category sales (modifiers are revenue for their parent item's category)
+        const modifierTotal = (item.modifiers || []).reduce(
+          (sum: number, mod: { price: any }) => sum + (Number(mod.price) || 0), 0
+        )
+        const itemTotal = itemBaseTotal + modifierTotal
         const categoryId = item.menuItem?.category?.id
 
         if (categoryId && salesByCategory[categoryId]) {

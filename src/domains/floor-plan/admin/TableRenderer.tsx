@@ -12,6 +12,9 @@ import { FloorCanvasAPI } from '../canvas';
 import type { EditorTable, EditorSeat, TableShape } from './types';
 import { SeatRenderer } from './SeatRenderer';
 
+// Stable empty Set to avoid re-renders from default parameter recreation
+const EMPTY_SET = new Set<string>();
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -255,7 +258,7 @@ export function TableRenderer({
   highlightedSeatId = null,
   onSeatClick,
   onSeatDoubleClick,
-  seatsWithItems = new Set(),
+  seatsWithItems = EMPTY_SET,
   onRotateStart,
   onResizeStart,
 }: TableRendererProps) {

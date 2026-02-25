@@ -230,6 +230,18 @@ export const PUT = withVenue(async function PUT(
           )
         }
 
+        // Cap tip-outs so they never exceed gross tips (prevents negative net tips).
+        // If rules produce a higher total, scale proportionally so the ratio is preserved.
+        if (actualTipOutTotal > serverGrossTips && serverGrossTips > 0) {
+          console.warn(
+            `[Shift ${id}] Tip-out total $${actualTipOutTotal.toFixed(2)} exceeds gross tips $${serverGrossTips.toFixed(2)} — capping to gross tips`
+          )
+          actualTipOutTotal = Math.round(serverGrossTips * 100) / 100
+        } else if (serverGrossTips <= 0) {
+          // No tips earned — zero out tip-outs to prevent negative net
+          actualTipOutTotal = 0
+        }
+
         // Server-side netTips = gross - tipOuts (never trust client values)
         const serverNetTips = Math.round((serverGrossTips - actualTipOutTotal) * 100) / 100
 

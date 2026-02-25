@@ -11,6 +11,8 @@ import {
   generateApprovalToken,
   isTwilioConfigured,
 } from '@/lib/twilio'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { createRateLimiter } from '@/lib/rate-limiter'
 
@@ -53,6 +55,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { error: 'Missing required fields' },
         { status: 400 }
       )
+    }
+
+    // Permission check — requester must have void items permission
+    const auth = await requirePermission(requestedById, locationId, PERMISSIONS.MGR_VOID_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Fetch the order to get order number

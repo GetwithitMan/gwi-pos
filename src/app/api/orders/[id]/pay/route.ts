@@ -586,7 +586,7 @@ export const POST = withVenue(withTiming(async function POST(
 
         // The client already sends the rounded amount (e.g. $3.25 from $3.29).
         // To compute the adjustment, compare against the raw remaining balance.
-        const rawRemaining = remaining - alreadyPaidInLoop
+        const rawRemaining = roundToCents(remaining - alreadyPaidInLoop)
         if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
           const rounded = applyPriceRounding(rawRemaining, settings.priceRounding, 'cash')
           roundingAdjustment = Math.round((rounded - rawRemaining) * 100) / 100
@@ -1256,11 +1256,14 @@ export const POST = withVenue(withTiming(async function POST(
       // Fire-and-forget to not block payment response
       // Skill 277: kind defaults to 'tip' (voluntary gratuity). Future callers
       // (e.g. bottle service auto-gratuity) should pass 'auto_gratuity' or 'service_charge'.
-      if (totalTips > 0 && order.employeeId) {
+      // Resolve tip owner: order's assigned employee, or the processing employee as fallback.
+      // Without fallback, tips on unassigned orders (e.g. walk-up kiosk) would be silently dropped.
+      const tipOwnerEmployeeId = order.employeeId || employeeId
+      if (totalTips > 0 && tipOwnerEmployeeId) {
         allocateTipsForPayment({
           locationId: order.locationId,
           orderId,
-          primaryEmployeeId: order.employeeId,
+          primaryEmployeeId: tipOwnerEmployeeId,
           createdPayments,
           totalTipsDollars: totalTips,
           tipBankSettings: settings.tipBank,

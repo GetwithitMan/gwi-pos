@@ -11,7 +11,14 @@ export default function IngredientsPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/ingredients' })
 
   if (!hydrated || !employee?.location?.id) {
-    return null
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-6xl mx-auto mt-6 space-y-4">
+          <div className="h-8 w-48 bg-gray-200 rounded animate-pulse" />
+          <div className="h-64 bg-gray-200 rounded-lg animate-pulse" />
+        </div>
+      </div>
+    )
   }
 
   return (

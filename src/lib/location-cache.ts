@@ -72,7 +72,17 @@ const locationIdCache = new Map<string, { id: string | null; timestamp: number }
  */
 export async function getLocationId(): Promise<string | null> {
   const now = Date.now()
-  const cacheKey = getRequestSlug() || '__default__'
+  const cacheKey = getRequestSlug()
+
+  // Without a venue slug, we can't safely cache — different venues could share the same
+  // serverless process. Always go to DB for unscoped requests.
+  if (!cacheKey) {
+    const location = await db.location.findFirst({
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    })
+    return location?.id ?? null
+  }
 
   const cached = locationIdCache.get(cacheKey)
   if (cached && cached.id && (now - cached.timestamp) < CACHE_TTL) {

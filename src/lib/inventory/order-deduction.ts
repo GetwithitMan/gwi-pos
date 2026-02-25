@@ -635,40 +635,43 @@ export async function deductInventoryForOrder(
       return { success: true, itemsDeducted: 0, totalCost: 0 }
     }
 
-    // Build transaction array for atomic operation
-    const operations = usageItems.flatMap(item => {
-      const totalCost = item.quantity * item.costPerUnit
-      const newStock = item.currentStock - item.quantity
+    // Execute all deductions atomically in an interactive transaction.
+    // Read currentStock INSIDE the transaction (after decrement) for accurate snapshots.
+    await db.$transaction(async (tx) => {
+      for (const item of usageItems) {
+        const totalCost = item.quantity * item.costPerUnit
 
-      return [
-        // Decrement stock
-        db.inventoryItem.update({
+        // Decrement stock first
+        const updated = await tx.inventoryItem.update({
           where: { id: item.inventoryItemId },
           data: {
             currentStock: { decrement: item.quantity },
           },
-        }),
-        // Create transaction record
-        db.inventoryItemTransaction.create({
+          select: { currentStock: true },
+        })
+
+        // Post-decrement stock is the authoritative "after" value
+        const quantityAfter = toNumber(updated.currentStock)
+        const quantityBefore = quantityAfter + item.quantity
+
+        // Create transaction record with accurate snapshot
+        await tx.inventoryItemTransaction.create({
           data: {
             locationId: order.locationId,
             inventoryItemId: item.inventoryItemId,
             type: 'sale',
-            quantityBefore: item.currentStock,
+            quantityBefore,
             quantityChange: -item.quantity,
-            quantityAfter: newStock,
+            quantityAfter,
             unitCost: item.costPerUnit,
             totalCost,
             reason: `Order #${order.orderNumber}`,
             referenceType: 'order',
             referenceId: orderId,
           },
-        }),
-      ]
+        })
+      }
     })
-
-    // Execute all operations atomically
-    await db.$transaction(operations)
 
     const totalCost = usageItems.reduce((sum, item) => sum + item.quantity * item.costPerUnit, 0)
 

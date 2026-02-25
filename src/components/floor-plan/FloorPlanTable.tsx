@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FloorPlanTable as TableType, FloorPlanSeat } from './use-floor-plan'
 import { SeatInfo, determineSeatStatus, SEAT_STATUS_COLORS } from '@/lib/seat-utils'
@@ -89,22 +89,24 @@ export function FloorPlanTable({
   const statusStyles = getStatusStyles()
 
   // Build seat info from table seats for orbital display
-  const seatInfoList: SeatInfo[] = (table.seats || []).map((seat: FloorPlanSeat) => {
-    const orderItems = table.currentOrder?.items || []
-    const seatItems = orderItems.filter((item: any) => item.seatNumber === seat.seatNumber)
-    const subtotal = seatItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0)
-    const taxAmount = subtotal * 0.0825
-    const seatTotal = subtotal + taxAmount
+  const seatInfoList = useMemo<SeatInfo[]>(() => {
+    return (table.seats || []).map((seat: FloorPlanSeat) => {
+      const orderItems = table.currentOrder?.items || []
+      const seatItems = orderItems.filter((item: any) => item.seatNumber === seat.seatNumber)
+      const subtotal = seatItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0)
+      const taxAmount = subtotal * 0.0825
+      const seatTotal = subtotal + taxAmount
 
-    return {
-      seatNumber: seat.seatNumber,
-      status: mode === 'admin' ? 'empty' : determineSeatStatus(seatItems, seat.seatNumber),
-      subtotal,
-      taxAmount,
-      total: seatTotal,
-      itemCount: seatItems.length,
-    }
-  })
+      return {
+        seatNumber: seat.seatNumber,
+        status: mode === 'admin' ? 'empty' : determineSeatStatus(seatItems, seat.seatNumber),
+        subtotal,
+        taxAmount,
+        total: seatTotal,
+        itemCount: seatItems.length,
+      }
+    })
+  }, [table.seats, table.currentOrder?.items, mode])
 
   return (
     <div className="relative w-full h-full group">
@@ -220,7 +222,7 @@ interface OrbitalSeatsProps {
   onSeatPositionChange?: (seatIndex: number, relativeX: number, relativeY: number) => void
 }
 
-function OrbitalSeats({
+const OrbitalSeats = memo(function OrbitalSeats({
   seats,
   seatInfo,
   tableWidth,
@@ -516,4 +518,4 @@ function OrbitalSeats({
       )}
     </div>
   )
-}
+})

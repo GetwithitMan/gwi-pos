@@ -639,7 +639,7 @@ model Shift {
   // Cash tip declarations (Skill 259)
   cashTipDeclarations CashTipDeclaration[]
 
-  @@index([locationId])
+  // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([employeeId])
   @@index([startedAt])
   @@index([timeClockEntryId])
@@ -805,6 +805,7 @@ model Category {
 
   // Printer routing - printers for items in this category
   // JSON array of printer IDs, e.g., ["printer-1", "printer-2"]
+  // TODO: JSON array cannot enforce FK constraints on Printer. Consider migrating to a relation table (CategoryPrinter) for referential integrity.
   printerIds Json?
 
   // Tag-based routing (Routing Engine) - inherited by items in this category
@@ -822,7 +823,7 @@ model Category {
   // Print routing rules for this category
   printRules PrintRule[]
 
-  @@index([locationId])
+  // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([prepStationId])
   @@index([sortOrder])
   @@index([categoryType])
@@ -868,6 +869,7 @@ model MenuItem {
 
   // Printer routing - override category's printers for this item
   // JSON array of printer IDs, e.g., ["printer-1", "printer-2"]
+  // TODO: JSON array cannot enforce FK constraints on Printer. Consider migrating to a relation table for referential integrity.
   printerIds       Json?
   backupPrinterIds Json? // Backup printers if primary fails
 
@@ -981,7 +983,7 @@ model MenuItem {
   floorPlanElements FloorPlanElement[]
 
   @@unique([locationId, sku])
-  @@index([locationId])
+  // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([categoryId])
   @@index([prepStationId])
   @@index([isActive, showOnPOS])
@@ -1128,6 +1130,7 @@ model Modifier {
   //                 "also" = prints with main item AND to printerIds
   //                 "only" = prints ONLY to printerIds (not with main item)
   printerRouting String @default("follow")
+  // TODO: JSON array cannot enforce FK constraints on Printer. Consider migrating to a relation table for referential integrity.
   printerIds     Json?  // Array of printer IDs when routing is "also" or "only"
 
   createdAt DateTime @default(now())
@@ -1268,6 +1271,7 @@ model Section {
   coordinates Json? // For polygon: [{x, y}, {x, y}, ...]
 
   // Floor plan dimensions in feet (for editor grid snapping)
+  // Float is acceptable here — display coordinates, no financial precision needed
   widthFeet    Float  @default(40)   // Room width in feet
   heightFeet   Float  @default(30)   // Room height in feet
   gridSizeFeet Float  @default(0.25) // Grid snap size in feet (0.25 = 3 inch)
@@ -1369,9 +1373,9 @@ model Table {
   sourceTableOrderItems  OrderItem[] @relation("SourceTableOrderItems") // Items ordered from this table (virtual combine T-S notation)
   entertainmentWaitlist  EntertainmentWaitlist[]
 
-  @@index([locationId])
+  // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([sectionId])
-  @@index([status])
+  // @@index([status]) — removed: redundant with @@index([locationId, status]) (all queries include locationId)
   @@index([locationId, status])
   @@index([locationId, isActive, deletedAt])
   @@index([locationId, sectionId])
@@ -1411,6 +1415,7 @@ model FloorPlanElement {
   // Or: { "type": "rectangle", "x": 0, "y": 0, "width": 5, "height": 3 }
   // Or: { "type": "circle", "x": 5, "y": 5, "radius": 2 }
   geometry    Json?
+  // Float is acceptable for thickness/opacity — display values, no financial precision needed
   thickness   Float   @default(0.5) // Wall thickness in feet
 
   // Visual customization
@@ -1674,11 +1679,11 @@ model Order {
   refundLogs    RefundLog[]
   itemDiscounts OrderItemDiscount[]
 
-  @@index([locationId])
+  // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([employeeId])
   @@index([tableId])
   @@index([customerId])
-  @@index([status])
+  // @@index([status]) — removed: redundant with @@index([locationId, status]) (all queries include locationId)
   @@index([openedAt])
   @@index([orderNumber, locationId])
   @@index([orderType])
@@ -1953,7 +1958,7 @@ model Payment {
   // Refund logs (P2-P02)
   refundLogs   RefundLog[]
 
-  @@index([locationId])
+  // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([orderId])
   @@index([processedAt])
   @@index([employeeId])
@@ -1997,12 +2002,13 @@ model SyncAuditEntry {
   cardLast4 String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Sync fields
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  @@index([locationId])
+  // @@index([locationId]) — redundant with @@index([locationId, idempotencyKey])
   @@index([orderId])
   @@index([paymentId])
   @@index([terminalId])
@@ -2061,10 +2067,11 @@ model Coupon {
   redemptions CouponRedemption[]
 
   @@unique([locationId, code])
-  @@index([locationId])
+  // @@index([locationId]) — redundant with compound indexes below
   @@index([code])
   @@index([isActive])
   @@index([locationId, isActive, validUntil])
+  @@index([locationId, code]) // Coupon lookup by code per location
 }
 
 model CouponRedemption {
@@ -2149,7 +2156,7 @@ model Reservation {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  @@index([locationId])
+  // @@index([locationId]) — removed: redundant with @@index([locationId, reservationDate, status])
   @@index([reservationDate])
   @@index([status])
   @@index([tableId])
@@ -2591,7 +2598,7 @@ model TipLedger {
   id                  String   @id @default(cuid())
   locationId          String
   location            Location @relation(fields: [locationId], references: [id])
-  employeeId          String   @unique
+  employeeId          String
   employee            Employee @relation(fields: [employeeId], references: [id])
   currentBalanceCents Int      @default(0)
   createdAt           DateTime @default(now())
@@ -2600,7 +2607,7 @@ model TipLedger {
   syncedAt            DateTime?
   entries             TipLedgerEntry[]
 
-  @@index([locationId])
+  @@unique([locationId, employeeId]) // One ledger per employee per location (was: employeeId @unique globally)
   @@index([employeeId])
 }
 
@@ -2631,6 +2638,8 @@ model TipLedgerEntry {
   @@index([sourceType])
   @@index([shiftId])
   @@index([createdAt])
+  @@index([locationId, sourceType, createdAt]) // Reports: tip-outs by type + date range
+  @@index([locationId, employeeId, createdAt]) // Employee tip history lookups
 }
 
 model TipTransaction {
@@ -2919,9 +2928,11 @@ model GiftCard {
 
   transactions GiftCardTransaction[]
 
-  @@index([locationId])
+  // @@index([locationId]) — redundant with compound indexes below
   @@index([cardNumber])
   @@index([status])
+  @@index([locationId, cardNumber]) // Gift card lookup by number per location
+  @@index([locationId, status])     // Active gift cards per location
 }
 
 model GiftCardTransaction {
@@ -3005,8 +3016,9 @@ model HouseAccount {
   transactions HouseAccountTransaction[]
 
   @@unique([locationId, name])
-  @@index([locationId])
+  // @@index([locationId]) — redundant with @@unique([locationId, name]) and compound below
   @@index([status])
+  @@index([locationId, status]) // Active house accounts per location
 }
 
 model HouseAccountTransaction {
@@ -3673,6 +3685,9 @@ model PrepItem {
   storageNotes   String?
 
   // Daily Prep Count configuration
+  // NOTE: These fields are NOT redundant with DailyPrepCountTransaction.
+  // currentPrepStock/lastCountedAt = live running balance (read frequently).
+  // DailyPrepCountTransaction = audit trail (append-only log).
   isDailyCountItem  Boolean  @default(false)  // Can this item be counted daily?
   currentPrepStock  Decimal  @default(0)      // Current prepared quantity on hand
   lastCountedAt     DateTime?                 // When was this last counted?
@@ -3914,11 +3929,12 @@ model InventoryItemTransaction {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  @@index([locationId])
+  // @@index([locationId]) — redundant with compound index below
   @@index([inventoryItemId])
   @@index([type])
   @@index([createdAt])
   @@index([inventoryItemId, createdAt])
+  @@index([locationId, type, createdAt]) // Liquor report: transactions by type + date range
 }
 
 // Vendor management
@@ -5401,6 +5417,7 @@ model PizzaConfig {
   allowModeSwitch    Boolean @default(true) // Can servers switch between modes?
 
   // Printer routing - multiple printers supported
+  // TODO: JSON array cannot enforce FK constraints on Printer. Consider migrating to a relation table for referential integrity.
   printerIds Json? // Array of printer IDs: ["printer-id-1", "printer-id-2"]
 
   // Pizza-specific print settings (JSON object conforming to PizzaPrintSettings)
@@ -6321,12 +6338,13 @@ model ChargebackCase {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  @@index([locationId])
+  // @@index([locationId]) — redundant with compound index below
   @@index([orderId])
   @@index([paymentId])
   @@index([cardLast4])
   @@index([status])
   @@index([chargebackDate])
+  @@index([locationId, status, chargebackDate]) // Chargeback dashboard: open chargebacks by date
 }
 
 // ============================================
@@ -6505,7 +6523,7 @@ model ErrorLog {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  @@index([locationId])
+  // @@index([locationId]) — redundant with compound indexes below
   @@index([locationId, severity])
   @@index([severity])
   @@index([errorType])
@@ -6515,6 +6533,8 @@ model ErrorLog {
   @@index([employeeId])
   @@index([orderId])
   @@index([category])
+  @@index([locationId, status, createdAt]) // Error monitoring: open errors by date
+  @@index([locationId, category, createdAt]) // Error reports by category
 }
 
 model PerformanceLog {

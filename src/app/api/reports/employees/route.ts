@@ -44,6 +44,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employees = await db.employee.findMany({
       where: {
         locationId,
+        deletedAt: null,
         isActive: true,
         ...(employeeId ? { id: employeeId } : {}),
       },
@@ -56,6 +57,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
+        deletedAt: null,
         status: { in: ['completed', 'paid'] },
         ...orderDateFilter,
         ...(employeeId ? { employeeId } : {}),

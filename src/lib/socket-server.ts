@@ -532,14 +532,17 @@ export async function emitToRoom(room: string, event: string, data: unknown): Pr
  * Tags are location-scoped: tag:{locationId}:{tagName}
  */
 export async function emitToTags(tags: string[], event: string, data: unknown, locationId?: string): Promise<boolean> {
+  // Build location-scoped room names: tag:{locationId}:{tagName}
+  const rooms = tags.map(tag => locationId ? `tag:${locationId}:${tag}` : `tag:${tag}`)
+
   if (globalForSocket.socketServer) {
-    tags.forEach((tag) => {
-      const room = locationId ? `tag:${locationId}:${tag}` : `tag:${tag}`
+    rooms.forEach((room) => {
       globalForSocket.socketServer!.to(room).emit(event, data)
     })
     return true
   }
-  return emitViaIPC({ type: 'tags', target: tags, event, data })
+  // IPC path: send pre-scoped room names so the remote ws-server uses correct rooms
+  return emitViaIPC({ type: 'tags', target: rooms, event, data })
 }
 
 /**

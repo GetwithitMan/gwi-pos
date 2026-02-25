@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
   // Enable strict mode for better error catching
   reactStrictMode: true,
 
+  // Prevent source code from being exposed in production browser bundles
+  productionBrowserSourceMaps: false,
+
   // Inject app version from package.json at build time
   env: {
     NEXT_PUBLIC_APP_VERSION: require('./package.json').version,

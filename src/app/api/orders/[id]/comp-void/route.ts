@@ -717,17 +717,75 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
-    // Restore the item
-    await db.orderItem.update({
-      where: { id: itemId },
-      data: {
-        status: 'active',
-        voidReason: null,
-      },
+    // Wrap item restore + order total recalculation in a single transaction for atomicity.
+    // Without this, a concurrent payment or void could see inconsistent state between
+    // the item status change and the order total update.
+    const { totals } = await db.$transaction(async (tx) => {
+      // 1. Restore the item
+      await tx.orderItem.update({
+        where: { id: itemId },
+        data: {
+          status: 'active',
+          voidReason: null,
+        },
+      })
+
+      // 2. Recalculate order totals
+      // H-FIN-7: Include isTaxInclusive to handle tax-inclusive pricing correctly
+      const activeItems = await tx.orderItem.findMany({
+        where: {
+          orderId,
+          status: 'active',
+        },
+        include: { modifiers: true },
+      })
+
+      let restoreInclusiveSubtotal = 0
+      let restoreExclusiveSubtotal = 0
+      activeItems.forEach(activeItem => {
+        const mods = activeItem.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
+        const total = (Number(activeItem.price) + mods) * activeItem.quantity
+        if ((activeItem as any).isTaxInclusive) {
+          restoreInclusiveSubtotal += total
+        } else {
+          restoreExclusiveSubtotal += total
+        }
+      })
+      restoreInclusiveSubtotal = roundToCents(restoreInclusiveSubtotal)
+      restoreExclusiveSubtotal = roundToCents(restoreExclusiveSubtotal)
+      const newSubtotal = roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal)
+
+      // Recalculate percent-based discounts against new subtotal
+      const discountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
+
+      // H-FIN-7: Use split tax calculation for tax-inclusive pricing support
+      const restoreTaxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
+      const restoreSplitTax = calculateSplitTax(restoreInclusiveSubtotal, restoreExclusiveSubtotal, restoreTaxRate)
+      const restoreEffectiveDiscount = Math.min(discountTotal, newSubtotal)
+      const txTotals = {
+        subtotal: newSubtotal,
+        discountTotal: restoreEffectiveDiscount,
+        taxTotal: restoreSplitTax.totalTax,
+        total: roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal + restoreSplitTax.taxFromExclusive - restoreEffectiveDiscount),
+      }
+
+      // 3. Update order with recalculated totals
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          ...txTotals,
+          itemCount: activeItems.reduce((sum, i) => sum + i.quantity, 0),
+          ...(order.isBottleService ? { bottleServiceCurrentSpend: txTotals.subtotal } : {}),
+          version: { increment: 1 },
+        },
+      })
+
+      return { totals: txTotals }
     })
 
-    // Fire-and-forget: reverse any inventory deduction that occurred during the original void
-    // This creates positive adjustment transactions to undo the waste deductions
+    // Fire-and-forget side effects OUTSIDE the transaction
+
+    // Reverse any inventory deduction that occurred during the original void
     void restoreInventoryForRestoredItem(itemId, order.locationId).catch(err => {
       console.error('[Inventory] Failed to reverse deduction on item restore:', err)
     })
@@ -755,55 +813,6 @@ export const PUT = withVenue(async function PUT(
         console.error('[CompVoid] Failed to restore entertainment status:', err)
       })
     }
-
-    // Recalculate order totals
-    // H-FIN-7: Include isTaxInclusive to handle tax-inclusive pricing correctly
-    const activeItems = await db.orderItem.findMany({
-      where: {
-        orderId,
-        status: 'active',
-      },
-      include: { modifiers: true },
-    })
-
-    let restoreInclusiveSubtotal = 0
-    let restoreExclusiveSubtotal = 0
-    activeItems.forEach(activeItem => {
-      const mods = activeItem.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-      const total = (Number(activeItem.price) + mods) * activeItem.quantity
-      if ((activeItem as any).isTaxInclusive) {
-        restoreInclusiveSubtotal += total
-      } else {
-        restoreExclusiveSubtotal += total
-      }
-    })
-    restoreInclusiveSubtotal = roundToCents(restoreInclusiveSubtotal)
-    restoreExclusiveSubtotal = roundToCents(restoreExclusiveSubtotal)
-    const newSubtotal = roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal)
-
-    // Recalculate percent-based discounts against new subtotal
-    const discountTotal = await recalculatePercentDiscounts(db, orderId, newSubtotal)
-
-    // H-FIN-7: Use split tax calculation for tax-inclusive pricing support
-    const restoreTaxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
-    const restoreSplitTax = calculateSplitTax(restoreInclusiveSubtotal, restoreExclusiveSubtotal, restoreTaxRate)
-    const restoreEffectiveDiscount = Math.min(discountTotal, newSubtotal)
-    const totals = {
-      subtotal: newSubtotal,
-      discountTotal: restoreEffectiveDiscount,
-      taxTotal: restoreSplitTax.totalTax,
-      total: roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal + restoreSplitTax.taxFromExclusive - restoreEffectiveDiscount),
-    }
-
-    await db.order.update({
-      where: { id: orderId },
-      data: {
-        ...totals,
-        itemCount: activeItems.reduce((sum, i) => sum + i.quantity, 0),
-        ...(order.isBottleService ? { bottleServiceCurrentSpend: totals.subtotal } : {}),
-        version: { increment: 1 },
-      },
-    })
 
     return NextResponse.json({ data: {
       success: true,

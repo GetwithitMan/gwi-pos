@@ -22,6 +22,10 @@ const cache = new Map<string, MenuCacheEntry>()
 /** Cache TTL in milliseconds (15 seconds — short enough for cross-process changes from cloud admin to appear quickly on NUC) */
 const CACHE_TTL = 15 * 1000
 
+/** Maximum cache entries to prevent unbounded memory growth.
+ *  Each venue × filter combo = 1 entry. 100 covers ~20 venues × 5 filter combos. */
+const MAX_CACHE_ENTRIES = 100
+
 /**
  * Build a cache key from location + optional filter params
  */
@@ -47,10 +51,24 @@ export function getMenuCache(cacheKey: string): unknown | null {
 }
 
 /**
- * Store menu data in cache
+ * Store menu data in cache.
+ * Evicts the oldest entry if the cache exceeds MAX_CACHE_ENTRIES.
  */
 export function setMenuCache(cacheKey: string, data: unknown): void {
   cache.set(cacheKey, { data, timestamp: Date.now() })
+
+  // Evict oldest entries when cache exceeds max size
+  if (cache.size > MAX_CACHE_ENTRIES) {
+    let oldestKey: string | null = null
+    let oldestTime = Infinity
+    for (const [key, entry] of cache) {
+      if (entry.timestamp < oldestTime) {
+        oldestTime = entry.timestamp
+        oldestKey = key
+      }
+    }
+    if (oldestKey) cache.delete(oldestKey)
+  }
 }
 
 /**
