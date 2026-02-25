@@ -7,7 +7,7 @@
  *
  * Architectural notes:
  *   - Does NOT use withVenue() — public routes cannot rely on x-venue-slug
- *     header set by middleware.ts (which only runs on authenticated routes).
+ *     header set by proxy.ts (which only runs on authenticated routes).
  *     Instead we accept locationId in the POST body and use the db proxy
  *     which routes to the correct database via masterClient.
  *   - employeeId is required by the Order schema. We find or create a

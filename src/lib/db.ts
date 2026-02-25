@@ -160,7 +160,7 @@ const MAX_VENUE_CLIENTS = 50
  *
  * Resolution order:
  *   1. AsyncLocalStorage (set by server.ts on the NUC)
- *   2. Next.js headers() — reads x-venue-slug (set by middleware.ts on Vercel)
+ *   2. Next.js headers() — reads x-venue-slug (set by proxy.ts on Vercel)
  *   3. Master client (local dev, or NUC with DATABASE_URL already correct)
  *
  * On the NUC:
@@ -169,7 +169,7 @@ const MAX_VENUE_CLIENTS = 50
  *
  * On Vercel (cloud / subdomains):
  *   No custom server → Priority 1 is undefined → falls through to Priority 2.
- *   middleware.ts sets x-venue-slug → headers().get('x-venue-slug') returns slug.
+ *   proxy.ts sets x-venue-slug → headers().get('x-venue-slug') returns slug.
  */
 function resolveClient(): PrismaClient {
   // Priority 1: AsyncLocalStorage (NUC custom server)
@@ -205,7 +205,7 @@ function resolveClient(): PrismaClient {
  *   const items = await db.menuItem.findMany(...)
  *
  * Under the hood, the proxy routes to the correct venue database
- * based on the x-venue-slug header set by middleware.ts.
+ * based on the x-venue-slug header set by proxy.ts.
  */
 export const db: PrismaClient = new Proxy(masterClient, {
   get(_target, prop, receiver) {

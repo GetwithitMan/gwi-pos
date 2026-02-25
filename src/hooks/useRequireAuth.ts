@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
 
-/** Cloud venue parent domains (must match middleware.ts) */
+/** Cloud venue parent domains (must match proxy.ts) */
 const CLOUD_PARENT_DOMAINS = [
   '.ordercontrolcenter.com',
   '.barpos.restaurant',

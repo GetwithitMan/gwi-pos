@@ -5,7 +5,7 @@ import { verifyAccessToken } from '@/lib/access-gate'
 const GWI_ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
 
 /**
- * Multi-tenant middleware with cloud auth enforcement.
+ * Multi-tenant proxy with cloud auth enforcement.
  *
  * Two modes:
  *
@@ -99,7 +99,7 @@ function isCloudVenueHost(hostname: string): boolean {
  * These are customer-facing public pages — no auth cookies required.
  * We extract the slug from the path and pass it via x-venue-slug so that
  * the page component can call /api/public/resolve-order-code to get the
- * locationId without triggering the authenticated middleware flow.
+ * locationId without triggering the authenticated proxy flow.
  */
 const ONLINE_ORDER_PATH_RE = /^\/([A-Z0-9]{4,8})\/([a-z0-9-]+)(\/.*)?$/
 
@@ -110,7 +110,7 @@ const ONLINE_ORDER_PATH_RE = /^\/([A-Z0-9]{4,8})\/([a-z0-9-]+)(\/.*)?$/
  */
 const PUBLIC_API_PATH_RE = /^\/api\/(online|public)\//
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const host = request.headers.get('host') || ''
   const hostname = host.split(':')[0]
   const pathname = request.nextUrl.pathname

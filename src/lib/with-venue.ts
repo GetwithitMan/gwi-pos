@@ -5,7 +5,7 @@
  * automatically routes to the correct venue Neon database.
  *
  * How it works:
- *   1. Reads x-venue-slug from request headers (set by middleware.ts)
+ *   1. Reads x-venue-slug from request headers (set by proxy.ts)
  *   2. Resolves the correct PrismaClient via getDbForVenue(slug)
  *   3. Runs the handler inside AsyncLocalStorage.run({ slug, prisma })
  *   4. db.ts Proxy reads from AsyncLocalStorage on every DB call

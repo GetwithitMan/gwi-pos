@@ -14,7 +14,7 @@
  * Architectural note:
  *   This route does NOT use withVenue() because it is a public route.
  *   In the multi-tenant model, withVenue() reads x-venue-slug set by
- *   middleware.ts (which only runs on authenticated routes). Instead,
+ *   proxy.ts (which only runs on authenticated routes). Instead,
  *   we accept locationId directly in the query string and use the db
  *   proxy with the masterClient context — which works for local dev and
  *   single-tenant NUC deployments. The locationId filter provides

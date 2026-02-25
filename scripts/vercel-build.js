@@ -118,9 +118,12 @@ async function main() {
   // Run pre-push migrations before db push
   await runPrePushMigrations()
 
-  // Sync schema to Neon PostgreSQL (additive only — fails on destructive changes)
+  // Sync schema to Neon PostgreSQL
+  // --skip-generate: already ran above; --accept-data-loss is intentionally NOT set
+  // so destructive changes (dropping columns/tables) will fail the build instead
+  // of silently deleting production data.
   console.log('[vercel-build] Running prisma db push...')
-  execSync('npx prisma db push', { stdio: 'inherit' })
+  execSync('npx prisma db push --skip-generate', { stdio: 'inherit' })
 
   // Build Next.js
   console.log('[vercel-build] Running next build...')
