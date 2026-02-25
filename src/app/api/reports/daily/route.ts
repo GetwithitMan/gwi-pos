@@ -296,6 +296,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
+    // Weight-based sales tracking
+    let weightBasedRevenue = 0
+    let weightBasedItemCount = 0
+    const weightByUnit: Record<string, number> = {}
+
     // Process orders
     orders.forEach(order => {
       const orderSubtotal = Number(order.subtotal) || 0
@@ -328,7 +333,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       salesByOrderType[orderTypeName].gross += orderSubtotal + orderTax + orderSurcharge
       salesByOrderType[orderTypeName].net += orderSubtotal - orderDiscount
 
-      // Track by category
+      // Track by category + weight-based sales
       order.items.forEach(item => {
         const itemTotal = Number(item.price) * item.quantity
         const categoryId = item.menuItem?.category?.id
@@ -336,6 +341,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         if (categoryId && salesByCategory[categoryId]) {
           salesByCategory[categoryId].units += item.quantity
           salesByCategory[categoryId].gross += itemTotal
+        }
+
+        // Track weight-based items
+        if (item.soldByWeight && item.weight) {
+          weightBasedRevenue += Number(item.itemTotal)
+          weightBasedItemCount += item.quantity
+          const unit = item.weightUnit || 'lb'
+          weightByUnit[unit] = (weightByUnit[unit] || 0) + Number(item.weight) * item.quantity
         }
       })
 
@@ -900,6 +913,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         total: round(totalTipSharesDistributed),
         pendingPayroll: round(totalTipSharesDistributed),
       },
+
+      weightBasedSales: weightBasedItemCount > 0 ? {
+        revenue: round(weightBasedRevenue),
+        itemCount: weightBasedItemCount,
+        totalWeight: Object.entries(weightByUnit).map(([unit, weight]) => ({
+          unit,
+          weight: round(weight),
+        })),
+      } : null,
 
       stats: {
         checks: checkCount,

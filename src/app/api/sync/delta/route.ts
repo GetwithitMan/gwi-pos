@@ -42,7 +42,30 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.order.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { items: { include: { modifiers: true } } } }),
   ])
 
+  // Convert Decimal fields to numbers for Android clients
+  const mappedMenuItems = menuItems.map(item => ({
+    ...item,
+    price: item.price != null ? Number(item.price) : null,
+    cost: item.cost != null ? Number(item.cost) : null,
+    pricePerWeightUnit: item.pricePerWeightUnit != null ? Number(item.pricePerWeightUnit) : null,
+  }))
+
+  const mappedOrders = orders.map(order => ({
+    ...order,
+    subtotal: order.subtotal != null ? Number(order.subtotal) : null,
+    taxTotal: order.taxTotal != null ? Number(order.taxTotal) : null,
+    total: order.total != null ? Number(order.total) : null,
+    items: order.items.map(item => ({
+      ...item,
+      price: item.price != null ? Number(item.price) : null,
+      weight: item.weight != null ? Number(item.weight) : null,
+      unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+      grossWeight: item.grossWeight != null ? Number(item.grossWeight) : null,
+      tareWeight: item.tareWeight != null ? Number(item.tareWeight) : null,
+    })),
+  }))
+
   return NextResponse.json({
-    data: { menuItems, categories, employees, tables, orderTypes, orders, syncVersion: Date.now() },
+    data: { menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, syncVersion: Date.now() },
   })
 })

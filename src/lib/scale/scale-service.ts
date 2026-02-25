@@ -29,6 +29,14 @@ class ScaleService {
    */
   async initialize(): Promise<void> {
     if (this.initialized) return
+
+    // Scale service only runs on NUC (local server with serial ports)
+    // Skip on Vercel/cloud deployments where serial ports don't exist
+    if (process.env.VERCEL || process.env.NODE_ENV === 'test') {
+      console.log('[ScaleService] Skipping initialization (cloud/test environment)')
+      return
+    }
+
     this.initialized = true
 
     try {
@@ -44,7 +52,7 @@ class ScaleService {
         })
       }
     } catch (err) {
-      console.error('[ScaleService] Failed to load scales from DB:', err)
+      console.error('[ScaleService] Failed to load scales from DB — server continues without scales:', err)
     }
   }
 

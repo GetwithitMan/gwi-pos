@@ -163,6 +163,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       cost: number
       profit: number
       modifierRevenue: number
+      soldByWeight: boolean
+      totalWeight: number
+      weightUnit: string | null
       orderTypes: Record<string, number>
       hourlyDistribution: Record<number, number>
     }>()
@@ -182,6 +185,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const hour = item.order.paidAt ? new Date(item.order.paidAt).getHours() : 0
       const orderType = item.order.orderType || 'dine_in'
 
+      const isByWeight = item.soldByWeight === true
+      const itemWeight = isByWeight && item.weight ? Number(item.weight) * item.quantity : 0
+
       if (itemMap.has(key)) {
         const existing = itemMap.get(key)!
         existing.quantity += item.quantity
@@ -189,6 +195,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         existing.cost += itemCost
         existing.profit += (itemTotal - itemCost)
         existing.modifierRevenue += modifierTotal
+        if (isByWeight) existing.totalWeight += itemWeight
         existing.orderTypes[orderType] = (existing.orderTypes[orderType] || 0) + item.quantity
         existing.hourlyDistribution[hour] = (existing.hourlyDistribution[hour] || 0) + item.quantity
       } else {
@@ -202,6 +209,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           cost: itemCost,
           profit: itemTotal - itemCost,
           modifierRevenue: modifierTotal,
+          soldByWeight: isByWeight,
+          totalWeight: itemWeight,
+          weightUnit: isByWeight ? (item.weightUnit || 'lb') : null,
           orderTypes: { [orderType]: item.quantity },
           hourlyDistribution: { [hour]: item.quantity },
         })

@@ -1760,12 +1760,12 @@ export default function OrdersPage() {
     }
 
     // Handle weight-based items — open scale modal
-    if ((item as any).soldByWeight && (item as any).pricePerWeightUnit) {
+    if (item.soldByWeight && item.pricePerWeightUnit) {
       setWeightCaptureItem({
         id: item.id,
         name: item.name,
-        pricePerWeightUnit: Number((item as any).pricePerWeightUnit),
-        weightUnit: (item as any).weightUnit || 'lb',
+        pricePerWeightUnit: Number(item.pricePerWeightUnit),
+        weightUnit: item.weightUnit || 'lb',
       })
       setShowWeightModal(true)
       return

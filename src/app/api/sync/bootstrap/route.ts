@@ -59,9 +59,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   const settings = (location?.settings || {}) as Record<string, unknown>
   const taxRate = ((settings?.tax as Record<string, unknown>)?.defaultRate as number ?? 0) / 100
 
+  // Convert Decimal fields to numbers for Android clients
+  const mappedCategories = categories.map(cat => ({
+    ...cat,
+    menuItems: cat.menuItems.map(item => ({
+      ...item,
+      price: item.price != null ? Number(item.price) : null,
+      cost: item.cost != null ? Number(item.cost) : null,
+      pricePerWeightUnit: item.pricePerWeightUnit != null ? Number(item.pricePerWeightUnit) : null,
+    })),
+  }))
+
   return NextResponse.json({
     data: {
-      menu: { categories },
+      menu: { categories: mappedCategories },
       employees: employees.map(e => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, displayName: e.displayName, pin: e.pin, locationId: e.locationId, role: e.role })),
       tables,
       orderTypes,

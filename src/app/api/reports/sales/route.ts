@@ -122,7 +122,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const dailySales: Record<string, { date: string; orders: number; gross: number; net: number; tax: number; tips: number; guests: number }> = {}
     const hourlySales: Record<number, { hour: number; orders: number; gross: number }> = {}
     const categorySales: Record<string, { name: string; quantity: number; gross: number }> = {}
-    const itemSales: Record<string, { name: string; quantity: number; gross: number; category: string }> = {}
+    const itemSales: Record<string, { name: string; quantity: number; gross: number; category: string; soldByWeight: boolean; totalWeight: number; weightUnit: string | null }> = {}
     const employeeSales: Record<string, { name: string; orders: number; gross: number; tips: number; itemCount: number }> = {}
     const tableSales: Record<string, { name: string; orders: number; gross: number; guests: number; avgTicket: number; turnTime: number[]; avgTurnTimeMinutes?: number }> = {}
     const seatSales: Record<number, { seat: number; itemCount: number; gross: number }> = {}
@@ -245,11 +245,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         categorySales[categoryId].gross += itemTotal
 
         // Item sales
+        const isByWeight = item.soldByWeight === true
+        const itemWeight = isByWeight && item.weight ? Number(item.weight) * item.quantity : 0
         if (!itemSales[itemId]) {
-          itemSales[itemId] = { name: itemName, quantity: 0, gross: 0, category: categoryName }
+          itemSales[itemId] = { name: itemName, quantity: 0, gross: 0, category: categoryName, soldByWeight: isByWeight, totalWeight: 0, weightUnit: isByWeight ? (item.weightUnit || 'lb') : null }
         }
         itemSales[itemId].quantity += item.quantity
         itemSales[itemId].gross += itemTotal
+        if (isByWeight) itemSales[itemId].totalWeight += itemWeight
 
         // Seat sales
         if (item.seatNumber !== null && item.seatNumber !== undefined) {
@@ -312,7 +315,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       .sort((a, b) => b.gross - a.gross)
 
     const itemReport = Object.entries(itemSales)
-      .map(([id, data]) => ({ id, ...data, gross: Math.round(data.gross * 100) / 100 }))
+      .map(([id, data]) => ({
+        id,
+        ...data,
+        gross: Math.round(data.gross * 100) / 100,
+        totalWeight: Math.round(data.totalWeight * 100) / 100,
+      }))
       .sort((a, b) => b.gross - a.gross)
       .slice(0, 50) // Top 50 items
 

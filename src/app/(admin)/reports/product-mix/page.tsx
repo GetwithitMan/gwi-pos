@@ -21,6 +21,9 @@ interface ProductMixItem {
   quantityPercent: number
   profitMargin: number
   avgPrice: number
+  soldByWeight?: boolean
+  totalWeight?: number
+  weightUnit?: string | null
   orderTypes: Record<string, number>
   hourlyDistribution: Record<number, number>
 }
@@ -70,6 +73,13 @@ interface ReportData {
   }
 }
 
+function formatQty(item: ProductMixItem): string {
+  if (item.soldByWeight && item.totalWeight) {
+    return `${item.totalWeight.toFixed(1)} ${item.weightUnit || 'lb'}`
+  }
+  return String(item.quantity)
+}
+
 function exportProductMixCSV(report: ReportData) {
   const header = [
     'Item', 'Category', 'Quantity', 'Revenue', 'Cost',
@@ -80,7 +90,7 @@ function exportProductMixCSV(report: ReportData) {
     [
       `"${item.name}"`,
       `"${item.categoryName}"`,
-      item.quantity,
+      `"${formatQty(item)}"`,
       item.revenue.toFixed(2),
       item.cost.toFixed(2),
       item.profit.toFixed(2),
@@ -293,7 +303,7 @@ export default function ProductMixReportPage() {
                     <span className="text-gray-600">
                       {i + 1}. {item.name}
                     </span>
-                    <span className="font-semibold text-gray-900">{item.quantity}</span>
+                    <span className="font-semibold text-gray-900">{formatQty(item)}</span>
                   </div>
                 ))}
               </div>
@@ -319,7 +329,7 @@ export default function ProductMixReportPage() {
                     <span className="text-gray-600">
                       {i + 1}. {item.name}
                     </span>
-                    <span className="font-semibold text-red-600">{item.quantity}</span>
+                    <span className="font-semibold text-red-600">{formatQty(item)}</span>
                   </div>
                 ))}
               </div>
@@ -346,7 +356,7 @@ export default function ProductMixReportPage() {
                   <tr key={item.menuItemId} className="border-t border-gray-200">
                     <td className="p-4 font-medium text-gray-900">{item.name}</td>
                     <td className="p-4 text-gray-600">{item.categoryName}</td>
-                    <td className="p-4 text-right text-gray-900">{item.quantity}</td>
+                    <td className="p-4 text-right text-gray-900">{formatQty(item)}</td>
                     <td className="p-4 text-right text-gray-900">${item.revenue.toFixed(2)}</td>
                     <td className="p-4 text-right text-gray-900">${item.cost.toFixed(2)}</td>
                     <td className="p-4 text-right text-green-600 font-medium">${item.profit.toFixed(2)}</td>

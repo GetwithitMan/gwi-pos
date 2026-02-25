@@ -35,6 +35,8 @@ interface UseScaleReturn {
   grossNet: 'gross' | 'net'
   /** Scale is over its maximum capacity */
   overCapacity: boolean
+  /** Last weight reading received while in gross mode (used to compute tare weight) */
+  lastGrossWeight: number | null
   /** Send tare (zero) command to scale */
   tare: () => Promise<void>
   /** Capture current reading if stable; returns null if unstable or no reading */
@@ -52,6 +54,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
   const [connected, setConnected] = useState(false)
   const readingRef = useRef(reading)
   readingRef.current = reading
+  const lastGrossWeightRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!scaleId) return
@@ -70,6 +73,10 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
       overCapacity: boolean
     }) => {
       if (data.scaleId !== scaleId) return
+      // Track last gross weight for tare computation
+      if (data.grossNet === 'gross') {
+        lastGrossWeightRef.current = data.weight
+      }
       setReading({
         weight: data.weight,
         unit: data.unit,
@@ -145,6 +152,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
       connected: false,
       grossNet: 'gross',
       overCapacity: false,
+      lastGrossWeight: null,
       tare: async () => {},
       captureWeight: () => null,
     }
@@ -157,6 +165,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
     connected,
     grossNet: reading.grossNet,
     overCapacity: reading.overCapacity,
+    lastGrossWeight: lastGrossWeightRef.current,
     tare,
     captureWeight,
   }

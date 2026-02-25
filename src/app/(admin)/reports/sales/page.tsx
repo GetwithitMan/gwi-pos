@@ -28,7 +28,7 @@ interface SalesReport {
   byDay: { date: string; orders: number; gross: number; net: number; tax: number; tips: number }[]
   byHour: { hour: number; label: string; orders: number; gross: number }[]
   byCategory: { id: string; name: string; quantity: number; gross: number }[]
-  byItem: { id: string; name: string; quantity: number; gross: number; category: string }[]
+  byItem: { id: string; name: string; quantity: number; gross: number; category: string; soldByWeight?: boolean; totalWeight?: number; weightUnit?: string | null }[]
   byEmployee: { id: string; name: string; orders: number; gross: number }[]
 }
 
@@ -513,7 +513,11 @@ export default function SalesReportPage() {
                               <td className="px-4 py-3 text-gray-400">{index + 1}</td>
                               <td className="px-4 py-3 font-medium">{item.name}</td>
                               <td className="px-4 py-3 text-gray-500">{item.category}</td>
-                              <td className="px-4 py-3 text-right text-gray-600">{item.quantity}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">
+                                {item.soldByWeight && item.totalWeight
+                                  ? `${item.totalWeight.toFixed(1)} ${item.weightUnit || 'lb'}`
+                                  : item.quantity}
+                              </td>
                               <td className="px-4 py-3 text-right font-medium text-green-600">{formatCurrency(item.gross)}</td>
                             </tr>
                           ))}

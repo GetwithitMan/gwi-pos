@@ -33,7 +33,7 @@ export function WeightCaptureModal({
   scaleId,
   onConfirm,
 }: WeightCaptureModalProps) {
-  const { weight, unit, stable, connected, grossNet, overCapacity, tare } = useScale(scaleId)
+  const { weight, unit, stable, connected, grossNet, overCapacity, lastGrossWeight, tare } = useScale(scaleId)
   const [manualWeight, setManualWeight] = useState('')
 
   const effectiveWeight = weight ?? 0
@@ -63,9 +63,27 @@ export function WeightCaptureModal({
   const handleConfirm = useCallback(() => {
     if (canAddFromScale && !manualValue) {
       // Use scale reading
-      const grossWeight = grossNet === 'net' ? undefined : effectiveWeight
-      const tareWeight = grossNet === 'net' ? undefined : undefined // tare not exposed directly
-      onConfirm(effectiveWeight, unit, item.pricePerWeightUnit, grossWeight, tareWeight)
+      let grossWt: number | undefined
+      let tareWt: number | undefined
+      if (grossNet === 'net') {
+        // Scale is in net mode — tare was used
+        if (lastGrossWeight != null && lastGrossWeight > 0) {
+          // We saw gross readings before tare — compute exact values
+          tareWt = lastGrossWeight
+          grossWt = effectiveWeight + lastGrossWeight
+        } else {
+          // Scale was already in net mode (tared before modal opened).
+          // We know tare was used but don't have the exact container weight.
+          // Pass grossWeight = undefined, tareWeight = small positive signal
+          // so receipt/ticket "NET" label triggers (checks tareWeight > 0).
+          tareWt = 0.001
+          grossWt = undefined
+        }
+      } else {
+        // Gross mode — no tare, weight is the full gross weight
+        grossWt = effectiveWeight
+      }
+      onConfirm(effectiveWeight, unit, item.pricePerWeightUnit, grossWt, tareWt)
     } else if (canAddFromManual) {
       // Use manual entry
       onConfirm(manualValue, item.weightUnit, item.pricePerWeightUnit)
@@ -75,7 +93,7 @@ export function WeightCaptureModal({
     }
     setManualWeight('')
     onClose()
-  }, [canAddFromScale, canAddFromManual, effectiveWeight, manualValue, unit, grossNet, item, onConfirm, onClose])
+  }, [canAddFromScale, canAddFromManual, effectiveWeight, manualValue, unit, grossNet, lastGrossWeight, item, onConfirm, onClose])
 
   const handleClose = useCallback(() => {
     setManualWeight('')

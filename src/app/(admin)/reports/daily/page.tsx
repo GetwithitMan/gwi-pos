@@ -172,6 +172,12 @@ interface DailyReport {
     ccTipFeeTransactions: number
   }
 
+  weightBasedSales?: {
+    revenue: number
+    itemCount: number
+    totalWeight: { unit: string; weight: number }[]
+  } | null
+
   stats: {
     checks: number
     avgCheck: number
@@ -689,6 +695,33 @@ export default function DailyReportPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Weight-Based Sales */}
+            {report.weightBasedSales && (
+              <Card className="print:shadow-none print:border">
+                <CardHeader className="pb-2">
+                  <CardTitle>Weight-Based Sales</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-1 font-mono text-sm">
+                    <div className="flex justify-between">
+                      <span>Items Sold</span>
+                      <span>{report.weightBasedSales.itemCount}</span>
+                    </div>
+                    {report.weightBasedSales.totalWeight.map(tw => (
+                      <div key={tw.unit} className="flex justify-between">
+                        <span>Total Weight ({tw.unit})</span>
+                        <span>{tw.weight.toFixed(1)} {tw.unit}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between font-semibold border-t pt-1 mt-1">
+                      <span>Revenue</span>
+                      <span>{formatCurrency(report.weightBasedSales.revenue)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Stats */}
             <Card className="print:shadow-none print:border">
