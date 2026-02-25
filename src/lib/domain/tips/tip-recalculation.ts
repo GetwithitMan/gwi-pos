@@ -18,6 +18,7 @@
  * this module call postToTipLedger() sequentially outside of transactions.
  */
 
+import type { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { postToTipLedger } from './tip-ledger'
 
@@ -103,7 +104,7 @@ export async function performTipAdjustment(params: {
       createdById: managerId,
       reason,
       adjustmentType,
-      contextJson: context as Record<string, unknown>,
+      contextJson: context as unknown as Prisma.InputJsonValue,
       autoRecalcRan: false,
     },
   })
