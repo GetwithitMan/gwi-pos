@@ -502,7 +502,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Compute early so cashDue can use it
     const cashPayoutsToday = tipsCollectedToday
       .filter(e => e.sourceType === 'PAYOUT_CASH')
-      .reduce((sum, e) => sum + Math.abs(e.amountCents) / 100, 0)
+      .reduce((sum, e) => sum + Math.abs(Number(e.amountCents)) / 100, 0)
 
     let cashIn = 0
     let cashOut = 0
@@ -636,10 +636,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Migrated from legacy TipBank/TipShare (Skill 273)
     // Tips banked = credits into employee ledgers (amountCents → dollars)
-    const tipsBankedIn = tipsBankedToday.reduce((sum, entry) => sum + entry.amountCents / 100, 0)
+    const tipsBankedIn = tipsBankedToday.reduce((sum, entry) => sum + Number(entry.amountCents) / 100, 0)
 
     // Tips collected = debits out of employee ledgers (payouts). DEBIT amountCents are negative; use Math.abs.
-    const tipsCollectedOut = tipsCollectedToday.reduce((sum, entry) => sum + Math.abs(entry.amountCents) / 100, 0)
+    const tipsCollectedOut = tipsCollectedToday.reduce((sum, entry) => sum + Math.abs(Number(entry.amountCents)) / 100, 0)
 
     // Net tip bank change for the day
     const tipBankNetChange = tipsBankedIn - tipsCollectedOut
@@ -669,7 +669,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const giverId = entry.employee.id
       const giverName = entry.employee.displayName ||
         `${entry.employee.firstName} ${entry.employee.lastName}`
-      const amount = Math.abs(entry.amountCents) / 100
+      const amount = Math.abs(Number(entry.amountCents)) / 100
 
       if (!tipSharesByGiver[giverId]) {
         tipSharesByGiver[giverId] = {
@@ -702,7 +702,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Total distributed = sum of DEBIT amounts (what givers gave out). Use Math.abs since DEBITs are negative.
     const totalTipSharesDistributed = tipoutDebits.reduce(
-      (sum, entry) => sum + Math.abs(entry.amountCents) / 100, 0
+      (sum, entry) => sum + Math.abs(Number(entry.amountCents)) / 100, 0
     )
 
     // ============================================
@@ -956,7 +956,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
 
       businessCosts: {
-        ccTipFees: round((ccTipFees._sum.ccFeeAmountCents || 0) / 100),
+        ccTipFees: round(Number(ccTipFees._sum.ccFeeAmountCents || 0) / 100),
         ccTipFeeTransactions: ccTipFees._count || 0,
       },
     } })

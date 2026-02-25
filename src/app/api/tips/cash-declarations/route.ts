@@ -42,9 +42,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    if (typeof amountCents !== 'number' || !Number.isInteger(amountCents) || amountCents < 0) {
+    if (typeof amountCents !== 'number' || amountCents < 0) {
       return NextResponse.json(
-        { error: 'amountCents must be a non-negative integer' },
+        { error: 'amountCents must be a non-negative number' },
         { status: 400 }
       )
     }
@@ -115,7 +115,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
         _sum: { amountCents: true },
       })
-      const ledgerCashTipsCents = cashTipEntries._sum.amountCents || 0
+      const ledgerCashTipsCents = Number(cashTipEntries._sum.amountCents || 0)
 
       if (amountCents > ledgerCashTipsCents && ledgerCashTipsCents > 0) {
         if (!complianceWarnings) complianceWarnings = []
@@ -137,7 +137,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       declaration: {
         id: declaration.id,
         employeeId: declaration.employeeId,
-        amountCents: declaration.amountCents,
+        amountCents: Number(declaration.amountCents),
         shiftId: declaration.shiftId,
         source: declaration.source,
         declaredAt: declaration.declaredAt.toISOString(),
@@ -267,7 +267,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         id: d.id,
         employeeId: d.employeeId,
         shiftId: d.shiftId,
-        amountCents: d.amountCents,
+        amountCents: Number(d.amountCents),
         source: d.source,
         overrideReason: d.overrideReason,
         overrideBy: d.overrideBy,

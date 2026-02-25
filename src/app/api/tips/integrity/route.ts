@@ -102,8 +102,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         _sum: { amountCents: true },
       })
 
-      const calculatedCents = result._sum.amountCents || 0
-      const cachedCents = ledger.currentBalanceCents
+      const calculatedCents = Number(result._sum.amountCents || 0)
+      const cachedCents = Number(ledger.currentBalanceCents)
 
       if (calculatedCents !== cachedCents) {
         let fixed = false
@@ -158,8 +158,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         _sum: { tipAmount: true },
       })
 
-      const creditsCents = ledgerCredits._sum.amountCents || 0
-      const debitsCents = Math.abs(ledgerDebits._sum.amountCents || 0)
+      const creditsCents = Number(ledgerCredits._sum.amountCents || 0)
+      const debitsCents = Math.abs(Number(ledgerDebits._sum.amountCents || 0))
       const netCents = creditsCents - debitsCents
       // Payment tipAmount is in dollars (Decimal), convert to cents
       const paymentTipsCents = Math.round(
@@ -179,7 +179,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         _sum: { amountCents: true },
       })
 
-      const tipIncomeCents = tipIncomeCredits._sum.amountCents || 0
+      const tipIncomeCents = Number(tipIncomeCredits._sum.amountCents || 0)
       const differenceCents = Math.abs(tipIncomeCents - paymentTipsCents)
 
       // Allow 1 cent tolerance per payment (rounding)

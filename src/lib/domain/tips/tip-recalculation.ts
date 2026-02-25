@@ -132,7 +132,7 @@ export async function performTipAdjustment(params: {
       deltaEntries.push({
         employeeId: delta.employeeId,
         type,
-        amountCents: ledgerEntry.amountCents,
+        amountCents: Number(ledgerEntry.amountCents),
         ledgerEntryId: ledgerEntry.id,
       })
     }
@@ -220,7 +220,7 @@ export async function recalculateGroupAllocations(params: {
   const employeeDeltaMap = new Map<string, { previousCents: number; newCents: number }>()
 
   for (const txn of transactions) {
-    if (!txn.segmentId || txn.amountCents <= 0) continue
+    if (!txn.segmentId || Number(txn.amountCents) <= 0) continue
 
     const splitJson = segmentLookup.get(txn.segmentId)
     if (!splitJson) continue
@@ -229,7 +229,7 @@ export async function recalculateGroupAllocations(params: {
     if (memberIds.length === 0) continue
 
     // Calculate what each member SHOULD receive from this transaction
-    const expectedShares = calculateShares(txn.amountCents, splitJson, memberIds)
+    const expectedShares = calculateShares(Number(txn.amountCents), splitJson, memberIds)
 
     // Find what each member ACTUALLY received (existing CREDIT entries for this transaction)
     const existingEntries = await db.tipLedgerEntry.findMany({
@@ -245,7 +245,7 @@ export async function recalculateGroupAllocations(params: {
     const actualMap = new Map<string, number>()
     for (const entry of existingEntries) {
       const current = actualMap.get(entry.employeeId) || 0
-      actualMap.set(entry.employeeId, current + entry.amountCents)
+      actualMap.set(entry.employeeId, current + Number(entry.amountCents))
     }
 
     // Accumulate deltas per employee across all transactions
@@ -393,10 +393,10 @@ export async function recalculateOrderAllocations(params: {
   const employeeDeltaMap = new Map<string, { previousCents: number; newCents: number }>()
 
   for (const txn of transactions) {
-    if (txn.amountCents <= 0) continue
+    if (Number(txn.amountCents) <= 0) continue
 
     // Calculate expected shares based on current ownership
-    const expectedShares = calculateShares(txn.amountCents, ownerSplits, ownerIds)
+    const expectedShares = calculateShares(Number(txn.amountCents), ownerSplits, ownerIds)
 
     // Find what each employee ACTUALLY received for this transaction
     // Look for DIRECT_TIP entries linked to this order with sourceId matching the transaction
@@ -414,7 +414,7 @@ export async function recalculateOrderAllocations(params: {
     const actualMap = new Map<string, number>()
     for (const entry of existingEntries) {
       const current = actualMap.get(entry.employeeId) || 0
-      actualMap.set(entry.employeeId, current + entry.amountCents)
+      actualMap.set(entry.employeeId, current + Number(entry.amountCents))
     }
 
     // Accumulate deltas per employee across all transactions

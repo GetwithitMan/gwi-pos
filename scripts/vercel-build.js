@@ -218,6 +218,55 @@ async function runPrePushMigrations() {
     console.log('[vercel-build]   Done — partial unique index created (root orders only)')
   }
 
+  // --- H-SCHEMA-3: Convert tip-related Int fields to Decimal(10,2) ---
+  // Prisma db push with --accept-data-loss handles type changes, but we
+  // pre-convert to avoid any data truncation issues on tables with existing rows.
+  // Uses needsColumn-style checks and inline ALTER TABLE for each field
+  // (can't parameterize identifiers in the Neon SQL template).
+  async function isIntegerColumn(table, column) {
+    const [colInfo] = await sql`
+      SELECT data_type FROM information_schema.columns
+      WHERE table_name = ${table} AND column_name = ${column}
+    `
+    return colInfo && colInfo.data_type === 'integer'
+  }
+
+  if (await isIntegerColumn('TipLedger', 'currentBalanceCents')) {
+    console.log('[vercel-build]   Converting TipLedger.currentBalanceCents INT → DECIMAL(10,2)...')
+    await sql`ALTER TABLE "TipLedger" ALTER COLUMN "currentBalanceCents" TYPE DECIMAL(10,2)`
+    console.log('[vercel-build]   Done')
+  }
+  if (await isIntegerColumn('TipLedgerEntry', 'amountCents')) {
+    console.log('[vercel-build]   Converting TipLedgerEntry.amountCents INT → DECIMAL(10,2)...')
+    await sql`ALTER TABLE "TipLedgerEntry" ALTER COLUMN "amountCents" TYPE DECIMAL(10,2)`
+    console.log('[vercel-build]   Done')
+  }
+  if (await isIntegerColumn('TipTransaction', 'amountCents')) {
+    console.log('[vercel-build]   Converting TipTransaction.amountCents INT → DECIMAL(10,2)...')
+    await sql`ALTER TABLE "TipTransaction" ALTER COLUMN "amountCents" TYPE DECIMAL(10,2)`
+    console.log('[vercel-build]   Done')
+  }
+  if (await isIntegerColumn('TipTransaction', 'ccFeeAmountCents')) {
+    console.log('[vercel-build]   Converting TipTransaction.ccFeeAmountCents INT → DECIMAL(10,2)...')
+    await sql`ALTER TABLE "TipTransaction" ALTER COLUMN "ccFeeAmountCents" TYPE DECIMAL(10,2)`
+    console.log('[vercel-build]   Done')
+  }
+  if (await isIntegerColumn('TipDebt', 'originalAmountCents')) {
+    console.log('[vercel-build]   Converting TipDebt.originalAmountCents INT → DECIMAL(10,2)...')
+    await sql`ALTER TABLE "TipDebt" ALTER COLUMN "originalAmountCents" TYPE DECIMAL(10,2)`
+    console.log('[vercel-build]   Done')
+  }
+  if (await isIntegerColumn('TipDebt', 'remainingCents')) {
+    console.log('[vercel-build]   Converting TipDebt.remainingCents INT → DECIMAL(10,2)...')
+    await sql`ALTER TABLE "TipDebt" ALTER COLUMN "remainingCents" TYPE DECIMAL(10,2)`
+    console.log('[vercel-build]   Done')
+  }
+  if (await isIntegerColumn('CashTipDeclaration', 'amountCents')) {
+    console.log('[vercel-build]   Converting CashTipDeclaration.amountCents INT → DECIMAL(10,2)...')
+    await sql`ALTER TABLE "CashTipDeclaration" ALTER COLUMN "amountCents" TYPE DECIMAL(10,2)`
+    console.log('[vercel-build]   Done')
+  }
+
   console.log('[vercel-build] Pre-push migrations complete')
 }
 

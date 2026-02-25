@@ -3022,7 +3022,7 @@ model TipLedger {
   location            Location @relation(fields: [locationId], references: [id])
   employeeId          String
   employee            Employee @relation(fields: [employeeId], references: [id])
-  currentBalanceCents Int      @default(0)
+  currentBalanceCents Decimal  @default(0) @db.Decimal(10, 2)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   deletedAt           DateTime?
@@ -3042,7 +3042,7 @@ model TipLedgerEntry {
   employeeId    String
   employee      Employee  @relation(fields: [employeeId], references: [id])
   type          TipLedgerEntryType
-  amountCents   Int
+  amountCents   Decimal  @db.Decimal(10, 2)
   sourceType    String    // DIRECT_TIP, TIP_GROUP, ROLE_TIPOUT, MANUAL_TRANSFER, PAYOUT_CASH, PAYOUT_PAYROLL, CHARGEBACK, ADJUSTMENT
   sourceId      String?
   memo          String?
@@ -3073,12 +3073,12 @@ model TipTransaction {
   paymentId         String?
   tipGroupId        String?
   segmentId         String?
-  amountCents       Int
+  amountCents       Decimal  @db.Decimal(10, 2)
   sourceType        TipTransactionSourceType
   kind              String   @default("tip") // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
   collectedAt       DateTime
   primaryEmployeeId String?
-  ccFeeAmountCents  Int       @default(0)
+  ccFeeAmountCents  Decimal   @default(0) @db.Decimal(10, 2)
   idempotencyKey    String?   @unique // Skill 274: dedup guard (e.g. "tip-txn:{orderId}:{paymentId}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -3202,8 +3202,8 @@ model TipDebt {
   location            Location  @relation(fields: [locationId], references: [id])
   employeeId          String
   employee            Employee  @relation(fields: [employeeId], references: [id])
-  originalAmountCents Int       // What was owed at chargeback time
-  remainingCents      Int       // What's still outstanding
+  originalAmountCents Decimal   @db.Decimal(10, 2) // What was owed at chargeback time
+  remainingCents      Decimal   @db.Decimal(10, 2) // What's still outstanding
   sourcePaymentId     String    // The payment that triggered chargeback
   sourceType          String    @default("CHARGEBACK")
   memo                String?
@@ -3297,7 +3297,7 @@ model CashTipDeclaration {
   employee       Employee @relation(fields: [employeeId], references: [id])
   shiftId        String?
   shift          Shift?   @relation(fields: [shiftId], references: [id])
-  amountCents    Int
+  amountCents    Decimal  @db.Decimal(10, 2)
   declaredAt     DateTime @default(now())
   source         String   @default("employee") // 'employee' | 'manager_override'
   overrideReason String?

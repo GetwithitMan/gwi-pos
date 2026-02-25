@@ -161,16 +161,17 @@ export async function aggregatePayrollData(params: {
   const serviceChargeMap = new Map<string, number>()
   for (const txn of tipTransactions) {
     if (!txn.primaryEmployeeId) continue
+    const txnAmountCents = Number(txn.amountCents)
     if (txn.kind === 'service_charge' || txn.kind === 'auto_gratuity') {
       serviceChargeMap.set(
         txn.primaryEmployeeId,
-        (serviceChargeMap.get(txn.primaryEmployeeId) || 0) + txn.amountCents,
+        (serviceChargeMap.get(txn.primaryEmployeeId) || 0) + txnAmountCents,
       )
     } else {
       // 'tip' or null/undefined — treat as qualified tip
       qualifiedTipsMap.set(
         txn.primaryEmployeeId,
-        (qualifiedTipsMap.get(txn.primaryEmployeeId) || 0) + txn.amountCents,
+        (qualifiedTipsMap.get(txn.primaryEmployeeId) || 0) + txnAmountCents,
       )
     }
   }
@@ -223,7 +224,7 @@ export async function aggregatePayrollData(params: {
   const cashDeclaredMap = new Map<string, number>()
   for (const decl of cashDeclarations) {
     const current = cashDeclaredMap.get(decl.employeeId) || 0
-    cashDeclaredMap.set(decl.employeeId, current + decl.amountCents)
+    cashDeclaredMap.set(decl.employeeId, current + Number(decl.amountCents))
   }
 
   // Aggregate ledger entries by employee and source type
@@ -264,7 +265,7 @@ export async function aggregatePayrollData(params: {
 
   for (const entry of entries) {
     const bucket = getOrCreateBucket(entry.employeeId)
-    const amt = entry.amountCents // signed: positive = credit, negative = debit
+    const amt = Number(entry.amountCents) // signed: positive = credit, negative = debit
 
     // netTipsCents is the raw sum of all ledger entries for the period
     bucket.netTipsCents += amt

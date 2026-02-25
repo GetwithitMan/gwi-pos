@@ -129,7 +129,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: { employeeId: fromEmployeeId },
         select: { currentBalanceCents: true },
       })
-      const currentBalanceCents = fromLedger?.currentBalanceCents ?? 0
+      const currentBalanceCents = Number(fromLedger?.currentBalanceCents ?? 0)
 
       if (currentBalanceCents < amountCents) {
         return { ok: false as const, currentBalanceCents }

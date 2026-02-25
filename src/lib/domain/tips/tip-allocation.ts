@@ -216,7 +216,7 @@ export async function allocateTipsForOrder(params: {
       tipTransactionId: existingTxn.id,
       allocations: existingEntries.map(e => ({
         employeeId: e.employeeId,
-        amountCents: e.amountCents,
+        amountCents: Number(e.amountCents),
         sourceType: e.sourceType as 'DIRECT_TIP' | 'TIP_GROUP',
         ledgerEntryId: e.id,
       })),
@@ -357,11 +357,12 @@ export async function calculateGroupCheckout(params: {
   }> = []
 
   for (const entry of entries) {
+    const amt = Number(entry.amountCents)
     if (entry.sourceType === 'DIRECT_TIP') {
-      soloTipsCents += entry.amountCents
+      soloTipsCents += amt
     } else if (entry.sourceType === 'TIP_GROUP' && entry.sourceId) {
       groupEntries.push({
-        amountCents: entry.amountCents,
+        amountCents: amt,
         sourceId: entry.sourceId,
       })
     }

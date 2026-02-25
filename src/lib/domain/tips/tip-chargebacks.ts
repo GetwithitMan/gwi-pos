@@ -106,7 +106,7 @@ async function handleBusinessAbsorbs(
   return {
     policy: 'BUSINESS_ABSORBS',
     tipTransactionId: primaryTxn.id,
-    originalTipCents: primaryTxn.amountCents,
+    originalTipCents: Number(primaryTxn.amountCents),
     chargedBackCents: 0,
     flaggedForReviewCents: 0,
     tipDebtIds: [],
@@ -148,7 +148,7 @@ async function handleEmployeeChargeback(
   // ── Create a DEBIT for each CREDIT entry ──────────────────────────────
   for (const credit of creditEntries) {
     // The credit amountCents is stored as a positive signed value
-    const originalCreditCents = credit.amountCents
+    const originalCreditCents = Number(credit.amountCents)
 
     // Skip zero or negative entries (should not happen, but be safe)
     if (originalCreditCents <= 0) continue
@@ -221,7 +221,7 @@ async function handleEmployeeChargeback(
           (c) => c.employeeId === entry.employeeId
         )
         const totalOriginal = originalCredits.reduce(
-          (sum, c) => sum + c.amountCents,
+          (sum, c) => sum + Number(c.amountCents),
           0
         )
         const totalDebited = resultEntries
@@ -260,7 +260,7 @@ async function handleEmployeeChargeback(
   return {
     policy: 'EMPLOYEE_CHARGEBACK',
     tipTransactionId: primaryTxn.id,
-    originalTipCents: primaryTxn.amountCents,
+    originalTipCents: Number(primaryTxn.amountCents),
     chargedBackCents: totalChargedBack,
     flaggedForReviewCents: totalFlaggedForReview,
     tipDebtIds,
@@ -317,7 +317,7 @@ interface TipTransactionRecord {
   paymentId: string | null
   tipGroupId: string | null
   segmentId: string | null
-  amountCents: number
+  amountCents: number | { toNumber(): number } // Prisma Decimal or number
   sourceType: string
   collectedAt: Date
   primaryEmployeeId: string | null

@@ -94,11 +94,11 @@ export const GET = withVenue(async (request: NextRequest) => {
     })
 
     const tipBalances = tipLedgers
-      .filter(tl => tl.currentBalanceCents > 0)
+      .filter(tl => Number(tl.currentBalanceCents) > 0)
       .map(tl => ({
         employeeId: tl.employeeId,
         employee: tl.employee.displayName || `${tl.employee.firstName} ${tl.employee.lastName}`,
-        balance: tl.currentBalanceCents / 100,
+        balance: Number(tl.currentBalanceCents) / 100,
       }))
 
     const totalTipBalance = tipBalances.reduce((sum, tb) => sum + tb.balance, 0)

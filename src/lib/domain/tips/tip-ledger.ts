@@ -103,7 +103,7 @@ export async function getOrCreateLedger(
     select: { id: true, currentBalanceCents: true },
   })
 
-  if (existing) return existing
+  if (existing) return { id: existing.id, currentBalanceCents: Number(existing.currentBalanceCents) }
 
   // Create new ledger with zero balance
   const ledger = await client.tipLedger.create({
@@ -114,7 +114,7 @@ export async function getOrCreateLedger(
     select: { id: true, currentBalanceCents: true },
   })
 
-  return ledger
+  return { id: ledger.id, currentBalanceCents: Number(ledger.currentBalanceCents) }
 }
 
 /**
@@ -167,9 +167,9 @@ export async function postToTipLedger(
         ledgerId: existing.ledgerId,
         employeeId: existing.employeeId,
         type: existing.type as LedgerEntryType,
-        amountCents: existing.amountCents,
+        amountCents: Number(existing.amountCents),
         sourceType: existing.sourceType as LedgerSourceType,
-        newBalanceCents: ledger?.currentBalanceCents ?? 0,
+        newBalanceCents: Number(ledger?.currentBalanceCents ?? 0),
       }
     }
   }
@@ -225,7 +225,7 @@ export async function postToTipLedger(
       type,
       amountCents: signedAmount,
       sourceType: sourceType as LedgerSourceType,
-      newBalanceCents: updatedLedger.currentBalanceCents,
+      newBalanceCents: Number(updatedLedger.currentBalanceCents),
     }
   }
 
@@ -277,7 +277,7 @@ export async function postToTipLedger(
     type,
     amountCents: signedAmount,
     sourceType: sourceType as LedgerSourceType,
-    newBalanceCents: updatedLedger.currentBalanceCents,
+    newBalanceCents: Number(updatedLedger.currentBalanceCents),
   }
 }
 
@@ -301,7 +301,7 @@ export async function getLedgerBalance(
 
   return {
     employeeId: ledger.employeeId,
-    currentBalanceCents: ledger.currentBalanceCents,
+    currentBalanceCents: Number(ledger.currentBalanceCents),
     ledgerId: ledger.id,
   }
 }
@@ -354,7 +354,10 @@ export async function getLedgerEntries(
     db.tipLedgerEntry.count({ where }),
   ])
 
-  return { entries, total }
+  return {
+    entries: entries.map(e => ({ ...e, amountCents: Number(e.amountCents) })),
+    total,
+  }
 }
 
 /**
@@ -387,8 +390,8 @@ export async function recalculateBalance(
     },
   })
 
-  const calculatedCents = result._sum.amountCents || 0
-  const cachedCents = ledger.currentBalanceCents
+  const calculatedCents = Number(result._sum.amountCents || 0)
+  const cachedCents = Number(ledger.currentBalanceCents)
 
   if (calculatedCents !== cachedCents) {
     // Fix the drift
@@ -440,10 +443,11 @@ async function autoReclaimTipDebts(params: {
   for (const debt of openDebts) {
     if (remainingCredit <= 0) break
 
-    const reclaimCents = Math.min(remainingCredit, debt.remainingCents)
+    const debtRemaining = Number(debt.remainingCents)
+    const reclaimCents = Math.min(remainingCredit, debtRemaining)
     if (reclaimCents <= 0) continue
 
-    const newRemaining = debt.remainingCents - reclaimCents
+    const newRemaining = debtRemaining - reclaimCents
     const isFullyRecovered = newRemaining <= 0
 
     // Post a DEBIT entry to reclaim from the employee's ledger

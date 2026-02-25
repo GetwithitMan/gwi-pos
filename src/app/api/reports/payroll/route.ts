@@ -301,19 +301,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Replaces Shift.tipsDeclared to eliminate double-counting
     grossTipLedgerEntries.forEach(entry => {
       if (!employeePayroll[entry.employeeId]) return
-      employeePayroll[entry.employeeId].declaredTips += Math.abs(entry.amountCents) / 100
+      employeePayroll[entry.employeeId].declaredTips += Math.abs(Number(entry.amountCents)) / 100
     })
 
     // Process tip shares
     tipSharesGivenEntries.forEach(entry => {
       if (employeePayroll[entry.employeeId]) {
-        employeePayroll[entry.employeeId].tipSharesGiven += Math.abs(entry.amountCents) / 100
+        employeePayroll[entry.employeeId].tipSharesGiven += Math.abs(Number(entry.amountCents)) / 100
       }
     })
 
     tipSharesReceivedEntries.forEach(entry => {
       if (employeePayroll[entry.employeeId]) {
-        employeePayroll[entry.employeeId].tipSharesReceived += entry.amountCents / 100
+        employeePayroll[entry.employeeId].tipSharesReceived += Number(entry.amountCents) / 100
       }
     })
 
@@ -322,11 +322,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const pendingByEmployee: Record<string, number> = {}
     bankedPendingEntries.forEach(entry => {
       if (!pendingByEmployee[entry.employeeId]) pendingByEmployee[entry.employeeId] = 0
-      pendingByEmployee[entry.employeeId] += entry.amountCents // CREDIT: positive
+      pendingByEmployee[entry.employeeId] += Number(entry.amountCents) // CREDIT: positive
     })
     allPayoutEntries.forEach(entry => {
       if (!pendingByEmployee[entry.employeeId]) pendingByEmployee[entry.employeeId] = 0
-      pendingByEmployee[entry.employeeId] += entry.amountCents // DEBIT: negative (reduces balance)
+      pendingByEmployee[entry.employeeId] += Number(entry.amountCents) // DEBIT: negative (reduces balance)
     })
 
     Object.entries(pendingByEmployee).forEach(([empId, balanceCents]) => {
@@ -337,7 +337,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     bankedCollectedEntries.forEach(entry => {
       if (employeePayroll[entry.employeeId]) {
-        employeePayroll[entry.employeeId].bankedTipsCollected += Math.abs(entry.amountCents) / 100
+        employeePayroll[entry.employeeId].bankedTipsCollected += Math.abs(Number(entry.amountCents)) / 100
       }
     })
 

@@ -191,7 +191,7 @@ export const PUT = withVenue(async function PUT(
           data = { givenCents: 0, receivedCents: 0, creditsCents: 0 }
           tipDataByEmployee.set(entry.employeeId, data)
         }
-        const cents = entry.amountCents || 0
+        const cents = Number(entry.amountCents || 0)
         if (entry.sourceType === 'ROLE_TIPOUT' && entry.type === 'DEBIT') {
           data.givenCents += cents
         } else if (entry.sourceType === 'ROLE_TIPOUT' && entry.type === 'CREDIT') {

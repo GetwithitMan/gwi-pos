@@ -145,7 +145,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
         // Build memberEarnings array
         const memberEarnings = earningsAgg.map((agg) => {
-          const totalCents = agg._sum.amountCents ?? 0
+          const totalCents = Number(agg._sum.amountCents ?? 0)
           return {
             employeeId: agg.employeeId,
             employeeName: employeeNameMap.get(agg.employeeId) ?? 'Unknown',

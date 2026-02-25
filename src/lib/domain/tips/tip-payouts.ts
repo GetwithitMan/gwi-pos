@@ -71,7 +71,7 @@ export async function cashOutTips(params: {
 
   // Ensure ledger exists and get current balance
   const ledger = await getOrCreateLedger(locationId, employeeId)
-  const previousBalanceCents = ledger.currentBalanceCents
+  const previousBalanceCents = Number(ledger.currentBalanceCents)
 
   // Determine payout amount: provided value or full balance
   const payoutCents = amountCents !== undefined ? amountCents : previousBalanceCents
@@ -186,10 +186,11 @@ export async function batchPayrollPayout(params: {
   let totalPaidOutCents = 0
 
   for (const ledger of ledgers) {
+    const balanceCents = Number(ledger.currentBalanceCents)
     const result = await postToTipLedger({
       locationId,
       employeeId: ledger.employeeId,
-      amountCents: ledger.currentBalanceCents,
+      amountCents: balanceCents,
       type: 'DEBIT',
       sourceType: 'PAYOUT_PAYROLL',
       memo: payrollMemo,
@@ -202,11 +203,11 @@ export async function batchPayrollPayout(params: {
     entries.push({
       employeeId: ledger.employeeId,
       employeeName,
-      amountCents: ledger.currentBalanceCents,
+      amountCents: balanceCents,
       ledgerEntryId: result.id,
     })
 
-    totalPaidOutCents += ledger.currentBalanceCents
+    totalPaidOutCents += balanceCents
   }
 
   return {
@@ -258,7 +259,7 @@ export async function getPayableBalances(
     lastName: ledger.employee.lastName,
     displayName: ledger.employee.displayName,
     roleName: ledger.employee.role.name,
-    currentBalanceCents: ledger.currentBalanceCents,
+    currentBalanceCents: Number(ledger.currentBalanceCents),
   }))
 }
 
@@ -317,7 +318,10 @@ export async function getPayoutHistory(params: {
     db.tipLedgerEntry.count({ where }),
   ])
 
-  return { entries, total }
+  return {
+    entries: entries.map(e => ({ ...e, amountCents: Number(e.amountCents) })),
+    total,
+  }
 }
 
 // ─── CC Fee Calculation ──────────────────────────────────────────────────────

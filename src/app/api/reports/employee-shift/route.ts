@@ -566,8 +566,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // amountCents is positive for CREDIT, negative for DEBIT in the ledger;
     // however the query already filters by type, so DEBIT amountCents are stored
     // as positive magnitude. Use Math.abs to be safe.
-    const tipsGivenTotal = tipOutsGiven.reduce((sum, e) => sum + Math.abs(e.amountCents), 0) / 100
-    const tipsReceivedTotal = tipOutsReceived.reduce((sum, e) => sum + e.amountCents, 0) / 100
+    const tipsGivenTotal = tipOutsGiven.reduce((sum, e) => sum + Math.abs(Number(e.amountCents)), 0) / 100
+    const tipsReceivedTotal = tipOutsReceived.reduce((sum, e) => sum + Number(e.amountCents), 0) / 100
     // TipLedgerEntry doesn't have a pending/collected status distinction;
     // all posted entries are considered collected (the ledger is the source of truth).
     const tipsReceivedPending = 0
@@ -757,7 +757,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             return {
               id: entry.id,
               to: toName,
-              amount: round(Math.abs(entry.amountCents) / 100),
+              amount: round(Math.abs(Number(entry.amountCents)) / 100),
               percentage: null, // TipOutRule percentage not stored on ledger entry
               shareType: 'role_tipout',
             }
@@ -776,7 +776,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             return {
               id: entry.id,
               from: fromName,
-              amount: round(entry.amountCents / 100),
+              amount: round(Number(entry.amountCents) / 100),
               percentage: null, // TipOutRule percentage not stored on ledger entry
               shareType: 'role_tipout',
               status: 'collected', // All posted ledger entries are collected

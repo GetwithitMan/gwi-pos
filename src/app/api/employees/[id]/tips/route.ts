@@ -101,11 +101,11 @@ export const GET = withVenue(async function GET(
 
     // Calculate totals (cents -> dollars)
     const pendingTotalCents = roleTipoutCredits.reduce(
-      (sum, e) => sum + Math.abs(e.amountCents),
+      (sum, e) => sum + Math.abs(Number(e.amountCents)),
       0
     )
     const bankedTotalCents = bankedCredits.reduce(
-      (sum, e) => sum + Math.abs(e.amountCents),
+      (sum, e) => sum + Math.abs(Number(e.amountCents)),
       0
     )
 
@@ -119,7 +119,7 @@ export const GET = withVenue(async function GET(
       pending: {
         tips: roleTipoutCredits.map(entry => ({
           id: entry.id,
-          amount: centsToDollars(Math.abs(entry.amountCents)),
+          amount: centsToDollars(Math.abs(Number(entry.amountCents))),
           shareType: 'role_tipout',
           fromEmployee: (entry.sourceId && sourceToFromEmployee.get(entry.sourceId))
             || entry.memo
@@ -132,7 +132,7 @@ export const GET = withVenue(async function GET(
       banked: {
         tips: bankedCredits.map(entry => ({
           id: entry.id,
-          amount: centsToDollars(Math.abs(entry.amountCents)),
+          amount: centsToDollars(Math.abs(Number(entry.amountCents))),
           source: entry.sourceType === 'DIRECT_TIP' ? 'direct_tip' : 'tip_group',
           fromEmployee: entry.memo || 'Tip',
           createdAt: entry.createdAt.toISOString(),
