@@ -558,7 +558,7 @@ export function DiscountModal({
                 <Button
                   variant="primary"
                   className="flex-1"
-                  onClick={handleApplyCustom}
+                  onClick={() => handleApplyCustom()}
                   disabled={isProcessing || !customValue}
                 >
                   {isProcessing ? 'Applying...' : 'Apply Discount'}

@@ -471,7 +471,7 @@ export function CompVoidModal({
                   <Button
                     variant={action === 'comp' ? 'primary' : 'danger'}
                     className="w-full"
-                    onClick={handleSubmit}
+                    onClick={() => handleSubmit()}
                     disabled={isProcessing || !reason || (reason === 'custom' && !customReason.trim()) || (action === 'void' && wasMade === null)}
                   >
                     {isProcessing
