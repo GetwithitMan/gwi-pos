@@ -1417,6 +1417,45 @@ export default function OrdersPage() {
     }
   }
 
+  // Handle removing a per-item discount
+  const handleItemDiscountRemove = async (itemId: string, discountId: string) => {
+    const orderId = savedOrderId
+    if (!orderId) return
+    try {
+      const res = await fetch(`/api/orders/${orderId}/items/${itemId}/discount?discountId=${discountId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to remove discount')
+        return
+      }
+      const rawResult = await res.json()
+      const result = rawResult.data ?? rawResult
+      // Update totals immediately
+      if (result.orderTotals) {
+        const store = useOrderStore.getState()
+        if (store.currentOrder) {
+          store.syncServerTotals({
+            subtotal: result.orderTotals.subtotal,
+            discountTotal: result.orderTotals.discountTotal,
+            taxTotal: result.orderTotals.taxTotal,
+            total: result.orderTotals.total,
+          })
+        }
+      }
+      // Full reload to update itemDiscounts on the item
+      void fetch(`/api/orders/${orderId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data) loadOrder(data.data || data) })
+        .catch(console.error)
+      setTabsRefreshTrigger(prev => prev + 1)
+      toast.success('Discount removed')
+    } catch {
+      toast.error('Failed to remove discount')
+    }
+  }
+
   // Handle discount applied
   const handleDiscountApplied = (newTotals: {
     subtotal?: number
@@ -2496,6 +2535,7 @@ export default function OrdersPage() {
             onItemEditModifiers={panelCallbacks.onItemEditModifiers}
             onItemCompVoid={panelCallbacks.onItemCompVoid}
             onItemDiscount={handleItemDiscount}
+            onItemDiscountRemove={handleItemDiscountRemove}
             onItemResend={panelCallbacks.onItemResend}
             onItemSplit={editingChildSplit || orderSplitChips.some(c => c.id === currentOrder?.id) ? undefined : panelCallbacks.onItemSplit}
             onQuickSplitEvenly={savedOrderId && !editingChildSplit && !orderSplitChips.some(c => c.id === currentOrder?.id) ? handleQuickSplitEvenly : undefined}

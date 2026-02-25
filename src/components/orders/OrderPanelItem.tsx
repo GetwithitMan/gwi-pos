@@ -738,9 +738,26 @@ export const OrderPanelItem = memo(function OrderPanelItem({
           {hasItemDiscount && item.itemDiscounts && item.itemDiscounts.length > 0 && (
             <div style={{ paddingLeft: '8px', marginTop: '2px', fontSize: '11px', color: '#4ade80' }}>
               {item.itemDiscounts.map((d) => (
-                <span key={d.id}>
+                <span key={d.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                   {d.percent ? `${d.percent}% Off` : `$${d.amount.toFixed(2)} Off`}
                   {d.reason ? ` — ${d.reason}` : ''}
+                  {onItemDiscountRemove && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onItemDiscountRemove(item.id, d.id) }}
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.15)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '3px',
+                        color: '#ef4444',
+                        cursor: 'pointer',
+                        fontSize: '9px',
+                        padding: '0 3px',
+                        lineHeight: '14px',
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </span>
               ))}
             </div>
