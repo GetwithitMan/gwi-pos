@@ -267,6 +267,52 @@ async function runPrePushMigrations() {
     console.log('[vercel-build]   Done')
   }
 
+  // --- H-SCHEMA-2: Convert String columns to Prisma Enums ---
+  // Prisma db push cannot cast text → enum on required columns with existing data.
+  // We pre-create the enum types and cast the columns so db push sees them as matching.
+  async function isTextColumn(table, column) {
+    const [colInfo] = await sql`
+      SELECT data_type FROM information_schema.columns
+      WHERE table_name = ${table} AND column_name = ${column}
+    `
+    return colInfo && (colInfo.data_type === 'text' || colInfo.data_type === 'character varying')
+  }
+
+  async function enumTypeExists(typeName) {
+    const [row] = await sql`SELECT typname FROM pg_type WHERE typname = ${typeName}`
+    return !!row
+  }
+
+  // Payment.paymentMethod: String → PaymentMethod enum
+  if (await isTextColumn('Payment', 'paymentMethod')) {
+    console.log('[vercel-build]   Converting Payment.paymentMethod TEXT → PaymentMethod enum...')
+    if (!(await enumTypeExists('PaymentMethod'))) {
+      await sql`CREATE TYPE "PaymentMethod" AS ENUM ('cash', 'card', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty', 'loyalty_points')`
+    }
+    await sql`ALTER TABLE "Payment" ALTER COLUMN "paymentMethod" TYPE "PaymentMethod" USING ("paymentMethod"::text::"PaymentMethod")`
+    console.log('[vercel-build]   Done')
+  }
+
+  // TipLedgerEntry.type: String → TipLedgerEntryType enum
+  if (await isTextColumn('TipLedgerEntry', 'type')) {
+    console.log('[vercel-build]   Converting TipLedgerEntry.type TEXT → TipLedgerEntryType enum...')
+    if (!(await enumTypeExists('TipLedgerEntryType'))) {
+      await sql`CREATE TYPE "TipLedgerEntryType" AS ENUM ('CREDIT', 'DEBIT')`
+    }
+    await sql`ALTER TABLE "TipLedgerEntry" ALTER COLUMN "type" TYPE "TipLedgerEntryType" USING ("type"::text::"TipLedgerEntryType")`
+    console.log('[vercel-build]   Done')
+  }
+
+  // TipTransaction.sourceType: String → TipTransactionSourceType enum
+  if (await isTextColumn('TipTransaction', 'sourceType')) {
+    console.log('[vercel-build]   Converting TipTransaction.sourceType TEXT → TipTransactionSourceType enum...')
+    if (!(await enumTypeExists('TipTransactionSourceType'))) {
+      await sql`CREATE TYPE "TipTransactionSourceType" AS ENUM ('CARD', 'CASH', 'ADJUSTMENT')`
+    }
+    await sql`ALTER TABLE "TipTransaction" ALTER COLUMN "sourceType" TYPE "TipTransactionSourceType" USING ("sourceType"::text::"TipTransactionSourceType")`
+    console.log('[vercel-build]   Done')
+  }
+
   console.log('[vercel-build] Pre-push migrations complete')
 }
 
