@@ -62,13 +62,45 @@
 | Course cycling | Client-side modulo (1-4) | Simple, no server round-trip for UI state |
 | Sent confirmation | AnimatedVisibility + LaunchedEffect 2s | Non-blocking, auto-clears, replaces Send button temporarily |
 
+### Modifier Indicator Fix (Commit 76232c0)
+
+- `MenuDao.getItemIdsWithModifiers()` — new Room query returns DISTINCT menuItemIds from modifier_groups
+- `OrderUiState.itemIdsWithModifiers: Set<String>` — pre-computed on category load
+- `MenuGrid` + `MenuItemCard` now show "+ options" only when item actually has modifier groups (was hardcoded true)
+
+### Shared Platform Issues Fixed (Commits f0fbd18 + adaed99)
+
+Cross-platform fixes applied to both Android register and web POS:
+
+**Manager PIN for Comp/Void (Issue #1):**
+- Android: New `ManagerPinDialog.kt` composable — AlertDialog with PIN input, calls `POST /api/auth/verify-pin`, returns manager employee ID. Wired into comp/void reason picker: user picks reason → manager PIN required → `approvedById` sent with `CompVoidRequest`
+- Web: `CompVoidModal.tsx` now shows `ManagerPinModal` before submission. `approvedById` included in API request. Remote SMS approval preserved as alternative path
+
+**Discount Approval (Issue #2):**
+- Android: `applyPercentageDiscount()` / `applyDollarDiscount()` catch HTTP 403, check for `requiresApproval` in body, show `ManagerPinDialog`, retry with `approvedById` via `retryDiscountWithApproval()`
+- Web: `DiscountModal.tsx` catches 403 `requiresApproval`, shows `ManagerPinModal`, retries with manager ID for both preset and custom discounts
+
+**PIN Brute-Force (Issue #3, Android only):**
+- `PinLoginViewModel` parses HTTP 429 response, extracts server lockout message
+- `PinLoginScreen` shows prominent red lockout text, clears on new input
+- Server-side rate limiter (`auth-rate-limiter.ts`) already protects both platforms
+
+**Cash Drawer (Issue #4, Android only):**
+- `GwiApiService.openCashDrawer()` — `POST /api/print/cash-drawer`
+- Fire-and-forget call in `payCash()` after successful payment + drawer open
+
+**Offline Payment Guard (Issue #5, Web only):**
+- `PaymentModal.tsx` tracks socket connection state via `connect`/`disconnect` events
+- All payment action buttons disabled when `!isConnected`
+- Red warning banner: "Payment unavailable — no connection to server"
+- Matches Android's existing `isOnline` hard-block pattern
+
 ### Remaining Gaps (from audit)
-- Split payments not implemented (web has full split UI)
-- Manager approval flows (web has PIN gate for voids/discounts)
-- On-screen keyboard for tab name entry
+- Split payments not implemented
 - Datacap USB/BT payment reader bridges (stubs only)
 - CFD dual-screen not implemented
 - Receipt printing (ESC/POS over network not yet wired)
+- Pre-auth reader selection (needs Datacap SDK)
 
 ## 2026-02-24 — Android Hardening: Production-Grade Resilience (4 Rounds)
 

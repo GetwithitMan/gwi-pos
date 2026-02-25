@@ -418,7 +418,7 @@
 | Mission Control (Phase 2) | 29 | 0 | 2 | 31 | 94% |
 | DevOps | 1 | 0 | 0 | 1 | 100% |
 | Performance Overhaul | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **256** | **7** | **18** | **281** | **92%** |
+| **TOTAL** | **259** | **7** | **18** | **284** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -539,13 +539,16 @@ Skills that can be developed simultaneously:
 
 ---
 
-## Recently Completed (2026-02-25 — Android UI Parity Audit, Skills 441-443)
+## Recently Completed (2026-02-25 — Android UI Parity + Shared Platform Hardening, Skills 441-446)
 
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
 | 441 | Android P0: Core Order Flow Fixes | DONE | Android / Orders | 440 | Employee name passthrough via nav args, pour size/multiplier in OrderItemRequest, floor plan visibility when empty order, order type mapping per tab, payment processing spinner + dismiss guard. Commit 551dea4, 5 files. |
 | 442 | Android P1: Missing UX Controls | DONE | Android / Orders / UX | 441 | Note dialog (AlertDialog + OutlinedTextField), discount button, PosHeader search + logout icons, two-tap void/remove confirmations (confirmingVoid/confirmingRemove states), tip validation (cash ≥ total + tip). Commit 008384d, 7 files. |
 | 443 | Android P2: Feature Parity with Web POS | DONE | Android / Orders / UX | 442 | Comp/void reason picker (preset reasons + custom), compItem/confirmCompVoid ViewModel functions, Close Tab button (CloseTabRequest), course cycling 1→4, "Order Sent!" banner (2s auto-dismiss), open orders filter chips (All/Dine In/Tabs/To Go) + sort toggles (Newest/Oldest/Total $), Comp ActionChip two-tap, refreshCurrentOrder in finally block. Commit 835cbad, 5 files. |
+| 444 | Cross-Platform: Manager PIN Gates | DONE | Security / Orders | 443 | Manager PIN required before comp/void on both platforms. Android: ManagerPinDialog.kt (AlertDialog + verify-pin API). Web: ManagerPinModal wired into CompVoidModal. approvedById in CompVoidRequest. Remote SMS approval preserved on web. Commits f0fbd18 (Android), adaed99 (Web). |
+| 445 | Cross-Platform: Discount Approval + Brute-Force + Cash Drawer | DONE | Security / Payments | 444 | Discount 403 requiresApproval → ManagerPinModal/Dialog → retry with approvedById (both platforms). Android PIN login: 429 lockout message parsing + red UI text. Cash drawer: fire-and-forget POST /api/print/cash-drawer after cash payment (Android). Commits f0fbd18 (Android), adaed99 (Web). |
+| 446 | Cross-Platform: Offline Payment Guard + Modifier Badges | DONE | Payments / UI | 445 | Web PaymentModal: socket connection tracking, all payment buttons disabled when !isConnected, red warning banner. Android MenuGrid: actual modifier group lookup via getItemIdsWithModifiers() DAO query, "+ options" shown only for items with real modifier groups. Commits adaed99 (Web), 76232c0 (Android). |
 
 ---
 
@@ -1363,6 +1366,9 @@ These skills emerged during development and are now part of the system:
 | 441 | Android P0: Core Order Flow Fixes | DONE | Android | 440 | Employee name, pour pricing, floor plan, order types, payment spinner |
 | 442 | Android P1: Missing UX Controls | DONE | Android | 441 | Notes dialog, discount, search, confirmations, logout, tip fix |
 | 443 | Android P2: Feature Parity | DONE | Android | 442 | Comp/void dialogs, close tab, courses, sent confirmation, filters |
+| 444 | Cross-Platform: Manager PIN Gates | DONE | Security | 443 | Manager PIN for comp/void on Android + web, approvedById in requests |
+| 445 | Cross-Platform: Discount/Brute-Force/Drawer | DONE | Security / Payments | 444 | Discount approval flow, 429 lockout, cash drawer open |
+| 446 | Cross-Platform: Offline Guard + Mod Badges | DONE | Payments / UI | 445 | Web payment offline guard, Android modifier indicator fix |
 
 ---
 
