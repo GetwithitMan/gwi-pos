@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
+import { calculateOrderTotals, calculateOrderSubtotal, recalculatePercentDiscounts, type LocationTaxSettings } from '@/lib/order-calculations'
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
 export const PUT = withVenue(async function PUT(
@@ -182,6 +184,8 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Regular update (no action specified)
+    const quantityChanged = updateData.quantity !== undefined && updateData.quantity !== item.quantity
+
     const updated = await db.orderItem.update({
       where: { id: itemId },
       data: {
@@ -191,9 +195,88 @@ export const PUT = withVenue(async function PUT(
         isHeld: updateData.isHeld !== undefined ? updateData.isHeld : undefined,
         holdUntil: updateData.holdUntil ? new Date(updateData.holdUntil) : undefined,
         specialNotes: updateData.specialNotes,
+        ...(quantityChanged ? {
+          quantity: updateData.quantity,
+          itemTotal: (Number(item.price) + Number(item.modifierTotal)) * updateData.quantity,
+        } : {}),
       },
       include: { modifiers: true },
     })
+
+    // If quantity changed, recalculate order totals (mirrors DELETE recalculation)
+    if (quantityChanged) {
+      const fullOrder = await db.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: {
+          location: { select: { settings: true } },
+          items: {
+            where: { deletedAt: null, status: 'active' },
+            include: {
+              modifiers: { where: { deletedAt: null } },
+              ingredientModifications: true,
+            },
+          },
+        },
+      })
+
+      const itemsForCalc = fullOrder.items.map(i => ({
+        ...i,
+        price: Number(i.price),
+        itemTotal: Number(i.itemTotal),
+        commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
+        weight: i.weight ? Number(i.weight) : undefined,
+        unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+        soldByWeight: i.soldByWeight ?? false,
+        modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
+        ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
+      }))
+
+      const newSubtotalForDiscounts = calculateOrderSubtotal(itemsForCalc)
+      const updatedDiscountTotal = await recalculatePercentDiscounts(db, orderId, newSubtotalForDiscounts)
+
+      const totals = calculateOrderTotals(
+        itemsForCalc,
+        fullOrder.location.settings as LocationTaxSettings | null,
+        updatedDiscountTotal,
+        Number(fullOrder.tipTotal) || 0,
+      )
+
+      await db.order.update({
+        where: { id: orderId },
+        data: {
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
+          total: totals.total,
+          commissionTotal: totals.commissionTotal,
+          itemCount: fullOrder.items.reduce((sum, i) => sum + i.quantity, 0),
+          version: { increment: 1 },
+        },
+      })
+
+      // Return full order response so clients get updated totals
+      const updatedOrder = await db.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: {
+          items: {
+            where: { deletedAt: null },
+            include: { modifiers: { where: { deletedAt: null } } },
+          },
+          employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+          table: { select: { id: true, name: true } },
+          payments: true,
+          discounts: true,
+        },
+      })
+
+      void dispatchOpenOrdersChanged(order.locationId, {
+        trigger: 'item_updated',
+        orderId: order.id,
+      }).catch(() => {})
+
+      return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
+    }
 
     await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
 
@@ -319,7 +402,71 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: now, status: 'removed' },
     })
 
-    await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
+    // Recalculate totals from remaining active items
+    const fullOrder = await db.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: {
+        location: { select: { settings: true } },
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          include: {
+            modifiers: { where: { deletedAt: null } },
+            ingredientModifications: true,
+          },
+        },
+      },
+    })
+
+    const itemsForCalc = fullOrder.items.map(i => ({
+      ...i,
+      price: Number(i.price),
+      itemTotal: Number(i.itemTotal),
+      commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
+      weight: i.weight ? Number(i.weight) : undefined,
+      unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+      soldByWeight: i.soldByWeight ?? false,
+      modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
+      ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
+    }))
+
+    const newSubtotalForDiscounts = calculateOrderSubtotal(itemsForCalc)
+    const updatedDiscountTotal = await recalculatePercentDiscounts(db, orderId, newSubtotalForDiscounts)
+
+    const totals = calculateOrderTotals(
+      itemsForCalc,
+      fullOrder.location.settings as LocationTaxSettings | null,
+      updatedDiscountTotal,
+      Number(fullOrder.tipTotal) || 0,
+    )
+
+    await db.order.update({
+      where: { id: orderId },
+      data: {
+        subtotal: totals.subtotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+        commissionTotal: totals.commissionTotal,
+        itemCount: fullOrder.items.reduce((sum, i) => sum + i.quantity, 0),
+        version: { increment: 1 },
+      },
+    })
+
+    // Fetch updated order with items for response
+    const updatedOrder = await db.order.findUniqueOrThrow({
+      where: { id: orderId },
+      include: {
+        items: {
+          where: { deletedAt: null },
+          include: { modifiers: { where: { deletedAt: null } } },
+        },
+        employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+        table: { select: { id: true, name: true } },
+        payments: true,
+        discounts: true,
+      },
+    })
 
     // Dispatch socket event so other terminals see the removal (Bug 11)
     void dispatchOpenOrdersChanged(order.locationId, {
@@ -327,7 +474,7 @@ export const DELETE = withVenue(async function DELETE(
       orderId: order.id,
     }).catch(() => {})
 
-    return NextResponse.json({ data: { success: true } })
+    return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
   } catch (error) {
     console.error('Failed to delete order item:', error)
     return NextResponse.json(
