@@ -1371,17 +1371,12 @@ export default function OrdersPage() {
     if (!currentOrder?.items.length) return
     setItemDiscountTargetId(null) // Clear any item target — this is order-level
 
-    // If order hasn't been saved yet, save it first
+    // If order hasn't been saved yet, save it first (but don't trigger "Sent!" flash)
     let orderId = savedOrderId
     if (!orderId) {
-      setIsSendingOrder(true)
-      try {
-        orderId = await ensureOrderInDB(employee?.id)
-        if (orderId) {
-          setSavedOrderId(orderId)
-        }
-      } finally {
-        setIsSendingOrder(false)
+      orderId = await ensureOrderInDB(employee?.id)
+      if (orderId) {
+        setSavedOrderId(orderId)
       }
     }
 
@@ -1405,13 +1400,8 @@ export default function OrdersPage() {
   const handleItemDiscount = async (itemId: string) => {
     let orderId = savedOrderId
     if (!orderId) {
-      setIsSendingOrder(true)
-      try {
-        orderId = await ensureOrderInDB(employee?.id)
-        if (orderId) setSavedOrderId(orderId)
-      } finally {
-        setIsSendingOrder(false)
-      }
+      orderId = await ensureOrderInDB(employee?.id)
+      if (orderId) setSavedOrderId(orderId)
     }
     if (orderId) {
       setOrderToPayId(orderId)
