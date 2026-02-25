@@ -366,8 +366,8 @@ async function main() {
           showOnline: r.showOnline,
           categoryShow: r.categoryShow,
           courseNumber: r.courseNumber,
-          printerIds: r.printerIds,
-          routeTags: r.routeTags,
+          printerIds: r.printerIds ?? undefined,
+          routeTags: r.routeTags ?? undefined,
           // Omit: prepStationId (venue-specific)
         })),
       })
