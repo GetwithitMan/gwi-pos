@@ -449,7 +449,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       guestCount: orderData.guestCount,
       items: allItems,
       subtotal: orderData.subtotal,
-      discountTotal: 0,
+      discountTotal: orderData.discountTotal || 0,
       taxTotal: orderData.taxTotal,
       tipTotal: orderData.tipTotal || 0,
       total: orderData.total,
