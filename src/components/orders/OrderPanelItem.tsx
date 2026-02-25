@@ -911,7 +911,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             </button>
           )}
           {/* Item discount button (P2-D01) */}
-          {onItemDiscount && item.status === 'active' && (
+          {onItemDiscount && !isCompedOrVoided && (
             <button
               onClick={(e) => { e.stopPropagation(); onItemDiscount(item.id) }}
               style={{
