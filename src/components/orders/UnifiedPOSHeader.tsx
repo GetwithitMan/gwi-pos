@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MenuSearchResults } from '@/components/search'
+import { PendingSyncBadge } from '@/components/PendingSyncBadge'
 import type { OrderTypeConfig } from '@/types/order-types'
 
 interface SearchMenuItem {
@@ -507,6 +508,9 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
           </span>
         )}
       </button>
+
+      {/* ── Pending Sync Badge ── */}
+      <PendingSyncBadge />
 
       {/* ── Admin Gear ── */}
       {onOpenAdminNav && (

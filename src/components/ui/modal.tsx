@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface ModalProps {
@@ -22,6 +22,9 @@ const sizeClasses = {
   '4xl': 'max-w-4xl',
 }
 
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export function Modal({
   isOpen,
   onClose,
@@ -30,17 +33,55 @@ export function Modal({
   children,
   variant = 'glass',
 }: ModalProps) {
-  // Handle escape key
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
+  const modalRef = useRef<HTMLDivElement>(null)
+
+  // Focus trap: cycle Tab/Shift+Tab within the modal
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
         onClose()
+        return
+      }
+
+      if (e.key !== 'Tab' || !modalRef.current) return
+
+      const focusable = modalRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)
+      if (focusable.length === 0) return
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    },
+    [isOpen, onClose],
+  )
+
+  // Handle escape + focus trap
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
+
+  // Auto-focus first focusable element when modal opens
+  useEffect(() => {
+    if (isOpen && modalRef.current) {
+      const first = modalRef.current.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)
+      if (first) {
+        // Delay slightly so framer-motion animation starts before focus
+        requestAnimationFrame(() => first.focus())
       }
     }
-
-    document.addEventListener('keydown', handleEscape)
-    return () => document.removeEventListener('keydown', handleEscape)
-  }, [isOpen, onClose])
+  }, [isOpen])
 
   // Prevent scroll when modal is open
   useEffect(() => {
@@ -79,6 +120,10 @@ export function Modal({
 
           {/* Modal Content */}
           <motion.div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title || 'Dialog'}
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}

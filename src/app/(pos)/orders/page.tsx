@@ -35,6 +35,7 @@ import type { OrderTypeConfig, OrderCustomFields, WorkflowRules } from '@/types/
 import type { IngredientModificationType } from '@/types/orders'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import { FloorPlanHome } from '@/components/floor-plan'
+import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
 import { useFloorPlanStore, type FloorPlanTable, type FloorPlanSection, type FloorPlanElement } from '@/components/floor-plan/use-floor-plan'
 import { BartenderView } from '@/components/bartender'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
@@ -48,6 +49,7 @@ import { toast } from '@/stores/toast-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
 import { OfflineManager } from '@/lib/offline-manager'
+import { getDraftOrder, clearDraftOrder } from '@/lib/draft-order-persistence'
 import { useSplitTickets } from '@/hooks/useSplitTickets'
 import { useShiftManagement } from '@/hooks/useShiftManagement'
 import { useTimedRentals } from '@/hooks/useTimedRentals'
@@ -320,6 +322,7 @@ export default function OrdersPage() {
   const [savedOrderId, setSavedOrderId] = useState<string | null>(null)
   const [isSendingOrder, setIsSendingOrder] = useState(false)
   const [orderSent, setOrderSent] = useState(false)
+  const sendLockRef = useRef(false) // ref-based instant lock for send-to-kitchen (Item 13)
 
   // Sync savedOrderId with Zustand store — FloorPlanHome/BartenderView load orders
   // directly into Zustand via store.loadOrder(), bypassing setSavedOrderId.
@@ -656,6 +659,60 @@ export default function OrdersPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee?.location?.id, employee?.id])
 
+  // Check for saved draft order from previous session (e.g., idle logout)
+  const draftCheckedRef = useRef(false)
+  useEffect(() => {
+    if (draftCheckedRef.current || !employee?.location?.id || !employee?.id) return
+    if (currentOrder && currentOrder.items.length > 0) return // Already has an order
+    draftCheckedRef.current = true
+
+    const draft = getDraftOrder(employee.location.id, employee.id)
+    if (!draft || draft.items.length === 0) return
+
+    const itemCount = draft.items.reduce((sum, i) => sum + i.quantity, 0)
+    const age = Date.now() - new Date(draft.savedAt).getTime()
+    const ageMinutes = Math.round(age / 60_000)
+
+    toast.info(
+      `Draft order recovered (${itemCount} item${itemCount !== 1 ? 's' : ''}, ${ageMinutes}m ago). Restoring...`,
+      8000,
+    )
+
+    // Restore the draft into the order store
+    startOrder(draft.orderType as 'dine_in', {
+      locationId: employee.location.id,
+      tableId: draft.tableId,
+      tableName: draft.tableName,
+      tabName: draft.tabName,
+      guestCount: draft.guestCount,
+    })
+
+    for (const item of draft.items) {
+      addItem({
+        menuItemId: item.menuItemId,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        modifiers: item.modifiers.map((m) => ({
+          id: m.id,
+          modifierId: m.id,
+          name: m.name,
+          price: m.price,
+          groupName: m.groupName || '',
+          groupId: '',
+        })),
+        seatNumber: item.seatNumber,
+        courseNumber: item.courseNumber,
+        specialNotes: item.specialNotes,
+        pourSize: item.pourSize,
+        pourMultiplier: item.pourMultiplier,
+      })
+    }
+
+    clearDraftOrder(employee.location.id, employee.id)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.location?.id, employee?.id])
+
   // Load menu with cache-busting
   // NOTE: selectedCategory intentionally NOT in deps — loadMenu fetches ALL items.
   // Category filtering is done client-side (line ~2437). Including selectedCategory
@@ -989,6 +1046,7 @@ export default function OrdersPage() {
   // Send to Kitchen handler — delegates to shared useActiveOrder hook
   // which handles: ensureOrderInDB, isHeld filtering, per-item delays, coursing, and /send API call
   const handleSendToKitchen = async () => {
+    if (sendLockRef.current) return // instant ref-based lock prevents double-clicks
     if (!currentOrder?.items.length) return
 
     // Validate based on workflow rules (page-specific logic)
@@ -1016,6 +1074,7 @@ export default function OrdersPage() {
       return
     }
 
+    sendLockRef.current = true
     setIsSendingOrder(true)
     try {
       // Use the shared hook — handles ensureOrderInDB, isHeld filtering, delays, coursing, /send
@@ -1060,6 +1119,7 @@ export default function OrdersPage() {
         printKitchenTicket(orderId).catch(() => {})
       }
     } finally {
+      sendLockRef.current = false
       setIsSendingOrder(false)
     }
   }
@@ -2502,6 +2562,7 @@ export default function OrdersPage() {
   // Shared OrderPanel element — passed as children to whichever view is active
   const sharedOrderPanel = (viewMode === 'floor-plan' || viewMode === 'bartender') && employee.location?.id ? (
     <div className="flex h-full">
+    <SilentErrorBoundary name="OrderPanel">
     <OrderPanel
             orderId={currentOrder?.id || savedOrderId}
             orderNumber={currentOrder?.orderNumber}
@@ -2968,6 +3029,7 @@ export default function OrdersPage() {
               setShowPayAllSplitsConfirm(true)
             } : undefined}
           />
+    </SilentErrorBoundary>
       {/* Quick Pick Strip — always visible, right side of order panel */}
         <QuickPickStrip
           selectedItemId={quickPickSelectedId}
@@ -3104,6 +3166,7 @@ export default function OrdersPage() {
           }}
         />
         {viewMode === 'floor-plan' && (
+          <SilentErrorBoundary name="FloorPlan">
           <FloorPlanHome
             orderTypes={orderTypes}
             locationId={employee?.location?.id}
@@ -3153,6 +3216,7 @@ export default function OrdersPage() {
           >
             {sharedOrderPanel}
           </FloorPlanHome>
+          </SilentErrorBoundary>
         )}
         {viewMode === 'bartender' && (
           <BartenderView

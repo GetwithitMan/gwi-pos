@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/modal'
 import { POSDisplaySettingsModal } from '@/components/orders/POSDisplaySettings'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
+import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
 import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
 import { useAuthStore } from '@/stores/auth-store'
@@ -440,6 +441,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
           />
         )}
         <div className={isTabManagerExpanded ? '' : 'fixed left-0 top-0 bottom-0 w-80 bg-slate-900 shadow-xl z-50'} style={!showTabsPanel && !isTabManagerExpanded ? { display: 'none' } : undefined}>
+          <SilentErrorBoundary name="OpenOrders">
           <OpenOrdersPanel
             locationId={employee?.location?.id}
             employeeId={employee.id}
@@ -455,6 +457,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             onOpenTipAdjustment={onOpenTipAdjustment}
             onViewReceipt={onViewReceipt}
           />
+          </SilentErrorBoundary>
         </div>
       </>
 

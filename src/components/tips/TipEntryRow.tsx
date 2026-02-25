@@ -48,8 +48,10 @@ export default function TipEntryRow({
       : parts[1]?.length > 2
         ? parts[0] + '.' + parts[1].slice(0, 2)
         : raw
-    setTipValue(formatted)
+    // Enforce max $9999.99
     const num = parseFloat(formatted) || 0
+    if (num > 9999.99) return
+    setTipValue(formatted)
     onTipChange(orderId, paymentId, num)
   }
 

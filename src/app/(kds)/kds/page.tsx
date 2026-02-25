@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type { Socket } from 'socket.io-client'
 import { useAuthStore } from '@/stores/auth-store'
+import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
 
 // LocalStorage keys for device authentication
 const DEVICE_TOKEN_KEY = 'kds_device_token'
@@ -718,8 +719,8 @@ function KDSContent() {
               const allCompleted = order.items.every(item => item.isCompleted)
 
               return (
+                <SilentErrorBoundary key={order.id} name="KDS Ticket">
                 <div
-                  key={order.id}
                   className={`bg-gray-800 rounded-lg border-t-4 overflow-hidden transition-all ${
                     allCompleted ? 'opacity-50 border-green-500' : getTimeStatusBg(order.timeStatus)
                   }`}
@@ -893,6 +894,7 @@ function KDSContent() {
                     </div>
                   )}
                 </div>
+                </SilentErrorBoundary>
               )
             })}
           </div>

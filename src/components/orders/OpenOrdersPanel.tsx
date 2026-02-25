@@ -10,6 +10,7 @@ import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
 import { TabTransferModal } from './TabTransferModal'
 import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
 import { toast } from '@/stores/toast-store'
+import { isSharedSocketConnected } from '@/lib/shared-socket'
 
 interface OpenOrder {
   id: string
@@ -236,6 +237,7 @@ export function OpenOrdersPanel({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [bulkProcessing, setBulkProcessing] = useState(false)
   const [tabTransferOrder, setTabTransferOrder] = useState<OpenOrder | null>(null)
+  const [loadError, setLoadError] = useState(false)
 
   const dark = isExpanded || forceDark
 
@@ -251,9 +253,13 @@ export function OpenOrdersPanel({
         const fetched = data.data?.orders || []
         setOrders(fetched)
         if (forPreviousDay) setPreviousDayCount(fetched.length)
+        setLoadError(false)
+      } else {
+        setLoadError(true)
       }
     } catch (error) {
       console.error('Failed to load orders:', error)
+      setLoadError(true)
     } finally {
       setIsLoading(false)
     }
@@ -306,11 +312,27 @@ export function OpenOrdersPanel({
     }
   }, [viewMode, loadOrders])
 
-  useOrderSockets({
+  const { isConnected } = useOrderSockets({
     locationId,
     enabled: viewMode === 'open',
     onOpenOrdersChanged: handleSocketOrdersChanged,
   })
+
+  // 30s polling fallback when socket is disconnected (Item 10)
+  useEffect(() => {
+    if (!locationId || viewMode !== 'open' || isConnected) return
+    const interval = setInterval(() => { loadOrders() }, 30000)
+    return () => clearInterval(interval)
+  }, [locationId, viewMode, isConnected, loadOrders])
+
+  // Refresh on socket reconnect: false → true transition (Item 11)
+  const prevConnectedRef = useRef(false)
+  useEffect(() => {
+    if (isConnected && !prevConnectedRef.current && locationId && viewMode === 'open') {
+      loadOrders()
+    }
+    prevConnectedRef.current = isConnected
+  }, [isConnected, locationId, viewMode, loadOrders])
 
   // Visibility-change fallback (tab refocus)
   useEffect(() => {
@@ -1075,7 +1097,18 @@ export function OpenOrdersPanel({
 
   const ordersList = (
     <div className={`flex-1 overflow-y-auto p-2 ${isExpanded ? 'grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 auto-rows-min items-start' : 'space-y-2'}`}>
-      {isLoading && filteredOrders.length === 0 ? (
+      {/* Error banner with retry (Item 9) */}
+      {loadError && !isLoading && filteredOrders.length === 0 ? (
+        <div className={`text-center py-8 ${isExpanded ? 'col-span-full' : ''}`}>
+          <p className={`text-sm ${dark ? 'text-red-400' : 'text-red-600'}`}>Failed to load orders</p>
+          <button
+            onClick={() => loadOrders()}
+            className="mt-3 px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      ) : isLoading && filteredOrders.length === 0 ? (
         <div className={`text-center py-8 ${isExpanded ? 'col-span-full' : ''} ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
           Loading orders...
         </div>

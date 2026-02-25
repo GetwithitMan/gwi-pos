@@ -137,8 +137,10 @@ export function AdjustTipModal({
                   type="number"
                   step="0.01"
                   min="0"
+                  max="9999.99"
                   value={newTipAmount}
                   onChange={(e) => setNewTipAmount(Number(e.target.value))}
+                  onKeyDown={(e) => { if (['e','E','+','-'].includes(e.key)) e.preventDefault() }}
                   className="w-full pl-8 pr-16 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-indigo-500"
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">

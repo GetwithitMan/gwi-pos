@@ -16,6 +16,7 @@ import { useOrderEditing } from '@/hooks/useOrderEditing'
 import { useTabCreation } from '@/hooks/useTabCreation'
 import ModeSelector from '@/components/orders/ModeSelector'
 import { OpenOrdersPanel } from '@/components/orders/OpenOrdersPanel'
+import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
 import { NewTabModal } from '@/components/bartender/NewTabModal'
 import { SpiritSelectionModal } from '@/components/bartender/SpiritSelectionModal'
 import { FavoriteItem } from '@/components/bartender/FavoriteItem'
@@ -1161,6 +1162,7 @@ export function BartenderView({
           transition={{ duration: 0.2, ease: 'easeOut' }}
           className="flex-shrink-0 flex flex-col"
         >
+          <SilentErrorBoundary name="OpenOrders">
           <OpenOrdersPanel
             locationId={locationId}
             employeeId={employeeId}
@@ -1175,6 +1177,7 @@ export function BartenderView({
             onClosedOrderAction={() => setTabRefreshTrigger(t => t + 1)}
             refreshTrigger={tabRefreshTrigger + (externalRefreshTrigger || 0)}
           />
+          </SilentErrorBoundary>
         </motion.div>
 
         {/* ====== CENTER: MENU GRID (hidden when tabs expanded) ====== */}

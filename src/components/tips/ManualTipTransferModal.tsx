@@ -151,9 +151,10 @@ export function ManualTipTransferModal({
               type="number"
               step="0.01"
               min="0.01"
-              max={currentBalanceDollars}
+              max={Math.min(currentBalanceDollars, 9999.99)}
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
+              onKeyDown={(e) => { if (['e','E','+','-'].includes(e.key)) e.preventDefault() }}
               placeholder="0.00"
               aria-label="Transfer amount in dollars"
               className="w-full bg-white/5 border border-white/10 text-white rounded-xl pl-8 pr-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"

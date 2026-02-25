@@ -3,7 +3,9 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { useOrderStore } from '@/stores/order-store'
 import { toast } from '@/stores/toast-store'
+import { saveDraftOrder } from '@/lib/draft-order-persistence'
 
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
 const WARNING_MS = 25 * 60 * 1000 // Warn at 25 minutes
@@ -19,6 +21,9 @@ const ACTIVITY_EVENTS: (keyof DocumentEventMap)[] = [
  * Auto-logs out at 30 minutes and calls the server logout endpoint
  * to clear the httpOnly session cookie.
  *
+ * On session expiry, saves any in-progress draft order to localStorage
+ * so it can be restored on next login.
+ *
  * Use this hook in the main POS layout or auth-guarded pages.
  */
 export function useIdleTimer() {
@@ -31,6 +36,16 @@ export function useIdleTimer() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const handleLogout = useCallback(async () => {
+    // Save any in-progress draft order before clearing state
+    const auth = useAuthStore.getState()
+    const order = useOrderStore.getState().currentOrder
+    if (auth.locationId && auth.employee?.id && order && order.items.length > 0) {
+      const saved = saveDraftOrder(auth.locationId, auth.employee.id, order)
+      if (saved) {
+        toast.info('Draft order saved — you can restore it on next login')
+      }
+    }
+
     // Clear server-side session cookie
     try {
       await fetch('/api/auth/logout', { method: 'POST' })

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { saveDraftOrder } from '@/lib/draft-order-persistence'
 
 interface AvailableRole {
   id: string
@@ -47,7 +48,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       employee: null,
       locationId: null,
       isAuthenticated: false,
@@ -65,6 +66,21 @@ export const useAuthStore = create<AuthState>()(
         }),
 
       logout: () => {
+        // Save draft order before clearing state (best-effort)
+        const { employee, locationId } = get()
+        if (locationId && employee?.id) {
+          try {
+            // Dynamic import avoided: order-store may already be loaded
+            const { useOrderStore } = require('@/stores/order-store')
+            const order = useOrderStore.getState().currentOrder
+            if (order && order.items.length > 0) {
+              saveDraftOrder(locationId, employee.id, order)
+            }
+          } catch {
+            // Order store not available — skip draft save
+          }
+        }
+
         // Fire-and-forget: clear the httpOnly session cookie on the server.
         // Local state clears immediately for instant UX; cookie cleanup is async.
         void fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})

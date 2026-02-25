@@ -1471,10 +1471,12 @@ export function PaymentModal({
                       type="number"
                       value={customCashAmount}
                       onChange={(e) => setCustomCashAmount(e.target.value)}
+                      onKeyDown={(e) => { if (['e','E','+','-'].includes(e.key)) e.preventDefault() }}
                       style={{ ...inputStyle, paddingLeft: 28 }}
                       placeholder="0.00"
                       step="0.01"
                       min="0"
+                      max="9999.99"
                     />
                   </div>
                   <button

@@ -62,6 +62,8 @@ export function OrderTypeSelector({
 }: OrderTypeSelectorProps) {
   const [orderTypes, setOrderTypes] = useState<OrderTypeConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
   const [showFieldsModal, setShowFieldsModal] = useState(false)
   const [pendingOrderType, setPendingOrderType] = useState<OrderTypeConfig | null>(null)
   const [customFieldValues, setCustomFieldValues] = useState<OrderCustomFields>({})
@@ -87,9 +89,13 @@ export function OrderTypeSelector({
           setOrderTypes(types)
           cachedOrderTypes = types
           orderTypeCacheLocationId = locationId
+          setLoadError(false)
+        } else {
+          setLoadError(true)
         }
       } catch (error) {
         console.error('Failed to load order types:', error)
+        setLoadError(true)
       } finally {
         setIsLoading(false)
       }
@@ -98,7 +104,7 @@ export function OrderTypeSelector({
     if (locationId) {
       loadOrderTypes()
     }
-  }, [locationId])
+  }, [locationId, retryCount])
 
   // Check if order type has required fields that need to be collected
   const hasRequiredFields = (orderType: OrderTypeConfig): boolean => {
@@ -326,6 +332,20 @@ export function OrderTypeSelector({
         {[1, 2, 3].map(i => (
           <div key={i} className="h-8 w-20 bg-gray-200 rounded-lg animate-pulse" />
         ))}
+      </div>
+    )
+  }
+
+  if (loadError && orderTypes.length === 0) {
+    return (
+      <div className={`flex gap-2 items-center ${className}`}>
+        <span className="text-sm text-red-500">Failed to load</span>
+        <button
+          onClick={() => { cachedOrderTypes = null; orderTypeCacheLocationId = null; setLoadError(false); setIsLoading(true); setRetryCount(c => c + 1) }}
+          className="px-3 py-1 text-xs font-medium bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+        >
+          Retry
+        </button>
       </div>
     )
   }

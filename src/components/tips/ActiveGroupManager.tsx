@@ -650,8 +650,10 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
               <input
                 type="number"
                 step="0.01"
+                max="9999.99"
                 value={adjustAmount}
                 onChange={e => setAdjustAmount(e.target.value)}
+                onKeyDown={(e) => { if (['e','E','+'].includes(e.key)) e.preventDefault() }}
                 placeholder="e.g., 5.00 or -3.50"
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-indigo-500"
                 aria-label="Adjustment amount in dollars"

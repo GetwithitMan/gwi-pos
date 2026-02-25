@@ -101,9 +101,11 @@ export function TipEntryStep({
               type="number"
               value={customTip}
               onChange={(e) => handleCustomTipChange(e.target.value)}
+              onKeyDown={(e) => { if (['e','E','+','-'].includes(e.key)) e.preventDefault() }}
               placeholder="Custom"
               step="0.01"
               min="0"
+              max="9999.99"
               className="w-full pl-7 pr-3 py-2 border rounded-lg"
             />
           </div>
