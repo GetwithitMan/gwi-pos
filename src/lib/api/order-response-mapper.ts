@@ -220,6 +220,10 @@ export interface MappedOrder {
   notes: string | null
   createdAt: Date
   updatedAt: Date
+  openedAt: Date | null
+  sentAt: Date | null
+  paidAt: Date | null
+  closedAt: Date | null
   reopenedAt: Date | null
   reopenReason: string | null
   version: number
@@ -253,6 +257,10 @@ export function mapOrderForResponse(order: any): MappedOrder {
     notes: order.notes,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
+    openedAt: order.openedAt || null,
+    sentAt: order.sentAt || null,
+    paidAt: order.paidAt || null,
+    closedAt: order.closedAt || null,
     reopenedAt: order.reopenedAt || null,
     reopenReason: order.reopenReason || null,
     version: order.version ?? 1,

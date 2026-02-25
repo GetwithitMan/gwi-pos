@@ -87,6 +87,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           subtotal: true,
           taxTotal: true,
           tipTotal: true,
+          discountTotal: true,
           total: true,
           createdAt: true,
           openedAt: true,
@@ -198,6 +199,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           subtotal: Number(o.subtotal),
           taxTotal: Number(o.taxTotal),
           tipTotal: Number(o.tipTotal),
+          discountTotal: Number(o.discountTotal),
           total: Number(o.total),
           // Pre-auth info
           hasPreAuth: !!o.preAuthId,
