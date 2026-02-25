@@ -161,7 +161,7 @@ async function runPrePushMigrations() {
 
   // --- Deduplicate Order.orderNumber before unique constraint ---
   // Schema adds @@unique([locationId, orderNumber]). If duplicate pairs exist,
-  // db push will fail. Append "-dupN" to duplicates (keep the newest).
+  // db push will fail. Offset duplicates to 900000+ range (keep the newest).
   const dupes = await sql`
     SELECT "locationId", "orderNumber", COUNT(*) as cnt
     FROM "Order"
@@ -177,9 +177,9 @@ async function runPrePushMigrations() {
         WHERE "locationId" = ${locationId} AND "orderNumber" = ${orderNumber}
         ORDER BY "createdAt" DESC
       `
-      // Skip the first (newest) — renumber the rest
+      // Skip the first (newest) — renumber the rest with high offset
       for (let i = 1; i < orders.length; i++) {
-        const newNum = `${orderNumber}-dup${i}`
+        const newNum = 900000 + orderNumber + i
         await sql`UPDATE "Order" SET "orderNumber" = ${newNum} WHERE id = ${orders[i].id}`
       }
     }
