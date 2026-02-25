@@ -74,6 +74,40 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Toggle prevention: if this discountRuleId is already applied to this item, remove it
+    if (body.discountRuleId) {
+      const alreadyApplied = await db.orderItemDiscount.findFirst({
+        where: { orderItemId: itemId, discountRuleId: body.discountRuleId, deletedAt: null },
+      })
+      if (alreadyApplied) {
+        const removedAmount = Number(alreadyApplied.amount)
+        await db.orderItemDiscount.update({
+          where: { id: alreadyApplied.id },
+          data: { deletedAt: new Date() },
+        })
+        const newDiscountTotal = Math.max(0, Number(order.discountTotal) - removedAmount)
+        const newTotal = Number(order.subtotal) + Number(order.taxTotal) - newDiscountTotal + Number(order.tipTotal)
+        const updatedOrder = await db.order.update({
+          where: { id: orderId },
+          data: { discountTotal: newDiscountTotal, total: newTotal },
+          select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
+        })
+        void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
+        return NextResponse.json({
+          data: {
+            toggled: 'off',
+            removedDiscountId: alreadyApplied.id,
+            orderTotals: {
+              subtotal: Number(updatedOrder.subtotal),
+              discountTotal: Number(updatedOrder.discountTotal),
+              taxTotal: Number(updatedOrder.taxTotal),
+              total: Number(updatedOrder.total),
+            },
+          },
+        })
+      }
+    }
+
     // Calculate discount amount
     let discountAmount: number
     let discountPercent: number | null = null
@@ -100,14 +134,16 @@ export const POST = withVenue(async function POST(
     })
 
     // Update Order.discountTotal (increment) and recalculate total
-    const newTotal = Number(order.total) - discountAmount
+    const newDiscountTotal = Number(order.discountTotal) + discountAmount
+    const newTotal = Number(order.subtotal) + Number(order.taxTotal) - newDiscountTotal + Number(order.tipTotal)
 
-    await db.order.update({
+    const updatedOrder = await db.order.update({
       where: { id: orderId },
       data: {
-        discountTotal: { increment: discountAmount },
+        discountTotal: newDiscountTotal,
         total: newTotal,
       },
+      select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
     })
 
     // Fire-and-forget socket dispatch
@@ -127,7 +163,13 @@ export const POST = withVenue(async function POST(
           createdAt: itemDiscount.createdAt.toISOString(),
         },
         newItemTotal: Number(item.itemTotal) - discountAmount,
-        newOrderTotal: newTotal,
+        newOrderTotal: Number(updatedOrder.total),
+        orderTotals: {
+          subtotal: Number(updatedOrder.subtotal),
+          discountTotal: Number(updatedOrder.discountTotal),
+          taxTotal: Number(updatedOrder.taxTotal),
+          total: Number(updatedOrder.total),
+        },
       },
     })
   } catch (error) {
@@ -197,14 +239,16 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     // Update Order.discountTotal (decrement) and recalculate total
-    const newTotal = Number(order.total) + discountAmount
+    const newDiscountTotal = Math.max(0, Number(order.discountTotal) - discountAmount)
+    const newTotal = Number(order.subtotal) + Number(order.taxTotal) - newDiscountTotal + Number(order.tipTotal)
 
-    await db.order.update({
+    const updatedOrder = await db.order.update({
       where: { id: orderId },
       data: {
-        discountTotal: { decrement: discountAmount },
+        discountTotal: newDiscountTotal,
         total: newTotal,
       },
+      select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
     })
 
     // Fire-and-forget socket dispatch
@@ -214,7 +258,15 @@ export const DELETE = withVenue(async function DELETE(
     }, { async: true }).catch(() => {})
 
     return NextResponse.json({
-      data: { success: true },
+      data: {
+        success: true,
+        orderTotals: {
+          subtotal: Number(updatedOrder.subtotal),
+          discountTotal: Number(updatedOrder.discountTotal),
+          taxTotal: Number(updatedOrder.taxTotal),
+          total: Number(updatedOrder.total),
+        },
+      },
     })
   } catch (error) {
     console.error('Failed to remove item discount:', error)

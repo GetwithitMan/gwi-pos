@@ -1398,19 +1398,18 @@ export default function OrdersPage() {
 
   // Handle opening per-item discount
   const handleItemDiscount = async (itemId: string) => {
-    let orderId = savedOrderId
     // Before ensureOrderInDB, find the item's index (for position-based lookup after ID remapping)
-    let store = useOrderStore.getState()
+    const store = useOrderStore.getState()
     const itemIndex = store.currentOrder?.items?.findIndex(i => i.id === itemId) ?? -1
 
-    if (!orderId) {
-      orderId = await ensureOrderInDB(employee?.id)
-      if (orderId) setSavedOrderId(orderId)
-    }
+    // ALWAYS call ensureOrderInDB — even if the order exists, the item might still have a temp ID
+    const orderId = await ensureOrderInDB(employee?.id)
+    if (orderId && !savedOrderId) setSavedOrderId(orderId)
+
     if (orderId) {
       // After ensureOrderInDB, get the item's current ID (may have been remapped from temp to real)
-      store = useOrderStore.getState()
-      const actualItemId = (itemIndex >= 0 && store.currentOrder?.items?.[itemIndex]?.id) || itemId
+      const updatedStore = useOrderStore.getState()
+      const actualItemId = (itemIndex >= 0 && updatedStore.currentOrder?.items?.[itemIndex]?.id) || itemId
 
       setOrderToPayId(orderId)
       setItemDiscountTargetId(actualItemId)

@@ -63,6 +63,8 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string }
         delayMinutes: item.delayMinutes,
         delayStartedAt: item.delayStartedAt,
         delayFiredAt: item.delayFiredAt,
+        itemDiscounts: item.itemDiscounts,
+        itemTotal: item.itemTotal,
       }
     })
   }, [items, menuItems])

@@ -103,6 +103,8 @@ interface OrderItem {
     percent?: number | null
     reason?: string | null
   }>
+  // Total for this item (price * quantity + modifiers), from server
+  itemTotal?: number
   // Split label for grouped display (e.g. "68-1")
   splitLabel?: string
 }
@@ -438,6 +440,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       })),
       // Pizza configuration
       pizzaConfig: item.pizzaConfig,
+      // Item total from server (price * quantity + modifiers)
+      itemTotal: item.itemTotal != null ? Number(item.itemTotal) : undefined,
       // Item-level discounts
       itemDiscounts: (item as any).itemDiscounts?.map((d: any) => ({
         id: d.id,

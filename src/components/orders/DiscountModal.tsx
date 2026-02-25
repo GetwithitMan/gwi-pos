@@ -191,9 +191,10 @@ export function DiscountModal({
         return
       }
 
-      if (isItemDiscount) {
-        // Per-item endpoint returns { discount, newItemTotal, newOrderTotal }
-        // Signal parent to refresh order data
+      if (isItemDiscount && result.orderTotals) {
+        onDiscountApplied(result.orderTotals)
+      } else if (isItemDiscount) {
+        // Fallback: trigger full reload via parent
         onDiscountApplied({ discountTotal: 0, taxTotal: 0, total: result.newOrderTotal ?? 0 })
       } else {
         onDiscountApplied(result.orderTotals)
