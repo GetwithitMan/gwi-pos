@@ -142,7 +142,8 @@ function appendPoolParams(url: string): string {
 // ============================================================================
 
 export const masterClient = globalForPrisma.prisma ?? createPrismaClient()
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = masterClient
+// Cache in globalThis to survive HMR (dev) and avoid duplicate clients (prod)
+globalForPrisma.prisma = masterClient
 
 // ============================================================================
 // Multi-tenant venue clients (cached per slug)

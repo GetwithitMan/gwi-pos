@@ -241,8 +241,8 @@ export function AddToWaitlistModal({
             <h2 className="text-xl font-bold text-white">{menuItemName}</h2>
             <p className="text-sm text-amber-100 font-medium">Add to Waitlist</p>
           </div>
-          <button onClick={onClose} className="text-white hover:text-amber-200">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button onClick={onClose} className="text-white hover:text-amber-200" aria-label="Close modal">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -256,7 +256,7 @@ export function AddToWaitlistModal({
               Currently Waiting
             </h3>
             {isLoading ? (
-              <p className="text-sm text-gray-600 font-medium">Loading...</p>
+              <p className="text-sm text-gray-600 font-medium" aria-busy="true">Loading...</p>
             ) : waitlist.length === 0 ? (
               <p className="text-sm text-gray-600 font-medium">No one waiting - they&apos;ll be first!</p>
             ) : (
@@ -287,7 +287,7 @@ export function AddToWaitlistModal({
             <h3 className="font-bold text-gray-900 text-lg border-b pb-2">New Customer</h3>
 
             {error && (
-              <div className="p-3 bg-red-100 border-2 border-red-400 rounded-lg text-red-800 font-medium">
+              <div role="alert" className="p-3 bg-red-100 border-2 border-red-400 rounded-lg text-red-800 font-medium">
                 {error}
               </div>
             )}
@@ -343,14 +343,16 @@ export function AddToWaitlistModal({
                 <div className="flex items-center gap-2 bg-purple-100 border-2 border-purple-400 rounded-lg p-2">
                   <button
                     type="button"
+                    aria-label="Decrease party size"
                     className="w-10 h-10 flex items-center justify-center bg-purple-500 text-white rounded-md hover:bg-purple-600 font-bold text-xl"
                     onClick={() => setPartySize(Math.max(1, partySize - 1))}
                   >
                     -
                   </button>
-                  <span className="w-12 text-center text-2xl font-bold text-purple-900">{partySize}</span>
+                  <span className="w-12 text-center text-2xl font-bold text-purple-900" aria-live="polite">{partySize}</span>
                   <button
                     type="button"
+                    aria-label="Increase party size"
                     className="w-10 h-10 flex items-center justify-center bg-purple-500 text-white rounded-md hover:bg-purple-600 font-bold text-xl"
                     onClick={() => setPartySize(partySize + 1)}
                   >

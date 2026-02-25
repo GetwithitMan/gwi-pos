@@ -31,7 +31,8 @@ BACKUP_SCRIPT="$APP_BASE/backup-pos.sh"
 MC_URL="https://app.thepasspos.com"
 MC_REGISTER_URL="$MC_URL/api/fleet/register"
 BACKOFFICE_API_URL="${BACKOFFICE_API_URL_OVERRIDE:-https://api.ordercontrolcenter.com}"
-GIT_REPO="https://github.com/GetwithitMan/gwi-pos.git"
+# Repo URL set during registration (encryptedRepoUrl), fallback for backwards compat
+GIT_REPO="${GIT_REPO_OVERRIDE:-}"
 
 # Color output
 RED='\033[0;31m'
@@ -358,6 +359,8 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
   ENCRYPTED_DB_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedDatabaseUrl // empty')
   ENCRYPTED_DIRECT_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedDirectUrl // empty')
   ENCRYPTED_DEPLOY_TOKEN=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedDeployToken // empty')
+  # Repo URL from MC (avoids hardcoding in public script)
+  ENCRYPTED_REPO_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedRepoUrl // empty')
 
   if [[ -z "$SERVER_NODE_ID" ]] || [[ -z "$ENCRYPTED_API_KEY" ]]; then
     err "Invalid response from Mission Control (missing serverNodeId or encryptedApiKey)."
@@ -397,6 +400,20 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
   DATABASE_URL=$(decrypt_rsa "$ENCRYPTED_DB_URL" "databaseUrl")
   DIRECT_URL=$(decrypt_rsa "$ENCRYPTED_DIRECT_URL" "directUrl")
   DEPLOY_TOKEN=$(decrypt_rsa "$ENCRYPTED_DEPLOY_TOKEN" "deployToken")
+
+  # Decrypt repo URL (if provided by Mission Control — avoids hardcoding in public script)
+  if [[ -n "$ENCRYPTED_REPO_URL" ]]; then
+    DECRYPTED_REPO_URL=$(decrypt_rsa "$ENCRYPTED_REPO_URL" "repoUrl")
+    if [[ -n "$DECRYPTED_REPO_URL" ]]; then
+      GIT_REPO="$DECRYPTED_REPO_URL"
+      log "Git repo URL from registration."
+    fi
+  fi
+  # Fallback: if MC didn't provide repoUrl and no override was set
+  if [[ -z "$GIT_REPO" ]]; then
+    GIT_REPO="https://github.com/GetwithitMan/gwi-pos.git"
+    log "Using default Git repo URL (MC did not provide encryptedRepoUrl)."
+  fi
 
   # Decrypt backoffice URL (if provided by Mission Control)
   ENCRYPTED_BACKOFFICE_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedBackofficeUrl // empty')

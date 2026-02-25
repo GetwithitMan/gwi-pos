@@ -334,7 +334,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Failed to generate tip share report:', error)
     return NextResponse.json(
-      { error: 'Failed to generate tip share report', details: error instanceof Error ? error.message : String(error) },
+      { error: 'Failed to generate tip share report' },
       { status: 500 }
     )
   }

@@ -283,7 +283,7 @@ function KDSContent() {
       socket.emit('join_station', {
         locationId,
         tags,
-        terminalId: `kds-${screenConfig?.id || 'fallback'}`,
+        terminalId: `kds-${screenConfig?.id || 'fallback-' + Math.random().toString(36).slice(2, 8)}`,
         stationId: stationIds?.[0],
       })
     }

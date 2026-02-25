@@ -51,10 +51,14 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
     grossNet: 'gross',
     overCapacity: false,
   })
-  const [connected, setConnected] = useState(false)
+  // `connected` reflects whether the scale device is responding (via scale:status events),
+  // NOT whether the socket transport is connected.
+  const [scaleConnected, setScaleConnected] = useState(false)
   const readingRef = useRef(reading)
   readingRef.current = reading
   const lastGrossWeightRef = useRef<number | null>(null)
+  // Track last scale:weight timestamp — if no reading within heartbeat window, mark disconnected
+  const lastWeightAtRef = useRef<number>(0)
 
   useEffect(() => {
     if (!scaleId) return
@@ -73,6 +77,9 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
       overCapacity: boolean
     }) => {
       if (data.scaleId !== scaleId) return
+      lastWeightAtRef.current = Date.now()
+      // Scale is sending data — it's connected
+      if (!scaleConnected) setScaleConnected(true)
       // Track last gross weight for tare computation
       if (data.grossNet === 'gross') {
         lastGrossWeightRef.current = data.weight
@@ -92,7 +99,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
       error?: string | null
     }) => {
       if (data.scaleId !== scaleId) return
-      setConnected(data.connected)
+      setScaleConnected(data.connected)
       if (data.error) {
         console.warn(`[useScale] Scale ${scaleId} error:`, data.error)
       }
@@ -107,12 +114,17 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
     socket.on('scale:status', onStatus)
     socket.on('connect', onConnect)
 
-    // If already connected, mark as connected
-    if (socket.connected) {
-      setConnected(true)
-    }
+    // Heartbeat: if no weight reading in 10s, mark scale as disconnected
+    const HEARTBEAT_INTERVAL = 5000
+    const HEARTBEAT_TIMEOUT = 10000
+    const heartbeat = setInterval(() => {
+      if (lastWeightAtRef.current > 0 && Date.now() - lastWeightAtRef.current > HEARTBEAT_TIMEOUT) {
+        setScaleConnected(false)
+      }
+    }, HEARTBEAT_INTERVAL)
 
     return () => {
+      clearInterval(heartbeat)
       socket.emit('unsubscribe', `scale:${scaleId}`)
       socket.off('scale:weight', onWeight)
       socket.off('scale:status', onStatus)
@@ -162,7 +174,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
     weight: reading.weight,
     unit: reading.unit,
     stable: reading.stable,
-    connected,
+    connected: scaleConnected,
     grossNet: reading.grossNet,
     overCapacity: reading.overCapacity,
     lastGrossWeight: lastGrossWeightRef.current,

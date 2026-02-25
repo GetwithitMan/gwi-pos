@@ -180,10 +180,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   } catch (error) {
     console.error('[tip-adjustment] Failed to load report:', error)
     return NextResponse.json(
-      {
-        error: 'Failed to load tip adjustment report',
-        details: error instanceof Error ? error.message : String(error),
-      },
+      { error: 'Failed to load tip adjustment report' },
       { status: 500 }
     )
   }

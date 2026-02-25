@@ -21,12 +21,25 @@ import { io, type Socket } from 'socket.io-client'
 let sharedSocket: Socket | null = null
 let refCount = 0
 
-// Stable terminal ID per tab (survives component re-mounts)
+// Stable terminal ID per tab (survives component re-mounts AND page refreshes via sessionStorage)
 let stableTerminalId: string | null = null
+const TERMINAL_ID_KEY = 'gwi-pos-terminal-id'
 
 export function getTerminalId(): string {
   if (!stableTerminalId) {
-    stableTerminalId = 'pos-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)
+    try {
+      stableTerminalId = sessionStorage.getItem(TERMINAL_ID_KEY)
+    } catch {
+      // sessionStorage unavailable (SSR, sandboxed iframe)
+    }
+    if (!stableTerminalId) {
+      stableTerminalId = 'pos-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)
+      try {
+        sessionStorage.setItem(TERMINAL_ID_KEY, stableTerminalId)
+      } catch {
+        // sessionStorage unavailable
+      }
+    }
   }
   return stableTerminalId
 }

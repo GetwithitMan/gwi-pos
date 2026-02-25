@@ -136,8 +136,11 @@ export const POST = withVenue(async function POST(
         const itemTotalCheck = (Number(itemForCheck.price) + modsTotalCheck) * itemForCheck.quantity
 
         // If threshold is 0, all voids require approval; otherwise only above threshold
-        const needsApproval = approvalSettings.voidApprovalThreshold === 0
-          || itemTotalCheck > approvalSettings.voidApprovalThreshold
+        // Compare in integer cents to avoid float precision issues
+        const itemCents = Math.round(itemTotalCheck * 100)
+        const thresholdCents = Math.round(approvalSettings.voidApprovalThreshold * 100)
+        const needsApproval = thresholdCents === 0
+          || itemCents > thresholdCents
 
         if (needsApproval && !approvedById && !remoteApprovalCode) {
           return NextResponse.json(
@@ -156,7 +159,8 @@ export const POST = withVenue(async function POST(
         const modsTotalCheck = itemForCheck.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
         const itemTotalCheck = (Number(itemForCheck.price) + modsTotalCheck) * itemForCheck.quantity
 
-        if (itemTotalCheck > securitySettings.void2FAThreshold && !remoteApprovalCode) {
+        // Compare in integer cents to avoid float precision issues
+        if (Math.round(itemTotalCheck * 100) > Math.round(securitySettings.void2FAThreshold * 100) && !remoteApprovalCode) {
           return NextResponse.json(
             { error: `Remote manager approval required for void over $${securitySettings.void2FAThreshold}`, requiresRemoteApproval: true },
             { status: 403 }

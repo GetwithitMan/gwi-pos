@@ -196,6 +196,7 @@ export function EntertainmentItemCard({
               size="sm"
               className="w-full"
               onClick={() => onOpenTab?.(item.currentOrder!.orderId)}
+              aria-label={`Open tab for ${item.displayName}`}
             >
               Open Tab
             </Button>
@@ -206,6 +207,7 @@ export function EntertainmentItemCard({
                   size="sm"
                   className="flex-1"
                   onClick={() => onExtendTime?.(item.id)}
+                  aria-label={`Extend time for ${item.displayName}`}
                 >
                   Extend
                 </Button>
@@ -215,6 +217,7 @@ export function EntertainmentItemCard({
                 size="sm"
                 className="flex-1 text-red-600 border-red-300 hover:bg-red-50"
                 onClick={() => onStopSession?.(item.id)}
+                aria-label={`Stop session for ${item.displayName}`}
               >
                 Stop
               </Button>
@@ -227,6 +230,7 @@ export function EntertainmentItemCard({
           size="sm"
           className={cn("w-full", isAvailable && "bg-blue-600 hover:bg-blue-700")}
           onClick={() => onAddToWaitlist?.(item.id)}
+          aria-label={`Add to waitlist for ${item.displayName}`}
         >
           + Add to Waitlist
         </Button>

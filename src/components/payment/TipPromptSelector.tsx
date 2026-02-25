@@ -51,6 +51,7 @@ export function TipPromptSelector({
             inputMode="decimal"
             step="0.01"
             min="0"
+            aria-label="Custom tip amount"
             className="w-full pl-8 pr-3 py-3 text-2xl text-center border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             value={customAmount}
             onChange={(e) => setCustomAmount(e.target.value)}

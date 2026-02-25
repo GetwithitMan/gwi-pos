@@ -1818,6 +1818,7 @@ model OrderItem {
   @@index([orderId, status])
   @@index([orderId, status, deletedAt])
   @@index([locationId, status, kitchenStatus])
+  @@index([menuItemId, createdAt]) // PMIX report: product mix by item over time range
 }
 
 model OrderItemModifier {
@@ -2068,8 +2069,8 @@ model Coupon {
 
   @@unique([locationId, code])
   // @@index([locationId]) — redundant with compound indexes below
-  @@index([code])
-  @@index([isActive])
+  // @@index([code]) — redundant: queries always filter by locationId, covered by @@unique + compound below
+  // @@index([isActive]) — redundant: low-cardinality, covered by compound [locationId, isActive, validUntil]
   @@index([locationId, isActive, validUntil])
   @@index([locationId, code]) // Coupon lookup by code per location
 }
@@ -4648,6 +4649,8 @@ model IngredientStockAdjustment {
 
 // Recipe for making an inventory item from raw materials
 // Example: Pizza Dough = 2 lb Flour + 0.5 oz Yeast + 2 oz Oil + 1 lb Water
+// WARNING: Self-referential cycles possible (A uses B, B uses A). Application code
+// must validate DAG integrity when creating/updating recipes to prevent infinite loops.
 model IngredientRecipe {
   id          String   @id @default(cuid())
   locationId  String

@@ -79,7 +79,7 @@ export default function EntertainmentKDSPage() {
       socket.emit('join_station', {
         locationId,
         tags: ['entertainment'],
-        terminalId: `entertainment-kds-${locationId || 'fallback'}`,
+        terminalId: `entertainment-kds-${locationId || 'fallback'}-${Math.random().toString(36).slice(2, 8)}`,
       })
     }
 
@@ -431,11 +431,11 @@ export default function EntertainmentKDSPage() {
       {/* Main content */}
       <main className="p-4">
         {isLoading ? (
-          <div className="flex items-center justify-center h-64">
+          <div className="flex items-center justify-center h-64" aria-busy="true">
             <div className="text-gray-400">Loading...</div>
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-64">
+          <div className="flex items-center justify-center h-64" role="alert">
             <div className="text-red-400">{error}</div>
           </div>
         ) : items.length === 0 ? (

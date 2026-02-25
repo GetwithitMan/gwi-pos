@@ -11,8 +11,8 @@
 import { build } from 'esbuild'
 
 const asyncLocalStorageBanner = `
-// Polyfill: Next.js 16 expects globalThis.AsyncLocalStorage but Node 20
-// only exposes it via require('async_hooks'). Must run before any imports.
+// Polyfill: Next.js 16 expects globalThis.AsyncLocalStorage but Node < 22
+// only exposes it via require('async_hooks'). NUC servers run Node 20.
 if (!globalThis.AsyncLocalStorage) {
   globalThis.AsyncLocalStorage = require('node:async_hooks').AsyncLocalStorage;
 }

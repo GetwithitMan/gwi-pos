@@ -79,6 +79,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           select: { id: true, displayName: true, firstName: true, lastName: true },
         },
         items: {
+          where: { status: 'active', deletedAt: null },
           include: {
             menuItem: { select: { id: true, name: true, commissionType: true, commissionValue: true } },
           },

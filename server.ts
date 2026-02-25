@@ -63,10 +63,12 @@ function startEodScheduler() {
     const nextRun = new Date(Date.now() + delay)
     console.log(`[EOD] Next stale-order cleanup scheduled for ${nextRun.toLocaleString()}`)
 
-    setTimeout(async () => {
+    const timer = setTimeout(async () => {
       await runEodCleanup()
       scheduleNext() // Reschedule for next day
     }, delay)
+    // Don't keep the process alive just for the EOD timer
+    timer.unref()
   }
 
   scheduleNext()

@@ -290,7 +290,12 @@ export class SocketEventProvider implements EventProvider {
     const payload = { event, data, channel: channelName }
 
     return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`emit("${event}") timed out after 10s`))
+      }, 10000)
+
       this.socket!.emit('event', payload, (response: { success: boolean; error?: string }) => {
+        clearTimeout(timeout)
         if (response?.success) {
           resolve()
         } else {

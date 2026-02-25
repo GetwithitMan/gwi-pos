@@ -7,15 +7,16 @@
  * that runs with plain `node server.js`.
  *
  * CRITICAL: Next.js 16 checks globalThis.AsyncLocalStorage before its own
- * bootstrap sets it up. On Node 20, AsyncLocalStorage is only available via
- * async_hooks, not on globalThis. The banner injects the polyfill BEFORE
- * any require('next') calls that esbuild hoists to the top of the file.
+ * bootstrap sets it up. On Node < 22, AsyncLocalStorage is only available via
+ * async_hooks, not on globalThis. NUC servers run Node 20 where this is needed.
+ * The banner injects the polyfill BEFORE any require('next') calls that esbuild
+ * hoists to the top of the file.
  */
 import { build } from 'esbuild'
 
 const asyncLocalStorageBanner = `
-// Polyfill: Next.js 16 expects globalThis.AsyncLocalStorage but Node 20
-// only exposes it via require('async_hooks'). Must run before require('next').
+// Polyfill: Next.js 16 expects globalThis.AsyncLocalStorage but Node < 22
+// only exposes it via require('async_hooks'). NUC servers run Node 20.
 if (!globalThis.AsyncLocalStorage) {
   globalThis.AsyncLocalStorage = require('node:async_hooks').AsyncLocalStorage;
 }

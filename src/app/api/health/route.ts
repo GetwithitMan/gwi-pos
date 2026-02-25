@@ -66,8 +66,9 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   const response: HealthResponse = {
     status,
     timestamp,
-    version,
-    uptime,
+    // Omit version and uptime in production to avoid leaking server info
+    version: process.env.NODE_ENV === 'production' ? 'ok' : version,
+    uptime: process.env.NODE_ENV === 'production' ? 0 : uptime,
     database: databaseStatus,
     checks: {
       database: databaseCheck,

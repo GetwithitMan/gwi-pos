@@ -59,7 +59,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     if (existing.length === 0) {
-      // CREATE DATABASE cannot use parameterized queries — sanitize via regex above
+      // CREATE DATABASE cannot use parameterized queries.
+      // SAFETY: slug is validated by /^[a-z0-9]+(-[a-z0-9]+)*$/ regex above,
+      // and venueDbName() only adds a safe prefix. No user-controlled characters
+      // can escape the double-quoted identifier.
       await db.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`)
       if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Created database: ${dbName}`)
     } else {

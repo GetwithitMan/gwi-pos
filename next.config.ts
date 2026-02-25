@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Enable standalone output for Docker deployment
-  // This creates a self-contained build that includes only necessary node_modules
+  // Standalone output: used by Vercel for serverless deployment.
+  // On NUC, the custom server.ts wraps Next.js directly (npm ci + full node_modules),
+  // so the standalone .next/standalone folder is not used there.
   output: 'standalone',
 
   // Disable x-powered-by header for security

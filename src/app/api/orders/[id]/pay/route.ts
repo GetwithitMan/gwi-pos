@@ -191,7 +191,7 @@ export const POST = withVenue(withTiming(async function POST(
         .filter(p => p.status === 'completed')
         .reduce((sum, p) => sum + Number(p.totalAmount), 0)
       const zeroRemaining = Number(order.total) - zeroAlreadyPaid
-      if (zeroRemaining <= 0 && zeroAlreadyPaid === 0) {
+      if (zeroRemaining <= 0) {
         await db.order.update({
           where: { id: orderId },
           data: { status: 'paid', paidAt: new Date() },

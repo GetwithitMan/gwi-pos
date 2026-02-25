@@ -363,15 +363,127 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     })
     const ingredientMap = new Map(ingredientsList.map(i => [i.id, i]))
 
-    // Process each adjustment
-    for (const adj of adjustments) {
-      const { ingredientId, quantity, operation = 'set' } = adj
+    // Process all adjustments in a single transaction to avoid N+1 writes
+    await db.$transaction(async (tx) => {
+      for (const adj of adjustments) {
+        const { ingredientId, quantity, operation = 'set' } = adj
 
-      try {
-        // O(1) lookup from pre-fetched map
-        const ingredient = ingredientMap.get(ingredientId)
+        try {
+          // O(1) lookup from pre-fetched map
+          const ingredient = ingredientMap.get(ingredientId)
 
-        if (!ingredient) {
+          if (!ingredient) {
+            results.push({
+              id: ingredientId,
+              name: 'Unknown',
+              previousStock: 0,
+              newStock: 0,
+              change: 0,
+              unit: 'unit',
+              costImpact: null,
+              success: false,
+              error: 'Not found'
+            })
+            continue
+          }
+
+          resolvedLocationId = ingredient.locationId
+          const currentStock = Number(ingredient.currentPrepStock) || 0
+          let newStock: number
+
+          switch (operation) {
+            case 'set':
+              newStock = quantity
+              break
+            case 'add':
+              newStock = currentStock + quantity
+              break
+            case 'subtract':
+              newStock = currentStock - quantity
+              break
+            default:
+              newStock = quantity
+          }
+
+          if (newStock < 0) newStock = 0
+          if (ingredient.countPrecision === 'whole') {
+            newStock = Math.round(newStock)
+          } else {
+            newStock = Math.round(newStock * 100) / 100
+          }
+
+          const quantityChange = newStock - currentStock
+          const unit = ingredient.outputUnit || ingredient.standardUnit || 'unit'
+
+          // Calculate cost
+          const costPerUnit = calculateCostPerUnit({
+            purchaseCost: ingredient.purchaseCost ? Number(ingredient.purchaseCost) : null,
+            unitsPerPurchase: ingredient.unitsPerPurchase ? Number(ingredient.unitsPerPurchase) : null,
+          })
+          const itemCostImpact = costPerUnit ? quantityChange * costPerUnit : null
+
+          if (itemCostImpact !== null) {
+            totalCostImpact += itemCostImpact
+          }
+
+          // Update ingredient stock
+          await tx.ingredient.update({
+            where: { id: ingredientId },
+            data: {
+              currentPrepStock: newStock,
+              lastCountedAt: new Date(),
+            }
+          })
+
+          // Create stock adjustment record
+          await tx.ingredientStockAdjustment.create({
+            data: {
+              locationId: ingredient.locationId,
+              ingredientId,
+              type: 'manual',
+              quantityBefore: currentStock,
+              quantityChange,
+              quantityAfter: newStock,
+              unit,
+              unitCost: costPerUnit,
+              totalCostImpact: itemCostImpact,
+              employeeId,
+              reason: 'Quick stock adjustment (bulk)',
+            },
+          })
+
+          // Create audit log entry
+          await tx.auditLog.create({
+            data: {
+              locationId: ingredient.locationId,
+              employeeId,
+              action: 'stock_adjust',
+              entityType: 'ingredient',
+              entityId: ingredientId,
+              details: {
+                name: ingredient.name,
+                previousStock: currentStock,
+                newStock,
+                change: quantityChange,
+                unit,
+                costPerUnit,
+                costImpact: itemCostImpact,
+              },
+            },
+          })
+
+          results.push({
+            id: ingredientId,
+            name: ingredient.name,
+            previousStock: currentStock,
+            newStock,
+            change: quantityChange,
+            unit,
+            costImpact: itemCostImpact,
+            success: true,
+          })
+        } catch (err) {
+          console.error(`Error adjusting ${ingredientId}:`, err)
           results.push({
             id: ingredientId,
             name: 'Unknown',
@@ -381,121 +493,11 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
             unit: 'unit',
             costImpact: null,
             success: false,
-            error: 'Not found'
+            error: 'Update failed'
           })
-          continue
         }
-
-        resolvedLocationId = ingredient.locationId
-        const currentStock = Number(ingredient.currentPrepStock) || 0
-        let newStock: number
-
-        switch (operation) {
-          case 'set':
-            newStock = quantity
-            break
-          case 'add':
-            newStock = currentStock + quantity
-            break
-          case 'subtract':
-            newStock = currentStock - quantity
-            break
-          default:
-            newStock = quantity
-        }
-
-        if (newStock < 0) newStock = 0
-        if (ingredient.countPrecision === 'whole') {
-          newStock = Math.round(newStock)
-        } else {
-          newStock = Math.round(newStock * 100) / 100
-        }
-
-        const quantityChange = newStock - currentStock
-        const unit = ingredient.outputUnit || ingredient.standardUnit || 'unit'
-
-        // Calculate cost
-        const costPerUnit = calculateCostPerUnit({
-          purchaseCost: ingredient.purchaseCost ? Number(ingredient.purchaseCost) : null,
-          unitsPerPurchase: ingredient.unitsPerPurchase ? Number(ingredient.unitsPerPurchase) : null,
-        })
-        const itemCostImpact = costPerUnit ? quantityChange * costPerUnit : null
-
-        if (itemCostImpact !== null) {
-          totalCostImpact += itemCostImpact
-        }
-
-        // Update ingredient stock
-        await db.ingredient.update({
-          where: { id: ingredientId },
-          data: {
-            currentPrepStock: newStock,
-            lastCountedAt: new Date(),
-          }
-        })
-
-        // Create stock adjustment record
-        await db.ingredientStockAdjustment.create({
-          data: {
-            locationId: ingredient.locationId,
-            ingredientId,
-            type: 'manual',
-            quantityBefore: currentStock,
-            quantityChange,
-            quantityAfter: newStock,
-            unit,
-            unitCost: costPerUnit,
-            totalCostImpact: itemCostImpact,
-            employeeId,
-            reason: 'Quick stock adjustment (bulk)',
-          },
-        })
-
-        // Create audit log entry
-        await db.auditLog.create({
-          data: {
-            locationId: ingredient.locationId,
-            employeeId,
-            action: 'stock_adjust',
-            entityType: 'ingredient',
-            entityId: ingredientId,
-            details: {
-              name: ingredient.name,
-              previousStock: currentStock,
-              newStock,
-              change: quantityChange,
-              unit,
-              costPerUnit,
-              costImpact: itemCostImpact,
-            },
-          },
-        })
-
-        results.push({
-          id: ingredientId,
-          name: ingredient.name,
-          previousStock: currentStock,
-          newStock,
-          change: quantityChange,
-          unit,
-          costImpact: itemCostImpact,
-          success: true,
-        })
-      } catch (err) {
-        console.error(`Error adjusting ${ingredientId}:`, err)
-        results.push({
-          id: ingredientId,
-          name: 'Unknown',
-          previousStock: 0,
-          newStock: 0,
-          change: 0,
-          unit: 'unit',
-          costImpact: null,
-          success: false,
-          error: 'Update failed'
-        })
       }
-    }
+    })
 
     const successCount = results.filter(r => r.success).length
     const failCount = results.filter(r => !r.success).length

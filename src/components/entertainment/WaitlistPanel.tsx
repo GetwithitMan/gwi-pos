@@ -44,10 +44,11 @@ export function WaitlistPanel({
             No one waiting
           </div>
         ) : (
-          <div className="divide-y divide-amber-200">
+          <div className="divide-y divide-amber-200" role="list" aria-label="Waitlist entries">
             {waitingEntries.map((entry, index) => (
               <div
                 key={entry.id}
+                role="listitem"
                 className="flex items-center justify-between px-4 py-3 hover:bg-amber-100"
               >
                 <div className="flex items-center gap-3">
@@ -102,8 +103,9 @@ export function WaitlistPanel({
                       size="sm"
                       className="text-red-600 border-red-400 hover:bg-red-100 font-semibold"
                       onClick={() => onRemove(entry.id)}
+                      aria-label={`Remove ${entry.customerName} from waitlist`}
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </Button>

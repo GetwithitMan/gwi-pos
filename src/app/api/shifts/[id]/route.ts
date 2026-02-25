@@ -147,46 +147,6 @@ export const PUT = withVenue(async function PUT(
         )
       }
 
-      // Check if employee has open orders (requireCloseTabsBeforeShift setting)
-      const locationSettings = await getLocationSettings(shift.locationId)
-      const locSettings = parseSettings(locationSettings)
-      const requireClose = locSettings.barTabs?.requireCloseTabsBeforeShift ?? true
-
-      if (requireClose) {
-        const openOrderCount = await db.order.count({
-          where: {
-            locationId: shift.locationId,
-            employeeId: shift.employeeId,
-            status: { in: ['open', 'sent', 'in_progress', 'split'] },
-            deletedAt: null,
-          },
-        })
-
-        if (openOrderCount > 0) {
-          // Manager override: transfer orders and proceed
-          if (forceClose && requestingEmployeeId !== shift.employeeId) {
-            await db.order.updateMany({
-              where: {
-                locationId: shift.locationId,
-                employeeId: shift.employeeId,
-                status: { in: ['open', 'sent', 'in_progress', 'split'] },
-                deletedAt: null,
-              },
-              data: { employeeId: requestingEmployeeId },
-            })
-          } else {
-            return NextResponse.json(
-              {
-                error: 'Cannot close shift with open orders',
-                openOrderCount,
-                requiresManagerOverride: true,
-              },
-              { status: 409 }
-            )
-          }
-        }
-      }
-
       // For 'none' cash handling mode, actual cash is always 0 (no cash handled)
       const cashMode = cashHandlingMode || 'drawer'
       const effectiveActualCash = cashMode === 'none' ? 0 : actualCash
@@ -213,8 +173,42 @@ export const PUT = withVenue(async function PUT(
       const variance = effectiveActualCash - expectedCash
 
       // Update shift + process tip distribution atomically
+      // Open order check is inside the transaction to prevent TOCTOU race condition
       // Server-side computation of grossTips/tipOutTotal/netTips (BUG #417/#421 fix)
       const updatedShift = await db.$transaction(async (tx) => {
+        // Check if employee has open orders (requireCloseTabsBeforeShift setting)
+        const locationSettings = await getLocationSettings(shift.locationId)
+        const locSettings = parseSettings(locationSettings)
+        const requireClose = locSettings.barTabs?.requireCloseTabsBeforeShift ?? true
+
+        if (requireClose) {
+          const openOrderCount = await tx.order.count({
+            where: {
+              locationId: shift.locationId,
+              employeeId: shift.employeeId,
+              status: { in: ['open', 'sent', 'in_progress', 'split'] },
+              deletedAt: null,
+            },
+          })
+
+          if (openOrderCount > 0) {
+            // Manager override: transfer orders and proceed
+            if (forceClose && requestingEmployeeId !== shift.employeeId) {
+              await tx.order.updateMany({
+                where: {
+                  locationId: shift.locationId,
+                  employeeId: shift.employeeId,
+                  status: { in: ['open', 'sent', 'in_progress', 'split'] },
+                  deletedAt: null,
+                },
+                data: { employeeId: requestingEmployeeId },
+              })
+            } else {
+              throw new Error(`OPEN_ORDERS:${openOrderCount}`)
+            }
+          }
+        }
+
         const serverGrossTips = summary.totalTips
         let actualTipOutTotal = 0
 
@@ -363,6 +357,18 @@ export const PUT = withVenue(async function PUT(
       message: 'Shift updated',
     } })
   } catch (error) {
+    // Handle structured errors from the transaction
+    if (error instanceof Error && error.message.startsWith('OPEN_ORDERS:')) {
+      const openOrderCount = parseInt(error.message.split(':')[1], 10)
+      return NextResponse.json(
+        {
+          error: 'Cannot close shift with open orders',
+          openOrderCount,
+          requiresManagerOverride: true,
+        },
+        { status: 409 }
+      )
+    }
     console.error('Failed to update shift:', error)
     return NextResponse.json(
       { error: 'Failed to update shift' },
@@ -708,7 +714,8 @@ async function processTipDistribution(
     const remainderCents = totalCents - (perPersonCents * recipients.length)
 
     for (let i = 0; i < recipients.length; i++) {
-      const recipientCents = perPersonCents + (i === 0 ? remainderCents : 0)
+      // Distribute remainder pennies round-robin (1 cent each) instead of all to first
+      const recipientCents = perPersonCents + (i < remainderCents ? 1 : 0)
       if (recipientCents <= 0) continue
       const recipientDollars = recipientCents / 100
 
