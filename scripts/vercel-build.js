@@ -174,6 +174,9 @@ async function runPrePushMigrations() {
   `
   if (dupes.length > 0) {
     console.log(`[vercel-build]   Deduplicating ${dupes.length} duplicate orderNumber groups...`)
+    // Use a counter starting above the max existing orderNumber to avoid collisions
+    const [maxRow] = await sql`SELECT COALESCE(MAX("orderNumber"), 0) as mx FROM "Order"`
+    let nextNum = Math.max(maxRow.mx, 900000) + 1000
     for (const { locationId, orderNumber } of dupes) {
       const orders = await sql`
         SELECT id FROM "Order"
@@ -181,10 +184,10 @@ async function runPrePushMigrations() {
           AND "parentOrderId" IS NULL
         ORDER BY "createdAt" DESC
       `
-      // Keep the newest, offset the rest
+      // Keep the newest, renumber the rest with unique sequential numbers
       for (let i = 1; i < orders.length; i++) {
-        const newNum = 900000 + orderNumber + i
-        await sql`UPDATE "Order" SET "orderNumber" = ${newNum} WHERE id = ${orders[i].id}`
+        nextNum++
+        await sql`UPDATE "Order" SET "orderNumber" = ${nextNum} WHERE id = ${orders[i].id}`
       }
     }
     console.log('[vercel-build]   Done — duplicate orderNumbers resolved')
