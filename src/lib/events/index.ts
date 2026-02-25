@@ -60,10 +60,14 @@ export function getEventProvider(config?: Partial<ProviderConfig>): EventProvide
     return providerInstance
   }
 
-  const providerType =
-    (typeof window !== 'undefined'
-      ? (process.env.NEXT_PUBLIC_EVENT_PROVIDER as ProviderType)
-      : 'local') || 'local'
+  let providerType: ProviderType = 'local'
+  if (typeof window !== 'undefined') {
+    const envProvider = process.env.NEXT_PUBLIC_EVENT_PROVIDER as ProviderType | undefined
+    providerType = envProvider || 'socket'
+    if (!envProvider) {
+      console.warn('[Events] NEXT_PUBLIC_EVENT_PROVIDER not set — defaulting to "socket". Set explicitly to silence this warning.')
+    }
+  }
 
   providerInstance = createProvider(providerType, config)
   return providerInstance

@@ -55,7 +55,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // In production with custom server, socket server runs in same process
     // In serverless, socket events are skipped (use external service like Pusher/Ably instead)
 
-    let emitToTags: (tags: string[], event: string, data: unknown) => Promise<boolean>
+    let emitToTags: (tags: string[], event: string, data: unknown, locationId?: string) => Promise<boolean>
     let emitToLocation: (locationId: string, event: string, data: unknown) => Promise<boolean>
 
     try {
@@ -120,7 +120,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           }
 
           // Emit to the tags this manifest matched
-          await emitToTags(manifest.matchedTags, 'kds:order-received', orderEvent)
+          await emitToTags(manifest.matchedTags, 'kds:order-received', orderEvent, locationId)
         }
 
         // Also emit to location for general awareness
@@ -138,7 +138,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
         }
         // Emit to expo and location
-        await emitToTags(['expo'], 'kds:item-status', payload)
+        await emitToTags(['expo'], 'kds:item-status', payload, locationId)
         await emitToLocation(locationId, 'kds:item-status', payload)
         break
       }
@@ -147,7 +147,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         if (!payload) {
           return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
         }
-        await emitToTags(['expo'], 'kds:order-bumped', payload)
+        await emitToTags(['expo'], 'kds:order-bumped', payload, locationId)
         await emitToLocation(locationId, 'kds:order-bumped', payload)
         break
       }
@@ -156,7 +156,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         if (!payload) {
           return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
         }
-        await emitToTags(['entertainment'], 'entertainment:session-update', payload)
+        await emitToTags(['entertainment'], 'entertainment:session-update', payload, locationId)
         await emitToLocation(locationId, 'entertainment:session-update', payload)
         break
       }

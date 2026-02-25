@@ -74,7 +74,7 @@ export async function dispatchNewOrder(
           stationName: manifest.stationName,
         }
 
-        await emitToTags(manifest.matchedTags, 'kds:order-received', orderEvent)
+        await emitToTags(manifest.matchedTags, 'kds:order-received', orderEvent, locationId)
       }
 
       // Also emit to location for general awareness
@@ -118,7 +118,7 @@ export async function dispatchItemStatus(
 ): Promise<boolean> {
   const doEmit = async () => {
     try {
-      await emitToTags(['expo'], 'kds:item-status', payload)
+      await emitToTags(['expo'], 'kds:item-status', payload, locationId)
       await emitToLocation(locationId, 'kds:item-status', payload)
       return true
     } catch (error) {
@@ -153,7 +153,7 @@ export async function dispatchOrderBumped(
 ): Promise<boolean> {
   const doEmit = async () => {
     try {
-      await emitToTags(['expo'], 'kds:order-bumped', payload)
+      await emitToTags(['expo'], 'kds:order-bumped', payload, locationId)
       await emitToLocation(locationId, 'kds:order-bumped', payload)
       return true
     } catch (error) {
@@ -191,7 +191,7 @@ export async function dispatchEntertainmentUpdate(
 ): Promise<boolean> {
   const doEmit = async () => {
     try {
-      await emitToTags(['entertainment'], 'entertainment:session-update', payload)
+      await emitToTags(['entertainment'], 'entertainment:session-update', payload, locationId)
       await emitToLocation(locationId, 'entertainment:session-update', payload)
       return true
     } catch (error) {

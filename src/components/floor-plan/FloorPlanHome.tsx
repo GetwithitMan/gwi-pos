@@ -28,7 +28,7 @@ import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
-import { useEvents } from '@/lib/events'
+import { useSocket } from '@/hooks/useSocket'
 // useMenuSearch lifted to orders/page.tsx (UnifiedPOSHeader)
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
@@ -752,7 +752,7 @@ export function FloorPlanHome({
   }, [locationId, initialSnapshot])
 
   // Socket.io: primary update mechanism for all floor plan data
-  const { subscribe, isConnected } = useEvents({ locationId, autoConnect: true })
+  const { socket, isConnected } = useSocket()
 
   // 1s heartbeat for UI timers only (flash/undo expiry) — NO data polling
   // FIX 4: Uses refs for callbacks to prevent interval restart on re-render
@@ -803,7 +803,7 @@ export function FloorPlanHome({
   }, [])
 
   useEffect(() => {
-    if (!isConnected) return
+    if (!socket || !isConnected) return
 
     // Optimistic grace period: after an optimistic update, defer socket-triggered
     // full refreshes for 3s to prevent "table disappears then reappears" flicker.
@@ -820,96 +820,99 @@ export function FloorPlanHome({
     }
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-    const unsubs = [
-      // Floor plan layout changes from another terminal (structure change — full reload)
-      subscribe('floor-plan:updated', () => {
-        logger.log('[FloorPlanHome] floor-plan:updated — full reload (structure change)')
+    // Floor plan layout changes from another terminal (structure change — full reload)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onFloorPlanUpdated = () => {
+      logger.log('[FloorPlanHome] floor-plan:updated — full reload (structure change)')
+      refreshAll()
+    }
+    // Open orders list changed (create/send/pay/void)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onOrdersListChanged = (data: any) => {
+      const { trigger, tableId, orderNumber, status } = data || {}
+      logger.log(`[FloorPlanHome] orders:list-changed trigger=${trigger} tableId=${tableId}`)
+      if ((trigger === 'sent' || trigger === 'created') && tableId) {
+        const currentTables = tablesRef.current
+        const table = currentTables.find(t => t.id === tableId)
+        if (table && !table.currentOrder) {
+          addTableOrder(tableId, {
+            id: data.orderId || '',
+            orderNumber: orderNumber || 0,
+            guestCount: 1,
+            total: 0,
+            openedAt: new Date().toISOString(),
+            server: '',
+            status: status || 'occupied',
+          })
+        }
+      } else if ((trigger === 'paid' || trigger === 'voided') && tableId) {
+        removeTableOrder(tableId)
+      } else {
         refreshAll()
-      }),
-      // Open orders list changed (create/send/pay/void)
-      subscribe('orders:list-changed', (data) => {
-        const { trigger, tableId, orderNumber, status } = data || {}
-        logger.log(`[FloorPlanHome] orders:list-changed trigger=${trigger} tableId=${tableId}`)
-        if ((trigger === 'sent' || trigger === 'created') && tableId) {
-          // Delta: order sent/created on a table — patch locally, no full reload.
-          // Optimistic state is already set by addTableOrder before viewMode switches.
-          // Other terminals: add order to table if not already present.
-          const currentTables = tablesRef.current
-          const table = currentTables.find(t => t.id === tableId)
-          if (table && !table.currentOrder) {
-            addTableOrder(tableId, {
-              id: data.orderId || '',
-              orderNumber: orderNumber || 0,
-              guestCount: 1,
-              total: 0,
-              openedAt: new Date().toISOString(),
-              server: '',
-              status: status || 'occupied',
-            })
-          }
-          // If table already has an order, optimistic state matches — no-op
-        } else if ((trigger === 'paid' || trigger === 'voided') && tableId) {
-          // Delta: remove order from table locally — zero network
-          removeTableOrder(tableId)
-        } else {
-          // transferred/reopened or no tableId — full reload
-          refreshAll()
+      }
+    }
+    // Order totals changed — delta patch the table's displayed total
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onTotalsUpdated = (data: any) => {
+      const { orderId, totals } = data || {}
+      if (orderId && totals) {
+        const currentTables = tablesRef.current
+        const table = currentTables.find(t => t.currentOrder?.id === orderId)
+        if (table) {
+          logger.log(`[FloorPlanHome] order:totals-updated — delta patch table ${table.id}`)
+          patchTableOrder(table.id, { total: totals.total })
         }
-      }),
-      // order:created is KDS-only (emitted by dispatchNewOrder for station routing).
-      // order:updated is order-content only (items/metadata) — doesn't affect floor plan table status.
-      // Floor plan updates are handled by orders:list-changed delta handlers above.
-      // Order totals changed — delta patch the table's displayed total
-      subscribe('order:totals-updated', (data) => {
-        const { orderId, totals } = data || {}
-        if (orderId && totals) {
-          // Delta: find the table with this order and patch the total
-          const currentTables = tablesRef.current
-          const table = currentTables.find(t => t.currentOrder?.id === orderId)
-          if (table) {
-            logger.log(`[FloorPlanHome] order:totals-updated — delta patch table ${table.id}`)
-            patchTableOrder(table.id, { total: totals.total })
-          }
-          // No table found = bar tab or non-table order — no floor plan action needed
-        }
-      }),
-      // Explicit table status change
-      subscribe('table:status-changed', (data) => {
-        const { tableId, newStatus } = data || {}
-        if (tableId && newStatus) {
-          logger.log(`[FloorPlanHome] table:status-changed — delta patch ${tableId}`)
-          updateSingleTableStatus(tableId, newStatus)
-        } else {
-          refreshAll()
-        }
-      }),
-      // payment:processed — already handled by orders:list-changed trigger='paid' (delta remove).
-      // Entertainment session update — status glow changes
-      subscribe('entertainment:session-update', () => {
-        logger.log('[FloorPlanHome] entertainment:session-update — full reload')
-        loadFloorPlanData(false)
-      }),
-      // EOD reset complete — show manager summary overlay
-      subscribe('eod:reset-complete', (data) => {
-        logger.log('[FloorPlanHome] eod:reset-complete received', data)
-        toast.success('End of day reset complete')
-        setEodSummary({
-          cancelledDrafts: data.cancelledDrafts,
-          rolledOverOrders: data.rolledOverOrders,
-          tablesReset: data.tablesReset,
-          businessDay: data.businessDay,
-        })
-        // Refresh floor plan so table statuses reflect the reset
+      }
+    }
+    // Explicit table status change
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onTableStatusChanged = (data: any) => {
+      const { tableId, status: newStatus } = data || {}
+      if (tableId && newStatus) {
+        logger.log(`[FloorPlanHome] table:status-changed — delta patch ${tableId}`)
+        updateSingleTableStatus(tableId, newStatus)
+      } else {
         refreshAll()
-      }),
-    ]
+      }
+    }
+    // Entertainment session update — status glow changes
+    const onEntertainmentUpdate = () => {
+      logger.log('[FloorPlanHome] entertainment:session-update — full reload')
+      loadFloorPlanData(false)
+    }
+    // EOD reset complete — show manager summary overlay
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onEodReset = (data: any) => {
+      logger.log('[FloorPlanHome] eod:reset-complete received', data)
+      toast.success('End of day reset complete')
+      setEodSummary({
+        cancelledDrafts: data.cancelledDrafts,
+        rolledOverOrders: data.rolledOverOrders,
+        tablesReset: data.tablesReset,
+        businessDay: data.businessDay,
+      })
+      refreshAll()
+    }
+
+    socket.on('floor-plan:updated', onFloorPlanUpdated)
+    socket.on('orders:list-changed', onOrdersListChanged)
+    socket.on('order:totals-updated', onTotalsUpdated)
+    socket.on('table:status-changed', onTableStatusChanged)
+    // payment:processed — already handled by orders:list-changed trigger='paid' (delta remove).
+    socket.on('entertainment:session-update', onEntertainmentUpdate)
+    socket.on('eod:reset-complete', onEodReset)
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer)
-      unsubs.forEach(unsub => unsub())
+      socket.off('floor-plan:updated', onFloorPlanUpdated)
+      socket.off('orders:list-changed', onOrdersListChanged)
+      socket.off('order:totals-updated', onTotalsUpdated)
+      socket.off('table:status-changed', onTableStatusChanged)
+      socket.off('entertainment:session-update', onEntertainmentUpdate)
+      socket.off('eod:reset-complete', onEodReset)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, subscribe])
+  }, [socket, isConnected])
 
   // Parent-triggered refresh (e.g., after send-to-kitchen in orders page)
   // Delayed 3s — optimistic state is already set by addTableOrder before viewMode switches,

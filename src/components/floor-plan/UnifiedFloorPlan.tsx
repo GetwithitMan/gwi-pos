@@ -10,7 +10,7 @@ import { RoomTabs } from './RoomTabs'
 import { calculateAttachSide, calculateAttachPosition } from './table-positioning'
 import './styles/floor-plan.css'
 import { logger } from '@/lib/logger'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 import { toast } from '@/stores/toast-store'
 
 type FloorPlanMode = 'admin' | 'pos'
@@ -85,7 +85,7 @@ export function UnifiedFloorPlan({
   const tablesRef = useRef(tables)
   tablesRef.current = tables
 
-  const { isConnected, subscribe } = useEvents({ locationId })
+  const { socket, isConnected } = useSocket()
 
   // Load data on mount
   useEffect(() => {
@@ -94,45 +94,36 @@ export function UnifiedFloorPlan({
 
   // Socket-driven updates with delta patterns (avoid full reload when possible)
   useEffect(() => {
-    if (!isConnected) return
-    const unsubs: (() => void)[] = []
+    if (!socket || !isConnected) return
 
-    // Floor plan layout changes from another terminal (structure change — full reload)
-    unsubs.push(subscribe('floor-plan:updated', () => {
+    const onFloorPlanUpdated = () => {
       logger.log('[UnifiedFloorPlan] floor-plan:updated — full reload (structure change)')
       loadFloorPlanData()
-    }))
-
-    // Open orders list changed (create/send/pay/void)
-    unsubs.push(subscribe('orders:list-changed', (data: { trigger?: string; tableId?: string }) => {
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onOrdersListChanged = (data: any) => {
       const { trigger, tableId } = data || {}
       logger.log(`[UnifiedFloorPlan] orders:list-changed trigger=${trigger} tableId=${tableId}`)
       if ((trigger === 'paid' || trigger === 'voided') && tableId) {
-        // Delta: remove order from table locally — zero network
         removeTableOrder(tableId)
       } else {
         loadFloorPlanData()
       }
-    }))
-
-    // New order created — table status changes
-    unsubs.push(subscribe('order:created', () => {
+    }
+    const onOrderCreated = () => {
       logger.log('[UnifiedFloorPlan] order:created — full reload')
       loadFloorPlanData()
-    }))
-
-    // Order updated (items added, metadata changed)
-    unsubs.push(subscribe('order:updated', () => {
+    }
+    const onOrderUpdated = () => {
       logger.log('[UnifiedFloorPlan] order:updated — full reload')
       loadFloorPlanData()
-    }))
-
-    // Order totals changed — delta patch the table's displayed total
-    unsubs.push(subscribe('order:totals-updated', (data: { orderId?: string; totals?: { total: number } }) => {
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onTotalsUpdated = (data: any) => {
       const { orderId, totals } = data || {}
       if (orderId && totals) {
         const currentTables = tablesRef.current
-        const table = currentTables.find((t) => t.currentOrder?.id === orderId)
+        const table = currentTables.find((t: FloorPlanTable) => t.currentOrder?.id === orderId)
         if (table) {
           logger.log(`[UnifiedFloorPlan] order:totals-updated — delta patch table ${table.id}`)
           patchTableOrder(table.id, { total: totals.total })
@@ -140,21 +131,34 @@ export function UnifiedFloorPlan({
         }
       }
       loadFloorPlanData()
-    }))
-
-    // Explicit table status change
-    unsubs.push(subscribe('table:status-changed', (data: { tableId?: string; newStatus?: string }) => {
-      const { tableId, newStatus } = data || {}
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onTableStatusChanged = (data: any) => {
+      const { tableId, status: newStatus } = data || {}
       if (tableId && newStatus) {
         logger.log(`[UnifiedFloorPlan] table:status-changed — delta patch ${tableId}`)
         updateSingleTableStatus(tableId, newStatus as import('./use-floor-plan').TableStatus)
       } else {
         loadFloorPlanData()
       }
-    }))
+    }
 
-    return () => unsubs.forEach(u => u())
-  }, [isConnected, subscribe])
+    socket.on('floor-plan:updated', onFloorPlanUpdated)
+    socket.on('orders:list-changed', onOrdersListChanged)
+    socket.on('order:created', onOrderCreated)
+    socket.on('order:updated', onOrderUpdated)
+    socket.on('order:totals-updated', onTotalsUpdated)
+    socket.on('table:status-changed', onTableStatusChanged)
+
+    return () => {
+      socket.off('floor-plan:updated', onFloorPlanUpdated)
+      socket.off('orders:list-changed', onOrdersListChanged)
+      socket.off('order:created', onOrderCreated)
+      socket.off('order:updated', onOrderUpdated)
+      socket.off('order:totals-updated', onTotalsUpdated)
+      socket.off('table:status-changed', onTableStatusChanged)
+    }
+  }, [socket, isConnected])
 
   // 20s disconnected-only fallback
   useEffect(() => {

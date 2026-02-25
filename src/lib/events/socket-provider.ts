@@ -168,21 +168,27 @@ export class SocketEventProvider implements EventProvider {
       return Promise.resolve()
     }
 
-    // Wait for connection
+    // Wait for connection with proper listener cleanup on timeout
     return new Promise((resolve, reject) => {
+      const onceConnect = () => {
+        clearTimeout(timeout)
+        this.socket!.off('connect_error', onceConnectError)
+        resolve()
+      }
+      const onceConnectError = (error: Error) => {
+        clearTimeout(timeout)
+        this.socket!.off('connect', onceConnect)
+        reject(error)
+      }
       const timeout = setTimeout(() => {
+        // Clean up both listeners to prevent leaks
+        this.socket!.off('connect', onceConnect)
+        this.socket!.off('connect_error', onceConnectError)
         reject(new Error('Connection timeout'))
       }, 10000)
 
-      this.socket!.once('connect', () => {
-        clearTimeout(timeout)
-        resolve()
-      })
-
-      this.socket!.once('connect_error', (error: Error) => {
-        clearTimeout(timeout)
-        reject(error)
-      })
+      this.socket!.once('connect', onceConnect)
+      this.socket!.once('connect_error', onceConnectError)
     })
   }
 

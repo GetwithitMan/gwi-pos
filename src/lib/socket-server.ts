@@ -3,7 +3,7 @@
  *
  * Room Architecture:
  * - location:{id} - Global venue alerts (sync status, hardware failures)
- * - tag:{tagName} - Prep stations (pizza KDS only hears tag:pizza)
+ * - tag:{locationId}:{tagName} - Prep stations, location-scoped (tag:loc_123:pizza)
  * - terminal:{id} - Direct messages to specific handheld
  *
  * This provides real-time updates to replace polling:
@@ -225,8 +225,9 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         socket.join(`terminal:${terminalId}`)
 
         // Subscribe to specific prep tags (pizza, bar, kitchen, expo)
+        // Location-scoped: tag:{locationId}:{tagName} for multi-venue isolation
         tags.forEach((tag: string) => {
-          socket.join(`tag:${tag}`)
+          socket.join(`tag:${locationId}:${tag}`)
         })
 
         // If station-specific, join that room too
@@ -255,7 +256,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
         if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} joined rooms:`, {
           location: `location:${locationId}`,
-          tags: tags.map(t => `tag:${t}`),
+          tags: tags.map(t => `tag:${locationId}:${t}`),
           station: stationId ? `station:${stationId}` : null,
         })
 
@@ -462,11 +463,13 @@ export async function emitToRoom(room: string, event: string, data: unknown): Pr
 
 /**
  * Emit to multiple tag rooms (for order routing)
+ * Tags are location-scoped: tag:{locationId}:{tagName}
  */
-export async function emitToTags(tags: string[], event: string, data: unknown): Promise<boolean> {
+export async function emitToTags(tags: string[], event: string, data: unknown, locationId?: string): Promise<boolean> {
   if (globalForSocket.socketServer) {
     tags.forEach((tag) => {
-      globalForSocket.socketServer!.to(`tag:${tag}`).emit(event, data)
+      const room = locationId ? `tag:${locationId}:${tag}` : `tag:${tag}`
+      globalForSocket.socketServer!.to(room).emit(event, data)
     })
     return true
   }

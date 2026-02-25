@@ -9,7 +9,7 @@ import { PendingTabAnimation } from './PendingTabAnimation'
 import { AuthStatusBadge } from './AuthStatusBadge'
 import { MultiCardBadges } from './MultiCardBadges'
 import BottleServiceBanner from './BottleServiceBanner'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 
 interface TabCard {
   id: string
@@ -84,16 +84,19 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
     loadTabs()
   }, [refreshTrigger, loadTabs])
 
-  const { subscribe, isConnected } = useEvents()
+  const { socket, isConnected } = useSocket()
 
   useEffect(() => {
-    if (!isConnected) return
-    const unsubs = [
-      subscribe('tab:updated', () => loadTabs()),
-      subscribe('orders:list-changed', () => loadTabs()),
-    ]
-    return () => unsubs.forEach(u => u())
-  }, [isConnected, subscribe, loadTabs])
+    if (!socket || !isConnected) return
+    const onTabUpdated = () => loadTabs()
+    const onOrdersChanged = () => loadTabs()
+    socket.on('tab:updated', onTabUpdated)
+    socket.on('orders:list-changed', onOrdersChanged)
+    return () => {
+      socket.off('tab:updated', onTabUpdated)
+      socket.off('orders:list-changed', onOrdersChanged)
+    }
+  }, [socket, isConnected, loadTabs])
 
   const filteredTabs = filter === 'mine' && employeeId
     ? tabs.filter(t => t.employee.id === employeeId)

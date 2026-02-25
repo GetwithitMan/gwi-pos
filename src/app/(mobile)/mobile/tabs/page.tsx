@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MobileTabCard from '@/components/mobile/MobileTabCard'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 
 interface MobileTab {
   id: string
@@ -49,7 +49,7 @@ function MobileTabsContent() {
   const [loading, setLoading] = useState(true)
   const [authChecked, setAuthChecked] = useState(false)
   const [filter, setFilter] = useState<'mine' | 'all'>('mine')
-  const { isConnected, subscribe } = useEvents({})
+  const { socket, isConnected } = useSocket()
 
   // Verify session cookie on mount. Redirect to login if not authenticated.
   useEffect(() => {
@@ -97,14 +97,19 @@ function MobileTabsContent() {
 
   // Socket-driven updates
   useEffect(() => {
-    if (!isConnected) return
-    const unsubs: (() => void)[] = []
-    unsubs.push(subscribe('order:created' as never, () => loadTabs()))
-    unsubs.push(subscribe('order:updated' as never, () => loadTabs()))
-    unsubs.push(subscribe('payment:processed' as never, () => loadTabs()))
-    unsubs.push(subscribe('tab:updated' as never, () => loadTabs()))
-    return () => unsubs.forEach(u => u())
-  }, [isConnected, subscribe, loadTabs])
+    if (!socket || !isConnected) return
+    const refresh = () => loadTabs()
+    socket.on('order:created', refresh)
+    socket.on('order:updated', refresh)
+    socket.on('payment:processed', refresh)
+    socket.on('tab:updated', refresh)
+    return () => {
+      socket.off('order:created', refresh)
+      socket.off('order:updated', refresh)
+      socket.off('payment:processed', refresh)
+      socket.off('tab:updated', refresh)
+    }
+  }, [socket, isConnected, loadTabs])
 
   // 20s disconnected-only fallback
   useEffect(() => {

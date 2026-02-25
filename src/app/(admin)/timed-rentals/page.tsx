@@ -9,7 +9,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 
 import type { EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals'
 import {
@@ -87,7 +87,7 @@ function TimedRentalsContent() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/timed-rentals' })
   const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
-  const { isConnected, subscribe } = useEvents({ locationId })
+  const { socket, isConnected } = useSocket()
   const [sessions, setSessions] = useState<TimedSession[]>([])
   const [timedItems, setTimedItems] = useState<TimedItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -115,12 +115,11 @@ function TimedRentalsContent() {
 
   // Socket-driven updates for entertainment status changes
   useEffect(() => {
-    if (!isConnected) return
-    const unsub = subscribe('entertainment:session-update', () => {
-      loadData()
-    })
-    return unsub
-  }, [isConnected, subscribe])
+    if (!socket || !isConnected) return
+    const onUpdate = () => loadData()
+    socket.on('entertainment:session-update', onUpdate)
+    return () => { socket.off('entertainment:session-update', onUpdate) }
+  }, [socket, isConnected])
 
   // 20s fallback polling only when socket is disconnected
   useEffect(() => {

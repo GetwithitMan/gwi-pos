@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrency, formatTime } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
@@ -46,7 +46,7 @@ export default function TabsPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [isClosingTab, setIsClosingTab] = useState(false)
 
-  const { subscribe, isConnected } = useEvents()
+  const { socket, isConnected } = useSocket()
 
   // Load tabs on mount
   useEffect(() => {
@@ -57,18 +57,21 @@ export default function TabsPage() {
 
   // Socket-driven refresh: subscribe to events that affect tab list
   useEffect(() => {
-    if (!isConnected) return
-
-    const unsubs = [
-      subscribe('order:created', () => loadTabs()),
-      subscribe('order:updated', () => loadTabs()),
-      subscribe('payment:processed', () => loadTabs()),
-      subscribe('tab:updated', () => loadTabs()),
-      subscribe('orders:list-changed', () => loadTabs()),
-    ]
-
-    return () => unsubs.forEach(unsub => unsub())
-  }, [isConnected, subscribe])
+    if (!socket || !isConnected) return
+    const refresh = () => loadTabs()
+    socket.on('order:created', refresh)
+    socket.on('order:updated', refresh)
+    socket.on('payment:processed', refresh)
+    socket.on('tab:updated', refresh)
+    socket.on('orders:list-changed', refresh)
+    return () => {
+      socket.off('order:created', refresh)
+      socket.off('order:updated', refresh)
+      socket.off('payment:processed', refresh)
+      socket.off('tab:updated', refresh)
+      socket.off('orders:list-changed', refresh)
+    }
+  }, [socket, isConnected])
 
   // 20s fallback polling only when socket is disconnected
   useEffect(() => {

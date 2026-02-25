@@ -9,7 +9,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 
 interface ErrorStats {
   bySeverity: { severity: string; count: number }[]
@@ -36,7 +36,7 @@ export default function MonitoringDashboard() {
   useEffect(() => {
     setLocationId(localStorage.getItem('locationId') || undefined)
   }, [])
-  const { isConnected } = useEvents({ locationId })
+  const { isConnected } = useSocket()
 
   useEffect(() => {
     loadDashboardData()

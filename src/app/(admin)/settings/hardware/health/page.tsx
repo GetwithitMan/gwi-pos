@@ -10,7 +10,7 @@ import {
   ChevronLeftIcon,
 } from '@heroicons/react/24/outline'
 import { useAuthStore } from '@/stores/auth-store'
-import { useEvents } from '@/lib/events'
+import { useSocket } from '@/hooks/useSocket'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -175,7 +175,7 @@ function ReaderCard({ reader }: { reader: ReaderHealth }) {
 export default function ReaderHealthPage() {
   const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
-  const { isConnected } = useEvents({ locationId, autoConnect: true })
+  const { isConnected } = useSocket()
 
   const [readers, setReaders] = useState<ReaderHealth[]>([])
   const [loading, setLoading] = useState(true)

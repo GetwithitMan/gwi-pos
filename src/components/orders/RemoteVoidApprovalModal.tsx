@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 
 interface Manager {
   id: string
@@ -90,7 +90,7 @@ export function RemoteVoidApprovalModal({
     return () => clearInterval(interval)
   }, [expiresAt, state])
 
-  const { isConnected, subscribe } = useEvents({ locationId })
+  const { socket, isConnected } = useSocket()
 
   // Helper to check approval status via API (used for fallback + initial check)
   const checkApprovalStatus = useCallback(async () => {
@@ -117,9 +117,10 @@ export function RemoteVoidApprovalModal({
 
   // Socket-driven updates for void approval
   useEffect(() => {
-    if (state !== 'pending' || !approvalId || !isConnected) return
+    if (state !== 'pending' || !approvalId || !socket || !isConnected) return
 
-    const unsub = subscribe('void:approval-update', (data) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const onApprovalUpdate = (data: any) => {
       if (data.approvalId !== approvalId) return
 
       if (data.type === 'approved' && data.approvalCode) {
@@ -133,10 +134,11 @@ export function RemoteVoidApprovalModal({
         setState('error')
         setError('Request expired')
       }
-    })
+    }
 
-    return unsub
-  }, [state, approvalId, isConnected, subscribe])
+    socket.on('void:approval-update', onApprovalUpdate)
+    return () => { socket.off('void:approval-update', onApprovalUpdate) }
+  }, [state, approvalId, socket, isConnected])
 
   // 20s disconnected-only fallback polling
   useEffect(() => {

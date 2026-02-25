@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 import { useAuthStore } from '@/stores/auth-store'
 
 interface PrinterStatus {
@@ -69,7 +69,7 @@ function getTerminalLiveStatus(terminal: TerminalStatus): 'online' | 'stale' | '
 export default function HardwareDashboard() {
   const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
-  const { isConnected } = useEvents({ locationId })
+  const { isConnected } = useSocket()
   const [printers, setPrinters] = useState<PrinterStatus[]>([])
   const [kdsScreens, setKdsScreens] = useState<KDSScreenStatus[]>([])
   const [terminals, setTerminals] = useState<TerminalStatus[]>([])

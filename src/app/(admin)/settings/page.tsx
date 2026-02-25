@@ -10,13 +10,13 @@ import { useAuthStore } from '@/stores/auth-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { HardwareHealthWidget } from '@/components/hardware/HardwareHealthWidget'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 import { toast } from '@/stores/toast-store'
 
 export default function SettingsPage() {
   const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
-  const { isConnected } = useEvents({ locationId })
+  const { isConnected } = useSocket()
   const [settings, setSettings] = useState<LocationSettings>(DEFAULT_SETTINGS)
   const [locationName, setLocationName] = useState('')
   const [isLoading, setIsLoading] = useState(true)

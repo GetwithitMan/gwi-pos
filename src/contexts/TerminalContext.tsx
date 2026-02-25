@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { TerminalPairingOverlay, TerminalConfig } from '@/components/pos/TerminalPairingOverlay'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 
 interface TerminalContextValue {
   terminal: TerminalConfig | null
@@ -77,7 +77,7 @@ export function TerminalProvider({ children, requirePairing = false }: TerminalP
   }, [checkTerminalAuth])
 
   // Socket connection awareness — heartbeat less often when socket is connected
-  const { isConnected: socketConnected } = useEvents({ autoConnect: false })
+  const { isConnected: socketConnected } = useSocket()
 
   // Heartbeat interval — slower when socket connected, faster when disconnected
   useEffect(() => {

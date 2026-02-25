@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useEvents } from '@/lib/events/use-events'
+import { useSocket } from '@/hooks/useSocket'
 
 interface BottleServiceStatus {
   depositAmount: number
@@ -31,7 +31,7 @@ export default function BottleServiceBanner({
   compact = false,
 }: BottleServiceBannerProps) {
   const [status, setStatus] = useState<BottleServiceStatus | null>(null)
-  const { subscribe, isConnected } = useEvents()
+  const { socket, isConnected } = useSocket()
 
   const loadStatus = useCallback(() => {
     fetch(`/api/orders/${orderId}/bottle-service`)
@@ -49,17 +49,19 @@ export default function BottleServiceBanner({
 
   // Socket-driven refresh: order/tab/payment events affect bottle service spend
   useEffect(() => {
-    if (!isConnected) return
-
-    const unsubs = [
-      subscribe('order:updated', () => loadStatus()),
-      subscribe('order:item-added', () => loadStatus()),
-      subscribe('tab:updated', () => loadStatus()),
-      subscribe('payment:processed', () => loadStatus()),
-    ]
-
-    return () => unsubs.forEach(unsub => unsub())
-  }, [isConnected, subscribe, loadStatus])
+    if (!socket || !isConnected) return
+    const refresh = () => loadStatus()
+    socket.on('order:updated', refresh)
+    socket.on('order:item-added', refresh)
+    socket.on('tab:updated', refresh)
+    socket.on('payment:processed', refresh)
+    return () => {
+      socket.off('order:updated', refresh)
+      socket.off('order:item-added', refresh)
+      socket.off('tab:updated', refresh)
+      socket.off('payment:processed', refresh)
+    }
+  }, [socket, isConnected, loadStatus])
 
   // 20s fallback polling only when socket is disconnected
   useEffect(() => {
