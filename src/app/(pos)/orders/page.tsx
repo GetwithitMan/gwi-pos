@@ -221,6 +221,9 @@ export default function OrdersPage() {
     appliedDiscounts, setAppliedDiscounts,
   } = usePaymentFlow()
 
+  // Per-item discount state
+  const [itemDiscountTargetId, setItemDiscountTargetId] = useState<string | null>(null)
+
   // Unified pricing calculations
   const pricing = usePricing({
     subtotal: currentOrder?.subtotal || 0,
@@ -1363,9 +1366,10 @@ export default function OrdersPage() {
     }
   }, [savedOrderId])
 
-  // Handle opening discount modal
+  // Handle opening discount modal (order-level)
   const handleOpenDiscount = async () => {
     if (!currentOrder?.items.length) return
+    setItemDiscountTargetId(null) // Clear any item target — this is order-level
 
     // If order hasn't been saved yet, save it first
     let orderId = savedOrderId
@@ -1397,12 +1401,33 @@ export default function OrdersPage() {
     }
   }
 
+  // Handle opening per-item discount
+  const handleItemDiscount = async (itemId: string) => {
+    let orderId = savedOrderId
+    if (!orderId) {
+      setIsSendingOrder(true)
+      try {
+        orderId = await ensureOrderInDB(employee?.id)
+        if (orderId) setSavedOrderId(orderId)
+      } finally {
+        setIsSendingOrder(false)
+      }
+    }
+    if (orderId) {
+      setOrderToPayId(orderId)
+      setItemDiscountTargetId(itemId)
+      setShowDiscountModal(true)
+    }
+  }
+
   // Handle discount applied
   const handleDiscountApplied = (newTotals: {
     discountTotal: number
     taxTotal: number
     total: number
   }) => {
+    // Clear per-item discount target
+    setItemDiscountTargetId(null)
     // Reload the order discounts
     if (orderToPayId) {
       fetch(`/api/orders/${orderToPayId}/discount`)
@@ -1414,6 +1439,13 @@ export default function OrdersPage() {
     }
     // Trigger a refresh of the tabs/orders to update totals
     setTabsRefreshTrigger(prev => prev + 1)
+    // Reload order to reflect item discount changes
+    if (savedOrderId) {
+      void fetch(`/api/orders/${savedOrderId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data) loadOrder(data.data || data) })
+        .catch(console.error)
+    }
   }
 
   // Comp/Void handlers
@@ -2451,6 +2483,7 @@ export default function OrdersPage() {
             onItemCourseChange={panelCallbacks.onItemCourseChange}
             onItemEditModifiers={panelCallbacks.onItemEditModifiers}
             onItemCompVoid={panelCallbacks.onItemCompVoid}
+            onItemDiscount={handleItemDiscount}
             onItemResend={panelCallbacks.onItemResend}
             onItemSplit={editingChildSplit || orderSplitChips.some(c => c.id === currentOrder?.id) ? undefined : panelCallbacks.onItemSplit}
             onQuickSplitEvenly={savedOrderId && !editingChildSplit && !orderSplitChips.some(c => c.id === currentOrder?.id) ? handleQuickSplitEvenly : undefined}
@@ -2782,6 +2815,7 @@ export default function OrdersPage() {
                 setShowPaymentModal(true)
               }
             }}
+            onDiscount={handleOpenDiscount}
             cashDiscountPct={pricing.cashDiscountRate}
             taxPct={Math.round(pricing.taxRate * 100)}
             cashTotal={pricing.cashTotal}
@@ -3478,6 +3512,7 @@ export default function OrdersPage() {
           setShowDiscountModal={setShowDiscountModal}
           appliedDiscounts={appliedDiscounts}
           onDiscountApplied={handleDiscountApplied}
+          itemDiscountTargetId={itemDiscountTargetId}
           showCompVoidModal={showCompVoidModal}
           setShowCompVoidModal={setShowCompVoidModal}
           compVoidItem={compVoidItem}

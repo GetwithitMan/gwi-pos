@@ -168,6 +168,7 @@ export interface OrderPageModalsProps {
   setShowDiscountModal: (v: boolean) => void
   appliedDiscounts: any[]
   onDiscountApplied: (newTotals: { discountTotal: number; taxTotal: number; total: number }) => void
+  itemDiscountTargetId?: string | null
 
   // Comp/Void modal
   showCompVoidModal: boolean
@@ -354,6 +355,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     setShowDiscountModal,
     appliedDiscounts,
     onDiscountApplied,
+    itemDiscountTargetId,
     showCompVoidModal,
     setShowCompVoidModal,
     compVoidItem,
@@ -640,20 +642,30 @@ export function OrderPageModals(props: OrderPageModalsProps) {
       )}
 
       {/* Discount Modal */}
-      {showDiscountModal && currentOrder && savedOrderId && employee && (
-        <Suspense fallback={null}>
-          <DiscountModal
-            isOpen={showDiscountModal}
-            onClose={() => setShowDiscountModal(false)}
-            orderId={savedOrderId}
-            orderSubtotal={currentOrder.subtotal || 0}
-            locationId={employee.location?.id || ''}
-            employeeId={employee.id}
-            appliedDiscounts={appliedDiscounts}
-            onDiscountApplied={onDiscountApplied}
-          />
-        </Suspense>
-      )}
+      {showDiscountModal && currentOrder && savedOrderId && employee && (() => {
+        const targetItem = itemDiscountTargetId
+          ? currentOrder.items?.find((i: any) => i.id === itemDiscountTargetId)
+          : null
+        const subtotal = targetItem
+          ? (Number(targetItem.itemTotal) || Number(targetItem.price) * (targetItem.quantity || 1))
+          : (currentOrder.subtotal || 0)
+        return (
+          <Suspense fallback={null}>
+            <DiscountModal
+              isOpen={showDiscountModal}
+              onClose={() => setShowDiscountModal(false)}
+              orderId={savedOrderId}
+              orderSubtotal={subtotal}
+              locationId={employee.location?.id || ''}
+              employeeId={employee.id}
+              appliedDiscounts={targetItem ? [] : appliedDiscounts}
+              onDiscountApplied={onDiscountApplied}
+              itemId={itemDiscountTargetId ?? undefined}
+              itemName={targetItem?.name}
+            />
+          </Suspense>
+        )
+      })()}
 
       {/* Comp/Void Modal */}
       {showCompVoidModal && (savedOrderId || orderToPayId) && compVoidItem && employee && (

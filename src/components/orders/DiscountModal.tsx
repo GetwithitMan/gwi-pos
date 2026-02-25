@@ -49,6 +49,9 @@ interface DiscountModalProps {
     taxTotal: number
     total: number
   }) => void
+  /** When set, discount is applied to this specific item instead of the whole order */
+  itemId?: string
+  itemName?: string
 }
 
 type DiscountMode = 'select' | 'custom' | 'manage'
@@ -62,7 +65,13 @@ export function DiscountModal({
   employeeId,
   appliedDiscounts,
   onDiscountApplied,
+  itemId,
+  itemName,
 }: DiscountModalProps) {
+  const isItemDiscount = !!itemId
+  const discountUrl = isItemDiscount
+    ? `/api/orders/${orderId}/items/${itemId}/discount`
+    : `/api/orders/${orderId}/discount`
   const [mode, setMode] = useState<DiscountMode>('select')
   const [discountRules, setDiscountRules] = useState<DiscountRule[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -134,15 +143,24 @@ export function DiscountModal({
     setError(null)
 
     try {
-      const response = await fetch(`/api/orders/${orderId}/discount`, {
+      const body = isItemDiscount
+        ? {
+            type: rule.discountConfig.type,
+            value: rule.discountConfig.value,
+            reason: rule.name,
+            employeeId,
+            discountRuleId: rule.id,
+          }
+        : {
+            discountRuleId: rule.id,
+            employeeId,
+            version: getOrderVersion(),
+            ...(approvedById && { approvedById }),
+          }
+      const response = await fetch(discountUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          discountRuleId: rule.id,
-          employeeId,
-          version: getOrderVersion(),
-          ...(approvedById && { approvedById }),
-        }),
+        body: JSON.stringify(body),
       })
 
       if (!response.ok) {
@@ -163,7 +181,13 @@ export function DiscountModal({
       const rawResult = await response.json()
       const result = rawResult.data ?? rawResult
 
-      onDiscountApplied(result.orderTotals)
+      if (isItemDiscount) {
+        // Per-item endpoint returns { discount, newItemTotal, newOrderTotal }
+        // Signal parent to refresh order data
+        onDiscountApplied({ discountTotal: 0, taxTotal: 0, total: result.newOrderTotal ?? 0 })
+      } else {
+        onDiscountApplied(result.orderTotals)
+      }
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply discount')
@@ -188,17 +212,20 @@ export function DiscountModal({
     setError(null)
 
     try {
-      const response = await fetch(`/api/orders/${orderId}/discount`, {
+      const body = isItemDiscount
+        ? { type: customType, value, reason: customReason || undefined, employeeId }
+        : {
+            type: customType,
+            value,
+            reason: customReason || undefined,
+            employeeId,
+            version: getOrderVersion(),
+            ...(approvedById && { approvedById }),
+          }
+      const response = await fetch(discountUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: customType,
-          value,
-          reason: customReason || undefined,
-          employeeId,
-          version: getOrderVersion(),
-          ...(approvedById && { approvedById }),
-        }),
+        body: JSON.stringify(body),
       })
 
       if (!response.ok) {
@@ -219,7 +246,11 @@ export function DiscountModal({
       const rawResult = await response.json()
       const result = rawResult.data ?? rawResult
 
-      onDiscountApplied(result.orderTotals)
+      if (isItemDiscount) {
+        onDiscountApplied({ discountTotal: 0, taxTotal: 0, total: result.newOrderTotal ?? 0 })
+      } else {
+        onDiscountApplied(result.orderTotals)
+      }
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to apply discount')
@@ -234,7 +265,7 @@ export function DiscountModal({
 
     try {
       const response = await fetch(
-        `/api/orders/${orderId}/discount?discountId=${discountId}`,
+        `${discountUrl}?discountId=${discountId}`,
         { method: 'DELETE' }
       )
 
@@ -282,7 +313,7 @@ export function DiscountModal({
       <div className="bg-white rounded-lg shadow-xl max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
-          <h2 className="text-xl font-bold">Apply Discount</h2>
+          <h2 className="text-xl font-bold">{isItemDiscount ? `Discount: ${itemName}` : 'Apply Discount'}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -301,7 +332,7 @@ export function DiscountModal({
           {/* Order Summary */}
           <div className="mb-4 p-3 bg-gray-50 rounded-lg">
             <div className="flex justify-between text-sm">
-              <span>Subtotal</span>
+              <span>{isItemDiscount ? 'Item Price' : 'Subtotal'}</span>
               <span className="font-medium">{formatCurrency(orderSubtotal)}</span>
             </div>
             {currentDiscountTotal > 0 && (

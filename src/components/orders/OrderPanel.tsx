@@ -58,6 +58,7 @@ export interface OrderPanelProps {
   onItemCourseChange?: (itemId: string, course: number | null) => void
   onItemEditModifiers?: (itemId: string) => void
   onItemCompVoid?: (item: OrderPanelItemData) => void
+  onItemDiscount?: (itemId: string) => void
   onItemResend?: (item: OrderPanelItemData) => void
   onItemSplit?: (itemId: string) => void
   onSessionEnded?: () => void
@@ -193,6 +194,7 @@ export const OrderPanel = memo(function OrderPanel({
   onItemCourseChange,
   onItemEditModifiers,
   onItemCompVoid,
+  onItemDiscount,
   onItemResend,
   onItemSplit,
   onSessionEnded,
@@ -414,6 +416,7 @@ export const OrderPanel = memo(function OrderPanel({
       onCourseChange={onItemCourseChange}
       onEditModifiers={onItemEditModifiers}
       onCompVoid={onItemCompVoid}
+      onItemDiscount={onItemDiscount}
       onResend={onItemResend}
       isExpanded={expandedItemId === item.id}
       onToggleExpand={onItemToggleExpand}
@@ -427,7 +430,7 @@ export const OrderPanel = memo(function OrderPanel({
       onCancelItemDelay={onCancelItemDelay}
       cardPriceMultiplier={cardPriceMultiplier}
     />
-  ), [locationId, showItemControls, showEntertainmentTimers, onItemClick, onItemRemove, onQuantityChange, onSessionEnded, onTimerStarted, onTimeExtended, onItemHoldToggle, onItemNoteEdit, onItemCourseChange, onItemEditModifiers, onItemCompVoid, onItemResend, expandedItemId, onItemToggleExpand, maxSeats, maxCourses, onItemSeatChange, newestItemId, selectedItemIds, selectedItemId, onItemSelect, onFireItem, onCancelItemDelay, cardPriceMultiplier])
+  ), [locationId, showItemControls, showEntertainmentTimers, onItemClick, onItemRemove, onQuantityChange, onSessionEnded, onTimerStarted, onTimeExtended, onItemHoldToggle, onItemNoteEdit, onItemCourseChange, onItemEditModifiers, onItemCompVoid, onItemDiscount, onItemResend, expandedItemId, onItemToggleExpand, maxSeats, maxCourses, onItemSeatChange, newestItemId, selectedItemIds, selectedItemId, onItemSelect, onFireItem, onCancelItemDelay, cardPriceMultiplier])
 
   // Build a match key for condensing like items
   const getCondenseKey = (item: OrderPanelItemData): string => {
