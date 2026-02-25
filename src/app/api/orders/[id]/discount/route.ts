@@ -33,7 +33,7 @@ export const POST = withVenue(async function POST(
       where: { id: orderId },
       include: {
         location: true,
-        discounts: true,
+        discounts: { where: { deletedAt: null } },
       },
     })
 
@@ -306,7 +306,7 @@ export const GET = withVenue(async function GET(
     const { id: orderId } = await params
 
     const discounts = await db.orderDiscount.findMany({
-      where: { orderId },
+      where: { orderId, deletedAt: null },
       include: {
         discountRule: {
           select: {
@@ -324,6 +324,7 @@ export const GET = withVenue(async function GET(
         name: d.name,
         amount: Number(d.amount),
         percent: d.percent ? Number(d.percent) : null,
+        discountRuleId: d.discountRuleId,
         ruleName: d.discountRule?.name || null,
         appliedBy: d.appliedBy,
         isAutomatic: d.isAutomatic,
@@ -362,7 +363,7 @@ export const DELETE = withVenue(async function DELETE(
       where: { id: orderId },
       include: {
         location: true,
-        discounts: true,
+        discounts: { where: { deletedAt: null } },
       },
     })
 

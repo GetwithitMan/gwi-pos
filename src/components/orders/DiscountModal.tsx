@@ -34,6 +34,7 @@ interface AppliedDiscount {
   name: string
   amount: number
   percent?: number | null
+  discountRuleId?: string | null
 }
 
 interface DiscountModalProps {
@@ -388,6 +389,28 @@ export function DiscountModal({
                   const preview = config.type === 'percent'
                     ? Math.round(orderSubtotal * (config.value / 100) * 100) / 100
                     : config.value
+
+                  // Check if this rule is already applied (toggle behavior)
+                  const existingDiscount = appliedDiscounts.find(
+                    d => d.discountRuleId === rule.id || d.name === rule.displayText
+                  )
+
+                  if (existingDiscount) {
+                    return (
+                      <Button
+                        key={rule.id}
+                        variant="outline"
+                        className="h-auto py-3 flex-col items-start text-left border-green-300 bg-green-50"
+                        onClick={() => handleRemoveDiscount(existingDiscount.id)}
+                        disabled={isProcessing}
+                      >
+                        <span className="font-medium text-green-700">{rule.displayText} ✓</span>
+                        <span className="text-xs text-green-600">
+                          -{formatCurrency(existingDiscount.amount)} · Tap to remove
+                        </span>
+                      </Button>
+                    )
+                  }
 
                   return (
                     <Button
