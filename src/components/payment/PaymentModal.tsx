@@ -185,6 +185,27 @@ export function PaymentModal({
   // Tab increment status — background indicator (Task #6)
   const [tabIncrementFailed, setTabIncrementFailed] = useState(false)
 
+  // Connection state — disable payment actions when disconnected from server
+  const [isConnected, setIsConnected] = useState(true)
+
+  useEffect(() => {
+    const socket = getSharedSocket()
+    const onConnect = () => setIsConnected(true)
+    const onDisconnect = () => setIsConnected(false)
+
+    // Set initial state
+    setIsConnected(socket.connected)
+
+    socket.on('connect', onConnect)
+    socket.on('disconnect', onDisconnect)
+
+    return () => {
+      socket.off('connect', onConnect)
+      socket.off('disconnect', onDisconnect)
+      releaseSharedSocket()
+    }
+  }, [])
+
   // Fetch order data if orderTotal is 0 or not provided
   useEffect(() => {
     if (isOpen && orderId && orderTotal === 0) {
@@ -983,6 +1004,33 @@ export function PaymentModal({
 
               <h3 style={sectionLabelStyle}>Select Payment Method</h3>
 
+              {/* Disconnected warning — block payments when no server connection */}
+              {!isConnected && (
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: 10,
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  marginBottom: 4,
+                }}>
+                  <div style={{
+                    width: 16,
+                    height: 16,
+                    border: '2px solid #f87171',
+                    borderTopColor: 'transparent',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ color: '#f87171', fontSize: 14, fontWeight: 600 }}>
+                    Payment unavailable — no connection to server
+                  </span>
+                </div>
+              )}
+
               {/* Pre-authed tab cards — charge existing card */}
               {tabCards.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
@@ -991,7 +1039,7 @@ export function PaymentModal({
                     <button
                       key={card.id}
                       onClick={() => handleChargeExistingCard(card)}
-                      disabled={isProcessing}
+                      disabled={isProcessing || !isConnected}
                       style={{
                         width: '100%',
                         height: 72,
@@ -1002,9 +1050,10 @@ export function PaymentModal({
                         borderRadius: 12,
                         border: '2px solid rgba(168, 85, 247, 0.6)',
                         background: 'rgba(168, 85, 247, 0.18)',
-                        cursor: isProcessing ? 'wait' : 'pointer',
+                        cursor: (isProcessing || !isConnected) ? 'not-allowed' : 'pointer',
                         textAlign: 'left' as const,
                         boxShadow: '0 2px 8px rgba(168, 85, 247, 0.25)',
+                        opacity: !isConnected ? 0.5 : 1,
                       }}
                     >
                       <span style={{ fontSize: 28 }}>💳</span>
@@ -1031,7 +1080,7 @@ export function PaymentModal({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
                   <button
                     onClick={handleAddCardToTab}
-                    disabled={addingCard || isProcessing}
+                    disabled={addingCard || isProcessing || !isConnected}
                     style={{
                       width: '100%',
                       padding: '14px 20px',
@@ -1041,8 +1090,8 @@ export function PaymentModal({
                       color: '#fff',
                       fontSize: 16,
                       fontWeight: 700,
-                      cursor: (addingCard || isProcessing) ? 'wait' : 'pointer',
-                      opacity: (addingCard || isProcessing) ? 0.5 : 1,
+                      cursor: (addingCard || isProcessing || !isConnected) ? 'not-allowed' : 'pointer',
+                      opacity: (addingCard || isProcessing || !isConnected) ? 0.5 : 1,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 12,
@@ -1091,6 +1140,7 @@ export function PaymentModal({
               {paymentSettings.acceptCash && (
                 <button
                   onClick={() => handleSelectMethod('cash')}
+                  disabled={!isConnected}
                   style={{
                     width: '100%',
                     height: 72,
@@ -1101,8 +1151,9 @@ export function PaymentModal({
                     borderRadius: 12,
                     border: '1px solid rgba(34, 197, 94, 0.3)',
                     background: 'rgba(34, 197, 94, 0.08)',
-                    cursor: 'pointer',
+                    cursor: !isConnected ? 'not-allowed' : 'pointer',
                     textAlign: 'left' as const,
+                    opacity: !isConnected ? 0.5 : 1,
                   }}
                 >
                   <span style={{ fontSize: 28 }}>💵</span>
@@ -1122,7 +1173,7 @@ export function PaymentModal({
               {paymentSettings.acceptCash && cashTotal > 0 && (
                 <button
                   onClick={handleCashExact}
-                  disabled={isProcessing}
+                  disabled={isProcessing || !isConnected}
                   style={{
                     width: '100%',
                     height: 56,
@@ -1133,9 +1184,9 @@ export function PaymentModal({
                     borderRadius: 12,
                     border: '2px solid rgba(34, 197, 94, 0.5)',
                     background: 'rgba(34, 197, 94, 0.2)',
-                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                    cursor: (isProcessing || !isConnected) ? 'not-allowed' : 'pointer',
                     textAlign: 'left' as const,
-                    opacity: isProcessing ? 0.5 : 1,
+                    opacity: (isProcessing || !isConnected) ? 0.5 : 1,
                   }}
                 >
                   <span style={{ fontSize: 22, color: '#22c55e', fontWeight: 900 }}>$</span>
@@ -1151,6 +1202,7 @@ export function PaymentModal({
               {paymentSettings.acceptCredit && (
                 <button
                   onClick={() => handleSelectMethod('credit')}
+                  disabled={!isConnected}
                   style={{
                     width: '100%',
                     height: 72,
@@ -1161,8 +1213,9 @@ export function PaymentModal({
                     borderRadius: 12,
                     border: '1px solid rgba(99, 102, 241, 0.3)',
                     background: 'rgba(99, 102, 241, 0.08)',
-                    cursor: 'pointer',
+                    cursor: !isConnected ? 'not-allowed' : 'pointer',
                     textAlign: 'left' as const,
+                    opacity: !isConnected ? 0.5 : 1,
                   }}
                 >
                   <span style={{ fontSize: 28 }}>💳</span>
@@ -1176,6 +1229,7 @@ export function PaymentModal({
               {paymentSettings.acceptDebit && (
                 <button
                   onClick={() => handleSelectMethod('debit')}
+                  disabled={!isConnected}
                   style={{
                     width: '100%',
                     height: 72,
@@ -1186,8 +1240,9 @@ export function PaymentModal({
                     borderRadius: 12,
                     border: '1px solid rgba(99, 102, 241, 0.3)',
                     background: 'rgba(99, 102, 241, 0.08)',
-                    cursor: 'pointer',
+                    cursor: !isConnected ? 'not-allowed' : 'pointer',
                     textAlign: 'left' as const,
+                    opacity: !isConnected ? 0.5 : 1,
                   }}
                 >
                   <span style={{ fontSize: 28 }}>💳</span>
@@ -1201,6 +1256,7 @@ export function PaymentModal({
               {paymentSettings.acceptGiftCards && (
                 <button
                   onClick={() => handleSelectMethod('gift_card')}
+                  disabled={!isConnected}
                   style={{
                     width: '100%',
                     height: 72,
@@ -1211,8 +1267,9 @@ export function PaymentModal({
                     borderRadius: 12,
                     border: '1px solid rgba(168, 85, 247, 0.3)',
                     background: 'rgba(168, 85, 247, 0.08)',
-                    cursor: 'pointer',
+                    cursor: !isConnected ? 'not-allowed' : 'pointer',
                     textAlign: 'left' as const,
+                    opacity: !isConnected ? 0.5 : 1,
                   }}
                 >
                   <span style={{ fontSize: 28 }}>🎁</span>
@@ -1226,6 +1283,7 @@ export function PaymentModal({
               {paymentSettings.acceptHouseAccounts && (
                 <button
                   onClick={() => handleSelectMethod('house_account')}
+                  disabled={!isConnected}
                   style={{
                     width: '100%',
                     height: 72,
@@ -1236,8 +1294,9 @@ export function PaymentModal({
                     borderRadius: 12,
                     border: '1px solid rgba(100, 116, 139, 0.3)',
                     background: 'rgba(100, 116, 139, 0.08)',
-                    cursor: 'pointer',
+                    cursor: !isConnected ? 'not-allowed' : 'pointer',
                     textAlign: 'left' as const,
+                    opacity: !isConnected ? 0.5 : 1,
                   }}
                 >
                   <span style={{ fontSize: 28 }}>🏢</span>

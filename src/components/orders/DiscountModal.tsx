@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
+import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
 
 interface DiscountRule {
   id: string
@@ -73,6 +74,12 @@ export function DiscountModal({
   const [customValue, setCustomValue] = useState('')
   const [customReason, setCustomReason] = useState('')
 
+  // Manager PIN approval state (for 403 requiresApproval responses)
+  const [showManagerPin, setShowManagerPin] = useState(false)
+  const [pendingApprovalRequest, setPendingApprovalRequest] = useState<
+    { type: 'preset'; rule: DiscountRule } | { type: 'custom' } | null
+  >(null)
+
   // Load discount rules
   useEffect(() => {
     if (isOpen && locationId) {
@@ -122,7 +129,7 @@ export function DiscountModal({
     }
   }
 
-  const handleApplyPreset = async (rule: DiscountRule) => {
+  const handleApplyPreset = async (rule: DiscountRule, approvedById?: string) => {
     setIsProcessing(true)
     setError(null)
 
@@ -134,22 +141,27 @@ export function DiscountModal({
           discountRuleId: rule.id,
           employeeId,
           version: getOrderVersion(),
+          ...(approvedById && { approvedById }),
         }),
       })
 
       if (!response.ok) {
         if (await handleVersionConflict(response, orderId)) { onClose(); return }
         const data = await response.json()
+
+        // Handle 403 with requiresApproval — prompt for manager PIN
+        if (response.status === 403 && data.requiresApproval) {
+          setPendingApprovalRequest({ type: 'preset', rule })
+          setShowManagerPin(true)
+          setIsProcessing(false)
+          return
+        }
+
         throw new Error(data.error || 'Failed to apply discount')
       }
 
       const rawResult = await response.json()
       const result = rawResult.data ?? rawResult
-
-      if (result.requiresApproval) {
-        // For now, just warn - in a full implementation, this would prompt for manager PIN
-        toast.info('This discount may require manager approval')
-      }
 
       onDiscountApplied(result.orderTotals)
       onClose()
@@ -160,7 +172,7 @@ export function DiscountModal({
     }
   }
 
-  const handleApplyCustom = async () => {
+  const handleApplyCustom = async (approvedById?: string) => {
     const value = parseFloat(customValue)
     if (!value || value <= 0) {
       setError('Please enter a valid discount amount')
@@ -185,21 +197,27 @@ export function DiscountModal({
           reason: customReason || undefined,
           employeeId,
           version: getOrderVersion(),
+          ...(approvedById && { approvedById }),
         }),
       })
 
       if (!response.ok) {
         if (await handleVersionConflict(response, orderId)) { onClose(); return }
         const data = await response.json()
+
+        // Handle 403 with requiresApproval — prompt for manager PIN
+        if (response.status === 403 && data.requiresApproval) {
+          setPendingApprovalRequest({ type: 'custom' })
+          setShowManagerPin(true)
+          setIsProcessing(false)
+          return
+        }
+
         throw new Error(data.error || 'Failed to apply discount')
       }
 
       const rawResult = await response.json()
       const result = rawResult.data ?? rawResult
-
-      if (result.requiresApproval) {
-        toast.info('This discount may require manager approval')
-      }
 
       onDiscountApplied(result.orderTotals)
       onClose()
@@ -243,9 +261,23 @@ export function DiscountModal({
     return Math.min(value, orderSubtotal)
   }
 
+  const handleManagerPinVerified = (managerId: string, _managerName: string) => {
+    setShowManagerPin(false)
+    if (!pendingApprovalRequest) return
+
+    // Retry the original request with manager approval
+    if (pendingApprovalRequest.type === 'preset') {
+      handleApplyPreset(pendingApprovalRequest.rule, managerId)
+    } else {
+      handleApplyCustom(managerId)
+    }
+    setPendingApprovalRequest(null)
+  }
+
   const currentDiscountTotal = appliedDiscounts.reduce((sum, d) => sum + d.amount, 0)
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={onClose} size="md" variant="default">
       <div className="bg-white rounded-lg shadow-xl max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
@@ -524,5 +556,19 @@ export function DiscountModal({
         </div>
       </div>
     </Modal>
+
+    {/* Manager PIN Modal (for discount approval) */}
+    <ManagerPinModal
+      isOpen={showManagerPin}
+      onClose={() => {
+        setShowManagerPin(false)
+        setPendingApprovalRequest(null)
+      }}
+      onVerified={handleManagerPinVerified}
+      title="Manager Approval Required"
+      message="This discount requires manager authorization. Enter manager PIN to continue."
+      locationId={locationId}
+    />
+    </>
   )
 }

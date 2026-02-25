@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { RemoteVoidApprovalModal } from './RemoteVoidApprovalModal'
+import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
 import type { UiModifier } from '@/types/orders'
 
 interface OrderItem {
@@ -78,6 +79,8 @@ export function CompVoidModal({
   const [error, setError] = useState<string | null>(null)
   const [showRemoteApproval, setShowRemoteApproval] = useState(false)
   const [remoteApprovalCode, setRemoteApprovalCode] = useState<string | null>(null)
+  const [showManagerPin, setShowManagerPin] = useState(false)
+  const [approvedById, setApprovedById] = useState<string | null>(null)
   const submitLockRef = useRef(false)
 
   const modifiersTotal = item.modifiers.reduce((sum, m) => sum + m.price, 0)
@@ -85,7 +88,7 @@ export function CompVoidModal({
 
   const isCompedOrVoided = item.status === 'comped' || item.status === 'voided'
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (overrideApprovedById?: string) => {
     // Ref guard: catches rapid double-taps before React state update
     if (submitLockRef.current) return
     submitLockRef.current = true
@@ -110,6 +113,14 @@ export function CompVoidModal({
       return
     }
 
+    // Gate: require manager PIN before submission (unless already approved or using remote approval)
+    const effectiveApprovedById = overrideApprovedById || approvedById
+    if (!effectiveApprovedById && !remoteApprovalCode) {
+      setShowManagerPin(true)
+      submitLockRef.current = false
+      return
+    }
+
     setIsProcessing(true)
     setError(null)
 
@@ -124,6 +135,7 @@ export function CompVoidModal({
           employeeId,
           wasMade: action === 'comp' ? true : wasMade,
           version: getOrderVersion(),
+          ...(effectiveApprovedById && { approvedById: effectiveApprovedById }),
           ...(remoteApprovalCode && { remoteApprovalCode }),
         }),
       })
@@ -148,6 +160,13 @@ export function CompVoidModal({
       setIsProcessing(false)
       submitLockRef.current = false
     }
+  }
+
+  const handleManagerPinVerified = (managerId: string, _managerName: string) => {
+    setApprovedById(managerId)
+    setShowManagerPin(false)
+    // Auto-submit now that we have manager approval
+    handleSubmit(managerId)
   }
 
   const handleRestore = async () => {
@@ -489,6 +508,16 @@ export function CompVoidModal({
       </div>
 
       </Modal>
+
+      {/* Manager PIN Modal (local approval gate) */}
+      <ManagerPinModal
+        isOpen={showManagerPin}
+        onClose={() => setShowManagerPin(false)}
+        onVerified={handleManagerPinVerified}
+        title="Manager Approval Required"
+        message={`Enter manager PIN to authorize ${action === 'comp' ? 'comp' : 'void'} of ${item.name}`}
+        locationId={locationId}
+      />
 
       {/* Remote Void Approval Modal */}
       <RemoteVoidApprovalModal
