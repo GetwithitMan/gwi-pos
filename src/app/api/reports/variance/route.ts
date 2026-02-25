@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { InventoryCountStatus } from '@prisma/client'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateTheoreticalUsage, toNumber } from '@/lib/inventory-calculations'
@@ -106,7 +107,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.inventoryCount.findMany({
         where: {
           locationId,
-          status: 'approved',
+          status: InventoryCountStatus.reviewed,
           countDate: { lt: start },
         },
         orderBy: { countDate: 'desc' },
@@ -117,7 +118,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.inventoryCount.findMany({
         where: {
           locationId,
-          status: 'approved',
+          status: InventoryCountStatus.reviewed,
           countDate: { gte: start, lte: end },
         },
         orderBy: { countDate: 'desc' },

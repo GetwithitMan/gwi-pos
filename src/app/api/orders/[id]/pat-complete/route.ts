@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { OrderStatus, TabStatus } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import {
@@ -74,18 +75,18 @@ export const POST = withVenue(async function POST(
 
     // Update the order: mark as paid, close tab if applicable
     const updateData: {
-      status: string
+      status: OrderStatus
       paidAt: Date
       tipTotal: number
-      tabStatus?: string
+      tabStatus?: TabStatus
     } = {
-      status: 'paid',
+      status: 'paid' as OrderStatus,
       paidAt: new Date(),
       tipTotal: Number(order.tipTotal) + effectiveTip,
     }
 
     if (order.orderType === 'bar_tab') {
-      updateData.tabStatus = 'closed'
+      updateData.tabStatus = 'closed' as TabStatus
     }
 
     await db.order.update({

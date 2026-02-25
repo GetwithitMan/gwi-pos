@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { EntertainmentWaitlistStatus } from '@prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
@@ -10,7 +11,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const elementId = searchParams.get('elementId')
     const visualType = searchParams.get('visualType')
-    const status = searchParams.get('status') || 'waiting'
+    const status = (searchParams.get('status') || 'waiting') as EntertainmentWaitlistStatus | 'all'
 
     if (!locationId) {
       return NextResponse.json(
@@ -172,7 +173,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: {
           locationId,
           deletedAt: null,
-          status: 'waiting',
+          status: EntertainmentWaitlistStatus.waiting,
           ...(elementId ? { elementId } : { visualType }),
         },
       })
@@ -188,7 +189,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           partySize: partySize || 1,
           notes: notes?.trim() || null,
           position: currentWaitlistCount + 1,
-          status: 'waiting',
+          status: EntertainmentWaitlistStatus.waiting,
           expiresAt,
         },
         include: {

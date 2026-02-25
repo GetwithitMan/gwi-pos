@@ -13,6 +13,427 @@ datasource db {
 }
 
 // ============================================
+// ENUMS (H-SCHEMA-2: Type-safe enum fields)
+// ============================================
+
+enum OrderStatus {
+  draft
+  open
+  in_progress
+  sent
+  received
+  pending
+  split
+  paid
+  closed
+  completed
+  voided
+  merged
+  cancelled
+}
+
+enum OrderCourseMode {
+  off
+  manual
+  auto
+}
+
+enum TabStatus {
+  pending_auth
+  open
+  no_card
+  closed
+  declined_capture
+  auth_failed
+}
+
+enum OrderItemStatus {
+  active
+  voided
+  comped
+  removed
+}
+
+enum KitchenStatus {
+  pending
+  sent
+  cooking
+  ready
+  delivered
+}
+
+enum CourseStatus {
+  pending
+  fired
+  ready
+  served
+}
+
+enum PaymentMethod {
+  cash
+  card
+  credit
+  debit
+  gift_card
+  house_account
+  loyalty
+  loyalty_points
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  refunded
+  voided
+}
+
+enum ShiftStatus {
+  open
+  closed
+}
+
+enum CategoryType {
+  food
+  drinks
+  liquor
+  entertainment
+  combos
+  pizza
+  retail
+}
+
+enum CategoryShow {
+  bar
+  food
+  entertainment
+  all
+}
+
+enum MenuItemType {
+  standard
+  combo
+  pizza
+  timed_rental
+}
+
+enum ModifierPriceType {
+  upcharge
+  override
+  from_item
+}
+
+enum ModifierPrinterRouting {
+  follow
+  also
+  only
+}
+
+enum TerminalPlatform {
+  BROWSER
+  ANDROID
+  IOS
+}
+
+enum TerminalCategory {
+  FIXED_STATION
+  HANDHELD
+}
+
+enum PaymentProvider {
+  DATACAP_DIRECT
+  SIMULATED
+}
+
+enum PrinterType {
+  thermal
+  impact
+}
+
+enum PrinterRole {
+  receipt
+  kitchen
+  bar
+}
+
+enum PrintJobStatus {
+  pending
+  sent
+  failed
+}
+
+enum PrintRuleLevel {
+  category
+  item
+  modifier
+}
+
+enum GiftCardStatus {
+  active
+  depleted
+  expired
+  frozen
+}
+
+enum HouseAccountStatus {
+  active
+  suspended
+  closed
+}
+
+enum ReservationStatus {
+  confirmed
+  seated
+  completed
+  cancelled
+  no_show
+}
+
+enum ScheduleStatus {
+  draft
+  published
+  archived
+}
+
+enum TipGroupStatus {
+  active
+  closed
+}
+
+enum TipGroupSplitMode {
+  equal
+  custom
+  role_weighted
+  hours_weighted
+}
+
+enum CashHandlingMode {
+  drawer
+  purse
+  none
+}
+
+enum BreakType {
+  paid
+  unpaid
+  meal
+}
+
+enum BreakStatus {
+  active
+  completed
+}
+
+enum PaidInOutType {
+  in
+  out
+}
+
+enum VoidType {
+  item
+  order
+}
+
+enum ErrorSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ErrorLogStatus {
+  NEW
+  INVESTIGATING
+  RESOLVED
+  IGNORED
+}
+
+enum HealthCheckStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+}
+
+enum EventStatus {
+  draft
+  on_sale
+  sold_out
+  cancelled
+  completed
+}
+
+enum TicketStatus {
+  available
+  held
+  sold
+  checked_in
+  cancelled
+  refunded
+}
+
+enum TableStatus {
+  available
+  occupied
+  reserved
+  dirty
+  in_use
+}
+
+enum SeatStatus {
+  available
+  occupied
+  reserved
+}
+
+enum SeatType {
+  standard
+  premium
+  accessible
+  booth_end
+}
+
+enum OrderCardStatus {
+  authorized
+  declined
+  captured
+  voided
+}
+
+enum ChargebackStatus {
+  open
+  responded
+  won
+  lost
+}
+
+enum WalkoutRetryStatus {
+  pending
+  collected
+  exhausted
+  written_off
+}
+
+enum RemoteVoidApprovalStatus {
+  pending
+  approved
+  rejected
+  expired
+  used
+}
+
+enum TipDebtStatus {
+  open
+  partial
+  recovered
+  written_off
+}
+
+enum DailyPrepCountStatus {
+  draft
+  submitted
+  approved
+  rejected
+}
+
+enum StationType {
+  PRINTER
+  KDS
+}
+
+enum FloorPlanElementType {
+  entertainment
+  decoration
+  barrier
+  stage
+}
+
+enum FloorPlanElementStatus {
+  available
+  in_use
+  reserved
+  maintenance
+}
+
+enum TipLedgerEntryType {
+  CREDIT
+  DEBIT
+}
+
+enum TipTransactionSourceType {
+  CARD
+  CASH
+  ADJUSTMENT
+}
+
+enum EntertainmentWaitlistStatus {
+  waiting
+  notified
+  seated
+  cancelled
+  expired
+}
+
+enum TimedSessionStatus {
+  active
+  paused
+  completed
+  cancelled
+}
+
+enum InventoryCountStatus {
+  in_progress
+  completed
+  reviewed
+}
+
+enum InvoiceStatus {
+  pending
+  received
+  paid
+}
+
+enum StockAlertStatus {
+  active
+  acknowledged
+  resolved
+}
+
+enum PayrollPeriodStatus {
+  open
+  processing
+  closed
+  paid
+}
+
+enum PayStubStatus {
+  pending
+  approved
+  paid
+  void
+}
+
+enum ScheduledShiftStatus {
+  scheduled
+  confirmed
+  no_show
+  called_off
+  worked
+}
+
+enum ShiftSwapRequestStatus {
+  pending
+  accepted
+  approved
+  rejected
+  cancelled
+}
+
+enum TipGroupMembershipStatus {
+  active
+  left
+  pending_approval
+}
+
+// ============================================
 // ORGANIZATION & LOCATIONS (Skill 53)
 // ============================================
 
@@ -326,7 +747,7 @@ model Role {
   tipWeight Decimal @default(1.0)   // Weight for role-weighted tip group splits (e.g., 1.5 for lead bartender)
 
   // Cash handling configuration
-  cashHandlingMode String  @default("drawer") // "drawer" | "purse" | "none"
+  cashHandlingMode CashHandlingMode  @default(drawer)
   trackLaborCost   Boolean @default(true)      // Include hours in labor cost reports
 
   createdAt DateTime @default(now())
@@ -613,7 +1034,7 @@ model Shift {
   netTips     Decimal? // Tips kept (gross - tipOut)
 
   notes  String?
-  status String  @default("open") // open, closed
+  status ShiftStatus  @default(open)
 
   // Link to time clock entry
   timeClockEntryId String?
@@ -679,7 +1100,7 @@ model PaidInOut {
   drawerId   String
   drawer     Drawer   @relation(fields: [drawerId], references: [id])
 
-  type      String // "in" or "out"
+  type      PaidInOutType
   amount    Decimal
   reason    String
   reference String? // Check number, vendor, etc.
@@ -785,8 +1206,7 @@ model Category {
   imageUrl    String?
 
   // Category Type - controls item builder, modifier filtering, and reporting
-  // food, drinks, liquor, entertainment, combos, pizza
-  categoryType String @default("food")
+  categoryType CategoryType @default(food)
 
   // Display
   sortOrder  Int     @default(0)
@@ -795,8 +1215,7 @@ model Category {
   showOnline Boolean @default(true)
 
   // Bartender View - which menu section this category appears in
-  // bar, food, entertainment, all (shows in both bar and food)
-  categoryShow String @default("all")
+  categoryShow CategoryShow @default(all)
 
   // Kitchen routing
   prepStationId String?
@@ -884,7 +1303,7 @@ model MenuItem {
   isAvailable    Boolean @default(true) // 86'd when false
 
   // Type
-  itemType String @default("standard") // standard, combo, timed_rental
+  itemType MenuItemType @default(standard)
 
   // Combo Print Mode - how combo components print to stations
   // 'individual' - Each component follows its own print rules (burger→kitchen, drink→bar)
@@ -1068,7 +1487,7 @@ model Modifier {
   // If linkedMenuItemId is set and price is 0, use linked item's price
   // If price > 0, it acts as a price override or upcharge
   price       Decimal  @default(0)
-  priceType   String   @default("upcharge") // 'upcharge' (add to base), 'override' (replace base), 'from_item' (use linked item price)
+  priceType   ModifierPriceType   @default(upcharge)
   upsellPrice Decimal? // Special price when offered as upsell
   cost        Decimal?
 
@@ -1129,7 +1548,7 @@ model Modifier {
   // printerRouting: "follow" (default) = prints with main item
   //                 "also" = prints with main item AND to printerIds
   //                 "only" = prints ONLY to printerIds (not with main item)
-  printerRouting String @default("follow")
+  printerRouting ModifierPrinterRouting @default(follow)
   // TODO: JSON array cannot enforce FK constraints on Printer. Consider migrating to a relation table for referential integrity.
   printerIds     Json?  // Array of printer IDs when routing is "also" or "only"
 
@@ -1343,7 +1762,7 @@ model Table {
   timedItemId   String? // Links to MenuItem for pricing
 
   // Status
-  status   String  @default("available") // available, occupied, reserved, dirty, in_use
+  status   TableStatus  @default(available)
   isActive Boolean @default(true)
 
   // Default layout (admin-defined, used for reset-to-default)
@@ -1396,7 +1815,7 @@ model FloorPlanElement {
   abbreviation String?  // Short display name: "PT1", "DB-A"
 
   // Element classification
-  elementType  String   @default("entertainment") // "entertainment", "decoration", "barrier", "stage"
+  elementType  FloorPlanElementType   @default(entertainment)
   visualType   String   // "pool_table", "dartboard", "arcade", "foosball", "shuffleboard", etc.
 
   // Link to menu item (for entertainment items with pricing/sessions)
@@ -1424,7 +1843,7 @@ model FloorPlanElement {
   opacity     Float   @default(1.0)
 
   // Status (for entertainment)
-  status          String    @default("available") // "available", "in_use", "reserved", "maintenance"
+  status          FloorPlanElementStatus    @default(available)
   currentOrderId  String?   // Active order using this element
   sessionStartedAt DateTime?
   sessionExpiresAt DateTime?
@@ -1465,7 +1884,7 @@ model EntertainmentWaitlist {
   phone        String?  // For SMS notification
 
   // Status
-  status       String   @default("waiting") // "waiting", "notified", "seated", "cancelled", "expired"
+  status       EntertainmentWaitlistStatus   @default(waiting)
   position     Int      @default(0) // Queue position
   requestedAt  DateTime @default(now())
   notifiedAt   DateTime?
@@ -1576,13 +1995,13 @@ model Order {
 
   tabName      String? // For bar tabs (auto-filled from cardholder name on chip)
   tabNickname  String? // Editable display name (e.g., "John S - Beard")
-  tabStatus    String? // pending_auth | open | no_card | closed (null = not a tab)
+  tabStatus    TabStatus? // null = not a tab
 
   // Custom fields collected for this order type (e.g., phone, pickupTime, vehicleColor)
   customFields Json?
 
   // Status
-  status String @default("open") // open, sent, paid, closed, voided, merged
+  status OrderStatus @default(open)
 
   // Concurrency control (optimistic locking for multi-terminal conflict detection)
   version Int @default(1)
@@ -1649,7 +2068,7 @@ model Order {
 
   // Coursing (T013)
   currentCourse Int    @default(1) // Currently active course
-  courseMode    String @default("off") // 'off' | 'manual' | 'auto'
+  courseMode    OrderCourseMode @default(off)
 
   // Offline Sync (Store and Forward)
   offlineId        String?   @unique // UUID from terminal for deduplication
@@ -1743,7 +2162,7 @@ model OrderItem {
 
   // Course (Skill 14)
   courseNumber Int?
-  courseStatus String @default("pending") // pending, fired, ready, served
+  courseStatus CourseStatus @default(pending)
 
   // Hold & Fire (Skill 15)
   isHeld    Boolean   @default(false)
@@ -1755,7 +2174,7 @@ model OrderItem {
   delayStartedAt  DateTime? // When the delay timer started (set by send route)
 
   // Kitchen status
-  kitchenStatus String @default("pending") // pending, cooking, ready, delivered
+  kitchenStatus KitchenStatus @default(pending)
 
   // KDS completion tracking
   isCompleted Boolean   @default(false)
@@ -1775,7 +2194,7 @@ model OrderItem {
   specialNotes String?
 
   // Status
-  status     String   @default("active") // active, voided, comped
+  status     OrderItemStatus   @default(active)
   voidReason String?
   wasMade    Boolean? // Was item made before void/comp? For waste tracking
 
@@ -1889,7 +2308,7 @@ model Payment {
   totalAmount Decimal
 
   // Method
-  paymentMethod String // cash, credit, debit, gift_card, house_account
+  paymentMethod PaymentMethod
 
   // Cash details
   amountTendered     Decimal? // Amount given by customer
@@ -1915,7 +2334,7 @@ model Payment {
   signatureData    String?  // Base64 signature from reader (chargeback defense)
 
   // Status
-  status String @default("completed") // pending, completed, refunded, voided
+  status PaymentStatus @default(completed)
 
   // Refund tracking
   refundedAmount Decimal   @default(0)
@@ -2129,7 +2548,7 @@ model Reservation {
   table   Table?  @relation(fields: [tableId], references: [id])
 
   // Status
-  status String @default("confirmed") // confirmed, seated, completed, cancelled, no_show
+  status ReservationStatus @default(confirmed)
 
   // Notes
   specialRequests String?
@@ -2335,7 +2754,7 @@ model VoidLog {
   employeeId String
   employee   Employee @relation(fields: [employeeId], references: [id])
 
-  voidType String // item, order
+  voidType VoidType
   itemId   String? // If item void
   amount   Decimal
   reason   String
@@ -2399,7 +2818,7 @@ model RemoteVoidApproval {
   approvalCodeExpiry DateTime? // 5 minutes after approval
 
   // Status
-  status          String    @default("pending") // pending | approved | rejected | expired | used
+  status          RemoteVoidApprovalStatus    @default(pending)
   approvedAt      DateTime?
   rejectedAt      DateTime?
   rejectionReason String?
@@ -2622,7 +3041,7 @@ model TipLedgerEntry {
   ledger        TipLedger @relation(fields: [ledgerId], references: [id])
   employeeId    String
   employee      Employee  @relation(fields: [employeeId], references: [id])
-  type          String    // 'CREDIT' | 'DEBIT'
+  type          TipLedgerEntryType
   amountCents   Int
   sourceType    String    // DIRECT_TIP, TIP_GROUP, ROLE_TIPOUT, MANUAL_TRANSFER, PAYOUT_CASH, PAYOUT_PAYROLL, CHARGEBACK, ADJUSTMENT
   sourceId      String?
@@ -2655,7 +3074,7 @@ model TipTransaction {
   tipGroupId        String?
   segmentId         String?
   amountCents       Int
-  sourceType        String   // 'CARD' | 'CASH' | 'ADJUSTMENT'
+  sourceType        TipTransactionSourceType
   kind              String   @default("tip") // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
   collectedAt       DateTime
   primaryEmployeeId String?
@@ -2682,7 +3101,7 @@ model TipGroupTemplate {
   location        Location @relation(fields: [locationId], references: [id])
   name            String   // "Downstairs Servers", "Bar Team", etc.
   allowedRoleIds  Json     // Array of role IDs that can join this team
-  defaultSplitMode String  @default("equal") // equal, hours_weighted, role_weighted
+  defaultSplitMode TipGroupSplitMode  @default(equal)
   active          Boolean  @default(true)
   sortOrder       Int      @default(0)
 
@@ -2711,8 +3130,8 @@ model TipGroup {
   template   TipGroupTemplate? @relation(fields: [templateId], references: [id])
   startedAt  DateTime  @default(now())
   endedAt    DateTime?
-  status     String    @default("active") // active, closed
-  splitMode  String    @default("equal")  // equal, custom, role_weighted, hours_weighted
+  status     TipGroupStatus    @default(active)
+  splitMode  TipGroupSplitMode    @default(equal)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
@@ -2740,7 +3159,7 @@ model TipGroupMembership {
   leftAt     DateTime?
   role       String?   // For role-weighted splits
   approvedBy String?   // Owner who approved join
-  status     String    @default("active") // active, left, pending_approval
+  status     TipGroupMembershipStatus    @default(active)
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
   deletedAt  DateTime?
@@ -2788,7 +3207,7 @@ model TipDebt {
   sourcePaymentId     String    // The payment that triggered chargeback
   sourceType          String    @default("CHARGEBACK")
   memo                String?
-  status              String    @default("open") // open | partial | recovered | written_off
+  status              TipDebtStatus    @default(open)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   recoveredAt         DateTime?
@@ -2911,7 +3330,7 @@ model GiftCard {
   currentBalance Decimal
 
   // Status
-  status String @default("active") // active, depleted, expired, frozen
+  status GiftCardStatus @default(active)
 
   // Validity
   purchasedAt  DateTime  @default(now())
@@ -3000,7 +3419,7 @@ model HouseAccount {
   paymentTerms   Int     @default(30) // Days until due
 
   // Status
-  status          String    @default("active") // active, suspended, closed
+  status          HouseAccountStatus    @default(active)
   suspendedAt     DateTime?
   suspendedReason String?
 
@@ -3096,7 +3515,7 @@ model TimedSession {
   rateAmount Decimal
 
   // Status
-  status String @default("active") // active, paused, completed, cancelled
+  status TimedSessionStatus @default(active)
 
   // Who started/ended
   startedById String?
@@ -3145,7 +3564,7 @@ model Seat {
   originalAngle     Int? // Saved angle before combine
 
   // Seat properties
-  seatType String @default("standard") // standard, premium, accessible, booth_end
+  seatType SeatType @default(standard)
 
   // Temporary seat (created by POS when server adds extra seats)
   isTemporary    Boolean  @default(false) // true = created by POS, not editor
@@ -3153,7 +3572,7 @@ model Seat {
   sourceOrder    Order?   @relation("tempSeats", fields: [sourceOrderId], references: [id])
 
   // Status tracking
-  status             String  @default("available") // available, occupied, reserved
+  status             SeatStatus  @default(available)
   currentOrderItemId String? // Currently active order item at this seat
 
   // Historical tracking
@@ -3215,7 +3634,7 @@ model Event {
   salesEndAt   DateTime?
 
   // Status
-  status   String  @default("draft") // draft, on_sale, sold_out, cancelled, completed
+  status   EventStatus  @default(draft)
   isActive Boolean @default(true)
 
   // Settings stored as JSON for flexibility
@@ -3350,7 +3769,7 @@ model Ticket {
   totalPrice Decimal
 
   // Status
-  status String @default("available") // available, held, sold, checked_in, cancelled, refunded
+  status TicketStatus @default(available)
 
   // Hold Information (for cart/checkout flow)
   heldAt          DateTime?
@@ -3487,7 +3906,7 @@ model StockAlert {
   threshold    Int // The level that triggered the alert
 
   // Status
-  status String @default("active") // active, acknowledged, resolved
+  status StockAlertStatus @default(active)
 
   acknowledgedAt DateTime?
   acknowledgedBy String?
@@ -3843,7 +4262,7 @@ model InventoryCount {
 
   countDate   DateTime @default(now())
   countType   String   // "full", "area", "spot", "cycle"
-  status      String   @default("in_progress") // "in_progress", "completed", "reviewed"
+  status      InventoryCountStatus   @default(in_progress)
 
   // Link to storage location (for area counts)
   storageLocationId String?
@@ -3999,7 +4418,7 @@ model Invoice {
   totalAmount   Decimal
 
   // Status
-  status        String   @default("pending") // "pending", "received", "paid"
+  status        InvoiceStatus   @default(pending)
   paidDate      DateTime?
 
   // Options
@@ -4151,13 +4570,13 @@ model Break {
   timeClockEntryId String
   employeeId       String
 
-  breakType String    @default("unpaid") // paid, unpaid, meal
+  breakType BreakType    @default(unpaid)
   startedAt DateTime  @default(now())
   endedAt   DateTime?
   duration  Int? // Minutes, calculated on end
 
   // Status
-  status String @default("active") // active, completed
+  status BreakStatus @default(active)
 
   notes String?
 
@@ -4843,7 +5262,7 @@ model Printer {
   location   Location @relation(fields: [locationId], references: [id])
 
   name        String // "Kitchen Printer", "Bar Printer", "Receipt Printer"
-  printerType String // "thermal" | "impact"
+  printerType PrinterType
   model       String? // "TM-T88VII", "TM-U220"
 
   // Network configuration
@@ -4851,7 +5270,7 @@ model Printer {
   port      Int    @default(9100)
 
   // Role
-  printerRole String  @default("kitchen") // "receipt" | "kitchen" | "bar"
+  printerRole PrinterRole  @default(kitchen)
   isDefault   Boolean @default(false) // Default printer for this role
 
   // Capabilities
@@ -4900,7 +5319,7 @@ model Station {
   // Identity
   name        String  // "Pizza Oven", "Main Expo", "Grill KDS", "Bar Printer"
   displayName String? // Optional friendly name for UI
-  type        String  // "PRINTER" | "KDS"
+  type        StationType
 
   // Network Configuration (for PRINTER type)
   ipAddress String?
@@ -5059,7 +5478,7 @@ model Terminal {
 
   // Identity
   name     String // "Bar Terminal 1", "Server Station", "Handheld 3"
-  category String @default("FIXED_STATION") // "FIXED_STATION" | "HANDHELD"
+  category TerminalCategory @default(FIXED_STATION)
 
   // Network Configuration
   staticIp String? // For fixed stations, helps identify device
@@ -5076,7 +5495,7 @@ model Terminal {
   deviceInfo        Json?   // User agent, screen size, model, etc.
 
   // Native Platform Support
-  platform    String  @default("BROWSER")  // "BROWSER" | "ANDROID" | "IOS"
+  platform    TerminalPlatform  @default(BROWSER)
   appVersion  String?                       // e.g. "1.0.0"
   osVersion   String?                       // e.g. "Android 14"
   pushToken   String?                       // FCM token for push notifications
@@ -5112,7 +5531,7 @@ model Terminal {
   // Payment Reader Binding (Datacap Direct Integration)
   paymentReaderId       String?
   paymentReader         PaymentReader? @relation("TerminalPaymentReader", fields: [paymentReaderId], references: [id])
-  paymentProvider       String         @default("SIMULATED") // "DATACAP_DIRECT" | "SIMULATED"
+  paymentProvider       PaymentProvider         @default(SIMULATED)
   backupPaymentReaderId String?
   backupPaymentReader   PaymentReader? @relation("TerminalBackupReader", fields: [backupPaymentReaderId], references: [id])
   readerFailoverTimeout Int            @default(10000) // 10s before trying backup reader
@@ -5273,7 +5692,7 @@ model PrintRule {
 
   // Match Level: category < item < modifier (cascade priority)
   // Higher specificity wins: modifier > item > category
-  ruleLevel String // "category" | "item" | "modifier"
+  ruleLevel PrintRuleLevel
 
   // Match Target (one set based on ruleLevel)
   categoryId String?
@@ -5367,7 +5786,7 @@ model PrintJob {
   printerId String
   printer   Printer  @relation(fields: [printerId], references: [id])
 
-  status       String  @default("pending") // "pending" | "sent" | "failed"
+  status       PrintJobStatus  @default(pending)
   errorMessage String?
   retryCount   Int     @default(0)
 
@@ -5762,7 +6181,7 @@ model PayrollPeriod {
   periodType  String // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
 
   // Status tracking
-  status    String   @default("open") // 'open' | 'processing' | 'closed' | 'paid'
+  status    PayrollPeriodStatus   @default(open)
   closedAt  DateTime?
   closedBy  String? // employeeId of manager who closed
   paidAt    DateTime?
@@ -5854,7 +6273,7 @@ model PayStub {
   paidAt        DateTime?
 
   // Status
-  status String @default("pending") // 'pending' | 'approved' | 'paid' | 'void'
+  status PayStubStatus @default(pending)
 
   notes String?
 
@@ -5886,7 +6305,7 @@ model Schedule {
   weekEnd   DateTime // Sunday of the week
 
   // Status
-  status      String   @default("draft") // 'draft' | 'published' | 'archived'
+  status      ScheduleStatus   @default(draft)
   publishedAt DateTime?
   publishedBy String? // employeeId
 
@@ -5934,7 +6353,7 @@ model ScheduledShift {
   sectionId String?
 
   // Status tracking
-  status String @default("scheduled") // 'scheduled' | 'confirmed' | 'no_show' | 'called_off' | 'worked'
+  status ScheduledShiftStatus @default(scheduled)
 
   // Actual vs scheduled (filled after shift)
   actualStartTime DateTime?
@@ -5976,7 +6395,7 @@ model ShiftSwapRequest {
   requestedByEmployee     Employee         @relation("SwapInitiator", fields: [requestedByEmployeeId], references: [id])
   requestedToEmployeeId   String?
   requestedToEmployee     Employee?        @relation("SwapTarget", fields: [requestedToEmployeeId], references: [id])
-  status                  String           @default("pending") // pending | accepted | approved | rejected | cancelled
+  status                  ShiftSwapRequestStatus           @default(pending)
   respondedAt             DateTime?
   approvedAt              DateTime?
   approvedByEmployeeId    String?
@@ -6126,7 +6545,7 @@ model DailyPrepCount {
 
   // Session details
   countDate   DateTime @default(now()) // Date of the count (morning of prep day)
-  status      String   @default("draft") // "draft", "submitted", "approved", "rejected"
+  status      DailyPrepCountStatus   @default(draft)
 
   // Who created, submitted, approved
   createdById String
@@ -6264,8 +6683,8 @@ model OrderCard {
   authAmount     Decimal // Current total authorized amount
   isDefault      Boolean @default(false) // Default payment card for this tab
 
-  // Status: authorized | declined | captured | voided
-  status         String  @default("authorized")
+  // Status
+  status         OrderCardStatus  @default(authorized)
 
   // Capture details (at tab close)
   capturedAmount Decimal?
@@ -6338,8 +6757,8 @@ model ChargebackCase {
   reasonCode       String?   // Processor reason code (e.g., "10.4" for fraud)
   responseDeadline DateTime?
 
-  // Status: open | responded | won | lost
-  status String @default("open")
+  // Status
+  status ChargebackStatus @default(open)
   notes  String?
 
   // Response tracking
@@ -6418,8 +6837,8 @@ model WalkoutRetry {
   retryCount     Int       @default(0)
   maxRetries     Int       @default(10)  // Calculated from settings
 
-  // Status: pending | collected | exhausted | written_off
-  status     String  @default("pending")
+  // Status
+  status     WalkoutRetryStatus  @default(pending)
 
   // Result tracking
   lastRetryAt    DateTime?
@@ -6485,7 +6904,7 @@ model ErrorLog {
   id String @id @default(cuid())
 
   // Classification
-  severity  String // CRITICAL, HIGH, MEDIUM, LOW
+  severity  ErrorSeverity
   errorType String // PAYMENT, ORDER, API, FRONTEND, DATABASE, NETWORK, BUSINESS_LOGIC, PERFORMANCE
   category  String // For grouping similar errors (e.g., "payment-timeout", "order-creation-failed")
 
@@ -6520,7 +6939,7 @@ model ErrorLog {
   responseTime Int? // Milliseconds (for API calls, DB queries, etc.)
 
   // Resolution Tracking
-  status          String    @default("NEW") // NEW, INVESTIGATING, RESOLVED, IGNORED
+  status          ErrorLogStatus    @default(NEW)
   groupId         String? // Link to group similar errors together
   occurrenceCount Int       @default(1) // How many times this exact error occurred
   firstOccurred   DateTime  @default(now()) // First time this error happened
@@ -6588,7 +7007,7 @@ model HealthCheck {
 
   // Check Details
   checkType    String // ORDER_CREATION, PAYMENT_PROCESSING, PRINTER_CONNECTION, DATABASE_QUERY, API_RESPONSE
-  status       String // HEALTHY, DEGRADED, DOWN
+  status       HealthCheckStatus
   responseTime Int? // Milliseconds
   errorMessage String? // If status != HEALTHY
 

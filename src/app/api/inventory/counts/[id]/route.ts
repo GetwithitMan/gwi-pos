@@ -125,7 +125,7 @@ export const PUT = withVenue(async function PUT(
     // Handle status changes
     const updateData: Record<string, unknown> = {}
 
-    if (body.status === 'in_progress' && existing.status === 'pending') {
+    if (body.status === 'in_progress' && (existing.status as string) === 'pending') {
       updateData.status = 'in_progress'
     }
 
@@ -257,7 +257,7 @@ export const DELETE = withVenue(async function DELETE(
       return NextResponse.json({ error: 'Inventory count not found' }, { status: 404 })
     }
 
-    if (existing.status === 'approved') {
+    if ((existing.status as string) === 'approved') {
       return NextResponse.json({
         error: 'Cannot delete approved inventory count',
       }, { status: 400 })

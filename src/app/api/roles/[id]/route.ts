@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { CashHandlingMode } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
@@ -109,7 +110,7 @@ export const PUT = withVenue(async function PUT(
       data: {
         ...(name !== undefined && { name }),
         ...(permissions !== undefined && { permissions }),
-        ...(cashHandlingMode !== undefined && { cashHandlingMode }),
+        ...(cashHandlingMode !== undefined && { cashHandlingMode: cashHandlingMode as CashHandlingMode }),
         ...(trackLaborCost !== undefined && { trackLaborCost }),
         ...(isTipped !== undefined && { isTipped }),
         ...(tipWeight !== undefined && { tipWeight: Number(tipWeight) }),

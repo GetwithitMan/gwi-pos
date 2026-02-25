@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { SeatType } from '@prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
@@ -10,7 +11,7 @@ interface SeatUpdate {
   relativeX?: number
   relativeY?: number
   angle?: number
-  seatType?: string
+  seatType?: SeatType
 }
 
 // PUT - Bulk update seat positions

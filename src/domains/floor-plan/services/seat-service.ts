@@ -6,6 +6,7 @@
  */
 
 import { db } from '@/shared'
+import { SeatType } from '@prisma/client'
 import type { Seat, SeatPosition } from '../types'
 
 // Re-export existing seat utilities
@@ -127,7 +128,7 @@ export async function addVirtualSeat(
       relativeX: Math.round(position.x * 100), // Convert to int pixels
       relativeY: Math.round(position.y * 100),
       angle: Math.round(position.angle),
-      seatType: 'virtual',
+      seatType: 'virtual' as unknown as SeatType,
     },
   })
 

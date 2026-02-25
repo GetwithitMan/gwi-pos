@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { db, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, CashHandlingMode, CategoryType } from '@prisma/client'
 import { hash } from 'bcryptjs'
 import { neon, Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
@@ -173,7 +173,7 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
         'tips.view_own', 'tips.view_all', 'tips.share', 'tips.manage_rules', 'tips.manage_bank',
       ],
       isTipped: false,
-      cashHandlingMode: 'none',
+      cashHandlingMode: CashHandlingMode.none,
     },
     {
       name: 'Server',
@@ -182,7 +182,7 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
         'menu.view', 'tables.view', 'tips.view_own', 'tips.share', 'reports.view_tips',
       ],
       isTipped: true,
-      cashHandlingMode: 'purse',
+      cashHandlingMode: CashHandlingMode.purse,
     },
     {
       name: 'Bartender',
@@ -192,13 +192,13 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
         'reports.view_tips',
       ],
       isTipped: true,
-      cashHandlingMode: 'drawer',
+      cashHandlingMode: CashHandlingMode.drawer,
     },
     {
       name: 'Host',
       permissions: ['pos.access', 'tables.view', 'menu.view'],
       isTipped: false,
-      cashHandlingMode: 'none',
+      cashHandlingMode: CashHandlingMode.none,
     },
   ]
 
@@ -270,13 +270,13 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
 
   // Default categories
   const categories = [
-    { name: 'Appetizers', categoryType: 'food', color: '#F59E0B', sortOrder: 0 },
-    { name: 'Entrees', categoryType: 'food', color: '#EF4444', sortOrder: 1 },
-    { name: 'Sides', categoryType: 'food', color: '#10B981', sortOrder: 2 },
-    { name: 'Desserts', categoryType: 'food', color: '#EC4899', sortOrder: 3 },
-    { name: 'Soft Drinks', categoryType: 'drinks', color: '#06B6D4', sortOrder: 4 },
-    { name: 'Beer', categoryType: 'drinks', color: '#F97316', sortOrder: 5 },
-    { name: 'Cocktails', categoryType: 'liquor', color: '#8B5CF6', sortOrder: 6 },
+    { name: 'Appetizers', categoryType: CategoryType.food, color: '#F59E0B', sortOrder: 0 },
+    { name: 'Entrees', categoryType: CategoryType.food, color: '#EF4444', sortOrder: 1 },
+    { name: 'Sides', categoryType: CategoryType.food, color: '#10B981', sortOrder: 2 },
+    { name: 'Desserts', categoryType: CategoryType.food, color: '#EC4899', sortOrder: 3 },
+    { name: 'Soft Drinks', categoryType: CategoryType.drinks, color: '#06B6D4', sortOrder: 4 },
+    { name: 'Beer', categoryType: CategoryType.drinks, color: '#F97316', sortOrder: 5 },
+    { name: 'Cocktails', categoryType: CategoryType.liquor, color: '#8B5CF6', sortOrder: 6 },
   ]
 
   for (const cat of categories) {

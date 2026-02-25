@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderStatus } from '@prisma/client'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { getLocationTaxRate } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
@@ -78,7 +79,7 @@ export const DELETE = withVenue(async function DELETE(
     // Soft delete the empty split (preserve audit trail)
     await db.order.update({
       where: { id: splitId },
-      data: { deletedAt: new Date(), status: 'cancelled' },
+      data: { deletedAt: new Date(), status: 'cancelled' as OrderStatus },
     })
 
     // Count remaining splits
@@ -146,7 +147,7 @@ export const DELETE = withVenue(async function DELETE(
         // Soft delete the last split (preserve audit trail)
         await tx.order.update({
           where: { id: lastSplit.id },
-          data: { deletedAt: new Date(), status: 'cancelled' },
+          data: { deletedAt: new Date(), status: 'cancelled' as OrderStatus },
         })
 
         // Restore any soft-deleted split items on parent

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
+import { Prisma, ModifierPrinterRouting } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -198,7 +198,7 @@ export const PUT = withVenue(async function PUT(
               isActive: mod.isActive !== undefined ? mod.isActive : undefined,
               showOnPOS: mod.showOnPOS !== undefined ? mod.showOnPOS : undefined,
               showOnline: mod.showOnline !== undefined ? mod.showOnline : undefined,
-              printerRouting: mod.printerRouting !== undefined ? mod.printerRouting : undefined,
+              printerRouting: mod.printerRouting !== undefined ? mod.printerRouting as ModifierPrinterRouting : undefined,
               printerIds: mod.printerIds !== undefined ? (mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull) : undefined,
               ingredientId: mod.ingredientId !== undefined ? (mod.ingredientId || null) : undefined,
               spiritTier: mod.spiritTier !== undefined ? mod.spiritTier : undefined,
@@ -224,7 +224,7 @@ export const PUT = withVenue(async function PUT(
               isActive: mod.isActive ?? true,
               showOnPOS: mod.showOnPOS ?? true,
               showOnline: mod.showOnline ?? true,
-              printerRouting: mod.printerRouting ?? 'follow',
+              printerRouting: (mod.printerRouting ?? 'follow') as ModifierPrinterRouting,
               printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
               ingredientId: mod.ingredientId || null,
               spiritTier: mod.spiritTier || null,

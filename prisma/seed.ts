@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, MenuItemType } from '@prisma/client'
 import { hash } from 'bcryptjs'
 
 const prisma = new PrismaClient()
@@ -1216,7 +1216,7 @@ async function main() {
         name: item.name,
         price: item.price,
         description: item.description,
-        itemType: item.itemType,
+        itemType: item.itemType as MenuItemType,
       },
     })
   }
@@ -1476,7 +1476,7 @@ async function main() {
         name: item.name,
         price: item.price,
         description: item.description,
-        itemType: item.itemType,
+        itemType: item.itemType as MenuItemType,
         timedPricing: item.timedPricing,
       },
     })

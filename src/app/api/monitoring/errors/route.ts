@@ -21,7 +21,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import { Prisma, ErrorSeverity, ErrorLogStatus } from '@prisma/client'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
@@ -64,9 +64,9 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     const where: Prisma.ErrorLogWhereInput = {}
 
     where.locationId = locationId
-    if (severity) where.severity = severity
+    if (severity) where.severity = severity as ErrorSeverity
     if (errorType) where.errorType = errorType
-    if (status) where.status = status
+    if (status) where.status = status as ErrorLogStatus
     if (groupId) where.groupId = groupId
 
     if (search) {

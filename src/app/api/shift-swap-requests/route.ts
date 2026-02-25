@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { Prisma } from '@prisma/client'
+import { Prisma, ShiftSwapRequestStatus } from '@prisma/client'
 
 // GET - List swap requests for the current location
 // Query params: locationId (required), status? (filter), employeeId? (filter as requestedToEmployeeId)
@@ -22,7 +22,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     if (status) {
-      where.status = status
+      where.status = status as ShiftSwapRequestStatus
     }
 
     if (employeeId) {

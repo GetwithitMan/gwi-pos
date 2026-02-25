@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { TimedSessionStatus } from '@prisma/client'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Start a new timed session
@@ -51,7 +52,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
-    const status = searchParams.get('status') || 'active'
+    const status = (searchParams.get('status') || 'active') as TimedSessionStatus
 
     if (!locationId) {
       return NextResponse.json(

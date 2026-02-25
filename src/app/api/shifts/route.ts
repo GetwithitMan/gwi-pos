@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { ShiftStatus } from '@prisma/client'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
@@ -9,7 +10,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const employeeId = searchParams.get('employeeId')
-    const status = searchParams.get('status') // 'open' or 'closed'
+    const status = searchParams.get('status') as ShiftStatus | null
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
 
@@ -131,7 +132,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       where: {
         employeeId,
         locationId,
-        status: 'open',
+        status: ShiftStatus.open,
       },
     })
 
@@ -147,7 +148,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const drawerClaimed = await db.shift.findFirst({
         where: {
           drawerId,
-          status: 'open',
+          status: ShiftStatus.open,
           deletedAt: null,
         },
         include: {
@@ -183,7 +184,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         employeeId,
         startingCash: startingCash ?? 0,
         notes,
-        status: 'open',
+        status: ShiftStatus.open,
         timeClockEntryId: activeClockEntry?.id || null,
         ...(drawerId ? { drawerId } : {}),
         ...(workingRoleId ? { workingRoleId } : {}),

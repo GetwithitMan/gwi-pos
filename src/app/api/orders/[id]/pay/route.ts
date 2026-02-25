@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
+import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client'
 import {
   generateFakeAuthCode,
   generateFakeTransactionId,
@@ -521,7 +522,7 @@ export const POST = withVenue(withTiming(async function POST(
         amount: number
         tipAmount: number
         totalAmount: number
-        paymentMethod: string
+        paymentMethod: PaymentMethod
         amountTendered?: number
         changeGiven?: number
         roundingAdjustment?: number
@@ -540,7 +541,7 @@ export const POST = withVenue(withTiming(async function POST(
         priceBeforeDiscount?: number
         pricingMode?: string
         idempotencyKey?: string
-        status: string
+        status: PaymentStatus
       } = {
         locationId: order.locationId,
         orderId,
@@ -551,8 +552,8 @@ export const POST = withVenue(withTiming(async function POST(
         amount: payment.amount,
         tipAmount: payment.tipAmount || 0,
         totalAmount: payment.amount + (payment.tipAmount || 0),
-        paymentMethod: payment.method,
-        status: 'completed',
+        paymentMethod: payment.method as PaymentMethod,
+        status: 'completed' as PaymentStatus,
         idempotencyKey: finalIdempotencyKey,
       }
 
@@ -996,8 +997,8 @@ export const POST = withVenue(withTiming(async function POST(
 
     const updateData: {
       tipTotal: number
-      primaryPaymentMethod?: string
-      status?: string
+      primaryPaymentMethod?: PaymentMethod
+      status?: OrderStatus
       paidAt?: Date
       closedAt?: Date
       businessDayDate: Date
@@ -1009,7 +1010,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Set primary payment method based on first/largest payment
     if (!order.primaryPaymentMethod) {
       const primaryMethod = payments[0].method
-      updateData.primaryPaymentMethod = primaryMethod === 'cash' ? 'cash' : 'card'
+      updateData.primaryPaymentMethod = (primaryMethod === 'cash' ? 'cash' : 'card') as PaymentMethod
     }
 
     // Mark as paid if fully paid

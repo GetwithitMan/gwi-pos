@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderItemStatus } from '@prisma/client'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -362,7 +363,7 @@ export const POST = withVenue(async function POST(
         where: {
           id: { in: itemIds },
         },
-        data: { deletedAt: new Date(), status: 'removed' },
+        data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
       })
 
       // Recalculate original order totals
@@ -571,7 +572,7 @@ export const POST = withVenue(async function POST(
       })
       await db.orderItem.updateMany({
         where: { id: { in: itemIdsToRemove } },
-        data: { deletedAt: new Date(), status: 'removed' },
+        data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
       })
 
       // Recalculate original order totals (for items without seat assignment)
@@ -777,7 +778,7 @@ export const POST = withVenue(async function POST(
       })
       await db.orderItem.updateMany({
         where: { id: { in: itemIdsToRemove } },
-        data: { deletedAt: new Date(), status: 'removed' },
+        data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
       })
 
       // Recalculate original order totals (for items without table assignment)

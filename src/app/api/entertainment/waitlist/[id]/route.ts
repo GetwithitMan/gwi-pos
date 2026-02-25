@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { EntertainmentWaitlistStatus } from '@prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
@@ -123,7 +124,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     const updateData: {
-      status?: string
+      status?: EntertainmentWaitlistStatus
       notifiedAt?: Date | null
       seatedAt?: Date | null
       notes?: string | null
@@ -133,7 +134,7 @@ export const PATCH = withVenue(async function PATCH(
 
     // Handle status transitions
     if (status) {
-      updateData.status = status
+      updateData.status = status as EntertainmentWaitlistStatus
 
       if (status === 'notified') {
         updateData.notifiedAt = new Date()
@@ -190,7 +191,7 @@ export const PATCH = withVenue(async function PATCH(
         await tx.entertainmentWaitlist.updateMany({
           where: {
             locationId,
-            status: 'waiting',
+            status: EntertainmentWaitlistStatus.waiting,
             deletedAt: null,
             position: { gt: entry.position },
             ...(entry.elementId ? { elementId: entry.elementId } : { visualType: entry.visualType }),
@@ -294,7 +295,7 @@ export const DELETE = withVenue(async function DELETE(
         await tx.entertainmentWaitlist.updateMany({
           where: {
             locationId,
-            status: 'waiting',
+            status: EntertainmentWaitlistStatus.waiting,
             deletedAt: null,
             position: { gt: entry.position },
             ...(entry.elementId ? { elementId: entry.elementId } : { visualType: entry.visualType }),

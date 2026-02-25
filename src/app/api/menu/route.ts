@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
 import { getLocationId } from '@/lib/location-cache'
+import type { CategoryType, CategoryShow } from '@prisma/client'
 
 // Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'
@@ -15,8 +16,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
   try {
     const { searchParams } = new URL(request.url)
-    const categoryType = searchParams.get('categoryType')   // Optional: 'food', 'liquor', 'drinks', etc.
-    const categoryShow = searchParams.get('categoryShow')   // Optional: 'food', 'bar', 'entertainment'
+    const categoryType = searchParams.get('categoryType') as CategoryType | null   // Optional: 'food', 'liquor', 'drinks', etc.
+    const categoryShow = searchParams.get('categoryShow') as CategoryShow | null   // Optional: 'food', 'bar', 'entertainment'
 
     // Get the location ID (cached)
     const locationId = await getLocationId()

@@ -12,7 +12,7 @@
  *   npx dotenv-cli -e .env.local -- npx tsx scripts/setup-full-pos-menu.ts
  */
 
-import { PrismaClient, Prisma } from '@prisma/client'
+import { PrismaClient, Prisma, ModifierPriceType } from '@prisma/client'
 
 const db = new PrismaClient()
 
@@ -350,7 +350,7 @@ async function main() {
       modifierGroupId: string
       name: string
       price: Prisma.Decimal
-      priceType: string
+      priceType: ModifierPriceType
       spiritTier: string
       linkedBottleProductId: string
       isActive: boolean

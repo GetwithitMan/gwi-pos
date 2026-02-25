@@ -3,19 +3,20 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeAuthCode, generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
+import type { OrderStatus } from '@prisma/client'
 
 // GET - List open tabs with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const employeeId = searchParams.get('employeeId')
-    const status = searchParams.get('status') || 'open'
+    const status = (searchParams.get('status') || 'open') as OrderStatus | 'all'
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
     const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'))
 
     const where = {
       orderType: 'bar_tab' as const,
-      status: status === 'all' ? undefined : status,
+      ...(status !== 'all' ? { status } : {}),
       ...(employeeId ? { employeeId } : {}),
     }
 

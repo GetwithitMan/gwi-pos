@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { TipGroupSplitMode } from '@prisma/client'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -126,7 +127,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId,
         name: name.trim(),
         allowedRoleIds: allowedRoleIds ?? [],
-        defaultSplitMode: defaultSplitMode ?? 'equal',
+        defaultSplitMode: (defaultSplitMode ?? 'equal') as TipGroupSplitMode,
         active: active ?? true,
         sortOrder: nextSort,
       },

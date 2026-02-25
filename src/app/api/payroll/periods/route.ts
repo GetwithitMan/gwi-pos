@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PayrollPeriodStatus } from '@prisma/client'
 import { calculateTaxes } from '@/lib/payroll/tax-calculator'
 import { withVenue } from '@/lib/with-venue'
 
@@ -8,7 +9,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const status = searchParams.get('status')
+    const status = searchParams.get('status') as PayrollPeriodStatus | null
     const limit = parseInt(searchParams.get('limit') || '20')
 
     if (!locationId) {

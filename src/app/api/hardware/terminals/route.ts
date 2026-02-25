@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { TerminalCategory } from '@prisma/client'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 
@@ -11,7 +12,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
-    const category = searchParams.get('category') // Filter by category
+    const category = searchParams.get('category') as TerminalCategory | null
 
     let terminals
     try {

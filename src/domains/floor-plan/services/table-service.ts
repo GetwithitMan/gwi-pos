@@ -6,6 +6,7 @@
  */
 
 import { db } from '@/shared'
+import { TableStatus as PrismaTableStatus } from '@prisma/client'
 import type { Table, TableShape, TableStatus } from '../types'
 
 // Re-export existing utilities for internal use
@@ -108,7 +109,7 @@ export async function updateTableStatus(
 ): Promise<Table> {
   const table = await db.table.update({
     where: { id: tableId },
-    data: { status },
+    data: { status: status as unknown as PrismaTableStatus },
     include: {
       section: true,
       seats: {

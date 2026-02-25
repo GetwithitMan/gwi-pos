@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { FloorPlanElementStatus } from '@prisma/client'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -236,14 +237,14 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     }
 
     const updateData: {
-      status?: string
+      status?: FloorPlanElementStatus
       currentOrderId?: string | null
       sessionStartedAt?: Date | null
       sessionExpiresAt?: Date | null
     } = {}
 
     if (status) {
-      updateData.status = status
+      updateData.status = status as FloorPlanElementStatus
     }
 
     if (status === 'available') {

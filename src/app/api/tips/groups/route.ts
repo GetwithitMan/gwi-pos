@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
+import { TipGroupStatus } from '@prisma/client'
 import { startTipGroup } from '@/lib/domain/tips/tip-groups'
 import type { TipGroupInfo } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
@@ -20,7 +21,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const status = searchParams.get('status') || 'active'
+    const status = (searchParams.get('status') || 'active') as TipGroupStatus
 
     // ── Validate required fields ──────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { VoidType, Prisma } from '@prisma/client'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -33,12 +34,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     end.setHours(23, 59, 59, 999)
 
     // Build where clause
-    const where: {
-      order: { locationId: string }
-      createdAt: { gte: Date; lte: Date }
-      employeeId?: string
-      voidType?: string
-    } = {
+    const where: Prisma.VoidLogWhereInput = {
       order: { locationId },
       createdAt: { gte: start, lte: end },
     }
@@ -48,7 +44,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     if (voidType) {
-      where.voidType = voidType
+      where.voidType = voidType as VoidType
     }
 
     // Get void logs

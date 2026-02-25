@@ -103,7 +103,7 @@ async function migrateRouting(locationId?: string): Promise<MigrationResult> {
         }
 
         // Map printer role to tags and template
-        const role = printer.printerRole || 'kitchen'
+        const role = (printer.printerRole || 'kitchen') as string
         const tags = PRINTER_ROLE_TO_TAGS[role] || ['kitchen']
         const templateType = PRINTER_ROLE_TO_TEMPLATE[role] || 'STANDARD_KITCHEN'
 

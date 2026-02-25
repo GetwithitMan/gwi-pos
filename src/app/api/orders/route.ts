@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
+import { Prisma, OrderStatus } from '@prisma/client'
 import { db } from '@/lib/db'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 import { errorCapture } from '@/lib/error-capture'
@@ -617,7 +617,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
-        ...(status ? { status } : {}),
+        ...(status ? { status: status as OrderStatus } : {}),
         ...(employeeId ? { employeeId } : {}),
         ...(Object.keys(dateRangeFilter).length > 0 ? { createdAt: dateRangeFilter } : {}),
         ...(totalFilter ? { total: totalFilter } : {}),

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { CashHandlingMode } from '@prisma/client'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
@@ -109,7 +110,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId,
         name,
         permissions: permissions || [],
-        ...(cashHandlingMode !== undefined ? { cashHandlingMode } : {}),
+        ...(cashHandlingMode !== undefined ? { cashHandlingMode: cashHandlingMode as CashHandlingMode } : {}),
         ...(trackLaborCost !== undefined ? { trackLaborCost } : {}),
         ...(isTipped !== undefined ? { isTipped } : {}),
         ...(tipWeight !== undefined ? { tipWeight: Number(tipWeight) } : {}),

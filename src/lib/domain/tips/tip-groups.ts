@@ -11,6 +11,7 @@
  */
 
 import { db } from '@/lib/db'
+import { TipGroupSplitMode, TipGroupStatus, TipGroupMembershipStatus } from '@prisma/client'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -310,8 +311,8 @@ export async function startTipGroup(params: {
         ownerId: createdBy,
         registerId: registerId ?? null,
         startedAt: now,
-        status: 'active',
-        splitMode: mode,
+        status: TipGroupStatus.active,
+        splitMode: mode as TipGroupSplitMode,
       },
     })
 
@@ -322,7 +323,7 @@ export async function startTipGroup(params: {
         groupId: tipGroup.id,
         employeeId: empId,
         joinedAt: now,
-        status: 'active',
+        status: TipGroupMembershipStatus.active,
       })),
     })
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { HouseAccountStatus } from '@prisma/client'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - House Accounts Aging Report (P1-03)
@@ -8,7 +9,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const statusFilter = searchParams.get('status') || 'active'
+    const statusFilter = (searchParams.get('status') || 'active') as HouseAccountStatus
     const includeZeroBalance = searchParams.get('includeZeroBalance') === 'true'
 
     if (!locationId) {

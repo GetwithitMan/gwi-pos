@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { PrinterRole } from '@prisma/client'
 import { db } from '@/lib/db'
 import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const printers = await db.printer.findMany({
       where: {
         locationId,
-        ...(role && { printerRole: role }),
+        ...(role && { printerRole: role as PrinterRole }),
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
