@@ -1705,7 +1705,10 @@ model Order {
   @@index([locationId, paidAt])
   @@index([locationId, createdAt, status])
   @@index([locationId, businessDayDate])
-  @@unique([locationId, orderNumber])
+  // DB-level constraint (raw SQL in vercel-build.js):
+  // UNIQUE INDEX "Order_locationId_orderNumber_unique" ON "Order" ("locationId", "orderNumber")
+  // WHERE "parentOrderId" IS NULL
+  // Only enforces uniqueness on root orders — split orders share parent's orderNumber.
 }
 
 model OrderItem {

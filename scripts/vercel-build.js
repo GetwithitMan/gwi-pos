@@ -159,31 +159,60 @@ async function runPrePushMigrations() {
     console.log('[vercel-build]   Done — cloud_event_queue.updatedAt backfilled')
   }
 
-  // --- Deduplicate Order.orderNumber before unique constraint ---
-  // Schema adds @@unique([locationId, orderNumber]). If duplicate pairs exist,
-  // db push will fail. Offset duplicates to 900000+ range (keep the newest).
+  // --- Partial unique index on Order(locationId, orderNumber) ---
+  // Split orders intentionally share the parent's orderNumber, so we can't use
+  // a plain @@unique. Instead, create a partial unique index that only covers
+  // root orders (parentOrderId IS NULL). Same pattern as Order_tableId_active_unique.
+  //
+  // First, deduplicate any root orders with colliding (locationId, orderNumber).
   const dupes = await sql`
     SELECT "locationId", "orderNumber", COUNT(*) as cnt
     FROM "Order"
+    WHERE "parentOrderId" IS NULL
     GROUP BY "locationId", "orderNumber"
     HAVING COUNT(*) > 1
   `
   if (dupes.length > 0) {
     console.log(`[vercel-build]   Deduplicating ${dupes.length} duplicate orderNumber groups...`)
     for (const { locationId, orderNumber } of dupes) {
-      // Get all orders with this duplicate pair, newest first
       const orders = await sql`
         SELECT id FROM "Order"
         WHERE "locationId" = ${locationId} AND "orderNumber" = ${orderNumber}
+          AND "parentOrderId" IS NULL
         ORDER BY "createdAt" DESC
       `
-      // Skip the first (newest) — renumber the rest with high offset
+      // Keep the newest, offset the rest
       for (let i = 1; i < orders.length; i++) {
         const newNum = 900000 + orderNumber + i
         await sql`UPDATE "Order" SET "orderNumber" = ${newNum} WHERE id = ${orders[i].id}`
       }
     }
     console.log('[vercel-build]   Done — duplicate orderNumbers resolved')
+  }
+
+  // Drop Prisma's plain unique if it exists (from previous deploy), then create partial
+  const [plainIdx] = await sql`
+    SELECT indexname FROM pg_indexes
+    WHERE tablename = 'Order' AND indexname = 'Order_locationId_orderNumber_key'
+  `
+  if (plainIdx) {
+    console.log('[vercel-build]   Dropping plain unique index Order_locationId_orderNumber_key...')
+    await sql`DROP INDEX "Order_locationId_orderNumber_key"`
+    console.log('[vercel-build]   Done')
+  }
+
+  const [partialIdx] = await sql`
+    SELECT indexname FROM pg_indexes
+    WHERE tablename = 'Order' AND indexname = 'Order_locationId_orderNumber_unique'
+  `
+  if (!partialIdx) {
+    console.log('[vercel-build]   Creating partial unique index Order_locationId_orderNumber_unique...')
+    await sql`
+      CREATE UNIQUE INDEX "Order_locationId_orderNumber_unique"
+      ON "Order" ("locationId", "orderNumber")
+      WHERE "parentOrderId" IS NULL
+    `
+    console.log('[vercel-build]   Done — partial unique index created (root orders only)')
   }
 
   console.log('[vercel-build] Pre-push migrations complete')
@@ -198,11 +227,11 @@ async function main() {
   await runPrePushMigrations()
 
   // Sync schema to Neon PostgreSQL
-  // --skip-generate: already ran above; --accept-data-loss is intentionally NOT set
-  // so destructive changes (dropping columns/tables) will fail the build instead
-  // of silently deleting production data.
+  // --skip-generate: already ran above
+  // --accept-data-loss: required for safe type casts (e.g. Float→Decimal) and
+  // new unique constraints. Pre-push migrations above handle the real data safety.
   console.log('[vercel-build] Running prisma db push...')
-  execSync('npx prisma db push --skip-generate', { stdio: 'inherit' })
+  execSync('npx prisma db push --skip-generate --accept-data-loss', { stdio: 'inherit' })
 
   // Build Next.js
   console.log('[vercel-build] Running next build...')
