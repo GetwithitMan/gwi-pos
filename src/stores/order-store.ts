@@ -96,6 +96,13 @@ interface OrderItem {
   // Pour size (liquor items) — T-006
   pourSize?: string | null
   pourMultiplier?: number | null
+  // Item-level discounts
+  itemDiscounts?: Array<{
+    id: string
+    amount: number
+    percent?: number | null
+    reason?: string | null
+  }>
   // Split label for grouped display (e.g. "68-1")
   splitLabel?: string
 }
@@ -431,6 +438,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       })),
       // Pizza configuration
       pizzaConfig: item.pizzaConfig,
+      // Item-level discounts
+      itemDiscounts: (item as any).itemDiscounts?.map((d: any) => ({
+        id: d.id,
+        amount: Number(d.amount),
+        percent: d.percent ? Number(d.percent) : null,
+        reason: d.reason || null,
+      })) || undefined,
       // Split label for grouped display
       splitLabel: item.splitLabel,
     }))

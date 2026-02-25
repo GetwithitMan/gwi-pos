@@ -734,6 +734,18 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             </div>
           )}
 
+          {/* Item discount note */}
+          {hasItemDiscount && item.itemDiscounts && item.itemDiscounts.length > 0 && (
+            <div style={{ paddingLeft: '8px', marginTop: '2px', fontSize: '11px', color: '#4ade80' }}>
+              {item.itemDiscounts.map((d) => (
+                <span key={d.id}>
+                  {d.percent ? `${d.percent}% Off` : `$${d.amount.toFixed(2)} Off`}
+                  {d.reason ? ` — ${d.reason}` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Void/Comp details */}
           {isCompedOrVoided && (
             <div style={{

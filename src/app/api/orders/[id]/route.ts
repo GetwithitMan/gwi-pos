@@ -106,6 +106,10 @@ export const GET = withVenue(async function GET(
                   modifierId: true,
                 },
               },
+              itemDiscounts: {
+                where: { deletedAt: null },
+                select: { id: true, amount: true, percent: true, reason: true },
+              },
             },
           },
         },
@@ -127,6 +131,12 @@ export const GET = withVenue(async function GET(
           ...item,
           price: Number(item.price),
           itemTotal: Number(item.itemTotal),
+          itemDiscounts: item.itemDiscounts.map(d => ({
+            id: d.id,
+            amount: Number(d.amount),
+            percent: d.percent ? Number(d.percent) : null,
+            reason: d.reason,
+          })),
           modifiers: item.modifiers.map(mod => ({
             ...mod,
             price: Number(mod.price),
@@ -161,6 +171,10 @@ export const GET = withVenue(async function GET(
             },
             pizzaData: true,
             ingredientModifications: true,
+            itemDiscounts: {
+              where: { deletedAt: null },
+              select: { id: true, amount: true, percent: true, reason: true },
+            },
           },
         },
         payments: {

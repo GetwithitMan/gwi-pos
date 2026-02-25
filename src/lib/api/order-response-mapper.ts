@@ -39,6 +39,12 @@ export interface MappedOrderItem {
   blockTimeStartedAt: Date | null
   blockTimeExpiresAt: Date | null
   ingredientModifications: MappedIngredientMod[]
+  itemDiscounts: Array<{
+    id: string
+    amount: number
+    percent: number | null
+    reason: string | null
+  }>
   createdAt: Date
 }
 
@@ -165,6 +171,12 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
       priceAdjustment: Number(ing.priceAdjustment),
       swappedToModifierId: ing.swappedToModifierId,
       swappedToModifierName: ing.swappedToModifierName,
+    })) || [],
+    itemDiscounts: item.itemDiscounts?.map((d: any) => ({
+      id: d.id,
+      amount: Number(d.amount),
+      percent: d.percent ? Number(d.percent) : null,
+      reason: d.reason,
     })) || [],
     createdAt: item.createdAt,
   }
