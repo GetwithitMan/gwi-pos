@@ -5,6 +5,103 @@
 
 ---
 
+## 2026-02-24 — Android Hardening: Production-Grade Resilience (4 Rounds)
+
+**Session:** Four rounds of hardening on the Android register app, incorporating internal requirements and two third-party code reviews. Managed as agent team lead — all code written by parallel agents. Desktop review docs regenerated after each round.
+
+### Commits
+
+**GWI Android Register** (`gwi-android-register`):
+- `5b7c96a` — Round 1A: PIN removal from Room (PCI), outbox per-order sequencing, bootstrap upsert-then-prune
+- `047a1f7` — Round 1B: NucNotConfiguredException domain exception, UX truthfulness (dual-signal online, kitchen queued warning, payment blocking, idle timeout, closed-elsewhere detection)
+- `a9c32ec` — Round 1C: ARCHITECTURE.md documenting 7 hardening invariants
+- `c63babe` — Divider deprecation fix (Divider → HorizontalDivider)
+- `5cd6894` — Round 2A: double-tap protection (isAddingItem/isSending/isProcessingPayment), non-menu DAO upsert-prune (Employee, Table, OrderType, PaymentReader), closed-elsewhere UX, docs update
+- `54af64b` — Round 2B: payment in-flight logging (PaymentLogEntity INITIATED/CONFIRMED/FAILED, PaymentLogDao, unreconciled count badge)
+- `499d62d` — Round 3: DynamicBaseUrlInterceptor (replaces Retrofit rebuild), OutboxWorker parsePayload<T> safety, BootstrapWorker NucNotConfiguredException handling, health check interval 30s→10s, SharedFlow buffers 10→64
+- `dc4bf31` — Round 4: PIN auto-submit fix (remove auto-submit at 4, add GO button for 4-6 digit PINs), SharedFlow BufferOverflow.DROP_OLDEST on all 12 flows
+
+### Deployments
+- Android: all pushed to main at https://github.com/GetwithitMan/gwi-android-register
+
+### Features Delivered
+
+**Security (Round 1A):**
+- `EmployeeEntity` — removed `pin` column entirely (PCI: PINs never persisted on device)
+- `DtoMappers` — EmployeeDto still receives pin from API but maps without persisting
+
+**Outbox Ordering (Round 1A):**
+- `OutboxEntry` — added `sequenceNumber: Long`, `Index("offlineId")`
+- `OutboxDao.getRetryable()` — NOT EXISTS subquery ensures per-order strict sequencing (entry N must complete before N+1 dispatches)
+- `OutboxDao.getNextSequenceNumber()` — auto-increments per offlineId
+
+**Bootstrap Safety (Round 1A):**
+- `MenuDao.syncMenuData()` — @Transaction upsert-then-prune (INSERT OR REPLACE, then DELETE WHERE id NOT IN)
+- All 4 non-menu DAOs (Employee, Table, OrderType, PaymentReader) — same upsert-then-prune pattern
+- `BootstrapWorker` — uses sync* methods instead of deleteAll+insertAll, catches NucNotConfiguredException
+
+**Domain Exceptions (Round 1B):**
+- `NucNotConfiguredException` — replaces raw IllegalStateException for unpaired device state
+- `ApiServiceHolder` — throws NucNotConfiguredException when no base URL configured
+- `OrderRepository` — private `api` helper wraps NucNotConfiguredException → IOException
+- `OutboxWorker` + `BootstrapWorker` — catch and handle gracefully
+
+**UX Truthfulness (Round 1B):**
+- `OrderViewModel.isOnline` — dual signal: socket connected AND HTTP health check (every 10s)
+- `kitchenQueuedWarning` — shown when sendToKitchen succeeds but outbox still has pending items
+- Payment blocking — `showPayment()`/`payCash()`/`payCard()` gated on `isOnline`
+- `orderClosedElsewhere` — detected when active order disappears from server open orders list
+- `sessionExpired` — 5-minute idle timeout with auto-logout
+- `unreconciledPaymentCount` — observes stale INITIATED payment logs, shown as red badge in PosHeader
+
+**Double-Tap Protection (Round 2A):**
+- `isAddingItem` — guards `addItem()`/`addItemWithModifiers()` with try/finally flag
+- `isSending` — guards `sendToKitchen()`
+- `isProcessingPayment` — guards all payment flows
+- `ModifierSheet` — confirm button disabled when `isAddingItem`
+
+**Payment Logging (Round 2B):**
+- `PaymentLogEntity` — Room entity with INITIATED/CONFIRMED/FAILED status, amounts, timestamps
+- `PaymentLogDao` — insert, markConfirmed, markFailed, getStaleInitiated, observeUnreconciledCount, purgeOldConfirmed
+- DB version 3→4 (destructive migration)
+
+**Connectivity (Round 3):**
+- `DynamicBaseUrlInterceptor` — OkHttp interceptor with AtomicReference, rewrites scheme/host/port per-request, preserves connection pool (replaces Retrofit rebuild)
+- `NetworkModule` — provides interceptor + single Retrofit instance with placeholder base URL
+- `OutboxWorker.parsePayload<T>()` — generic JSON deserialization helper with dead-letter on parse failure
+- Health check interval reduced from 30s to 10s
+
+**PIN & Socket (Round 4):**
+- `PinLoginViewModel` — removed auto-submit at length 4, added `onSubmit()` (requires ≥4 digits)
+- `PinLoginScreen` — added "GO" button to numpad (enabled at 4+ digits, dimmed when disabled)
+- `SocketManager` — all 12 SharedFlows: `BufferOverflow.DROP_OLDEST` (tryEmit never silently drops newest event)
+
+### Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| PIN storage | Never persist on device | PCI compliance — server validates on every login |
+| Outbox sequencing | NOT EXISTS subquery | Guarantees per-order strict ordering without complex locking |
+| DAO sync pattern | Upsert-then-prune | Flicker-free UI — no delete-all gap between old and new data |
+| Domain exceptions | NucNotConfiguredException | Distinguishes unpaired vs network error for graceful UX |
+| Online detection | Socket + HTTP health | Socket alone misses API-layer failures; dual signal catches both |
+| URL switching | OkHttp interceptor | Preserves connection pool and in-flight requests vs Retrofit rebuild |
+| SharedFlow overflow | DROP_OLDEST | With tryEmit(), default SUSPEND silently drops new events; DROP_OLDEST keeps freshest |
+| PIN submission | Explicit GO button | Auto-submit at 4 prevented 5-6 digit PINs from being entered |
+
+### Third-Party Reviews Addressed
+- **Grok AI analysis:** ~40% outdated (pre-server-truth), ~30% wrong assumptions, ~30% valid → all valid items fixed
+- **"Bartender-proof" review:** 3 glass jaws (DynamicBaseUrlInterceptor, parsePayload safety, health check interval) → all fixed
+- **"Mean Reviewer" items:** 5 checks — 2 already fixed, 2 fixed in round 4, 1 confirmed non-issue (prune trap impossible in server-truth architecture)
+
+### Known Issues / Next Steps
+- WorkManager 15-min min interval (need foreground service for sub-minute sync)
+- USB/BT payment reader bridges are stubs only
+- CFD dual-screen (Presentation API) not implemented
+- Desktop review docs on `~/Desktop/`: `android-register-data.txt` (3433 lines), `android-register-ui.txt` (4564 lines)
+
+---
+
 ## 2026-02-24 — Retrofit Lifecycle + Offline UX Guardrails
 
 **Session:** Replaced per-request URL rewriting with a clean Retrofit rebuild-on-IP-change pattern (`ApiServiceHolder` singleton with `AtomicReference`), and added comprehensive offline UX guardrails — persistent disconnect banner, payment blocking when offline, kitchen send warning, dead-letter badges, and an outbox detail sheet. Two-agent parallel build (retrofit-agent on data/network layer, ux-agent on UI layer) with zero file overlap.
