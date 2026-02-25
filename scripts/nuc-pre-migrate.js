@@ -146,6 +146,35 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED ModifierTemplate.deletedAt:`, err.message)
     }
 
+    // --- Orphaned FK cleanup (null out references to non-existent rows) ---
+    // Prisma db push adds FK constraints; existing data may reference deleted/missing rows.
+    const orphanedFks = [
+      ['Payment', 'terminalId', 'Terminal'],
+      ['Payment', 'drawerId', 'Drawer'],
+      ['Payment', 'shiftId', 'Shift'],
+      ['Payment', 'paymentReaderId', 'PaymentReader'],
+      ['Payment', 'employeeId', 'Employee'],
+    ]
+    for (const [table, column, refTable] of orphanedFks) {
+      try {
+        const hasCol = await columnExists(prisma, table, column)
+        if (hasCol) {
+          const [orphaned] = await prisma.$queryRawUnsafe(
+            `SELECT COUNT(*) as cnt FROM "${table}" t WHERE t."${column}" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "${refTable}" r WHERE r.id = t."${column}")`
+          )
+          if (orphaned && Number(orphaned.cnt) > 0) {
+            console.log(`${PREFIX}   Nulling ${orphaned.cnt} orphaned ${table}.${column} references...`)
+            await prisma.$executeRawUnsafe(
+              `UPDATE "${table}" SET "${column}" = NULL WHERE "${column}" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "${refTable}" r WHERE r.id = "${table}"."${column}")`
+            )
+            console.log(`${PREFIX}   Done`)
+          }
+        }
+      } catch (err) {
+        console.error(`${PREFIX}   FAILED orphan cleanup ${table}.${column}:`, err.message)
+      }
+    }
+
     // --- updatedAt backfills (add column if missing, backfill NULLs either way) ---
     const updatedAtTables = [
       'OrderOwnershipEntry', 'PaymentReaderLog', 'TipLedgerEntry',
