@@ -1370,6 +1370,12 @@ These skills emerged during development and are now part of the system:
 | 445 | Cross-Platform: Discount/Brute-Force/Drawer | DONE | Security / Payments | 444 | Discount approval flow, 429 lockout, cash drawer open |
 | 446 | Cross-Platform: Offline Guard + Mod Badges | DONE | Payments / UI | 445 | Web payment offline guard, Android modifier indicator fix |
 
+### Schema Hardening + NUC Deployment Pipeline (2026-02-25)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 447 | NUC-DEPLOYMENT-PIPELINE | DONE | Infrastructure / NUC Fleet | 345, 399 | End-to-end NUC fleet deployment via Mission Control. Pre-flight DB migrations (nuc-pre-migrate.js): column additions, orphaned FK cleanup, updatedAt backfills, order dedup, Int→Decimal, String→Enum casts. Sync agent fixes: service name resolution (thepasspos/pulse-pos fallback), RE_PROVISION/RELOAD_TERMINALS/RESTART_KIOSK handlers. vercel-build.js enum casts for Vercel/Neon. Prisma schema: ~50 forward @relation + 17 reverse relations. Commits: c554d09, e851c83, 96982b6, fa4c803, 5b28181. |
+
 ---
 
 ## Next Session Priority (2026-02-11+)

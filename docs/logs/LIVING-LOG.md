@@ -71,9 +71,9 @@
 
 ---
 
-## 2026-02-25 — Schema Hardening: Enum Migrations + Relation Completeness
+## 2026-02-25 — Deployment Pipeline: Vercel Enum Casts + NUC Fleet Deployment Fix (Skill 447)
 
-**Session:** Vercel deployment blocked by Prisma `db push` failing on 3 String→Enum column conversions (Payment.paymentMethod, TipLedgerEntry.type, TipTransaction.sourceType). Added pre-flight SQL casts to `vercel-build.js` that create enum types and ALTER COLUMN with USING cast — idempotent, data-preserving. Then added ~50 missing `@relation` annotations and 17 reverse relation fields across MenuItem, Order, Terminal, and TimeClockEntry to satisfy Prisma's bidirectional relation requirement.
+**Session:** Vercel deployment blocked by 3 String→Enum column casts. Fixed with pre-flight SQL in `vercel-build.js`. Then added ~50 @relation annotations + 17 missing reverse relations. Then investigated NUC fleet deployment failure (Fruita Grill) — found 3 root causes: incomplete `nuc-pre-migrate.js`, wrong systemd service name in sync agent, missing command handlers. Built comprehensive NUC pre-migration system mirroring vercel-build.js, fixed sync agent, and added orphaned FK cleanup. Full deploy cycle now works end-to-end.
 
 ### Commits
 
@@ -81,9 +81,61 @@
 - `c554d09` — fix: pre-flight enum casts in vercel-build to unblock db push (3 enum type conversions)
 - `e851c83` — schema: add missing Prisma relation annotations (C-SCHEMA-1) (~50 forward relations)
 - `96982b6` — fix: add 17 missing reverse relations to MenuItem, Order, Terminal, TimeClockEntry
+- `fa4c803` — fix: NUC deployment — pre-migrate, service names, command handlers
+- `5b28181` — fix: null orphaned Payment FK references before db push adds constraints
 
 ### Deployments
-- POS: all 3 commits pushed to main, Vercel auto-deploy
+- POS Vercel: all commits pushed to main, auto-deploy
+- `c554d09` — first successful Vercel deploy after enum fix
+- `e851c83` — Vercel failed (17 missing reverse relations)
+- `96982b6` — Vercel passed clean
+- NUC Fruita Grill: FORCE_UPDATE deployed via MC after `fa4c803`+`5b28181`
+
+### NUC Deployment Investigation (Skill 447)
+
+**Root causes found via SSH logs on 172.16.1.254:**
+
+| # | Issue | Symptom | Fix | Commit |
+|---|-------|---------|-----|--------|
+| 1 | `nuc-pre-migrate.js` incomplete | `prisma db push` fails: can't add updatedAt to cloud_event_queue (9 rows), can't cast paymentMethod text→enum | Added updatedAt backfills, Int→Decimal, enum casts, order dedup, partial unique index | `fa4c803` |
+| 2 | Wrong service name in sync-agent.js | `systemctl restart pulse-pos` → "Unit not found" (actual: `thepasspos`) | Try `thepasspos` first, fallback to `pulse-pos` for legacy | `fa4c803` |
+| 3 | Missing command handlers | RE_PROVISION, RELOAD_TERMINALS, RESTART_KIOSK → "Unknown command" | Added handlers: RE_PROVISION=full update, RELOAD_TERMINALS/RESTART_KIOSK=service restart | `fa4c803` |
+| 4 | Orphaned Payment FK references | `prisma db push` → "violates foreign key constraint Payment_terminalId_fkey" | Pre-migrate nulls orphaned FK references before constraints added | `5b28181` |
+| 5 | cloud_event_queue.updatedAt NULL spam | POS service error every 30s: P2032 "found incompatible value of null" | updatedAt backfill in nuc-pre-migrate.js | `fa4c803` |
+
+### Deployment Flow (Now Working)
+
+```
+MC "Deploy" button → FORCE_UPDATE FleetCommand → NUC sync agent SSE
+→ git fetch/reset → npm install → prisma generate
+→ nuc-pre-migrate.js (backfills + enum casts + orphan cleanup)
+→ prisma db push → npm run build → systemctl restart thepasspos
+→ ACK COMPLETED → MC shows success
+```
+
+### Sync Agent Self-Update Chain
+
+The sync agent on NUC had old code with wrong service name. Fix required:
+1. Push fix to GitHub
+2. Reboot NUC (or restart thepasspos-sync)
+3. Boot self-update downloads fixed sync-agent.js from GitHub
+4. Next FORCE_UPDATE uses correct service name
+
+### Bug Fixes
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| Vercel: can't cast text→enum on required columns | Pre-flight SQL: CREATE TYPE + ALTER COLUMN USING cast | `c554d09` |
+| Prisma: 17 missing opposite relation fields | Added reverse relations to MenuItem (5), Order (10), Terminal (1), TimeClockEntry (1) | `96982b6` |
+| NUC: nuc-pre-migrate.js missing all vercel-build migrations | Ported full migration suite: updatedAt, dedup, decimals, enums | `fa4c803` |
+| NUC: sync-agent uses wrong service name `pulse-pos` | Try `thepasspos` first, fallback to legacy name | `fa4c803` |
+| NUC: RE_PROVISION/RELOAD_TERMINALS/RESTART_KIOSK unhandled | Added command handlers with service restart logic | `fa4c803` |
+| NUC: orphaned Payment.terminalId blocks FK constraint | Null orphaned references before db push | `5b28181` |
+| NUC: cloud_event_queue P2032 error spam every 30s | updatedAt backfill fixes NULL values | `fa4c803` |
+
+### Known Issues
+- `prisma migrate deploy` always fails P3005 on NUC (never baselined) — soft fail, no impact
+- NUC pre-migrate orphan cleanup currently covers Payment table only — may need expansion for other new FK constraints
 - `c554d09` — first successful deploy after enum fix
 - `e851c83` — failed (17 missing reverse relations)
 - `96982b6` — passed clean
