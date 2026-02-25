@@ -245,15 +245,29 @@ if [[ -d "$APP_BASE" ]]; then
     warn "Role change detected: $PREV_ROLE → $STATION_ROLE"
     if [[ "$PREV_ROLE" == "server" ]] && [[ "$STATION_ROLE" == "terminal" ]]; then
       log "Disabling server services..."
-      systemctl disable --now pulse-pos 2>/dev/null || true
-      systemctl disable --now pulse-sync 2>/dev/null || true
+      systemctl disable --now thepasspos 2>/dev/null || true
+      systemctl disable --now thepasspos-sync 2>/dev/null || true
       # Stop local PostgreSQL if running (terminal doesn't need it)
       systemctl disable --now postgresql 2>/dev/null || true
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
       log "Disabling terminal-only kiosk..."
-      systemctl disable --now pulse-kiosk 2>/dev/null || true
+      systemctl disable --now thepasspos-kiosk 2>/dev/null || true
     fi
   fi
+
+  # Disable new service names if re-running installer
+  systemctl disable --now thepasspos 2>/dev/null || true
+  systemctl disable --now thepasspos-sync 2>/dev/null || true
+  systemctl disable --now thepasspos-kiosk 2>/dev/null || true
+  systemctl disable --now thepasspos-exit-kiosk 2>/dev/null || true
+
+  # Clean up legacy pulse-* services from pre-rebrand installs
+  systemctl disable --now pulse-pos 2>/dev/null || true
+  systemctl disable --now pulse-sync 2>/dev/null || true
+  systemctl disable --now pulse-kiosk 2>/dev/null || true
+  systemctl disable --now pulse-exit-kiosk 2>/dev/null || true
+  rm -f /etc/systemd/system/pulse-pos.service /etc/systemd/system/pulse-kiosk.service /etc/systemd/system/pulse-sync.service /etc/systemd/system/pulse-exit-kiosk.service
+  systemctl daemon-reload
 
   log "Updating existing installation..."
 else
@@ -721,10 +735,10 @@ if [[ "$STATION_ROLE" == "server" ]]; then
 
   header "Configuring Systemd Services"
 
-  # pulse-pos.service — POS backend/UI
-  cat > /etc/systemd/system/pulse-pos.service <<SVCEOF
+  # thepasspos.service — POS backend/UI
+  cat > /etc/systemd/system/thepasspos.service <<SVCEOF
 [Unit]
-Description=GWI POS Server
+Description=ThePassPOS Server
 After=network-online.target postgresql.service
 Wants=network-online.target postgresql.service
 
@@ -736,9 +750,10 @@ Environment=NODE_ENV=production
 ExecStart=/usr/bin/node -r ./preload.js server.js
 Restart=always
 RestartSec=3
+TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=pulse-pos
+SyslogIdentifier=thepasspos
 
 [Install]
 WantedBy=multi-user.target
@@ -771,33 +786,51 @@ SVCEOF
     fi
   fi
 
-  # pulse-kiosk.service — Chromium in kiosk mode
-  cat > /etc/systemd/system/pulse-kiosk.service <<SVCEOF
+  # Health-check gate script — kiosk waits for POS server to be ready
+  cat > /opt/gwi-pos/wait-for-pos.sh <<'WAITEOF'
+#!/bin/bash
+URL="${1:-http://localhost:3005/login}"
+TIMEOUT=120
+ELAPSED=0
+while [ $ELAPSED -lt $TIMEOUT ]; do
+  if curl -sf -o /dev/null "$URL" 2>/dev/null; then
+    exit 0
+  fi
+  sleep 2
+  ELAPSED=$((ELAPSED + 2))
+done
+echo "POS server not ready after ${TIMEOUT}s" >&2
+exit 1
+WAITEOF
+  chmod +x /opt/gwi-pos/wait-for-pos.sh
+
+  # thepasspos-kiosk.service — Chromium in kiosk mode
+  cat > /etc/systemd/system/thepasspos-kiosk.service <<SVCEOF
 [Unit]
-Description=GWI POS Kiosk
-After=graphical.target pulse-pos.service
-Wants=pulse-pos.service
+Description=ThePassPOS Kiosk
+After=graphical.target thepasspos.service
+Wants=thepasspos.service
 
 [Service]
 Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
-ExecStartPre=/bin/sleep 5
+ExecStartPre=/opt/gwi-pos/wait-for-pos.sh
 ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 http://localhost:3005
-Restart=on-failure
-RestartSec=10
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=graphical.target
 SVCEOF
 
   systemctl daemon-reload
-  systemctl enable pulse-pos
-  systemctl enable pulse-kiosk
+  systemctl enable thepasspos
+  systemctl enable thepasspos-kiosk
 
   log "Starting POS server..."
-  systemctl restart pulse-pos
+  systemctl restart thepasspos
 
   # Wait for POS to be ready before starting kiosk
   log "Waiting for POS to start..."
@@ -809,7 +842,7 @@ SVCEOF
     sleep 2
   done
 
-  systemctl restart pulse-kiosk
+  systemctl restart thepasspos-kiosk
   log "Services configured and started."
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -875,14 +908,14 @@ BKEOF
 
   cat > /etc/sudoers.d/gwi-pos <<SUDEOF
 # GWI POS — allow service user to manage POS services without password
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-pos
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop pulse-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start pulse-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
 $POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown
 $POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-sync
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
 SUDEOF
   chmod 440 /etc/sudoers.d/gwi-pos
 
@@ -1030,11 +1063,11 @@ HBEOF
 
   chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
 
-  # pulse-sync.service — Sync Agent
-  cat > /etc/systemd/system/pulse-sync.service <<SVCEOF
+  # thepasspos-sync.service — Sync Agent
+  cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
 [Unit]
-Description=GWI POS Sync Agent
-After=network-online.target pulse-pos.service
+Description=ThePassPOS Sync Agent
+After=network-online.target thepasspos.service
 Wants=network-online.target
 
 [Service]
@@ -1045,15 +1078,15 @@ Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=pulse-sync
+SyslogIdentifier=thepasspos-sync
 
 [Install]
 WantedBy=multi-user.target
 SVCEOF
 
   systemctl daemon-reload
-  systemctl enable pulse-sync
-  systemctl restart pulse-sync
+  systemctl enable thepasspos-sync
+  systemctl restart thepasspos-sync
 
   log "Sync agent configured and started."
 
@@ -1080,10 +1113,10 @@ if [[ "$STATION_ROLE" == "terminal" ]]; then
   pkill -f "$TERM_CHROMIUM" 2>/dev/null || true
   sleep 1
 
-  # pulse-kiosk.service — Chromium pointing at server
-  cat > /etc/systemd/system/pulse-kiosk.service <<SVCEOF
+  # thepasspos-kiosk.service — Chromium pointing at server
+  cat > /etc/systemd/system/thepasspos-kiosk.service <<SVCEOF
 [Unit]
-Description=GWI POS Kiosk (Terminal)
+Description=ThePassPOS Kiosk (Terminal)
 After=graphical.target network-online.target
 Wants=network-online.target
 
@@ -1092,26 +1125,26 @@ Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
-ExecStartPre=/bin/sleep 2
+ExecStartPre=/opt/gwi-pos/wait-for-pos.sh $SERVER_URL
 ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 $SERVER_URL
-Restart=on-failure
-RestartSec=10
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=graphical.target
 SVCEOF
 
   systemctl daemon-reload
-  systemctl enable pulse-kiosk
-  systemctl restart pulse-kiosk
+  systemctl enable thepasspos-kiosk
+  systemctl restart thepasspos-kiosk
 
   log "Terminal kiosk configured → $SERVER_URL"
 
   # Sudoers for terminal — allow service user to stop kiosk without password
   cat > /etc/sudoers.d/gwi-pos << SUDEOF
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop pulse-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start pulse-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
 SUDEOF
   chmod 440 /etc/sudoers.d/gwi-pos
@@ -1130,7 +1163,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
-        subprocess.Popen(['sudo', 'systemctl', 'stop', 'pulse-kiosk'])
+        subprocess.Popen(['sudo', 'systemctl', 'stop', 'thepasspos-kiosk'])
         subprocess.Popen(['sudo', 'pkill', '-f', 'chromium'])
     def do_OPTIONS(self):
         self.send_response(200)
@@ -1143,9 +1176,9 @@ class Handler(BaseHTTPRequestHandler):
 HTTPServer(('127.0.0.1', 3006), Handler).serve_forever()
 PYEOF
 
-  cat > /etc/systemd/system/pulse-exit-kiosk.service << SVCEOF
+  cat > /etc/systemd/system/thepasspos-exit-kiosk.service << SVCEOF
 [Unit]
-Description=GWI POS Terminal Kiosk Exit Service
+Description=ThePassPOS Terminal Kiosk Exit Service
 After=network.target
 
 [Service]
@@ -1159,8 +1192,8 @@ WantedBy=multi-user.target
 SVCEOF
 
   systemctl daemon-reload
-  systemctl enable pulse-exit-kiosk
-  systemctl start pulse-exit-kiosk
+  systemctl enable thepasspos-exit-kiosk
+  systemctl start thepasspos-exit-kiosk
   log "Terminal kiosk exit service running on localhost:3006"
 fi
 
@@ -1344,9 +1377,9 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   echo -e "  ${GREEN}Sync:${NC}     Listening for deploy commands"
   echo ""
   echo -e "  ${CYAN}Services:${NC}"
-  echo "    pulse-pos    — $(systemctl is-active pulse-pos 2>/dev/null || echo 'unknown')"
-  echo "    pulse-kiosk  — $(systemctl is-active pulse-kiosk 2>/dev/null || echo 'unknown')"
-  echo "    pulse-sync   — $(systemctl is-active pulse-sync 2>/dev/null || echo 'unknown')"
+  echo "    thepasspos    — $(systemctl is-active thepasspos 2>/dev/null || echo 'unknown')"
+  echo "    thepasspos-kiosk  — $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
+  echo "    thepasspos-sync   — $(systemctl is-active thepasspos-sync 2>/dev/null || echo 'unknown')"
   echo "    postgresql   — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
   echo "    x11vnc       — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
 else
@@ -1362,11 +1395,11 @@ fi
 
 echo ""
 echo -e "  ${CYAN}Useful commands:${NC}"
-echo "    sudo systemctl status pulse-pos    — Check POS status"
-echo "    sudo systemctl status pulse-sync   — Check sync agent"
-echo "    sudo journalctl -u pulse-pos -f    — View POS logs"
-echo "    sudo journalctl -u pulse-sync -f   — View sync agent logs"
-echo "    sudo systemctl restart pulse-pos   — Restart POS"
+echo "    sudo systemctl status thepasspos    — Check POS status"
+echo "    sudo systemctl status thepasspos-sync   — Check sync agent"
+echo "    sudo journalctl -u thepasspos -f    — View POS logs"
+echo "    sudo journalctl -u thepasspos-sync -f   — View sync agent logs"
+echo "    sudo systemctl restart thepasspos   — Restart POS"
 if [[ "$STATION_ROLE" == "server" ]]; then
   if [[ "$USE_LOCAL_PG" == "true" ]]; then
     echo "    sudo bash $BACKUP_SCRIPT     — Run manual backup"
