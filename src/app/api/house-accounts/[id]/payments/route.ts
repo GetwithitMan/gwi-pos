@@ -34,48 +34,48 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
     }
 
-    // Fetch the house account
-    const account = await db.houseAccount.findFirst({
-      where: { id, deletedAt: null },
-      select: {
-        id: true,
-        locationId: true,
-        currentBalance: true,
-        creditLimit: true,
-        status: true,
-        deletedAt: true,
-      },
-    })
+    // C-FIN-1: Read balance inside the transaction to prevent race condition.
+    // Previously, balance was read outside the tx and SET inside — concurrent
+    // payments could overwrite each other's balance changes.
+    const result = await db.$transaction(async (tx) => {
+      const account = await tx.houseAccount.findFirst({
+        where: { id, deletedAt: null },
+        select: {
+          id: true,
+          locationId: true,
+          currentBalance: true,
+          status: true,
+        },
+      })
 
-    if (!account) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 })
-    }
+      if (!account) {
+        throw new Error('HA_NOT_FOUND')
+      }
 
-    if (account.status !== 'active') {
-      return NextResponse.json({ error: 'Account is not active' }, { status: 409 })
-    }
+      if (account.status !== 'active') {
+        throw new Error(`HA_NOT_ACTIVE:${account.status}`)
+      }
 
-    const { locationId } = account
-    const currentBalance = Number(account.currentBalance)
+      const currentBalance = Number(account.currentBalance)
+      // Clamp decrement so balance never goes negative
+      const effectiveAmount = Math.min(amount, currentBalance)
+      const newBalance = currentBalance - effectiveAmount
 
-    // Calculate new balance — clamp to 0 minimum (cannot go negative)
-    const newBalance = Math.max(0, currentBalance - amount)
-
-    // Execute as a transaction: update balance + create transaction record
-    const [, transaction] = await db.$transaction([
-      db.houseAccount.update({
+      // Atomic decrement instead of direct SET to prevent lost updates
+      await tx.houseAccount.update({
         where: { id },
         data: {
-          currentBalance: newBalance,
+          currentBalance: { decrement: effectiveAmount },
           updatedAt: new Date(),
         },
-      }),
-      db.houseAccountTransaction.create({
+      })
+
+      const transaction = await tx.houseAccountTransaction.create({
         data: {
-          locationId,
+          locationId: account.locationId,
           houseAccountId: id,
           type: 'payment',
-          amount: -amount,        // negative = reduces balance
+          amount: -effectiveAmount,  // negative = reduces balance
           balanceBefore: currentBalance,
           balanceAfter: newBalance,
           paymentMethod,
@@ -83,8 +83,24 @@ export const POST = withVenue(async function POST(
           notes: notes || null,
           employeeId,
         },
-      }),
-    ])
+      })
+
+      return { transaction, newBalance }
+    }).catch((err: Error) => {
+      if (err.message === 'HA_NOT_FOUND') {
+        return { error: 'Account not found', status: 404 } as const
+      }
+      if (err.message.startsWith('HA_NOT_ACTIVE:')) {
+        return { error: 'Account is not active', status: 409 } as const
+      }
+      throw err
+    })
+
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
+    }
+
+    const { transaction, newBalance } = result
 
     return NextResponse.json({
       data: {

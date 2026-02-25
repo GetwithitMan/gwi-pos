@@ -126,11 +126,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Location required' }, { status: 400 })
     }
 
-    // Auth check — require inventory.adjust_prep_stock permission
-    if (employeeId) {
-      const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
-    }
+    // Auth check — require inventory.adjust_prep_stock permission (unconditional)
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!ingredientId || operation === undefined || quantity === undefined) {
       return NextResponse.json(

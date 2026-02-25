@@ -15,7 +15,7 @@ import { convertUnits } from './unit-conversion'
  */
 export const ORDER_INVENTORY_INCLUDE = {
   items: {
-    where: { deletedAt: null },
+    where: { deletedAt: null, status: 'active' },
     include: {
       menuItem: {
         include: {

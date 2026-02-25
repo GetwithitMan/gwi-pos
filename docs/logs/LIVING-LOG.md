@@ -5,6 +5,91 @@
 
 ---
 
+## 2026-02-25 — Scale Forensic Audit + Critical Fixes + Android USB Scale
+
+**Session:** 6-agent forensic audit of the entire CAS PD-II scale integration uncovered 4 critical, 8 major, and 6 minor issues. Fixed all 4 critical issues with a 5-agent fix team. Then built full per-station USB scale support for Android tablets — each tablet connects its own CAS PD-II scale via USB-to-serial adapter, no NUC dependency.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `2767e2a` — Fix 4 critical scale issues: sync endpoints, tare capture, reports, environment guard (12 files, +177/-21)
+
+**GWI Android Register** (`gwi-android-register`):
+- `0242dd3` — Add CAS PD-II USB scale integration for per-station weight-based selling (21 files, +935)
+
+### Deployments
+- POS: pushed to main, Vercel auto-deploy
+- Android: pushed to main
+
+### Forensic Audit Findings
+
+6 parallel audit agents (frontend-bartender, backend-manager, report-manager, output-auditor, api-socket-auditor, data-integrity-auditor) reviewed the full scale integration end-to-end.
+
+**4 Critical Issues Found & Fixed:**
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | Android sync endpoints (bootstrap + delta) missing ALL weight fields — Decimal types sent as strings | Added `Number()` conversion for `pricePerWeightUnit`, `weight`, `unitPrice`, `grossWeight`, `tareWeight` in both routes |
+| 2 | Reports completely weight-unaware (25+ report pages, zero weight references) | Added weight columns/sections to product-mix, daily, and sales reports |
+| 3 | Gross/tare weight never captured — WeightCaptureModal always set tareWeight=undefined | Added `lastGrossWeightRef` tracking in useScale hook; WeightCaptureModal now computes gross/tare from tracked readings |
+| 4 | Scale service initialized at server startup outside request context (fails on Vercel) | Added VERCEL/test environment guard — hardware init only on NUC |
+
+**8 Major Issues (documented, some deferred):**
+- `(item as any)` type casts in orders page (fixed — MenuItem interface already has weight fields)
+- No scale auto-discovery on Android stations (fixed — built full USB scale module)
+- Order panel weight display on Android missing (fixed — OrderItemControls shows weight info line)
+- Menu card price display doesn't show per-unit for weight items on Android (fixed — MenuItemCard shows `$5.99/lb` + scale emoji)
+- `order.tax` field name mismatch in delta sync (fixed — corrected to `order.taxTotal`)
+
+### Android USB Scale Module (NEW)
+
+**Architecture:** Per-station model — each Android tablet has its own CAS PD-II scale connected via USB-to-serial adapter. No NUC dependency needed. Scale is managed entirely on-device.
+
+**New Kotlin Files (6):**
+| File | Purpose |
+|------|---------|
+| `scale/WeightReading.kt` | Data class + GrossNet enum |
+| `scale/CasPdIIProtocol.kt` | Type 5 protocol: 9600/7/E/1, W/T commands, status byte parsing, frame extraction |
+| `scale/ScaleManager.kt` | Hilt singleton, USB auto-detect via UsbSerialProber, 200ms poll on Dispatchers.IO, exponential backoff reconnect (1s→30s) |
+| `di/ScaleModule.kt` | Hilt DI module |
+| `ui/pos/components/WeightCaptureSheet.kt` | ModalBottomSheet: live weight display (color-coded), manual entry, tare, price calc |
+| `res/xml/device_filter.xml` | USB vendor IDs: FTDI (1027), Prolific (9025), CH340 (6790), CP210x (4292) |
+
+**Modified Files (15):**
+- Data layer: MenuItemEntity (+3 weight fields), CachedOrderItemEntity (+6 fields), OrderDtos, SyncDto, DtoMappers, ServerOrderMapper
+- Build: settings.gradle.kts (JitPack), build.gradle.kts (usb-serial-for-android:3.7.3), AndroidManifest (USB host feature)
+- UI: OrderViewModel (scaleWeight/scaleConnected flows, addWeightItem, tareScale), OrderScreen (WeightCaptureSheet rendering), MenuGrid, MenuItemCard (scale emoji + price/unit), OrderItemControls (weight info line)
+- DB version 7 (destructive migration)
+
+### How to Add a Scale to an Android Station
+
+1. **Hardware:** Connect CAS PD-II scale to Android tablet via USB-to-serial adapter (FTDI, Prolific, CH340, or CP210x chipset)
+2. **Permission:** Android will prompt "Allow USB device access?" — tap Allow
+3. **Auto-detect:** ScaleManager automatically discovers the USB serial device on app launch
+4. **Usage:** Tap a sold-by-weight menu item → WeightCaptureSheet opens with live reading → place item on scale → wait for green "Stable" → tap "Add to Order"
+5. **Manual fallback:** If scale disconnected, type weight manually in the text field
+6. **Tare:** Tap "Tare" button to zero container weight before adding product
+
+### Bug Fixes
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| Sync endpoints send Decimal as string to Android | `Number()` conversion for all weight Decimal fields | `2767e2a` |
+| WeightCaptureModal never captures gross/tare | Track lastGrossWeight in useScale ref, compute on confirm | `2767e2a` |
+| Reports show "128" for weight items instead of "47.3 lb" | formatQty() helper, weight-based revenue sections | `2767e2a` |
+| Scale service crashes on Vercel (no serial ports) | VERCEL/test env guard skips init | `2767e2a` |
+| `order.tax` doesn't exist on Order model | Changed to `order.taxTotal` in delta sync | `2767e2a` |
+| `(item as any)` casts in orders page | Removed — MenuItem interface already has fields | `2767e2a` |
+| AGP bumped to non-existent 8.13.2 by agent | Reverted to 8.7.3 | `0242dd3` |
+
+### Known Gaps
+- Android scale: no settings UI to configure scale (auto-detects first USB serial device)
+- No JDK on dev machine — Android build not verified with `./gradlew assembleDebug`
+- Scale admin "Test Connection" on web POS still requires NUC-attached scale
+- Weight-based inventory deduction on Android not yet tested end-to-end
+
+---
+
 ## 2026-02-25 — Scale Integration: CAS PD-II + Weight-Based Selling
 
 **Session:** Full-stack scale integration for weight-based selling (deli meats, produce, bulk goods). CAS PD-II scale connected via USB-to-serial adapter. Weight data flows through POS, receipts, kitchen tickets, KDS, and inventory deduction. Fleet schema migration button added to Mission Control. 8-agent team executed across 5 phases.

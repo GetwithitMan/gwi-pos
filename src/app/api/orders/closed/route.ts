@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - List closed orders (paid, closed) with search, pagination, date range, tip filtering
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -24,6 +26,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require POS access to view closed orders
+    const requestingEmployeeId = request.headers.get('x-employee-id') || searchParams.get('requestingEmployeeId')
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Date range: default to today if no dateFrom/dateTo provided
     let dateStart: Date

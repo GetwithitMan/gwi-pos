@@ -13,6 +13,8 @@ import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlan
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -30,6 +32,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
+
+    // Auth check — require POS access
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get next order number for today
     const today = new Date()
@@ -582,6 +588,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require POS access
+    const requestingEmployeeId = request.headers.get('x-employee-id') || searchParams.get('requestingEmployeeId')
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Build date range filter on createdAt
     const dateRangeFilter: Record<string, unknown> = {}

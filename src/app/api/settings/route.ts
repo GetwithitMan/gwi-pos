@@ -102,12 +102,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       )
     }
 
-    // Auth: editing settings requires admin.manage_settings
-    if (employeeId) {
-      const auth = await requirePermission(employeeId, location.id, PERMISSIONS.ADMIN)
-      if (!auth.authorized) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status })
-      }
+    // Auth: editing settings requires admin permission (unconditional)
+    const auth = await requirePermission(employeeId, location.id, PERMISSIONS.ADMIN)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Validate dual pricing: cashDiscountPercent must be 0-10%

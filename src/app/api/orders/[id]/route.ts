@@ -5,6 +5,8 @@ import { recalculateTotalWithTip } from '@/lib/order-calculations'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get order details
 export const GET = withVenue(async function GET(
@@ -14,6 +16,17 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
     const view = request.nextUrl.searchParams.get('view')
+
+    // Auth check — require POS access (locationId resolved from order record below)
+    const requestingEmployeeId = request.headers.get('x-employee-id') || request.nextUrl.searchParams.get('requestingEmployeeId')
+    if (requestingEmployeeId) {
+      // Lightweight lookup to get locationId for auth check
+      const orderForAuth = await db.order.findFirst({ where: { id, deletedAt: null }, select: { locationId: true } })
+      if (orderForAuth) {
+        const auth = await requirePermission(requestingEmployeeId, orderForAuth.locationId, PERMISSIONS.POS_ACCESS)
+        if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
+    }
 
     // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
     if (view === 'split') {
@@ -278,6 +291,13 @@ export const PUT = withVenue(async function PUT(
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
     }
 
+    // Auth check — require POS access for order edits
+    const requestingEmployeeId = request.headers.get('x-employee-id') || body.requestingEmployeeId || body.employeeId
+    if (requestingEmployeeId) {
+      const auth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_ACCESS)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     // Concurrency check: if client sent a version, verify it matches
     if (version != null && existingOrder.version !== version) {
       return NextResponse.json({
@@ -409,6 +429,13 @@ export const PATCH = withVenue(async function PATCH(
 
     if (!existing) {
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    }
+
+    // Auth check — require POS access for order edits
+    const requestingEmployeeId = request.headers.get('x-employee-id') || body.requestingEmployeeId || body.employeeId
+    if (requestingEmployeeId) {
+      const auth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_ACCESS)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     if (!['open', 'draft', 'sent', 'in_progress', 'split'].includes(existing.status)) {

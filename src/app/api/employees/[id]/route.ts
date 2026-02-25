@@ -48,6 +48,13 @@ export const GET = withVenue(async function GET(
       )
     }
 
+    // Auth check — require staff.view permission
+    const requestingEmployeeId = request.headers.get('x-employee-id') || request.nextUrl.searchParams.get('requestingEmployeeId')
+    if (requestingEmployeeId) {
+      const auth = await requirePermission(requestingEmployeeId, employee.locationId, PERMISSIONS.STAFF_VIEW)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     // Get summary stats
     const [orderCount, totalSales, totalCommission] = await Promise.all([
       db.order.count({
@@ -313,14 +320,15 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id } = await params
 
-    // Auth check — require staff.edit_profile permission
+    // Auth check — require staff.edit_profile permission (unconditional)
     const { searchParams } = new URL(request.url)
     const requestingEmployeeId = searchParams.get('requestingEmployeeId')
-    const locationId = searchParams.get('locationId')
-    if (locationId) {
-      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    const locationId = searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
     }
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const employee = await db.employee.findUnique({
       where: { id },

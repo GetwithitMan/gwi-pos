@@ -62,7 +62,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
     const socket = getSharedSocket()
 
     // Join the scale room
-    socket.emit('join', `scale:${scaleId}`)
+    socket.emit('subscribe', `scale:${scaleId}`)
 
     const onWeight = (data: {
       scaleId: string
@@ -100,7 +100,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
 
     const onConnect = () => {
       // Re-join room after reconnection
-      socket.emit('join', `scale:${scaleId}`)
+      socket.emit('subscribe', `scale:${scaleId}`)
     }
 
     socket.on('scale:weight', onWeight)
@@ -113,7 +113,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
     }
 
     return () => {
-      socket.emit('leave', `scale:${scaleId}`)
+      socket.emit('unsubscribe', `scale:${scaleId}`)
       socket.off('scale:weight', onWeight)
       socket.off('scale:status', onStatus)
       socket.off('connect', onConnect)

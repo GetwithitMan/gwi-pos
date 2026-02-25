@@ -222,6 +222,7 @@ export const POST = withVenue(async function POST(
           datacapRecordNo: true,
           paymentReaderId: true,
           totalAmount: true,
+          refundedAmount: true,
           cardLast4: true,
           paymentMethod: true,
         },
@@ -403,22 +404,60 @@ export const POST = withVenue(async function POST(
       if (reversiblePayments.length > 0) {
         try {
           const datacapClient = await getDatacapClient(order.locationId)
+          let remainingRefund = itemTotal
           for (const payment of reversiblePayments) {
             try {
               if (shouldAutoClose) {
-                // All items voided — void the entire sale
-                const result = await datacapClient.voidSale(payment.paymentReaderId!, { recordNo: payment.datacapRecordNo! })
-                if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
-                  await db.payment.update({ where: { id: payment.id }, data: { status: 'voided' } })
-                  console.log(`[CompVoid] Datacap void succeeded for payment ${payment.id} (card ***${payment.cardLast4})`)
+                // All items voided — reverse the payment
+                const alreadyRefunded = Number(payment.refundedAmount ?? 0)
+
+                if (alreadyRefunded > 0) {
+                  // C-FIN-2: Prior partial refund exists — cannot voidSale (would double-refund).
+                  // Issue a return for only the remaining non-refunded amount instead.
+                  const remainingToRefund = Number(payment.totalAmount) - alreadyRefunded
+                  if (remainingToRefund > 0) {
+                    const result = await datacapClient.emvReturn(payment.paymentReaderId!, {
+                      amount: remainingToRefund,
+                      recordNo: payment.datacapRecordNo!,
+                      cardPresent: false,
+                      invoiceNo: orderId,
+                    })
+                    if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
+                      await db.payment.update({
+                        where: { id: payment.id },
+                        data: { status: 'voided', refundedAmount: payment.totalAmount, refundedAt: new Date() },
+                      })
+                      console.log(`[CompVoid] Datacap remaining refund of $${remainingToRefund.toFixed(2)} succeeded for payment ${payment.id} (card ***${payment.cardLast4})`)
+                    } else {
+                      cardReversalWarning = `Card refund declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
+                      console.warn(`[CompVoid] Datacap remaining refund declined for payment ${payment.id}: ${result.textResponse}`)
+                    }
+                  } else {
+                    // Already fully refunded via previous partial refunds — just mark voided
+                    await db.payment.update({ where: { id: payment.id }, data: { status: 'voided' } })
+                    console.log(`[CompVoid] Payment ${payment.id} already fully refunded, marked voided`)
+                  }
                 } else {
-                  cardReversalWarning = `Card reversal declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
-                  console.warn(`[CompVoid] Datacap void declined for payment ${payment.id}: ${result.textResponse}`)
+                  // No previous refunds — safe to void the entire sale
+                  const result = await datacapClient.voidSale(payment.paymentReaderId!, { recordNo: payment.datacapRecordNo! })
+                  if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
+                    await db.payment.update({ where: { id: payment.id }, data: { status: 'voided' } })
+                    console.log(`[CompVoid] Datacap void succeeded for payment ${payment.id} (card ***${payment.cardLast4})`)
+                  } else {
+                    cardReversalWarning = `Card reversal declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
+                    console.warn(`[CompVoid] Datacap void declined for payment ${payment.id}: ${result.textResponse}`)
+                  }
                 }
               } else {
-                // Partial void — refund only the voided item amount
+                // Partial void — refund the voided item amount, split across payments
+                if (remainingRefund <= 0) break
+                const alreadyRefunded = Number(payment.refundedAmount ?? 0)
+                const paymentAvailable = Number(payment.totalAmount) - alreadyRefunded
+                const refundAmount = Math.min(remainingRefund, paymentAvailable)
+                if (refundAmount <= 0) continue
+
                 const result = await datacapClient.emvReturn(payment.paymentReaderId!, {
-                  amount: itemTotal,
+                  amount: refundAmount,
                   recordNo: payment.datacapRecordNo!,
                   cardPresent: false,
                   invoiceNo: orderId,
@@ -426,9 +465,10 @@ export const POST = withVenue(async function POST(
                 if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
                   await db.payment.update({
                     where: { id: payment.id },
-                    data: { refundedAmount: { increment: itemTotal }, refundedAt: new Date() },
+                    data: { refundedAmount: { increment: refundAmount }, refundedAt: new Date() },
                   })
-                  console.log(`[CompVoid] Datacap partial refund of $${itemTotal.toFixed(2)} succeeded for payment ${payment.id}`)
+                  remainingRefund -= refundAmount
+                  console.log(`[CompVoid] Datacap partial refund of $${refundAmount.toFixed(2)} succeeded for payment ${payment.id}`)
                 } else {
                   cardReversalWarning = `Card refund declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
                   console.warn(`[CompVoid] Datacap partial refund declined for payment ${payment.id}: ${result.textResponse}`)

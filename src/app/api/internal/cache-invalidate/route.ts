@@ -8,6 +8,12 @@ type Domain = typeof VALID_DOMAINS[number]
 
 export async function POST(request: Request) {
   try {
+    // Internal route — require API key auth
+    const apiKey = request.headers.get('x-api-key')
+    if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { domain, action, entityId, locationId } = body as {
       domain: Domain

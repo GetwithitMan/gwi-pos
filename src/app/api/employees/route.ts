@@ -24,6 +24,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
+    // Auth check — require staff.view permission
+    const requestingEmployeeId = request.headers.get('x-employee-id') || searchParams.get('requestingEmployeeId')
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     const where = {
       locationId,
       ...(includeInactive ? {} : { isActive: true }),

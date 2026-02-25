@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { getFloorPlanSnapshot } from '@/lib/snapshot'
 import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
 import { getAllMenuItemsStockStatus } from '@/lib/stock-status'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * GET /api/session/bootstrap?locationId=...&employeeId=...
@@ -21,6 +23,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
   if (!locationId) {
     return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+  }
+
+  // Auth check — require basic POS access (any authenticated employee)
+  if (employeeId) {
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
 
   try {

@@ -6,6 +6,8 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - List all categories for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -71,6 +73,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require menu.edit_items permission
+    const requestingEmployeeId = request.headers.get('x-employee-id') || body.requestingEmployeeId
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get max sort order
     const maxSortOrder = await db.category.aggregate({

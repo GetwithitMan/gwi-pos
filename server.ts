@@ -11,7 +11,7 @@
 
 import { createServer } from 'http'
 import next from 'next'
-import { initializeSocketServer } from './src/lib/socket-server'
+import { initializeSocketServer, getSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
 import { startCloudEventWorker } from './src/lib/cloud-event-queue'
@@ -114,6 +114,42 @@ async function main() {
     startEodScheduler()
     startOnlineOrderDispatchWorker(port)
     void scaleService.initialize().catch(console.error)
+  })
+
+  // Graceful shutdown
+  let shuttingDown = false
+  async function shutdown(signal: string) {
+    if (shuttingDown) return
+    shuttingDown = true
+    console.log(`[Server] ${signal} received — shutting down gracefully...`)
+
+    const io = getSocketServer()
+    if (io) {
+      io.close()
+      console.log('[Server] Socket.io closed')
+    }
+
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => {
+        console.log('[Server] HTTP server closed')
+        resolve()
+      })
+    })
+
+    await masterClient.$disconnect()
+    console.log('[Server] Prisma disconnected')
+
+    process.exit(0)
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'))
+  process.on('SIGINT', () => shutdown('SIGINT'))
+  process.on('unhandledRejection', (err) => {
+    console.error('[Server] Unhandled rejection:', err)
+  })
+  process.on('uncaughtException', (err) => {
+    console.error('[Server] Uncaught exception:', err)
+    process.exit(1)
   })
 }
 

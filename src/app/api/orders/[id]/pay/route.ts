@@ -828,58 +828,43 @@ export const POST = withVenue(withTiming(async function POST(
           )
         }
 
-        const houseAccount = await db.houseAccount.findUnique({
-          where: { id: payment.houseAccountId }
-        })
-
-        if (!houseAccount) {
-          return NextResponse.json(
-            { error: 'House account not found' },
-            { status: 404 }
-          )
-        }
-
-        if (houseAccount.status !== 'active') {
-          return NextResponse.json(
-            { error: `House account is ${houseAccount.status}` },
-            { status: 400 }
-          )
-        }
-
         const paymentAmount = payment.amount + (payment.tipAmount || 0)
-        const currentBalance = Number(houseAccount.currentBalance)
-        const creditLimit = Number(houseAccount.creditLimit)
-        const newBalance = currentBalance + paymentAmount
 
-        // Check credit limit (0 = unlimited)
-        if (creditLimit > 0 && newBalance > creditLimit) {
-          return NextResponse.json(
-            {
-              error: 'Charge would exceed credit limit',
-              currentBalance,
-              creditLimit,
-              availableCredit: Math.max(0, creditLimit - currentBalance),
-            },
-            { status: 400 }
-          )
-        }
-
-        // Calculate due date
-        const dueDate = new Date()
-        dueDate.setDate(dueDate.getDate() + (houseAccount.paymentTerms ?? 30))
-
-        // Charge to house account + create payment atomically
-        paymentRecord = {
-          ...paymentRecord,
-          transactionId: `HA:${houseAccount.id}`,
-          authCode: houseAccount.name,
-        }
-
+        // C-FIN-1: Read balance, check credit limit, and increment ALL inside the
+        // transaction to prevent race conditions on concurrent house account charges.
+        // Previously, balance was read outside the tx and SET inside — two concurrent
+        // payments would both read the same balance and one would overwrite the other.
         const haResult = await db.$transaction(async (tx) => {
+          const freshAccount = await tx.houseAccount.findUnique({
+            where: { id: payment.houseAccountId! }
+          })
+
+          if (!freshAccount) {
+            throw new Error('HA_NOT_FOUND')
+          }
+
+          if (freshAccount.status !== 'active') {
+            throw new Error(`HA_STATUS:${freshAccount.status}`)
+          }
+
+          const currentBalance = Number(freshAccount.currentBalance)
+          const creditLimit = Number(freshAccount.creditLimit)
+          const newBalance = currentBalance + paymentAmount
+
+          // Check credit limit inside transaction with fresh balance (0 = unlimited)
+          if (creditLimit > 0 && newBalance > creditLimit) {
+            throw new Error(`HA_CREDIT_LIMIT:${currentBalance}:${creditLimit}`)
+          }
+
+          // Calculate due date
+          const dueDate = new Date()
+          dueDate.setDate(dueDate.getDate() + (freshAccount.paymentTerms ?? 30))
+
+          // Atomic increment instead of direct SET to prevent lost updates
           await tx.houseAccount.update({
-            where: { id: houseAccount!.id },
+            where: { id: freshAccount.id },
             data: {
-              currentBalance: newBalance,
+              currentBalance: { increment: paymentAmount },
               transactions: {
                 create: {
                   locationId: order.locationId,
@@ -895,8 +880,50 @@ export const POST = withVenue(withTiming(async function POST(
               }
             }
           })
-          return tx.payment.create({ data: paymentRecord })
+
+          return tx.payment.create({
+            data: {
+              ...paymentRecord,
+              transactionId: `HA:${freshAccount.id}`,
+              authCode: freshAccount.name,
+            }
+          })
+        }).catch((err: Error) => {
+          if (err.message === 'HA_NOT_FOUND') {
+            return { error: 'House account not found', status: 404 } as const
+          }
+          if (err.message.startsWith('HA_STATUS:')) {
+            return { error: `House account is ${err.message.split(':')[1]}`, status: 400 } as const
+          }
+          if (err.message.startsWith('HA_CREDIT_LIMIT:')) {
+            const [, bal, lim] = err.message.split(':')
+            const currentBalance = parseFloat(bal)
+            const creditLimit = parseFloat(lim)
+            return {
+              error: 'Charge would exceed credit limit',
+              currentBalance,
+              creditLimit,
+              availableCredit: Math.max(0, creditLimit - currentBalance),
+              status: 400,
+            } as const
+          }
+          throw err
         })
+
+        // If the transaction returned an error object, return it as HTTP response
+        if ('error' in haResult) {
+          return NextResponse.json(
+            {
+              error: haResult.error,
+              ...('currentBalance' in haResult ? {
+                currentBalance: (haResult as any).currentBalance,
+                creditLimit: (haResult as any).creditLimit,
+                availableCredit: (haResult as any).availableCredit,
+              } : {}),
+            },
+            { status: haResult.status }
+          )
+        }
 
         createdPayments.push(haResult)
         totalTips += payment.tipAmount || 0

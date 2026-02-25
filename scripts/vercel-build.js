@@ -2,7 +2,7 @@
 /**
  * Vercel Build Script
  *
- * Runs pre-push migrations, pushes schema to PostgreSQL (Neon), and builds the app.
+ * Runs pre-push migrations, applies Prisma migrations to PostgreSQL (Neon), and builds the app.
  * Both dev and prod use the same PostgreSQL engine.
  */
 const { execSync } = require('child_process')
@@ -118,9 +118,9 @@ async function main() {
   // Run pre-push migrations before db push
   await runPrePushMigrations()
 
-  // Push schema to Neon PostgreSQL (creates/updates tables)
-  console.log('[vercel-build] Running prisma db push...')
-  execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' })
+  // Apply pending migrations to Neon PostgreSQL
+  console.log('[vercel-build] Running prisma migrate deploy...')
+  execSync('npx prisma migrate deploy', { stdio: 'inherit' })
 
   // Build Next.js
   console.log('[vercel-build] Running next build...')

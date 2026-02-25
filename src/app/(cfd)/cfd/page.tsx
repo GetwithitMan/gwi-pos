@@ -29,6 +29,7 @@ export default function CFDPage() {
 function CFDContent() {
   const searchParams = useSearchParams()
   const terminalId = searchParams.get('terminalId')
+  const locationId = searchParams.get('locationId')
 
   const [screenState, setScreenState] = useState<CFDScreenState>('idle')
   const [orderData, setOrderData] = useState<CFDShowOrderEvent | null>(null)
@@ -46,12 +47,19 @@ function CFDContent() {
     const socket = getSharedSocket()
     socketRef.current = socket
 
-    // Join CFD room for this terminal
+    // Join location room (CFD events dispatched via emitToLocation) + terminal room
+    const joinRooms = () => {
+      if (locationId) {
+        socket.emit('subscribe', `location:${locationId}`)
+      }
+      socket.emit('subscribe', `terminal:${terminalId}`)
+    }
+
     if (socket.connected) {
-      socket.emit('join', `cfd:${terminalId}`)
+      joinRooms()
     }
     const onConnect = () => {
-      socket.emit('join', `cfd:${terminalId}`)
+      joinRooms()
       setDisconnected(false)
     }
     const onDisconnect = () => {
@@ -95,6 +103,10 @@ function CFDContent() {
     socket.on(CFD_EVENTS.IDLE, onIdle)
 
     return () => {
+      if (locationId) {
+        socket.emit('unsubscribe', `location:${locationId}`)
+      }
+      socket.emit('unsubscribe', `terminal:${terminalId}`)
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
       socket.off(CFD_EVENTS.SHOW_ORDER, onShowOrder)
@@ -108,7 +120,7 @@ function CFDContent() {
       socketRef.current = null
       releaseSharedSocket()
     }
-  }, [terminalId])
+  }, [terminalId, locationId])
 
   // Send event back to POS terminal
   const emitEvent = useCallback((event: string, data: unknown) => {
