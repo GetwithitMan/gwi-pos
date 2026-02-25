@@ -226,6 +226,9 @@ async function getMenuForBootstrap(locationId: string) {
       stockStatus: item.stockStatus,
       stockCount: item.stockCount,
       stockIngredientName: item.stockIngredientName,
+      soldByWeight: item.soldByWeight,
+      weightUnit: item.weightUnit,
+      pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
     })),
   }
 
