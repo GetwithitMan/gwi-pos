@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getDatacapClient, datacapErrorResponse } from '@/lib/datacap/helpers'
+import { roundToCents } from '@/lib/pricing'
 
 /**
  * Cloud reader transaction proxy
@@ -31,14 +32,14 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Reader is not in cloud mode' }, { status: 400 })
     }
 
-    const amount = parseFloat(body.Amount)
+    const amount = roundToCents(parseFloat(body.Amount))
     if (isNaN(amount) || amount <= 0) {
       return NextResponse.json({ error: 'Invalid Amount' }, { status: 400 })
     }
 
     const tranType: 'Sale' | 'Auth' = body.TranType === 'Auth' ? 'Auth' : 'Sale'
     const invoiceNo: string = body.Invoice || ''
-    const tipAmount = body.TipAmount ? parseFloat(body.TipAmount) : undefined
+    const tipAmount = body.TipAmount ? roundToCents(parseFloat(body.TipAmount)) : undefined
 
     const client = await getDatacapClient(reader.locationId)
 
@@ -64,7 +65,7 @@ export const POST = withVenue(async function POST(
 
     // Map DatacapResponse → the JSON shape useDatacap.ts expects
     const approved = response.cmdStatus === 'Approved'
-    const amountAuthorized = response.authorize ? parseFloat(response.authorize) : amount
+    const amountAuthorized = response.authorize ? roundToCents(parseFloat(response.authorize)) : amount
 
     return NextResponse.json({
       approved,

@@ -35,12 +35,12 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Insufficient permissions to reopen orders' }, { status: 403 })
     }
 
-    // Get the order with its payments
-    const order = await db.order.findUnique({
-      where: { id: orderId },
+    // Get the order with its payments (exclude soft-deleted)
+    const order = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null },
       include: {
         payments: {
-          where: { status: 'completed' },
+          where: { status: 'completed', deletedAt: null },
           select: {
             id: true,
             paymentMethod: true,
@@ -79,25 +79,40 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // W1-P4: Warn about card payments before reopening — prevents accidental double-charge
-    const cardPayments = order.payments.filter(
-      p => p.paymentMethod === 'credit' || p.paymentMethod === 'debit'
-    )
-    if (cardPayments.length > 0 && !forceReopen) {
+    // Guard: warn about ALL completed payments before reopening
+    if (order.payments.length > 0 && !forceReopen) {
+      const cardPayments = order.payments.filter(
+        p => p.paymentMethod === 'credit' || p.paymentMethod === 'debit'
+      )
+      const cashPayments = order.payments.filter(p => p.paymentMethod === 'cash')
+      const totalPaid = order.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0)
+
       return NextResponse.json(
         {
-          error: 'Order has completed card payments. Reopening will void these payments. Send forceReopen: true to confirm.',
-          requiresCardPaymentWarning: true,
-          cardPayments: cardPayments.map(p => ({
-            id: p.id,
-            method: p.paymentMethod,
-            amount: Number(p.amount),
-            cardLast4: p.cardLast4,
-          })),
+          error: `Order has ${order.payments.length} completed payment(s) totaling $${totalPaid.toFixed(2)}. Reopening will void these. Send forceReopen: true to confirm.`,
+          requiresPaymentWarning: true,
+          requiresCardPaymentWarning: cardPayments.length > 0,
+          payments: {
+            total: order.payments.length,
+            totalAmount: totalPaid,
+            card: cardPayments.map(p => ({
+              id: p.id,
+              method: p.paymentMethod,
+              amount: Number(p.amount),
+              cardLast4: p.cardLast4,
+            })),
+            cash: cashPayments.length,
+            cashAmount: cashPayments.reduce((sum, p) => sum + Number(p.totalAmount), 0),
+          },
         },
         { status: 409 }
       )
     }
+
+    // Separate card payment list for audit log
+    const cardPayments = order.payments.filter(
+      p => p.paymentMethod === 'credit' || p.paymentMethod === 'debit'
+    )
 
     // W1-P4: Mark all existing completed payments as voided so the pay route's
     // alreadyPaid calculation starts fresh (old payments were for the previous close).

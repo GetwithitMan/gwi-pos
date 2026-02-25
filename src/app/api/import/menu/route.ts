@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { roundToCents } from '@/lib/pricing'
 
 interface ImportError {
   row: number
@@ -162,7 +163,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         continue
       }
 
-      const price = parseFloat(priceStr)
+      const price = roundToCents(parseFloat(priceStr))
       if (isNaN(price) || price < 0) {
         errors.push({ row: rowNum, error: `Invalid price "${priceStr}"` })
         continue
@@ -194,7 +195,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // Parse optional cost
-      const cost = costStr ? parseFloat(costStr) : undefined
+      const cost = costStr ? roundToCents(parseFloat(costStr)) : undefined
 
       // Create menu item
       await db.menuItem.create({

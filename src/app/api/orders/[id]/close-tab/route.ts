@@ -9,6 +9,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
+import { roundToCents } from '@/lib/pricing'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -150,7 +151,7 @@ export const POST = withVenue(async function POST(
             const tipResponse = await client.getSuggestiveTip(card.readerId, tipSuggestions)
             if (tipResponse.gratuityAmount) {
               // Use device-selected tip
-              const deviceTip = parseFloat(tipResponse.gratuityAmount) || 0
+              const deviceTip = roundToCents(parseFloat(tipResponse.gratuityAmount) || 0)
               const response = await client.preAuthCapture(card.readerId, {
                 recordNo: card.recordNo,
                 purchaseAmount,

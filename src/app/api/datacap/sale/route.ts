@@ -4,6 +4,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { roundToCents } from '@/lib/pricing'
 
 interface SaleRequest {
   locationId: string
@@ -67,7 +68,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           cardType: response.cardType || 'unknown',
           cardLast4: response.cardLast4 || '????',
           cardholderName: response.cardholderName,
-          spendAmount: parseFloat(response.authorize || '0') || amount,
+          spendAmount: roundToCents(parseFloat(response.authorize || '0')) || amount,
         }),
       }).catch(err => console.warn('[Card Recognition] Background update failed:', err))
     }

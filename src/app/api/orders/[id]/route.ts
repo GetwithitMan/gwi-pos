@@ -17,8 +17,8 @@ export const GET = withVenue(async function GET(
 
     // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
     if (view === 'split') {
-      const order = await db.order.findUnique({
-        where: { id },
+      const order = await db.order.findFirst({
+        where: { id, deletedAt: null },
         select: {
           id: true, orderNumber: true, status: true, orderType: true,
           subtotal: true, taxTotal: true, total: true, discountTotal: true,
@@ -54,8 +54,8 @@ export const GET = withVenue(async function GET(
 
     // Lightweight panel view — items + modifiers only (no payments, pizzaData, ingredientModifications)
     if (view === 'panel') {
-      const order = await db.order.findUnique({
-        where: { id },
+      const order = await db.order.findFirst({
+        where: { id, deletedAt: null },
         select: {
           id: true,
           orderNumber: true,
@@ -145,8 +145,8 @@ export const GET = withVenue(async function GET(
       } })
     }
 
-    const order = await db.order.findUnique({
-      where: { id },
+    const order = await db.order.findFirst({
+      where: { id, deletedAt: null },
       include: {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
@@ -178,6 +178,7 @@ export const GET = withVenue(async function GET(
           },
         },
         payments: {
+          where: { deletedAt: null },
           select: {
             id: true,
             paymentMethod: true,

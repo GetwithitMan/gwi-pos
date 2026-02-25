@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email-service'
 import { withVenue } from '@/lib/with-venue'
 import { formatCurrency } from '@/lib/utils'
+import { getLocationDateRange } from '@/lib/timezone'
 
 export const POST = withVenue(async (request: NextRequest) => {
   try {
@@ -25,9 +26,13 @@ export const POST = withVenue(async (request: NextRequest) => {
 
     const locationName = location?.name || 'Unknown Location'
 
-    // Build date range for the report day
-    const startOfDay = new Date(reportDate + 'T00:00:00')
-    const endOfDay = new Date(reportDate + 'T23:59:59.999')
+    // Build date range for the report day using venue timezone
+    const loc = await db.location.findFirst({
+      where: { id: locationId },
+      select: { timezone: true },
+    })
+    const timezone = loc?.timezone || 'America/New_York'
+    const { startOfDay, endOfDay } = getLocationDateRange(timezone, reportDate)
 
     // Fetch key metrics
     const orders = await db.order.findMany({

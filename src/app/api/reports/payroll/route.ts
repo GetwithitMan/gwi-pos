@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { dateRangeToUTC, getTodayInTimezone, tzToUTC } from '@/lib/timezone'
 
 // GET - Comprehensive payroll report for a date range
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -26,14 +27,40 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Default to current week if no dates provided
-    const now = new Date()
-    const weekStart = new Date(now)
-    weekStart.setDate(now.getDate() - now.getDay()) // Sunday
-    weekStart.setHours(0, 0, 0, 0)
+    // Resolve venue timezone for correct date boundaries
+    const loc = await db.location.findFirst({
+      where: { id: locationId },
+      select: { timezone: true },
+    })
+    const timezone = loc?.timezone || 'America/New_York'
 
-    const periodStart = startDate ? new Date(startDate) : weekStart
-    const periodEnd = endDate ? new Date(endDate + 'T23:59:59') : new Date()
+    // Default to current week (Sunday start) in venue timezone
+    let periodStart: Date
+    let periodEnd: Date
+
+    if (startDate && endDate) {
+      const range = dateRangeToUTC(startDate, endDate, timezone)
+      periodStart = range.start
+      periodEnd = range.end
+    } else if (startDate) {
+      const range = dateRangeToUTC(startDate, null, timezone)
+      periodStart = range.start
+      periodEnd = new Date()
+    } else {
+      // Current week: find Sunday in venue timezone
+      const todayStr = getTodayInTimezone(timezone)
+      const [y, m, d] = todayStr.split('-').map(Number)
+      const localNow = new Date(y, m - 1, d)
+      const dayOfWeek = localNow.getDay() // 0 = Sunday
+      const sundayDate = new Date(localNow)
+      sundayDate.setDate(localNow.getDate() - dayOfWeek)
+      const sundayStr = sundayDate.toISOString().split('T')[0]
+      periodStart = tzToUTC(
+        sundayDate.getFullYear(), sundayDate.getMonth() + 1, sundayDate.getDate(),
+        0, 0, 0, 0, timezone
+      )
+      periodEnd = new Date()
+    }
 
     // Get all active employees
     const employees = await db.employee.findMany({

@@ -14,7 +14,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
-import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
+import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -917,7 +917,7 @@ export const POST = withVenue(withTiming(async function POST(
     // The tolerance must cover this gap so the order is marked fully paid.
     const hasCash = payments.some(p => p.method === 'cash')
     const paidTolerance = (hasCash && settings.priceRounding?.enabled && settings.priceRounding.applyToCash)
-      ? parseFloat(settings.priceRounding.increment) / 2  // Half the increment covers rounding in either direction
+      ? roundToCents(parseFloat(settings.priceRounding.increment) / 2)  // Half the increment covers rounding in either direction
       : 0.01
 
     const updateData: {

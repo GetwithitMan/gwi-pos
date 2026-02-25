@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { dateRangeToUTC } from '@/lib/timezone'
 
 // GET - Product mix report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -27,18 +28,28 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build date filter
+    // Resolve venue timezone for correct date boundaries
+    const loc = await db.location.findFirst({
+      where: { id: locationId },
+      select: { timezone: true },
+    })
+    const timezone = loc?.timezone || 'America/New_York'
+
+    // Build date filter — timezone-aware
     const dateFilter: Record<string, Date> = {}
     if (startDate) {
-      dateFilter.gte = new Date(startDate)
+      const range = dateRangeToUTC(startDate, endDate, timezone)
+      dateFilter.gte = range.start
+      if (endDate) {
+        dateFilter.lte = range.end
+      }
     } else {
       // Default to last 30 days
       dateFilter.gte = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    }
-    if (endDate) {
-      const end = new Date(endDate)
-      end.setHours(23, 59, 59, 999)
-      dateFilter.lte = end
+      if (endDate) {
+        const range = dateRangeToUTC(endDate, null, timezone)
+        dateFilter.lte = range.end
+      }
     }
 
     // Get all order items in the date range

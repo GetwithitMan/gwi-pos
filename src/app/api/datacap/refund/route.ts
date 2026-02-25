@@ -3,6 +3,7 @@ import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse }
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { roundToCents } from '@/lib/pricing'
 
 interface RefundRequest {
   readerId: string
@@ -81,7 +82,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         approved,
         refNo: response.refNo ?? '',
         authCode: response.authCode ?? '',
-        amount: response.authorize ? parseFloat(response.authorize) : amount,
+        amount: response.authorize ? roundToCents(parseFloat(response.authorize)) : amount,
       },
     })
   } catch (err) {

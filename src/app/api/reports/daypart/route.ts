@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationDateRange, dateRangeToUTC, getHourInTimezone } from '@/lib/timezone'
 
 interface DaypartConfig {
   name: string
@@ -47,13 +48,29 @@ export const GET = withVenue(async (request: NextRequest) => {
 
     const dayparts = DEFAULT_DAYPARTS
 
-    // Date range
-    const start = startDate
-      ? new Date(startDate + 'T00:00:00')
-      : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })()
-    const end = endDate
-      ? new Date(endDate + 'T23:59:59.999')
-      : new Date()
+    // Resolve venue timezone for correct date boundaries
+    const loc = await db.location.findFirst({
+      where: { id: locationId },
+      select: { timezone: true },
+    })
+    const timezone = loc?.timezone || 'America/New_York'
+
+    // Date range — timezone-aware
+    let start: Date
+    let end: Date
+    if (startDate && endDate) {
+      const range = dateRangeToUTC(startDate, endDate, timezone)
+      start = range.start
+      end = range.end
+    } else if (startDate) {
+      const range = dateRangeToUTC(startDate, null, timezone)
+      start = range.start
+      end = new Date()
+    } else {
+      const range = getLocationDateRange(timezone)
+      start = range.startOfDay
+      end = new Date()
+    }
 
     // Fetch paid orders in range
     const orders = await db.order.findMany({
@@ -85,10 +102,10 @@ export const GET = withVenue(async (request: NextRequest) => {
       tipTotal: 0,
     }))
 
-    // Group orders into dayparts
+    // Group orders into dayparts (use venue timezone for hour bucketing)
     for (const order of orders) {
       if (!order.paidAt) continue
-      const hour = getHourOfDay(order.paidAt)
+      const hour = getHourInTimezone(order.paidAt, timezone)
       const idx = getDaypartIndex(hour, dayparts)
       if (idx >= 0) {
         buckets[idx].orderCount += 1

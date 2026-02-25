@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getRandomCard, generateAuthCode, delay, randomBetween } from '@/lib/mock-cards'
 import { checkSimulatedReaderAccess } from '../guard'
 import { withVenue } from '@/lib/with-venue'
+import { roundToCents } from '@/lib/pricing'
 
 /**
  * Simulated Datacap Reader - Process Transaction
@@ -17,7 +18,7 @@ export const POST = withVenue(async function POST(request: Request) {
 
   // Validate Amount
   const rawAmount = body.Amount
-  const amount = parseFloat(rawAmount)
+  const amount = roundToCents(parseFloat(rawAmount))
   if (!rawAmount || isNaN(amount) || amount <= 0) {
     console.error('[simulated-reader] Invalid amount:', rawAmount)
     return NextResponse.json(
@@ -47,7 +48,7 @@ export const POST = withVenue(async function POST(request: Request) {
   }
 
   // Validate TipAmount if present (must be non-negative number)
-  const tipAmount = body.TipAmount ? parseFloat(body.TipAmount) : 0
+  const tipAmount = body.TipAmount ? roundToCents(parseFloat(body.TipAmount)) : 0
   if (isNaN(tipAmount) || tipAmount < 0) {
     console.error('[simulated-reader] Invalid TipAmount:', body.TipAmount)
     return NextResponse.json(
