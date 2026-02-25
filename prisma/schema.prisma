@@ -6642,19 +6642,26 @@ model ServerRegistrationToken {
 // ============================================
 
 model CloudEventQueue {
-  id          String   @id @default(uuid())
+  id          String    @id @default(cuid())
   venueId     String
   locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  location    Location  @relation(fields: [locationId], references: [id])
   eventType   String
   body        Json
-  nextRetryAt DateTime @default(now())
-  attempts    Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status      String    @default("pending")
+  nextRetryAt DateTime  @default(now())
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  lastError   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  syncedAt    DateTime?
 
   @@index([locationId])
   @@index([nextRetryAt])
+  @@index([status])
+  @@index([locationId, status])
   @@map("cloud_event_queue")
 }
 

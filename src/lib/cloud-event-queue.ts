@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 const MAX_QUEUE_SIZE = 1000
 const RETRY_INTERVAL_MS = 30_000
 const MAX_BACKOFF_MS = 3_600_000
+const DEFAULT_MAX_ATTEMPTS = 5
 
 let workerInterval: ReturnType<typeof setInterval> | null = null
 
@@ -22,6 +23,8 @@ export async function queueCloudEvent(
         locationId,
         eventType,
         body: JSON.parse(body),
+        status: 'pending',
+        maxAttempts: DEFAULT_MAX_ATTEMPTS,
       },
     })
 
@@ -49,12 +52,34 @@ async function processQueue(): Promise<void> {
 
   try {
     const events = await db.cloudEventQueue.findMany({
-      where: { nextRetryAt: { lte: new Date() } },
+      where: {
+        status: { in: ['pending', 'failed'] },
+        nextRetryAt: { lte: new Date() },
+      },
       orderBy: { createdAt: 'asc' },
       take: 10,
     })
 
     for (const event of events) {
+      // Check if max attempts exceeded -- move to dead_letter
+      if (event.attempts >= event.maxAttempts) {
+        await db.cloudEventQueue.update({
+          where: { id: event.id },
+          data: {
+            status: 'dead_letter',
+            lastError: event.lastError || 'Max attempts exceeded',
+          },
+        })
+        console.error('[CloudEventQueue] Dead-lettered', { id: event.id, eventType: event.eventType, attempts: event.attempts })
+        continue
+      }
+
+      // Mark as processing
+      await db.cloudEventQueue.update({
+        where: { id: event.id },
+        data: { status: 'processing' },
+      })
+
       const bodyString = JSON.stringify(event.body)
       const signature = createHmac('sha256', process.env.SERVER_API_KEY || '')
         .update(bodyString)
@@ -75,19 +100,30 @@ async function processQueue(): Promise<void> {
           throw new Error(`HTTP ${res.status} ${res.statusText}`)
         }
 
-        await db.cloudEventQueue.delete({ where: { id: event.id } })
+        // Mark as completed and soft-delete
+        await db.cloudEventQueue.update({
+          where: { id: event.id },
+          data: {
+            status: 'completed',
+            syncedAt: new Date(),
+            deletedAt: new Date(),
+          },
+        })
         console.log(`[CloudEventQueue] Retried successfully: ${event.eventType} (${event.id})`)
       } catch (error) {
         const attempts = event.attempts + 1
         const backoff = Math.min(Math.pow(2, attempts) * 1000, MAX_BACKOFF_MS)
+        const errorMessage = error instanceof Error ? error.message : String(error)
         await db.cloudEventQueue.update({
           where: { id: event.id },
           data: {
             attempts,
+            status: 'failed',
+            lastError: errorMessage,
             nextRetryAt: new Date(Date.now() + backoff),
           },
         })
-        console.error('[CloudEventQueue] Retry failed', { id: event.id, eventType: event.eventType, attempts, error })
+        console.error('[CloudEventQueue] Retry failed', { id: event.id, eventType: event.eventType, attempts, error: errorMessage })
       }
     }
   } catch (error) {
