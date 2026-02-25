@@ -118,9 +118,9 @@ async function main() {
   // Run pre-push migrations before db push
   await runPrePushMigrations()
 
-  // Apply pending migrations to Neon PostgreSQL
-  console.log('[vercel-build] Running prisma migrate deploy...')
-  execSync('npx prisma migrate deploy', { stdio: 'inherit' })
+  // Sync schema to Neon PostgreSQL (additive only — fails on destructive changes)
+  console.log('[vercel-build] Running prisma db push...')
+  execSync('npx prisma db push', { stdio: 'inherit' })
 
   // Build Next.js
   console.log('[vercel-build] Running next build...')
