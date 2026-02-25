@@ -5,6 +5,71 @@
 
 ---
 
+## 2026-02-25 — Android UI Audit: Web vs Android Parity (P0→P1→P2)
+
+**Session:** Full bartender-workflow audit comparing web POS and Android register UIs side-by-side. Two agent teams independently traced identical 17-step workflows. Cross-compared findings, then fixed all gaps in 3 priority rounds. Managed as agent team lead — all code written by parallel agents with cross-agent wiring fixes.
+
+### Commits
+
+**GWI Android Register** (`gwi-android-register`):
+- `551dea4` — P0: employee name passthrough, pour pricing (size + multiplier), floor plan visibility fix, order type mapping per tab, payment processing spinner
+- `008384d` — P1: notes dialog (AlertDialog + OutlinedTextField), discount button, search toggle, two-tap void/remove confirmations, logout button, tip validation fix
+- `835cbad` — P2: comp/void reason picker dialogs, close tab button, course cycling (1→4), "Order Sent!" confirmation banner, open orders filter chips + sort toggles
+
+### Deployments
+- Android: all pushed to main at https://github.com/GetwithitMan/gwi-android-register
+
+### Features Delivered
+
+**P0 — Blocking Fixes (5 files, 53 insertions):**
+- Employee name passthrough via navigation args (PinLoginScreen → AppNavigation → OrderViewModel)
+- Pour size and multiplier sent with OrderItemRequest (was hardcoded to defaults)
+- Floor plan visible when order has no items (was gated on `currentOrderId == null`)
+- Order type mapped per active tab (TABLES→dine_in, BAR→bar_tab, TAKEOUT→takeout, DELIVERY→delivery)
+- Payment sheet: processing spinner, disabled button, undismissable during payment
+
+**P1 — Pre-Pilot UX (7 files, 183 insertions):**
+- Note dialog for order items (AlertDialog with themed OutlinedTextField, placeholder text)
+- Discount button on OrderPanel (amber, wired to DiscountSheet)
+- Search icon + Logout icon on PosHeader
+- Two-tap confirmation on Void chip ("Confirm Void?") and Remove button ("Sure?")
+- Tip validation: cash tendered must cover order total + tip
+
+**P2 — Pre-Production Features (5 files, 352 insertions):**
+- Comp/void reason picker: AlertDialog with preset reasons (5 comp, 4 void) + custom input field
+- `compItem()` and `confirmCompVoid()` ViewModel functions calling server API
+- Close Tab button (purple, bar tabs only) with `CloseTabRequest`
+- Course cycling (1→2→3→4→1) on order items via `setCourse()` + `UpdateItemRequest`
+- "Order Sent!" green confirmation banner with 2s auto-dismiss (AnimatedVisibility + LaunchedEffect)
+- Open orders panel: filter chips (All / Dine In / Tabs / To Go), sort toggles (Newest / Oldest / Total $)
+- Comp ActionChip with two-tap confirmation in OrderItemControls
+- `refreshCurrentOrder()` moved to finally block for reliable state refresh after add
+
+### Cross-Agent Wiring Fixes
+- `onComp` → `onCompItem` (param name mismatch between agents)
+- `onSetCourse` threaded through OrderPanel to OrderItemControls (was hardcoded to `{ }`)
+- `tabName`, `showSentConfirmation`, `onDismissSentConfirmation`, `onCloseTab` wired from OrderScreen → OrderPanel
+- `onLogout` wired from OrderScreen → PosHeader (caught post-P1 merge)
+
+### Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Audit methodology | Identical 17-step bartender workflows | Ensures apples-to-apples comparison between web and Android |
+| Priority triage | P0 (money/broken) → P1 (missing UX) → P2 (incomplete features) | Ship-blocking items first |
+| Agent file partitioning | Agent A: ViewModel + Screen, Agent B: UI components | Prevents merge conflicts in parallel work |
+| Comp/void flow | Reason picker dialog with presets | Matches web POS CompVoidModal pattern |
+| Course cycling | Client-side modulo (1-4) | Simple, no server round-trip for UI state |
+| Sent confirmation | AnimatedVisibility + LaunchedEffect 2s | Non-blocking, auto-clears, replaces Send button temporarily |
+
+### Remaining Gaps (from audit)
+- Split payments not implemented (web has full split UI)
+- Manager approval flows (web has PIN gate for voids/discounts)
+- On-screen keyboard for tab name entry
+- Datacap USB/BT payment reader bridges (stubs only)
+- CFD dual-screen not implemented
+- Receipt printing (ESC/POS over network not yet wired)
+
 ## 2026-02-24 — Android Hardening: Production-Grade Resilience (4 Rounds)
 
 **Session:** Four rounds of hardening on the Android register app, incorporating internal requirements and two third-party code reviews. Managed as agent team lead — all code written by parallel agents. Desktop review docs regenerated after each round.

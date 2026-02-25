@@ -418,7 +418,7 @@
 | Mission Control (Phase 2) | 29 | 0 | 2 | 31 | 94% |
 | DevOps | 1 | 0 | 0 | 1 | 100% |
 | Performance Overhaul | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **253** | **7** | **18** | **278** | **92%** |
+| **TOTAL** | **256** | **7** | **18** | **281** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -536,6 +536,16 @@ Skills that can be developed simultaneously:
 - Sync when reconnected
 - Dependencies: ALL
 - Status: TODO
+
+---
+
+## Recently Completed (2026-02-25 — Android UI Parity Audit, Skills 441-443)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 441 | Android P0: Core Order Flow Fixes | DONE | Android / Orders | 440 | Employee name passthrough via nav args, pour size/multiplier in OrderItemRequest, floor plan visibility when empty order, order type mapping per tab, payment processing spinner + dismiss guard. Commit 551dea4, 5 files. |
+| 442 | Android P1: Missing UX Controls | DONE | Android / Orders / UX | 441 | Note dialog (AlertDialog + OutlinedTextField), discount button, PosHeader search + logout icons, two-tap void/remove confirmations (confirmingVoid/confirmingRemove states), tip validation (cash ≥ total + tip). Commit 008384d, 7 files. |
+| 443 | Android P2: Feature Parity with Web POS | DONE | Android / Orders / UX | 442 | Comp/void reason picker (preset reasons + custom), compItem/confirmCompVoid ViewModel functions, Close Tab button (CloseTabRequest), course cycling 1→4, "Order Sent!" banner (2s auto-dismiss), open orders filter chips (All/Dine In/Tabs/To Go) + sort toggles (Newest/Oldest/Total $), Comp ActionChip two-tap, refreshCurrentOrder in finally block. Commit 835cbad, 5 files. |
 
 ---
 
@@ -1350,6 +1360,9 @@ These skills emerged during development and are now part of the system:
 | 438 | ANDROID-DOUBLE-TAP-GUARDS | DONE | Android / UI | 432 | ViewModel-level in-flight flags: isAddingItem (guards addItem/addItemWithModifiers with try/finally), isSending (guards sendToKitchen), isProcessingPayment (guards all payment flows). ModifierSheet confirm button disabled when isAddingItem. Commits: 5cd6894 |
 | 439 | ANDROID-PAYMENT-LOGGING | DONE | Android / Payments | 434 | PaymentLogEntity (Room): orderId, amount, tipAmount, paymentMethod, status (INITIATED/CONFIRMED/FAILED), timestamps. PaymentLogDao: insert, markConfirmed, markFailed, getStaleInitiated, observeUnreconciledCount, purgeOldConfirmed. PosHeader unreconciledPaymentCount red badge. DB version 3→4. Commits: 54af64b |
 | 440 | ANDROID-PIN-AND-SOCKET-POLISH | DONE | Android / UI / Real-Time | 431, 432 | PinLoginViewModel: removed auto-submit at 4 digits (blocked 5-6 digit PINs), added onSubmit() (requires ≥4 digits). PinLoginScreen: GO button on numpad (enabled at 4+, dimmed when disabled). SocketManager: all 12 SharedFlows use BufferOverflow.DROP_OLDEST (tryEmit never silently drops newest event). extraBufferCapacity = 64. Commits: dc4bf31 |
+| 441 | Android P0: Core Order Flow Fixes | DONE | Android | 440 | Employee name, pour pricing, floor plan, order types, payment spinner |
+| 442 | Android P1: Missing UX Controls | DONE | Android | 441 | Notes dialog, discount, search, confirmations, logout, tip fix |
+| 443 | Android P2: Feature Parity | DONE | Android | 442 | Comp/void dialogs, close tab, courses, sent confirmation, filters |
 
 ---
 
