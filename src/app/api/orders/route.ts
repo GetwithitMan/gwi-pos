@@ -37,12 +37,6 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // Get next order number for today
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
     // Compute business day for this order
     const locationRec = await db.location.findFirst({ where: { id: locationId }, select: { settings: true } })
     const locSettings = locationRec?.settings as Record<string, unknown> | null
@@ -81,10 +75,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             }
           }
 
-          // Lock latest order row to prevent duplicate order numbers
+          // Lock latest order row to prevent duplicate order numbers (global unique constraint)
           const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-            `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-            locationId, today, tomorrow
+            `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+            locationId
           )
           const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
@@ -175,6 +169,17 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         id: order.id,
         orderNumber: order.orderNumber,
         status: 'draft',
+        orderType: order.orderType,
+        tableId: order.tableId || null,
+        tabName: order.tabName || null,
+        guestCount: order.guestCount,
+        employeeId: order.employeeId,
+        subtotal: 0,
+        taxTotal: 0,
+        tipTotal: 0,
+        discountTotal: 0,
+        total: 0,
+        openedAt: order.createdAt.toISOString(),
         items: [],
       } })
     }
@@ -399,10 +404,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           }
         }
 
-        // Lock latest order row to prevent duplicate order numbers (Bug 5)
+        // Lock latest order row to prevent duplicate order numbers (global unique constraint)
         const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-          locationId, today, tomorrow
+          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+          locationId
         )
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 

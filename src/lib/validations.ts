@@ -136,10 +136,10 @@ export const createOrderSchema = z.object({
   employeeId: idSchema,
   locationId: idSchema,
   orderType: z.string(), // Allow custom order type slugs (not just enum)
-  orderTypeId: idSchema.optional(), // Reference to OrderType record
+  orderTypeId: idSchema.nullish(), // Reference to OrderType record (null from Android/Moshi)
   tableId: idSchema.nullish(),
   tabName: z.string().max(50).nullish(),
-  guestCount: z.number().int().positive().default(1),
+  guestCount: z.number().int().positive().nullish().default(1),
   items: z.array(orderItemSchema).default([]),  // Empty = draft shell (no items yet)
   notes: z.string().max(500).nullish(),
   customFields: z.record(z.string(), z.string()).optional(), // Custom fields for configurable order types
