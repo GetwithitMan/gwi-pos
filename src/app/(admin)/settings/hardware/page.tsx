@@ -525,6 +525,24 @@ export default function HardwareDashboard() {
               )}
             </div>
 
+            {/* Scales Section */}
+            <div className="rounded-xl bg-white p-6 shadow">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Scales</h2>
+                  <p className="text-sm text-gray-500">
+                    Weight scales for sold-by-weight items
+                  </p>
+                </div>
+                <Link
+                  href="/settings/hardware/scales"
+                  className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+                >
+                  Manage Scales
+                </Link>
+              </div>
+            </div>
+
             {/* Print Routing Section */}
             <div className="rounded-xl bg-white p-6 shadow">
               <div className="mb-4 flex items-center justify-between">

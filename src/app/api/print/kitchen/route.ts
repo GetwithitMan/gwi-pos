@@ -406,6 +406,11 @@ function buildKitchenTicket(
     sourceTable: { id: string; name: string; abbreviation: string | null } | null
     specialNotes: string | null
     resendCount: number
+    // Weight-based item fields
+    soldByWeight: boolean | null
+    weight: unknown | null  // Prisma Decimal
+    weightUnit: string | null
+    tareWeight: unknown | null  // Prisma Decimal
     modifiers: Array<{
       name: string
       preModifier: string | null
@@ -603,7 +608,16 @@ function buildKitchenTicket(
       content.push(line(`FOR: ${item._modifierOnlyFor}`))
     }
 
-    let itemName = `${positionPrefix}${item.quantity}x ${item.name}`
+    // Weight-based items show weight instead of quantity
+    let itemName: string
+    if (item.soldByWeight && item.weight != null) {
+      const w = Number(item.weight).toFixed(2)
+      const unit = item.weightUnit || 'lb'
+      const netLabel = item.tareWeight != null && Number(item.tareWeight) > 0 ? ' (NET)' : ''
+      itemName = `${positionPrefix}${w} ${unit} ${item.name}${netLabel}`
+    } else {
+      itemName = `${positionPrefix}${item.quantity}x ${item.name}`
+    }
     if (allCapsItems) itemName = itemName.toUpperCase()
     content.push(importantLine(itemName, itemNameSize, useRedItemNames, boldItems))
 

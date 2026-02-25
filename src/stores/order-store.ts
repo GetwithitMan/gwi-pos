@@ -107,6 +107,13 @@ interface OrderItem {
   itemTotal?: number
   // Split label for grouped display (e.g. "68-1")
   splitLabel?: string
+  // Weight-based selling (scale integration)
+  soldByWeight?: boolean
+  weight?: number | null
+  weightUnit?: string | null
+  unitPrice?: number | null
+  grossWeight?: number | null
+  tareWeight?: number | null
 }
 
 export interface CourseDelay {
@@ -207,6 +214,13 @@ interface LoadedOrderData {
     pizzaConfig?: PizzaOrderConfigStore
     // Split label for grouped display (e.g. "68-1")
     splitLabel?: string
+    // Weight-based selling
+    soldByWeight?: boolean
+    weight?: number | null
+    weightUnit?: string | null
+    unitPrice?: number | null
+    grossWeight?: number | null
+    tareWeight?: number | null
   }[]
   subtotal: number
   discountTotal?: number
@@ -451,6 +465,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       })) || undefined,
       // Split label for grouped display
       splitLabel: item.splitLabel,
+      // Weight-based selling
+      soldByWeight: item.soldByWeight || false,
+      weight: item.weight ?? null,
+      weightUnit: item.weightUnit ?? null,
+      unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+      grossWeight: item.grossWeight ?? null,
+      tareWeight: item.tareWeight ?? null,
     }))
 
     // Recover any pending items from localStorage before setting state

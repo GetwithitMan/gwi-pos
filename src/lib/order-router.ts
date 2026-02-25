@@ -232,6 +232,12 @@ export class OrderRouter {
       isEntertainment,
       isBar,
       categoryName: item.menuItem?.category?.name || null,
+      // Weight-based item fields
+      soldByWeight: item.soldByWeight ?? false,
+      weight: item.weight ? Number(item.weight) : null,
+      weightUnit: item.weightUnit ?? null,
+      unitPrice: item.unitPrice ? Number(item.unitPrice) : null,
+      tareWeight: item.tareWeight ? Number(item.tareWeight) : null,
       modifiers: (item.modifiers || []).map((m: any) => ({
         id: m.id,
         name: m.name,

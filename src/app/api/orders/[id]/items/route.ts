@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
 import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, calculateOrderSubtotal, isItemTaxInclusive, recalculatePercentDiscounts, type LocationTaxSettings } from '@/lib/order-calculations'
-import { calculateCardPrice } from '@/lib/pricing'
+import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded, dispatchTabItemsUpdated } from '@/lib/socket-dispatch'
@@ -72,6 +72,13 @@ type NewItem = {
   }
   // Entertainment/timed rental fields
   blockTimeMinutes?: number
+  // Weight-based pricing
+  soldByWeight?: boolean
+  weight?: number       // NET weight (post-tare)
+  weightUnit?: string   // "lb" | "kg" | "oz" | "g"
+  unitPrice?: number    // Price per weight unit
+  grossWeight?: number  // Weight before tare subtracted
+  tareWeight?: number   // Container weight
 }
 
 /**
@@ -104,6 +111,21 @@ export const POST = withVenue(async function POST(
           `Invalid quantity for item "${item.name || item.menuItemId}": must be at least 1`,
           ERROR_CODES.VALIDATION_ERROR
         )
+      }
+      // Validate weight-based items: weight and unitPrice must be > 0
+      if (item.soldByWeight) {
+        if (!item.weight || item.weight <= 0) {
+          return apiError.badRequest(
+            `Weight is required for sold-by-weight item "${item.name || item.menuItemId}"`,
+            ERROR_CODES.VALIDATION_ERROR
+          )
+        }
+        if (!item.unitPrice || item.unitPrice <= 0) {
+          return apiError.badRequest(
+            `Unit price is required for sold-by-weight item "${item.name || item.menuItemId}"`,
+            ERROR_CODES.VALIDATION_ERROR
+          )
+        }
       }
     }
 
@@ -253,8 +275,16 @@ export const POST = withVenue(async function POST(
       let newItemsCommission = 0
 
       for (const item of items) {
+        // For weight-based items, compute the effective price for backward compat
+        const effectivePrice = (item.soldByWeight && item.weight && item.unitPrice)
+          ? roundToCents(item.unitPrice * item.weight)
+          : item.price
+
         // Calculate item total using centralized function
-        const fullItemTotal = calculateItemTotal(item)
+        const fullItemTotal = calculateItemTotal({
+          ...item,
+          price: effectivePrice,
+        })
         newItemsSubtotal += fullItemTotal
 
         // Calculate commission using centralized function
@@ -278,8 +308,8 @@ export const POST = withVenue(async function POST(
             locationId: existingOrder.locationId,
             menuItemId: item.menuItemId,
             name: item.name,
-            price: item.price,
-            cardPrice: dualPricingEnabled ? calculateCardPrice(item.price, cashDiscountPct) : null,
+            price: effectivePrice,
+            cardPrice: dualPricingEnabled ? calculateCardPrice(effectivePrice, cashDiscountPct) : null,
             isTaxInclusive: itemTaxInclusive,
             categoryType: catType,
             quantity: item.quantity,
@@ -294,6 +324,13 @@ export const POST = withVenue(async function POST(
             delayMinutes: item.delayMinutes || null,
             // Entertainment/timed rental fields
             blockTimeMinutes: item.blockTimeMinutes || null,
+            // Weight-based pricing fields
+            soldByWeight: item.soldByWeight || false,
+            weight: item.weight ?? null,
+            weightUnit: item.weightUnit ?? null,
+            unitPrice: item.unitPrice ?? null,
+            grossWeight: item.grossWeight ?? null,
+            tareWeight: item.tareWeight ?? null,
             // Modifiers
             modifiers: {
               create: item.modifiers.map(mod => ({
@@ -389,6 +426,9 @@ export const POST = withVenue(async function POST(
         price: Number(i.price),
         itemTotal: Number(i.itemTotal),
         commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
+        weight: i.weight ? Number(i.weight) : undefined,
+        unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+        soldByWeight: i.soldByWeight ?? false,
         modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
         ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
       }))

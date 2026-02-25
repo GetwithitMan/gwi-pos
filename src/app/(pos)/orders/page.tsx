@@ -62,6 +62,8 @@ import { useTabsPanel } from '@/hooks/useTabsPanel'
 import { usePizzaBuilder } from '@/hooks/usePizzaBuilder'
 import { useOrderPageModals } from './useOrderPageModals'
 import { OrderPageModals } from './OrderPageModals'
+import { WeightCaptureModal } from '@/components/scale/WeightCaptureModal'
+import { ScaleStatusBadge } from '@/components/scale/ScaleStatusBadge'
 import type { Category, MenuItem, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
 // DEFERRED: Replace with dynamic terminal ID from device provisioning — tracked in PM-TASK-BOARD.md
@@ -225,6 +227,14 @@ export default function OrdersPage() {
 
   // Per-item discount state
   const [itemDiscountTargetId, setItemDiscountTargetId] = useState<string | null>(null)
+
+  // Weight capture modal state (scale integration)
+  const [showWeightModal, setShowWeightModal] = useState(false)
+  const [weightCaptureItem, setWeightCaptureItem] = useState<{
+    id: string; name: string; pricePerWeightUnit: number; weightUnit: string
+  } | null>(null)
+  // Scale ID bound to this terminal (fetched once on mount)
+  const [terminalScaleId, setTerminalScaleId] = useState<string | null>(null)
 
   // Unified pricing calculations
   const pricing = usePricing({
@@ -765,6 +775,18 @@ export default function OrdersPage() {
       loadActiveSessions()
     }
   }, [employee?.location?.id, loadMenu, loadOrderTypes])
+
+  // Load terminal's bound scale ID (for weight-based selling)
+  useEffect(() => {
+    if (!TERMINAL_ID) return
+    fetch(`/api/hardware/terminals/${TERMINAL_ID}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        const terminal = data?.data?.terminal
+        if (terminal?.scaleId) setTerminalScaleId(terminal.scaleId)
+      })
+      .catch(() => {}) // silent — scale is optional
+  }, [])
 
   // Throttled loadMenu — coalesces rapid calls from entertainment handlers
   const menuRefreshingRef = useRef(false)
@@ -1737,6 +1759,18 @@ export default function OrdersPage() {
       return
     }
 
+    // Handle weight-based items — open scale modal
+    if ((item as any).soldByWeight && (item as any).pricePerWeightUnit) {
+      setWeightCaptureItem({
+        id: item.id,
+        name: item.name,
+        pricePerWeightUnit: Number((item as any).pricePerWeightUnit),
+        weightUnit: (item as any).weightUnit || 'lb',
+      })
+      setShowWeightModal(true)
+      return
+    }
+
     // Check if item has modifiers
     if (item.modifierGroupCount && item.modifierGroupCount > 0) {
       setSelectedItem(item)
@@ -1765,6 +1799,33 @@ export default function OrdersPage() {
       })
     }
   }
+
+  // Handle weight-based item confirmed from WeightCaptureModal
+  const handleAddWeightItem = useCallback((
+    weight: number,
+    weightUnit: string,
+    unitPrice: number,
+    grossWeight?: number,
+    tareWeight?: number,
+  ) => {
+    if (!weightCaptureItem) return
+    const totalPrice = Math.round(weight * unitPrice * 100) / 100
+    addItem({
+      menuItemId: weightCaptureItem.id,
+      name: weightCaptureItem.name,
+      price: totalPrice,
+      quantity: 1,
+      modifiers: [],
+      soldByWeight: true,
+      weight,
+      weightUnit,
+      unitPrice,
+      grossWeight: grossWeight ?? null,
+      tareWeight: tareWeight ?? null,
+    })
+    setWeightCaptureItem(null)
+    setShowWeightModal(false)
+  }, [weightCaptureItem, addItem])
 
   // Handle quick bar item click - add to order (T035)
   const handleQuickBarItemClick = async (itemId: string) => {
@@ -3142,6 +3203,7 @@ export default function OrdersPage() {
           onSearchSelect={handleSearchSelect}
           onScanComplete={handleScanComplete}
           cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
+          scaleId={terminalScaleId}
           onQuickServiceOrder={() => {
             // Find first active non-dine-in order type (prefer takeout)
             const takeout = orderTypes.find(ot => ot.slug === 'takeout' && ot.isActive)
@@ -3742,6 +3804,17 @@ export default function OrdersPage() {
           showShiftCloseoutModal={showShiftCloseoutModal}
           pricing={pricing}
         />
+
+        {/* Weight Capture Modal (scale integration) */}
+        {weightCaptureItem && (
+          <WeightCaptureModal
+            isOpen={showWeightModal}
+            onClose={() => { setShowWeightModal(false); setWeightCaptureItem(null) }}
+            item={weightCaptureItem}
+            scaleId={terminalScaleId}
+            onConfirm={handleAddWeightItem}
+          />
+        )}
       </div>
     )
   }

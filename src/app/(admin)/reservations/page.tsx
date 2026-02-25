@@ -178,8 +178,30 @@ export default function ReservationsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-gray-400">Loading reservations...</div>
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto space-y-3 mt-16">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 p-4 bg-white rounded-xl">
+              <div className="skeleton-shimmer rounded-lg h-12 w-16" />
+              <div className="flex-1 space-y-2">
+                <div className="skeleton-shimmer rounded h-4 w-3/4" />
+                <div className="skeleton-shimmer rounded h-3 w-1/2" />
+              </div>
+              <div className="skeleton-shimmer rounded-lg h-8 w-20" />
+            </div>
+          ))}
+          <style>{`
+            .skeleton-shimmer {
+              background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+              background-size: 200% 100%;
+              animation: shimmer 1.5s ease-in-out infinite;
+            }
+            @keyframes shimmer {
+              0% { background-position: 200% 0; }
+              100% { background-position: -200% 0; }
+            }
+          `}</style>
+        </div>
       </div>
     )
   }

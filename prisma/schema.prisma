@@ -191,6 +191,7 @@ model Location {
   printJobs         PrintJob[]
   paymentReaders    PaymentReader[]
   readerLogs        PaymentReaderLog[]
+  scales            Scale[]
 
   // Order Cards (multi-card tabs)
   orderCards OrderCard[]
@@ -931,6 +932,11 @@ model MenuItem {
   pourSizes            Json?
   defaultPourSize      String? // Default selection: 'shot', 'double', 'tall', 'short'
   applyPourToModifiers Boolean @default(false) // Apply pour multiplier to spirit modifiers too
+
+  // Weight-Based Selling (Scale Integration)
+  soldByWeight       Boolean  @default(false)  // Item sold by weight instead of quantity
+  weightUnit         String?                    // "lb" | "kg" | "oz" | "g"
+  pricePerWeightUnit Decimal?                   // Price per weight unit (e.g. 5.99/lb)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1765,6 +1771,14 @@ model OrderItem {
   status     String   @default("active") // active, voided, comped
   voidReason String?
   wasMade    Boolean? // Was item made before void/comp? For waste tracking
+
+  // Weight-Based Selling (Scale Integration)
+  soldByWeight Boolean  @default(false)  // Was this item sold by weight?
+  weight       Decimal?  // Captured NET weight at sale (always post-tare)
+  weightUnit   String?   // Unit snapshot: "lb" | "kg" | "oz" | "g"
+  unitPrice    Decimal?  // Price-per-unit snapshot (e.g. 5.99)
+  grossWeight  Decimal?  // Gross weight before tare (audit trail)
+  tareWeight   Decimal?  // Tare/container weight (audit trail)
 
   // Totals
   modifierTotal Decimal @default(0)
@@ -5071,6 +5085,10 @@ model Terminal {
   backupPaymentReader   PaymentReader? @relation("TerminalBackupReader", fields: [backupPaymentReaderId], references: [id])
   readerFailoverTimeout Int            @default(10000) // 10s before trying backup reader
 
+  // Scale Binding (Weight-Based Selling)
+  scaleId String?
+  scale   Scale?  @relation(fields: [scaleId], references: [id])
+
   sortOrder Int @default(0)
 
   createdAt DateTime @default(now())
@@ -5086,7 +5104,49 @@ model Terminal {
   @@index([deviceToken])
   @@index([backupTerminalId])
   @@index([paymentReaderId])
+  @@index([scaleId])
   @@index([platform])
+}
+
+// Scale - Weight measurement devices (CAS PD-II, etc.)
+model Scale {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Identity
+  name      String                        // "Deli Scale", "Produce Scale"
+  scaleType String @default("CAS_PD_II")  // Protocol type for factory pattern
+
+  // Serial Port Configuration
+  portPath String                  // "/dev/ttyUSB0", "COM3", etc.
+  baudRate Int     @default(9600)
+  dataBits Int     @default(7)
+  parity   String  @default("even") // "none" | "even" | "odd"
+  stopBits Int     @default(1)
+
+  // Weight Configuration
+  maxCapacity Decimal?               // Max weight capacity
+  weightUnit  String   @default("lb") // "lb" | "kg" | "oz" | "g"
+  precision   Int      @default(2)    // Decimal places
+
+  // Status
+  isActive    Boolean   @default(true)
+  isConnected Boolean   @default(false)
+  lastSeenAt  DateTime?
+  lastError   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  terminals Terminal[]
+
+  @@unique([locationId, name])
+  @@unique([locationId, portPath])
+  @@index([locationId])
 }
 
 // Payment Reader - Datacap Direct card reader devices

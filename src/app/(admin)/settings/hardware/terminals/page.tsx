@@ -13,6 +13,13 @@ interface Printer {
   printerRole: string
 }
 
+interface ScaleInfo {
+  id: string
+  name: string
+  portPath: string
+  isConnected: boolean
+}
+
 interface Terminal {
   id: string
   name: string
@@ -20,6 +27,8 @@ interface Terminal {
   staticIp: string | null
   receiptPrinterId: string | null
   receiptPrinter: Printer | null
+  scaleId: string | null
+  scale: ScaleInfo | null
   roleSkipRules: Record<string, string[]> | null
   forceAllPrints: boolean
   isPaired: boolean
@@ -45,6 +54,7 @@ export default function TerminalsPage() {
   const locationId = employee?.location?.id
   const [terminals, setTerminals] = useState<Terminal[]>([])
   const [printers, setPrinters] = useState<Printer[]>([])
+  const [scales, setScales] = useState<ScaleInfo[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -54,10 +64,11 @@ export default function TerminalsPage() {
   const fetchData = useCallback(async () => {
     if (!locationId) return
     try {
-      const [terminalsRes, printersRes, rolesRes] = await Promise.all([
+      const [terminalsRes, printersRes, rolesRes, scalesRes] = await Promise.all([
         fetch(`/api/hardware/terminals?locationId=${locationId}`),
         fetch(`/api/hardware/printers?locationId=${locationId}&role=receipt`),
         fetch(`/api/employees/roles?locationId=${locationId}`),
+        fetch(`/api/scales?locationId=${locationId}`),
       ])
 
       if (terminalsRes.ok) {
@@ -73,6 +84,17 @@ export default function TerminalsPage() {
       if (rolesRes.ok) {
         const data = await rolesRes.json()
         setRoles(data.data.roles || [])
+      }
+
+      if (scalesRes.ok) {
+        const data = await scalesRes.json()
+        const rawScales = data.data || []
+        setScales(rawScales.filter((s: { isActive: boolean }) => s.isActive).map((s: { id: string; name: string; portPath: string; isConnected: boolean }) => ({
+          id: s.id,
+          name: s.name,
+          portPath: s.portPath,
+          isConnected: s.isConnected,
+        })))
       }
     } catch (error) {
       console.error('Failed to fetch data:', error)
@@ -246,6 +268,7 @@ export default function TerminalsPage() {
         <TerminalModal
           terminal={editingTerminal}
           printers={printers}
+          scales={scales}
           roles={roles}
           locationId={locationId!}
           onClose={() => {
@@ -398,6 +421,21 @@ function TerminalCard({
           </span>
         </div>
 
+        {/* Scale */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-600">Scale</span>
+          <span className="text-gray-900">
+            {terminal.scale ? (
+              <span className="flex items-center gap-1.5">
+                <span className={`inline-block h-1.5 w-1.5 rounded-full ${terminal.scale.isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                {terminal.scale.name}
+              </span>
+            ) : (
+              <span className="text-gray-500">None</span>
+            )}
+          </span>
+        </div>
+
         {/* Skip Rules Summary */}
         <div className="flex items-center justify-between text-sm">
           <span className="text-gray-600">Skip Rules</span>
@@ -470,6 +508,7 @@ function TerminalCard({
 function TerminalModal({
   terminal,
   printers,
+  scales,
   roles,
   locationId,
   onClose,
@@ -477,6 +516,7 @@ function TerminalModal({
 }: {
   terminal: Terminal | null
   printers: Printer[]
+  scales: ScaleInfo[]
   roles: Role[]
   locationId: string
   onClose: () => void
@@ -486,6 +526,7 @@ function TerminalModal({
   const [category, setCategory] = useState<'FIXED_STATION' | 'HANDHELD'>(terminal?.category || 'FIXED_STATION')
   const [staticIp, setStaticIp] = useState(terminal?.staticIp || '')
   const [receiptPrinterId, setReceiptPrinterId] = useState(terminal?.receiptPrinterId || '')
+  const [scaleId, setScaleId] = useState(terminal?.scaleId || '')
   const [roleSkipRules, setRoleSkipRules] = useState<Record<string, string[]>>(
     terminal?.roleSkipRules || {}
   )
@@ -525,6 +566,7 @@ function TerminalModal({
           category,
           staticIp: staticIp.trim() || null,
           receiptPrinterId: receiptPrinterId || null,
+          scaleId: scaleId || null,
           roleSkipRules,
         }),
       })
@@ -619,6 +661,27 @@ function TerminalModal({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                  Scale (Weight-Based Selling)
+                </label>
+                <select
+                  value={scaleId}
+                  onChange={(e) => setScaleId(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none"
+                >
+                  <option value="">None (No scale)</option>
+                  {scales.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.portPath}) {s.isConnected ? '' : '- Offline'}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Bind a scale for weight-based items at this station
+                </p>
               </div>
             </div>
 

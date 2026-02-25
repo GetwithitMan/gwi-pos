@@ -44,6 +44,13 @@ export interface RoutedItem {
   // Category info for grouping
   categoryName: string | null
 
+  // Weight-based item fields
+  soldByWeight?: boolean
+  weight?: number | null
+  weightUnit?: string | null
+  unitPrice?: number | null
+  tareWeight?: number | null
+
   // Full item data for template rendering
   modifiers: Array<{
     id: string

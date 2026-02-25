@@ -254,6 +254,10 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         backupPrinterIds: item.backupPrinterIds,
         // Combo print mode
         comboPrintMode: item.comboPrintMode,
+        // Weight-based selling
+        soldByWeight: item.soldByWeight,
+        weightUnit: item.weightUnit,
+        pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
         // 86 status (ingredient out of stock)
         is86d: item.is86d,
         reasons86d: item.reasons86d,

@@ -293,9 +293,37 @@ export default function InventoryItemsPage() {
         {/* Item List - Virtualized */}
         <div className="flex-1 overflow-hidden">
           {isLoading ? (
-            <div className="p-4 text-gray-500">Loading...</div>
+            <div className="space-y-2 p-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="skeleton-shimmer rounded h-10 w-10" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="skeleton-shimmer rounded h-4 w-2/3" />
+                    <div className="skeleton-shimmer rounded h-3 w-1/3" />
+                  </div>
+                  <div className="skeleton-shimmer rounded h-6 w-16" />
+                </div>
+              ))}
+              <style>{`
+                .skeleton-shimmer {
+                  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+                  background-size: 200% 100%;
+                  animation: shimmer 1.5s ease-in-out infinite;
+                }
+                @keyframes shimmer {
+                  0% { background-position: 200% 0; }
+                  100% { background-position: -200% 0; }
+                }
+              `}</style>
+            </div>
           ) : filteredItems.length === 0 ? (
-            <div className="p-4 text-gray-500">No items found</div>
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+              <svg className="w-12 h-12 mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+              </svg>
+              <p className="text-base font-medium">No inventory items found</p>
+              <p className="text-sm mt-1">Adjust your filters or add a new item to get started.</p>
+            </div>
           ) : (
             <Virtuoso
               style={{ height: '100%' }}

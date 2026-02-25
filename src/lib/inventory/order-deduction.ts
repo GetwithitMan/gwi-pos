@@ -405,7 +405,15 @@ export async function deductInventoryForOrder(
     for (const orderItem of order.items) {
       // Skip combo wrapper items — their components were already processed above
       if ((orderItem.menuItem as any)?.itemType === 'combo') continue
-      const itemQty = orderItem.quantity
+      // For weight-based items, the deduction multiplier uses net weight from scale
+      // (e.g., 2 bags of 0.5 lb each → 0.5 × 2 = 1.0 lb total deduction)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const soldByWeight = (orderItem.menuItem as any)?.soldByWeight === true
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const itemWeight = soldByWeight ? toNumber((orderItem as any).weight) : 0
+      const itemQty = (soldByWeight && itemWeight > 0)
+        ? itemWeight * orderItem.quantity
+        : orderItem.quantity
 
       // Build a set of inventory item IDs that have "NO" modifiers on this order item
       const removedIngredientIds = new Set<string>()

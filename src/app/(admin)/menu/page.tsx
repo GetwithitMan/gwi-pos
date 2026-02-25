@@ -604,9 +604,30 @@ export default function MenuManagementPage() {
           className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-300"
         >
           {isLoading ? (
-            <div className="text-gray-400 py-2">Loading...</div>
+            <div className="space-y-2 py-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="skeleton-shimmer rounded-lg h-8" />
+              ))}
+              <style>{`
+                .skeleton-shimmer {
+                  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+                  background-size: 200% 100%;
+                  animation: shimmer 1.5s ease-in-out infinite;
+                }
+                @keyframes shimmer {
+                  0% { background-position: 200% 0; }
+                  100% { background-position: -200% 0; }
+                }
+              `}</style>
+            </div>
           ) : categories.length === 0 ? (
-            <div className="text-gray-400 py-2">No categories - click + Add to create one</div>
+            <div className="flex flex-col items-center py-8 text-gray-400">
+              <svg className="w-10 h-10 mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6z" />
+              </svg>
+              <p className="text-sm font-medium">No categories yet</p>
+              <p className="text-xs mt-1">Click + Add to create your first category.</p>
+            </div>
           ) : (
             categories.map(category => {
               const typeInfo = CATEGORY_TYPES.find(t => t.value === category.categoryType)
@@ -734,7 +755,13 @@ export default function MenuManagementPage() {
             className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-300"
           >
             {filteredItems.length === 0 ? (
-              <div className="text-gray-400 py-2">No items - click + Add Item to create one</div>
+              <div className="flex flex-col items-center py-8 text-gray-400">
+                <svg className="w-10 h-10 mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-sm font-medium">No menu items</p>
+                <p className="text-xs mt-1">Click + Add Item to create one.</p>
+              </div>
             ) : (
               filteredItems.map(item => {
                 const isSelected = selectedItemForEditor?.id === item.id

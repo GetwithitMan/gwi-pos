@@ -123,6 +123,13 @@ const orderItemSchema = z.object({
   pizzaConfig: pizzaConfigSchema,
   // Timed rental / entertainment fields
   blockTimeMinutes: z.number().int().positive().nullish(),
+  // Weight-based pricing
+  soldByWeight: z.boolean().optional(),
+  weight: z.number().positive().optional(),       // NET weight (post-tare)
+  weightUnit: z.enum(['lb', 'kg', 'oz', 'g']).optional(),
+  unitPrice: z.number().positive().optional(),     // Price per weight unit
+  grossWeight: z.number().positive().optional(),   // Weight before tare
+  tareWeight: z.number().nonnegative().optional(), // Container weight
 })
 
 export const createOrderSchema = z.object({

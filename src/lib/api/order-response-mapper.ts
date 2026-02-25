@@ -38,6 +38,13 @@ export interface MappedOrderItem {
   blockTimeMinutes: number | null
   blockTimeStartedAt: Date | null
   blockTimeExpiresAt: Date | null
+  // Weight-based pricing
+  weight: number | null
+  weightUnit: string | null
+  unitPrice: number | null
+  grossWeight: number | null
+  tareWeight: number | null
+  soldByWeight: boolean
   ingredientModifications: MappedIngredientMod[]
   itemDiscounts: Array<{
     id: string
@@ -163,6 +170,13 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
     blockTimeMinutes: item.blockTimeMinutes,
     blockTimeStartedAt: item.blockTimeStartedAt,
     blockTimeExpiresAt: item.blockTimeExpiresAt,
+    // Weight-based pricing
+    weight: item.weight ? Number(item.weight) : null,
+    weightUnit: item.weightUnit ?? null,
+    unitPrice: item.unitPrice ? Number(item.unitPrice) : null,
+    grossWeight: item.grossWeight ? Number(item.grossWeight) : null,
+    tareWeight: item.tareWeight ? Number(item.tareWeight) : null,
+    soldByWeight: item.soldByWeight ?? false,
     ingredientModifications: item.ingredientModifications?.map((ing: Record<string, unknown>) => ({
       id: ing.id,
       ingredientId: ing.ingredientId,

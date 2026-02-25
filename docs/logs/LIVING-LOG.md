@@ -5,6 +5,66 @@
 
 ---
 
+## 2026-02-25 — Android Code Review: Nav Routes, String Externalization, Nav Args
+
+**Session:** Applied 3rd-party Android code review recommendations to `gwi-android-register`. Three items addressed: type-safe navigation routes, string externalization to `strings.xml`, and navigation argument cleanup. All work done directly — 19 files changed, 2 new files created.
+
+### Commits
+
+**GWI Android Register** (`gwi-android-register`):
+- `532d55e` — Code review fixes: Screen routes, string externalization, nav arg cleanup
+
+### Deployments
+- Android: pushed to main at https://github.com/GetwithitMan/gwi-android-register
+
+### Features Delivered
+
+**1. Type-Safe Navigation Routes (Screen sealed class):**
+- New `Screen.kt` sealed class in `ui/navigation/` with `Pairing`, `Login`, `Pos` routes
+- `AppNavigation.kt` rewritten to use `Screen.Pairing.route`, `Screen.Login.route`, `Screen.Pos.createRoute()`
+- Eliminates hardcoded route strings scattered across navigation code
+
+**2. String Externalization (100+ strings):**
+- New `app/src/main/res/values/strings.xml` with 100+ string resources
+- All 15 UI Composable files updated to use `stringResource(R.string.*)`:
+  - PairingScreen, PinLoginScreen, OrderScreen, ConnectionBanner, PosHeader
+  - OrderPanel, PaymentSheet, DiscountSheet, ModifierSheet, NewTabDialog
+  - ManagerPinDialog, OutboxDetailSheet, SearchOverlay, OpenOrdersPanel, OrderItemControls
+- Covers: pairing, login, POS header, orders, totals, item controls, note/comp/void dialogs, manager PIN, payment, discount, modifier, new tab, open orders, outbox, search, and common strings
+
+**3. Navigation Argument Cleanup:**
+- Removed `employeeName` from navigation route arguments entirely
+- `PinLoginScreen.onLoggedIn` simplified from `(String, String) -> Unit` to `(String) -> Unit`
+- `OrderViewModel` now injects `EmployeeDao` and looks up employee name from Room cache on init
+- Leverages existing `EmployeeDao.findById()` — employee is already cached during login
+
+### Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Navigation routes | Sealed class pattern | Type-safe, IDE autocomplete, single source of truth |
+| String externalization | `stringResource()` in Composables | Android i18n standard, enables future localization |
+| Employee name | DAO lookup vs nav arg | Removes fragile string passing through nav graph, data already cached |
+| ViewModel error strings | Left as hardcoded | ViewModels don't have Composable context for `stringResource()` |
+
+### Files Changed (19 modified + 2 new)
+
+| Category | Files |
+|----------|-------|
+| **New** | `Screen.kt`, `strings.xml` |
+| **Navigation** | `AppNavigation.kt` |
+| **Login** | `PinLoginScreen.kt` |
+| **ViewModel** | `OrderViewModel.kt` |
+| **Pairing** | `PairingScreen.kt` |
+| **POS Screens** | `OrderScreen.kt` |
+| **Components** | `ConnectionBanner.kt`, `PosHeader.kt`, `OrderPanel.kt`, `PaymentSheet.kt`, `DiscountSheet.kt`, `ModifierSheet.kt`, `NewTabDialog.kt`, `ManagerPinDialog.kt`, `OutboxDetailSheet.kt`, `SearchOverlay.kt`, `OpenOrdersPanel.kt`, `OrderItemControls.kt` |
+
+### Known Issues / Blockers
+- No JDK on dev machine — build verification deferred (code validated via grep cross-check of all R.string references against strings.xml)
+- ViewModel error strings (`PinLoginViewModel`, `ManagerPinDialog` catch blocks) remain hardcoded — no `stringResource()` access outside Composable context
+
+---
+
 ## 2026-02-25 — Phase 9b: Complete Forensic Audit (31 Items)
 
 **Session:** Completed all 31 remaining forensic audit items from Phase 9 across 5 parallel workstreams (security, resilience, data integrity, socket, UX). Managed as agent team lead — 5 agents in isolated worktrees, all code merged to main, TypeScript clean, pushed.

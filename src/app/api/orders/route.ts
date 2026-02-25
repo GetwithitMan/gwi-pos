@@ -5,7 +5,7 @@ import { createOrderSchema, validateRequest } from '@/lib/validations'
 import { errorCapture } from '@/lib/error-capture'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
 import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive } from '@/lib/order-calculations'
-import { calculateCardPrice } from '@/lib/pricing'
+import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -197,8 +197,16 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     }
 
     const orderItems = items.map(item => {
+      // For weight-based items, compute the effective price for backward compat
+      const effectivePrice = (item.soldByWeight && item.weight && item.unitPrice)
+        ? roundToCents(item.unitPrice * item.weight)
+        : item.price
+
       // Calculate item total using centralized function
-      const fullItemTotal = calculateItemTotal(item)
+      const fullItemTotal = calculateItemTotal({
+        ...item,
+        price: effectivePrice,
+      })
       subtotal += fullItemTotal
 
       // Calculate commission using centralized function
@@ -244,7 +252,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         locationId,
         menuItemId: item.menuItemId,
         name: item.name,
-        price: item.price,
+        price: effectivePrice,
         quantity: item.quantity,
         itemTotal: fullItemTotal,
         commissionAmount: itemCommission,
@@ -255,6 +263,13 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         delayMinutes: item.delayMinutes || null,
         // Timed rental / entertainment fields
         blockTimeMinutes: item.blockTimeMinutes || null,
+        // Weight-based pricing fields
+        soldByWeight: item.soldByWeight || false,
+        weight: item.weight ?? null,
+        weightUnit: item.weightUnit ?? null,
+        unitPrice: item.unitPrice ?? null,
+        grossWeight: item.grossWeight ?? null,
+        tareWeight: item.tareWeight ?? null,
         modifiers: {
           create: item.modifiers.map(mod => ({
             locationId,
@@ -335,10 +350,14 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     }
 
     // Also mark the raw items array so calculateOrderTotals can split
+    // For weight-based items, override price with effectivePrice for correct total calculation
     for (const item of items) {
       const mi = menuItemMap.get(item.menuItemId)
       const catType = mi?.category?.categoryType ?? null
       ;(item as any).isTaxInclusive = isItemTaxInclusive(catType ?? undefined, taxIncSettings)
+      if (item.soldByWeight && item.weight && item.unitPrice) {
+        ;(item as any).price = roundToCents(item.unitPrice * item.weight)
+      }
     }
 
     // Use centralized calculation function (single source of truth)

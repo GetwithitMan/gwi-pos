@@ -96,6 +96,10 @@ export const GET = withVenue(async function GET(
         pourSizes: item.pourSizes,
         defaultPourSize: item.defaultPourSize,
         imageUrl: item.imageUrl,
+        // Weight-Based Selling
+        soldByWeight: item.soldByWeight,
+        weightUnit: item.weightUnit,
+        pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
       },
     } })
   } catch (error) {
@@ -165,6 +169,10 @@ export const PUT = withVenue(async function PUT(
       // Linked bottle product (direct bottle linking)
       linkedBottleProductId,
       linkedPourSizeOz,
+      // Weight-Based Selling
+      soldByWeight,
+      weightUnit,
+      pricePerWeightUnit,
     } = body
 
     // Get old item to detect stock changes (fetch availability fields for computeIsOrderableOnline)
@@ -240,6 +248,10 @@ export const PUT = withVenue(async function PUT(
         // Linked bottle product
         ...(linkedBottleProductId !== undefined && { linkedBottleProductId: linkedBottleProductId || null }),
         ...(linkedPourSizeOz !== undefined && { linkedPourSizeOz: linkedPourSizeOz !== null ? new Prisma.Decimal(linkedPourSizeOz) : null }),
+        // Weight-Based Selling
+        ...(soldByWeight !== undefined && { soldByWeight }),
+        ...(weightUnit !== undefined && { weightUnit: weightUnit || null }),
+        ...(pricePerWeightUnit !== undefined && { pricePerWeightUnit: pricePerWeightUnit !== null ? new Prisma.Decimal(pricePerWeightUnit) : null }),
       }
     })
 

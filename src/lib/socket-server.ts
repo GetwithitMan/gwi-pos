@@ -170,7 +170,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     }
 
     // Valid room prefixes for subscribe
-    const ALLOWED_ROOM_PREFIXES = ['location:', 'tag:', 'terminal:', 'station:']
+    const ALLOWED_ROOM_PREFIXES = ['location:', 'tag:', 'terminal:', 'station:', 'scale:']
 
     // Handle channel subscribe/unsubscribe from SocketEventProvider
     socket.on('subscribe', (channelName: string) => {

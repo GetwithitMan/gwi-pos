@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MenuSearchResults } from '@/components/search'
 import { PendingSyncBadge } from '@/components/PendingSyncBadge'
+import { ScaleStatusBadge } from '@/components/scale/ScaleStatusBadge'
 import type { OrderTypeConfig } from '@/types/order-types'
 
 interface SearchMenuItem {
@@ -70,6 +71,7 @@ export interface UnifiedPOSHeaderProps {
   cardPriceMultiplier?: number
   onScanComplete?: (sku: string) => void
   onQuickServiceOrder?: () => void
+  scaleId?: string | null
 }
 
 export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
@@ -110,6 +112,7 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   cardPriceMultiplier,
   onScanComplete,
   onQuickServiceOrder,
+  scaleId,
 }: UnifiedPOSHeaderProps) {
   const [showEmployeeMenu, setShowEmployeeMenu] = useState(false)
   const [showGearMenu, setShowGearMenu] = useState(false)
@@ -508,6 +511,9 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
           </span>
         )}
       </button>
+
+      {/* ── Scale Status Badge ── */}
+      <ScaleStatusBadge scaleId={scaleId} />
 
       {/* ── Pending Sync Badge ── */}
       <PendingSyncBadge />

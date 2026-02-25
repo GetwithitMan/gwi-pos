@@ -33,6 +33,11 @@ export interface OrderItemForCalculation {
   commissionAmount?: number // For persisted items from DB
   categoryType?: string | null // For tax-inclusive pricing split
   isTaxInclusive?: boolean // Stored on OrderItem — true if item was tax-inclusive at time of sale
+  // Weight-based pricing (sold-by-weight items)
+  weight?: number | null       // NET weight (post-tare)
+  weightUnit?: string | null   // "lb" | "kg" | "oz" | "g"
+  unitPrice?: number | null    // Price per weight unit
+  soldByWeight?: boolean
 }
 
 export interface LocationTaxSettings {
@@ -70,7 +75,10 @@ export function calculateItemTotal(item: OrderItemForCalculation): number {
   }
 
   // Calculate from components
-  const itemBaseTotal = item.price * item.quantity
+  // Weight-based items: unitPrice * weight * quantity (instead of price * quantity)
+  const itemBaseTotal = (item.soldByWeight && item.weight && item.unitPrice)
+    ? item.unitPrice * item.weight * item.quantity
+    : item.price * item.quantity
 
   const modifiersTotal = (item.modifiers || []).reduce((sum, mod) => {
     return sum + (mod.price * (mod.quantity || 1))
@@ -117,6 +125,7 @@ function buildTotalsCacheKey(
     items.map(i => [
       i.price, i.quantity, i.status ?? 'active', i.itemTotal ?? null,
       i.commissionAmount ?? null, i.isTaxInclusive ?? false,
+      i.soldByWeight ?? false, i.weight ?? null, i.unitPrice ?? null,
       (i.modifiers || []).map(m => [m.price, m.quantity ?? 1]),
       (i.ingredientModifications || []).map(im => im.priceAdjustment),
     ]),

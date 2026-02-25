@@ -29,6 +29,10 @@ interface ItemSettings {
   // Commission
   commissionType: string | null
   commissionValue: number | null
+  // Weight-Based Selling
+  soldByWeight: boolean
+  weightUnit: string | null
+  pricePerWeightUnit: number | null
 }
 
 interface ItemSettingsModalProps {
@@ -77,6 +81,10 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
   // Commission
   const [commissionType, setCommissionType] = useState('')
   const [commissionValue, setCommissionValue] = useState('')
+  // Weight-Based Selling
+  const [soldByWeight, setSoldByWeight] = useState(false)
+  const [weightUnit, setWeightUnit] = useState('lb')
+  const [pricePerWeightUnit, setPricePerWeightUnit] = useState('')
 
   // Fetch full item data on mount
   useEffect(() => {
@@ -109,6 +117,9 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
         }
         setCommissionType(it.commissionType || '')
         setCommissionValue(it.commissionValue != null ? String(it.commissionValue) : '')
+        setSoldByWeight(it.soldByWeight ?? false)
+        setWeightUnit(it.weightUnit || 'lb')
+        setPricePerWeightUnit(it.pricePerWeightUnit != null ? String(it.pricePerWeightUnit) : '')
 
         // Auto-focus name if new item
         if (it.name === 'New Item') {
@@ -211,6 +222,10 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
         availableDays: availableDays.size > 0 ? Array.from(availableDays).join(',') : null,
         commissionType: commissionType || null,
         commissionValue: commissionValue ? parseFloat(commissionValue) : null,
+        // Weight-Based Selling
+        soldByWeight,
+        weightUnit: soldByWeight ? weightUnit : null,
+        pricePerWeightUnit: soldByWeight && pricePerWeightUnit ? parseFloat(pricePerWeightUnit) : null,
       }
 
       const res = await fetch(`/api/menu/items/${itemId}`, {
@@ -338,6 +353,49 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
                       </div>
                       <p className="text-[11px] text-gray-400 mt-0.5">Auto-calculated from cash discount settings.</p>
                     </div>
+                  </div>
+
+                  {/* Sold by Weight Toggle */}
+                  <div className="border border-gray-200 rounded-xl p-3 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={soldByWeight}
+                        onChange={(e) => setSoldByWeight(e.target.checked)}
+                        className="w-4 h-4 rounded"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Sold by Weight</span>
+                      <span className="text-[11px] text-gray-400">(requires scale)</span>
+                    </label>
+                    {soldByWeight && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelClass}>Weight Unit</label>
+                          <select
+                            value={weightUnit}
+                            onChange={(e) => setWeightUnit(e.target.value)}
+                            className={inputClass}
+                          >
+                            <option value="lb">Pounds (lb)</option>
+                            <option value="kg">Kilograms (kg)</option>
+                            <option value="oz">Ounces (oz)</option>
+                            <option value="g">Grams (g)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Price per {weightUnit}</label>
+                          <input
+                            type="number"
+                            value={pricePerWeightUnit}
+                            onChange={(e) => setPricePerWeightUnit(e.target.value)}
+                            placeholder="e.g. 5.99"
+                            step="0.01"
+                            min="0"
+                            className={inputClass}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Ingredient Cost Breakdown — collapsible */}

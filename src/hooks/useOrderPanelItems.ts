@@ -65,6 +65,11 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string }
         delayFiredAt: item.delayFiredAt,
         itemDiscounts: item.itemDiscounts,
         itemTotal: item.itemTotal,
+        // Weight-based selling
+        soldByWeight: item.soldByWeight,
+        weight: item.weight,
+        weightUnit: item.weightUnit,
+        unitPrice: item.unitPrice,
       }
     })
   }, [items, menuItems])

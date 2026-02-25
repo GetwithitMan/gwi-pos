@@ -36,6 +36,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             lastSeenAt: true,
           },
         },
+        scale: {
+          select: {
+            id: true,
+            name: true,
+            portPath: true,
+            isConnected: true,
+          },
+        },
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
@@ -59,6 +67,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       staticIp,
       receiptPrinterId,
       roleSkipRules,
+      scaleId,
     } = body
 
     if (!locationId) {
@@ -119,6 +128,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         staticIp: staticIp || null,
         receiptPrinterId: receiptPrinterId || null,
         roleSkipRules: roleSkipRules || {},
+        scaleId: scaleId || null,
       },
       include: {
         receiptPrinter: {

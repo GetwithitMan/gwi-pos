@@ -50,6 +50,11 @@ export interface OrderPanelItemData {
   }>
   // itemTotal from DB (used for discount display)
   itemTotal?: number
+  // Weight-based selling (scale integration)
+  soldByWeight?: boolean
+  weight?: number | null
+  weightUnit?: string | null
+  unitPrice?: number | null
 }
 
 interface OrderPanelItemProps {
@@ -641,6 +646,18 @@ export const OrderPanelItem = memo(function OrderPanelItem({
               </button>
             )}
           </div>
+
+          {/* Weight-based item info line */}
+          {item.soldByWeight && item.weight != null && item.unitPrice != null && (
+            <div style={{
+              fontSize: '11px',
+              color: '#94a3b8',
+              paddingLeft: '2px',
+              marginTop: '2px',
+            }}>
+              {item.weight.toFixed(2)} {item.weightUnit || 'lb'} @ ${item.unitPrice.toFixed(2)}/{item.weightUnit || 'lb'}
+            </div>
+          )}
 
           {/* Ingredient modifications — base item customizations (No, Lite, Extra, On Side, Swap) */}
           {item.ingredientModifications && item.ingredientModifications.length > 0 && (

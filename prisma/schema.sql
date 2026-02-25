@@ -92,6 +92,7 @@ CREATE TABLE "Employee" (
     "zipCode" TEXT,
     "pin" TEXT NOT NULL,
     "password" TEXT,
+    "requiresPinChange" BOOLEAN NOT NULL DEFAULT false,
     "hourlyRate" DECIMAL(65,30),
     "hireDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -364,6 +365,9 @@ CREATE TABLE "MenuItem" (
     "pourSizes" JSONB,
     "defaultPourSize" TEXT,
     "applyPourToModifiers" BOOLEAN NOT NULL DEFAULT false,
+    "soldByWeight" BOOLEAN NOT NULL DEFAULT false,
+    "weightUnit" TEXT,
+    "pricePerWeightUnit" DECIMAL(65,30),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -565,6 +569,7 @@ CREATE TABLE "Table" (
     "defaultPosY" INTEGER,
     "defaultSectionId" TEXT,
     "isLocked" BOOLEAN NOT NULL DEFAULT false,
+    "version" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -772,6 +777,12 @@ CREATE TABLE "OrderItem" (
     "status" TEXT NOT NULL DEFAULT 'active',
     "voidReason" TEXT,
     "wasMade" BOOLEAN,
+    "soldByWeight" BOOLEAN NOT NULL DEFAULT false,
+    "weight" DECIMAL(65,30),
+    "weightUnit" TEXT,
+    "unitPrice" DECIMAL(65,30),
+    "grossWeight" DECIMAL(65,30),
+    "tareWeight" DECIMAL(65,30),
     "modifierTotal" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "itemTotal" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "commissionAmount" DECIMAL(65,30),
@@ -1380,9 +1391,11 @@ CREATE TABLE "OrderOwnership" (
 -- CreateTable
 CREATE TABLE "OrderOwnershipEntry" (
     "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
     "orderOwnershipId" TEXT NOT NULL,
     "employeeId" TEXT NOT NULL,
     "sharePercent" DOUBLE PRECISION NOT NULL,
+    "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "OrderOwnershipEntry_pkey" PRIMARY KEY ("id")
 );
@@ -1569,6 +1582,7 @@ CREATE TABLE "Seat" (
     "lastOccupiedAt" TIMESTAMP(3),
     "lastOccupiedBy" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "version" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2471,6 +2485,7 @@ CREATE TABLE "ModifierGroupTemplate" (
 -- CreateTable
 CREATE TABLE "ModifierTemplate" (
     "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
     "templateId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "price" DECIMAL(65,30) NOT NULL DEFAULT 0,
@@ -2483,6 +2498,7 @@ CREATE TABLE "ModifierTemplate" (
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
 
     CONSTRAINT "ModifierTemplate_pkey" PRIMARY KEY ("id")
 );
@@ -2636,6 +2652,10 @@ CREATE TABLE "Terminal" (
     "deviceFingerprint" TEXT,
     "lastKnownIp" TEXT,
     "deviceInfo" JSONB,
+    "platform" TEXT NOT NULL DEFAULT 'BROWSER',
+    "appVersion" TEXT,
+    "osVersion" TEXT,
+    "pushToken" TEXT,
     "receiptPrinterId" TEXT,
     "roleSkipRules" JSONB,
     "forceAllPrints" BOOLEAN NOT NULL DEFAULT false,
@@ -2649,6 +2669,7 @@ CREATE TABLE "Terminal" (
     "paymentProvider" TEXT NOT NULL DEFAULT 'SIMULATED',
     "backupPaymentReaderId" TEXT,
     "readerFailoverTimeout" INTEGER NOT NULL DEFAULT 10000,
+    "scaleId" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -2656,6 +2677,32 @@ CREATE TABLE "Terminal" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "Terminal_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Scale" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "scaleType" TEXT NOT NULL DEFAULT 'CAS_PD_II',
+    "portPath" TEXT NOT NULL,
+    "baudRate" INTEGER NOT NULL DEFAULT 9600,
+    "dataBits" INTEGER NOT NULL DEFAULT 7,
+    "parity" TEXT NOT NULL DEFAULT 'even',
+    "stopBits" INTEGER NOT NULL DEFAULT 1,
+    "maxCapacity" DECIMAL(65,30),
+    "weightUnit" TEXT NOT NULL DEFAULT 'lb',
+    "precision" INTEGER NOT NULL DEFAULT 2,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "isConnected" BOOLEAN NOT NULL DEFAULT false,
+    "lastSeenAt" TIMESTAMP(3),
+    "lastError" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "Scale_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -3490,6 +3537,7 @@ CREATE TABLE "ServerRegistrationToken" (
 CREATE TABLE "cloud_event_queue" (
     "id" TEXT NOT NULL,
     "venueId" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
     "eventType" TEXT NOT NULL,
     "body" JSONB NOT NULL,
     "nextRetryAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -3922,9 +3970,6 @@ CREATE INDEX "Order_locationId_createdAt_status_idx" ON "Order"("locationId", "c
 CREATE INDEX "Order_locationId_businessDayDate_idx" ON "Order"("locationId", "businessDayDate");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Order_locationId_orderNumber_key" ON "Order"("locationId", "orderNumber");
-
--- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
 
 -- CreateIndex
@@ -4301,6 +4346,9 @@ CREATE INDEX "OrderOwnership_orderId_idx" ON "OrderOwnership"("orderId");
 
 -- CreateIndex
 CREATE INDEX "OrderOwnership_locationId_idx" ON "OrderOwnership"("locationId");
+
+-- CreateIndex
+CREATE INDEX "OrderOwnershipEntry_locationId_idx" ON "OrderOwnershipEntry"("locationId");
 
 -- CreateIndex
 CREATE INDEX "OrderOwnershipEntry_orderOwnershipId_idx" ON "OrderOwnershipEntry"("orderOwnershipId");
@@ -4804,6 +4852,9 @@ CREATE INDEX "ModifierGroupTemplate_locationId_idx" ON "ModifierGroupTemplate"("
 CREATE UNIQUE INDEX "ModifierGroupTemplate_locationId_name_key" ON "ModifierGroupTemplate"("locationId", "name");
 
 -- CreateIndex
+CREATE INDEX "ModifierTemplate_locationId_idx" ON "ModifierTemplate"("locationId");
+
+-- CreateIndex
 CREATE INDEX "ModifierTemplate_templateId_idx" ON "ModifierTemplate"("templateId");
 
 -- CreateIndex
@@ -4888,7 +4939,22 @@ CREATE INDEX "Terminal_backupTerminalId_idx" ON "Terminal"("backupTerminalId");
 CREATE INDEX "Terminal_paymentReaderId_idx" ON "Terminal"("paymentReaderId");
 
 -- CreateIndex
+CREATE INDEX "Terminal_scaleId_idx" ON "Terminal"("scaleId");
+
+-- CreateIndex
+CREATE INDEX "Terminal_platform_idx" ON "Terminal"("platform");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Terminal_locationId_name_key" ON "Terminal"("locationId", "name");
+
+-- CreateIndex
+CREATE INDEX "Scale_locationId_idx" ON "Scale"("locationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Scale_locationId_name_key" ON "Scale"("locationId", "name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Scale_locationId_portPath_key" ON "Scale"("locationId", "portPath");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "PaymentReader_serialNumber_key" ON "PaymentReader"("serialNumber");
@@ -5293,6 +5359,9 @@ CREATE INDEX "ServerRegistrationToken_locationId_idx" ON "ServerRegistrationToke
 CREATE INDEX "ServerRegistrationToken_locationId_status_expiresAt_idx" ON "ServerRegistrationToken"("locationId", "status", "expiresAt");
 
 -- CreateIndex
+CREATE INDEX "cloud_event_queue_locationId_idx" ON "cloud_event_queue"("locationId");
+
+-- CreateIndex
 CREATE INDEX "cloud_event_queue_nextRetryAt_idx" ON "cloud_event_queue"("nextRetryAt");
 
 -- CreateIndex
@@ -5536,7 +5605,7 @@ ALTER TABLE "Order" ADD CONSTRAINT "Order_tableId_fkey" FOREIGN KEY ("tableId") 
 ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -5548,7 +5617,7 @@ ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_sourceTableId_fkey" FOREIGN KE
 ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_modifierId_fkey" FOREIGN KEY ("modifierId") REFERENCES "Modifier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -5726,6 +5795,9 @@ ALTER TABLE "OrderOwnership" ADD CONSTRAINT "OrderOwnership_locationId_fkey" FOR
 
 -- AddForeignKey
 ALTER TABLE "OrderOwnership" ADD CONSTRAINT "OrderOwnership_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderOwnershipEntry" ADD CONSTRAINT "OrderOwnershipEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderOwnershipEntry" ADD CONSTRAINT "OrderOwnershipEntry_orderOwnershipId_fkey" FOREIGN KEY ("orderOwnershipId") REFERENCES "OrderOwnership"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -6037,13 +6109,16 @@ ALTER TABLE "MenuItemIngredient" ADD CONSTRAINT "MenuItemIngredient_ingredientId
 ALTER TABLE "ModifierGroupTemplate" ADD CONSTRAINT "ModifierGroupTemplate_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "ModifierTemplate" ADD CONSTRAINT "ModifierTemplate_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ModifierTemplate" ADD CONSTRAINT "ModifierTemplate_templateId_fkey" FOREIGN KEY ("templateId") REFERENCES "ModifierGroupTemplate"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderItemIngredient" ADD CONSTRAINT "OrderItemIngredient_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderItemIngredient" ADD CONSTRAINT "OrderItemIngredient_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "OrderItemIngredient" ADD CONSTRAINT "OrderItemIngredient_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Printer" ADD CONSTRAINT "Printer_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -6080,6 +6155,12 @@ ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_paymentReaderId_fkey" FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_backupPaymentReaderId_fkey" FOREIGN KEY ("backupPaymentReaderId") REFERENCES "PaymentReader"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_scaleId_fkey" FOREIGN KEY ("scaleId") REFERENCES "Scale"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Scale" ADD CONSTRAINT "Scale_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PaymentReader" ADD CONSTRAINT "PaymentReader_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -6169,7 +6250,7 @@ ALTER TABLE "PizzaSpecialty" ADD CONSTRAINT "PizzaSpecialty_defaultCheeseId_fkey
 ALTER TABLE "OrderItemPizza" ADD CONSTRAINT "OrderItemPizza_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderItemPizza" ADD CONSTRAINT "OrderItemPizza_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "OrderItemPizza" ADD CONSTRAINT "OrderItemPizza_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderItemPizza" ADD CONSTRAINT "OrderItemPizza_sizeId_fkey" FOREIGN KEY ("sizeId") REFERENCES "PizzaSize"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -6277,7 +6358,7 @@ ALTER TABLE "DailyPrepCountTransaction" ADD CONSTRAINT "DailyPrepCountTransactio
 ALTER TABLE "OrderCard" ADD CONSTRAINT "OrderCard_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OrderCard" ADD CONSTRAINT "OrderCard_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "OrderCard" ADD CONSTRAINT "OrderCard_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "DigitalReceipt" ADD CONSTRAINT "DigitalReceipt_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -6308,6 +6389,9 @@ ALTER TABLE "HealthCheck" ADD CONSTRAINT "HealthCheck_locationId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "ServerRegistrationToken" ADD CONSTRAINT "ServerRegistrationToken_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "cloud_event_queue" ADD CONSTRAINT "cloud_event_queue_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RefundLog" ADD CONSTRAINT "RefundLog_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

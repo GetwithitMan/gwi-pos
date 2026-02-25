@@ -37,6 +37,11 @@ interface KDSItem {
   courseStatus: string
   isHeld: boolean
   firedAt: string | null
+  // Weight-based item fields
+  soldByWeight?: boolean
+  weight?: number | null
+  weightUnit?: string | null
+  tareWeight?: number | null
   modifiers: { id: string; name: string; depth?: number }[]
   ingredientModifications: IngredientMod[]
 }
@@ -773,7 +778,13 @@ function KDSContent() {
                               {item.seatNumber && (
                                 <span className="text-purple-400 font-bold mr-1">S{item.seatNumber}:</span>
                               )}
-                              <span className="text-blue-400 mr-2">{item.quantity}x</span>
+                              {item.soldByWeight && item.weight != null ? (
+                                <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs font-bold mr-2">
+                                  {Number(item.weight).toFixed(2)} {item.weightUnit || 'lb'}
+                                </span>
+                              ) : (
+                                <span className="text-blue-400 mr-2">{item.quantity}x</span>
+                              )}
                               {item.name}
                               {/* Course badge (T013) */}
                               {item.courseNumber != null && item.courseNumber >= 0 && (

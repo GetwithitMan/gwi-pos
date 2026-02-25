@@ -42,6 +42,14 @@ export const GET = withVenue(async function GET(
             isOnline: true,
           },
         },
+        scale: {
+          select: {
+            id: true,
+            name: true,
+            portPath: true,
+            isConnected: true,
+          },
+        },
       },
     })
 
@@ -82,6 +90,8 @@ export const PUT = withVenue(async function PUT(
       paymentProvider,
       backupPaymentReaderId,
       readerFailoverTimeout,
+      // Scale binding
+      scaleId,
     } = body
 
     // Check terminal exists
@@ -164,6 +174,16 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
+    // Validate scale if provided
+    if (scaleId) {
+      const scale = await db.scale.findFirst({
+        where: { id: scaleId, deletedAt: null },
+      })
+      if (!scale) {
+        return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
+      }
+    }
+
     // Validate payment provider if provided
     if (paymentProvider && !['DATACAP_DIRECT', 'SIMULATED'].includes(paymentProvider)) {
       return NextResponse.json(
@@ -191,6 +211,8 @@ export const PUT = withVenue(async function PUT(
         ...(paymentProvider !== undefined && { paymentProvider }),
         ...(backupPaymentReaderId !== undefined && { backupPaymentReaderId: backupPaymentReaderId || null }),
         ...(readerFailoverTimeout !== undefined && { readerFailoverTimeout }),
+        // Scale binding
+        ...(scaleId !== undefined && { scaleId: scaleId || null }),
       },
       include: {
         receiptPrinter: {
@@ -227,6 +249,14 @@ export const PUT = withVenue(async function PUT(
             name: true,
             ipAddress: true,
             isOnline: true,
+          },
+        },
+        scale: {
+          select: {
+            id: true,
+            name: true,
+            portPath: true,
+            isConnected: true,
           },
         },
       },

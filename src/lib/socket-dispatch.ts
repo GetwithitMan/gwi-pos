@@ -16,7 +16,8 @@
  */
 
 import type { RoutingResult } from '@/types/routing'
-import { emitToLocation, emitToTags } from '@/lib/socket-server'
+import type { WeightReading } from '@/lib/scale/scale-protocol'
+import { emitToLocation, emitToTags, emitToRoom } from '@/lib/socket-server'
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 
@@ -62,6 +63,12 @@ export async function dispatchNewOrder(
             isPizza: item.isPizza,
             isBar: item.isBar,
             pizzaData: item.pizzaData,
+            // Weight-based item fields
+            weight: item.weight ? Number(item.weight) : null,
+            weightUnit: item.weightUnit ?? null,
+            unitPrice: item.unitPrice ? Number(item.unitPrice) : null,
+            soldByWeight: item.soldByWeight ?? false,
+            tareWeight: item.tareWeight ? Number(item.tareWeight) : null,
           })),
           referenceItems: manifest.referenceItems.map((item) => ({
             id: item.id,
@@ -944,4 +951,47 @@ export function dispatchCFDReceiptSent(locationId: string, data: {
   total: number
 }): void {
   void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, data).catch(console.error)
+}
+
+// ==================== Scale Events ====================
+
+/**
+ * Dispatch scale weight reading to scale room subscribers
+ *
+ * Called by ScaleService on each parsed weight reading.
+ * Emits to `scale:{scaleId}` room so only terminals watching this scale receive updates.
+ */
+export function dispatchScaleWeight(
+  locationId: string,
+  scaleId: string,
+  reading: WeightReading
+): void {
+  void emitToRoom(`scale:${scaleId}`, 'scale:weight', {
+    scaleId,
+    weight: reading.weight,
+    unit: reading.unit,
+    stable: reading.stable,
+    grossNet: reading.grossNet,
+    overCapacity: reading.overCapacity,
+    timestamp: reading.timestamp.toISOString(),
+  }).catch(console.error)
+}
+
+/**
+ * Dispatch scale connection status change to location room
+ *
+ * Called by ScaleService on connect/disconnect/error events.
+ * All terminals in the location receive status updates.
+ */
+export function dispatchScaleStatus(
+  locationId: string,
+  scaleId: string,
+  status: { connected: boolean; error?: string }
+): void {
+  void emitToLocation(locationId, 'scale:status', {
+    scaleId,
+    connected: status.connected,
+    error: status.error ?? null,
+    timestamp: new Date().toISOString(),
+  }).catch(console.error)
 }

@@ -12,6 +12,12 @@ export interface ReceiptItem {
   specialNotes?: string | null
   status?: string
   seatNumber?: number | null  // For seat assignment
+  // Weight-based item fields
+  soldByWeight?: boolean
+  weight?: number | null
+  weightUnit?: string | null
+  unitPrice?: number | null
+  tareWeight?: number | null
   modifiers?: {
     id: string
     name: string
@@ -176,21 +182,47 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
 
           return (
           <div key={item.id} className="mb-2">
-            <div className="flex justify-between">
-              <span>
-                {positionPrefix && <span className="text-gray-500">{positionPrefix}</span>}
-                {item.quantity > 1 && `${item.quantity}x `}
-                {item.name}
-                {item.status === 'comped' && (
-                  <span className="text-xs text-red-600 ml-1">(COMP)</span>
+            {item.soldByWeight && item.weight != null && item.unitPrice != null ? (
+              <>
+                <div className="flex justify-between">
+                  <span>
+                    {positionPrefix && <span className="text-gray-500">{positionPrefix}</span>}
+                    {item.name}
+                    {item.status === 'comped' && (
+                      <span className="text-xs text-red-600 ml-1">(COMP)</span>
+                    )}
+                  </span>
+                  {showPrices && (
+                    <span className={item.status === 'comped' ? 'line-through text-gray-400' : ''}>
+                      {formatCurrency(item.itemTotal)}
+                    </span>
+                  )}
+                </div>
+                {showPrices && (
+                  <div className="text-xs text-gray-500 pl-2">
+                    {item.weight.toFixed(2)} {item.weightUnit || 'lb'}
+                    {item.tareWeight != null && item.tareWeight > 0 ? ' NET' : ''}
+                    {' '}@ {formatCurrency(item.unitPrice)}/{item.weightUnit || 'lb'}
+                  </div>
                 )}
-              </span>
-              {showPrices && (
-                <span className={item.status === 'comped' ? 'line-through text-gray-400' : ''}>
-                  {formatCurrency(item.itemTotal)}
+              </>
+            ) : (
+              <div className="flex justify-between">
+                <span>
+                  {positionPrefix && <span className="text-gray-500">{positionPrefix}</span>}
+                  {item.quantity > 1 && `${item.quantity}x `}
+                  {item.name}
+                  {item.status === 'comped' && (
+                    <span className="text-xs text-red-600 ml-1">(COMP)</span>
+                  )}
                 </span>
-              )}
-            </div>
+                {showPrices && (
+                  <span className={item.status === 'comped' ? 'line-through text-gray-400' : ''}>
+                    {formatCurrency(item.itemTotal)}
+                  </span>
+                )}
+              </div>
+            )}
             {/* Modifiers */}
             {item.modifiers && item.modifiers.length > 0 && (
               <div className="pl-4 text-xs text-gray-600">

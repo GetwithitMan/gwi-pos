@@ -42,6 +42,10 @@ export interface MenuItem {
   applyPourToModifiers?: boolean
   // Liquor item flag
   isLiquorItem?: boolean
+  // Weight-based selling (scale integration)
+  soldByWeight?: boolean
+  weightUnit?: string | null
+  pricePerWeightUnit?: number | null
 }
 
 /**
