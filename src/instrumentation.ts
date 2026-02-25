@@ -12,7 +12,11 @@ export async function register() {
   // Only install on the Node.js runtime — Edge Runtime does not support process.on
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
 
-  process.on('unhandledRejection', (reason: unknown) => {
+  // Use globalThis.process to avoid Turbopack static analysis flagging
+  // process.exit / process.on as Edge-incompatible at build time
+  const proc = globalThis.process
+
+  proc.on('unhandledRejection', (reason: unknown) => {
     const error = reason instanceof Error ? reason : new Error(String(reason))
     console.error(JSON.stringify({
       level: 'fatal',
@@ -22,10 +26,10 @@ export async function register() {
       timestamp: new Date().toISOString(),
     }))
     // Let the process manager handle restart
-    process.exit(1)
+    proc.exit(1)
   })
 
-  process.on('uncaughtException', (error: Error) => {
+  proc.on('uncaughtException', (error: Error) => {
     console.error(JSON.stringify({
       level: 'fatal',
       event: 'uncaughtException',
@@ -34,6 +38,6 @@ export async function register() {
       timestamp: new Date().toISOString(),
     }))
     // Let the process manager handle restart
-    process.exit(1)
+    proc.exit(1)
   })
 }
