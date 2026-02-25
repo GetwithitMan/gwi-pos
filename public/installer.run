@@ -804,6 +804,26 @@ exit 1
 WAITEOF
   chmod +x /opt/gwi-pos/wait-for-pos.sh
 
+  # Clear Chromium session data — prevents stale "site can't be reached" restore
+  cat > /opt/gwi-pos/clear-kiosk-session.sh <<'CLEAREOF'
+#!/bin/bash
+# Chromium restores previous sessions on launch. If the POS was down when
+# Chromium last ran, it caches the error page and restores it even after
+# the POS comes back up. Wipe session/cache so kiosk always starts fresh.
+SNAP_PROFILE="$HOME/snap/chromium/common/chromium/Default"
+NATIVE_PROFILE="$HOME/.config/chromium/Default"
+for PROFILE in "$SNAP_PROFILE" "$NATIVE_PROFILE"; do
+  if [ -d "$PROFILE" ]; then
+    rm -rf "$PROFILE/Sessions" "$PROFILE/Session Storage" \
+           "$PROFILE/Cache" "$PROFILE/Code Cache" \
+           "$PROFILE/GPUCache" "$PROFILE/DawnGraphiteCache" \
+           "$PROFILE/Service Worker/CacheStorage"
+  fi
+done
+exit 0
+CLEAREOF
+  chmod +x /opt/gwi-pos/clear-kiosk-session.sh
+
   # thepasspos-kiosk.service — Chromium in kiosk mode
   cat > /etc/systemd/system/thepasspos-kiosk.service <<SVCEOF
 [Unit]
@@ -816,6 +836,7 @@ Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
+ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
 ExecStartPre=/opt/gwi-pos/wait-for-pos.sh
 ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 http://localhost:3005
 Restart=always
@@ -1125,6 +1146,7 @@ Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
+ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
 ExecStartPre=/opt/gwi-pos/wait-for-pos.sh $SERVER_URL
 ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 $SERVER_URL
 Restart=always
