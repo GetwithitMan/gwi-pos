@@ -13,6 +13,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not authenticated. Provide Authorization: Bearer {token}' }, { status: 401 })
     }
 
+    // Parse optional body for version info
+    let appVersion: string | undefined
+    try {
+      const body = await request.json()
+      appVersion = body?.appVersion
+    } catch {
+      // No body or invalid JSON — fine, heartbeat still works
+    }
+
     // Get client IP
     const clientIp =
       request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
@@ -72,6 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         isOnline: true,
         lastSeenAt: new Date(),
         lastKnownIp: clientIp,
+        ...(appVersion ? { appVersion } : {}),
       },
     })
 
