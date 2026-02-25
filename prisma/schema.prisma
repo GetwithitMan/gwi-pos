@@ -455,7 +455,7 @@ model Location {
   organization   Organization @relation(fields: [organizationId], references: [id])
 
   name     String
-  slug     String?  @unique // URL-friendly identifier for venue subdomains
+  slug     String? @unique // URL-friendly identifier for venue subdomains
   address  String?
   phone    String?
   timezone String  @default("America/New_York")
@@ -490,9 +490,9 @@ model Location {
   entertainmentWaitlist EntertainmentWaitlist[]
   floorPlanElements     FloorPlanElement[]
   // Seat-Level Ticketing
-  seats   Seat[]
-  events  Event[]
-  tickets Ticket[]
+  seats                 Seat[]
+  events                Event[]
+  tickets               Ticket[]
 
   // Liquor Builder (Skill: Liquor)
   spiritCategories   SpiritCategory[]
@@ -506,24 +506,24 @@ model Location {
   tipPoolEntries TipPoolEntry[]
 
   // Tip Bank Ledger (Skill 250)
-  tipLedgers        TipLedger[]
-  tipLedgerEntries  TipLedgerEntry[]
-  tipTransactions   TipTransaction[]
+  tipLedgers       TipLedger[]
+  tipLedgerEntries TipLedgerEntry[]
+  tipTransactions  TipTransaction[]
 
   // Tip Groups (Skill 252)
-  tipGroupTemplates      TipGroupTemplate[]
-  tipGroups              TipGroup[]
-  tipGroupMemberships    TipGroupMembership[]
-  tipGroupSegments       TipGroupSegment[]
-  orderOwnerships        OrderOwnership[]
-  orderOwnershipEntries  OrderOwnershipEntry[]
+  tipGroupTemplates     TipGroupTemplate[]
+  tipGroups             TipGroup[]
+  tipGroupMemberships   TipGroupMembership[]
+  tipGroupSegments      TipGroupSegment[]
+  orderOwnerships       OrderOwnership[]
+  orderOwnershipEntries OrderOwnershipEntry[]
 
   // Tip Adjustments & Compliance (Skills 256, 259)
-  tipAdjustments         TipAdjustment[]
-  cashTipDeclarations    CashTipDeclaration[]
+  tipAdjustments      TipAdjustment[]
+  cashTipDeclarations CashTipDeclaration[]
 
   // Tip Debt (Skill 278 - Chargeback Remainder)
-  tipDebts               TipDebt[]
+  tipDebts TipDebt[]
 
   // Order Details (multi-tenancy)
   orderItems         OrderItem[]
@@ -532,7 +532,7 @@ model Location {
   payments           Payment[]
 
   // Menu Details (multi-tenancy)
-  modifiers              Modifier[]
+  modifiers Modifier[]
 
   // Combos (multi-tenancy)
   comboTemplates        ComboTemplate[]
@@ -540,15 +540,15 @@ model Location {
   comboComponentOptions ComboComponentOption[]
 
   // Multi-role support (multi-tenancy)
-  employeeRoles        EmployeeRole[]
+  employeeRoles EmployeeRole[]
 
   // Operations (multi-tenancy)
-  paidInOuts           PaidInOut[]
-  sectionAssignments   SectionAssignment[]
-  voidLogs             VoidLog[]
-  refundLogs           RefundLog[]
-  breaks               Break[]
-  remoteVoidApprovals  RemoteVoidApproval[]
+  paidInOuts          PaidInOut[]
+  sectionAssignments  SectionAssignment[]
+  voidLogs            VoidLog[]
+  refundLogs          RefundLog[]
+  breaks              Break[]
+  remoteVoidApprovals RemoteVoidApproval[]
 
   // Transactions (multi-tenancy)
   couponRedemptions        CouponRedemption[]
@@ -590,12 +590,12 @@ model Location {
   spiritModifierGroups SpiritModifierGroup[]
 
   // Menu Item Ingredients (multi-tenancy)
-  ingredientCategories    IngredientCategory[]
-  ingredientSwapGroups    IngredientSwapGroup[]
-  ingredients             Ingredient[]
-  ingredientRecipes       IngredientRecipe[]
-  menuItemIngredients     MenuItemIngredient[]
-  orderItemIngredients    OrderItemIngredient[]
+  ingredientCategories IngredientCategory[]
+  ingredientSwapGroups IngredientSwapGroup[]
+  ingredients          Ingredient[]
+  ingredientRecipes    IngredientRecipe[]
+  menuItemIngredients  MenuItemIngredient[]
+  orderItemIngredients OrderItemIngredient[]
 
   // Modifier Group Templates (for quick item-specific group creation)
   modifierGroupTemplates ModifierGroupTemplate[]
@@ -618,10 +618,10 @@ model Location {
   orderCards OrderCard[]
 
   // Datacap Advanced Features (Sprint 3)
-  digitalReceipts  DigitalReceipt[]
-  chargebackCases  ChargebackCase[]
-  cardProfiles     CardProfile[]
-  walkoutRetries   WalkoutRetry[]
+  digitalReceipts DigitalReceipt[]
+  chargebackCases ChargebackCase[]
+  cardProfiles    CardProfile[]
+  walkoutRetries  WalkoutRetry[]
 
   // Sync Audit
   syncAuditEntries SyncAuditEntry[]
@@ -652,11 +652,11 @@ model Location {
   courseConfigs CourseConfig[]
 
   // Daily Prep Counting
-  prepTrayConfigs              PrepTrayConfig[]
-  dailyPrepCounts              DailyPrepCount[]
-  dailyPrepCountItems          DailyPrepCountItem[]
-  dailyPrepCountTransactions   DailyPrepCountTransaction[]
-  ingredientStockAdjustments   IngredientStockAdjustment[]
+  prepTrayConfigs            PrepTrayConfig[]
+  dailyPrepCounts            DailyPrepCount[]
+  dailyPrepCountItems        DailyPrepCountItem[]
+  dailyPrepCountTransactions DailyPrepCountTransaction[]
+  ingredientStockAdjustments IngredientStockAdjustment[]
 
   // Bottle Service (Phase 10)
   bottleServiceTiers BottleServiceTier[]
@@ -677,7 +677,7 @@ model Location {
   mobileSessions    MobileSession[]
 
   // C-SCHEMA-1: Added reverse relations
-  timedSessions          TimedSession[]
+  timedSessions TimedSession[]
 
   @@index([organizationId])
 }
@@ -713,9 +713,9 @@ model Customer {
   marketingOptIn Boolean   @default(false)
   birthday       DateTime?
 
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -750,14 +750,14 @@ model Role {
 
   // Tip configuration
   isTipped  Boolean @default(false) // Is this a tipped position?
-  tipWeight Decimal @default(1.0)   // Weight for role-weighted tip group splits (e.g., 1.5 for lead bartender)
+  tipWeight Decimal @default(1.0) // Weight for role-weighted tip group splits (e.g., 1.5 for lead bartender)
 
   // Cash handling configuration
-  cashHandlingMode CashHandlingMode  @default(drawer)
-  trackLaborCost   Boolean @default(true)      // Include hours in labor cost reports
+  cashHandlingMode CashHandlingMode @default(drawer)
+  trackLaborCost   Boolean          @default(true) // Include hours in labor cost reports
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -795,13 +795,13 @@ model Employee {
   phone       String?
 
   // Address (for tax documents like W-2)
-  address  String?
-  city     String?
-  state    String?
-  zipCode  String?
+  address String?
+  city    String?
+  state   String?
+  zipCode String?
 
   // Authentication
-  pin               String  // 4-6 digit PIN (hashed)
+  pin               String // 4-6 digit PIN (hashed)
   password          String? // Optional password for admin access (hashed)
   requiresPinChange Boolean @default(false) // True when provisioned with default PIN
 
@@ -811,14 +811,14 @@ model Employee {
   isActive   Boolean  @default(true)
 
   // Tax Information (W-4 data)
-  federalFilingStatus          String?  // 'single' | 'married' | 'head_of_household'
-  federalAllowances            Int      @default(0)
-  additionalFederalWithholding Decimal  @default(0)
-  stateFilingStatus            String?  // State-specific filing status
-  stateAllowances              Int      @default(0)
-  additionalStateWithholding   Decimal  @default(0)
-  isExemptFromFederalTax       Boolean  @default(false)
-  isExemptFromStateTax         Boolean  @default(false)
+  federalFilingStatus          String? // 'single' | 'married' | 'head_of_household'
+  federalAllowances            Int     @default(0)
+  additionalFederalWithholding Decimal @default(0)
+  stateFilingStatus            String? // State-specific filing status
+  stateAllowances              Int     @default(0)
+  additionalStateWithholding   Decimal @default(0)
+  isExemptFromFederalTax       Boolean @default(false)
+  isExemptFromStateTax         Boolean @default(false)
 
   // Payment Preferences
   paymentMethod     String? // 'direct_deposit' | 'check' | 'cash'
@@ -829,17 +829,17 @@ model Employee {
   bankAccountLast4  String? // Last 4 digits for display
 
   // Year-to-Date Tracking (reset annually)
-  ytdGrossEarnings  Decimal @default(0) // Total gross (wages + tips + commission)
-  ytdGrossWages     Decimal @default(0)
-  ytdTips           Decimal @default(0)
-  ytdCommission     Decimal @default(0)
-  ytdTaxesWithheld  Decimal @default(0) // Total taxes (federal + state + FICA)
-  ytdFederalTax     Decimal @default(0)
-  ytdStateTax       Decimal @default(0)
-  ytdLocalTax       Decimal @default(0)
-  ytdSocialSecurity Decimal @default(0)
-  ytdMedicare       Decimal @default(0)
-  ytdNetPay         Decimal @default(0)
+  ytdGrossEarnings  Decimal   @default(0) // Total gross (wages + tips + commission)
+  ytdGrossWages     Decimal   @default(0)
+  ytdTips           Decimal   @default(0)
+  ytdCommission     Decimal   @default(0)
+  ytdTaxesWithheld  Decimal   @default(0) // Total taxes (federal + state + FICA)
+  ytdFederalTax     Decimal   @default(0)
+  ytdStateTax       Decimal   @default(0)
+  ytdLocalTax       Decimal   @default(0)
+  ytdSocialSecurity Decimal   @default(0)
+  ytdMedicare       Decimal   @default(0)
+  ytdNetPay         Decimal   @default(0)
   ytdLastUpdated    DateTime?
 
   // Settings
@@ -850,15 +850,15 @@ model Employee {
   posLayoutSettings Json? // Bar/Food mode, favorites, category order
 
   // Default screen after login: 'orders' | 'bar' | 'kds'
-  defaultScreen     String?   @default("orders")
+  defaultScreen    String? @default("orders")
   // Default order type slug to pre-select
-  defaultOrderType  String?
+  defaultOrderType String?
 
   // Room Order Preferences (for POS floor plan)
   preferredRoomOrder String? // JSON array of room IDs: ["room-1", "room-3", "room-2"]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -873,11 +873,11 @@ model Employee {
   refundLogs       RefundLog[]
 
   // Tip sharing relations
-  tipSharesGiven    TipShare[] @relation("TipShareFrom")
-  tipSharesReceived TipShare[] @relation("TipShareTo")
+  tipSharesGiven    TipShare[]       @relation("TipShareFrom")
+  tipSharesReceived TipShare[]       @relation("TipShareTo")
   // Tip Bank Ledger (Skill 250)
-  tipLedgers       TipLedger[]
-  tipLedgerEntries TipLedgerEntry[]
+  tipLedgers        TipLedger[]
+  tipLedgerEntries  TipLedgerEntry[]
 
   // Tip Groups (Skill 252)
   tipGroupMemberships TipGroupMembership[]
@@ -886,15 +886,15 @@ model Employee {
   orderOwnershipEntries OrderOwnershipEntry[]
 
   // Tip Adjustments & Compliance (Skills 256, 259)
-  tipAdjustments       TipAdjustment[]
-  cashTipDeclarations  CashTipDeclaration[]
+  tipAdjustments      TipAdjustment[]
+  cashTipDeclarations CashTipDeclaration[]
 
   // Tip Debt (Skill 278 - Chargeback Remainder)
-  tipDebts             TipDebt[]
+  tipDebts TipDebt[]
 
   // Payroll & Scheduling
-  payStubs           PayStub[]
-  scheduledShifts    ScheduledShift[]
+  payStubs            PayStub[]
+  scheduledShifts     ScheduledShift[]
   availabilityEntries AvailabilityEntry[]
 
   // Remote void approval relations
@@ -919,32 +919,32 @@ model Employee {
   mobileSessions MobileSession[]
 
   // Shift Swap relations
-  initiatedSwapRequests   ShiftSwapRequest[] @relation("SwapInitiator")
-  receivedSwapRequests    ShiftSwapRequest[] @relation("SwapTarget")
-  approvedSwapRequests    ShiftSwapRequest[] @relation("SwapApprover")
+  initiatedSwapRequests ShiftSwapRequest[] @relation("SwapInitiator")
+  receivedSwapRequests  ShiftSwapRequest[] @relation("SwapTarget")
+  approvedSwapRequests  ShiftSwapRequest[] @relation("SwapApprover")
 
   // C-SCHEMA-1: Added reverse relations
-  paidInOutsProcessed PaidInOut[] @relation("PaidInOutEmployee")
-  paidInOutsApproved   PaidInOut[] @relation("PaidInOutApprover")
-  addedOrderItems      OrderItem[] @relation("OrderItemAddedBy")
-  payments             Payment[] @relation("PaymentEmployee")
-  upsellEvents       UpsellEvent[]
-  voidLogsApproved   VoidLog[] @relation("VoidLogApprover")
-  tipGroupsCreated   TipGroup[] @relation("TipGroupCreatedBy")
-  tipGroupsOwned     TipGroup[] @relation("TipGroupOwner")
-  orderOwnershipsCreated OrderOwnership[] @relation("OrderOwnershipCreatedBy")
-  giftCardsSold    GiftCard[] @relation("GiftCardSoldBy")
-  giftCardTransactions GiftCardTransaction[] @relation("GiftCardTransactionEmployee")
+  paidInOutsProcessed          PaidInOut[]               @relation("PaidInOutEmployee")
+  paidInOutsApproved           PaidInOut[]               @relation("PaidInOutApprover")
+  addedOrderItems              OrderItem[]               @relation("OrderItemAddedBy")
+  payments                     Payment[]                 @relation("PaymentEmployee")
+  upsellEvents                 UpsellEvent[]
+  voidLogsApproved             VoidLog[]                 @relation("VoidLogApprover")
+  tipGroupsCreated             TipGroup[]                @relation("TipGroupCreatedBy")
+  tipGroupsOwned               TipGroup[]                @relation("TipGroupOwner")
+  orderOwnershipsCreated       OrderOwnership[]          @relation("OrderOwnershipCreatedBy")
+  giftCardsSold                GiftCard[]                @relation("GiftCardSoldBy")
+  giftCardTransactions         GiftCardTransaction[]     @relation("GiftCardTransactionEmployee")
   houseAccountTransactions_emp HouseAccountTransaction[] @relation("HouseAcctTxnEmployee")
-  timedSessionsStarted TimedSession[] @relation("TimedSessionStartedBy")
-  timedSessionsEnded   TimedSession[] @relation("TimedSessionEndedBy")
-  breaks              Break[]
-  invoicesEntered  Invoice[] @relation("InvoiceEnteredBy")
-  wasteLogEntries  WasteLogEntry[] @relation("WasteLogEmployee")
-  spiritUpsellEvents  SpiritUpsellEvent[] @relation("SpiritUpsellEmployee")
-  refundLogsApproved RefundLog[] @relation("RefundLogApprover")
-  itemDiscountsApplied OrderItemDiscount[] @relation("ItemDiscountAppliedBy")
-  registeredDevices RegisteredDevice[] @relation("RegisteredDeviceEmployee")
+  timedSessionsStarted         TimedSession[]            @relation("TimedSessionStartedBy")
+  timedSessionsEnded           TimedSession[]            @relation("TimedSessionEndedBy")
+  breaks                       Break[]
+  invoicesEntered              Invoice[]                 @relation("InvoiceEnteredBy")
+  wasteLogEntries              WasteLogEntry[]           @relation("WasteLogEmployee")
+  spiritUpsellEvents           SpiritUpsellEvent[]       @relation("SpiritUpsellEmployee")
+  refundLogsApproved           RefundLog[]               @relation("RefundLogApprover")
+  itemDiscountsApplied         OrderItemDiscount[]       @relation("ItemDiscountAppliedBy")
+  registeredDevices            RegisteredDevice[]        @relation("RegisteredDeviceEmployee")
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -1016,11 +1016,12 @@ model TimeClockEntry {
   selectedTipGroupId String?
   selectedTipGroup   TipGroup? @relation("ClockEntryTipGroup", fields: [selectedTipGroupId], references: [id])
 
-  // Reverse relation
+  // Reverse relations
   shifts Shift[]
+  breaks Break[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1064,7 +1065,7 @@ model Shift {
   netTips     Decimal? // Tips kept (gross - tipOut)
 
   notes  String?
-  status ShiftStatus  @default(open)
+  status ShiftStatus @default(open)
 
   // Link to time clock entry
   timeClockEntryId String?
@@ -1078,8 +1079,8 @@ model Shift {
   drawerId String?
   drawer   Drawer? @relation(fields: [drawerId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1093,7 +1094,8 @@ model Shift {
   // @@index([locationId]) — removed: redundant with compound indexes below
 
   // C-SCHEMA-1: Added reverse relations
-  payments   Payment[] @relation("PaymentShift")
+  payments Payment[] @relation("PaymentShift")
+
   @@index([employeeId])
   @@index([startedAt])
   @@index([timeClockEntryId])
@@ -1112,8 +1114,8 @@ model Drawer {
   deviceId String? // Associated terminal
   isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1124,7 +1126,7 @@ model Drawer {
   shifts Shift[]
 
   // C-SCHEMA-1: Added reverse relations
-  payments   Payment[] @relation("PaymentDrawer")
+  payments Payment[] @relation("PaymentDrawer")
 
   @@index([locationId])
 }
@@ -1182,8 +1184,8 @@ model PrepStation {
   showAllItems Boolean @default(false) // Expo sees all items
   autoComplete Int? // Auto-complete after X seconds (for non-interactive)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1208,17 +1210,17 @@ model CourseConfig {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
-  courseNumber  Int    // 1, 2, 3, 4, 5
+  courseNumber  Int // 1, 2, 3, 4, 5
   name          String // "Appetizers", "Soup/Salad", "Entrees", "Dessert", "After-Dinner"
   displayName   String? // Optional custom display name
   color         String? // Badge color (hex)
-  autoFireDelay Int?   // Minutes after previous course to auto-fire (null = manual only)
+  autoFireDelay Int? // Minutes after previous course to auto-fire (null = manual only)
 
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1269,8 +1271,8 @@ model Category {
   // JSON array of route tags, e.g., ["grill", "made-to-order"]
   routeTags Json?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1303,10 +1305,10 @@ model MenuItem {
   imageUrl    String?
 
   // Pricing
-  price       Decimal          // Cash price (or base price if no dual pricing)
-  priceCC     Decimal?         // Credit card price (for dual pricing)
-  cost        Decimal?         // For profit tracking
-  onlinePrice Decimal?         // Online ordering price override (null = use POS price)
+  price       Decimal // Cash price (or base price if no dual pricing)
+  priceCC     Decimal? // Credit card price (for dual pricing)
+  cost        Decimal? // For profit tracking
+  onlinePrice Decimal? // Online ordering price override (null = use POS price)
 
   // Tax
   taxRate     Decimal? // Override location default
@@ -1350,24 +1352,24 @@ model MenuItem {
   comboPrintMode String? // null for non-combos, 'individual' | 'primary' | 'all'
 
   // Timed Rental Pricing (Skill 81) - for pool tables, dart boards, etc.
-  timedPricing   Json? // { per15Min: 5.00, per30Min: 8.00, perHour: 15.00, minimum: 15 }
+  timedPricing     Json? // { per15Min: 5.00, per30Min: 8.00, perHour: 15.00, minimum: 15 }
   // Per-minute pricing (replaces timedPricing JSON)
-  ratePerMinute      Decimal?  // e.g., 0.25 = $0.25/min
-  minimumCharge      Decimal?  // e.g., 15.00 = $15 minimum
-  incrementMinutes   Int?      @default(15)  // Charges in blocks after minimum
-  minimumMinutes Int? // Minimum rental time in minutes
-  graceMinutes   Int? // Grace period before next increment
+  ratePerMinute    Decimal? // e.g., 0.25 = $0.25/min
+  minimumCharge    Decimal? // e.g., 15.00 = $15 minimum
+  incrementMinutes Int?     @default(15) // Charges in blocks after minimum
+  minimumMinutes   Int? // Minimum rental time in minutes
+  graceMinutes     Int? // Grace period before next increment
 
   // Prepaid packages - discounted upfront deals
   // Format: [{ minutes: 30, price: 10, label: "30 Min Deal" }, { minutes: 60, price: 15, label: "1 Hour Special" }]
-  prepaidPackages    Json?
+  prepaidPackages Json?
 
   // Happy Hour - automatic time-based discounts
-  happyHourEnabled   Boolean?  @default(false)
-  happyHourDiscount  Int?      @default(50)  // Percentage off (50 = 50% off)
-  happyHourStart     String?   // "13:00" (1 PM in 24h format)
-  happyHourEnd       String?   // "16:00" (4 PM in 24h format)
-  happyHourDays      Json?     // ["monday", "tuesday", "wednesday", "thursday", "friday"]
+  happyHourEnabled  Boolean? @default(false)
+  happyHourDiscount Int?     @default(50) // Percentage off (50 = 50% off)
+  happyHourStart    String? // "13:00" (1 PM in 24h format)
+  happyHourEnd      String? // "16:00" (4 PM in 24h format)
+  happyHourDays     Json? // ["monday", "tuesday", "wednesday", "thursday", "friday"]
 
   // Entertainment tracking (Skill 94-97)
   entertainmentStatus String? // 'available', 'in_use', 'maintenance'
@@ -1393,23 +1395,23 @@ model MenuItem {
   applyPourToModifiers Boolean @default(false) // Apply pour multiplier to spirit modifiers too
 
   // Weight-Based Selling (Scale Integration)
-  soldByWeight       Boolean  @default(false)  // Item sold by weight instead of quantity
-  weightUnit         String?                    // "lb" | "kg" | "oz" | "g"
-  pricePerWeightUnit Decimal?                   // Price per weight unit (e.g. 5.99/lb)
+  soldByWeight       Boolean  @default(false) // Item sold by weight instead of quantity
+  weightUnit         String? // "lb" | "kg" | "oz" | "g"
+  pricePerWeightUnit Decimal? // Price per weight unit (e.g. 5.99/lb)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
 
   // Relations
-  ownedModifierGroups    ModifierGroup[] @relation("ItemModifierGroups") // Item-specific modifier groups
+  ownedModifierGroups    ModifierGroup[]        @relation("ItemModifierGroups") // Item-specific modifier groups
   orderItems             OrderItem[]
-  upsellTriggers         UpsellConfig[]          @relation("TriggerItem")
-  upsellSuggestions      UpsellConfig[]          @relation("SuggestionItem")
-  comboComponentItems    ComboComponent[]        @relation("ComboComponentItem")
-  comboComponentDefaults ComboComponent[]        @relation("ComboComponentDefault")
+  upsellTriggers         UpsellConfig[]         @relation("TriggerItem")
+  upsellSuggestions      UpsellConfig[]         @relation("SuggestionItem")
+  comboComponentItems    ComboComponent[]       @relation("ComboComponentItem")
+  comboComponentDefaults ComboComponent[]       @relation("ComboComponentDefault")
   comboOptions           ComboComponentOption[]
 
   // Liquor Builder - Recipe ingredients for cocktails
@@ -1419,7 +1421,7 @@ model MenuItem {
   // This enables bottles to be the source of truth for liquor menu items
   linkedBottleProductId String?
   linkedBottleProduct   BottleProduct? @relation("LinkedBottleMenuItems", fields: [linkedBottleProductId], references: [id])
-  linkedPourSizeOz      Decimal?  // Custom pour size override for linked bottle (oz)
+  linkedPourSizeOz      Decimal? // Custom pour size override for linked bottle (oz)
 
   // Modifiers that link to this item (for spirit upgrades, etc.)
   linkedModifiers Modifier[] @relation("LinkedModifierItem")
@@ -1438,6 +1440,13 @@ model MenuItem {
 
   // Floor Plan Elements linked to this item (for entertainment items)
   floorPlanElements FloorPlanElement[]
+
+  // C-SCHEMA-1: Reverse relations
+  comboTemplates        ComboTemplate[]        @relation("ComboTemplateMenuItem")
+  timedTables           Table[]                @relation("TableTimedItem")
+  timedSessions         TimedSession[]         @relation("TimedSessionMenuItem")
+  inventoryTransactions InventoryTransaction[]
+  stockAlerts           StockAlert[]
 
   @@unique([locationId, sku])
   // @@index([locationId]) — removed: redundant with compound indexes below
@@ -1490,8 +1499,8 @@ model ModifierGroup {
   // Liquor Builder - Spirit Group Configuration
   isSpiritGroup Boolean @default(false)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1524,18 +1533,18 @@ model Modifier {
   // Pricing
   // If linkedMenuItemId is set and price is 0, use linked item's price
   // If price > 0, it acts as a price override or upcharge
-  price       Decimal  @default(0)
-  priceType   ModifierPriceType   @default(upcharge)
+  price       Decimal           @default(0)
+  priceType   ModifierPriceType @default(upcharge)
   upsellPrice Decimal? // Special price when offered as upsell
   cost        Decimal?
 
   // Pre-modifier support - explicit boolean fields for each option
   // These work just like ingredient pre-mods for consistent inventory tracking
-  allowNo      Boolean  @default(true)
-  allowLite    Boolean  @default(false)
-  allowOnSide  Boolean  @default(false)
-  allowExtra   Boolean  @default(false)
-  extraPrice   Decimal  @default(0) // Price when "extra" is selected
+  allowNo     Boolean @default(true)
+  allowLite   Boolean @default(false)
+  allowOnSide Boolean @default(false)
+  allowExtra  Boolean @default(false)
+  extraPrice  Decimal @default(0) // Price when "extra" is selected
 
   // Per-modifier deduction multipliers (override location-level defaults)
   // null = fall back to location MultiplierSettings (0.5 for lite, 2.0 for extra)
@@ -1576,11 +1585,11 @@ model Modifier {
   isActive  Boolean @default(true)
 
   // Channel visibility (for online ordering overrides)
-  showOnPOS    Boolean @default(true)  // Visible to servers on POS
-  showOnline   Boolean @default(true)  // Visible for online ordering
+  showOnPOS  Boolean @default(true) // Visible to servers on POS
+  showOnline Boolean @default(true) // Visible for online ordering
 
   // Inventory tracking (Skill 115)
-  isLabel      Boolean @default(false) // True = grouping only, no inventory tracking
+  isLabel Boolean @default(false) // True = grouping only, no inventory tracking
 
   // Printer routing for modifiers
   // printerRouting: "follow" (default) = prints with main item
@@ -1588,10 +1597,10 @@ model Modifier {
   //                 "only" = prints ONLY to printerIds (not with main item)
   printerRouting ModifierPrinterRouting @default(follow)
   // TODO: JSON array cannot enforce FK constraints on Printer. Consider migrating to a relation table for referential integrity.
-  printerIds     Json?  // Array of printer IDs when routing is "also" or "only"
+  printerIds     Json? // Array of printer IDs when routing is "also" or "only"
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1626,8 +1635,8 @@ model ComboTemplate {
   basePrice    Decimal
   comparePrice Decimal? // A la carte total for savings display
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1695,13 +1704,12 @@ model ComboComponentOption {
   upcharge    Decimal  @default(0)
   sortOrder   Int      @default(0)
   isAvailable Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
-
 
   @@unique([comboComponentId, menuItemId])
   @@index([locationId])
@@ -1730,15 +1738,15 @@ model Section {
 
   // Floor plan dimensions in feet (for editor grid snapping)
   // Float is acceptable here — display coordinates, no financial precision needed
-  widthFeet    Float  @default(40)   // Room width in feet
-  heightFeet   Float  @default(30)   // Room height in feet
-  gridSizeFeet Float  @default(0.25) // Grid snap size in feet (0.25 = 3 inch)
+  widthFeet    Float @default(40) // Room width in feet
+  heightFeet   Float @default(30) // Room height in feet
+  gridSizeFeet Float @default(0.25) // Grid snap size in feet (0.25 = 3 inch)
 
   sortOrder Int     @default(0)
   isVisible Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -1761,13 +1769,12 @@ model SectionAssignment {
 
   assignedAt   DateTime  @default(now())
   unassignedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
-
 
   @@index([locationId])
   @@index([sectionId])
@@ -1782,55 +1789,55 @@ model Table {
   sectionId  String?
   section    Section? @relation(fields: [sectionId], references: [id])
 
-  name         String  // "Table 1", "Bar 3", "Patio A"
+  name         String // "Table 1", "Bar 3", "Patio A"
   abbreviation String? // Short display name for floor plan: "T1", "B3", "PA"
   capacity     Int     @default(4) // DEPRECATED: Use _count.seats or seats.length instead
   // ⚠️ This field can drift from actual seat count. Always use seatCount from API responses.
 
   // Floor plan position (Skill 80)
-  posX     Int    @default(0)
-  posY     Int    @default(0)
-  width    Int    @default(80)
-  height   Int    @default(80)
-  rotation Int    @default(0) // Degrees 0-359
+  posX        Int    @default(0)
+  posY        Int    @default(0)
+  width       Int    @default(80)
+  height      Int    @default(80)
+  rotation    Int    @default(0) // Degrees 0-359
   shape       String @default("rectangle") // rectangle, circle, square, booth, bar
   seatPattern String @default("all_around") // all_around, front_only, three_sides, two_sides, inside
 
   // For timed rentals (pool tables, dart boards)
-  isTimedRental Boolean @default(false)
+  isTimedRental Boolean   @default(false)
   timedItemId   String? // Links to MenuItem for pricing
   timedItem     MenuItem? @relation("TableTimedItem", fields: [timedItemId], references: [id])
 
   // Status
-  status   TableStatus  @default(available)
-  isActive Boolean @default(true)
+  status   TableStatus @default(available)
+  isActive Boolean     @default(true)
 
   // Default layout (admin-defined, used for reset-to-default)
   // Set via "Save as Default Layout" button in floor plan admin
-  defaultPosX      Int?    // Admin-defined default X position
-  defaultPosY      Int?    // Admin-defined default Y position
+  defaultPosX      Int? // Admin-defined default X position
+  defaultPosY      Int? // Admin-defined default Y position
   defaultSectionId String? // Admin-defined default section
 
   // Locked items (T019) - bolted down furniture that cannot be moved
-  isLocked         Boolean @default(false)
+  isLocked Boolean @default(false)
 
   // Optimistic locking (B8) — prevents concurrent edit races
   version Int @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  orders                 Order[]
-  reservations           Reservation[]
-  timedSessions          TimedSession[]
-  seats                  Seat[]
-  tickets                Ticket[]
-  eventConfigurations    EventTableConfig[]
-  sourceTableOrderItems  OrderItem[] @relation("SourceTableOrderItems") // Items ordered from this table (virtual combine T-S notation)
-  entertainmentWaitlist  EntertainmentWaitlist[]
+  orders                Order[]
+  reservations          Reservation[]
+  timedSessions         TimedSession[]
+  seats                 Seat[]
+  tickets               Ticket[]
+  eventConfigurations   EventTableConfig[]
+  sourceTableOrderItems OrderItem[]             @relation("SourceTableOrderItems") // Items ordered from this table (virtual combine T-S notation)
+  entertainmentWaitlist EntertainmentWaitlist[]
 
   // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([sectionId])
@@ -1851,12 +1858,12 @@ model FloorPlanElement {
   sectionId  String?
   section    Section? @relation(fields: [sectionId], references: [id])
 
-  name         String   // "Pool Table 1", "Dartboard A"
-  abbreviation String?  // Short display name: "PT1", "DB-A"
+  name         String // "Pool Table 1", "Dartboard A"
+  abbreviation String? // Short display name: "PT1", "DB-A"
 
   // Element classification
-  elementType  FloorPlanElementType   @default(entertainment)
-  visualType   String   // "pool_table", "dartboard", "arcade", "foosball", "shuffleboard", etc.
+  elementType FloorPlanElementType @default(entertainment)
+  visualType  String // "pool_table", "dartboard", "arcade", "foosball", "shuffleboard", etc.
 
   // Link to menu item (for entertainment items with pricing/sessions)
   linkedMenuItemId String?
@@ -1873,9 +1880,9 @@ model FloorPlanElement {
   // JSON: { "type": "line", "start": { "x": 0, "y": 0 }, "end": { "x": 10, "y": 0 } }
   // Or: { "type": "rectangle", "x": 0, "y": 0, "width": 5, "height": 3 }
   // Or: { "type": "circle", "x": 5, "y": 5, "radius": 2 }
-  geometry    Json?
+  geometry  Json?
   // Float is acceptable for thickness/opacity — display values, no financial precision needed
-  thickness   Float   @default(0.5) // Wall thickness in feet
+  thickness Float @default(0.5) // Wall thickness in feet
 
   // Visual customization
   fillColor   String? // Override default SVG fill
@@ -1883,8 +1890,8 @@ model FloorPlanElement {
   opacity     Float   @default(1.0)
 
   // Status (for entertainment)
-  status          FloorPlanElementStatus    @default(available)
-  currentOrderId  String?   // Active order using this element
+  status           FloorPlanElementStatus @default(available)
+  currentOrderId   String? // Active order using this element
   sessionStartedAt DateTime?
   sessionExpiresAt DateTime?
 
@@ -1912,24 +1919,24 @@ model EntertainmentWaitlist {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Can be for a specific element OR any element of a type
-  elementId    String?           // Specific element (e.g., "Pool Table 2")
-  element      FloorPlanElement? @relation(fields: [elementId], references: [id])
-  visualType   String?           // OR any of this type (e.g., "any pool_table")
+  elementId  String? // Specific element (e.g., "Pool Table 2")
+  element    FloorPlanElement? @relation(fields: [elementId], references: [id])
+  visualType String? // OR any of this type (e.g., "any pool_table")
 
   // Who's waiting
-  tableId      String?  // Table that's waiting
-  table        Table?   @relation(fields: [tableId], references: [id])
-  customerName String?  // Walk-in name
-  partySize    Int      @default(1)
-  phone        String?  // For SMS notification
+  tableId      String? // Table that's waiting
+  table        Table?  @relation(fields: [tableId], references: [id])
+  customerName String? // Walk-in name
+  partySize    Int     @default(1)
+  phone        String? // For SMS notification
 
   // Status
-  status       EntertainmentWaitlistStatus   @default(waiting)
-  position     Int      @default(0) // Queue position
-  requestedAt  DateTime @default(now())
-  notifiedAt   DateTime?
-  seatedAt     DateTime?
-  expiresAt    DateTime? // Auto-expire after X minutes if not claimed
+  status      EntertainmentWaitlistStatus @default(waiting)
+  position    Int                         @default(0) // Queue position
+  requestedAt DateTime                    @default(now())
+  notifiedAt  DateTime?
+  seatedAt    DateTime?
+  expiresAt   DateTime? // Auto-expire after X minutes if not claimed
 
   notes String?
 
@@ -1983,8 +1990,8 @@ model OrderType {
   printConfig Json?
 
   orders    Order[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -2028,14 +2035,14 @@ model Order {
   guestCount   Int        @default(1)
 
   // Atomic Seat Management (Skill 121)
-  baseSeatCount   Int      @default(1)  // Original seat count when order opened
-  extraSeatCount  Int      @default(0)  // Additional seats added (can be negative if removed)
-  seatVersion     Int      @default(0)  // Monotonic counter for concurrency control
-  seatTimestamps  Json?                 // When each seat was added: { "1": "2026-02-01T10:00:00Z", ... }
+  baseSeatCount  Int   @default(1) // Original seat count when order opened
+  extraSeatCount Int   @default(0) // Additional seats added (can be negative if removed)
+  seatVersion    Int   @default(0) // Monotonic counter for concurrency control
+  seatTimestamps Json? // When each seat was added: { "1": "2026-02-01T10:00:00Z", ... }
 
-  tabName      String? // For bar tabs (auto-filled from cardholder name on chip)
-  tabNickname  String? // Editable display name (e.g., "John S - Beard")
-  tabStatus    TabStatus? // null = not a tab
+  tabName     String? // For bar tabs (auto-filled from cardholder name on chip)
+  tabNickname String? // Editable display name (e.g., "John S - Beard")
+  tabStatus   TabStatus? // null = not a tab
 
   // Custom fields collected for this order type (e.g., phone, pickupTime, vehicleColor)
   customFields Json?
@@ -2053,19 +2060,19 @@ model Order {
   closedAt DateTime?
 
   // Reopen tracking (for closed orders that are reopened)
-  reopenedAt     DateTime?
-  reopenedBy     String? // Employee ID who reopened
-  reopenReason   String?
+  reopenedAt   DateTime?
+  reopenedBy   String? // Employee ID who reopened
+  reopenReason String?
 
   // Denormalized counts
-  itemCount        Int     @default(0)
+  itemCount Int @default(0)
 
   // Totals
   subtotal         Decimal @default(0)
   discountTotal    Decimal @default(0)
   taxTotal         Decimal @default(0)
-  taxFromInclusive Decimal @default(0)  // Tax backed out of inclusive items
-  taxFromExclusive Decimal @default(0)  // Tax added on top of exclusive items
+  taxFromInclusive Decimal @default(0) // Tax backed out of inclusive items
+  taxFromExclusive Decimal @default(0) // Tax added on top of exclusive items
   tipTotal         Decimal @default(0)
   total            Decimal @default(0)
 
@@ -2088,56 +2095,72 @@ model Order {
   preAuthReaderId  String? // Which reader did the pre-auth
 
   // Bottle Service (Phase 10)
-  isBottleService              Boolean   @default(false)
-  bottleServiceTierId          String?   // Linked tier
-  bottleServiceTier            BottleServiceTier? @relation("OrderBottleServiceTier", fields: [bottleServiceTierId], references: [id])
-  bottleServiceDeposit         Decimal?  // Deposit amount pre-authorized
-  bottleServiceMinSpend        Decimal?  // Minimum spend requirement (from tier at time of creation)
-  bottleServiceCurrentSpend    Decimal?  @default(0) @db.Decimal(10, 2) // Denormalized: mirrors subtotal for bottle service orders (avoids re-computation in snapshot)
+  isBottleService           Boolean            @default(false)
+  bottleServiceTierId       String? // Linked tier
+  bottleServiceTier         BottleServiceTier? @relation("OrderBottleServiceTier", fields: [bottleServiceTierId], references: [id])
+  bottleServiceDeposit      Decimal? // Deposit amount pre-authorized
+  bottleServiceMinSpend     Decimal? // Minimum spend requirement (from tier at time of creation)
+  bottleServiceCurrentSpend Decimal?           @default(0) @db.Decimal(10, 2) // Denormalized: mirrors subtotal for bottle service orders (avoids re-computation in snapshot)
 
   // Walkout Recovery (Phase 6)
   isWalkout       Boolean   @default(false)
   walkoutAt       DateTime?
-  walkoutMarkedBy String?   // Employee who marked as walkout
+  walkoutMarkedBy String? // Employee who marked as walkout
 
   // Tab Rollover & Declined Capture
-  rolledOverAt       DateTime?   // Set when order crosses business day boundary
-  rolledOverFrom     String?     // "Shift: {shiftId}" or "EOD reset by {name}"
-  captureDeclinedAt  DateTime?   // When last capture attempt was declined
-  captureRetryCount  Int         @default(0) // Number of capture retry attempts
-  lastCaptureError   String?     // Last decline reason text
+  rolledOverAt      DateTime? // Set when order crosses business day boundary
+  rolledOverFrom    String? // "Shift: {shiftId}" or "EOD reset by {name}"
+  captureDeclinedAt DateTime? // When last capture attempt was declined
+  captureRetryCount Int       @default(0) // Number of capture retry attempts
+  lastCaptureError  String? // Last decline reason text
 
   // Coursing (T013)
-  currentCourse Int    @default(1) // Currently active course
+  currentCourse Int             @default(1) // Currently active course
   courseMode    OrderCourseMode @default(off)
 
   // Offline Sync (Store and Forward)
-  offlineId        String?   @unique // UUID from terminal for deduplication
-  offlineLocalId   String?   // Terminal-prefixed ID (e.g., "BAR1-102")
-  offlineTimestamp DateTime? // When order was created offline
-  offlineTerminalId String?  // Which terminal created this offline
+  offlineId         String?   @unique // UUID from terminal for deduplication
+  offlineLocalId    String? // Terminal-prefixed ID (e.g., "BAR1-102")
+  offlineTimestamp  DateTime? // When order was created offline
+  offlineTerminalId String? // Which terminal created this offline
 
   // Business day tracking (orders at 1 AM belong to previous day's business day)
   businessDayDate DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
 
   // Relations
-  items     OrderItem[]
-  payments  Payment[]
-  discounts OrderDiscount[]
-  voidLogs  VoidLog[]
-  cards     OrderCard[]
-  syncAuditEntries SyncAuditEntry[]
+  items               OrderItem[]
+  payments            Payment[]
+  discounts           OrderDiscount[]
+  voidLogs            VoidLog[]
+  cards               OrderCard[]
+  syncAuditEntries    SyncAuditEntry[]
   remoteVoidApprovals RemoteVoidApproval[]
   orderOwnerships     OrderOwnership[]
-  tempSeats           Seat[]             @relation("tempSeats")
-  refundLogs    RefundLog[]
-  itemDiscounts OrderItemDiscount[]
+  tempSeats           Seat[]               @relation("tempSeats")
+  refundLogs          RefundLog[]
+  itemDiscounts       OrderItemDiscount[]
+
+  // C-SCHEMA-1: Reverse relations
+  couponRedemptions        CouponRedemption[]
+  reservations             Reservation[]             @relation("ReservationOrder")
+  upsellEvents             UpsellEvent[]
+  giftCards                GiftCard[]                @relation("GiftCardOrder")
+  giftCardTransactions     GiftCardTransaction[]     @relation("GiftCardTransactionOrder")
+  houseAccountTransactions HouseAccountTransaction[] @relation("HouseAcctTxnOrder")
+  timedSessions            TimedSession[]
+  spiritUpsellEvents       SpiritUpsellEvent[]
+  digitalReceipt           DigitalReceipt?
+  walkoutRetries           WalkoutRetry[]
+  // DB-level constraint (raw SQL in vercel-build.js):
+  // UNIQUE INDEX "Order_locationId_orderNumber_unique" ON "Order" ("locationId", "orderNumber")
+  // WHERE "parentOrderId" IS NULL
+  // Only enforces uniqueness on root orders — split orders share parent's orderNumber.
 
   // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([employeeId])
@@ -2165,10 +2188,6 @@ model Order {
   @@index([locationId, paidAt])
   @@index([locationId, createdAt, status])
   @@index([locationId, businessDayDate])
-  // DB-level constraint (raw SQL in vercel-build.js):
-  // UNIQUE INDEX "Order_locationId_orderNumber_unique" ON "Order" ("locationId", "orderNumber")
-  // WHERE "parentOrderId" IS NULL
-  // Only enforces uniqueness on root orders — split orders share parent's orderNumber.
 }
 
 model OrderItem {
@@ -2186,13 +2205,13 @@ model OrderItem {
   quantity Int     @default(1)
 
   // Pour size (liquor items) — T-006
-  pourSize       String?   // "shot", "double", "tall", "short" (null = no pour selection)
-  pourMultiplier Decimal?  // 1.0, 2.0, 1.5, 0.75 (null = no pour multiplier applied)
+  pourSize       String? // "shot", "double", "tall", "short" (null = no pour selection)
+  pourMultiplier Decimal? // 1.0, 2.0, 1.5, 0.75 (null = no pour multiplier applied)
 
   // Item-level pricing truth (Layer 2)
-  cardPrice      Decimal?           // Computed card price at time of order (null if no dual pricing)
-  isTaxInclusive Boolean  @default(false)  // Was this item tax-inclusive at time of sale?
-  categoryType   String?            // Snapshot of category type at time of order
+  cardPrice      Decimal? // Computed card price at time of order (null if no dual pricing)
+  isTaxInclusive Boolean  @default(false) // Was this item tax-inclusive at time of sale?
+  categoryType   String? // Snapshot of category type at time of order
 
   // Seat tracking (Skill 24)
   seatNumber Int?
@@ -2211,8 +2230,8 @@ model OrderItem {
   firedAt   DateTime?
 
   // Per-item delay (e.g., 5m, 10m — item waits, then fires to kitchen)
-  delayMinutes    Int?      // Delay preset in minutes (null = no delay)
-  delayStartedAt  DateTime? // When the delay timer started (set by send route)
+  delayMinutes   Int? // Delay preset in minutes (null = no delay)
+  delayStartedAt DateTime? // When the delay timer started (set by send route)
 
   // Kitchen status
   kitchenStatus KitchenStatus @default(pending)
@@ -2235,17 +2254,17 @@ model OrderItem {
   specialNotes String?
 
   // Status
-  status     OrderItemStatus   @default(active)
+  status     OrderItemStatus @default(active)
   voidReason String?
   wasMade    Boolean? // Was item made before void/comp? For waste tracking
 
   // Weight-Based Selling (Scale Integration)
-  soldByWeight Boolean  @default(false)  // Was this item sold by weight?
-  weight       Decimal?  // Captured NET weight at sale (always post-tare)
-  weightUnit   String?   // Unit snapshot: "lb" | "kg" | "oz" | "g"
-  unitPrice    Decimal?  // Price-per-unit snapshot (e.g. 5.99)
-  grossWeight  Decimal?  // Gross weight before tare (audit trail)
-  tareWeight   Decimal?  // Tare/container weight (audit trail)
+  soldByWeight Boolean  @default(false) // Was this item sold by weight?
+  weight       Decimal? // Captured NET weight at sale (always post-tare)
+  weightUnit   String? // Unit snapshot: "lb" | "kg" | "oz" | "g"
+  unitPrice    Decimal? // Price-per-unit snapshot (e.g. 5.99)
+  grossWeight  Decimal? // Gross weight before tare (audit trail)
+  tareWeight   Decimal? // Tare/container weight (audit trail)
 
   // Totals
   modifierTotal Decimal @default(0)
@@ -2258,8 +2277,8 @@ model OrderItem {
   addedByEmployeeId String?
   addedByEmployee   Employee? @relation("OrderItemAddedBy", fields: [addedByEmployeeId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -2332,11 +2351,11 @@ model OrderItemModifier {
 // ============================================
 
 model Payment {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location  @relation(fields: [locationId], references: [id])
   orderId    String
-  order      Order    @relation(fields: [orderId], references: [id])
+  order      Order     @relation(fields: [orderId], references: [id])
   employeeId String? // Who processed the payment
   employee   Employee? @relation("PaymentEmployee", fields: [employeeId], references: [id])
 
@@ -2378,7 +2397,7 @@ model Payment {
   // Partial Approvals & Signature (Chargeback Defense)
   amountRequested  Decimal? // Original amount requested
   amountAuthorized Decimal? // Actual amount approved (may be less for partial approvals)
-  signatureData    String?  // Base64 signature from reader (chargeback defense)
+  signatureData    String? // Base64 signature from reader (chargeback defense)
 
   // Status
   status PaymentStatus @default(completed)
@@ -2389,49 +2408,50 @@ model Payment {
   refundReason   String?
 
   // Void tracking (separate from refunds - voids mark payment as invalid)
-  voidedAt     DateTime?
-  voidedBy     String? // Employee ID who voided
-  voidReason   String?
+  voidedAt   DateTime?
+  voidedBy   String? // Employee ID who voided
+  voidReason String?
 
-  settledAt    DateTime?          // When payment was settled/batched by processor
+  settledAt DateTime? // When payment was settled/batched by processor
 
   // Offline Payment Tracking (Store and Forward)
-  offlineIntentId    String?   @unique // UUID from PaymentIntentManager for deduplication
-  idempotencyKey     String?   @unique // Terminal+Order+Timestamp fingerprint for deduplication
-  isOfflineCapture   Boolean   @default(false) // Was this captured while offline?
-  offlineCapturedAt  DateTime? // When it was queued for offline capture
-  offlineTerminalId  String?   // Which terminal processed this offline
+  offlineIntentId   String?   @unique // UUID from PaymentIntentManager for deduplication
+  idempotencyKey    String?   @unique // Terminal+Order+Timestamp fingerprint for deduplication
+  isOfflineCapture  Boolean   @default(false) // Was this captured while offline?
+  offlineCapturedAt DateTime? // When it was queued for offline capture
+  offlineTerminalId String? // Which terminal processed this offline
 
   // Dual Pricing / Cash Discount (Visa Compliance)
-  cashDiscountAmount  Decimal?  // Amount of cash discount applied (null if no dual pricing)
-  priceBeforeDiscount Decimal?  // Original card price before cash discount
-  pricingMode         String?   // "cash" or "card" — which price was used
+  cashDiscountAmount  Decimal? // Amount of cash discount applied (null if no dual pricing)
+  priceBeforeDiscount Decimal? // Original card price before cash discount
+  pricingMode         String? // "cash" or "card" — which price was used
 
   // Reconciliation (for EOD reports)
   needsReconciliation Boolean   @default(false) // Flag for accountant review
   reconciledAt        DateTime? // When verified against bank statement
-  reconciledBy        String?   // Employee who verified
+  reconciledBy        String? // Employee who verified
 
   // Sync audit tracking
-  syncAttempts       Int       @default(0) // How many times sync was attempted
-  wasDuplicateBlocked Boolean  @default(false) // Was a duplicate blocked by idempotency?
+  syncAttempts        Int     @default(0) // How many times sync was attempted
+  wasDuplicateBlocked Boolean @default(false) // Was a duplicate blocked by idempotency?
 
   processedAt DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
 
   // Refund logs (P2-P02)
-  refundLogs   RefundLog[]
+  refundLogs RefundLog[]
 
   // @@index([locationId]) — removed: redundant with compound indexes below
 
   // C-SCHEMA-1: Added reverse relations
-  tipDebts            TipDebt[] @relation("TipDebtSourcePayment")
+  tipDebts        TipDebt[]        @relation("TipDebtSourcePayment")
   digitalReceipts DigitalReceipt[]
+
   @@index([orderId])
   @@index([processedAt])
   @@index([employeeId])
@@ -2453,23 +2473,23 @@ model SyncAuditEntry {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Transaction details
-  orderId        String
-  order          Order    @relation(fields: [orderId], references: [id])
-  paymentId      String?  // If payment was created
-  terminalId     String
-  terminalName   String
-  employeeId     String?
+  orderId      String
+  order        Order   @relation(fields: [orderId], references: [id])
+  paymentId    String? // If payment was created
+  terminalId   String
+  terminalName String
+  employeeId   String?
 
   // Amount
   amount Decimal
 
   // Idempotency tracking
   idempotencyKey String
-  localIntentId  String?  // Original intent ID from terminal
+  localIntentId  String? // Original intent ID from terminal
 
   // Status: SUCCESS, DUPLICATE_BLOCKED, OFFLINE_SYNC, VOIDED, FAILED
-  status      String
-  statusNote  String?  // Additional context
+  status     String
+  statusNote String? // Additional context
 
   // Card details (for display)
   cardLast4 String?
@@ -2531,8 +2551,8 @@ model Coupon {
   // Tracking
   createdBy String? // Employee who created
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -2548,13 +2568,13 @@ model Coupon {
 }
 
 model CouponRedemption {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   locationId String
-  location   Location @relation(fields: [locationId], references: [id])
+  location   Location  @relation(fields: [locationId], references: [id])
   couponId   String
-  coupon     Coupon   @relation(fields: [couponId], references: [id])
+  coupon     Coupon    @relation(fields: [couponId], references: [id])
   orderId    String
-  order      Order    @relation(fields: [orderId], references: [id])
+  order      Order     @relation(fields: [orderId], references: [id])
   customerId String? // If linked to customer
   customer   Customer? @relation(fields: [customerId], references: [id])
 
@@ -2562,13 +2582,12 @@ model CouponRedemption {
 
   redeemedAt DateTime @default(now())
   redeemedBy String? // Employee who applied
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
-
 
   @@index([locationId])
   @@index([couponId])
@@ -2626,8 +2645,8 @@ model Reservation {
   cancelledAt  DateTime?
   cancelReason String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -2672,12 +2691,12 @@ model DiscountRule {
   requiresApproval Boolean @default(false)
   maxPerOrder      Int?
 
-  isActive            Boolean @default(true)
-  isAutomatic         Boolean @default(false) // Auto-apply vs manual
-  isEmployeeDiscount  Boolean @default(false) // Surfaces prominently in DiscountModal
+  isActive           Boolean @default(true)
+  isAutomatic        Boolean @default(false) // Auto-apply vs manual
+  isEmployeeDiscount Boolean @default(false) // Surfaces prominently in DiscountModal
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -2756,8 +2775,8 @@ model UpsellConfig {
   isActive Boolean @default(true)
   priority Int     @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -2814,7 +2833,7 @@ model VoidLog {
   itemId   String? // If item void
   amount   Decimal
   reason   String
-  wasMade  Boolean @default(false) // Was the item already made? For waste/loss tracking
+  wasMade  Boolean  @default(false) // Was the item already made? For waste/loss tracking
 
   approvedById String?
   approvedBy   Employee? @relation("VoidLogApprover", fields: [approvedById], references: [id])
@@ -2851,31 +2870,31 @@ model RemoteVoidApproval {
   // Request Details
   orderId       String
   order         Order    @relation(fields: [orderId], references: [id])
-  orderItemId   String?  // If voiding specific item
+  orderItemId   String? // If voiding specific item
   requestedById String
   requestedBy   Employee @relation("VoidRequester", fields: [requestedById], references: [id])
   voidReason    String
-  voidType      String   // "item" | "order" | "comp"
+  voidType      String // "item" | "order" | "comp"
   amount        Decimal
-  itemName      String   // Cached for SMS
-  orderNumber   Int      // Cached for SMS
+  itemName      String // Cached for SMS
+  orderNumber   Int // Cached for SMS
 
   // Manager Assignment
   managerId    String
   manager      Employee @relation("VoidApprover", fields: [managerId], references: [id])
-  managerPhone String   // Cached phone for SMS
+  managerPhone String // Cached phone for SMS
 
   // SMS Tracking
   twilioMessageSid    String?
   approvalToken       String   @unique // 32 hex chars for web link
-  approvalTokenExpiry DateTime          // 30 minutes
+  approvalTokenExpiry DateTime // 30 minutes
 
   // Approval Code (generated after approval)
-  approvalCode       String?   // 6-digit code
+  approvalCode       String? // 6-digit code
   approvalCodeExpiry DateTime? // 5 minutes after approval
 
   // Status
-  status          RemoteVoidApprovalStatus    @default(pending)
+  status          RemoteVoidApprovalStatus @default(pending)
   approvedAt      DateTime?
   rejectedAt      DateTime?
   rejectionReason String?
@@ -2954,8 +2973,8 @@ model TipPool {
 
   isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3010,14 +3029,14 @@ model TipOutRule {
   isActive   Boolean @default(true)
 
   // Enhanced tip-out fields (Skill 251)
-  basisType        String   @default("tips_earned") // tips_earned, food_sales, bar_sales, total_sales, net_sales
-  salesCategoryIds Json?    // Optional category filter for sales-based rules
+  basisType        String    @default("tips_earned") // tips_earned, food_sales, bar_sales, total_sales, net_sales
+  salesCategoryIds Json? // Optional category filter for sales-based rules
   maxPercentage    Decimal? // Compliance cap (max % of tips/sales)
   effectiveDate    DateTime? // Rule becomes active on this date
   expiresAt        DateTime? // Rule expires after this date
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3074,14 +3093,14 @@ model TipShare {
 // ============================================
 
 model TipLedger {
-  id                  String   @id @default(cuid())
+  id                  String           @id @default(cuid())
   locationId          String
-  location            Location @relation(fields: [locationId], references: [id])
+  location            Location         @relation(fields: [locationId], references: [id])
   employeeId          String
-  employee            Employee @relation(fields: [employeeId], references: [id])
-  currentBalanceCents Decimal  @default(0) @db.Decimal(10, 2)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  employee            Employee         @relation(fields: [employeeId], references: [id])
+  currentBalanceCents Decimal          @default(0) @db.Decimal(10, 2)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
   deletedAt           DateTime?
   syncedAt            DateTime?
   entries             TipLedgerEntry[]
@@ -3091,24 +3110,24 @@ model TipLedger {
 }
 
 model TipLedgerEntry {
-  id            String    @id @default(cuid())
-  locationId    String
-  location      Location  @relation(fields: [locationId], references: [id])
-  ledgerId      String
-  ledger        TipLedger @relation(fields: [ledgerId], references: [id])
-  employeeId    String
-  employee      Employee  @relation(fields: [employeeId], references: [id])
-  type          TipLedgerEntryType
-  amountCents   Decimal  @db.Decimal(10, 2)
-  sourceType    String    // DIRECT_TIP, TIP_GROUP, ROLE_TIPOUT, MANUAL_TRANSFER, PAYOUT_CASH, PAYOUT_PAYROLL, CHARGEBACK, ADJUSTMENT
-  sourceId      String?
-  memo          String?
-  adjustmentId  String?
-  shiftId       String?
+  id             String             @id @default(cuid())
+  locationId     String
+  location       Location           @relation(fields: [locationId], references: [id])
+  ledgerId       String
+  ledger         TipLedger          @relation(fields: [ledgerId], references: [id])
+  employeeId     String
+  employee       Employee           @relation(fields: [employeeId], references: [id])
+  type           TipLedgerEntryType
+  amountCents    Decimal            @db.Decimal(10, 2)
+  sourceType     String // DIRECT_TIP, TIP_GROUP, ROLE_TIPOUT, MANUAL_TRANSFER, PAYOUT_CASH, PAYOUT_PAYROLL, CHARGEBACK, ADJUSTMENT
+  sourceId       String?
+  memo           String?
+  adjustmentId   String?
+  shiftId        String?
   orderId        String?
-  idempotencyKey String?   @unique // Skill 274: dedup guard (e.g. "tip-ledger:{orderId}:{paymentId}:{employeeId}")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  idempotencyKey String?            @unique // Skill 274: dedup guard (e.g. "tip-ledger:{orderId}:{paymentId}:{employeeId}")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
   deletedAt      DateTime?
   syncedAt       DateTime?
 
@@ -3123,22 +3142,22 @@ model TipLedgerEntry {
 }
 
 model TipTransaction {
-  id                String   @id @default(cuid())
+  id                String                   @id @default(cuid())
   locationId        String
-  location          Location @relation(fields: [locationId], references: [id])
+  location          Location                 @relation(fields: [locationId], references: [id])
   orderId           String
   paymentId         String?
   tipGroupId        String?
   segmentId         String?
-  amountCents       Decimal  @db.Decimal(10, 2)
+  amountCents       Decimal                  @db.Decimal(10, 2)
   sourceType        TipTransactionSourceType
-  kind              String   @default("tip") // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
+  kind              String                   @default("tip") // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
   collectedAt       DateTime
   primaryEmployeeId String?
-  ccFeeAmountCents  Decimal   @default(0) @db.Decimal(10, 2)
-  idempotencyKey    String?   @unique // Skill 274: dedup guard (e.g. "tip-txn:{orderId}:{paymentId}")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  ccFeeAmountCents  Decimal                  @default(0) @db.Decimal(10, 2)
+  idempotencyKey    String?                  @unique // Skill 274: dedup guard (e.g. "tip-txn:{orderId}:{paymentId}")
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
   deletedAt         DateTime?
   syncedAt          DateTime?
 
@@ -3153,14 +3172,14 @@ model TipTransaction {
 // ===============================================
 
 model TipGroupTemplate {
-  id              String   @id @default(cuid())
-  locationId      String
-  location        Location @relation(fields: [locationId], references: [id])
-  name            String   // "Downstairs Servers", "Bar Team", etc.
-  allowedRoleIds  Json     // Array of role IDs that can join this team
-  defaultSplitMode TipGroupSplitMode  @default(equal)
-  active          Boolean  @default(true)
-  sortOrder       Int      @default(0)
+  id               String            @id @default(cuid())
+  locationId       String
+  location         Location          @relation(fields: [locationId], references: [id])
+  name             String // "Downstairs Servers", "Bar Team", etc.
+  allowedRoleIds   Json // Array of role IDs that can join this team
+  defaultSplitMode TipGroupSplitMode @default(equal)
+  active           Boolean           @default(true)
+  sortOrder        Int               @default(0)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -3177,30 +3196,30 @@ model TipGroupTemplate {
 // ============================================
 
 model TipGroup {
-  id         String    @id @default(cuid())
-  locationId String
-  location   Location  @relation(fields: [locationId], references: [id])
-  createdBy        String    // Employee who started the group
-  createdByEmployee Employee  @relation("TipGroupCreatedBy", fields: [createdBy], references: [id])
-  ownerId          String    // Current owner (for approvals)
-  owner            Employee  @relation("TipGroupOwner", fields: [ownerId], references: [id])
-  registerId       String?   // Terminal/register
-  templateId String?   // Links to admin-defined TipGroupTemplate (null = ad-hoc group)
-  template   TipGroupTemplate? @relation(fields: [templateId], references: [id])
-  startedAt  DateTime  @default(now())
-  endedAt    DateTime?
-  status     TipGroupStatus    @default(active)
-  splitMode  TipGroupSplitMode    @default(equal)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
-  syncedAt   DateTime?
+  id                String            @id @default(cuid())
+  locationId        String
+  location          Location          @relation(fields: [locationId], references: [id])
+  createdBy         String // Employee who started the group
+  createdByEmployee Employee          @relation("TipGroupCreatedBy", fields: [createdBy], references: [id])
+  ownerId           String // Current owner (for approvals)
+  owner             Employee          @relation("TipGroupOwner", fields: [ownerId], references: [id])
+  registerId        String? // Terminal/register
+  templateId        String? // Links to admin-defined TipGroupTemplate (null = ad-hoc group)
+  template          TipGroupTemplate? @relation(fields: [templateId], references: [id])
+  startedAt         DateTime          @default(now())
+  endedAt           DateTime?
+  status            TipGroupStatus    @default(active)
+  splitMode         TipGroupSplitMode @default(equal)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  deletedAt         DateTime?
+  syncedAt          DateTime?
 
   memberships TipGroupMembership[]
   segments    TipGroupSegment[]
 
   // C-SCHEMA-1: Added reverse relations
-  clockEntries       TimeClockEntry[] @relation("ClockEntryTipGroup")
+  clockEntries TimeClockEntry[] @relation("ClockEntryTipGroup")
 
   @@index([locationId])
   @@index([status])
@@ -3210,20 +3229,20 @@ model TipGroup {
 }
 
 model TipGroupMembership {
-  id         String    @id @default(cuid())
+  id         String                   @id @default(cuid())
   locationId String
-  location   Location  @relation(fields: [locationId], references: [id])
+  location   Location                 @relation(fields: [locationId], references: [id])
   groupId    String
-  group      TipGroup  @relation(fields: [groupId], references: [id])
+  group      TipGroup                 @relation(fields: [groupId], references: [id])
   employeeId String
-  employee   Employee  @relation(fields: [employeeId], references: [id])
-  joinedAt   DateTime  @default(now())
+  employee   Employee                 @relation(fields: [employeeId], references: [id])
+  joinedAt   DateTime                 @default(now())
   leftAt     DateTime?
-  role       String?   // For role-weighted splits
-  approvedBy String?   // Owner who approved join
-  status     TipGroupMembershipStatus    @default(active)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  role       String? // For role-weighted splits
+  approvedBy String? // Owner who approved join
+  status     TipGroupMembershipStatus @default(active)
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
   deletedAt  DateTime?
   syncedAt   DateTime?
 
@@ -3243,7 +3262,7 @@ model TipGroupSegment {
   startedAt   DateTime
   endedAt     DateTime?
   memberCount Int
-  splitJson   Json      // { "emp1": 0.5, "emp2": 0.5 }
+  splitJson   Json // { "emp1": 0.5, "emp2": 0.5 }
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deletedAt   DateTime?
@@ -3259,20 +3278,20 @@ model TipGroupSegment {
 // ============================================
 
 model TipDebt {
-  id                  String    @id @default(cuid())
+  id                  String        @id @default(cuid())
   locationId          String
-  location            Location  @relation(fields: [locationId], references: [id])
+  location            Location      @relation(fields: [locationId], references: [id])
   employeeId          String
-  employee            Employee  @relation(fields: [employeeId], references: [id])
-  originalAmountCents Decimal   @db.Decimal(10, 2) // What was owed at chargeback time
-  remainingCents      Decimal   @db.Decimal(10, 2) // What's still outstanding
-  sourcePaymentId     String    // The payment that triggered chargeback
-  sourcePayment       Payment   @relation("TipDebtSourcePayment", fields: [sourcePaymentId], references: [id])
-  sourceType          String    @default("CHARGEBACK")
+  employee            Employee      @relation(fields: [employeeId], references: [id])
+  originalAmountCents Decimal       @db.Decimal(10, 2) // What was owed at chargeback time
+  remainingCents      Decimal       @db.Decimal(10, 2) // What's still outstanding
+  sourcePaymentId     String // The payment that triggered chargeback
+  sourcePayment       Payment       @relation("TipDebtSourcePayment", fields: [sourcePaymentId], references: [id])
+  sourceType          String        @default("CHARGEBACK")
   memo                String?
-  status              TipDebtStatus    @default(open)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  status              TipDebtStatus @default(open)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
   recoveredAt         DateTime?
   writtenOffAt        DateTime?
   writtenOffBy        String?
@@ -3289,16 +3308,16 @@ model TipDebt {
 // ============================================
 
 model OrderOwnership {
-  id          String   @id @default(cuid())
+  id          String                @id @default(cuid())
   locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  location    Location              @relation(fields: [locationId], references: [id])
   orderId     String
-  order       Order    @relation(fields: [orderId], references: [id])
-  createdById String   // Employee who set the split
-  createdBy   Employee @relation("OrderOwnershipCreatedBy", fields: [createdById], references: [id])
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  order       Order                 @relation(fields: [orderId], references: [id])
+  createdById String // Employee who set the split
+  createdBy   Employee              @relation("OrderOwnershipCreatedBy", fields: [createdById], references: [id])
+  isActive    Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
   deletedAt   DateTime?
   syncedAt    DateTime?
   owners      OrderOwnershipEntry[]
@@ -3330,19 +3349,19 @@ model OrderOwnershipEntry {
 // ============================================
 
 model TipAdjustment {
-  id              String   @id @default(cuid())
-  locationId      String
-  location        Location @relation(fields: [locationId], references: [id])
-  createdById     String
-  createdBy       Employee @relation(fields: [createdById], references: [id])
-  reason          String
-  adjustmentType  String   // 'group_membership' | 'ownership_split' | 'clock_fix' | 'manual_override' | 'tip_amount'
-  contextJson     Json?    // Structured before/after state
-  autoRecalcRan   Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  deletedAt       DateTime?
-  syncedAt        DateTime?
+  id             String    @id @default(cuid())
+  locationId     String
+  location       Location  @relation(fields: [locationId], references: [id])
+  createdById    String
+  createdBy      Employee  @relation(fields: [createdById], references: [id])
+  reason         String
+  adjustmentType String // 'group_membership' | 'ownership_split' | 'clock_fix' | 'manual_override' | 'tip_amount'
+  contextJson    Json? // Structured before/after state
+  autoRecalcRan  Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+  syncedAt       DateTime?
 
   @@index([locationId])
   @@index([createdById])
@@ -3354,20 +3373,20 @@ model TipAdjustment {
 // ============================================
 
 model CashTipDeclaration {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   locationId     String
-  location       Location @relation(fields: [locationId], references: [id])
+  location       Location  @relation(fields: [locationId], references: [id])
   employeeId     String
-  employee       Employee @relation(fields: [employeeId], references: [id])
+  employee       Employee  @relation(fields: [employeeId], references: [id])
   shiftId        String?
-  shift          Shift?   @relation(fields: [shiftId], references: [id])
-  amountCents    Decimal  @db.Decimal(10, 2)
-  declaredAt     DateTime @default(now())
-  source         String   @default("employee") // 'employee' | 'manager_override'
+  shift          Shift?    @relation(fields: [shiftId], references: [id])
+  amountCents    Decimal   @db.Decimal(10, 2)
+  declaredAt     DateTime  @default(now())
+  source         String    @default("employee") // 'employee' | 'manager_override'
   overrideReason String?
   overrideBy     String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
   syncedAt       DateTime?
 
@@ -3415,8 +3434,8 @@ model GiftCard {
   orderId String? // Order where it was purchased
   order   Order?  @relation("GiftCardOrder", fields: [orderId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3427,7 +3446,7 @@ model GiftCard {
   @@index([cardNumber])
   @@index([status])
   @@index([locationId, cardNumber]) // Gift card lookup by number per location
-  @@index([locationId, status])     // Active gift cards per location
+  @@index([locationId, status]) // Active gift cards per location
 }
 
 model GiftCardTransaction {
@@ -3487,7 +3506,7 @@ model HouseAccount {
   paymentTerms   Int     @default(30) // Days until due
 
   // Status
-  status          HouseAccountStatus    @default(active)
+  status          HouseAccountStatus @default(active)
   suspendedAt     DateTime?
   suspendedReason String?
 
@@ -3504,8 +3523,8 @@ model HouseAccount {
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3569,9 +3588,9 @@ model TimedSession {
   menuItemId String // The timed rental item (for pricing)
   menuItem   MenuItem @relation("TimedSessionMenuItem", fields: [menuItemId], references: [id])
   tableId    String? // The physical table/equipment being used
-  table      Table?  @relation(fields: [tableId], references: [id])
+  table      Table?   @relation(fields: [tableId], references: [id])
   orderId    String? // Linked order for billing
-  order      Order?  @relation(fields: [orderId], references: [id])
+  order      Order?   @relation(fields: [orderId], references: [id])
 
   // Session timing
   startedAt     DateTime  @default(now())
@@ -3598,8 +3617,8 @@ model TimedSession {
 
   notes String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3642,17 +3661,17 @@ model Seat {
   seatType SeatType @default(standard)
 
   // Temporary seat (created by POS when server adds extra seats)
-  isTemporary    Boolean  @default(false) // true = created by POS, not editor
-  sourceOrderId  String?                  // order that created this temp seat
-  sourceOrder    Order?   @relation("tempSeats", fields: [sourceOrderId], references: [id])
+  isTemporary   Boolean @default(false) // true = created by POS, not editor
+  sourceOrderId String? // order that created this temp seat
+  sourceOrder   Order?  @relation("tempSeats", fields: [sourceOrderId], references: [id])
 
   // Status tracking
-  status             SeatStatus  @default(available)
+  status             SeatStatus @default(available)
   currentOrderItemId String? // Currently active order item at this seat
 
   // Historical tracking
   lastOccupiedAt DateTime? // When seat was last occupied
-  lastOccupiedBy String?   // Customer name or order reference
+  lastOccupiedBy String? // Customer name or order reference
 
   // Status
   isActive Boolean @default(true)
@@ -3660,8 +3679,8 @@ model Seat {
   // Optimistic locking (B8) — prevents concurrent edit races
   version Int @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3709,8 +3728,8 @@ model Event {
   salesEndAt   DateTime?
 
   // Status
-  status   EventStatus  @default(draft)
-  isActive Boolean @default(true)
+  status   EventStatus @default(draft)
+  isActive Boolean     @default(true)
 
   // Settings stored as JSON for flexibility
   settings Json?
@@ -3719,8 +3738,8 @@ model Event {
   reservationConflictsHandled Boolean @default(false)
   reservationConflictNotes    String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3763,8 +3782,8 @@ model EventPricingTier {
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3795,13 +3814,12 @@ model EventTableConfig {
   // For per-table booking: min/max party size
   minPartySize Int?
   maxPartySize Int? // null = use table capacity
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
-
 
   @@unique([eventId, tableId])
   @@index([locationId])
@@ -3871,8 +3889,8 @@ model Ticket {
   // Notes
   notes String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -3913,8 +3931,8 @@ model TaxRule {
 
   isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -4009,16 +4027,16 @@ model StockAlert {
 
 // Void reasons with automatic inventory deduction flag
 model VoidReason {
-  id              String   @id @default(cuid())
-  locationId      String
-  location        Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
-  name            String   // "Kitchen Error - Made", "Customer Changed Mind"
+  name            String // "Kitchen Error - Made", "Customer Changed Mind"
   description     String?
-  deductInventory Boolean  @default(false) // Auto-deduct from theoretical inventory
-  requiresManager Boolean  @default(false) // Requires manager PIN
-  isActive        Boolean  @default(true)
-  sortOrder       Int      @default(0)
+  deductInventory Boolean @default(false) // Auto-deduct from theoretical inventory
+  requiresManager Boolean @default(false) // Requires manager PIN
+  isActive        Boolean @default(true)
+  sortOrder       Int     @default(0)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4031,14 +4049,14 @@ model VoidReason {
 
 // Storage locations for inventory (Walk-in, Dry Storage, Bar, etc.)
 model StorageLocation {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
-  name        String   // "Main Walk-in", "Bar Well 1", "Dry Storage"
+  name        String // "Main Walk-in", "Bar Well 1", "Dry Storage"
   description String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
 
   inventoryItems  InventoryItemStorage[]
   inventoryCounts InventoryCount[]
@@ -4054,39 +4072,39 @@ model StorageLocation {
 
 // Core inventory item - everything you purchase
 model InventoryItem {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   // Identity
-  name        String   // "Chicken Breast", "Tito's Vodka"
-  sku         String?  // Optional SKU/barcode
+  name        String // "Chicken Breast", "Tito's Vodka"
+  sku         String? // Optional SKU/barcode
   description String?
 
   // Classification - CRITICAL FOR COGS REPORTING
-  department    String   // "Food", "Beverage", "Retail" - for P&L COGS split
-  itemType      String   // "food", "liquor", "beer", "wine", "supply"
-  revenueCenter String   // "kitchen", "bar"
-  category      String   // "protein", "dairy", "whiskey", "vodka"
-  subcategory   String?  // "bourbon", "scotch"
-  brand         String?  // "Tyson", "Tito's"
+  department    String // "Food", "Beverage", "Retail" - for P&L COGS split
+  itemType      String // "food", "liquor", "beer", "wine", "supply"
+  revenueCenter String // "kitchen", "bar"
+  category      String // "protein", "dairy", "whiskey", "vodka"
+  subcategory   String? // "bourbon", "scotch"
+  brand         String? // "Tyson", "Tito's"
 
   // Purchase info
-  purchaseUnit     String   // "case", "lb", "bottle", "each"
-  purchaseSize     Decimal  // 15 (for 15lb case), 1 (for single bottle)
-  purchaseCost     Decimal  // $65.00 per case
-  defaultVendorId  String?
-  defaultVendor    Vendor?  @relation("DefaultVendor", fields: [defaultVendorId], references: [id])
+  purchaseUnit    String // "case", "lb", "bottle", "each"
+  purchaseSize    Decimal // 15 (for 15lb case), 1 (for single bottle)
+  purchaseCost    Decimal // $65.00 per case
+  defaultVendorId String?
+  defaultVendor   Vendor? @relation("DefaultVendor", fields: [defaultVendorId], references: [id])
 
   // Storage/usage unit (what you count in)
-  storageUnit      String   // "oz", "each", "bottle"
-  unitsPerPurchase Decimal  // 240 oz per 15lb case
-  costPerUnit      Decimal  // Auto-calc: purchaseCost / unitsPerPurchase
+  storageUnit      String // "oz", "each", "bottle"
+  unitsPerPurchase Decimal // 240 oz per 15lb case
+  costPerUnit      Decimal // Auto-calc: purchaseCost / unitsPerPurchase
 
   // Costing method & tracking
-  costingMethod    String   @default("weighted_average") // "weighted_average" or "fifo"
-  lastPriceUpdate  DateTime? // When cost was last updated
-  priceSource      String   @default("manual") // "manual", "invoice", "api"
+  costingMethod   String    @default("weighted_average") // "weighted_average" or "fifo"
+  lastPriceUpdate DateTime? // When cost was last updated
+  priceSource     String    @default("manual") // "manual", "invoice", "api"
 
   // Yield (for items with waste)
   yieldPercent     Decimal  @default(100) // 75% = 25% trim/cooking loss
@@ -4095,18 +4113,18 @@ model InventoryItem {
   // For liquor items
   spiritCategoryId String?
   spiritCategory   SpiritCategory? @relation("InventoryItemSpirit", fields: [spiritCategoryId], references: [id])
-  pourSizeOz       Decimal?  // Standard pour size (overrides location default)
-  proofPercent     Decimal?  // Alcohol proof
+  pourSizeOz       Decimal? // Standard pour size (overrides location default)
+  proofPercent     Decimal? // Alcohol proof
 
   // Inventory levels (aggregate across all storage locations)
-  currentStock     Decimal  @default(0)  // Total in storage units
-  parLevel         Decimal? // Minimum to keep on hand (total)
-  reorderPoint     Decimal? // When to reorder
-  reorderQty       Decimal? // How much to order
+  currentStock Decimal  @default(0) // Total in storage units
+  parLevel     Decimal? // Minimum to keep on hand (total)
+  reorderPoint Decimal? // When to reorder
+  reorderQty   Decimal? // How much to order
 
   // Status
-  isActive         Boolean  @default(true)
-  trackInventory   Boolean  @default(true)
+  isActive       Boolean @default(true)
+  trackInventory Boolean @default(true)
 
   // Relations
   storageLocations InventoryItemStorage[]
@@ -4119,13 +4137,13 @@ model InventoryItem {
   wasteEntries     WasteLogEntry[]
 
   // Pizza component relations (Skill 115)
-  pizzaCrusts      PizzaCrust[]   @relation("PizzaCrustInventory")
-  pizzaSauces      PizzaSauce[]   @relation("PizzaSauceInventory")
-  pizzaCheeses     PizzaCheese[]  @relation("PizzaCheeseInventory")
-  pizzaToppings    PizzaTopping[] @relation("PizzaToppingInventory")
+  pizzaCrusts   PizzaCrust[]   @relation("PizzaCrustInventory")
+  pizzaSauces   PizzaSauce[]   @relation("PizzaSauceInventory")
+  pizzaCheeses  PizzaCheese[]  @relation("PizzaCheeseInventory")
+  pizzaToppings PizzaTopping[] @relation("PizzaToppingInventory")
 
   // Ingredients that link to this inventory item for deduction
-  ingredientLinks  Ingredient[]   @relation("IngredientInventoryLink")
+  ingredientLinks Ingredient[] @relation("IngredientInventoryLink")
 
   // Reverse relation from BottleProduct (one-to-many: multiple bottles can share one inventory item)
   bottleProducts BottleProduct[] @relation("BottleInventoryLink")
@@ -4157,8 +4175,8 @@ model InventoryItemStorage {
   storageLocationId String
   storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id])
 
-  currentStock      Decimal  @default(0)  // Stock at THIS location
-  parLevel          Decimal? // Par level for THIS location
+  currentStock Decimal  @default(0) // Stock at THIS location
+  parLevel     Decimal? // Par level for THIS location
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4173,18 +4191,18 @@ model InventoryItemStorage {
 
 // Prep items - made from inventory items
 model PrepItem {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
-  name        String   // "Shredded Chicken", "Simple Syrup"
+  name        String // "Shredded Chicken", "Simple Syrup"
   description String?
 
   // Output specifications
-  outputUnit    String   // "oz", "each", "qt"
-  batchYield    Decimal  // How much one batch makes
-  batchUnit     String   // Unit for batch (may differ from output)
-  costPerUnit   Decimal? // Auto-calculated from ingredients
+  outputUnit  String // "oz", "each", "qt"
+  batchYield  Decimal // How much one batch makes
+  batchUnit   String // Unit for batch (may differ from output)
+  costPerUnit Decimal? // Auto-calculated from ingredients
 
   // Shelf life
   shelfLifeHours Int?
@@ -4194,24 +4212,24 @@ model PrepItem {
   // NOTE: These fields are NOT redundant with DailyPrepCountTransaction.
   // currentPrepStock/lastCountedAt = live running balance (read frequently).
   // DailyPrepCountTransaction = audit trail (append-only log).
-  isDailyCountItem  Boolean  @default(false)  // Can this item be counted daily?
-  currentPrepStock  Decimal  @default(0)      // Current prepared quantity on hand
-  lastCountedAt     DateTime?                 // When was this last counted?
+  isDailyCountItem Boolean   @default(false) // Can this item be counted daily?
+  currentPrepStock Decimal   @default(0) // Current prepared quantity on hand
+  lastCountedAt    DateTime? // When was this last counted?
 
   // Stock alert thresholds
-  lowStockThreshold      Decimal?  // Show 🟡 warning when below this
-  criticalStockThreshold Decimal?  // Show 🔴 critical when below this
-  onlineStockThreshold   Decimal?  // Show "Limited availability" online when below this
+  lowStockThreshold      Decimal? // Show 🟡 warning when below this
+  criticalStockThreshold Decimal? // Show 🔴 critical when below this
+  onlineStockThreshold   Decimal? // Show "Limited availability" online when below this
 
   // Relations
-  ingredients    PrepItemIngredient[]
-  recipeUsages   MenuItemRecipeIngredient[]
-  modifierLinks  ModifierInventoryLink[]
+  ingredients   PrepItemIngredient[]
+  recipeUsages  MenuItemRecipeIngredient[]
+  modifierLinks ModifierInventoryLink[]
 
   // Ingredients that link to this prep item for deduction
-  ingredientLinks  Ingredient[]   @relation("IngredientPrepLink")
+  ingredientLinks Ingredient[] @relation("IngredientPrepLink")
 
-  isActive  Boolean  @default(true)
+  isActive Boolean @default(true)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4232,10 +4250,10 @@ model PrepItemIngredient {
   inventoryItemId String
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
 
-  quantity        Decimal       // Amount used
-  unit            String        // Unit (should match inventory storageUnit)
+  quantity Decimal // Amount used
+  unit     String // Unit (should match inventory storageUnit)
 
-  sortOrder       Int           @default(0)
+  sortOrder Int @default(0)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4248,18 +4266,18 @@ model PrepItemIngredient {
 
 // Recipe - links menu items to ingredients
 model MenuItemRecipe {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
-  menuItemId  String   @unique
-  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String   @unique
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
   // Calculated costs
-  totalCost     Decimal?  // Sum of all ingredients
-  foodCostPct   Decimal?  // totalCost / menuItem.price
+  totalCost   Decimal? // Sum of all ingredients
+  foodCostPct Decimal? // totalCost / menuItem.price
 
   // Relations
-  ingredients   MenuItemRecipeIngredient[]
+  ingredients MenuItemRecipeIngredient[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4272,11 +4290,11 @@ model MenuItemRecipe {
 
 // Individual ingredient in a recipe
 model MenuItemRecipeIngredient {
-  id          String          @id @default(cuid())
-  locationId  String
-  location    Location        @relation(fields: [locationId], references: [id])
-  recipeId    String
-  recipe      MenuItemRecipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  id         String         @id @default(cuid())
+  locationId String
+  location   Location       @relation(fields: [locationId], references: [id])
+  recipeId   String
+  recipe     MenuItemRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   // Link to either inventory item OR prep item (one must be set)
   inventoryItemId String?
@@ -4284,12 +4302,12 @@ model MenuItemRecipeIngredient {
   prepItemId      String?
   prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
 
-  quantity    Decimal  // Amount used
-  unit        String   // Unit
-  cost        Decimal? // Calculated cost for this ingredient
+  quantity Decimal // Amount used
+  unit     String // Unit
+  cost     Decimal? // Calculated cost for this ingredient
 
-  sortOrder   Int      @default(0)
-  notes       String?  // "lightly toasted", "diced"
+  sortOrder Int     @default(0)
+  notes     String? // "lightly toasted", "diced"
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4304,11 +4322,11 @@ model MenuItemRecipeIngredient {
 
 // Links modifiers to inventory for tracking
 model ModifierInventoryLink {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
-  modifierId  String   @unique
-  modifier    Modifier @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  modifierId String   @unique
+  modifier   Modifier @relation(fields: [modifierId], references: [id], onDelete: Cascade)
 
   // Link to either inventory item OR prep item
   inventoryItemId String?
@@ -4317,9 +4335,9 @@ model ModifierInventoryLink {
   prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
 
   // Usage amount when modifier is selected
-  usageQuantity   Decimal
-  usageUnit       String
-  calculatedCost  Decimal?
+  usageQuantity  Decimal
+  usageUnit      String
+  calculatedCost Decimal?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4333,13 +4351,13 @@ model ModifierInventoryLink {
 
 // Inventory count session
 model InventoryCount {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
-  countDate   DateTime @default(now())
-  countType   String   // "full", "area", "spot", "cycle"
-  status      InventoryCountStatus   @default(in_progress)
+  countDate DateTime             @default(now())
+  countType String // "full", "area", "spot", "cycle"
+  status    InventoryCountStatus @default(in_progress)
 
   // Link to storage location (for area counts)
   storageLocationId String?
@@ -4356,10 +4374,10 @@ model InventoryCount {
   varianceValue Decimal?
   variancePct   Decimal?
 
-  notes       String?
+  notes String?
 
   // Relations
-  items       InventoryCountItem[]
+  items InventoryCountItem[]
 
   completedAt DateTime?
   reviewedAt  DateTime?
@@ -4376,22 +4394,22 @@ model InventoryCount {
 
 // Individual item in a count
 model InventoryCountItem {
-  id               String          @id @default(cuid())
+  id               String         @id @default(cuid())
   locationId       String
-  location         Location        @relation(fields: [locationId], references: [id])
+  location         Location       @relation(fields: [locationId], references: [id])
   inventoryCountId String
-  inventoryCount   InventoryCount  @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
+  inventoryCount   InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
   inventoryItemId  String
-  inventoryItem    InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem    InventoryItem  @relation(fields: [inventoryItemId], references: [id])
 
-  expectedQty      Decimal   // What system says
-  countedQty       Decimal?  // What was counted
-  variance         Decimal?  // countedQty - expectedQty
-  varianceValue    Decimal?  // variance * costPerUnit
-  variancePct      Decimal?
+  expectedQty   Decimal // What system says
+  countedQty    Decimal? // What was counted
+  variance      Decimal? // countedQty - expectedQty
+  varianceValue Decimal? // variance * costPerUnit
+  variancePct   Decimal?
 
-  countedAt        DateTime?
-  notes            String?
+  countedAt DateTime?
+  notes     String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4411,25 +4429,25 @@ model InventoryItemTransaction {
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
 
   // Transaction type
-  type            String   // "purchase", "sale", "adjustment", "waste", "transfer", "count"
+  type String // "purchase", "sale", "adjustment", "waste", "transfer", "count"
 
   // Quantities
-  quantityBefore  Decimal
-  quantityChange  Decimal  // Positive for additions, negative for deductions
-  quantityAfter   Decimal
+  quantityBefore Decimal
+  quantityChange Decimal // Positive for additions, negative for deductions
+  quantityAfter  Decimal
 
   // Cost info
-  unitCost        Decimal?
-  totalCost       Decimal?
+  unitCost  Decimal?
+  totalCost Decimal?
 
   // Reference info
-  reason          String?
-  referenceType   String?  // "invoice", "order", "waste_log", "count"
-  referenceId     String?  // ID of related record
-  notes           String?
+  reason        String?
+  referenceType String? // "invoice", "order", "waste_log", "count"
+  referenceId   String? // ID of related record
+  notes         String?
 
   // Who did it
-  employeeId      String?
+  employeeId String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4446,24 +4464,24 @@ model InventoryItemTransaction {
 
 // Vendor management
 model Vendor {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
-  name        String
-  accountNum  String?
-  phone       String?
-  email       String?
-  address     String?
-  notes       String?
+  name       String
+  accountNum String?
+  phone      String?
+  email      String?
+  address    String?
+  notes      String?
 
   // Payment terms
-  paymentTerms String?  // "Net 30", "COD"
+  paymentTerms String? // "Net 30", "COD"
 
-  isActive    Boolean  @default(true)
+  isActive Boolean @default(true)
 
   // Relations
-  invoices    Invoice[]
+  invoices        Invoice[]
   defaultForItems InventoryItem[] @relation("DefaultVendor")
 
   createdAt DateTime  @default(now())
@@ -4477,11 +4495,11 @@ model Vendor {
 
 // Invoice/Purchase tracking
 model Invoice {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
-  vendorId    String
-  vendor      Vendor   @relation(fields: [vendorId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  vendorId   String
+  vendor     Vendor   @relation(fields: [vendorId], references: [id])
 
   invoiceNumber String
   invoiceDate   DateTime
@@ -4489,27 +4507,27 @@ model Invoice {
   receivedDate  DateTime?
 
   // Totals
-  subtotal      Decimal
-  taxAmount     Decimal  @default(0)
-  shippingCost  Decimal  @default(0)
-  totalAmount   Decimal
+  subtotal     Decimal
+  taxAmount    Decimal @default(0)
+  shippingCost Decimal @default(0)
+  totalAmount  Decimal
 
   // Status
-  status        InvoiceStatus   @default(pending)
-  paidDate      DateTime?
+  status   InvoiceStatus @default(pending)
+  paidDate DateTime?
 
   // Options
-  updateCosts     Boolean @default(true)  // Update item costs from invoice
-  addToInventory  Boolean @default(true)  // Add quantities to inventory
+  updateCosts    Boolean @default(true) // Update item costs from invoice
+  addToInventory Boolean @default(true) // Add quantities to inventory
 
-  notes         String?
+  notes String?
 
   // Relations
-  lineItems     InvoiceLineItem[]
+  lineItems InvoiceLineItem[]
 
   // Who entered it
-  enteredById   String?
-  enteredBy     Employee? @relation("InvoiceEnteredBy", fields: [enteredById], references: [id])
+  enteredById String?
+  enteredBy   Employee? @relation("InvoiceEnteredBy", fields: [enteredById], references: [id])
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4524,26 +4542,26 @@ model Invoice {
 
 // Invoice line items
 model InvoiceLineItem {
-  id              String        @id @default(cuid())
+  id              String         @id @default(cuid())
   locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
+  location        Location       @relation(fields: [locationId], references: [id])
   invoiceId       String
-  invoice         Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice         Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
 
   // If not linked to inventory item
-  description     String?
+  description String?
 
-  quantity        Decimal
-  unit            String
-  unitCost        Decimal
-  totalCost       Decimal
+  quantity  Decimal
+  unit      String
+  unitCost  Decimal
+  totalCost Decimal
 
   // For cost comparison
-  previousCost    Decimal?  // What it cost before
-  costChange      Decimal?  // Difference
-  costChangePct   Decimal?  // % change
+  previousCost  Decimal? // What it cost before
+  costChange    Decimal? // Difference
+  costChangePct Decimal? // % change
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4563,22 +4581,22 @@ model WasteLogEntry {
   inventoryItemId String
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
 
-  quantity        Decimal
-  unit            String
-  costImpact      Decimal?
+  quantity   Decimal
+  unit       String
+  costImpact Decimal?
 
-  reason          String   // "spoilage", "spill", "overcooked", "contamination", "training"
-  notes           String?
+  reason String // "spoilage", "spill", "overcooked", "contamination", "training"
+  notes  String?
 
   // Who logged it
-  employeeId      String?
-  employee        Employee? @relation("WasteLogEmployee", fields: [employeeId], references: [id])
+  employeeId String?
+  employee   Employee? @relation("WasteLogEmployee", fields: [employeeId], references: [id])
 
-  wasteDate       DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  deletedAt       DateTime?
-  syncedAt        DateTime?
+  wasteDate DateTime  @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([wasteDate])
@@ -4588,24 +4606,24 @@ model WasteLogEntry {
 
 // Settings for inventory management
 model InventorySettings {
-  id          String   @id @default(cuid())
-  locationId  String   @unique
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String   @unique
+  location   Location @relation(fields: [locationId], references: [id])
 
   // Tracking mode: determines what features are enabled
   // - "usage_only": Track what goes out (sales, waste) - no incoming inventory logging required
   // - "full_tracking": Track incoming + outgoing = variance reports, theoretical vs actual
-  trackingMode          String  @default("usage_only") // "usage_only", "full_tracking"
+  trackingMode String @default("usage_only") // "usage_only", "full_tracking"
 
   // When to deduct inventory
   // - "on_send": Deduct when order sent to kitchen (committed to making it)
   // - "on_pay": Deduct when order is paid (legacy behavior)
-  deductionTiming       String  @default("on_send") // "on_send", "on_pay"
+  deductionTiming String @default("on_send") // "on_send", "on_pay"
 
   // Prep stock settings
-  trackPrepStock        Boolean @default(true) // Track prep item stock levels
-  deductPrepOnSend      Boolean @default(true) // Deduct prep stock when sent to kitchen
-  restorePrepOnVoid     Boolean @default(true) // Restore prep stock when voided (if not made)
+  trackPrepStock    Boolean @default(true) // Track prep item stock levels
+  deductPrepOnSend  Boolean @default(true) // Deduct prep stock when sent to kitchen
+  restorePrepOnVoid Boolean @default(true) // Restore prep stock when voided (if not made)
 
   // Count settings
   defaultCountFrequency String  @default("weekly") // "daily", "weekly", "biweekly", "monthly"
@@ -4615,22 +4633,22 @@ model InventorySettings {
   varianceAlertPct      Decimal @default(5) // Alert if >5% variance
 
   // Cost settings
-  costChangeAlertPct    Decimal @default(10) // Alert if cost changes >10%
-  targetFoodCostPct     Decimal? // Target food cost %
-  targetLiquorCostPct   Decimal? // Target liquor cost %
+  costChangeAlertPct  Decimal  @default(10) // Alert if cost changes >10%
+  targetFoodCostPct   Decimal? // Target food cost %
+  targetLiquorCostPct Decimal? // Target liquor cost %
 
   // Modifier instruction multipliers (for Lite, Extra, etc.)
-  multiplierLite        Decimal @default(0.5)  // "Lite" = 50% of standard amount
-  multiplierExtra       Decimal @default(2.0)  // "Extra" = 200% of standard amount
-  multiplierTriple      Decimal @default(3.0)  // "Triple" = 300% of standard amount
+  multiplierLite   Decimal @default(0.5) // "Lite" = 50% of standard amount
+  multiplierExtra  Decimal @default(2.0) // "Extra" = 200% of standard amount
+  multiplierTriple Decimal @default(3.0) // "Triple" = 300% of standard amount
 
   // Default pour sizes (for liquor)
-  defaultPourSizeOz     Decimal @default(1.5)
+  defaultPourSizeOz Decimal @default(1.5)
 
   // Integration settings
-  exportEnabled         Boolean @default(false)
-  exportTarget          String? // "marginedge", "restaurant365"
-  exportApiKey          String?
+  exportEnabled Boolean @default(false)
+  exportTarget  String? // "marginedge", "restaurant365"
+  exportApiKey  String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4643,15 +4661,15 @@ model InventorySettings {
 // ============================================
 
 model Break {
-  id               String   @id @default(cuid())
+  id               String         @id @default(cuid())
   locationId       String
-  location         Location @relation(fields: [locationId], references: [id])
+  location         Location       @relation(fields: [locationId], references: [id])
   timeClockEntryId String
   timeClockEntry   TimeClockEntry @relation(fields: [timeClockEntryId], references: [id])
   employeeId       String
   employee         Employee       @relation(fields: [employeeId], references: [id])
 
-  breakType BreakType    @default(unpaid)
+  breakType BreakType @default(unpaid)
   startedAt DateTime  @default(now())
   endedAt   DateTime?
   duration  Int? // Minutes, calculated on end
@@ -4689,11 +4707,11 @@ model SpiritCategory {
   categoryType String  @default("spirit") // 'spirit' | 'beer' | 'wine'
   displayName  String?
   description  String?
-  sortOrder   Int     @default(0)
-  isActive    Boolean @default(true)
+  sortOrder    Int     @default(0)
+  isActive     Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -4701,7 +4719,7 @@ model SpiritCategory {
   // Relations
   bottleProducts       BottleProduct[]
   spiritModifierGroups SpiritModifierGroup[]
-  inventoryItems       InventoryItem[]      @relation("InventoryItemSpirit")
+  inventoryItems       InventoryItem[]       @relation("InventoryItemSpirit")
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -4737,7 +4755,7 @@ model BottleProduct {
   // Container & subtype classification
   containerType  String  @default("bottle") // 'bottle' | 'can' | 'draft' | 'glass'
   alcoholSubtype String? // beer: 'domestic'|'import'|'craft'|'seltzer'|'na'; wine: 'red'|'white'|'rose'|'sparkling'
-  vintage        Int?    // Wine vintage year e.g. 2021
+  vintage        Int? // Wine vintage year e.g. 2021
 
   // Inventory - tracks bottles on hand
   currentStock  Int     @default(0) // Number of bottles in inventory
@@ -4750,8 +4768,8 @@ model BottleProduct {
   verifiedAt        DateTime?
   verifiedBy        String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -4759,7 +4777,7 @@ model BottleProduct {
   // Relations
   spiritModifiers   Modifier[] // Modifiers that link to this bottle
   recipeIngredients RecipeIngredient[] // Recipes that use this bottle
-  linkedMenuItems   MenuItem[] @relation("LinkedBottleMenuItems") // Menu items created from this bottle
+  linkedMenuItems   MenuItem[]         @relation("LinkedBottleMenuItems") // Menu items created from this bottle
 
   // Link to unified inventory for stock tracking
   inventoryItemId String?
@@ -4774,19 +4792,19 @@ model BottleProduct {
 
 // Recipe ingredients - what goes into a cocktail
 model RecipeIngredient {
-  id              String        @id @default(cuid())
-  locationId      String
-  location        Location      @relation(fields: [locationId], references: [id])
-  menuItemId      String
-  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
   // Spirit link (optional — one of bottleProduct OR ingredient must be set)
   bottleProductId String?
   bottleProduct   BottleProduct? @relation(fields: [bottleProductId], references: [id])
 
   // Food ingredient link (optional — alternative to bottleProduct)
-  ingredientId    String?
-  ingredient      Ingredient?    @relation(fields: [ingredientId], references: [id])
+  ingredientId String?
+  ingredient   Ingredient? @relation(fields: [ingredientId], references: [id])
 
   // Pour amount (for spirits)
   pourCount       Decimal  @default(1) // 1 pour, 0.5 pour, 2 pours
@@ -4795,8 +4813,8 @@ model RecipeIngredient {
   isSubstitutable Boolean  @default(true) // Can swap for different tier (premium upgrade)
 
   // Quantity for food items (e.g., 1 each, 2 slices)
-  quantity         Decimal?
-  unit             String?  // "each", "oz", "slice", "wedge", "sprig", "dash"
+  quantity Decimal?
+  unit     String? // "each", "oz", "slice", "wedge", "sprig", "dash"
 
   // For display
   sortOrder Int     @default(0)
@@ -4831,8 +4849,8 @@ model SpiritModifierGroup {
   upsellPromptText String? // "Upgrade to {name} for ${diff}?"
   defaultTier      String  @default("well") // Default selection tier
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -4888,56 +4906,56 @@ model SpiritUpsellEvent {
 
 // Admin-configurable ingredient categories
 model IngredientCategory {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   // Identity - code is IMMUTABLE after creation (for historical tracking)
-  code        Int      // Auto-assigned sequential number, NEVER changes
-  name        String   // "Produce", "Protein" - can be renamed
+  code        Int // Auto-assigned sequential number, NEVER changes
+  name        String // "Produce", "Protein" - can be renamed
   description String?
 
   // Display
-  icon        String?  // Emoji or icon name: "🥬", "🍖"
-  color       String?  // Hex color for UI grouping
-  sortOrder   Int      @default(0)
+  icon      String? // Emoji or icon name: "🥬", "🍖"
+  color     String? // Hex color for UI grouping
+  sortOrder Int     @default(0)
 
   // Status
-  isActive          Boolean  @default(true)
-  needsVerification Boolean  @default(false)
+  isActive          Boolean @default(true)
+  needsVerification Boolean @default(false)
 
   // Relations
   ingredients Ingredient[]
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  syncedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
-  @@unique([locationId, code])  // Code unique per location
-  @@unique([locationId, name])  // Name unique per location
+  @@unique([locationId, code]) // Code unique per location
+  @@unique([locationId, name]) // Name unique per location
   @@index([locationId])
 }
 
 // Group of swappable ingredients (e.g., "Proteins", "Cheese Options")
 model IngredientSwapGroup {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
-  name        String   // "Proteins", "Cheese Options", "Bread Choices"
+  name        String // "Proteins", "Cheese Options", "Bread Choices"
   description String?
 
   // Members of this swap group
   ingredients Ingredient[]
 
-  sortOrder   Int     @default(0)
-  isActive    Boolean @default(true)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  syncedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -4945,16 +4963,16 @@ model IngredientSwapGroup {
 
 // Global ingredient library - reusable across menu items
 model Ingredient {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   // Identity
-  name        String   // "Lettuce", "Bacon", "Ranch"
-  description String?  // Optional description
+  name        String // "Lettuce", "Bacon", "Ranch"
+  description String? // Optional description
 
   // Legacy category string - deprecated, use categoryId instead
-  category   String? // "produce", "protein", "dairy" - kept for backwards compatibility
+  category String? // "produce", "protein", "dairy" - kept for backwards compatibility
 
   // New Category relation (optional for backwards compatibility, required in UI)
   categoryId       String?
@@ -4968,53 +4986,53 @@ model Ingredient {
   prepItem        PrepItem?      @relation("IngredientPrepLink", fields: [prepItemId], references: [id])
 
   // Standard portion (used in recipes and for deduction)
-  standardQuantity Decimal?  // e.g., 1.5
-  standardUnit     String?   // "oz", "slice", "each", "g"
+  standardQuantity Decimal? // e.g., 1.5
+  standardUnit     String? // "oz", "slice", "each", "g"
 
   // Source type: How is this item obtained?
-  sourceType       String    @default("delivered")  // "delivered" = purchased from vendor, "made" = made from recipe
+  sourceType String @default("delivered") // "delivered" = purchased from vendor, "made" = made from recipe
 
   // Purchase info (for delivered items)
-  purchaseUnit     String?   // What you order: "case", "bag", "bottle", "gallon", "box", "jar", "each"
-  purchaseCost     Decimal?  // Cost per purchase unit (e.g., $45 per case)
-  unitsPerPurchase Decimal?  // How many storage units per purchase (e.g., 120 slices per case)
+  purchaseUnit     String? // What you order: "case", "bag", "bottle", "gallon", "box", "jar", "each"
+  purchaseCost     Decimal? // Cost per purchase unit (e.g., $45 per case)
+  unitsPerPurchase Decimal? // How many storage units per purchase (e.g., 120 slices per case)
   // Note: standardUnit is the storage/usage unit (slices, lb, oz, etc.)
   // costPerUnit is calculated: purchaseCost / unitsPerPurchase
 
   // Order Customization Options
-  allowNo         Boolean @default(true)   // Customer can say "No X"
-  allowLite       Boolean @default(true)   // Customer can say "Lite X"
-  allowExtra      Boolean @default(true)   // Customer can say "Extra X"
-  allowOnSide     Boolean @default(false)  // Customer can say "X on side"
+  allowNo     Boolean @default(true) // Customer can say "No X"
+  allowLite   Boolean @default(true) // Customer can say "Lite X"
+  allowExtra  Boolean @default(true) // Customer can say "Extra X"
+  allowOnSide Boolean @default(false) // Customer can say "X on side"
 
   // Pricing for customizations
-  extraPrice      Decimal @default(0)      // Upcharge for "Extra"
+  extraPrice Decimal @default(0) // Upcharge for "Extra"
 
   // Inventory multipliers for customizations
-  liteMultiplier  Decimal @default(0.5)    // Lite = 50% of standard
-  extraMultiplier Decimal @default(2.0)    // Extra = 200% of standard
+  liteMultiplier  Decimal @default(0.5) // Lite = 50% of standard
+  extraMultiplier Decimal @default(2.0) // Extra = 200% of standard
 
   // Swap configuration
-  allowSwap           Boolean              @default(false)
-  swapGroupId         String?              // Links to a group of swappable ingredients
-  swapGroup           IngredientSwapGroup? @relation(fields: [swapGroupId], references: [id])
-  swapUpcharge        Decimal              @default(0)
+  allowSwap    Boolean              @default(false)
+  swapGroupId  String? // Links to a group of swappable ingredients
+  swapGroup    IngredientSwapGroup? @relation(fields: [swapGroupId], references: [id])
+  swapUpcharge Decimal              @default(0)
 
   // Visibility (for future use)
   // "visible" = staff sees in counts/POS
   // "admin_only" = only managers see (for cost tracking)
   // "hidden" = system internal, deprecated items
-  visibility      String  @default("visible")  // "visible", "admin_only", "hidden"
+  visibility String @default("visible") // "visible", "admin_only", "hidden"
 
   // Display
-  sortOrder       Int     @default(0)
-  isActive        Boolean @default(true)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
 
   // Menu Item links (which items use this ingredient)
   menuItemIngredients MenuItemIngredient[]
 
   // Modifiers that deduct from this ingredient
-  linkedModifiers     Modifier[] @relation("ModifierIngredient")
+  linkedModifiers Modifier[] @relation("ModifierIngredient")
 
   // ========== INGREDIENT HIERARCHY (Parent/Child Preparations) ==========
   // Allows tracking preparations like: Raw Chicken → Sliced Chicken, Diced Chicken
@@ -5024,68 +5042,68 @@ model Ingredient {
   childIngredients   Ingredient[] @relation("IngredientHierarchy")
 
   // Preparation info (for child ingredients)
-  preparationType    String?   // "Sliced", "Diced", "Cooked", "Marinated", "Ground"
-  yieldPercent       Decimal?  // e.g., 0.94 = 94% yield (6% cooking loss)
-  batchYield         Decimal?  // How many of this prep item from 1 unit of parent (e.g., 16 slices from 1 lb)
+  preparationType String? // "Sliced", "Diced", "Cooked", "Marinated", "Ground"
+  yieldPercent    Decimal? // e.g., 0.94 = 94% yield (6% cooking loss)
+  batchYield      Decimal? // How many of this prep item from 1 unit of parent (e.g., 16 slices from 1 lb)
 
   // ========== EXPLICIT INPUT → OUTPUT (New Model) ==========
   // For prep items: defines the transformation from parent to this item
   // Example: 6 oz Raw Chicken → 2 oz Shredded Chicken
 
   // INPUT: How much of parent is consumed to make this prep item
-  inputQuantity      Decimal?  // e.g., 6 (oz of raw chicken)
-  inputUnit          String?   // e.g., "oz" - should match or be convertible to parent's unit
+  inputQuantity Decimal? // e.g., 6 (oz of raw chicken)
+  inputUnit     String? // e.g., "oz" - should match or be convertible to parent's unit
 
   // OUTPUT: How much of this prep item is produced
-  outputQuantity     Decimal?  @default(1)  // e.g., 2 (oz shredded) or 1 (crust)
-  outputUnit         String?   @default("each")  // e.g., "oz" for bulk, "each" for discrete items
+  outputQuantity Decimal? @default(1) // e.g., 2 (oz shredded) or 1 (crust)
+  outputUnit     String?  @default("each") // e.g., "oz" for bulk, "each" for discrete items
 
   // ========== RECIPE BATCH YIELD (For Inventory Items) ==========
   // For inventory items with recipes: defines how much one recipe batch makes
   // Example: "This dough recipe makes 50 lb" or "This sauce recipe makes 1 gallon"
-  recipeYieldQuantity Decimal?  // e.g., 50
-  recipeYieldUnit     String?   // e.g., "lb", "gallons", "batches"
+  recipeYieldQuantity Decimal? // e.g., 50
+  recipeYieldUnit     String? // e.g., "lb", "gallons", "batches"
 
   // DEPRECATED: Legacy fields - kept for migration, use inputQuantity/outputQuantity instead
-  portionSize        Decimal?  // DEPRECATED: Use inputQuantity
-  portionUnit        String?   // DEPRECATED: Use inputUnit
+  portionSize Decimal? // DEPRECATED: Use inputQuantity
+  portionUnit String? // DEPRECATED: Use inputUnit
 
   // Daily counting (for prep items counted each morning)
-  isDailyCountItem   Boolean @default(false)  // Include in daily prep count
-  currentPrepStock   Decimal @default(0)      // Current stock from last count
-  lastCountedAt      DateTime?                // When last counted
-  countPrecision     String  @default("whole") // 'whole' = integers only (pizzas), 'decimal' = allow decimals (oz, lbs)
+  isDailyCountItem Boolean   @default(false) // Include in daily prep count
+  currentPrepStock Decimal   @default(0) // Current stock from last count
+  lastCountedAt    DateTime? // When last counted
+  countPrecision   String    @default("whole") // 'whole' = integers only (pizzas), 'decimal' = allow decimals (oz, lbs)
 
   // Stock alert thresholds (for prep items)
-  lowStockThreshold      Decimal?  // Show 🟡 warning on POS when below this
-  criticalStockThreshold Decimal?  // Show 🔴 critical on POS when below this
-  onlineStockThreshold   Decimal?  // Show "Limited availability" online when below this
+  lowStockThreshold      Decimal? // Show 🟡 warning on POS when below this
+  criticalStockThreshold Decimal? // Show 🔴 critical on POS when below this
+  onlineStockThreshold   Decimal? // Show "Limited availability" online when below this
 
   // Daily count behavior
-  resetDailyToZero       Boolean @default(true)   // true = fresh prep (expect 0), false = carry forward
-  varianceHandling       String  @default("auto_adjust")  // 'auto_adjust', 'require_reason', 'auto_waste'
-  varianceThreshold      Decimal @default(10)     // % threshold for requiring reason (e.g., 10 = 10%)
+  resetDailyToZero  Boolean @default(true) // true = fresh prep (expect 0), false = carry forward
+  varianceHandling  String  @default("auto_adjust") // 'auto_adjust', 'require_reason', 'auto_waste'
+  varianceThreshold Decimal @default(10) // % threshold for requiring reason (e.g., 10 = 10%)
 
   // Is this a base ingredient (root) or a preparation (child)?
-  isBaseIngredient   Boolean @default(true)
+  isBaseIngredient Boolean @default(true)
 
   // ========== 86 STATUS (Out of Stock) ==========
   // When an ingredient is 86'd, all menu items and modifiers using it become unavailable
-  is86d              Boolean   @default(false)   // Currently out of stock
-  last86dAt          DateTime?                   // When it was last marked as 86
-  last86dBy          String?                     // Employee ID who marked it
-  showOnQuick86      Boolean   @default(false)   // Show in Quick 86 custom list at top
+  is86d         Boolean   @default(false) // Currently out of stock
+  last86dAt     DateTime? // When it was last marked as 86
+  last86dBy     String? // Employee ID who marked it
+  showOnQuick86 Boolean   @default(false) // Show in Quick 86 custom list at top
 
   // ========== VERIFICATION (Items created from menu builder) ==========
   // Items created from menu builder need confirmation from inventory team
-  needsVerification  Boolean   @default(false)   // Created from menu builder, needs review
-  verifiedAt         DateTime?                   // When verified by inventory team
-  verifiedBy         String?                     // Employee ID who verified
+  needsVerification Boolean   @default(false) // Created from menu builder, needs review
+  verifiedAt        DateTime? // When verified by inventory team
+  verifiedBy        String? // Employee ID who verified
 
   // Daily Prep Count relations (for prep-style ingredients)
-  trayConfigs              PrepTrayConfig[]             @relation("IngredientTrayConfigs")
-  dailyCountItems          DailyPrepCountItem[]         @relation("IngredientDailyCountItems")
-  dailyCountTransactions   DailyPrepCountTransaction[]  @relation("IngredientDailyCountTransactions")
+  trayConfigs            PrepTrayConfig[]            @relation("IngredientTrayConfigs")
+  dailyCountItems        DailyPrepCountItem[]        @relation("IngredientDailyCountItems")
+  dailyCountTransactions DailyPrepCountTransaction[] @relation("IngredientDailyCountTransactions")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -5093,9 +5111,9 @@ model Ingredient {
   syncedAt  DateTime?
 
   // Recipe components - what raw materials make this inventory item
-  recipeComponents   IngredientRecipe[] @relation("RecipeOutput")
+  recipeComponents IngredientRecipe[] @relation("RecipeOutput")
   // Where this ingredient is used as a component
-  usedInRecipes      IngredientRecipe[] @relation("RecipeComponent")
+  usedInRecipes    IngredientRecipe[] @relation("RecipeComponent")
 
   // Stock adjustment history
   stockAdjustments IngredientStockAdjustment[]
@@ -5108,6 +5126,7 @@ model Ingredient {
 
   // C-SCHEMA-1: Added reverse relations
   orderItemIngredients OrderItemIngredient[]
+
   @@index([locationId])
   @@index([locationId, name])
   @@index([categoryId])
@@ -5120,34 +5139,34 @@ model Ingredient {
 // Tracks all manual stock adjustments for cost reporting and audit trails
 // Created by Quick Stock Adjust page and other manual adjustment workflows
 model IngredientStockAdjustment {
-  id           String   @id @default(cuid())
-  locationId   String
-  location     Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   ingredientId String
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
 
   // Adjustment type
-  type         String   // "manual", "count", "waste", "transfer", "receiving"
+  type String // "manual", "count", "waste", "transfer", "receiving"
 
   // Quantity tracking
-  quantityBefore  Decimal
-  quantityChange  Decimal  // Positive for additions, negative for deductions
-  quantityAfter   Decimal
-  unit            String?  // Unit of measurement
+  quantityBefore Decimal
+  quantityChange Decimal // Positive for additions, negative for deductions
+  quantityAfter  Decimal
+  unit           String? // Unit of measurement
 
   // Cost tracking (captured at time of adjustment)
   unitCost        Decimal? // Cost per unit at time of adjustment
   totalCostImpact Decimal? // quantityChange * unitCost (for reporting)
 
   // Who and why
-  employeeId   String?
-  employee     Employee? @relation(fields: [employeeId], references: [id])
-  reason       String?   // "Morning count", "Waste - dropped", "Received delivery", etc.
-  notes        String?
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  reason     String? // "Morning count", "Waste - dropped", "Received delivery", etc.
+  notes      String?
 
   // Reference to source (if from another workflow)
-  referenceType String?  // "daily_count", "waste_log", "purchase_order"
+  referenceType String? // "daily_count", "waste_log", "purchase_order"
   referenceId   String?
 
   createdAt DateTime  @default(now())
@@ -5167,33 +5186,33 @@ model IngredientStockAdjustment {
 // WARNING: Self-referential cycles possible (A uses B, B uses A). Application code
 // must validate DAG integrity when creating/updating recipes to prevent infinite loops.
 model IngredientRecipe {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   // The output item (what gets made) - e.g., Pizza Dough
-  outputId    String
-  output      Ingredient @relation("RecipeOutput", fields: [outputId], references: [id], onDelete: Cascade)
+  outputId String
+  output   Ingredient @relation("RecipeOutput", fields: [outputId], references: [id], onDelete: Cascade)
 
   // The component/raw material used - e.g., Flour
   componentId String
   component   Ingredient @relation("RecipeComponent", fields: [componentId], references: [id])
 
   // How much of the component is needed
-  quantity    Decimal   // e.g., 2
-  unit        String    // e.g., "lb"
+  quantity Decimal // e.g., 2
+  unit     String // e.g., "lb"
 
   // For batch recipes - this makes X units of output
   // If null, assumes recipe makes 1 unit of output
-  batchSize   Decimal?
-  batchUnit   String?
+  batchSize Decimal?
+  batchUnit String?
 
-  sortOrder   Int       @default(0)
+  sortOrder Int @default(0)
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  syncedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@unique([outputId, componentId])
   @@index([locationId])
@@ -5203,12 +5222,12 @@ model IngredientRecipe {
 
 // Links ingredients to menu items with quantity overrides
 model MenuItemIngredient {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
-  menuItemId  String
-  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
   ingredientId String
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
@@ -5217,25 +5236,25 @@ model MenuItemIngredient {
   isIncluded Boolean @default(true) // Comes on item by default?
 
   // Override quantity for this specific item (null = use ingredient's standard)
-  quantity    Decimal?
-  unit        String?
+  quantity Decimal?
+  unit     String?
 
   // Override customization options for this item
-  allowNo     Boolean?  // null = use ingredient default
+  allowNo     Boolean? // null = use ingredient default
   allowLite   Boolean?
   allowExtra  Boolean?
   allowOnSide Boolean?
-  extraPrice  Decimal?  // Override extra price for this item
+  extraPrice  Decimal? // Override extra price for this item
 
   // Is this a "base" ingredient or optional add-on?
-  isBase      Boolean @default(true)  // Base ingredients show by default
+  isBase Boolean @default(true) // Base ingredients show by default
 
-  sortOrder   Int     @default(0)
+  sortOrder Int @default(0)
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  syncedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@unique([menuItemId, ingredientId])
   @@index([locationId])
@@ -5266,8 +5285,8 @@ model ModifierGroupTemplate {
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   syncedAt  DateTime?
 
@@ -5357,8 +5376,8 @@ model Printer {
   port      Int    @default(9100)
 
   // Role
-  printerRole PrinterRole  @default(kitchen)
-  isDefault   Boolean @default(false) // Default printer for this role
+  printerRole PrinterRole @default(kitchen)
+  isDefault   Boolean     @default(false) // Default printer for this role
 
   // Capabilities
   paperWidth  Int     @default(80) // 80mm or 40mm
@@ -5374,23 +5393,23 @@ model Printer {
 
   sortOrder Int @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
 
   // Relations
-  printJobs   PrintJob[]
-  printRules  PrintRule[]
+  printJobs  PrintJob[]
+  printRules PrintRule[]
   // printRoutes replaced by named relations: printRoutesPrimary + printRoutesBackup (C-SCHEMA-1)
-  terminals   Terminal[] @relation("TerminalReceiptPrinter") // Terminals using this as receipt printer
+  terminals  Terminal[]  @relation("TerminalReceiptPrinter") // Terminals using this as receipt printer
 
   // C-SCHEMA-1: Added reverse relations
   printRoutesPrimary PrintRoute[] @relation("PrintRoutePrimaryPrinter")
   printRoutesBackup  PrintRoute[] @relation("PrintRouteBackupPrinter")
 
-  @@unique([locationId, name])  // Same IP can be used multiple times with different names/roles
+  @@unique([locationId, name]) // Same IP can be used multiple times with different names/roles
   @@index([locationId])
   @@index([printerRole])
   @@index([ipAddress])
@@ -5408,7 +5427,7 @@ model Station {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Identity
-  name        String  // "Pizza Oven", "Main Expo", "Grill KDS", "Bar Printer"
+  name        String // "Pizza Oven", "Main Expo", "Grill KDS", "Bar Printer"
   displayName String? // Optional friendly name for UI
   type        StationType
 
@@ -5427,11 +5446,11 @@ model Station {
   // Values: STANDARD_KITCHEN, PIZZA_STATION, EXPO_SUMMARY, ENTERTAINMENT_TICKET, BAR_TICKET
 
   // Printer-specific settings (only for PRINTER type)
-  printerType   String?  // "thermal" | "impact"
-  printerModel  String?  // "TM-T88VII", "TM-U220"
-  paperWidth    Int?     @default(80) // 80, 58, 40mm
-  supportsCut   Boolean  @default(true)
-  printSettings Json?    // PrinterSettings JSON object
+  printerType   String? // "thermal" | "impact"
+  printerModel  String? // "TM-T88VII", "TM-U220"
+  paperWidth    Int?    @default(80) // 80, 58, 40mm
+  supportsCut   Boolean @default(true)
+  printSettings Json? // PrinterSettings JSON object
 
   // KDS-specific settings (only for KDS type)
   columns      Int?    @default(4)
@@ -5481,7 +5500,7 @@ model KDSScreen {
 
   name       String // "Kitchen Main", "Grill Station", "Bar Display"
   slug       String? // URL-friendly identifier: "kitchen-main", "grill-station"
-  screenType String @default("kds") // "kds" | "entertainment"
+  screenType String  @default("kds") // "kds" | "entertainment"
 
   // Display Settings
   columns     Int    @default(4)
@@ -5498,17 +5517,17 @@ model KDSScreen {
 
   // Device Pairing & Authentication
   deviceToken          String?   @unique // Secure token assigned after pairing
-  pairingCode          String?   // 6-digit temporary pairing code
+  pairingCode          String? // 6-digit temporary pairing code
   pairingCodeExpiresAt DateTime? // When pairing code expires
   isPaired             Boolean   @default(false) // Whether a device is paired
 
   // Static IP Configuration (for UniFi/private networks)
-  staticIp        String?  // Expected static IP address (e.g., "192.168.1.50")
-  enforceStaticIp Boolean  @default(false) // Reject requests from wrong IP
+  staticIp        String? // Expected static IP address (e.g., "192.168.1.50")
+  enforceStaticIp Boolean @default(false) // Reject requests from wrong IP
 
   // Device Info (for troubleshooting)
   lastKnownIp String? // Last IP address seen
-  deviceInfo  Json?   // User agent, screen size, etc.
+  deviceInfo  Json? // User agent, screen size, etc.
 
   // Status
   isActive   Boolean   @default(true)
@@ -5517,8 +5536,8 @@ model KDSScreen {
 
   sortOrder Int @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -5542,14 +5561,13 @@ model KDSScreenStation {
   stationId   String
   station     PrepStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
 
-  sortOrder Int @default(0)
+  sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
-
 
   @@unique([kdsScreenId, stationId])
   @@index([locationId])
@@ -5576,20 +5594,20 @@ model Terminal {
 
   // Device Pairing (similar to KDS pairing)
   deviceToken          String?   @unique // Secure token assigned after pairing
-  pairingCode          String?   // 6-digit temporary pairing code
+  pairingCode          String? // 6-digit temporary pairing code
   pairingCodeExpiresAt DateTime? // When pairing code expires
   isPaired             Boolean   @default(false)
 
   // Device Info
   deviceFingerprint String? // Browser/app fingerprint for handhelds
   lastKnownIp       String? // Last IP address seen
-  deviceInfo        Json?   // User agent, screen size, model, etc.
+  deviceInfo        Json? // User agent, screen size, model, etc.
 
   // Native Platform Support
-  platform    TerminalPlatform  @default(BROWSER)
-  appVersion  String?                       // e.g. "1.0.0"
-  osVersion   String?                       // e.g. "Android 14"
-  pushToken   String?                       // FCM token for push notifications
+  platform   TerminalPlatform @default(BROWSER)
+  appVersion String? // e.g. "1.0.0"
+  osVersion  String? // e.g. "Android 14"
+  pushToken  String? // FCM token for push notifications
 
   // Local Receipt Printer
   // The physical receipt printer attached to or near this terminal
@@ -5621,11 +5639,11 @@ model Terminal {
 
   // Payment Reader Binding (Datacap Direct Integration)
   paymentReaderId       String?
-  paymentReader         PaymentReader? @relation("TerminalPaymentReader", fields: [paymentReaderId], references: [id])
-  paymentProvider       PaymentProvider         @default(SIMULATED)
+  paymentReader         PaymentReader?  @relation("TerminalPaymentReader", fields: [paymentReaderId], references: [id])
+  paymentProvider       PaymentProvider @default(SIMULATED)
   backupPaymentReaderId String?
-  backupPaymentReader   PaymentReader? @relation("TerminalBackupReader", fields: [backupPaymentReaderId], references: [id])
-  readerFailoverTimeout Int            @default(10000) // 10s before trying backup reader
+  backupPaymentReader   PaymentReader?  @relation("TerminalBackupReader", fields: [backupPaymentReaderId], references: [id])
+  readerFailoverTimeout Int             @default(10000) // 10s before trying backup reader
 
   // Scale Binding (Weight-Based Selling)
   scaleId String?
@@ -5633,11 +5651,14 @@ model Terminal {
 
   sortOrder Int @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields
   deletedAt DateTime?
   syncedAt  DateTime?
+
+  // C-SCHEMA-1: Reverse relations
+  processedPayments Payment[] @relation("PaymentTerminal")
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -5657,20 +5678,20 @@ model Scale {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Identity
-  name      String                        // "Deli Scale", "Produce Scale"
-  scaleType String @default("CAS_PD_II")  // Protocol type for factory pattern
+  name      String // "Deli Scale", "Produce Scale"
+  scaleType String @default("CAS_PD_II") // Protocol type for factory pattern
 
   // Serial Port Configuration
-  portPath String                  // "/dev/ttyUSB0", "COM3", etc.
-  baudRate Int     @default(9600)
-  dataBits Int     @default(7)
-  parity   String  @default("even") // "none" | "even" | "odd"
-  stopBits Int     @default(1)
+  portPath String // "/dev/ttyUSB0", "COM3", etc.
+  baudRate Int    @default(9600)
+  dataBits Int    @default(7)
+  parity   String @default("even") // "none" | "even" | "odd"
+  stopBits Int    @default(1)
 
   // Weight Configuration
-  maxCapacity Decimal?               // Max weight capacity
+  maxCapacity Decimal? // Max weight capacity
   weightUnit  String   @default("lb") // "lb" | "kg" | "oz" | "g"
-  precision   Int      @default(2)    // Decimal places
+  precision   Int      @default(2) // Decimal places
 
   // Status
   isActive    Boolean   @default(true)
@@ -5710,10 +5731,10 @@ model PaymentReader {
   merchantId        String? // Datacap merchant ID if different per reader
   terminalId        String? // Datacap terminal ID (their concept, not ours)
   lastSequenceNo    String  @default("0010010010") // Track Datacap SequenceNo per device
-  deviceType        String  @default("PAX")        // PAX | INGENICO | IDTECH — determines port/protocol
-  communicationMode String  @default("local")      // local | cloud | local_with_cloud_fallback | simulated
-  cloudUsername     String?                         // Basic Auth username (cloud mode)
-  cloudPassword     String?                         // Basic Auth password (cloud mode, encrypted)
+  deviceType        String  @default("PAX") // PAX | INGENICO | IDTECH — determines port/protocol
+  communicationMode String  @default("local") // local | cloud | local_with_cloud_fallback | simulated
+  cloudUsername     String? // Basic Auth username (cloud mode)
+  cloudPassword     String? // Basic Auth password (cloud mode, encrypted)
 
   // Verification Settings
   verificationType String @default("SERIAL_HANDSHAKE") // "SERIAL_HANDSHAKE" | "IP_ONLY"
@@ -5727,25 +5748,25 @@ model PaymentReader {
   firmwareVersion String?
 
   // Health Metrics
-  avgResponseTime Int?     // Average ms for last 10 transactions
+  avgResponseTime Int? // Average ms for last 10 transactions
   successRate     Decimal? // % successful in last 24 hours
 
   sortOrder Int @default(0)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields
   deletedAt DateTime?
   syncedAt  DateTime?
 
   // Relations
-  terminals Terminal[] @relation("TerminalPaymentReader")
-  backupFor Terminal[] @relation("TerminalBackupReader")
+  terminals Terminal[]         @relation("TerminalPaymentReader")
+  backupFor Terminal[]         @relation("TerminalBackupReader")
   logs      PaymentReaderLog[]
 
   // C-SCHEMA-1: Added reverse relations
-  processedPayments Payment[] @relation("PaymentReaderPayments")
-  orderCards       OrderCard[] @relation("OrderCardReader")
+  processedPayments Payment[]   @relation("PaymentReaderPayments")
+  orderCards        OrderCard[] @relation("OrderCardReader")
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -5764,10 +5785,10 @@ model PaymentReaderLog {
   location     Location      @relation(fields: [locationId], references: [id])
   readerId     String
   reader       PaymentReader @relation(fields: [readerId], references: [id])
-  responseTime Int           // milliseconds
+  responseTime Int // milliseconds
   success      Boolean
   errorCode    String?
-  tranType     String?       // sale, void, preauth, etc.
+  tranType     String? // sale, void, preauth, etc.
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   syncedAt     DateTime?
@@ -5816,8 +5837,8 @@ model PrintRule {
   priority Int     @default(0) // For tie-breaking within same level
   isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -5840,32 +5861,32 @@ model PrintRoute {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
-  name       String              // "Pizza Printer 1", "Bar Printer"
-  routeType  String              // "category" | "item_type" | "station" | "custom"
-  isActive   Boolean  @default(true)
-  priority   Int      @default(0)
+  name      String // "Pizza Printer 1", "Bar Printer"
+  routeType String // "category" | "item_type" | "station" | "custom"
+  isActive  Boolean @default(true)
+  priority  Int     @default(0)
 
   // Routing criteria
-  categoryIds    Json?   // Array of category IDs this route handles
-  itemTypes      Json?   // Array of item types (food, liquor, etc.)
-  stationId      String? // Specific station
+  categoryIds Json? // Array of category IDs this route handles
+  itemTypes   Json? // Array of item types (food, liquor, etc.)
+  stationId   String? // Specific station
 
   // Target printer
-  printerId      String?
-  printer        Printer? @relation("PrintRoutePrimaryPrinter", fields: [printerId], references: [id])
+  printerId String?
+  printer   Printer? @relation("PrintRoutePrimaryPrinter", fields: [printerId], references: [id])
 
   // Backup printer for failover
   backupPrinterId String?
   backupPrinter   Printer? @relation("PrintRouteBackupPrinter", fields: [backupPrinterId], references: [id])
-  failoverTimeout Int?    @default(5000) // ms before trying backup
+  failoverTimeout Int?     @default(5000) // ms before trying backup
 
   // Settings
-  settings    Json?    // RouteSpecificSettings JSON
+  settings Json? // RouteSpecificSettings JSON
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
-  syncedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([routeType])
@@ -5880,15 +5901,15 @@ model PrintJob {
   jobType   String // "kitchen_ticket" | "receipt" | "reference"
   orderId   String?
   printerId String
-  printer   Printer  @relation(fields: [printerId], references: [id])
+  printer   Printer @relation(fields: [printerId], references: [id])
 
-  status       PrintJobStatus  @default(pending)
+  status       PrintJobStatus @default(pending)
   errorMessage String?
-  retryCount   Int     @default(0)
+  retryCount   Int            @default(0)
 
   content String? // ESC/POS buffer for reprint
 
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Sync fields (for cloud sync and soft deletes)
@@ -5914,12 +5935,12 @@ model PizzaConfig {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Sectional settings
-  maxSections     Int     @default(8) // Max sections: 1 (whole), 2 (halves), 4 (quarters), 8 (eighths)
-  defaultSections Int     @default(2) // Default view (halves)
-  sectionOptions  Json    @default("[1, 2, 4, 8]") // Available section modes
+  maxSections     Int  @default(8) // Max sections: 1 (whole), 2 (halves), 4 (quarters), 8 (eighths)
+  defaultSections Int  @default(2) // Default view (halves)
+  sectionOptions  Json @default("[1, 2, 4, 8]") // Available section modes
 
   // Pricing strategy - FRACTIONAL is recommended
-  pricingMode String @default("fractional")
+  pricingMode   String @default("fractional")
   // "fractional" (DEFAULT): coverage% = price% (half = 50%, quarter = 25%, eighth = 12.5%)
   // "flat": any coverage = full topping price (higher margin, simpler)
   // "hybrid": custom percentages per coverage level
@@ -5952,8 +5973,8 @@ model PizzaConfig {
   // Pizza-specific print settings (JSON object conforming to PizzaPrintSettings)
   printSettings Json?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -5988,8 +6009,8 @@ model PizzaSize {
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6016,15 +6037,15 @@ model PizzaCrust {
   // Links to dough inventory - usage is for MEDIUM size, scaled by size multiplier
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaCrustInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal?       // Base usage for medium pizza (e.g., 12 oz dough)
-  usageUnit       String?        // "oz", "each"
+  usageQuantity   Decimal? // Base usage for medium pizza (e.g., 12 oz dough)
+  usageUnit       String? // "oz", "each"
 
   sortOrder Int     @default(0)
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6056,15 +6077,15 @@ model PizzaSauce {
   // Inventory tracking (Skill 115)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaSauceInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal?       // Base usage for medium pizza (e.g., 4 oz sauce)
-  usageUnit       String?        // "oz"
+  usageQuantity   Decimal? // Base usage for medium pizza (e.g., 4 oz sauce)
+  usageUnit       String? // "oz"
 
   sortOrder Int     @default(0)
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6096,15 +6117,15 @@ model PizzaCheese {
   // Inventory tracking (Skill 115)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaCheeseInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal?       // Base usage for medium pizza (e.g., 8 oz cheese)
-  usageUnit       String?        // "oz"
+  usageQuantity   Decimal? // Base usage for medium pizza (e.g., 8 oz cheese)
+  usageUnit       String? // "oz"
 
   sortOrder Int     @default(0)
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6141,14 +6162,14 @@ model PizzaTopping {
   // Inventory tracking (Skill 115)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaToppingInventory", fields: [inventoryItemId], references: [id])
-  usageQuantity   Decimal?       // Base usage for medium whole pizza (e.g., 2 oz pepperoni)
-  usageUnit       String?        // "oz", "each"
+  usageQuantity   Decimal? // Base usage for medium whole pizza (e.g., 2 oz pepperoni)
+  usageUnit       String? // "oz", "each"
 
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6188,8 +6209,8 @@ model PizzaSpecialty {
   allowCheeseChange Boolean @default(true)
   allowToppingMods  Boolean @default(true) // Add/remove toppings
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6277,25 +6298,25 @@ model PayrollPeriod {
   periodType  String // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
 
   // Status tracking
-  status    PayrollPeriodStatus   @default(open)
-  closedAt  DateTime?
-  closedBy  String? // employeeId of manager who closed
-  paidAt    DateTime?
+  status   PayrollPeriodStatus @default(open)
+  closedAt DateTime?
+  closedBy String? // employeeId of manager who closed
+  paidAt   DateTime?
 
   // Totals (calculated when closed)
-  totalRegularHours   Decimal?
-  totalOvertimeHours  Decimal?
-  totalWages          Decimal?
-  totalTips           Decimal?
-  totalCommissions    Decimal?
-  totalBankedTips     Decimal?
-  grandTotal          Decimal?
+  totalRegularHours  Decimal?
+  totalOvertimeHours Decimal?
+  totalWages         Decimal?
+  totalTips          Decimal?
+  totalCommissions   Decimal?
+  totalBankedTips    Decimal?
+  grandTotal         Decimal?
 
   // Notes
   notes String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6311,7 +6332,7 @@ model PayrollPeriod {
 
 // PayStub - Individual employee pay stub for a period
 model PayStub {
-  id              String        @id @default(cuid())
+  id              String   @id @default(cuid())
   locationId      String
   location        Location @relation(fields: [locationId], references: [id])
   payrollPeriodId String
@@ -6321,21 +6342,21 @@ model PayStub {
   employee      Employee      @relation(fields: [employeeId], references: [id])
 
   // Time worked
-  regularHours   Decimal @default(0)
-  overtimeHours  Decimal @default(0)
-  breakMinutes   Int     @default(0)
+  regularHours  Decimal @default(0)
+  overtimeHours Decimal @default(0)
+  breakMinutes  Int     @default(0)
 
   // Wages
-  hourlyRate     Decimal @default(0)
-  regularPay     Decimal @default(0) // regularHours * hourlyRate
-  overtimePay    Decimal @default(0) // overtimeHours * hourlyRate * 1.5
+  hourlyRate  Decimal @default(0)
+  regularPay  Decimal @default(0) // regularHours * hourlyRate
+  overtimePay Decimal @default(0) // overtimeHours * hourlyRate * 1.5
 
   // Tips
-  declaredTips     Decimal @default(0) // Tips declared at shift closeout
-  tipSharesGiven   Decimal @default(0) // Tip-outs to other employees
-  tipSharesReceived Decimal @default(0) // Tip-outs from other employees
+  declaredTips        Decimal @default(0) // Tips declared at shift closeout
+  tipSharesGiven      Decimal @default(0) // Tip-outs to other employees
+  tipSharesReceived   Decimal @default(0) // Tip-outs from other employees
   bankedTipsCollected Decimal @default(0) // Previously banked tips now paid
-  netTips          Decimal @default(0) // declared - given + received + banked
+  netTips             Decimal @default(0) // declared - given + received + banked
 
   // Commissions
   commissionTotal Decimal @default(0)
@@ -6350,7 +6371,7 @@ model PayStub {
   medicareTax       Decimal @default(0)
   localTax          Decimal @default(0)
   totalDeductions   Decimal @default(0) // All taxes combined
-  deductions        Json?   // Additional deductions { other: [] }
+  deductions        Json? // Additional deductions { other: [] }
 
   // Net pay
   netPay Decimal @default(0)
@@ -6359,9 +6380,9 @@ model PayStub {
   checkNumber String?
 
   // Shifts included
-  shiftCount    Int @default(0)
-  shiftIds      Json? // Array of shift IDs included
-  timeEntryIds  Json? // Array of time entry IDs included
+  shiftCount   Int   @default(0)
+  shiftIds     Json? // Array of shift IDs included
+  timeEntryIds Json? // Array of time entry IDs included
 
   // Payment tracking
   paymentMethod String? // 'check' | 'direct_deposit' | 'cash'
@@ -6373,8 +6394,8 @@ model PayStub {
 
   notes String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6401,15 +6422,15 @@ model Schedule {
   weekEnd   DateTime // Sunday of the week
 
   // Status
-  status      ScheduleStatus   @default(draft)
+  status      ScheduleStatus @default(draft)
   publishedAt DateTime?
   publishedBy String? // employeeId
 
   // Notes
   notes String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6435,15 +6456,15 @@ model ScheduledShift {
 
   // Shift timing
   date      DateTime // Date of the shift
-  startTime String   // "09:00" (24h format)
-  endTime   String   // "17:00" (24h format)
+  startTime String // "09:00" (24h format)
+  endTime   String // "17:00" (24h format)
 
   // Break scheduling
   breakMinutes Int @default(0)
 
   // Role/position for this shift (may differ from employee's primary role)
   roleId String?
-  role   Role?  @relation(fields: [roleId], references: [id])
+  role   Role?   @relation(fields: [roleId], references: [id])
 
   // Section assignment (if applicable)
   sectionId String?
@@ -6464,8 +6485,8 @@ model ScheduledShift {
   // Notes
   notes String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6482,27 +6503,27 @@ model ScheduledShift {
 
 // ShiftSwapRequest - Employee shift swap workflow
 model ShiftSwapRequest {
-  id                      String           @id @default(cuid())
-  locationId              String
-  location                Location         @relation(fields: [locationId], references: [id])
-  shiftId                 String
-  shift                   ScheduledShift   @relation(fields: [shiftId], references: [id], onDelete: Cascade)
-  requestedByEmployeeId   String
-  requestedByEmployee     Employee         @relation("SwapInitiator", fields: [requestedByEmployeeId], references: [id])
-  requestedToEmployeeId   String?
-  requestedToEmployee     Employee?        @relation("SwapTarget", fields: [requestedToEmployeeId], references: [id])
-  status                  ShiftSwapRequestStatus           @default(pending)
-  respondedAt             DateTime?
-  approvedAt              DateTime?
-  approvedByEmployeeId    String?
-  approvedByEmployee      Employee?        @relation("SwapApprover", fields: [approvedByEmployeeId], references: [id])
-  expiresAt               DateTime?
-  notes                   String?
-  declineReason           String?
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @updatedAt
-  deletedAt               DateTime?
-  syncedAt                DateTime?
+  id                    String                 @id @default(cuid())
+  locationId            String
+  location              Location               @relation(fields: [locationId], references: [id])
+  shiftId               String
+  shift                 ScheduledShift         @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  requestedByEmployeeId String
+  requestedByEmployee   Employee               @relation("SwapInitiator", fields: [requestedByEmployeeId], references: [id])
+  requestedToEmployeeId String?
+  requestedToEmployee   Employee?              @relation("SwapTarget", fields: [requestedToEmployeeId], references: [id])
+  status                ShiftSwapRequestStatus @default(pending)
+  respondedAt           DateTime?
+  approvedAt            DateTime?
+  approvedByEmployeeId  String?
+  approvedByEmployee    Employee?              @relation("SwapApprover", fields: [approvedByEmployeeId], references: [id])
+  expiresAt             DateTime?
+  notes                 String?
+  declineReason         String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  deletedAt             DateTime?
+  syncedAt              DateTime?
 
   @@index([locationId])
   @@index([shiftId])
@@ -6520,10 +6541,10 @@ model AvailabilityEntry {
   employee   Employee @relation(fields: [employeeId], references: [id])
 
   // Recurring availability (weekly pattern)
-  dayOfWeek     Int      // 0-6 (Sunday-Saturday)
-  availableFrom String?  // "09:00" or null for not available
-  availableTo   String?  // "17:00" or null for not available
-  isAvailable   Boolean  @default(true)
+  dayOfWeek     Int // 0-6 (Sunday-Saturday)
+  availableFrom String? // "09:00" or null for not available
+  availableTo   String? // "17:00" or null for not available
+  isAvailable   Boolean @default(true)
 
   // Preference level
   preference String @default("available") // 'preferred' | 'available' | 'if_needed' | 'unavailable'
@@ -6535,8 +6556,8 @@ model AvailabilityEntry {
   // Notes
   notes String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6558,44 +6579,44 @@ model PayrollSettings {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Pay Period Configuration
-  payPeriodType   String @default("biweekly") // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
-  payDayOfWeek    Int?   // 0-6 for weekly/biweekly (Friday = 5)
-  payDayOfMonth1  Int?   // 1-31 for semimonthly/monthly
-  payDayOfMonth2  Int?   // Second pay day for semimonthly
+  payPeriodType  String @default("biweekly") // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
+  payDayOfWeek   Int? // 0-6 for weekly/biweekly (Friday = 5)
+  payDayOfMonth1 Int? // 1-31 for semimonthly/monthly
+  payDayOfMonth2 Int? // Second pay day for semimonthly
 
   // Overtime Configuration
-  overtimeThresholdDaily  Decimal @default(8)  // Hours per day before OT kicks in
-  overtimeThresholdWeekly Decimal @default(40) // Hours per week before OT kicks in
-  overtimeMultiplier      Decimal @default(1.5) // 1.5x for time-and-a-half
+  overtimeThresholdDaily  Decimal  @default(8) // Hours per day before OT kicks in
+  overtimeThresholdWeekly Decimal  @default(40) // Hours per week before OT kicks in
+  overtimeMultiplier      Decimal  @default(1.5) // 1.5x for time-and-a-half
   doubleTimeThreshold     Decimal? // Hours before double-time (California: 12 hrs/day)
-  doubleTimeMultiplier    Decimal @default(2.0)
+  doubleTimeMultiplier    Decimal  @default(2.0)
 
   // Tax Configuration
   stateTaxState   String? // State code: 'CA', 'TX', 'NY', etc.
   stateTaxRate    Decimal? // Flat rate if applicable
-  localTaxEnabled Boolean @default(false)
+  localTaxEnabled Boolean  @default(false)
   localTaxRate    Decimal?
   localTaxName    String? // 'City Tax', 'School District', etc.
 
   // FICA (Social Security & Medicare)
-  socialSecurityRate Decimal @default(6.2)  // Employee portion %
-  medicareRate       Decimal @default(1.45) // Employee portion %
+  socialSecurityRate     Decimal @default(6.2) // Employee portion %
+  medicareRate           Decimal @default(1.45) // Employee portion %
   socialSecurityWageBase Decimal @default(168600) // 2024 wage base
 
   // Minimum Wage
-  minimumWage      Decimal @default(7.25) // Federal default
+  minimumWage       Decimal @default(7.25) // Federal default
   tippedMinimumWage Decimal @default(2.13) // Tipped employee minimum
 
   // Break Requirements
-  mealBreakThreshold    Int @default(360) // Minutes worked before meal break required (6 hrs)
-  mealBreakDuration     Int @default(30)  // Required meal break duration in minutes
-  restBreakInterval     Int @default(240) // Minutes between rest breaks (4 hrs)
-  restBreakDuration     Int @default(10)  // Rest break duration in minutes
-  paidMealBreaks        Boolean @default(false)
-  paidRestBreaks        Boolean @default(true)
+  mealBreakThreshold Int     @default(360) // Minutes worked before meal break required (6 hrs)
+  mealBreakDuration  Int     @default(30) // Required meal break duration in minutes
+  restBreakInterval  Int     @default(240) // Minutes between rest breaks (4 hrs)
+  restBreakDuration  Int     @default(10) // Rest break duration in minutes
+  paidMealBreaks     Boolean @default(false)
+  paidRestBreaks     Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
@@ -6610,18 +6631,18 @@ model PayrollSettings {
 
 // Tray configurations for a prep item (e.g., "Large Dough Tray = 6 balls")
 model PrepTrayConfig {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
-  prepItemId  String   // Actually stores Ingredient ID (prep-style ingredients)
-  ingredient  Ingredient @relation("IngredientTrayConfigs", fields: [prepItemId], references: [id], onDelete: Cascade)
+  id         String     @id @default(cuid())
+  locationId String
+  location   Location   @relation(fields: [locationId], references: [id])
+  prepItemId String // Actually stores Ingredient ID (prep-style ingredients)
+  ingredient Ingredient @relation("IngredientTrayConfigs", fields: [prepItemId], references: [id], onDelete: Cascade)
 
   // Identity
-  name        String   // "Large Dough Tray", "Small Dough Tray", "Loose"
-  capacity    Decimal  // 6 (balls, portions, etc.)
+  name        String // "Large Dough Tray", "Small Dough Tray", "Loose"
+  capacity    Decimal // 6 (balls, portions, etc.)
   description String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -6635,13 +6656,13 @@ model PrepTrayConfig {
 
 // Daily Prep Count session - represents a morning count session
 model DailyPrepCount {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   // Session details
-  countDate   DateTime @default(now()) // Date of the count (morning of prep day)
-  status      DailyPrepCountStatus   @default(draft)
+  countDate DateTime             @default(now()) // Date of the count (morning of prep day)
+  status    DailyPrepCountStatus @default(draft)
 
   // Who created, submitted, approved
   createdById String
@@ -6675,29 +6696,29 @@ model DailyPrepCount {
 
 // Individual prep item count within a daily count session
 model DailyPrepCountItem {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   dailyCountId String
   dailyCount   DailyPrepCount @relation(fields: [dailyCountId], references: [id], onDelete: Cascade)
 
-  prepItemId  String   // Actually stores Ingredient ID (prep-style ingredients)
-  ingredient  Ingredient @relation("IngredientDailyCountItems", fields: [prepItemId], references: [id])
+  prepItemId String // Actually stores Ingredient ID (prep-style ingredients)
+  ingredient Ingredient @relation("IngredientDailyCountItems", fields: [prepItemId], references: [id])
 
   // Tray breakdown - JSON: { "Large Tray": 3, "Small Tray": 2, "Loose": 4 }
   // Keys are tray names, values are quantities counted
   trayBreakdown Json?
 
   // Calculated values
-  totalCounted      Decimal   // Sum of all trays: (Large * 6) + (Small * 12) + loose
-  expectedQuantity  Decimal?  // Previous closing stock (for variance)
-  variance          Decimal?  // totalCounted - expectedQuantity
-  variancePercent   Decimal?  // (variance / expectedQuantity) * 100
+  totalCounted     Decimal // Sum of all trays: (Large * 6) + (Small * 12) + loose
+  expectedQuantity Decimal? // Previous closing stock (for variance)
+  variance         Decimal? // totalCounted - expectedQuantity
+  variancePercent  Decimal? // (variance / expectedQuantity) * 100
 
   // Cost impact (calculated on approval)
-  costPerUnit       Decimal?  // Snapshot of prep item cost
-  totalCost         Decimal?  // totalCounted * costPerUnit
+  costPerUnit Decimal? // Snapshot of prep item cost
+  totalCost   Decimal? // totalCounted * costPerUnit
 
   notes String?
 
@@ -6714,33 +6735,33 @@ model DailyPrepCountItem {
 
 // Audit trail for inventory movements from daily prep counts
 model DailyPrepCountTransaction {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   dailyCountId String
   dailyCount   DailyPrepCount @relation(fields: [dailyCountId], references: [id], onDelete: Cascade)
 
   // Type of transaction: "prep_stock_add" or "ingredient_deduct"
-  type        String
+  type String
 
   // For prep item stock additions (actually Ingredient ID)
-  prepItemId  String?
-  ingredient  Ingredient? @relation("IngredientDailyCountTransactions", fields: [prepItemId], references: [id])
+  prepItemId String?
+  ingredient Ingredient? @relation("IngredientDailyCountTransactions", fields: [prepItemId], references: [id])
 
   // For raw ingredient deductions
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
 
   // Quantity movement
-  quantityBefore  Decimal
-  quantityChange  Decimal  // Positive for prep item add, negative for ingredient deduct
-  quantityAfter   Decimal
-  unit            String?
+  quantityBefore Decimal
+  quantityChange Decimal // Positive for prep item add, negative for ingredient deduct
+  quantityAfter  Decimal
+  unit           String?
 
   // Cost tracking (for reporting)
-  unitCost        Decimal?
-  totalCost       Decimal?
+  unitCost  Decimal?
+  totalCost Decimal?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -6769,19 +6790,19 @@ model OrderCard {
   reader   PaymentReader @relation("OrderCardReader", fields: [readerId], references: [id])
 
   // Datacap tokens
-  recordNo String  // Datacap RecordNo token — needed for capture/increment/void
+  recordNo String // Datacap RecordNo token — needed for capture/increment/void
 
   // Card info (from chip/tap data)
-  cardType       String  // VISA, MASTERCARD, AMEX, DISCOVER, etc.
-  cardLast4      String  // Last 4 digits
+  cardType       String // VISA, MASTERCARD, AMEX, DISCOVER, etc.
+  cardLast4      String // Last 4 digits
   cardholderName String? // Name from chip data (auto-fills tab name)
 
   // Authorization tracking
-  authAmount     Decimal // Current total authorized amount
-  isDefault      Boolean @default(false) // Default payment card for this tab
+  authAmount Decimal // Current total authorized amount
+  isDefault  Boolean @default(false) // Default payment card for this tab
 
   // Status
-  status         OrderCardStatus  @default(authorized)
+  status OrderCardStatus @default(authorized)
 
   // Capture details (at tab close)
   capturedAmount Decimal?
@@ -6811,20 +6832,20 @@ model DigitalReceipt {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
-  orderId    String   @unique
-  order      Order    @relation(fields: [orderId], references: [id])
-  paymentId  String
-  payment    Payment  @relation(fields: [paymentId], references: [id])
+  orderId   String  @unique
+  order     Order   @relation(fields: [orderId], references: [id])
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id])
 
   // Full receipt content (items, amounts, taxes, discounts, etc.)
-  receiptData     Json
+  receiptData Json
 
   // Signature for chargeback defense
-  signatureData   String?  // Base64 PNG from reader or POS screen
-  signatureSource String?  // "reader" | "pos_screen"
+  signatureData   String? // Base64 PNG from reader or POS screen
+  signatureSource String? // "reader" | "pos_screen"
 
   // Archive lifecycle
-  archivedAt      DateTime?  // When moved to cloud archive
+  archivedAt DateTime? // When moved to cloud archive
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
@@ -6845,18 +6866,18 @@ model ChargebackCase {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Auto-matched order/payment (if found)
-  orderId    String?
-  paymentId  String?
+  orderId   String?
+  paymentId String?
 
   // Card info for matching
-  cardLast4  String
-  cardBrand  String?
-  amount     Decimal
+  cardLast4 String
+  cardBrand String?
+  amount    Decimal
 
   // Chargeback details
   chargebackDate   DateTime
   reason           String?
-  reasonCode       String?   // Processor reason code (e.g., "10.4" for fraud)
+  reasonCode       String? // Processor reason code (e.g., "10.4" for fraud)
   responseDeadline DateTime?
 
   // Status
@@ -6864,10 +6885,10 @@ model ChargebackCase {
   notes  String?
 
   // Response tracking
-  respondedAt    DateTime?
-  respondedBy    String?   // Employee who responded
-  responseNotes  String?
-  resolvedAt     DateTime?
+  respondedAt   DateTime?
+  respondedBy   String? // Employee who responded
+  responseNotes String?
+  resolvedAt    DateTime?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -6893,21 +6914,21 @@ model CardProfile {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Hashed card identity (privacy-safe — cannot reverse to card number)
-  cardholderIdHash String    // SHA-256 of Datacap CardholderID
+  cardholderIdHash String // SHA-256 of Datacap CardholderID
 
   // Card info
-  cardType       String     // VISA, MASTERCARD, etc.
+  cardType       String // VISA, MASTERCARD, etc.
   cardLast4      String
-  cardholderName String?    // From chip data
+  cardholderName String? // From chip data
 
   // Visit tracking
-  visitCount     Int       @default(0)
-  firstSeenAt    DateTime  @default(now())
-  lastSeenAt     DateTime  @default(now())
-  totalSpend     Decimal   @default(0)
+  visitCount  Int      @default(0)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+  totalSpend  Decimal  @default(0)
 
   // Link to Customer record (future: merge via phone number)
-  customerId     String?
+  customerId String?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -6928,28 +6949,28 @@ model WalkoutRetry {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
-  orderId    String
-  order      Order     @relation(fields: [orderId], references: [id])
-  orderCardId String   // Which OrderCard to retry capture against
-  orderCard  OrderCard @relation(fields: [orderCardId], references: [id])
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id])
+  orderCardId String // Which OrderCard to retry capture against
+  orderCard   OrderCard @relation(fields: [orderCardId], references: [id])
 
   // Amount to capture
-  amount     Decimal
+  amount Decimal
 
   // Retry schedule
-  nextRetryAt    DateTime
-  retryCount     Int       @default(0)
-  maxRetries     Int       @default(10)  // Calculated from settings
+  nextRetryAt DateTime
+  retryCount  Int      @default(0)
+  maxRetries  Int      @default(10) // Calculated from settings
 
   // Status
-  status     WalkoutRetryStatus  @default(pending)
+  status WalkoutRetryStatus @default(pending)
 
   // Result tracking
   lastRetryAt    DateTime?
   lastRetryError String?
   collectedAt    DateTime?
   writtenOffAt   DateTime?
-  writtenOffBy   String?   // Employee who wrote off
+  writtenOffBy   String? // Employee who wrote off
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -6972,18 +6993,18 @@ model BottleServiceTier {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Tier details
-  name        String   // e.g., "Bronze", "Silver", "Gold", "Platinum"
-  description String?  // e.g., "Includes reserved seating for 4"
-  color       String   @default("#D4AF37")  // Banner/badge color (default: gold)
+  name        String // e.g., "Bronze", "Silver", "Gold", "Platinum"
+  description String? // e.g., "Includes reserved seating for 4"
+  color       String  @default("#D4AF37") // Banner/badge color (default: gold)
 
   // Financial
-  depositAmount     Decimal  // Pre-auth amount (e.g., $500, $1000, $2000)
-  minimumSpend      Decimal  // Soft minimum spend requirement
+  depositAmount       Decimal // Pre-auth amount (e.g., $500, $1000, $2000)
+  minimumSpend        Decimal // Soft minimum spend requirement
   autoGratuityPercent Decimal? // Override auto-gratuity for this tier (e.g., 20%)
 
   // Configuration
-  sortOrder  Int      @default(0)  // Display order
-  isActive   Boolean  @default(true)
+  sortOrder Int     @default(0) // Display order
+  isActive  Boolean @default(true)
 
   // Back-relations
   reservations Reservation[]
@@ -6994,7 +7015,7 @@ model BottleServiceTier {
   syncedAt  DateTime?
 
   // C-SCHEMA-1: Added reverse relations
-  orders       Order[] @relation("OrderBottleServiceTier")
+  orders Order[] @relation("OrderBottleServiceTier")
 
   @@index([locationId])
   @@index([locationId, isActive])
@@ -7046,11 +7067,11 @@ model ErrorLog {
   responseTime Int? // Milliseconds (for API calls, DB queries, etc.)
 
   // Resolution Tracking
-  status          ErrorLogStatus    @default(NEW)
+  status          ErrorLogStatus @default(NEW)
   groupId         String? // Link to group similar errors together
-  occurrenceCount Int       @default(1) // How many times this exact error occurred
-  firstOccurred   DateTime  @default(now()) // First time this error happened
-  lastOccurred    DateTime  @default(now()) // Most recent occurrence
+  occurrenceCount Int            @default(1) // How many times this exact error occurred
+  firstOccurred   DateTime       @default(now()) // First time this error happened
+  lastOccurred    DateTime       @default(now()) // Most recent occurrence
   resolvedAt      DateTime? // When was this marked resolved
   resolution      String? // How was it fixed
   notes           String? // Developer notes
@@ -7199,38 +7220,38 @@ model CloudEventQueue {
 // ============================================
 
 model RefundLog {
-  id              String    @id @default(cuid())
-  locationId      String
-  location        Location  @relation(fields: [locationId], references: [id])
-  orderId         String
-  order           Order     @relation(fields: [orderId], references: [id])
-  paymentId       String
-  payment         Payment   @relation(fields: [paymentId], references: [id])
-  employeeId      String
-  employee        Employee  @relation(fields: [employeeId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  paymentId  String
+  payment    Payment  @relation(fields: [paymentId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
 
-  refundAmount    Decimal
-  originalAmount  Decimal
-  refundReason    String
-  notes           String?
+  refundAmount   Decimal
+  originalAmount Decimal
+  refundReason   String
+  notes          String?
 
   // Datacap processor reference
   datacapRecordNo String?
   datacapRefNo    String?
 
   // Approval chain
-  approvedById    String?
-  approvedBy      Employee? @relation("RefundLogApprover", fields: [approvedById], references: [id])
-  approvedAt      DateTime?
+  approvedById String?
+  approvedBy   Employee? @relation("RefundLogApprover", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
 
   // Receipt
-  receiptPrinted    Boolean  @default(false)
-  receiptPrintedAt  DateTime?
+  receiptPrinted   Boolean   @default(false)
+  receiptPrintedAt DateTime?
 
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
-  syncedAt        DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([orderId])
@@ -7257,7 +7278,7 @@ model OrderItemDiscount {
   amount         Decimal
   percent        Decimal?
   appliedById    String?
-  appliedBy      Employee? @relation("ItemDiscountAppliedBy", fields: [appliedById], references: [id])
+  appliedBy      Employee?     @relation("ItemDiscountAppliedBy", fields: [appliedById], references: [id])
   reason         String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
@@ -7276,18 +7297,18 @@ model OrderItemDiscount {
 // ============================================
 
 model RegisteredDevice {
-  id                String   @id @default(cuid())
+  id                String          @id @default(cuid())
   locationId        String
-  location          Location @relation(fields: [locationId], references: [id])
-  name              String                     // "Sarah's iPhone"
-  deviceType        String   @default("phone") // phone, tablet
-  deviceFingerprint String?                    // browser fingerprint (optional)
-  registeredById    String                     // employeeId who first registered
-  registeredBy      Employee @relation("RegisteredDeviceEmployee", fields: [registeredById], references: [id])
-  isActive          Boolean  @default(true)
-  lastSeenAt        DateTime @default(now())
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  location          Location        @relation(fields: [locationId], references: [id])
+  name              String // "Sarah's iPhone"
+  deviceType        String          @default("phone") // phone, tablet
+  deviceFingerprint String? // browser fingerprint (optional)
+  registeredById    String // employeeId who first registered
+  registeredBy      Employee        @relation("RegisteredDeviceEmployee", fields: [registeredById], references: [id])
+  isActive          Boolean         @default(true)
+  lastSeenAt        DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
   deletedAt         DateTime?
   syncedAt          DateTime?
   sessions          MobileSession[]
