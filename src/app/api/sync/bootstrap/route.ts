@@ -23,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -53,6 +53,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }),
     db.paymentReader.findMany({ where: { locationId, deletedAt: null } }),
     db.printer.findMany({ where: { locationId, deletedAt: null } }),
+    db.section.findMany({ where: { locationId, deletedAt: null }, orderBy: { sortOrder: 'asc' } }),
   ])
 
   const settings = (location?.settings || {}) as Record<string, unknown>
@@ -68,6 +69,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       locationSettings: settings,
       paymentReaders,
       printers,
+      sections: sections.map(s => ({ id: s.id, name: s.name, color: s.color, sortOrder: s.sortOrder })),
       syncVersion: Date.now(),
     },
   })
