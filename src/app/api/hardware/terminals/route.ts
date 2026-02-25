@@ -36,19 +36,25 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             lastSeenAt: true,
           },
         },
-        scale: {
-          select: {
-            id: true,
-            name: true,
-            portPath: true,
-            isConnected: true,
-          },
-        },
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({ data: { terminals } })
+    // Scale include is separate — gracefully degrade if Scale table doesn't exist yet (pre-migration)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let terminalsWithScales: any[] = terminals.map((t) => ({ ...t, scale: null }))
+    try {
+      const withScales = await db.terminal.findMany({
+        where: { locationId, deletedAt: null, scaleId: { not: null } },
+        select: { id: true, scale: { select: { id: true, name: true, portPath: true, isConnected: true } } },
+      })
+      const scaleMap = new Map(withScales.map((t) => [t.id, t.scale]))
+      terminalsWithScales = terminals.map((t) => ({ ...t, scale: scaleMap.get(t.id) ?? null }))
+    } catch {
+      // Scale table not yet migrated — terminals still work without scale data
+    }
+
+    return NextResponse.json({ data: { terminals: terminalsWithScales } })
   } catch (error) {
     console.error('Failed to fetch terminals:', error)
     return NextResponse.json({ error: 'Failed to fetch terminals' }, { status: 500 })
@@ -119,17 +125,35 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
+    // Build create data — scaleId only if Scale table exists (post-migration)
+    const createData: Record<string, unknown> = {
+      locationId,
+      name,
+      category,
+      platform,
+      staticIp: staticIp || null,
+      receiptPrinterId: receiptPrinterId || null,
+      roleSkipRules: roleSkipRules || {},
+    }
+
+    // Only set scaleId if provided and Scale table exists
+    const cleanScaleId = scaleId || null
+    if (cleanScaleId) {
+      try {
+        const scale = await db.scale.findFirst({
+          where: { id: cleanScaleId, deletedAt: null },
+        })
+        if (!scale) {
+          return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
+        }
+        createData.scaleId = cleanScaleId
+      } catch {
+        // Scale table not yet migrated — skip scaleId
+      }
+    }
+
     const terminal = await db.terminal.create({
-      data: {
-        locationId,
-        name,
-        category,
-        platform,
-        staticIp: staticIp || null,
-        receiptPrinterId: receiptPrinterId || null,
-        roleSkipRules: roleSkipRules || {},
-        scaleId: scaleId || null,
-      },
+      data: createData as Parameters<typeof db.terminal.create>[0]['data'],
       include: {
         receiptPrinter: {
           select: {
@@ -151,6 +175,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-    return NextResponse.json({ error: 'Failed to create terminal' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({ error: `Failed to create terminal: ${msg}` }, { status: 500 })
   }
 })

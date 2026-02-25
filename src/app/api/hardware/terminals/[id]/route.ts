@@ -42,14 +42,6 @@ export const GET = withVenue(async function GET(
             isOnline: true,
           },
         },
-        scale: {
-          select: {
-            id: true,
-            name: true,
-            portPath: true,
-            isConnected: true,
-          },
-        },
       },
     })
 
@@ -57,7 +49,21 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ data: { terminal } })
+    // Attach scale data separately — gracefully degrade if Scale table doesn't exist yet
+    let scale = null
+    try {
+      if ((terminal as Record<string, unknown>).scaleId) {
+        const scaleResult = await db.scale.findFirst({
+          where: { id: (terminal as Record<string, unknown>).scaleId as string, deletedAt: null },
+          select: { id: true, name: true, portPath: true, isConnected: true },
+        })
+        scale = scaleResult
+      }
+    } catch {
+      // Scale table not yet migrated
+    }
+
+    return NextResponse.json({ data: { terminal: { ...terminal, scale } } })
   } catch (error) {
     console.error('Failed to fetch terminal:', error)
     return NextResponse.json({ error: 'Failed to fetch terminal' }, { status: 500 })
@@ -174,13 +180,19 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
-    // Validate scale if provided
+    // Validate scale if provided — gracefully skip if Scale table not yet migrated
+    let scaleValidated = false
     if (scaleId) {
-      const scale = await db.scale.findFirst({
-        where: { id: scaleId, deletedAt: null },
-      })
-      if (!scale) {
-        return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
+      try {
+        const scale = await db.scale.findFirst({
+          where: { id: scaleId, deletedAt: null },
+        })
+        if (!scale) {
+          return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
+        }
+        scaleValidated = true
+      } catch {
+        // Scale table not yet migrated — skip scaleId
       }
     }
 
@@ -211,8 +223,9 @@ export const PUT = withVenue(async function PUT(
         ...(paymentProvider !== undefined && { paymentProvider }),
         ...(backupPaymentReaderId !== undefined && { backupPaymentReaderId: backupPaymentReaderId || null }),
         ...(readerFailoverTimeout !== undefined && { readerFailoverTimeout }),
-        // Scale binding
-        ...(scaleId !== undefined && { scaleId: scaleId || null }),
+        // Scale binding — only if validated (Scale table exists)
+        ...(scaleId !== undefined && scaleValidated && { scaleId: scaleId || null }),
+        ...(scaleId === '' && scaleValidated && { scaleId: null }),
       },
       include: {
         receiptPrinter: {
@@ -251,18 +264,24 @@ export const PUT = withVenue(async function PUT(
             isOnline: true,
           },
         },
-        scale: {
-          select: {
-            id: true,
-            name: true,
-            portPath: true,
-            isConnected: true,
-          },
-        },
       },
     })
 
-    return NextResponse.json({ data: { terminal } })
+    // Attach scale data separately — gracefully degrade if Scale table doesn't exist yet
+    let scale = null
+    try {
+      if ((terminal as Record<string, unknown>).scaleId) {
+        const scaleResult = await db.scale.findFirst({
+          where: { id: (terminal as Record<string, unknown>).scaleId as string, deletedAt: null },
+          select: { id: true, name: true, portPath: true, isConnected: true },
+        })
+        scale = scaleResult
+      }
+    } catch {
+      // Scale table not yet migrated
+    }
+
+    return NextResponse.json({ data: { terminal: { ...terminal, scale } } })
   } catch (error) {
     console.error('Failed to update terminal:', error)
     if (error instanceof Error && error.message.includes('Unique constraint')) {

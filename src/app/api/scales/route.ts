@@ -24,6 +24,11 @@ export const GET = withVenue(async function GET() {
       })),
     })
   } catch (error) {
+    // Gracefully return empty array if Scale table doesn't exist yet (pre-migration)
+    const msg = error instanceof Error ? error.message : ''
+    if (msg.includes('does not exist') || msg.includes('relation') || msg.includes('P2021')) {
+      return NextResponse.json({ data: [] })
+    }
     console.error('Failed to fetch scales:', error)
     return NextResponse.json({ error: 'Failed to fetch scales' }, { status: 500 })
   }
