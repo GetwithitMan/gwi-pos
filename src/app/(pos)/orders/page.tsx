@@ -1422,13 +1422,27 @@ export default function OrdersPage() {
 
   // Handle discount applied
   const handleDiscountApplied = (newTotals: {
+    subtotal?: number
     discountTotal: number
     taxTotal: number
     total: number
   }) => {
     // Clear per-item discount target
     setItemDiscountTargetId(null)
-    // Reload the order discounts
+
+    // Immediately update Zustand with server-authoritative totals
+    // so the OrderPanel reflects the discount right away
+    const store = useOrderStore.getState()
+    if (store.currentOrder) {
+      store.syncServerTotals({
+        subtotal: newTotals.subtotal ?? store.currentOrder.subtotal,
+        discountTotal: newTotals.discountTotal,
+        taxTotal: newTotals.taxTotal,
+        total: newTotals.total,
+      })
+    }
+
+    // Reload the order discounts (for DiscountModal toggle state)
     if (orderToPayId) {
       fetch(`/api/orders/${orderToPayId}/discount`)
         .then(res => res.json())
@@ -1439,7 +1453,7 @@ export default function OrdersPage() {
     }
     // Trigger a refresh of the tabs/orders to update totals
     setTabsRefreshTrigger(prev => prev + 1)
-    // Reload order to reflect item discount changes
+    // Reload full order for item-level discount changes
     if (savedOrderId) {
       void fetch(`/api/orders/${savedOrderId}`)
         .then(r => r.ok ? r.json() : null)
@@ -2472,6 +2486,7 @@ export default function OrdersPage() {
             tax={pricing.tax}
             cashTax={pricing.cashTax}
             cardTax={pricing.cardTax}
+            discounts={pricing.discounts}
             total={pricing.total}
             showItemControls={true}
             showEntertainmentTimers={true}

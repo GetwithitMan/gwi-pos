@@ -167,7 +167,7 @@ export interface OrderPageModalsProps {
   showDiscountModal: boolean
   setShowDiscountModal: (v: boolean) => void
   appliedDiscounts: any[]
-  onDiscountApplied: (newTotals: { discountTotal: number; taxTotal: number; total: number }) => void
+  onDiscountApplied: (newTotals: { subtotal?: number; discountTotal: number; taxTotal: number; total: number }) => void
   itemDiscountTargetId?: string | null
 
   // Comp/Void modal

@@ -46,6 +46,7 @@ interface DiscountModalProps {
   employeeId: string
   appliedDiscounts: AppliedDiscount[]
   onDiscountApplied: (newTotals: {
+    subtotal?: number
     discountTotal: number
     taxTotal: number
     total: number
