@@ -333,6 +333,35 @@ export const PUT = withVenue(async function PUT(
     if (customerId !== undefined) updateData.customerId = customerId
     if (employeeId !== undefined) updateData.employeeId = employeeId
     if (status !== undefined) {
+      // Status transition validation — prevent invalid state changes
+      const VALID_TRANSITIONS: Record<string, string[]> = {
+        open: ['closed', 'void', 'cancelled'],
+        draft: ['open', 'closed', 'void', 'cancelled'],
+        sent: ['open', 'closed', 'void', 'cancelled'],
+        in_progress: ['open', 'closed', 'void', 'cancelled'],
+        split: ['open', 'closed', 'void', 'cancelled'],
+        closed: ['void'],  // needs manager auth (checked above)
+        void: [],           // terminal state
+        paid: [],           // terminal state — only via payment flow
+        cancelled: [],      // terminal state
+      }
+
+      // Never allow direct transition to 'paid' via PUT
+      if (status === 'paid') {
+        return apiError.badRequest(
+          'Cannot set status to "paid" directly. Use the payment flow (/api/orders/[id]/pay).',
+          ERROR_CODES.INVALID_ORDER_STATUS
+        )
+      }
+
+      const allowedNext = VALID_TRANSITIONS[existingOrder.status] ?? []
+      if (!allowedNext.includes(status)) {
+        return apiError.badRequest(
+          `Invalid status transition: "${existingOrder.status}" → "${status}". Allowed: ${allowedNext.length ? allowedNext.join(', ') : 'none (terminal state)'}`,
+          ERROR_CODES.INVALID_ORDER_STATUS
+        )
+      }
+
       updateData.status = status
       if (status === 'cancelled' || status === 'closed') {
         updateData.closedAt = new Date()
@@ -464,6 +493,34 @@ export const PATCH = withVenue(async function PATCH(
     if (customerId !== undefined) updateData.customerId = customerId
     if (employeeId !== undefined) updateData.employeeId = employeeId
     if (status !== undefined) {
+      // Status transition validation — same rules as PUT
+      const VALID_TRANSITIONS: Record<string, string[]> = {
+        open: ['closed', 'void', 'cancelled'],
+        draft: ['open', 'closed', 'void', 'cancelled'],
+        sent: ['open', 'closed', 'void', 'cancelled'],
+        in_progress: ['open', 'closed', 'void', 'cancelled'],
+        split: ['open', 'closed', 'void', 'cancelled'],
+        closed: ['void'],
+        void: [],
+        paid: [],
+        cancelled: [],
+      }
+
+      if (status === 'paid') {
+        return apiError.badRequest(
+          'Cannot set status to "paid" directly. Use the payment flow (/api/orders/[id]/pay).',
+          ERROR_CODES.INVALID_ORDER_STATUS
+        )
+      }
+
+      const allowedNext = VALID_TRANSITIONS[existing.status] ?? []
+      if (!allowedNext.includes(status)) {
+        return apiError.badRequest(
+          `Invalid status transition: "${existing.status}" → "${status}". Allowed: ${allowedNext.length ? allowedNext.join(', ') : 'none (terminal state)'}`,
+          ERROR_CODES.INVALID_ORDER_STATUS
+        )
+      }
+
       updateData.status = status
       if (status === 'cancelled' || status === 'closed') {
         updateData.closedAt = new Date()

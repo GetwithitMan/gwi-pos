@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/stores/toast-store'
@@ -33,11 +33,11 @@ export function LiquorModifiers() {
   const [selectedGroup, setSelectedGroup] = useState<ModifierGroup | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    loadGroups()
-  }, [])
+  // Ref to track selected group id for use inside loadGroups without stale closures
+  const selectedGroupIdRef = useRef<string | null>(null)
+  selectedGroupIdRef.current = selectedGroup?.id ?? null
 
-  const loadGroups = async () => {
+  const loadGroups = useCallback(async (autoSelectId?: string) => {
     setIsLoading(true)
     try {
       const res = await fetch('/api/menu/modifiers')
@@ -50,9 +50,14 @@ export function LiquorModifiers() {
             (!g.linkedItems || g.linkedItems.length === 0)
         )
         setGroups(liquorGroups)
-        // Keep selected group in sync, or auto-select first
-        if (selectedGroup) {
-          const refreshed = liquorGroups.find((g: ModifierGroup) => g.id === selectedGroup.id)
+
+        // If a specific ID was requested (e.g. newly created group), select it
+        if (autoSelectId) {
+          const target = liquorGroups.find((g: ModifierGroup) => g.id === autoSelectId)
+          setSelectedGroup(target || liquorGroups[0] || null)
+        } else if (selectedGroupIdRef.current) {
+          // Keep selected group in sync
+          const refreshed = liquorGroups.find((g: ModifierGroup) => g.id === selectedGroupIdRef.current)
           setSelectedGroup(refreshed || liquorGroups[0] || null)
         } else if (liquorGroups.length > 0) {
           setSelectedGroup(liquorGroups[0])
@@ -61,37 +66,28 @@ export function LiquorModifiers() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadGroups()
+  }, [loadGroups])
 
   const addGroup = async () => {
-    const res = await fetch('/api/menu/modifiers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'New Group', modifierTypes: ['liquor'] }),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      const newId = data.data?.id
-      await loadGroups()
-      // Auto-select the new group after reload
-      if (newId) {
-        // loadGroups sets groups, but we need to wait for state update
-        // so re-fetch to find it
-        const res2 = await fetch('/api/menu/modifiers')
-        if (res2.ok) {
-          const data2 = await res2.json()
-          const liquorGroups = (data2.data?.modifierGroups || []).filter(
-            (g: any) =>
-              g.modifierTypes?.includes('liquor') &&
-              !g.isSpiritGroup &&
-              (!g.linkedItems || g.linkedItems.length === 0)
-          )
-          setGroups(liquorGroups)
-          const newGroup = liquorGroups.find((g: ModifierGroup) => g.id === newId)
-          setSelectedGroup(newGroup || null)
-        }
+    try {
+      const res = await fetch('/api/menu/modifiers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'New Group', modifierTypes: ['liquor'] }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const newId = data.data?.id
+        // Single reload with auto-select — replaces the old 3-fetch cascade
+        await loadGroups(newId)
+      } else {
+        toast.error('Failed to create modifier group')
       }
-    } else {
+    } catch {
       toast.error('Failed to create modifier group')
     }
   }

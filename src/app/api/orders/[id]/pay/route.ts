@@ -25,6 +25,7 @@ import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { calculateCharge, type EntertainmentPricing } from '@/lib/entertainment-pricing'
+import { getLocationTaxRate } from '@/lib/order-calculations'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -305,65 +306,79 @@ export const POST = withVenue(withTiming(async function POST(
     // BUG #380: Settle per-minute entertainment pricing before calculating totals.
     // For timed_rental items with per-minute pricing, the order item's price was set to
     // the base price at ordering time. At payment, compute the actual charge from elapsed time.
+    // H-FIN-5: All settlement writes happen inside a single transaction.
+    // H-FIN-4: Tax is recalculated after price settlement (not just subtotal + old tax).
     const perMinuteItems = order.items.filter(
       (item: any) => item.menuItem?.itemType === 'timed_rental' && item.blockTimeStartedAt && !item.blockTimeExpiresAt
     )
     if (perMinuteItems.length > 0) {
       const now = new Date()
-      for (const item of perMinuteItems) {
-        const startedAt = new Date(item.blockTimeStartedAt!)
-        const elapsedMinutes = Math.max(1, Math.ceil((now.getTime() - startedAt.getTime()) / 60000))
+      const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
 
-        // Fetch the menu item's pricing config
-        const mi = await db.menuItem.findUnique({
-          where: { id: item.menuItemId },
-          select: { ratePerMinute: true, minimumCharge: true, incrementMinutes: true, graceMinutes: true, price: true },
-        })
-        if (!mi) continue
+      await db.$transaction(async (tx) => {
+        for (const item of perMinuteItems) {
+          const startedAt = new Date(item.blockTimeStartedAt!)
+          const elapsedMinutes = Math.max(1, Math.ceil((now.getTime() - startedAt.getTime()) / 60000))
 
-        const ratePerMinute = mi.ratePerMinute ? Number(mi.ratePerMinute) : 0
-        if (ratePerMinute <= 0) continue // Not per-minute pricing
+          // Fetch the menu item's pricing config
+          const mi = await tx.menuItem.findUnique({
+            where: { id: item.menuItemId },
+            select: { ratePerMinute: true, minimumCharge: true, incrementMinutes: true, graceMinutes: true, price: true },
+          })
+          if (!mi) continue
 
-        const pricing: EntertainmentPricing = {
-          ratePerMinute,
-          minimumCharge: mi.minimumCharge ? Number(mi.minimumCharge) : 0,
-          incrementMinutes: mi.incrementMinutes ?? 15,
-          graceMinutes: mi.graceMinutes ?? 5,
+          const ratePerMinute = mi.ratePerMinute ? Number(mi.ratePerMinute) : 0
+          if (ratePerMinute <= 0) continue // Not per-minute pricing
+
+          const pricing: EntertainmentPricing = {
+            ratePerMinute,
+            minimumCharge: mi.minimumCharge ? Number(mi.minimumCharge) : 0,
+            incrementMinutes: mi.incrementMinutes ?? 15,
+            graceMinutes: mi.graceMinutes ?? 5,
+          }
+
+          const breakdown = calculateCharge(elapsedMinutes, pricing)
+          const settledPrice = breakdown.totalCharge
+
+          // Update the order item's price to the settled per-minute charge
+          await tx.orderItem.update({
+            where: { id: item.id },
+            data: {
+              price: settledPrice,
+              itemTotal: settledPrice * item.quantity,
+            },
+          })
         }
 
-        const breakdown = calculateCharge(elapsedMinutes, pricing)
-        const settledPrice = breakdown.totalCharge
-
-        // Update the order item's price to the settled per-minute charge
-        await db.orderItem.update({
-          where: { id: item.id },
-          data: {
-            price: settledPrice,
-            itemTotal: settledPrice * item.quantity,
-          },
-        })
-
-        // Recalculate the order total from all active items
-        const activeItems = await db.orderItem.findMany({
+        // Recalculate the order total from all active items (once, after all items settled)
+        const activeItems = await tx.orderItem.findMany({
           where: { orderId, status: 'active', deletedAt: null },
           include: { modifiers: true },
         })
         let newSubtotal = 0
         for (const ai of activeItems) {
-          const modTotal = ai.modifiers.reduce((s, m) => s + Number(m.price), 0)
+          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
           newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
         }
-        await db.order.update({
+
+        // H-FIN-4: Recalculate tax from the new subtotal (don't reuse stale taxTotal)
+        const newTaxTotal = roundToCents(newSubtotal * taxRate)
+        const newTotal = roundToCents(newSubtotal + newTaxTotal)
+
+        await tx.order.update({
           where: { id: orderId },
           data: {
             subtotal: newSubtotal,
-            total: newSubtotal + Number(order.taxTotal),
+            taxTotal: newTaxTotal,
+            total: newTotal,
           },
         })
+
         // Refresh order reference for accurate total below
         ;(order as any).subtotal = newSubtotal
-        ;(order as any).total = newSubtotal + Number(order.taxTotal)
-      }
+        ;(order as any).taxTotal = newTaxTotal
+        ;(order as any).total = newTotal
+      })
     }
 
     // Calculate how much is already paid
@@ -665,6 +680,7 @@ export const POST = withVenue(withTiming(async function POST(
           )
         }
 
+        // Pre-flight check (non-authoritative — authoritative check is inside tx)
         if (order.customer.loyaltyPoints < payment.pointsUsed) {
           return NextResponse.json(
             { error: `Insufficient points. Customer has ${order.customer.loyaltyPoints} points.` },
@@ -695,8 +711,16 @@ export const POST = withVenue(withTiming(async function POST(
           transactionId: `LOYALTY:${payment.pointsUsed}pts`,
         }
 
-        // Deduct points + create payment atomically
+        // H-FIN-3: Read fresh balance + check + decrement ALL inside transaction
+        // to prevent TOCTOU race where concurrent redemptions bypass balance check
         const loyaltyResult = await db.$transaction(async (tx) => {
+          const freshCustomer = await tx.customer.findUnique({
+            where: { id: order.customer!.id },
+            select: { loyaltyPoints: true },
+          })
+          if (!freshCustomer || freshCustomer.loyaltyPoints < payment.pointsUsed!) {
+            throw new Error(`LOYALTY_INSUFFICIENT:${freshCustomer?.loyaltyPoints ?? 0}`)
+          }
           await tx.customer.update({
             where: { id: order.customer!.id },
             data: {
@@ -704,7 +728,20 @@ export const POST = withVenue(withTiming(async function POST(
             },
           })
           return tx.payment.create({ data: paymentRecord })
+        }).catch((err: Error) => {
+          if (err.message.startsWith('LOYALTY_INSUFFICIENT:')) {
+            const pts = parseInt(err.message.split(':')[1], 10)
+            return { error: `Insufficient points. Customer has ${pts} points.`, status: 400 } as const
+          }
+          throw err
         })
+
+        if ('error' in loyaltyResult) {
+          return NextResponse.json(
+            { error: loyaltyResult.error },
+            { status: loyaltyResult.status }
+          )
+        }
 
         createdPayments.push(loyaltyResult)
         totalTips += payment.tipAmount || 0
@@ -759,6 +796,11 @@ export const POST = withVenue(withTiming(async function POST(
           const cardBalance = Number(giftCard.currentBalance)
           const paymentAmount = payment.amount + (payment.tipAmount || 0)
 
+          // H-FIN-2: Verify balance >= amount INSIDE transaction to prevent negative balance
+          if (cardBalance < paymentAmount) {
+            throw new Error(`GC_INSUFFICIENT:${cardBalance}`)
+          }
+
           const newBalance = cardBalance - paymentAmount
 
           paymentRecord = {
@@ -767,10 +809,11 @@ export const POST = withVenue(withTiming(async function POST(
             cardLast4: giftCard.cardNumber.slice(-4),
           }
 
+          // H-FIN-2: Use atomic decrement instead of SET to prevent TOCTOU race
           await tx.giftCard.update({
             where: { id: giftCard.id },
             data: {
-              currentBalance: newBalance,
+              currentBalance: { decrement: paymentAmount },
               status: newBalance === 0 ? 'depleted' : 'active',
               transactions: {
                 create: {
@@ -797,6 +840,10 @@ export const POST = withVenue(withTiming(async function POST(
           }
           if (err.message === 'GC_EXPIRED') {
             return { error: 'Gift card has expired', status: 400 } as const
+          }
+          if (err.message.startsWith('GC_INSUFFICIENT:')) {
+            const balance = parseFloat(err.message.split(':')[1])
+            return { error: `Insufficient gift card balance ($${balance.toFixed(2)})`, currentBalance: balance, status: 400 } as const
           }
           throw err // Re-throw unexpected errors
         })

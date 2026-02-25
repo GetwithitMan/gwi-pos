@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { CategorySection } from './CategorySection'
@@ -147,6 +147,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
   const [deletedIngredients, setDeletedIngredients] = useState<Ingredient[]>([])
   const [showDeleted, setShowDeleted] = useState(false)
   const [restoringItem, setRestoringItem] = useState<Ingredient | null>(null) // Item being restored
+  const [restoreInProgress, setRestoreInProgress] = useState(false) // Loading state during restore API call
   const [restoreStep, setRestoreStep] = useState<'type' | 'category' | 'parent'>('type')
   const [restoreAsType, setRestoreAsType] = useState<'inventory' | 'prep' | null>(null)
   const [restoreCategoryId, setRestoreCategoryId] = useState<string | null>(null)
@@ -159,23 +160,24 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
   const [editingCategory, setEditingCategory] = useState<IngredientCategory | null>(null)
   const [preparationParent, setPreparationParent] = useState<Ingredient | null>(null)
 
-  const loadCategories = useCallback(async () => {
+  const loadCategories = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams({
         locationId,
         includeInactive: 'true',
       })
-      const response = await fetch(`/api/ingredient-categories?${params}`)
+      const response = await fetch(`/api/ingredient-categories?${params}`, { signal })
       if (response.ok) {
         const data = await response.json()
         setCategories(data.data || [])
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load categories:', error)
     }
   }, [locationId])
 
-  const loadIngredients = useCallback(async () => {
+  const loadIngredients = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams({
         locationId,
@@ -184,85 +186,92 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
         // When in hierarchy mode, only fetch root ingredients with their children
         hierarchy: viewMode === 'hierarchy' ? 'true' : 'false',
       })
-      const response = await fetch(`/api/ingredients?${params}`)
+      const response = await fetch(`/api/ingredients?${params}`, { signal })
       if (response.ok) {
         const data = await response.json()
         setIngredients(data.data || [])
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load ingredients:', error)
     }
   }, [locationId, showInactive, viewMode])
 
-  const loadSwapGroups = useCallback(async () => {
+  const loadSwapGroups = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams({ locationId })
-      const response = await fetch(`/api/ingredient-swap-groups?${params}`)
+      const response = await fetch(`/api/ingredient-swap-groups?${params}`, { signal })
       if (response.ok) {
         const data = await response.json()
         setSwapGroups(data.data || [])
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load swap groups:', error)
     }
   }, [locationId])
 
-  const loadInventoryItems = useCallback(async () => {
+  const loadInventoryItems = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams({ locationId })
-      const response = await fetch(`/api/inventory/items?${params}`)
+      const response = await fetch(`/api/inventory/items?${params}`, { signal })
       if (response.ok) {
         const data = await response.json()
         setInventoryItems(data.data || [])
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load inventory items:', error)
     }
   }, [locationId])
 
-  const loadPrepItems = useCallback(async () => {
+  const loadPrepItems = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams({ locationId })
-      const response = await fetch(`/api/inventory/prep-items?${params}`)
+      const response = await fetch(`/api/inventory/prep-items?${params}`, { signal })
       if (response.ok) {
         const data = await response.json()
         setPrepItems(data.data || [])
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load prep items:', error)
     }
   }, [locationId])
 
-  const loadDeletedIngredients = useCallback(async () => {
+  const loadDeletedIngredients = useCallback(async (signal?: AbortSignal) => {
     try {
       const params = new URLSearchParams({
         locationId,
         deletedOnly: 'true',
       })
-      const response = await fetch(`/api/ingredients?${params}`)
+      const response = await fetch(`/api/ingredients?${params}`, { signal })
       if (response.ok) {
         const data = await response.json()
         setDeletedIngredients(data.data || [])
       }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load deleted ingredients:', error)
     }
   }, [locationId])
 
   useEffect(() => {
+    const controller = new AbortController()
     const loadAll = async () => {
       setIsLoading(true)
       await Promise.all([
-        loadCategories(),
-        loadIngredients(),
-        loadSwapGroups(),
-        loadInventoryItems(),
-        loadPrepItems(),
-        loadDeletedIngredients(),
+        loadCategories(controller.signal),
+        loadIngredients(controller.signal),
+        loadSwapGroups(controller.signal),
+        loadInventoryItems(controller.signal),
+        loadPrepItems(controller.signal),
+        loadDeletedIngredients(controller.signal),
       ])
-      setIsLoading(false)
+      if (!controller.signal.aborted) setIsLoading(false)
     }
     loadAll()
+    return () => controller.abort()
   }, [loadCategories, loadIngredients, loadSwapGroups, loadInventoryItems, loadPrepItems, loadDeletedIngredients])
 
   // Selection handlers
@@ -502,6 +511,8 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
     targetId?: string
     targetName?: string
   }) => {
+    if (restoreInProgress) return // Prevent double-clicks
+    setRestoreInProgress(true)
     try {
       const updateData: Record<string, unknown> = {
         deletedAt: null, // Clear deletion
@@ -543,6 +554,8 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
     } catch (error) {
       console.error('Failed to restore ingredient:', error)
       toast.error('Failed to restore ingredient')
+    } finally {
+      setRestoreInProgress(false)
     }
   }
 
@@ -1121,7 +1134,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
 
                     {/* Restore destination picker - Two-step flow */}
                     {isRestoring && (
-                      <div className="mt-3 pt-3 border-t border-green-200">
+                      <div className={`mt-3 pt-3 border-t border-green-200 ${restoreInProgress ? 'opacity-50 pointer-events-none' : ''}`}>
                         {/* Step 1: Is this an Inventory Item or Prep Item? */}
                         {restoreStep === 'type' && (
                           <>

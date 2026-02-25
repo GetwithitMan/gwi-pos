@@ -2,9 +2,13 @@ import { PrismaClient } from '@prisma/client'
 import { headers } from 'next/headers'
 import { getRequestPrisma } from './request-context'
 
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL environment variable is required')
+}
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
-  venueClients: Map<string, PrismaClient> | undefined
+  venueClients: Map<string, { client: PrismaClient; lastAccessed: number }> | undefined
 }
 
 /**
@@ -148,6 +152,8 @@ if (!globalForPrisma.venueClients) {
   globalForPrisma.venueClients = new Map()
 }
 
+const MAX_VENUE_CLIENTS = 50
+
 /**
  * Resolve the active PrismaClient for the current request.
  *
@@ -232,12 +238,32 @@ export function getDbForVenue(slug: string): PrismaClient {
 
   const clients = globalForPrisma.venueClients!
 
-  let client = clients.get(slug)
-  if (client) return client
+  const entry = clients.get(slug)
+  if (entry) {
+    entry.lastAccessed = Date.now()
+    return entry.client
+  }
+
+  // Evict least-recently-used client if at capacity
+  if (clients.size >= MAX_VENUE_CLIENTS) {
+    let oldestSlug: string | null = null
+    let oldestTime = Infinity
+    for (const [key, val] of clients) {
+      if (val.lastAccessed < oldestTime) {
+        oldestTime = val.lastAccessed
+        oldestSlug = key
+      }
+    }
+    if (oldestSlug) {
+      const evicted = clients.get(oldestSlug)
+      clients.delete(oldestSlug)
+      void evicted?.client.$disconnect().catch(() => {})
+    }
+  }
 
   const venueUrl = buildVenueDatabaseUrl(slug)
-  client = createPrismaClient(venueUrl)
-  clients.set(slug, client)
+  const client = createPrismaClient(venueUrl)
+  clients.set(slug, { client, lastAccessed: Date.now() })
   return client
 }
 
@@ -247,9 +273,9 @@ export function getDbForVenue(slug: string): PrismaClient {
  */
 export async function disconnectVenue(slug: string): Promise<void> {
   const clients = globalForPrisma.venueClients!
-  const client = clients.get(slug)
-  if (client) {
-    await client.$disconnect()
+  const entry = clients.get(slug)
+  if (entry) {
+    await entry.client.$disconnect()
     clients.delete(slug)
   }
 }
@@ -269,7 +295,8 @@ export function getVenueClientCount(): number {
  * "joes-bar" → gwi_pos_joes_bar
  */
 export function buildVenueDatabaseUrl(slug: string): string {
-  const masterUrl = process.env.DATABASE_URL!
+  const masterUrl = process.env.DATABASE_URL
+  if (!masterUrl) throw new Error('DATABASE_URL environment variable is required')
   const dbName = venueDbName(slug)
   return replaceDbNameInUrl(masterUrl, dbName)
 }
@@ -279,7 +306,8 @@ export function buildVenueDatabaseUrl(slug: string): string {
  * Used for schema migrations and provisioning.
  */
 export function buildVenueDirectUrl(slug: string): string {
-  const directUrl = process.env.DIRECT_URL!
+  const directUrl = process.env.DIRECT_URL
+  if (!directUrl) throw new Error('DIRECT_URL environment variable is required')
   const dbName = venueDbName(slug)
   return replaceDbNameInUrl(directUrl, dbName)
 }

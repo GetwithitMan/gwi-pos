@@ -337,12 +337,14 @@ export default function OrdersPage() {
   // Sync savedOrderId with Zustand store — FloorPlanHome/BartenderView load orders
   // directly into Zustand via store.loadOrder(), bypassing setSavedOrderId.
   // This ensures Split/CompVoid/Resend modals can render (they depend on savedOrderId).
+  const savedOrderIdRef = useRef(savedOrderId)
+  savedOrderIdRef.current = savedOrderId
   useEffect(() => {
     const storeOrderId = currentOrder?.id ?? null
-    if (storeOrderId !== savedOrderId) {
+    if (storeOrderId !== savedOrderIdRef.current) {
       setSavedOrderId(storeOrderId)
     }
-  }, [currentOrder?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentOrder?.id])
 
   // Refresh tab cards when a new card is added via PaymentModal
   const handleTabCardsChanged = useCallback(() => {
@@ -375,6 +377,12 @@ export default function OrdersPage() {
   const quickOrderTypeRef = useRef<((orderType: string) => void) | null>(null)
   const tablesClickRef = useRef<(() => void) | null>(null)
 
+  // Refs for split context guards (read-only inside effect, shouldn't trigger re-run)
+  const splitParentIdRef = useRef(splitParentId)
+  splitParentIdRef.current = splitParentId
+  const orderSplitChipsRef = useRef(orderSplitChips)
+  orderSplitChipsRef.current = orderSplitChips
+
   // Fetch split chips when a split parent order is loaded, or clear when leaving split context
   useEffect(() => {
     const orderId = currentOrder?.id
@@ -403,16 +411,15 @@ export default function OrdersPage() {
     }
     // If we have a splitParentId, we're in split context — keep chips visible
     // (covers navigating between sibling splits AND newly created splits)
-    if (splitParentId) {
+    if (splitParentIdRef.current) {
       return
     }
     // Otherwise, leaving split context entirely
-    if (orderSplitChips.length > 0) {
+    if (orderSplitChipsRef.current.length > 0) {
       setOrderSplitChips([])
       setSplitParentId(null)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentOrder?.id, currentOrder?.status])
+  }, [currentOrder?.id, currentOrder?.status, setOrderSplitChips, setSplitParentId])
 
   // Shift management state (extracted to useShiftManagement hook)
   const {
@@ -606,6 +613,10 @@ export default function OrdersPage() {
   selectedCategoryRef.current = selectedCategory
 
   // Session bootstrap — single fetch replaces menu + shift + orderTypes + snapshot
+  // Refs for fallback functions to avoid stale closures without adding them as deps
+  const loadMenuRef = useRef<() => void>(() => {})
+  const loadOrderTypesRef = useRef<() => void>(() => {})
+  const checkOpenShiftRef = useRef<() => void>(() => {})
   const bootstrapLoadedRef = useRef(false)
   useEffect(() => {
     if (!employee?.location?.id || !employee?.id || bootstrapLoadedRef.current) return
@@ -662,18 +673,19 @@ export default function OrdersPage() {
         // Manually trigger the fallback fetches.
         bootstrapLoadedRef.current = false
         setInitialSnapshot(null) // Signal FloorPlanHome to fetch on its own
-        loadMenu()
-        loadOrderTypes()
-        checkOpenShift()
+        loadMenuRef.current()
+        loadOrderTypesRef.current()
+        checkOpenShiftRef.current()
       })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employee?.location?.id, employee?.id])
+  }, [employee?.location?.id, employee?.id, setCurrentShift, setShiftChecked, setShowShiftStartModal])
 
   // Check for saved draft order from previous session (e.g., idle logout)
   const draftCheckedRef = useRef(false)
+  const currentOrderRef = useRef(currentOrder)
+  currentOrderRef.current = currentOrder
   useEffect(() => {
     if (draftCheckedRef.current || !employee?.location?.id || !employee?.id) return
-    if (currentOrder && currentOrder.items.length > 0) return // Already has an order
+    if (currentOrderRef.current && currentOrderRef.current.items.length > 0) return // Already has an order
     draftCheckedRef.current = true
 
     const draft = getDraftOrder(employee.location.id, employee.id)
@@ -720,7 +732,6 @@ export default function OrdersPage() {
     }
 
     clearDraftOrder(employee.location.id, employee.id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee?.location?.id, employee?.id])
 
   // Load menu with cache-busting
@@ -750,6 +761,7 @@ export default function OrdersPage() {
       setIsLoading(false)
     }
   }, [employee?.location?.id])
+  loadMenuRef.current = loadMenu
 
   // Load order types
   const loadOrderTypes = useCallback(async () => {
@@ -764,6 +776,7 @@ export default function OrdersPage() {
       console.error('Failed to load order types:', error)
     }
   }, [employee?.location?.id])
+  loadOrderTypesRef.current = loadOrderTypes
 
   useEffect(() => {
     if (employee?.location?.id) {
@@ -889,6 +902,7 @@ export default function OrdersPage() {
       setShiftChecked(true)
     }
   }
+  checkOpenShiftRef.current = checkOpenShift
 
   // Load open orders count (debounced — many call sites trigger tabsRefreshTrigger)
   const loadOpenOrdersCountRef = useRef<ReturnType<typeof setTimeout>>(undefined)

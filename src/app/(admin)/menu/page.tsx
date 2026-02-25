@@ -572,6 +572,16 @@ export default function MenuManagementPage() {
   })
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
 
+  // Stable click handler for items in the horizontal scroll — avoids creating closures per item
+  const handleItemClick = useCallback((item: MenuItem) => {
+    if (selectedCategoryData?.categoryType === 'entertainment') {
+      router.push(`/timed-rentals?item=${item.id}`)
+    } else {
+      setSelectedItemForEditor(item)
+      setSelectedGroupId(null)
+    }
+  }, [selectedCategoryData?.categoryType, router])
+
   if (!hydrated) return null
 
   return (
@@ -768,14 +778,7 @@ export default function MenuManagementPage() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => {
-                      if (selectedCategoryData?.categoryType === 'entertainment') {
-                        router.push(`/timed-rentals?item=${item.id}`)
-                      } else {
-                        setSelectedItemForEditor(item)
-                        setSelectedGroupId(null)
-                      }
-                    }}
+                    onClick={() => handleItemClick(item)}
                     onDragOver={(e) => {
                       // Only accept modifier group drags
                       if (e.dataTransfer.types.includes('application/x-modifier-group')) {

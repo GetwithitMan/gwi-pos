@@ -64,7 +64,7 @@ export interface AdjustmentRecord {
   createdById: string
   reason: string
   adjustmentType: string
-  contextJson: string
+  contextJson: unknown
   autoRecalcRan: boolean
   createdAt: Date
 }
@@ -103,7 +103,7 @@ export async function performTipAdjustment(params: {
       createdById: managerId,
       reason,
       adjustmentType,
-      contextJson: JSON.stringify(context),
+      contextJson: context as Record<string, unknown>,
       autoRecalcRan: false,
     },
   })
@@ -282,10 +282,10 @@ export async function recalculateGroupAllocations(params: {
       createdById: managerId,
       reason,
       adjustmentType: 'group_membership',
-      contextJson: JSON.stringify({
+      contextJson: {
         before: { groupId, allocations: beforeState },
         after: { groupId, allocations: afterState },
-      }),
+      },
       autoRecalcRan: true,
     },
   })
@@ -450,10 +450,10 @@ export async function recalculateOrderAllocations(params: {
       createdById: managerId,
       reason,
       adjustmentType: 'ownership_split',
-      contextJson: JSON.stringify({
+      contextJson: {
         before: { orderId, allocations: beforeState },
         after: { orderId, allocations: afterState, ownerSplits },
-      }),
+      },
       autoRecalcRan: true,
     },
   })

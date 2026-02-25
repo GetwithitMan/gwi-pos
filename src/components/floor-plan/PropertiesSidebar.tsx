@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   TrashIcon,
@@ -59,6 +59,14 @@ export function PropertiesSidebar({
 }: PropertiesSidebarProps) {
   const [localName, setLocalName] = useState(table?.name || '')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const deleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Clear delete confirmation timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (deleteTimeoutRef.current) clearTimeout(deleteTimeoutRef.current)
+    }
+  }, [])
 
   // Check for duplicate name (case-insensitive, excluding current table)
   const isDuplicateName = localName.trim() !== '' && existingTableNames.some(
@@ -108,11 +116,12 @@ export function PropertiesSidebar({
   const handleDelete = useCallback(() => {
     if (!table) return
     if (confirmDelete) {
+      if (deleteTimeoutRef.current) clearTimeout(deleteTimeoutRef.current)
       onDelete(table.id)
       onClose()
     } else {
       setConfirmDelete(true)
-      setTimeout(() => setConfirmDelete(false), 3000)
+      deleteTimeoutRef.current = setTimeout(() => setConfirmDelete(false), 3000)
     }
   }, [table, confirmDelete, onDelete, onClose])
 

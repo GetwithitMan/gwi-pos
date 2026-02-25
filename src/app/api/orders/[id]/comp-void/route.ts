@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { deductInventoryForVoidedItem, restorePrepStockForVoid, restoreInventoryForRestoredItem, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { calculateSimpleOrderTotals as calculateOrderTotals, recalculatePercentDiscounts } from '@/lib/order-calculations'
+import { calculateSimpleOrderTotals as calculateOrderTotals, recalculatePercentDiscounts, getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
+import { roundToCents } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
@@ -310,6 +311,7 @@ export const POST = withVenue(async function POST(
       }
 
       // 4. Recalculate order totals — get all active items
+      // H-FIN-7: Include isTaxInclusive to handle tax-inclusive pricing correctly
       const txActiveItems = await tx.orderItem.findMany({
         where: {
           orderId,
@@ -318,17 +320,36 @@ export const POST = withVenue(async function POST(
         include: { modifiers: true },
       })
 
-      let newSubtotal = 0
+      // H-FIN-7: Split items into tax-inclusive vs tax-exclusive subtotals
+      let inclusiveSubtotal = 0
+      let exclusiveSubtotal = 0
       txActiveItems.forEach(activeItem => {
         const mods = activeItem.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-        newSubtotal += (Number(activeItem.price) + mods) * activeItem.quantity
+        const itemTotal = (Number(activeItem.price) + mods) * activeItem.quantity
+        if ((activeItem as any).isTaxInclusive) {
+          inclusiveSubtotal += itemTotal
+        } else {
+          exclusiveSubtotal += itemTotal
+        }
       })
+      inclusiveSubtotal = roundToCents(inclusiveSubtotal)
+      exclusiveSubtotal = roundToCents(exclusiveSubtotal)
+      const newSubtotal = roundToCents(inclusiveSubtotal + exclusiveSubtotal)
 
       // Recalculate percent-based discounts against new subtotal
       const discountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
 
-      // Recalculate order totals using centralized tax engine
-      const txTotals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
+      // H-FIN-7: Use split tax calculation for tax-inclusive pricing support
+      const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
+      const splitTax = calculateSplitTax(inclusiveSubtotal, exclusiveSubtotal, taxRate)
+      const effectiveDiscount = Math.min(discountTotal, newSubtotal)
+      // Inclusive items already contain tax; exclusive items get taxFromExclusive added on top
+      const txTotals = {
+        subtotal: newSubtotal,
+        discountTotal: effectiveDiscount,
+        taxTotal: splitTax.totalTax,
+        total: roundToCents(inclusiveSubtotal + exclusiveSubtotal + splitTax.taxFromExclusive - effectiveDiscount),
+      }
 
       // If all items are voided/comped (total is $0 with no active items), auto-close the order
       const txShouldAutoClose = txActiveItems.length === 0
@@ -404,7 +425,12 @@ export const POST = withVenue(async function POST(
       if (reversiblePayments.length > 0) {
         try {
           const datacapClient = await getDatacapClient(order.locationId)
-          let remainingRefund = itemTotal
+          // H-FIN-6: Cap total refund at the sum of refundable amounts across all payments
+          // to prevent refunding more than was originally paid
+          const totalRefundable = reversiblePayments.reduce(
+            (sum, p) => sum + Math.max(0, Number(p.totalAmount) - Number(p.refundedAmount ?? 0)), 0
+          )
+          let remainingRefund = Math.min(itemTotal, totalRefundable)
           for (const payment of reversiblePayments) {
             try {
               if (shouldAutoClose) {
@@ -731,6 +757,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Recalculate order totals
+    // H-FIN-7: Include isTaxInclusive to handle tax-inclusive pricing correctly
     const activeItems = await db.orderItem.findMany({
       where: {
         orderId,
@@ -739,16 +766,34 @@ export const PUT = withVenue(async function PUT(
       include: { modifiers: true },
     })
 
-    let newSubtotal = 0
+    let restoreInclusiveSubtotal = 0
+    let restoreExclusiveSubtotal = 0
     activeItems.forEach(activeItem => {
       const mods = activeItem.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-      newSubtotal += (Number(activeItem.price) + mods) * activeItem.quantity
+      const total = (Number(activeItem.price) + mods) * activeItem.quantity
+      if ((activeItem as any).isTaxInclusive) {
+        restoreInclusiveSubtotal += total
+      } else {
+        restoreExclusiveSubtotal += total
+      }
     })
+    restoreInclusiveSubtotal = roundToCents(restoreInclusiveSubtotal)
+    restoreExclusiveSubtotal = roundToCents(restoreExclusiveSubtotal)
+    const newSubtotal = roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal)
 
     // Recalculate percent-based discounts against new subtotal
     const discountTotal = await recalculatePercentDiscounts(db, orderId, newSubtotal)
 
-    const totals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
+    // H-FIN-7: Use split tax calculation for tax-inclusive pricing support
+    const restoreTaxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
+    const restoreSplitTax = calculateSplitTax(restoreInclusiveSubtotal, restoreExclusiveSubtotal, restoreTaxRate)
+    const restoreEffectiveDiscount = Math.min(discountTotal, newSubtotal)
+    const totals = {
+      subtotal: newSubtotal,
+      discountTotal: restoreEffectiveDiscount,
+      taxTotal: restoreSplitTax.totalTax,
+      total: roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal + restoreSplitTax.taxFromExclusive - restoreEffectiveDiscount),
+    }
 
     await db.order.update({
       where: { id: orderId },

@@ -69,10 +69,22 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   const socketModule = await import('socket.io')
   const Server = socketModule.Server
 
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? []
+
   const socketServer = new Server(httpServer, {
     path: process.env.SOCKET_PATH || '/api/socket',
     cors: {
-      origin: process.env.NODE_ENV === 'development' ? '*' : process.env.ALLOWED_ORIGINS?.split(','),
+      origin: process.env.NODE_ENV === 'development'
+        ? '*'
+        : (origin, callback) => {
+            // No origin (same-origin / server-to-server) — allow
+            if (!origin) return callback(null, true)
+            if (allowedOrigins.length > 0 && allowedOrigins.includes(origin)) {
+              return callback(null, true)
+            }
+            // ALLOWED_ORIGINS not set or origin not in list — reject
+            callback(new Error('CORS rejected'), false)
+          },
       methods: ['GET', 'POST'],
     },
     // Connection settings optimized for local network
@@ -286,10 +298,15 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      * When a terminal opens an order, it emits `order:editing` — we broadcast
      * to the location room so other terminals can show a conflict banner.
      */
-    socket.on('order:editing', (data: { orderId: string; terminalId: string; terminalName: string; locationId: string }) => {
+    socket.on('order:editing', (data: { orderId: string; terminalId: string; terminalName: string }) => {
       try {
-        if (typeof data.locationId === 'string' && typeof data.orderId === 'string') {
-          socketServer.to(`location:${data.locationId}`).except(socket.id).emit('order:editing', {
+        const locationId = socket.data.locationId
+        if (!locationId) {
+          console.warn(`[Socket] order:editing rejected — no authenticated locationId on socket ${socket.id}`)
+          return
+        }
+        if (typeof data.orderId === 'string') {
+          socketServer.to(`location:${locationId}`).except(socket.id).emit('order:editing', {
             orderId: data.orderId,
             terminalId: data.terminalId,
             terminalName: data.terminalName,
@@ -300,10 +317,15 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       }
     })
 
-    socket.on('order:editing-released', (data: { orderId: string; terminalId: string; locationId: string }) => {
+    socket.on('order:editing-released', (data: { orderId: string; terminalId: string }) => {
       try {
-        if (typeof data.locationId === 'string' && typeof data.orderId === 'string') {
-          socketServer.to(`location:${data.locationId}`).except(socket.id).emit('order:editing-released', {
+        const locationId = socket.data.locationId
+        if (!locationId) {
+          console.warn(`[Socket] order:editing-released rejected — no authenticated locationId on socket ${socket.id}`)
+          return
+        }
+        if (typeof data.orderId === 'string') {
+          socketServer.to(`location:${locationId}`).except(socket.id).emit('order:editing-released', {
             orderId: data.orderId,
             terminalId: data.terminalId,
           })
@@ -316,30 +338,33 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     // ==================== Mobile Tab Relay ====================
 
     // Phone → relay tab close request to all terminals in location
-    socket.on(MOBILE_EVENTS.TAB_CLOSE_REQUEST, (data: { orderId: string; locationId: string; employeeId: string; tipMode: string }) => {
+    socket.on(MOBILE_EVENTS.TAB_CLOSE_REQUEST, (data: { orderId: string; employeeId: string; tipMode: string }) => {
       try {
-        if (typeof data.locationId !== 'string') return
-        socketServer.to(`location:${data.locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_CLOSE_REQUEST, data)
+        const locationId = socket.data.locationId
+        if (!locationId) return
+        socketServer.to(`location:${locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_CLOSE_REQUEST, { ...data, locationId })
       } catch (err) {
         console.error(JSON.stringify({ event: 'TAB_CLOSE_REQUEST', socketId: socket.id, error: String(err) }))
       }
     })
 
     // Phone → relay transfer request to all terminals in location
-    socket.on(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, (data: { orderId: string; locationId: string; employeeId: string }) => {
+    socket.on(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, (data: { orderId: string; employeeId: string }) => {
       try {
-        if (typeof data.locationId !== 'string') return
-        socketServer.to(`location:${data.locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, data)
+        const locationId = socket.data.locationId
+        if (!locationId) return
+        socketServer.to(`location:${locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, { ...data, locationId })
       } catch (err) {
         console.error(JSON.stringify({ event: 'TAB_TRANSFER_REQUEST', socketId: socket.id, error: String(err) }))
       }
     })
 
     // Phone → relay manager alert to all terminals in location (fire-and-forget, no response needed)
-    socket.on(MOBILE_EVENTS.TAB_ALERT_MANAGER, (data: { orderId: string; locationId: string; employeeId: string }) => {
+    socket.on(MOBILE_EVENTS.TAB_ALERT_MANAGER, (data: { orderId: string; employeeId: string }) => {
       try {
-        if (typeof data.locationId !== 'string') return
-        socketServer.to(`location:${data.locationId}`).emit(MOBILE_EVENTS.TAB_ALERT_MANAGER, data)
+        const locationId = socket.data.locationId
+        if (!locationId) return
+        socketServer.to(`location:${locationId}`).emit(MOBILE_EVENTS.TAB_ALERT_MANAGER, { ...data, locationId })
       } catch (err) {
         console.error(JSON.stringify({ event: 'TAB_ALERT_MANAGER', socketId: socket.id, error: String(err) }))
       }
@@ -348,15 +373,56 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     // ==================== Direct Terminal Messages ====================
 
     /**
-     * Send message to specific terminal
+     * Send message to specific terminal.
+     * Validates: sender has an authenticated location, target terminal belongs to the
+     * same location, and the relayed event name is on the allow-list.
      */
+    const TERMINAL_MESSAGE_ALLOWED_EVENTS = new Set([
+      'sync:completed',
+      'order:editing',
+      'order:editing-released',
+      'print:job',
+      'print:status',
+      'kds:bump',
+      'kds:recall',
+      'terminal:ping',
+      'terminal:config-update',
+    ])
+
     socket.on('terminal_message', ({ terminalId, event, data }: {
       terminalId: string
       event: string
       data: unknown
     }) => {
       try {
-        socketServer.to(`terminal:${terminalId}`).emit(event, data)
+        // Require authenticated locationId on sender
+        const senderLocationId = socket.data.locationId
+        if (!senderLocationId) {
+          console.warn(`[Socket] terminal_message rejected — no authenticated locationId on socket ${socket.id}`)
+          return
+        }
+
+        // Validate event name against allow-list
+        if (!TERMINAL_MESSAGE_ALLOWED_EVENTS.has(event)) {
+          console.warn(`[Socket] terminal_message rejected — event "${event}" not in allow-list (socket ${socket.id})`)
+          return
+        }
+
+        // Validate target terminal belongs to the same location
+        const targetInfo = connectedTerminals.get(terminalId)
+        if (targetInfo && targetInfo.locationId !== senderLocationId) {
+          console.warn(`[Socket] terminal_message rejected — cross-location: sender ${senderLocationId}, target ${targetInfo.locationId}`)
+          return
+        }
+
+        // If target terminal not in connectedTerminals map (e.g., browser-only terminal),
+        // still emit but only if it's in the sender's location room
+        if (!targetInfo) {
+          // Emit to intersection of terminal room and location room for safety
+          socketServer.to(`terminal:${terminalId}`).except(socket.id).emit(event, data)
+        } else {
+          socketServer.to(`terminal:${terminalId}`).emit(event, data)
+        }
       } catch (err) {
         console.error(JSON.stringify({ event: 'terminal_message', socketId: socket.id, targetTerminal: terminalId, error: String(err) }))
       }

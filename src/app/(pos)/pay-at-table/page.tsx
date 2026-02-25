@@ -49,6 +49,16 @@ function PayAtTableContent() {
   const socketRef = useRef<ReturnType<typeof getSharedSocket> | null>(null)
   const accumulatedTipRef = useRef(0)
 
+  // Refs for volatile state so socket handler always has fresh values
+  const currentSplitRef = useRef(currentSplit)
+  currentSplitRef.current = currentSplit
+  const splitCountRef = useRef(splitCount)
+  splitCountRef.current = splitCount
+  const tipAmountRef = useRef(tipAmount)
+  tipAmountRef.current = tipAmount
+  const orderRef = useRef(order)
+  orderRef.current = order
+
   // Wire socket for real-time payment sync with POS terminal
   useEffect(() => {
     if (!orderId) return
@@ -61,13 +71,13 @@ function PayAtTableContent() {
 
       if (data.success) {
         // If more splits to process
-        if (currentSplit + 1 < splitCount) {
-          accumulatedTipRef.current += tipAmount
+        if (currentSplitRef.current + 1 < splitCountRef.current) {
+          accumulatedTipRef.current += tipAmountRef.current
           setCurrentSplit(prev => prev + 1)
           setTipAmount(0)
           setState('tip')
         } else {
-          const finalTip = accumulatedTipRef.current + tipAmount
+          const finalTip = accumulatedTipRef.current + tipAmountRef.current
           // Notify POS terminals that payment is complete (fire-and-forget)
           if (orderId && employeeId) {
             fetch(`/api/orders/${orderId}/pat-complete`, {
@@ -75,7 +85,7 @@ function PayAtTableContent() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 employeeId,
-                totalPaid: (order?.total ?? 0) + finalTip,
+                totalPaid: (orderRef.current?.total ?? 0) + finalTip,
                 tipAmount: finalTip,
               }),
             }).catch(console.error)
@@ -95,7 +105,7 @@ function PayAtTableContent() {
       socketRef.current = null
       releaseSharedSocket()
     }
-  }, [orderId, currentSplit, splitCount, tipAmount, order, employeeId])
+  }, [orderId, employeeId])
 
   // Load order on mount
   useEffect(() => {

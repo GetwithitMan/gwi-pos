@@ -2004,6 +2004,7 @@ model SyncAuditEntry {
 
   @@index([locationId])
   @@index([orderId])
+  @@index([paymentId])
   @@index([terminalId])
   @@index([status])
   @@index([createdAt])
@@ -2836,7 +2837,7 @@ model TipAdjustment {
   createdBy       Employee @relation(fields: [createdById], references: [id])
   reason          String
   adjustmentType  String   // 'group_membership' | 'ownership_split' | 'clock_fix' | 'manual_override' | 'tip_amount'
-  contextJson     String   // JSON: before/after state
+  contextJson     Json?    // Structured before/after state
   autoRecalcRan   Boolean  @default(false)
   createdAt       DateTime @default(now())
   deletedAt       DateTime?
@@ -3090,6 +3091,7 @@ model TimedSession {
   @@index([locationId])
   @@index([menuItemId])
   @@index([tableId])
+  @@index([orderId])
   @@index([status])
   @@index([startedAt])
 }
@@ -4798,6 +4800,7 @@ model OrderItemIngredient {
 
   @@index([locationId])
   @@index([orderItemId])
+  @@index([ingredientId])
   @@index([modificationType])
 }
 
@@ -6319,6 +6322,8 @@ model ChargebackCase {
   syncedAt  DateTime?
 
   @@index([locationId])
+  @@index([orderId])
+  @@index([paymentId])
   @@index([cardLast4])
   @@index([status])
   @@index([chargebackDate])
@@ -6396,6 +6401,7 @@ model WalkoutRetry {
   syncedAt  DateTime?
 
   @@index([locationId])
+  @@index([orderId])
   @@index([status])
   @@index([nextRetryAt])
 }

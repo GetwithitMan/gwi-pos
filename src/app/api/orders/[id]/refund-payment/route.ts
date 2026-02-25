@@ -72,9 +72,9 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Verify manager exists and has permission
-    const manager = await db.employee.findUnique({
-      where: { id: managerId, deletedAt: null },
+    // Verify manager exists and has permission (must be from same venue)
+    const manager = await db.employee.findFirst({
+      where: { id: managerId, locationId: order.locationId, deletedAt: null },
       include: { role: true },
     })
 

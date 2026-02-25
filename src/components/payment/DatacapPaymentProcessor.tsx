@@ -7,7 +7,7 @@ import { useDatacap, DatacapResult } from '@/hooks/useDatacap'
 import { SwapConfirmationModal } from './SwapConfirmationModal'
 import { ReaderStatusIndicator } from './ReaderStatusIndicator'
 import { formatCurrency } from '@/lib/utils'
-import { getSharedSocket } from '@/lib/shared-socket'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 
 interface DatacapPaymentProcessorProps {
   orderId: string
@@ -119,6 +119,7 @@ export function DatacapPaymentProcessor({
       amount: totalToCharge,
       paymentMethod: 'credit',
     })
+    releaseSharedSocket()
 
     const result = await processPayment({
       orderId,
