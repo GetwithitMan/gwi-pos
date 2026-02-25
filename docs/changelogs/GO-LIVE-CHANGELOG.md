@@ -1,5 +1,25 @@
 # Go-Live & Launch Readiness -- Changelog
 
+## 2026-02-25 — Deployment Pipeline: Vercel Enum Casts + NUC Fleet Deployment (Skill 447)
+
+### Vercel Build Fix
+- `vercel-build.js` — Added pre-flight SQL enum casts for 3 columns (`Payment.paymentMethod`, `TipLedgerEntry.type`, `TipTransaction.sourceType`). Creates enum types and uses `ALTER COLUMN TYPE USING` cast before `prisma db push`.
+- `prisma/schema.prisma` — Added ~50 forward `@relation` annotations and 17 reverse relation fields (MenuItem 5, Order 10, Terminal 1, TimeClockEntry 1). Required by Prisma's bidirectional relation validation.
+
+### NUC Fleet Deployment Fix (Fruita Grill)
+- `nuc-pre-migrate.js` — Comprehensive pre-flight migrations: column additions, orphaned FK cleanup (Payment→Terminal/Drawer/Shift/PaymentReader/Employee), updatedAt backfills (5 tables), order deduplication + partial unique index, Int→Decimal (7 tip fields), String→Enum (3 casts).
+- `sync-agent.js` — Fixed service name resolution (`thepasspos` first, fallback to `pulse-pos`). Added missing command handlers: `RE_PROVISION`, `RELOAD_TERMINALS`, `RELOAD_TERMINAL`, `RESTART_KIOSK`.
+- **Deployment verified** end-to-end via FORCE_UPDATE from Mission Control.
+
+### Critical Pattern: Adding New Migrations
+When schema changes would fail `prisma db push` on tables with data:
+1. Add migration to BOTH `scripts/nuc-pre-migrate.js` AND `scripts/vercel-build.js`
+2. nuc-pre-migrate uses `prisma.$executeRawUnsafe()` (PrismaClient)
+3. vercel-build uses `sql\`...\`` (@neondatabase/serverless tagged templates)
+4. Both must be idempotent — check before acting
+
+---
+
 ## 2026-02-23 — Bugfix Sprint C+D: Multi-Tenant Hardening & Cascade Safety
 
 ### 8 locationId Bypass Routes Hardened
