@@ -5,6 +5,98 @@
 
 ---
 
+## 2026-02-25 — Scale Integration: CAS PD-II + Weight-Based Selling
+
+**Session:** Full-stack scale integration for weight-based selling (deli meats, produce, bulk goods). CAS PD-II scale connected via USB-to-serial adapter. Weight data flows through POS, receipts, kitchen tickets, KDS, and inventory deduction. Fleet schema migration button added to Mission Control. 8-agent team executed across 5 phases.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `b6da02e` — Scale integration: CAS PD-II + weight-based selling across full stack (49 files, +3319/-44)
+- `0117195` — Backward-compatible scale includes for un-migrated venue databases (7 files)
+- `8cfdd54` — Improve error messages for order item add failures
+
+**GWI Mission Control** (`gwi-mission-control`):
+- `8246987` — Fleet schema migration: per-venue sync + batch fleet sync (6 files, +751)
+
+### Deployments
+- POS: pushed to main, Vercel auto-deploy to barpos.restaurant / *.ordercontrolcenter.com
+- MC: pushed to main, Vercel auto-deploy to app.thepasspos.com
+
+### Features Delivered
+
+**1. Scale Hardware Layer:**
+- `Scale` Prisma model (CAS_PD_II type, serial config, weight config, status tracking)
+- CAS PD-II Type 5 protocol implementation (9600/7/even/1, `W` for weight, `T` for tare)
+- Scale service singleton with auto-reconnect, 200ms active / 2s idle polling
+- Socket.IO streaming to `scale:{scaleId}` rooms
+- 6 API routes: CRUD, test connection, tare, weight, serial port enumeration
+
+**2. Weight-Based Order Logic:**
+- `calculateItemTotal()` extended: `unitPrice × weight × quantity` + modifiers
+- Add items API accepts weight fields, computes `price = unitPrice × weight` for backward compat
+- Response mapper includes weight/weightUnit/unitPrice/grossWeight/tareWeight
+- Zod validation: if `soldByWeight`, require `weight > 0` and `unitPrice > 0`
+
+**3. POS UI:**
+- `useScale` hook — real-time socket subscription, tare(), captureWeight()
+- `WeightCaptureModal` — live scale reading (color-coded stability), manual entry fallback, tare button, live price calc
+- Orders page intercepts weight-based items → opens modal instead of direct add
+- `OrderPanelItem` shows `0.75 lb @ $5.99/lb` format for weight items
+- `ScaleStatusBadge` in POS header (green/red connection dot)
+
+**4. Output Systems:**
+- Receipt: `0.75 lb NET @ $5.99/lb  Deli Turkey  $4.49` (NET only when tared)
+- Kitchen print: `0.75 lb Deli Turkey (NET)` instead of `1x Deli Turkey`
+- KDS: green weight badge instead of blue quantity badge
+- Socket dispatch includes weight fields in KDS events
+
+**5. Admin & Inventory:**
+- Menu item "Sold by Weight" toggle + weight unit + price per unit
+- Scale hardware admin page (CRUD, test connection with raw/parsed response, port dropdown)
+- Terminal-to-scale binding (per-register and shared scale support)
+- Inventory deduction: `recipeIngredientQty × weight × quantity` for weight items
+
+**6. Fleet Schema Migration (Mission Control):**
+- Per-venue "Sync Database Schema" card on Infrastructure tab
+- Fleet-wide "Sync All Schemas" button on Locations page with progress tracking
+- Audit logged to FleetAuditLog, sequential processing for Neon limits
+
+### Bug Fixes
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| Terminals GET/POST 500 on un-migrated venue DBs | Try-catch fallback omitting scale includes | `0117195` |
+| Generic "Failed to create terminal" error msg | Surface actual Prisma error in response | `0117195` |
+
+### Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Scale protocol | Factory pattern by `scaleType` string | Extensible for future scale brands (AP-1, SW series) |
+| Weight on OrderItem | Always NET (post-tare) | Simplifies calculations; gross/tare stored separately for audit |
+| `price` field | Computed as `unitPrice × weight` | Backward compat — all existing code reads `price` |
+| Backward compat | Try-catch with fallback queries | Venues can deploy before schema migration |
+| Fleet migration | MC button → `syncVenueSchema()` | Reuses existing Neon provisioning infrastructure |
+
+### New Files (14 POS + 4 MC)
+
+| Category | Files |
+|----------|-------|
+| **Scale protocol** | `scale-protocol.ts`, `cas-pd-ii.ts`, `scale-factory.ts`, `scale-service.ts` |
+| **Scale API** | `scales/route.ts`, `scales/[id]/route.ts`, `test/route.ts`, `tare/route.ts`, `weight/route.ts`, `serial-ports/route.ts` |
+| **POS UI** | `useScale.ts`, `WeightCaptureModal.tsx`, `ScaleStatusBadge.tsx` |
+| **Admin** | `hardware/scales/page.tsx` |
+| **MC API** | `locations/[id]/sync-schema/route.ts`, `fleet/sync-schema/route.ts` |
+| **MC UI** | `SchemaSyncCard.tsx`, `FleetSchemaSyncModal.tsx` |
+
+### Known Gaps
+- Tare is functional but nice-to-have (manual weight entry always available as fallback)
+- USB/BT SDK stubs only on Android register (scale is POS-server-side via serial)
+- Scale admin "Test Connection" requires scale physically connected to NUC running POS
+
+---
+
 ## 2026-02-25 — Android Code Review: Nav Routes, String Externalization, Nav Args
 
 **Session:** Applied 3rd-party Android code review recommendations to `gwi-android-register`. Three items addressed: type-safe navigation routes, string externalization to `strings.xml`, and navigation argument cleanup. All work done directly — 19 files changed, 2 new files created.
