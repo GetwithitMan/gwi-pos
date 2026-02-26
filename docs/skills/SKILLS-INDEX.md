@@ -148,6 +148,9 @@
 | 380 | Kiosk Performance (Incognito Removal) | DONE | DevOps | 345, 377 | Remove --incognito from kiosk Chromium flags, cache assets between restarts |
 | 381 | Release Kiosk Restart | DONE | Mission Control | 334, 377 | requiresKioskRestart on Release, auto-reload terminals after deploy |
 | 404 | MC QR Code Modal + Location Environment Tags (T-073/T-075) | DONE | Mission Control | 300, 336 | T-073/T-075 — QRCodeCanvas 256px, error-correction H, Download PNG + Print actions. LocationEnvironment enum (DEVELOPMENT/STAGING/PRODUCTION) on CloudLocation, color-coded EnvironmentSelector component, prisma db push applied. Deploy modal groups by env. |
+| 447 | NUC Deployment Pipeline | DONE | Mission Control / DevOps | 302, 307, 308 | End-to-end FORCE_UPDATE cycle: sync agent SSE → git pull → pre-migrate → prisma db push → build → restart. nuc-pre-migrate.js mirrors vercel-build.js for local PG. |
+| 448 | Architecture Audit Fixes | DONE | Global | - | 15 findings: auth offline resilience, schema completeness (deletedAt+syncedAt on all 147 models), N+1 batching, fire-and-forget audit, cache utilization, socket efficiency. |
+| 449 | NUC Sync Hardening | DONE | Cloud Sync, DevOps | 345, 447 | 3 bugs: timestamp timezone conversion (::timestamptz on non-tz columns shifted -7h), PgBouncer cached plan (SELECT * → explicit cols), OnlineOrderWorker 401 spam (missing env guard). Installer updated for UTC. |
 
 ### Performance Overhaul (Feb 14, 2026)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -415,10 +418,10 @@
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| Mission Control (Phase 2) | 29 | 0 | 2 | 31 | 94% |
+| Mission Control (Phase 2) | 32 | 0 | 2 | 34 | 94% |
 | DevOps | 1 | 0 | 0 | 1 | 100% |
 | Performance Overhaul | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **259** | **7** | **18** | **284** | **92%** |
+| **TOTAL** | **262** | **7** | **18** | **287** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 

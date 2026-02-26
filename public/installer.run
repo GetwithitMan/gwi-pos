@@ -647,6 +647,16 @@ HBAEOF
     exit 1
   fi
 
+  # Set UTC timezone for database (CRITICAL for offline-first sync integrity)
+  # Without this, timestamps synced from Neon cloud can be silently shifted by the
+  # local timezone offset when inserted into "timestamp without time zone" columns.
+  # See Skill 449 for full root cause analysis.
+  log "Setting database timezone to UTC..."
+  sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" \
+    -c "ALTER DATABASE $DB_NAME SET timezone = 'UTC';" >/dev/null 2>&1 || {
+    warn "Failed to set database timezone to UTC — data sync may have timestamp inconsistencies."
+  }
+
   # Create .pgpass for passwordless pg_dump in backups/cron
   PGPASS_FILE="$POSUSER_HOME/.pgpass"
   echo "localhost:5432:$DB_NAME:$DB_USER:$DB_PASSWORD" > "$PGPASS_FILE"

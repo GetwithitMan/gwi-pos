@@ -226,29 +226,36 @@ export function PaymentModal({
     }
   }, [isOpen, orderId, orderTotal])
 
-  // CFD: emit show-order when payment modal opens (fire and forget)
+  // CFD: dispatch show-order via server when payment modal opens (fire and forget)
   useEffect(() => {
     if (!isOpen || !orderId || !locationId) return
     fetch(`/api/orders/${orderId}`)
       .then(res => res.json())
       .then(raw => {
         const data = raw.data ?? raw
-        const socket = getSharedSocket()
-        socket.emit('cfd:show-order', {
-          orderId: data.id ?? orderId,
-          orderNumber: data.orderNumber ?? 0,
-          items: (data.items ?? []).map((i: { name: string; quantity: number; price: number | string }) => ({
-            name: i.name,
-            quantity: i.quantity,
-            price: Number(i.price),
-          })),
-          subtotal: Number(data.subtotal ?? 0),
-          tax: Number(data.taxTotal ?? 0),
-          total: Number(data.total ?? orderTotal),
-        })
+        void fetch('/api/cfd/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'show-order',
+            locationId,
+            payload: {
+              orderId: data.id ?? orderId,
+              orderNumber: data.orderNumber ?? 0,
+              items: (data.items ?? []).map((i: { name: string; quantity: number; price: number | string }) => ({
+                name: i.name,
+                quantity: i.quantity,
+                price: Number(i.price),
+              })),
+              subtotal: Number(data.subtotal ?? 0),
+              tax: Number(data.taxTotal ?? 0),
+              total: Number(data.total ?? orderTotal),
+            },
+          }),
+        }).catch(() => {})
       })
       .catch(err => {
-        console.error('[CFD] Failed to emit cfd:show-order:', err)
+        console.error('[CFD] Failed to dispatch cfd:show-order:', err)
       })
   }, [isOpen, orderId, locationId]) // eslint-disable-line react-hooks/exhaustive-deps
 

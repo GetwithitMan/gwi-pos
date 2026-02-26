@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
-import { emitToLocation } from '@/lib/socket-server'
+import { dispatchMenuStructureChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
@@ -49,7 +48,7 @@ export const PUT = withVenue(async function PUT(
     invalidateMenuCache(category.locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void emitToLocation(category.locationId, 'menu:changed', { action: 'category_updated' }).catch(() => {})
+    void dispatchMenuUpdate(category.locationId, { action: 'updated' }).catch(() => {})
 
     // Dispatch socket event for real-time menu structure update
     dispatchMenuStructureChanged(category.locationId, {
@@ -118,7 +117,7 @@ export const DELETE = withVenue(async function DELETE(
     invalidateMenuCache(category.locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void emitToLocation(category.locationId, 'menu:changed', { action: 'category_deleted' }).catch(() => {})
+    void dispatchMenuUpdate(category.locationId, { action: 'deleted' }).catch(() => {})
 
     // Dispatch socket event for real-time menu structure update
     if (category) {

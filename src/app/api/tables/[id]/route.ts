@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
-import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { softDeleteData } from '@/lib/floorplan/queries'
 import { Prisma } from '@prisma/client'
@@ -203,9 +202,6 @@ export const PUT = withVenue(async function PUT(
         },
       },
     })
-
-    // Fire-and-forget socket dispatch for real-time floorplan updates
-    void emitToLocation(table.locationId, 'floorplan:changed', { tableId: id }).catch(() => {})
 
     // Dispatch table:status-changed when status is updated (fire-and-forget)
     if (status !== undefined) {

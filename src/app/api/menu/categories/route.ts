@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
-import { emitToLocation } from '@/lib/socket-server'
+import { dispatchMenuStructureChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
@@ -101,7 +100,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     invalidateMenuCache(locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void emitToLocation(locationId, 'menu:changed', { action: 'category_created' }).catch(() => {})
+    void dispatchMenuUpdate(locationId, { action: 'created' }).catch(() => {})
 
     // Dispatch socket event for real-time menu structure update
     dispatchMenuStructureChanged(locationId, {

@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-02-26 — NUC Sync Hardening: Fruita Grill Live Deployment (Skill 449)
+
+**Session:** Fixed 3 critical NUC sync bugs discovered during Fruita Grill live deployment. Timezone conversion silently shifted all synced timestamps by -7 hours (breaking terminal pairing). PgBouncer cached plan errors from SELECT * queries. OnlineOrderWorker 401 spam from missing env var. All fixes deployed to NUC via MC FORCE_UPDATE — full cloud-to-Android pairing flow verified working.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `626beaa` — fix: eliminate PgBouncer cached plan errors + silence OnlineOrderWorker 401 spam
+- `78dbc7c` — fix: timestamp timezone conversion bug in downstream sync + online order worker
+
+### Deployments
+- POS: pushed to main, Vercel auto-deploy
+- NUC (Fruita Grill): deployed via MC FORCE_UPDATE — verified running latest code
+
+### Fixes
+
+| # | Severity | Bug | Root Cause | Fix |
+|---|----------|-----|------------|-----|
+| 1 | CRITICAL | All synced timestamps shifted -7h on NUC | `buildCast()` used `::timestamptz` for `timestamp without time zone` columns; NUC PG timezone=America/Denver converted UTC→MST | Split cast: `timestamptz` for tz columns, `::timestamp` for non-tz. Set NUC PG timezone=UTC. |
+| 2 | HIGH | "cached plan must not change result type" errors | `SELECT *` queries on Neon via PgBouncer; prepared statement cache holds old column list after schema changes | Replaced all `SELECT *` with explicit column lists from `information_schema.columns` cache |
+| 3 | MEDIUM | OnlineOrderWorker 401 every 15 seconds | `PROVISION_API_KEY` not set on NUC; worker sent empty `x-api-key` header | Early return guard when env var missing |
+
+### Infrastructure Changes (Fruita Grill NUC)
+- `ALTER DATABASE pulse_pos SET timezone = 'UTC'` — permanent timezone fix
+- Installer updated to set UTC timezone on all future NUC provisions
+
+### Key Technical Details
+
+- **Timezone bug chain:** Neon stores `2026-02-26T21:33:00Z` → downstream sync inserts with `::timestamptz` → NUC PG (timezone=MST) converts to `14:33:00` and stores in `timestamp without time zone` column → Prisma reads `14:33:00` as UTC → thinks it's 7 hours in the past → pairing code "expired"
+- **PgBouncer fix applies to both workers:** `downstream-sync-worker.ts` uses `columnCache` from `loadColumnMetadata()`. `online-order-worker.ts` uses new `getColumnNames()` with `columnNameCache` Map.
+- **Belt-and-suspenders:** Both code fix (correct casts) AND infrastructure fix (UTC timezone) applied. Either alone is sufficient, both together prevent recurrence.
+
+### End-to-End Verification
+1. Generated pairing code from cloud admin (fruita-grill.ordercontrolcenter.com)
+2. Downstream sync pulled code to NUC local PG (~15s)
+3. Android app entered code → paired successfully ✅
+4. NUC logs clean — no sync errors, no 401 spam
+
+### Known Issues / Blockers
+- None — all three bugs resolved and verified in production
+
+---
+
 ## 2026-02-26 — Codebase Architecture Audit Fixes (Skill 448)
 
 **Session:** Fixed 15 findings from full codebase architecture audit. 5 parallel agents: auth hardening, schema sync fields, N+1/fire-and-forget fixes, cache bypass elimination, hard delete/UI/socket improvements. All POS-repo issues resolved; Android deferred.

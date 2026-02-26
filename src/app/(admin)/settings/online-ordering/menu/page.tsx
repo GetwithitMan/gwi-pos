@@ -107,9 +107,9 @@ export default function OnlineMenuPage() {
     const onMenuChanged = () => {
       loadMenu()
     }
-    socket.on('menu:changed', onMenuChanged)
+    socket.on('menu:updated', onMenuChanged)
     return () => {
-      socket.off('menu:changed', onMenuChanged)
+      socket.off('menu:updated', onMenuChanged)
       releaseSharedSocket()
     }
   }, [loadMenu])

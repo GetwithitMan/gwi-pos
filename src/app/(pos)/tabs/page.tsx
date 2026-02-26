@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
@@ -55,21 +55,26 @@ export default function TabsPage() {
     }
   }, [employee?.location?.id])
 
-  // Socket-driven refresh: subscribe to events that affect tab list
+  // Socket-driven refresh: subscribe to events that affect tab list (300ms debounce)
+  const tabsDebounceTimer = useRef<NodeJS.Timeout | null>(null)
   useEffect(() => {
     if (!socket || !isConnected) return
-    const refresh = () => loadTabs()
-    socket.on('order:created', refresh)
-    socket.on('order:updated', refresh)
-    socket.on('payment:processed', refresh)
-    socket.on('tab:updated', refresh)
-    socket.on('orders:list-changed', refresh)
+    const debouncedRefresh = () => {
+      if (tabsDebounceTimer.current) clearTimeout(tabsDebounceTimer.current)
+      tabsDebounceTimer.current = setTimeout(() => loadTabs(), 300)
+    }
+    socket.on('order:created', debouncedRefresh)
+    socket.on('order:updated', debouncedRefresh)
+    socket.on('payment:processed', debouncedRefresh)
+    socket.on('tab:updated', debouncedRefresh)
+    socket.on('orders:list-changed', debouncedRefresh)
     return () => {
-      socket.off('order:created', refresh)
-      socket.off('order:updated', refresh)
-      socket.off('payment:processed', refresh)
-      socket.off('tab:updated', refresh)
-      socket.off('orders:list-changed', refresh)
+      socket.off('order:created', debouncedRefresh)
+      socket.off('order:updated', debouncedRefresh)
+      socket.off('payment:processed', debouncedRefresh)
+      socket.off('tab:updated', debouncedRefresh)
+      socket.off('orders:list-changed', debouncedRefresh)
+      if (tabsDebounceTimer.current) clearTimeout(tabsDebounceTimer.current)
     }
   }, [socket, isConnected])
 

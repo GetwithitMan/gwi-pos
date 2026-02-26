@@ -87,12 +87,18 @@ export default function EntertainmentKDSPage() {
       setSocketConnected(false)
     }
 
+    const debouncedFetchTimer = { current: null as NodeJS.Timeout | null }
+    const debouncedFetch = () => {
+      if (debouncedFetchTimer.current) clearTimeout(debouncedFetchTimer.current)
+      debouncedFetchTimer.current = setTimeout(() => fetchStatus(), 200)
+    }
+
     const onEntertainmentChanged = () => {
-      fetchStatus()
+      debouncedFetch()
     }
 
     const onListChanged = () => {
-      fetchStatus()
+      debouncedFetch()
     }
 
     socket.on('connect', onConnect)
@@ -109,6 +115,7 @@ export default function EntertainmentKDSPage() {
       socket.off('disconnect', onDisconnect)
       socket.off('entertainment:status-changed', onEntertainmentChanged)
       socket.off('orders:list-changed', onListChanged)
+      if (debouncedFetchTimer.current) clearTimeout(debouncedFetchTimer.current)
       socketRef.current = null
       releaseSharedSocket()
     }

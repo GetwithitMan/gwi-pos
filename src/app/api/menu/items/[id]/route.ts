@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
-import { dispatchMenuItemChanged, dispatchMenuStockChanged } from '@/lib/socket-dispatch'
+import { dispatchMenuItemChanged, dispatchMenuStockChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { computeIsOrderableOnline } from '@/lib/online-availability'
-import { emitToLocation } from '@/lib/socket-server'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
@@ -259,7 +258,7 @@ export const PUT = withVenue(async function PUT(
     invalidateMenuCache(item.locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void emitToLocation(item.locationId, 'menu:changed', { action: 'updated' }).catch(() => {})
+    void dispatchMenuUpdate(item.locationId, { action: 'updated' }).catch(() => {})
 
     // Dispatch socket events for real-time updates
     const action = deletedAt ? 'deleted' : (item.deletedAt === null && deletedAt === undefined) ? 'updated' : 'restored'
@@ -360,7 +359,7 @@ export const DELETE = withVenue(async function DELETE(
     invalidateMenuCache(item.locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void emitToLocation(item.locationId, 'menu:changed', { action: 'deleted' }).catch(() => {})
+    void dispatchMenuUpdate(item.locationId, { action: 'deleted' }).catch(() => {})
 
     // Dispatch socket event for real-time update
     if (item) {
