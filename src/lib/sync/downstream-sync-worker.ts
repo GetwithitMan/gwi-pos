@@ -38,7 +38,7 @@ const highWaterMarks = new Map<string, Date>()
 
 /** Cached column names per table */
 const columnCache = new Map<string, string[]>()
-/** Cached column data types: tableName → columnName → data_type */
+/** Cached column PG casts: tableName → columnName → cast expression (e.g., '::timestamptz') */
 const columnTypeMap = new Map<string, Map<string, string>>()
 
 let timer: ReturnType<typeof setInterval> | null = null
@@ -85,15 +85,15 @@ async function loadColumnMetadata(): Promise<void> {
   const models = getDownstreamModels()
   for (const [tableName] of models) {
     try {
-      const cols = await masterClient.$queryRawUnsafe<{ column_name: string; data_type: string }[]>(
-        `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position`,
+      const cols = await masterClient.$queryRawUnsafe<{ column_name: string; data_type: string; udt_name: string }[]>(
+        `SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position`,
         tableName
       )
       if (cols.length > 0) {
         columnCache.set(tableName, cols.map((c) => c.column_name))
-        const typeMap = new Map<string, string>()
-        cols.forEach((c) => typeMap.set(c.column_name, c.data_type))
-        columnTypeMap.set(tableName, typeMap)
+        const castMap = new Map<string, string>()
+        cols.forEach((c) => castMap.set(c.column_name, buildCast(c.data_type, c.udt_name)))
+        columnTypeMap.set(tableName, castMap)
       }
     } catch {
       // Skip tables that don't exist locally yet
@@ -102,13 +102,18 @@ async function loadColumnMetadata(): Promise<void> {
   console.log(`[DownstreamSync] Column metadata loaded for ${columnCache.size} tables`)
 }
 
-/** Map PG data_type to an explicit cast for parameterized queries */
-function pgCast(dataType?: string): string {
-  if (!dataType) return ''
+/** Build PG type cast from column metadata */
+function buildCast(dataType: string, udtName: string): string {
   if (dataType.includes('timestamp')) return '::timestamptz'
   if (dataType === 'jsonb') return '::jsonb'
   if (dataType === 'json') return '::json'
   if (dataType === 'boolean') return '::boolean'
+  if (dataType === 'numeric') return '::numeric'
+  if (dataType === 'integer' || dataType === 'smallint') return '::integer'
+  if (dataType === 'bigint') return '::bigint'
+  if (dataType === 'double precision' || dataType === 'real') return '::double precision'
+  if (dataType === 'USER-DEFINED') return `::"${udtName}"`
+  if (dataType === 'ARRAY') return `::"${udtName.replace(/^_/, '')}"[]`
   return ''
 }
 
@@ -134,7 +139,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   const upsertCols = columns.filter((c) => c !== 'syncedAt')
   const quotedCols = upsertCols.map((c) => `"${c}"`).join(', ')
   const types = columnTypeMap.get(tableName)
-  const placeholders = upsertCols.map((c, i) => `$${i + 1}${pgCast(types?.get(c))}`).join(', ')
+  const placeholders = upsertCols.map((c, i) => `$${i + 1}${types?.get(c) ?? ''}`).join(', ')
   const updateSet = upsertCols
     .filter((c) => c !== 'id')
     .map((c) => `"${c}" = EXCLUDED."${c}"`)
