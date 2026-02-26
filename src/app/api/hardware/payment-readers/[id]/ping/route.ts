@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getDatacapClient } from '@/lib/datacap/helpers'
+import { executeHardwareCommand } from '@/lib/hardware-command'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Ping payment reader to check connectivity
@@ -19,6 +20,37 @@ export const POST = withVenue(async function POST(
 
     if (!reader) {
       return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
+    }
+
+    // Cloud mode: route through NUC via HardwareCommand
+    if (process.env.VERCEL) {
+      const result = await executeHardwareCommand({
+        locationId: reader.locationId,
+        commandType: 'PAYMENT_READER_PING',
+        targetDeviceId: id,
+      })
+
+      // Update reader status from remote result
+      if (result.resultPayload) {
+        const isOnline = result.success
+        await db.paymentReader.update({
+          where: { id },
+          data: {
+            isOnline,
+            lastSeenAt: isOnline ? new Date() : reader.lastSeenAt,
+            ...(result.resultPayload.responseTimeMs && { avgResponseTime: result.resultPayload.responseTimeMs }),
+            ...(isOnline && { lastError: null, lastErrorAt: null }),
+            ...(!isOnline && { lastError: result.error, lastErrorAt: new Date() }),
+          },
+        })
+      }
+
+      return NextResponse.json({ data: {
+        success: result.success,
+        isOnline: result.success,
+        responseTimeMs: result.resultPayload?.responseTimeMs,
+        error: result.error,
+      } })
     }
 
     const startTime = Date.now()

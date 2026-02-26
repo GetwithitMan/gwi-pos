@@ -676,6 +676,9 @@ model Location {
   registeredDevices RegisteredDevice[]
   mobileSessions    MobileSession[]
 
+  // Hardware Remote Commands (cloud-to-NUC)
+  hardwareCommands HardwareCommand[]
+
   // C-SCHEMA-1: Added reverse relations
   timedSessions TimedSession[]
   auditLogs     AuditLog[]
@@ -7475,4 +7478,29 @@ model MobileSession {
   @@index([locationId])
   @@index([sessionToken])
   @@index([employeeId])
+}
+
+// ============================================
+// HARDWARE REMOTE COMMANDS
+// Cloud-to-NUC command queue for printer/reader operations
+// ============================================
+
+model HardwareCommand {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  commandType    String // "PRINTER_PING" | "PRINTER_TEST_PAGE" | "PAYMENT_READER_PING"
+  targetDeviceId String // Printer or PaymentReader ID
+  payload        Json? // Optional extra parameters
+  status         String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  resultPayload  Json? // Result from the NUC
+  errorMessage   String?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  expiresAt   DateTime // Auto-cleanup: 60s from creation
+
+  @@index([locationId, status])
+  @@index([locationId])
 }

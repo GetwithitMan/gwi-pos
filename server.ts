@@ -16,6 +16,7 @@ import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
 import { startCloudEventWorker } from './src/lib/cloud-event-queue'
 import { startOnlineOrderDispatchWorker } from './src/lib/online-order-worker'
+import { startHardwareCommandWorker } from './src/lib/hardware-command-worker'
 import { scaleService } from './src/lib/scale/scale-service'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -124,6 +125,7 @@ async function main() {
     startCloudEventWorker()
     startEodScheduler()
     startOnlineOrderDispatchWorker(port)
+    startHardwareCommandWorker()
     void scaleService.initialize().catch(console.error)
   })
 

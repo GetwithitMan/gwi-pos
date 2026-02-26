@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
+import { executeHardwareCommand } from '@/lib/hardware-command'
 import {
   buildDocument,
   buildDocumentNoCut,
@@ -27,6 +28,24 @@ export const POST = withVenue(async function POST(
 
     if (!printer) {
       return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
+    }
+
+    // Cloud mode: route through NUC via HardwareCommand
+    if (process.env.VERCEL) {
+      const result = await executeHardwareCommand({
+        locationId: printer.locationId,
+        commandType: 'PRINTER_TEST_PAGE',
+        targetDeviceId: id,
+      })
+
+      return NextResponse.json({ data: {
+        success: result.success,
+        error: result.error || result.resultPayload?.error,
+        printer: {
+          id: printer.id,
+          name: printer.name,
+        },
+      } })
     }
 
     // Determine paper width

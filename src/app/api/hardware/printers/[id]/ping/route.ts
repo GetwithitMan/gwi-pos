@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { testPrinterConnection } from '@/lib/printer-connection'
+import { executeHardwareCommand } from '@/lib/hardware-command'
 import { withVenue } from '@/lib/with-venue'
 
 // POST test printer connection
@@ -17,6 +18,38 @@ export const POST = withVenue(async function POST(
 
     if (!printer) {
       return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
+    }
+
+    // Cloud mode: route through NUC via HardwareCommand
+    if (process.env.VERCEL) {
+      const result = await executeHardwareCommand({
+        locationId: printer.locationId,
+        commandType: 'PRINTER_PING',
+        targetDeviceId: id,
+      })
+
+      // Update printer status from remote result
+      if (result.resultPayload) {
+        await db.printer.update({
+          where: { id },
+          data: {
+            lastPingAt: new Date(),
+            lastPingOk: result.success,
+          },
+        })
+      }
+
+      return NextResponse.json({ data: {
+        success: result.success,
+        responseTime: result.resultPayload?.responseTime,
+        error: result.error || result.resultPayload?.error,
+        printer: {
+          id: printer.id,
+          name: printer.name,
+          ipAddress: printer.ipAddress,
+          port: printer.port,
+        },
+      } })
     }
 
     // Test the connection
