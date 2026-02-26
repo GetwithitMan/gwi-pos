@@ -1220,6 +1220,7 @@ export const POST = withVenue(withTiming(async function POST(
         trigger: 'paid',
         orderId: order.parentOrderId!,
         tableId: parentTableId || undefined,
+        sourceTerminalId: terminalId || undefined,
       }).catch(() => {})
       void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
       invalidateSnapshotCache(order.locationId)
@@ -1315,12 +1316,13 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Dispatch payment:processed for each created payment (fire-and-forget)
     for (const p of createdPayments) {
-      void dispatchPaymentProcessed(order.locationId, { orderId, paymentId: p.id, status: 'completed' }).catch(() => {})
+      void dispatchPaymentProcessed(order.locationId, { orderId, paymentId: p.id, status: 'completed', sourceTerminalId: terminalId || undefined }).catch(() => {})
     }
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
+    // Include sourceTerminalId so receiving clients can suppress "closed on another terminal" banners
     if (updateData.status === 'paid') {
-      void dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
+      void dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined, sourceTerminalId: terminalId || undefined }, { async: true }).catch(() => {})
     }
 
     // Notify CFD that receipt was sent — transitions CFD to thank-you screen (fire-and-forget)

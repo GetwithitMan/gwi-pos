@@ -189,6 +189,7 @@ export const POST = withVenue(async function POST(
       trigger: 'paid',
       orderId: parentOrderId,
       tableId: parentOrder.tableId || undefined,
+      sourceTerminalId: terminalId || undefined,
     }, { async: true }).catch(() => {})
 
     if (parentOrder.tableId) {

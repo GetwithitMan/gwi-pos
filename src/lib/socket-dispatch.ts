@@ -655,6 +655,7 @@ export async function dispatchOpenOrdersChanged(
     tableId?: string
     orderNumber?: number
     status?: string
+    sourceTerminalId?: string
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
@@ -692,7 +693,7 @@ export async function dispatchOpenOrdersChanged(
  */
 export async function dispatchPaymentProcessed(
   locationId: string,
-  data: { orderId: string; paymentId?: string; status: string }
+  data: { orderId: string; paymentId?: string; status: string; sourceTerminalId?: string }
 ): Promise<boolean> {
   try {
     await emitToLocation(locationId, 'payment:processed', data)
