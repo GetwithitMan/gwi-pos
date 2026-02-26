@@ -80,7 +80,16 @@ async function main() {
 
   await app.prepare()
 
+  const socketPath = process.env.SOCKET_PATH || '/api/socket'
+
   const httpServer = createServer((req, res) => {
+    // Let Socket.io handle its own HTTP polling requests — the [orderCode]/[slug]
+    // catch-all route would otherwise intercept /api/socket as a page route.
+    const pathname = req.url?.split('?')[0] || ''
+    if (pathname === socketPath || pathname.startsWith(socketPath + '/')) {
+      return // Socket.io's own request listener handles this
+    }
+
     // Multi-tenant: wrap request in AsyncLocalStorage with the correct
     // PrismaClient so that `import { db } from '@/lib/db'` automatically
     // routes to the venue's Neon database.
