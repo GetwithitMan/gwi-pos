@@ -129,8 +129,12 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   const hwm = highWaterMarks.get(tableName) ?? new Date('1970-01-01T00:00:00Z')
 
   // Fetch rows from Neon newer than high-water mark
+  // Use explicit column names instead of SELECT * to avoid "cached plan must not
+  // change result type" errors from PgBouncer prepared statement caching after
+  // schema changes on the Neon connection pooler.
+  const quotedSelectCols = columns.map((c) => `"${c}"`).join(', ')
   const rows = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT * FROM "${tableName}" WHERE "updatedAt" > $1::timestamptz ORDER BY "updatedAt" ASC LIMIT $2`,
+    `SELECT ${quotedSelectCols} FROM "${tableName}" WHERE "updatedAt" > $1::timestamptz ORDER BY "updatedAt" ASC LIMIT $2`,
     hwm.toISOString(),
     batchSize
   )

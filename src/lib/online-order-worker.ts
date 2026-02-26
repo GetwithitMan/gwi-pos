@@ -39,6 +39,11 @@ export function startOnlineOrderDispatchWorker(port: number): void {
     return
   }
 
+  if (!process.env.PROVISION_API_KEY) {
+    console.log('[OnlineOrderWorker] PROVISION_API_KEY not set — worker disabled (online ordering not configured)')
+    return
+  }
+
   console.log('[OnlineOrderWorker] Started (15s polling interval)')
 
   workerInterval = setInterval(() => {
@@ -95,6 +100,20 @@ async function pollAndDispatch(port: number, locationId: string): Promise<void> 
 }
 
 // ── Pull online orders from Neon into local PG ─────────────────────────────
+
+/** Cached column names per table (for explicit SELECT instead of SELECT *) */
+const columnNameCache = new Map<string, string>()
+
+async function getColumnNames(tableName: string): Promise<string> {
+  if (columnNameCache.has(tableName)) return columnNameCache.get(tableName)!
+  const cols = await masterClient.$queryRawUnsafe<{ column_name: string }[]>(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position`,
+    tableName
+  )
+  const quoted = cols.map((c) => `"${c.column_name}"`).join(', ')
+  columnNameCache.set(tableName, quoted)
+  return quoted
+}
 
 /** Cached column data types for upsert type casts */
 const upsertTypeCache = new Map<string, Map<string, string>>()
@@ -178,16 +197,19 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
         )
         if (claimed === 0) continue // Already claimed
 
-        // Get full order row from Neon
+        // Get full order row from Neon (use explicit columns to avoid
+        // PgBouncer "cached plan must not change result type" errors)
+        const orderCols = await getColumnNames('Order')
         const [orderRow] = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
-          `SELECT * FROM "Order" WHERE id = $1`,
+          `SELECT ${orderCols} FROM "Order" WHERE id = $1`,
           orderId
         )
         if (!orderRow) continue
 
         // Get order items
+        const itemCols = await getColumnNames('OrderItem')
         const items = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
-          `SELECT * FROM "OrderItem" WHERE "orderId" = $1`,
+          `SELECT ${itemCols} FROM "OrderItem" WHERE "orderId" = $1`,
           orderId
         )
 
@@ -195,8 +217,9 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
         const itemIds = items.map((i) => i.id as string)
         let modifiers: Record<string, unknown>[] = []
         if (itemIds.length > 0) {
+          const modCols = await getColumnNames('OrderItemModifier')
           modifiers = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
-            `SELECT * FROM "OrderItemModifier" WHERE "orderItemId" = ANY($1::text[])`,
+            `SELECT ${modCols} FROM "OrderItemModifier" WHERE "orderItemId" = ANY($1::text[])`,
             itemIds
           )
         }
