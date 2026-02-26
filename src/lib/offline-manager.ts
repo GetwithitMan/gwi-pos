@@ -382,16 +382,47 @@ class OfflineManagerClass {
           }
         }
 
+        // Transform PendingPayment.data into PaymentRequestSchema shape
+        // PendingPayment stores: { paymentMethodId, amount, tipAmount, employeeId }
+        // Pay route expects: { payments: [{ method, amount, tipAmount }], employeeId, terminalId }
+        const payData = payment.data
+        const payloadMethod = (payData as Record<string, unknown>).paymentMethodId ?? (payData as Record<string, unknown>).method ?? 'cash'
+        const payloadAmount = payData.amount
+        const payloadTip = payData.tipAmount ?? 0
+        const payloadEmployee = payData.employeeId
+
+        // If data already has a `payments` array (new callers), pass through;
+        // otherwise transform the flat structure into the expected shape
+        const body = (payData as Record<string, unknown>).payments
+          ? payData
+          : {
+              payments: [{
+                method: payloadMethod,
+                amount: payloadAmount,
+                tipAmount: payloadTip,
+                // Forward cash-specific fields if present
+                ...((payData as Record<string, unknown>).amountTendered ? { amountTendered: (payData as Record<string, unknown>).amountTendered } : {}),
+              }],
+              employeeId: payloadEmployee,
+              terminalId: this.terminalId || undefined,
+            }
+
         const res = await fetch(`/api/orders/${orderId}/pay`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payment.data),
+          body: JSON.stringify(body),
         })
 
         if (res.ok) {
           await offlineDb.pendingPayments.update(payment.id, { status: 'synced' })
         } else {
-          throw new Error(`Payment failed: ${res.status}`)
+          // Capture response body for debugging (Zod validation errors, etc.)
+          let errorDetail = ''
+          try {
+            const errBody = await res.json()
+            errorDetail = errBody?.error || JSON.stringify(errBody).slice(0, 200)
+          } catch { /* ignore parse errors */ }
+          throw new Error(`Payment failed: ${res.status}${errorDetail ? ` — ${errorDetail}` : ''}`)
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error'
