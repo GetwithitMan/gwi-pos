@@ -96,6 +96,30 @@ async function pollAndDispatch(port: number, locationId: string): Promise<void> 
 
 // ── Pull online orders from Neon into local PG ─────────────────────────────
 
+/** Cached column data types for upsert type casts */
+const upsertTypeCache = new Map<string, Map<string, string>>()
+
+async function getColumnTypes(tableName: string): Promise<Map<string, string>> {
+  if (upsertTypeCache.has(tableName)) return upsertTypeCache.get(tableName)!
+  const cols = await masterClient.$queryRawUnsafe<{ column_name: string; data_type: string }[]>(
+    `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public'`,
+    tableName
+  )
+  const typeMap = new Map<string, string>()
+  cols.forEach((c) => typeMap.set(c.column_name, c.data_type))
+  upsertTypeCache.set(tableName, typeMap)
+  return typeMap
+}
+
+function pgCast(dataType?: string): string {
+  if (!dataType) return ''
+  if (dataType.includes('timestamp')) return '::timestamptz'
+  if (dataType === 'jsonb') return '::jsonb'
+  if (dataType === 'json') return '::json'
+  if (dataType === 'boolean') return '::boolean'
+  return ''
+}
+
 function serializeValue(val: unknown): unknown {
   if (val === null || val === undefined) return null
   if (val instanceof Date) return val.toISOString()
@@ -110,9 +134,10 @@ function serializeValue(val: unknown): unknown {
 }
 
 async function upsertRow(tableName: string, row: Record<string, unknown>): Promise<void> {
+  const types = await getColumnTypes(tableName)
   const cols = Object.keys(row).filter((k) => row[k] !== undefined)
   const values = cols.map((c) => serializeValue(row[c]))
-  const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
+  const placeholders = cols.map((c, i) => `$${i + 1}${pgCast(types.get(c))}`).join(', ')
   const quotedCols = cols.map((c) => `"${c}"`).join(', ')
   const updateSet = cols
     .filter((c) => c !== 'id')

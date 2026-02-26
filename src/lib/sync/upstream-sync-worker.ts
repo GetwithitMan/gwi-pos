@@ -34,6 +34,8 @@ const metrics: SyncMetrics = {
 
 /** Cached column names per table (loaded once at startup) */
 const columnCache = new Map<string, string[]>()
+/** Cached column data types: tableName → columnName → data_type */
+const columnTypeMap = new Map<string, Map<string, string>>()
 
 let timer: ReturnType<typeof setInterval> | null = null
 
@@ -58,12 +60,15 @@ async function loadColumnMetadata(): Promise<void> {
   const models = getUpstreamModels()
   for (const [tableName] of models) {
     try {
-      const cols = await masterClient.$queryRawUnsafe<{ column_name: string }[]>(
-        `SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position`,
+      const cols = await masterClient.$queryRawUnsafe<{ column_name: string; data_type: string }[]>(
+        `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position`,
         tableName
       )
       if (cols.length > 0) {
         columnCache.set(tableName, cols.map((c) => c.column_name))
+        const typeMap = new Map<string, string>()
+        cols.forEach((c) => typeMap.set(c.column_name, c.data_type))
+        columnTypeMap.set(tableName, typeMap)
       }
     } catch (err) {
       console.error(
@@ -73,6 +78,16 @@ async function loadColumnMetadata(): Promise<void> {
     }
   }
   console.log(`[UpstreamSync] Column metadata loaded for ${columnCache.size} tables`)
+}
+
+/** Map PG data_type to an explicit cast for parameterized queries */
+function pgCast(dataType?: string): string {
+  if (!dataType) return ''
+  if (dataType.includes('timestamp')) return '::timestamptz'
+  if (dataType === 'jsonb') return '::jsonb'
+  if (dataType === 'json') return '::json'
+  if (dataType === 'boolean') return '::boolean'
+  return ''
 }
 
 // ── Core sync logic ───────────────────────────────────────────────────────────
@@ -100,7 +115,8 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
   // Columns to upsert (exclude syncedAt — that's local tracking only)
   const upsertCols = columns.filter((c) => c !== 'syncedAt')
   const quotedCols = upsertCols.map((c) => `"${c}"`).join(', ')
-  const placeholders = upsertCols.map((_, i) => `$${i + 1}`).join(', ')
+  const types = columnTypeMap.get(tableName)
+  const placeholders = upsertCols.map((c, i) => `$${i + 1}${pgCast(types?.get(c))}`).join(', ')
   const updateSet = upsertCols
     .filter((c) => c !== 'id')
     .map((c) => `"${c}" = EXCLUDED."${c}"`)

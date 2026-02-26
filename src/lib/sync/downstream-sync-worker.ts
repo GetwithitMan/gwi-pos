@@ -38,6 +38,8 @@ const highWaterMarks = new Map<string, Date>()
 
 /** Cached column names per table */
 const columnCache = new Map<string, string[]>()
+/** Cached column data types: tableName → columnName → data_type */
+const columnTypeMap = new Map<string, Map<string, string>>()
 
 let timer: ReturnType<typeof setInterval> | null = null
 let immediateRunning = false
@@ -83,18 +85,31 @@ async function loadColumnMetadata(): Promise<void> {
   const models = getDownstreamModels()
   for (const [tableName] of models) {
     try {
-      const cols = await masterClient.$queryRawUnsafe<{ column_name: string }[]>(
-        `SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position`,
+      const cols = await masterClient.$queryRawUnsafe<{ column_name: string; data_type: string }[]>(
+        `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = $1 AND table_schema = 'public' ORDER BY ordinal_position`,
         tableName
       )
       if (cols.length > 0) {
         columnCache.set(tableName, cols.map((c) => c.column_name))
+        const typeMap = new Map<string, string>()
+        cols.forEach((c) => typeMap.set(c.column_name, c.data_type))
+        columnTypeMap.set(tableName, typeMap)
       }
     } catch {
       // Skip tables that don't exist locally yet
     }
   }
   console.log(`[DownstreamSync] Column metadata loaded for ${columnCache.size} tables`)
+}
+
+/** Map PG data_type to an explicit cast for parameterized queries */
+function pgCast(dataType?: string): string {
+  if (!dataType) return ''
+  if (dataType.includes('timestamp')) return '::timestamptz'
+  if (dataType === 'jsonb') return '::jsonb'
+  if (dataType === 'json') return '::json'
+  if (dataType === 'boolean') return '::boolean'
+  return ''
 }
 
 // ── Core sync logic ───────────────────────────────────────────────────────────
@@ -108,7 +123,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
 
   // Fetch rows from Neon newer than high-water mark
   const rows = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT * FROM "${tableName}" WHERE "updatedAt" > $1 ORDER BY "updatedAt" ASC LIMIT $2`,
+    `SELECT * FROM "${tableName}" WHERE "updatedAt" > $1::timestamptz ORDER BY "updatedAt" ASC LIMIT $2`,
     hwm.toISOString(),
     batchSize
   )
@@ -118,7 +133,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   // Build upsert SQL for local PG
   const upsertCols = columns.filter((c) => c !== 'syncedAt')
   const quotedCols = upsertCols.map((c) => `"${c}"`).join(', ')
-  const placeholders = upsertCols.map((_, i) => `$${i + 1}`).join(', ')
+  const types = columnTypeMap.get(tableName)
+  const placeholders = upsertCols.map((c, i) => `$${i + 1}${pgCast(types?.get(c))}`).join(', ')
   const updateSet = upsertCols
     .filter((c) => c !== 'id')
     .map((c) => `"${c}" = EXCLUDED."${c}"`)
