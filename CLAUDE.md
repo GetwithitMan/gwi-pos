@@ -116,6 +116,23 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
          Terminals (Chromium kiosk) + Phones/iPads (PWA)
 ```
 
+### CRITICAL: All Terminals Point to the NUC (MANDATORY)
+
+**Every POS terminal, kiosk, SmartTab, and browser MUST connect to the local NUC server — NEVER to Vercel/cloud URLs.**
+
+| Device | URL | Why |
+|--------|-----|-----|
+| NUC kiosk | `http://localhost:3005` | Server role — kiosk on same machine |
+| Terminal/SmartTab | `http://{NUC_IP}:3005` | Terminal role — points to NUC on LAN |
+| Phone/iPad (PWA) | `http://{NUC_IP}:3005` | Mobile — connects via local WiFi |
+
+**Vercel URLs (`*.ordercontrolcenter.com`, `barpos.restaurant`) are for online ordering and cloud admin ONLY.** They cannot:
+- Maintain WebSocket/Socket.IO connections (serverless = no persistent sockets)
+- Reach local printers, payment readers, or KDS screens
+- Provide the "Connection lost" banner will ALWAYS show on Vercel
+
+**Before making any deployment or kiosk changes, ALWAYS verify terminals point to the NUC.** The NUC is the single gateway to the cloud — terminals never talk to the cloud directly.
+
 | Phase | What | Status |
 |-------|------|--------|
 | **1** | Build the POS (`gwi-pos`) | 🔄 In Progress |
