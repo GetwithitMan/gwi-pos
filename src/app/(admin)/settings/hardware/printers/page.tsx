@@ -234,12 +234,13 @@ export default function PrintersPage() {
       })
       const data = await res.json()
 
+      const result = data.data ?? data
       setTestResult({
         id: printer.id,
-        success: data.success,
-        message: data.success
-          ? `Connected in ${data.responseTime}ms`
-          : data.error || 'Connection failed',
+        success: result.success,
+        message: result.success
+          ? `Connected in ${result.responseTime}ms`
+          : result.error || 'Connection failed',
       })
 
       fetchPrinters()
@@ -264,10 +265,11 @@ export default function PrintersPage() {
       })
       const data = await res.json()
 
+      const result = data.data ?? data
       setTestResult({
         id: printer.id,
-        success: data.success,
-        message: data.success ? 'Test page sent!' : data.error || 'Print failed',
+        success: result.success,
+        message: result.success ? 'Test page sent!' : result.error || 'Print failed',
       })
     } catch (error) {
       setTestResult({
