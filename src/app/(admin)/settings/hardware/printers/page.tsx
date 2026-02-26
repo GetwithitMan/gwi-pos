@@ -129,7 +129,7 @@ export default function PrintersPage() {
       if (res.ok) {
         const data = await res.json()
         if (data.data.settings?.receiptDisplay) {
-          setGlobalReceiptSettings(data.settings.receiptDisplay)
+          setGlobalReceiptSettings(data.data.settings.receiptDisplay)
         }
       }
     } catch (error) {

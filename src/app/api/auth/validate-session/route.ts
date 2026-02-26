@@ -36,16 +36,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
   }
 
-  const employee = await db.employee.findUnique({
-    where: { id: employeeId },
-    select: { id: true, isActive: true },
-  })
+  // Cloud users (JWT-backed, not DB records) have IDs like "cloud-user_..."
+  // They're authenticated via the cloud-session endpoint, not the employee table.
+  if (!employeeId.startsWith('cloud-')) {
+    const employee = await db.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, isActive: true },
+    })
 
-  if (!employee || !employee.isActive) {
-    return NextResponse.json(
-      { valid: false, reason: 'employee_not_found' },
-      { status: 401 }
-    )
+    if (!employee || !employee.isActive) {
+      return NextResponse.json(
+        { valid: false, reason: 'employee_not_found' },
+        { status: 401 }
+      )
+    }
   }
 
   return NextResponse.json({ data: { valid: true } })
