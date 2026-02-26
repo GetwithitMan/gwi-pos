@@ -160,7 +160,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       // Stamp syncedAt locally if the column exists
       if (columns.includes('syncedAt')) {
         await masterClient.$executeRawUnsafe(
-          `UPDATE "${tableName}" SET "syncedAt" = NOW() WHERE id = $1`,
+          `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
           row.id as string
         )
       }

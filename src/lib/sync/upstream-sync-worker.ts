@@ -137,7 +137,7 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
 
       // Stamp syncedAt locally
       await masterClient.$executeRawUnsafe(
-        `UPDATE "${tableName}" SET "syncedAt" = NOW() WHERE id = $1`,
+        `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
         row.id as string
       )
 

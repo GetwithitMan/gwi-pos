@@ -627,6 +627,91 @@ Named routes with priority-based routing: `PrintRoute > Item printer > Category 
 ### KDS Device Security
 256-bit token + httpOnly cookie + 5-min pairing code. Optional static IP binding. See `docs/skills/102-KDS-DEVICE-SECURITY.md`.
 
+## Payment Gateway: Datacap (THE ONLY PROCESSOR — NEVER USE STRIPE/SQUARE/BRAINTREE)
+
+**GWI POS uses Datacap exclusively for all card payments. This is a hard architectural constraint — do NOT integrate any other payment processor.**
+
+### Priority Rule: Payments First, Reports Second
+
+> **"Customers must always get their money. Reports can always be fixed after the fact."**
+
+If there is ever a conflict between payment processing reliability and reporting accuracy, payment processing wins. A failed transaction that doesn't record correctly in a report is a data problem. A failed transaction that the customer was charged for but the venue didn't receive is a business-ending problem. Never sacrifice payment flow stability for reporting convenience.
+
+### Architecture — No Outside Processing
+
+There is no third-party payment gateway sitting between the NUC and Datacap. The NUC talks directly to the Datacap reader over TCP on the local LAN. No internet required. No middleman.
+
+```
+Customer taps/swipes card
+         │
+         ▼
+  Datacap Reader (LAN — 192.168.x.x:port)
+         │  TCP — local network only
+         ▼
+  NUC (src/lib/datacap/client.ts)
+         │  POST /api/orders/[id]/pay
+         ▼
+  Approved / Declined (local, ~1s)
+         │
+         ▼
+  Order marked paid in local PG
+         │  (background, non-blocking)
+         ▼
+  Syncs to Neon cloud (5s upstream)
+```
+
+### Credential Flow: Mission Control → NUC (NEVER entered locally)
+
+Datacap credentials are **configured in Mission Control** per venue and **pushed down to the NUC** — they are never entered directly into the POS or NUC environment.
+
+```
+GWI Admin sets credentials in Mission Control
+  └── Location.settings.payments.datacapMerchantId
+  └── Location.settings.payments.datacapTokenKey
+  └── Location.settings.payments.datacapEnvironment
+
+         │ Pushed to NUC via:
+         │ 1. Registration flow (during NUC provisioning)
+         │ 2. Downstream sync (Neon → NUC, every 15s)
+         ▼
+
+NUC local PG — Location.settings (cloud-authoritative)
+         │
+         ▼
+getPaymentSettingsCached(locationId)  ← 5min TTL cache
+         │
+         ▼
+DatacapClient configured and ready
+```
+
+### Actual Credential Fields (from `location.settings.payments`)
+
+| Field | What it is | Set where |
+|-------|-----------|-----------|
+| `datacapMerchantId` | Datacap MID — identifies the merchant | Mission Control |
+| `datacapTokenKey` | Token key — used as password in cloud mode auth | Mission Control |
+| `datacapEnvironment` | `'cert'` (test) or `'production'` | Mission Control |
+| `processor` | `'datacap'` in production, `'simulated'` in dev | Mission Control |
+| `readerTimeoutSeconds` | TCP timeout to reader (default 30s) | Mission Control |
+| `operatorId` | Hardcoded `'POS'` — not configurable | N/A |
+
+**Location.settings is cloud-authoritative** — MC is the source of truth, NUC receives it via downstream sync.
+
+### Rules for Agents
+
+1. **NEVER** add Stripe, Square, Braintree, or any other payment processor
+2. **NEVER** enter Datacap credentials directly in `.env` or the NUC — they come from Mission Control via sync
+3. All payment code lives in `src/lib/datacap/` — do not create payment code outside this directory
+4. `communicationMode: 'local'` in production — reader is on the LAN, zero internet dependency
+5. `communicationMode: 'cloud'` is for dev/remote testing only (Datacap cloud relay)
+6. Pre-auth (bar tabs) also goes through Datacap — same reader, same `DatacapClient`
+7. Payment settings are cached at 5min TTL via `getPaymentSettingsCached()` — never query Location directly in the pay route
+8. The simulated payment path (`src/lib/datacap/simulated-defaults.ts`) is **dev-only** — tagged `SIMULATED_DEFAULTS`, remove entirely before go-live
+
+**Key files:** `src/lib/datacap/`, `src/lib/datacap/helpers.ts`, `src/lib/payment-settings-cache.ts`, `/api/orders/[id]/pay/route.ts`, `/api/orders/[id]/pre-auth/route.ts`
+
+---
+
 ## Toast Notifications
 
 ```typescript

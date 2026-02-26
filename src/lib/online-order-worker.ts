@@ -161,7 +161,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
   try {
     // Find received online orders in Neon
     const orders = await neonClient!.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "Order" WHERE "locationId" = $1 AND status = 'received' AND source = 'online' AND "deletedAt" IS NULL LIMIT 20`,
+      `SELECT id FROM "Order" WHERE "locationId" = $1 AND status = 'received' AND "deletedAt" IS NULL LIMIT 20`,
       locationId
     )
 
