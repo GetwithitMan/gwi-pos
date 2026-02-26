@@ -130,8 +130,10 @@ function serializeValue(val: unknown): unknown {
   if (val instanceof Date) return val.toISOString()
   if (typeof val === 'bigint') return val.toString()
   if (typeof val === 'object') {
-    if ((val as { constructor?: { name?: string } }).constructor?.name === 'Decimal') {
-      return (val as { toString(): string }).toString()
+    // Decimal.js (Prisma Decimal) — has d (digits), s (sign), e (exponent)
+    const v = val as Record<string, unknown>
+    if (v.d !== undefined && v.s !== undefined && v.e !== undefined) {
+      return String(val)
     }
     return JSON.stringify(val)
   }
