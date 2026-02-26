@@ -609,7 +609,7 @@ export const PATCH = withVenue(async function PATCH(
       },
     })
 
-    // Dispatch socket update if tip changed
+    // Dispatch socket updates for cross-terminal sync
     if (tipTotal !== undefined) {
       dispatchOrderTotalsUpdate(updatedOrder.locationId, updatedOrder.id, {
         subtotal: Number(updatedOrder.subtotal),
@@ -619,6 +619,12 @@ export const PATCH = withVenue(async function PATCH(
         total: Number(updatedOrder.total),
         commissionTotal: Number(updatedOrder.commissionTotal || 0),
       }, { async: true }).catch(console.error)
+    }
+
+    // Dispatch order:updated for metadata changes (tabName, guestCount, notes, tableId, etc.)
+    // This notifies other terminals (especially Android) of the metadata change
+    if (Object.keys(updateData).length > 0) {
+      void dispatchOrderUpdated(updatedOrder.locationId, { orderId: updatedOrder.id }).catch(() => {})
     }
 
     return NextResponse.json({ data: {
