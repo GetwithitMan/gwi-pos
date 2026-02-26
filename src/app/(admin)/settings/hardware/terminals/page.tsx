@@ -39,6 +39,25 @@ interface Terminal {
   backupTerminalId: string | null
   failoverEnabled: boolean
   failoverTimeout: number
+  platform?: string
+  appVersion?: string
+  deviceInfo?: {
+    connectedHardware?: {
+      cardReader?: {
+        transport: string
+        deviceName: string
+        status: string
+      }
+      scale?: {
+        connected: boolean
+        type: string
+      }
+      printerCount?: number
+      platform?: string
+      osVersion?: string
+    }
+    lastHardwareReportAt?: string
+  } | null
 }
 
 interface Role {
@@ -396,6 +415,9 @@ function TerminalCard({
               {terminal.staticIp && (
                 <span className="text-xs text-gray-500 font-mono">{terminal.staticIp}</span>
               )}
+              {terminal.appVersion && (
+                <span className="text-[10px] text-gray-400 font-mono">v{terminal.appVersion}</span>
+              )}
             </div>
           </div>
         </div>
@@ -435,6 +457,88 @@ function TerminalCard({
             )}
           </span>
         </div>
+
+        {/* Connected Hardware (Android terminals) */}
+        {terminal.deviceInfo?.connectedHardware && (
+          <div className="pt-2 border-t border-gray-100 space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Connected Hardware</span>
+
+            {/* Card Reader */}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+                Card Reader
+              </span>
+              {terminal.deviceInfo.connectedHardware.cardReader ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
+                  <span className="text-gray-900 text-xs">
+                    {terminal.deviceInfo.connectedHardware.cardReader.deviceName}
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-mono uppercase">
+                    {terminal.deviceInfo.connectedHardware.cardReader.transport}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-gray-400 text-xs">None</span>
+              )}
+            </div>
+
+            {/* Scale */}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+                </svg>
+                Scale
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                  terminal.deviceInfo.connectedHardware.scale?.connected ? 'bg-green-500' : 'bg-gray-300'
+                }`} />
+                <span className="text-xs text-gray-700">
+                  {terminal.deviceInfo.connectedHardware.scale?.connected
+                    ? terminal.deviceInfo.connectedHardware.scale.type || 'Connected'
+                    : 'Not connected'}
+                </span>
+              </span>
+            </div>
+
+            {/* Printers */}
+            {terminal.deviceInfo.connectedHardware.printerCount != null && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Printers
+                </span>
+                <span className="text-xs text-gray-700">
+                  {terminal.deviceInfo.connectedHardware.printerCount} configured
+                </span>
+              </div>
+            )}
+
+            {/* Platform/OS */}
+            {terminal.deviceInfo.connectedHardware.osVersion && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">OS</span>
+                <span className="text-xs text-gray-500 font-mono">
+                  {terminal.deviceInfo.connectedHardware.osVersion}
+                </span>
+              </div>
+            )}
+
+            {/* Last hardware report time */}
+            {terminal.deviceInfo.lastHardwareReportAt && (
+              <div className="text-[10px] text-gray-400 text-right">
+                Hardware reported {new Date(terminal.deviceInfo.lastHardwareReportAt).toLocaleTimeString()}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Skip Rules Summary */}
         <div className="flex items-center justify-between text-sm">

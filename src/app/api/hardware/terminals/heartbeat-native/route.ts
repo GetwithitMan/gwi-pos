@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
@@ -15,9 +16,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Parse optional body for version info
     let appVersion: string | undefined
+    let connectedHardware: Record<string, unknown> | undefined
     try {
       const body = await request.json()
       appVersion = body?.appVersion
+      connectedHardware = body?.connectedHardware
     } catch {
       // No body or invalid JSON — fine, heartbeat still works
     }
@@ -82,6 +85,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         lastSeenAt: new Date(),
         lastKnownIp: clientIp,
         ...(appVersion ? { appVersion } : {}),
+        ...(connectedHardware ? {
+          deviceInfo: {
+            ...((terminal.deviceInfo as Record<string, unknown>) || {}),
+            connectedHardware,
+            lastHardwareReportAt: new Date().toISOString(),
+          } as Prisma.InputJsonValue
+        } : {}),
       },
     })
 
