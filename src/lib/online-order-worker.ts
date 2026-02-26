@@ -131,7 +131,10 @@ async function getColumnCasts(tableName: string): Promise<Map<string, string>> {
 }
 
 function buildCast(dataType: string, udtName: string): string {
-  if (dataType.includes('timestamp')) return '::timestamptz'
+  // CRITICAL: Use ::timestamp (not ::timestamptz) for "timestamp without time zone"
+  // columns to prevent timezone conversion on NUCs with non-UTC PostgreSQL timezone.
+  if (dataType === 'timestamp with time zone') return '::timestamptz'
+  if (dataType.includes('timestamp')) return '::timestamp'
   if (dataType === 'jsonb') return '::jsonb'
   if (dataType === 'json') return '::json'
   if (dataType === 'boolean') return '::boolean'

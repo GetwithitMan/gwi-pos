@@ -106,7 +106,12 @@ async function loadColumnMetadata(): Promise<void> {
 
 /** Build PG type cast from column metadata */
 function buildCast(dataType: string, udtName: string): string {
-  if (dataType.includes('timestamp')) return '::timestamptz'
+  // CRITICAL: Use ::timestamp (not ::timestamptz) for "timestamp without time zone"
+  // columns. Using ::timestamptz causes PostgreSQL to convert from UTC to the session
+  // timezone (e.g., America/Denver = -7h) before storing, which silently shifts all
+  // timestamps by the timezone offset when Prisma reads them back as UTC.
+  if (dataType === 'timestamp with time zone') return '::timestamptz'
+  if (dataType.includes('timestamp')) return '::timestamp'
   if (dataType === 'jsonb') return '::jsonb'
   if (dataType === 'json') return '::json'
   if (dataType === 'boolean') return '::boolean'
