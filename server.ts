@@ -78,6 +78,37 @@ function startEodScheduler() {
   scheduleNext()
 }
 
+// ============================================================================
+// Periodic Draft Cleanup — cancels abandoned $0 drafts every 30 minutes
+// ============================================================================
+
+function startDraftCleanupInterval() {
+  const INTERVAL_MS = 30 * 60 * 1000 // 30 minutes
+  const MAX_AGE_HOURS = 1 // Cancel drafts older than 1 hour (more aggressive than EOD's 4h)
+
+  async function cleanupDrafts() {
+    const locationId = process.env.POS_LOCATION_ID
+    if (!locationId) return
+
+    try {
+      const url = `http://localhost:${port}/api/system/cleanup-stale-orders?locationId=${locationId}&maxAgeHours=${MAX_AGE_HOURS}`
+      const res = await fetch(url, { method: 'POST' })
+      const data = await res.json()
+      if (data.data?.closedCount > 0) {
+        console.log(`[DraftCleanup] Cancelled ${data.data.closedCount} abandoned draft orders (>${MAX_AGE_HOURS}h old)`)
+      }
+    } catch {
+      // Silent — non-critical background task
+    }
+  }
+
+  const timer = setInterval(cleanupDrafts, INTERVAL_MS)
+  timer.unref()
+  // Run once on startup after a 2-minute delay (let server fully boot)
+  const startupTimer = setTimeout(cleanupDrafts, 2 * 60 * 1000)
+  startupTimer.unref()
+}
+
 async function main() {
   const app = next({ dev, hostname, port })
   const handle = app.getRequestHandler()
@@ -127,6 +158,7 @@ async function main() {
     console.log(`[Server] Mode: ${dev ? 'development' : 'production'}`)
     startCloudEventWorker()
     startEodScheduler()
+    startDraftCleanupInterval()
     startOnlineOrderDispatchWorker(port)
     startHardwareCommandWorker()
     void scaleService.initialize().catch(console.error)

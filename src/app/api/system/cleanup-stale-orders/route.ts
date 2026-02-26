@@ -35,11 +35,11 @@ export const POST = withVenue(async (request) => {
     const cutoff = new Date()
     cutoff.setHours(cutoff.getHours() - maxAgeHours)
 
-    // Find stale draft orders: status='open', total=$0, no items sent, older than cutoff
+    // Find stale draft orders: status='draft' or 'open', total=$0, no items sent, older than cutoff
     const staleOrders = await db.order.findMany({
       where: {
         locationId,
-        status: 'open',
+        status: { in: ['draft', 'open'] },
         total: 0,
         subtotal: 0,
         sentAt: null,
@@ -87,9 +87,10 @@ export const POST = withVenue(async (request) => {
     const result = await db.order.updateMany({
       where: { id: { in: ids } },
       data: {
-        status: 'closed',
+        status: 'cancelled',
         closedAt: now,
-        notes: `Auto-closed: stale $0 draft (older than ${maxAgeHours}h)`,
+        deletedAt: now,
+        notes: `Auto-cancelled: stale $0 draft (older than ${maxAgeHours}h)`,
       },
     })
 
