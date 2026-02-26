@@ -416,12 +416,25 @@ class OfflineManagerClass {
         if (res.ok) {
           await offlineDb.pendingPayments.update(payment.id, { status: 'synced' })
         } else {
-          // Capture response body for debugging (Zod validation errors, etc.)
+          // Capture response body for debugging
           let errorDetail = ''
+          let errBody: Record<string, unknown> | null = null
           try {
-            const errBody = await res.json()
-            errorDetail = errBody?.error || JSON.stringify(errBody).slice(0, 200)
+            errBody = await res.json() as Record<string, unknown>
+            errorDetail = (errBody?.error as string) || JSON.stringify(errBody).slice(0, 200)
           } catch { /* ignore parse errors */ }
+
+          // If order is already paid/closed, treat as success (stop retrying)
+          const alreadyPaid = errorDetail.includes('already paid')
+            || errorDetail.includes('already closed')
+            || errorDetail.includes('status: paid')
+            || errorDetail.includes('status: closed')
+            || (errBody?.data as Record<string, unknown>)?.alreadyPaid === true
+          if (alreadyPaid) {
+            await offlineDb.pendingPayments.update(payment.id, { status: 'synced' })
+            continue
+          }
+
           throw new Error(`Payment failed: ${res.status}${errorDetail ? ` — ${errorDetail}` : ''}`)
         }
       } catch (err) {

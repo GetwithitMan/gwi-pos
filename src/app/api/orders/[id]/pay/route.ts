@@ -207,6 +207,30 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // ─── Normalize legacy / Android offline-sync payment format ───────────
+    // Old callers (and PendingPayment offline queue) send a flat object:
+    //   { paymentMethodId: "cash", amount: 123, tipAmount: 0, employeeId: "..." }
+    // The Zod schema expects:
+    //   { payments: [{ method: "cash", amount: 123 }], employeeId: "..." }
+    // Transform the flat shape so both formats are accepted.
+    if (!body.payments && (body.paymentMethodId || body.method || body.amount)) {
+      const method = body.paymentMethodId || body.method || 'cash'
+      body = {
+        payments: [{
+          method,
+          amount: body.amount,
+          ...(body.tipAmount !== undefined ? { tipAmount: body.tipAmount } : {}),
+          ...(body.amountTendered !== undefined ? { amountTendered: body.amountTendered } : {}),
+          ...(body.cardBrand !== undefined ? { cardBrand: body.cardBrand } : {}),
+          ...(body.cardLast4 !== undefined ? { cardLast4: body.cardLast4 } : {}),
+          ...(body.simulate !== undefined ? { simulate: body.simulate } : {}),
+        }],
+        ...(body.employeeId ? { employeeId: body.employeeId } : {}),
+        ...(body.terminalId ? { terminalId: body.terminalId } : {}),
+        ...(body.idempotencyKey ? { idempotencyKey: body.idempotencyKey } : {}),
+      }
+    }
+
     // Validate request body with Zod
     const validation = PaymentRequestSchema.safeParse(body)
     if (!validation.success) {
@@ -256,6 +280,17 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
+      // Return 200 (not 400) for already-paid orders so offline sync queues
+      // treat this as success and stop retrying. The payment already went through.
+      if (order.status === 'paid' || order.status === 'closed') {
+        return NextResponse.json({ data: {
+          success: true,
+          alreadyPaid: true,
+          orderId,
+          orderStatus: order.status,
+          message: `Order already ${order.status}`,
+        } })
+      }
       return NextResponse.json(
         { error: 'Cannot pay an order with status: ' + order.status },
         { status: 400 }
