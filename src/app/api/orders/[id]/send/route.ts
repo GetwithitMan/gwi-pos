@@ -155,9 +155,9 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Batch update entertainment items with sessions in a single transaction
     if (entertainmentUpdates.length > 0) {
-      await db.$transaction(async (tx) => {
-        for (const { itemId, menuItemId, sessionEnd } of entertainmentUpdates) {
-          await tx.orderItem.update({
+      await db.$transaction(
+        entertainmentUpdates.map(({ itemId, sessionEnd }) =>
+          db.orderItem.update({
             where: { id: itemId },
             data: {
               kitchenStatus: 'sent',
@@ -166,12 +166,14 @@ export const POST = withVenue(withTiming(async function POST(
               blockTimeExpiresAt: sessionEnd,
             },
           })
-        }
-      })
+        )
+      )
       // Start entertainment sessions outside transaction (touches menu items + floor plan)
-      for (const { itemId, menuItemId, sessionEnd } of entertainmentUpdates) {
-        await startEntertainmentSession(menuItemId, order.id, itemId, now, sessionEnd)
-      }
+      await Promise.all(
+        entertainmentUpdates.map(({ itemId, menuItemId, sessionEnd }) =>
+          startEntertainmentSession(menuItemId, order.id, itemId, now, sessionEnd)
+        )
+      )
     }
 
     timing.end('db-update', 'Batch status updates')
@@ -180,7 +182,7 @@ export const POST = withVenue(withTiming(async function POST(
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)
 
     // Dispatch real-time socket events to KDS screens (fire and forget)
-    dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {
+    void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {
       console.error('[API /orders/[id]/send] Socket dispatch failed:', err)
     })
 
@@ -189,7 +191,7 @@ export const POST = withVenue(withTiming(async function POST(
       if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
         const sessionExpiresAt = new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000).toISOString()
 
-        dispatchEntertainmentUpdate(order.locationId, {
+        void dispatchEntertainmentUpdate(order.locationId, {
           sessionId: item.id,
           tableId: order.tableId || '',
           tableName: order.tabName || `Order #${order.orderNumber}`,
@@ -199,7 +201,7 @@ export const POST = withVenue(withTiming(async function POST(
           console.error('[API /orders/[id]/send] Entertainment dispatch failed:', err)
         })
 
-        dispatchEntertainmentStatusChanged(order.locationId, {
+        void dispatchEntertainmentStatusChanged(order.locationId, {
           itemId: item.menuItem.id,
           entertainmentStatus: 'in_use',
           currentOrderId: order.id,
@@ -209,17 +211,17 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Fire kitchen print jobs for PRINTER-type stations (fire and forget)
-    printKitchenTicketsForManifests(routingResult).catch(err => {
+    void printKitchenTicketsForManifests(routingResult).catch(err => {
       console.error('[API /orders/[id]/send] Kitchen print failed:', err)
     })
 
     // Deduct prep stock for sent items (fire and forget)
-    deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {
+    void deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {
       console.error('[API /orders/[id]/send] Prep stock deduction failed:', err)
     })
 
     // Audit log: sent to kitchen (fire-and-forget — don't block response)
-    db.auditLog.create({
+    void db.auditLog.create({
       data: {
         locationId: order.locationId,
         employeeId: order.employeeId,
@@ -237,7 +239,7 @@ export const POST = withVenue(withTiming(async function POST(
     })
 
     // Dispatch open orders update with 'sent' trigger — delta-only, no full snapshot reload
-    dispatchOpenOrdersChanged(order.locationId, { trigger: 'sent', orderId: order.id, tableId: order.tableId || undefined, orderNumber: order.orderNumber, status: 'occupied' }, { async: true }).catch(() => {})
+    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'sent', orderId: order.id, tableId: order.tableId || undefined, orderNumber: order.orderNumber, status: 'occupied' }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

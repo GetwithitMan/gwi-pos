@@ -1227,7 +1227,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // If order is fully paid, reset entertainment items and table status
     if (updateData.status === 'paid') {
-      await db.menuItem.updateMany({
+      void db.menuItem.updateMany({
         where: {
           currentOrderId: orderId,
           itemType: 'timed_rental',
@@ -1237,12 +1237,14 @@ export const POST = withVenue(withTiming(async function POST(
           currentOrderId: null,
           currentOrderItemId: null,
         },
+      }).catch(err => {
+        console.error('[Pay] Entertainment reset failed:', err)
       })
 
       // Deduct inventory (food + liquor) — fire-and-forget to not block payment.
       // Handles MenuItemRecipes, RecipeIngredients (cocktails), ModifierInventoryLinks,
       // and spirit tier substitutions (linkedBottleProduct on OrderItemModifier).
-      deductInventoryForOrder(orderId, employeeId).catch(err => {
+      void deductInventoryForOrder(orderId, employeeId).catch(err => {
         console.error('Background inventory deduction failed:', err)
       })
 
@@ -1261,7 +1263,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Without fallback, tips on unassigned orders (e.g. walk-up kiosk) would be silently dropped.
       const tipOwnerEmployeeId = order.employeeId || employeeId
       if (totalTips > 0 && tipOwnerEmployeeId) {
-        allocateTipsForPayment({
+        void allocateTipsForPayment({
           locationId: order.locationId,
           orderId,
           primaryEmployeeId: tipOwnerEmployeeId,
@@ -1274,15 +1276,17 @@ export const POST = withVenue(withTiming(async function POST(
         })
       }
 
-      // Reset table status to available
+      // Reset table status to available (fire-and-forget — don't block payment response)
       if (order.tableId) {
-        await db.table.update({
+        void db.table.update({
           where: { id: order.tableId },
           data: { status: 'available' },
+        }).then(() => {
+          // Invalidate snapshot cache after table update completes so floor plan gets fresh data
+          invalidateSnapshotCache(order.locationId)
+        }).catch(err => {
+          console.error('[Pay] Table status reset failed:', err)
         })
-        // Immediately invalidate snapshot cache so any floor plan request
-        // between now and dispatchFloorPlanUpdate gets fresh DB data
-        invalidateSnapshotCache(order.locationId)
       }
 
       // Clean up temporary seats then dispatch floor plan update
@@ -1298,7 +1302,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Dispatch real-time order totals update (tip changed) — fire-and-forget
     if (totalTips > 0) {
-      dispatchOrderTotalsUpdate(order.locationId, orderId, {
+      void dispatchOrderTotalsUpdate(order.locationId, orderId, {
         subtotal: Number(order.subtotal),
         taxTotal: Number(order.taxTotal),
         tipTotal: newTipTotal,
@@ -1316,7 +1320,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     if (updateData.status === 'paid') {
-      dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
+      void dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
     }
 
     // Notify CFD that receipt was sent — transitions CFD to thank-you screen (fire-and-forget)
@@ -1440,7 +1444,7 @@ export const POST = withVenue(withTiming(async function POST(
     console.error('Failed to process payment:', error)
 
     // Capture CRITICAL payment error
-    errorCapture.critical('PAYMENT', 'Payment processing failed', {
+    void errorCapture.critical('PAYMENT', 'Payment processing failed', {
       category: 'payment-processing-error',
       action: `Processing payment for Order ${orderId}`,
       orderId,

@@ -193,7 +193,7 @@ This system is split across **three independent repositories**. Never put Missio
 | | GWI POS | GWI Mission Control | GWI Backoffice |
 |---|---------|-------------------|----------------|
 | **Repo** | `gwi-pos` | `gwi-mission-control` | `gwi-backoffice` |
-| **Local path** | `/Users/brianlewis/Documents/My websites/2-8 2026-B-am GWI POINT OF SALE` | `/Users/brianlewis/Documents/My websites/gwi-mission-control` | `/Users/brianlewis/Documents/My websites/gwi-backoffice` |
+| **Local path** | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-pos` | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-mission-control` | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-backoffice` |
 | **Domain** | `www.barpos.restaurant` | `app.thepasspos.com` | `api.ordercontrolcenter.com` (API) / `{slug}.ordercontrolcenter.com/admin` (UI proxy) |
 | **Venue subdomains** | `{slug}.ordercontrolcenter.com` | N/A | N/A |
 | **Purpose** | POS app (ordering, payments, KDS, floor plan, menu, reports) | Admin console (onboard venues, fleet management, monitoring, billing) | Venue backoffice (event ingestion, reporting, admin dashboard) |

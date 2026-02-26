@@ -307,7 +307,7 @@ export default function QuickStockAdjustPage() {
           {stats.critical > 0 && (
             <button
               onClick={() => setStockFilter(stockFilter === 'critical' ? 'all' : 'critical')}
-              className={`px-2 py-1 rounded text-xs font-medium ${stockFilter === 'critical' ? 'bg-red-500 text-white' : 'bg-red-400/30 text-white'}`}
+              className={`px-2 py-1 min-h-12 rounded text-xs font-medium ${stockFilter === 'critical' ? 'bg-red-500 text-white' : 'bg-red-400/30 text-white'}`}
             >
               {stats.critical} Critical
             </button>
@@ -315,7 +315,7 @@ export default function QuickStockAdjustPage() {
           {stats.low > 0 && (
             <button
               onClick={() => setStockFilter(stockFilter === 'low' ? 'all' : 'low')}
-              className={`px-2 py-1 rounded text-xs font-medium ${stockFilter === 'low' ? 'bg-amber-500 text-white' : 'bg-amber-400/30 text-white'}`}
+              className={`px-2 py-1 min-h-12 rounded text-xs font-medium ${stockFilter === 'low' ? 'bg-amber-500 text-white' : 'bg-amber-400/30 text-white'}`}
             >
               {stats.low} Low
             </button>
@@ -575,8 +575,8 @@ function StockRow({
             autoFocus
             className="w-16 h-7 text-center text-sm border rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
           />
-          <button onClick={handleSet} className="px-2 h-7 text-xs bg-blue-500 text-white rounded hover:bg-blue-600">Set</button>
-          <button onClick={() => setEditing(false)} className="px-2 h-7 text-xs bg-gray-200 rounded hover:bg-gray-300">X</button>
+          <button onClick={handleSet} className="px-2 h-7 min-w-12 min-h-12 text-xs bg-blue-500 text-white rounded hover:bg-blue-600">Set</button>
+          <button onClick={() => setEditing(false)} className="px-2 h-7 min-w-12 min-h-12 text-xs bg-gray-200 rounded hover:bg-gray-300">X</button>
         </div>
       ) : (
         <div className="flex items-center gap-1">
@@ -584,7 +584,7 @@ function StockRow({
           <button
             onClick={() => onAdjust(item, 'subtract', step)}
             disabled={currentStock <= 0}
-            className="w-8 h-8 flex items-center justify-center bg-white border rounded text-lg font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            className="w-8 h-8 min-w-12 min-h-12 flex items-center justify-center bg-white border rounded text-lg font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40"
           >
             −
           </button>
@@ -592,7 +592,7 @@ function StockRow({
           {/* Stock Display */}
           <button
             onClick={() => { setEditVal(currentStock.toString()); setEditing(true); }}
-            className={`w-16 h-8 flex flex-col items-center justify-center border rounded ${hasPendingChange ? 'border-orange-400 bg-orange-50' : `${colors.border} ${colors.bg}`}`}
+            className={`w-16 h-8 min-h-12 flex flex-col items-center justify-center border rounded ${hasPendingChange ? 'border-orange-400 bg-orange-50' : `${colors.border} ${colors.bg}`}`}
           >
             <span className={`text-sm font-bold leading-tight ${hasPendingChange ? 'text-orange-700' : colors.text}`}>
               {currentStock}
@@ -603,7 +603,7 @@ function StockRow({
           {/* Add */}
           <button
             onClick={() => onAdjust(item, 'add', step)}
-            className="w-8 h-8 flex items-center justify-center bg-white border rounded text-lg font-bold text-gray-600 hover:bg-gray-50"
+            className="w-8 h-8 min-w-12 min-h-12 flex items-center justify-center bg-white border rounded text-lg font-bold text-gray-600 hover:bg-gray-50"
           >
             +
           </button>
@@ -611,7 +611,7 @@ function StockRow({
           {/* Quick +5 */}
           <button
             onClick={() => onAdjust(item, 'add', step * 5)}
-            className="px-1.5 h-8 text-xs font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+            className="px-1.5 h-8 min-h-12 text-xs font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
           >
             +{step * 5}
           </button>

@@ -4,6 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import type { TipBankSettings, TipShareSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET tip settings for a location
@@ -26,19 +27,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    const location = await db.location.findUnique({
-      where: { id: locationId },
-      select: { id: true, settings: true },
-    })
-
-    if (!location) {
-      return NextResponse.json(
-        { error: 'Location not found' },
-        { status: 404 }
-      )
-    }
-
-    const settings = parseSettings(location.settings)
+    // Use cached location settings instead of direct DB query (FIX-021)
+    const cachedSettings = await getLocationSettings(locationId)
+    const settings = parseSettings(cachedSettings)
 
     return NextResponse.json({ data: {
       tipBank: settings.tipBank,

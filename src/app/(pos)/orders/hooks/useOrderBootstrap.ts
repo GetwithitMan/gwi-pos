@@ -244,10 +244,21 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
   }, [loadMenu])
 
   // Socket-based real-time updates
+  // Local increment/decrement for open order count — avoids API call on every socket event
   useOrderSockets({
     locationId,
-    onOpenOrdersChanged: () => {
-      loadOpenOrdersCount()
+    onOpenOrdersChanged: (data) => {
+      const trigger = (data as { trigger?: string }).trigger
+      if (trigger === 'paid' || trigger === 'voided') {
+        // Decrement locally — order left the open list
+        setOpenOrdersCount(prev => Math.max(0, prev - 1))
+      } else if (trigger === 'created') {
+        // Increment locally — new order added to open list
+        setOpenOrdersCount(prev => prev + 1)
+      } else {
+        // transferred/reopened/other — full refresh only on these rare events
+        loadOpenOrdersCount()
+      }
     },
     onEntertainmentStatusChanged: (data) => {
       setMenuItems(prev => prev.map(item =>

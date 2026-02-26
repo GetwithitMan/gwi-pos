@@ -1,12 +1,13 @@
 import { db } from '@/lib/db'
 
 /**
- * Hard-delete all temporary seats created for a specific order.
+ * Soft-delete all temporary seats created for a specific order.
  * Called when an order is paid, closed, or auto-cancelled.
- * Temp seats are ephemeral — no soft delete needed.
+ * Uses soft delete for consistency with project-wide policy.
  */
 export async function cleanupTemporarySeats(orderId: string): Promise<void> {
-  await db.seat.deleteMany({
-    where: { sourceOrderId: orderId },
+  await db.seat.updateMany({
+    where: { sourceOrderId: orderId, deletedAt: null },
+    data: { deletedAt: new Date() },
   })
 }

@@ -287,8 +287,16 @@ export function OpenOrdersPanel({
   const socketRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => { if (socketRefreshTimerRef.current) clearTimeout(socketRefreshTimerRef.current) }, [])
 
+  // Debounced full refresh for socket events that add/change orders (prevents burst reloads)
+  const debouncedLoadOrdersRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedLoadOrders = useCallback(() => {
+    if (debouncedLoadOrdersRef.current) clearTimeout(debouncedLoadOrdersRef.current)
+    debouncedLoadOrdersRef.current = setTimeout(() => { loadOrders() }, 300)
+  }, [loadOrders])
+  useEffect(() => () => { if (debouncedLoadOrdersRef.current) clearTimeout(debouncedLoadOrdersRef.current) }, [])
+
   // Socket-based real-time open orders updates (replaces 3s polling)
-  // Delta updates: "paid"/"voided" remove from list locally; others trigger full refresh
+  // Delta updates: "paid"/"voided" remove from list locally; others debounce a single refresh
   const handleSocketOrdersChanged = useCallback((data: { locationId: string; trigger: string; orderId?: string }) => {
     if (viewMode !== 'open') return
     if (ageFilter === 'previous') return // Don't overwrite prior-day results with socket refreshes
@@ -297,7 +305,7 @@ export function OpenOrdersPanel({
       // Check if this is a split child being paid — refresh to update parent's split tabs
       const isSplitChild = ordersRef.current.some(o => o.splits?.some(s => s.id === orderId))
       if (isSplitChild) {
-        loadOrders() // Need to refresh parent's split data
+        debouncedLoadOrders() // Need to refresh parent's split data
       } else {
         // Delta: remove closed/voided order from local state (no fetch)
         setOrders(prev => prev.filter(o => o.id !== orderId))
@@ -305,12 +313,12 @@ export function OpenOrdersPanel({
     } else if (trigger === 'sent' && orderId) {
       // Sent trigger: order already in open list — no-op unless new
       const exists = ordersRef.current.some(o => o.id === orderId)
-      if (!exists) loadOrders()
+      if (!exists) debouncedLoadOrders()
     } else {
-      // Created/transferred/reopened — need full data
-      loadOrders()
+      // Created/transferred/reopened — debounce to coalesce burst events
+      debouncedLoadOrders()
     }
-  }, [viewMode, loadOrders])
+  }, [viewMode, debouncedLoadOrders, ageFilter])
 
   const { isConnected } = useOrderSockets({
     locationId,

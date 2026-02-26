@@ -443,8 +443,10 @@ enum TipGroupMembershipStatus {
 model Organization {
   id        String   @id @default(cuid())
   name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   locations Location[]
 }
@@ -464,8 +466,10 @@ model Location {
   // Settings
   settings Json?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   employees             Employee[]
@@ -2183,6 +2187,9 @@ model Order {
   // Business day tracking (orders at 1 AM belong to previous day's business day)
   businessDayDate DateTime?
 
+  // Online ordering attribution (e.g., "online", "kiosk", "pos")
+  source String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -3450,6 +3457,7 @@ model OrderOwnershipEntry {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   deletedAt        DateTime?
+  syncedAt         DateTime?
 
   @@index([locationId])
   @@index([orderOwnershipId])
@@ -5441,6 +5449,7 @@ model ModifierTemplate {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([templateId])
@@ -5923,6 +5932,7 @@ model PaymentReaderLog {
   tranType     String? // sale, void, preauth, etc.
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
   syncedAt     DateTime?
 
   @@index([locationId])
@@ -7474,6 +7484,8 @@ model MobileSession {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
   revokedAt    DateTime?
+  deletedAt    DateTime?
+  syncedAt     DateTime?
 
   @@index([locationId])
   @@index([sessionToken])
@@ -7500,6 +7512,8 @@ model HardwareCommand {
   createdAt   DateTime  @default(now())
   completedAt DateTime?
   expiresAt   DateTime // Auto-cleanup: 60s from creation
+  deletedAt   DateTime?
+  syncedAt    DateTime?
 
   @@index([locationId, status])
   @@index([locationId])

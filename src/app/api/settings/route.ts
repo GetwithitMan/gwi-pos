@@ -15,6 +15,8 @@ const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
 // GET location settings
 export const GET = withVenue(async function GET() {
   try {
+    // NOTE: This DB call fetches `name` which the location cache doesn't store.
+    // Settings are already read from cache below via getLocationSettings().
     const location = await db.location.findFirst({ select: { id: true, name: true } })
     if (!location) {
       return NextResponse.json(

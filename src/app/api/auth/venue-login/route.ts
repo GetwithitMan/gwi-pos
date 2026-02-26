@@ -74,84 +74,90 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // ── MC-authorized owner (no local Employee required) ─────────────
   // Owners added via MC Team tab authenticate through Clerk. MC confirms
   // their venue access and they get an admin-level session directly.
+  // If MC is unreachable or MISSION_CONTROL_URL is not configured, fall
+  // through to the local employee session below — login MUST work offline.
   if (clerkValid) {
-    const mcUrl = process.env.MISSION_CONTROL_URL || 'https://app.thepasspos.com'
-    const provisionKey = process.env.PROVISION_API_KEY || ''
-    try {
-      const venueRes = await fetch(
-        `${mcUrl}/api/owner/venues?email=${encodeURIComponent(normalizedEmail)}`,
-        {
-          headers: { Authorization: `Bearer ${provisionKey}` },
-          signal: AbortSignal.timeout(4000),
+    const mcUrl = process.env.MISSION_CONTROL_URL
+    if (!mcUrl) {
+      console.warn('[venue-login] MISSION_CONTROL_URL not configured — skipping MC owner/venues check, falling through to local auth')
+    } else {
+      const provisionKey = process.env.PROVISION_API_KEY || ''
+      try {
+        const venueRes = await fetch(
+          `${mcUrl}/api/owner/venues?email=${encodeURIComponent(normalizedEmail)}`,
+          {
+            headers: { Authorization: `Bearer ${provisionKey}` },
+            signal: AbortSignal.timeout(4000),
+          }
+        )
+        if (!venueRes.ok) {
+          console.error(`[venue-login] MC owner/venues returned ${venueRes.status} for ${normalizedEmail}`)
         }
-      )
-      if (!venueRes.ok) {
-        console.error(`[venue-login] MC owner/venues returned ${venueRes.status} for ${normalizedEmail}`)
-      }
-      if (venueRes.ok) {
-        const venueData = await venueRes.json()
-        const venues: Array<{ slug: string; name: string; domain: string }> = venueData.data?.venues ?? []
-        console.log(`[venue-login] MC returned ${venues.length} venues for ${normalizedEmail}, looking for slug=${venueSlug}`)
+        if (venueRes.ok) {
+          const venueData = await venueRes.json()
+          const venues: Array<{ slug: string; name: string; domain: string }> = venueData.data?.venues ?? []
+          console.log(`[venue-login] MC returned ${venues.length} venues for ${normalizedEmail}, looking for slug=${venueSlug}`)
 
-        if (venues.length > 1) {
-          // Multi-venue owner — return venue picker data instead of a session
-          const ownerToken = await signOwnerToken(normalizedEmail, venues.map(v => v.slug), secret)
-          return NextResponse.json({
-            data: {
-              multiVenue: true,
-              venues,
-              ownerToken,
-            },
-          })
-        }
-
-        // Single venue or MC-only owner — check if they have access to this venue
-        const hasAccess = venues.some(v => v.slug === venueSlug)
-        if (hasAccess && !employee) {
-          // No local Employee record — issue admin session from MC data
-          const ownerName = venueData.data?.name || normalizedEmail.split('@')[0]
-          const nameParts = ownerName.split(' ')
-          const token = await signVenueToken(
-            {
-              sub: `mc-owner-${normalizedEmail}`,
-              email: normalizedEmail,
-              name: ownerName,
-              slug: venueSlug,
-              orgId: 'venue-local',
-              role: 'Owner Manager',
-              posLocationId: location.id,
-            },
-            secret
-          )
-
-          const employeeData = {
-            id: `mc-owner-${normalizedEmail}`,
-            firstName: nameParts[0] || ownerName,
-            lastName: nameParts.slice(1).join(' ') || '',
-            displayName: ownerName,
-            role: { id: 'mc-owner', name: 'Owner Manager' },
-            location: { id: location.id, name: location.name },
-            permissions: ['admin'],
-            isDevAccess: false,
+          if (venues.length > 1) {
+            // Multi-venue owner — return venue picker data instead of a session
+            const ownerToken = await signOwnerToken(normalizedEmail, venues.map(v => v.slug), secret)
+            return NextResponse.json({
+              data: {
+                multiVenue: true,
+                venues,
+                ownerToken,
+              },
+            })
           }
 
-          const response = NextResponse.json({ data: { employee: employeeData } })
-          response.cookies.set('pos-cloud-session', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            path: '/',
-            maxAge: 8 * 60 * 60,
-          })
-          return response
-        }
+          // Single venue or MC-only owner — check if they have access to this venue
+          const hasAccess = venues.some(v => v.slug === venueSlug)
+          if (hasAccess && !employee) {
+            // No local Employee record — issue admin session from MC data
+            const ownerName = venueData.data?.name || normalizedEmail.split('@')[0]
+            const nameParts = ownerName.split(' ')
+            const token = await signVenueToken(
+              {
+                sub: `mc-owner-${normalizedEmail}`,
+                email: normalizedEmail,
+                name: ownerName,
+                slug: venueSlug,
+                orgId: 'venue-local',
+                role: 'Owner Manager',
+                posLocationId: location.id,
+              },
+              secret
+            )
 
-        if (!hasAccess) {
-          console.error(`[venue-login] ${normalizedEmail} not authorized for venue ${venueSlug}. Available: ${venues.map(v => v.slug).join(', ') || 'none'}`)
+            const employeeData = {
+              id: `mc-owner-${normalizedEmail}`,
+              firstName: nameParts[0] || ownerName,
+              lastName: nameParts.slice(1).join(' ') || '',
+              displayName: ownerName,
+              role: { id: 'mc-owner', name: 'Owner Manager' },
+              location: { id: location.id, name: location.name },
+              permissions: ['admin'],
+              isDevAccess: false,
+            }
+
+            const response = NextResponse.json({ data: { employee: employeeData } })
+            response.cookies.set('pos-cloud-session', token, {
+              httpOnly: true,
+              secure: process.env.NODE_ENV === 'production',
+              sameSite: 'lax',
+              path: '/',
+              maxAge: 8 * 60 * 60,
+            })
+            return response
+          }
+
+          if (!hasAccess) {
+            console.error(`[venue-login] ${normalizedEmail} not authorized for venue ${venueSlug}. Available: ${venues.map(v => v.slug).join(', ') || 'none'}`)
+          }
         }
+      } catch (err) {
+        console.warn(`[venue-login] MC owner/venues call failed — falling through to local auth for ${normalizedEmail}:`, err)
       }
-    } catch (err) {
-      console.error('[venue-login] MC owner/venues call failed:', err)
     }
   }
 

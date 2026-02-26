@@ -255,7 +255,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       const orderId = firstItem.orderId
 
       if (action === 'bump_order') {
-        dispatchOrderBumped(locationId, {
+        void dispatchOrderBumped(locationId, {
           orderId: body.orderId || orderId,
           stationId: body.stationId || '',
           bumpedBy: body.employeeId || firstItem.order.employeeId || '',
@@ -267,7 +267,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         // serve, update_status — dispatch item status for each item
         const newStatus = action === 'serve' || status === 'served' ? 'completed' : (status || 'active')
         for (const iid of itemIds) {
-          dispatchItemStatus(locationId, {
+          void dispatchItemStatus(locationId, {
             orderId,
             itemId: iid,
             status: newStatus,
@@ -293,18 +293,16 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         }).catch(err => console.error('[AuditLog] Expo audit failed:', err))
       } else {
         const auditAction = action === 'serve' || status === 'served' ? 'kds_serve' : 'kds_status_update'
-        for (const iid of itemIds) {
-          void db.auditLog.create({
-            data: {
-              locationId,
-              employeeId: body.employeeId || null,
-              action: auditAction,
-              entityType: 'order_item',
-              entityId: iid,
-              details: { action, status, stationId: body.stationId }
-            }
-          }).catch(err => console.error('[AuditLog] Expo audit failed:', err))
-        }
+        void db.auditLog.createMany({
+          data: itemIds.map((iid: string) => ({
+            locationId,
+            employeeId: body.employeeId || null,
+            action: auditAction,
+            entityType: 'order_item',
+            entityId: iid,
+            details: { action, status, stationId: body.stationId }
+          }))
+        }).catch(err => console.error('[AuditLog] Expo audit failed:', err))
       }
     }
 

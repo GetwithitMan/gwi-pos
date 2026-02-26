@@ -6,7 +6,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency, formatTime } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Button } from '@/components/ui/button'
-import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 
 // ============================================================================
 // TYPES
@@ -345,6 +345,8 @@ export default function ManagerDashboardPage() {
   // ------------------------------------------
   useEffect(() => {
     const interval = setInterval(() => {
+      // Skip polling when socket is connected — real-time events handle updates
+      if (isSharedSocketConnected()) return
       refreshRef.current()
     }, 60000)
     return () => clearInterval(interval)

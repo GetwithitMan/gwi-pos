@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { invalidateLocationCache } from '@/lib/location-cache'
+import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
@@ -46,19 +46,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
-    const location = await db.location.findUnique({
-      where: { id: locationId },
-      select: { id: true, settings: true },
-    })
-
-    if (!location) {
-      return NextResponse.json(
-        { error: 'Location not found' },
-        { status: 404 }
-      )
-    }
-
-    const rawSettings = (location.settings ?? {}) as Record<string, unknown>
+    // Use cached location settings instead of direct DB query (FIX-021)
+    const cachedSettings = await getLocationSettings(locationId)
+    const rawSettings = (cachedSettings ?? {}) as Record<string, unknown>
     const onlineOrdering = rawSettings.onlineOrdering as Record<string, unknown> | undefined
 
     return NextResponse.json({ data: { ...DEFAULTS, ...onlineOrdering } })

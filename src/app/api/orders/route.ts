@@ -37,9 +37,8 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // Compute business day for this order
-    const locationRec = await db.location.findFirst({ where: { id: locationId }, select: { settings: true } })
-    const locSettings = locationRec?.settings as Record<string, unknown> | null
+    // Compute business day for this order (uses cached location settings — FIX-005)
+    const locSettings = await getLocationSettings(locationId) as Record<string, unknown> | null
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
@@ -322,6 +321,8 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const cashDiscountPct = parsedSettings?.dualPricing?.cashDiscountPercent ?? 4.0
 
     // Derive tax-inclusive flags from TaxRule records (same logic as /api/settings GET)
+    // NOTE: TaxRule and category-to-categoryType mapping are not in any cache — these must remain direct DB queries.
+    // The menu cache stores presentation data (items + categories), not tax rules. The location cache only stores settings JSON.
     const [taxRules, allCategories] = await Promise.all([
       db.taxRule.findMany({
         where: { locationId, isActive: true, isInclusive: true, deletedAt: null },

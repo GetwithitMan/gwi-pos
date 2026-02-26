@@ -203,9 +203,10 @@ export const POST = withVenue(async function POST(
       if (!table) {
         return NextResponse.json({ error: 'Table not found' }, { status: 404 })
       }
-      // Delete ALL temp seats on this table (any order)
-      const deleted = await db.seat.deleteMany({
-        where: { tableId: resetTableId, isTemporary: true },
+      // Soft-delete ALL temp seats on this table (any order)
+      const deleted = await db.seat.updateMany({
+        where: { tableId: resetTableId, isTemporary: true, deletedAt: null },
+        data: { deletedAt: new Date() },
       })
       // Reset extraSeatCount on any open orders for this table
       await db.order.updateMany({
@@ -213,7 +214,7 @@ export const POST = withVenue(async function POST(
         data: { extraSeatCount: 0 },
       })
       void dispatchFloorPlanUpdate(table.locationId, { async: true }).catch(console.error)
-      return NextResponse.json({ data: { action: 'RESET_TABLE', success: true, deletedSeats: deleted.count } })
+      return NextResponse.json({ data: { action: 'RESET_TABLE', success: true, softDeletedSeats: deleted.count } })
     }
 
     // CLEANUP: Remove all temp seats for this order (used when closing panel with no items)
@@ -463,8 +464,8 @@ export const POST = withVenue(async function POST(
           })
 
           if (lastTempSeat) {
-            // Hard delete — temp seats are ephemeral
-            await tx.seat.delete({ where: { id: lastTempSeat.id } })
+            // Soft delete — consistent with project-wide soft-delete policy
+            await tx.seat.update({ where: { id: lastTempSeat.id }, data: { deletedAt: new Date() } })
           }
 
           // Fire-and-forget: notify all terminals of floor plan change
