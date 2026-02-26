@@ -16,30 +16,51 @@ GWI POS is a hybrid SaaS point-of-sale system designed for bars and restaurants.
 │  • Onboard new locations        • Push updates                  │
 │  • Manage subscriptions         • Aggregate reporting           │
 │  • Monitor all locations        • License enforcement           │
+│  DATABASE: Neon PostgreSQL (cloud replica, reporting only)      │
 └─────────────────────────────────────────────────────────────────┘
                               ▲
-                              │ Sync when online
+                              │ Background sync (5s upstream / 15s downstream)
+                              │ Internet can drop — POS keeps running
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                LOCAL SERVER (Ubuntu Mini PC)                     │
-│  Docker Compose:                                                │
-│  ├── GWI POS (Next.js)           ├── PostgreSQL (local data)   │
-│  ├── Socket.io (real-time)       └── Watchtower (auto-updates) │
+│                LOCAL SERVER (Ubuntu NUC)                         │
+│  Node.js (systemd) + Socket.io + LOCAL PostgreSQL 16 (PRIMARY) │
 │                                                                 │
-│  • Manages all terminals + devices                              │
-│  • Works 100% offline                                           │
-│  • Sub-10ms response times                                      │
+│  • LOCAL PG is the source of truth for ALL transactions        │
+│  • Works 100% OFFLINE — no internet needed for POS operations  │
+│  • Sub-10ms response times (everything stays on LAN)           │
+│  • Syncs orders/payments to Neon in background when online     │
 └─────────────────────────────────────────────────────────────────┘
                               ▲
                               │ Local network (WiFi/Ethernet)
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-         ┌─────────┐    ┌─────────┐    ┌─────────┐
-         │Terminal │    │Terminal │    │ Phone/  │
-         │   #1    │    │   #2    │    │  iPad   │
-         │(browser)│    │(browser)│    │  (PWA)  │
-         └─────────┘    └─────────┘    └─────────┘
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+    ┌─────────┐         ┌─────────┐         ┌──────────────┐
+    │Terminal │         │Terminal │         │Android Native│
+    │(Chromium│         │(Chromium│         │ App (PRIMARY)│
+    │ kiosk)  │         │ kiosk)  │         │  + PWA/iPad  │
+    └─────────┘         └─────────┘         └──────────────┘
 ```
+
+---
+
+## Android-First Client Architecture
+
+**Android native app is the PRIMARY POS client. Web/browser (Chromium kiosk) is secondary/fallback.**
+
+| Client | Role | Notes |
+|--------|------|-------|
+| **Android native** | **PRIMARY** | Full ordering, payments, KDS — optimized native experience |
+| Chromium kiosk (NUC) | Secondary | Kiosk on the server machine itself |
+| Web browser / PWA | Fallback | iPads, phones connecting over WiFi |
+
+### Implications for every developer
+
+- **Touch-first:** All UI must work with finger taps. No hover states as primary interactions. Min touch target 48×48dp.
+- **Socket.io is the nervous system:** The Android app connects to the NUC's Socket.io server on the LAN. Events (new order, KDS bump, floor plan update) arrive in <10ms. Every screen must be socket-driven.
+- **Speed is non-negotiable:** Sub-50ms from tap to visual response. Every API call that blocks UI is a bug. Use fire-and-forget for all non-critical work.
+- **Offline transparent:** The Android app talks to the NUC only. If the NUC can't reach the internet — the app still works identically.
+- **No polling:** Android apps battery-drain on polling. All updates MUST come via socket events. 30s fallback ONLY when socket is disconnected.
 
 ---
 
@@ -394,15 +415,47 @@ Any new query pattern that filters on multiple columns MUST:
 
 ## Database Strategy
 
-### PostgreSQL Only
+### Offline-First — Local PostgreSQL on NUC, Neon for Cloud Sync
 
-**Database:** Neon PostgreSQL with database-per-venue. SQLite is NOT supported.
+**This is the most critical architectural principle. Read it carefully before touching any database code.**
 
-- Local NUC: Local PostgreSQL in Docker
-- Cloud venues: Neon PostgreSQL (one database per venue)
+| Environment | DATABASE_URL | Purpose |
+|-------------|-------------|---------|
+| **NUC (production)** | `localhost:5432/pulse_pos` | PRIMARY — offline-first, all POS ops |
+| **Dev (Mac)** | Neon cloud | Convenience — no local PG needed |
+| **Vercel (online ordering)** | Neon cloud | Serverless, no local disk |
+
+**The NUC's local PostgreSQL is the single source of truth for all POS operations.** Every order, payment, void, shift, tip, inventory transaction — everything goes to local PG first. Neon is only a cloud replica for admin dashboards and reporting.
+
+The `neonClient` (at `src/lib/neon-client.ts`) is used **exclusively by background sync workers**. POS API routes NEVER use it.
+
+- Local NUC: Local PostgreSQL 16 (installed by installer.run, always at `localhost:5432/pulse_pos`)
+- Dev / Vercel: Neon PostgreSQL (one database per venue: `gwi_pos_{slug}`)
 - Per-venue PrismaClient cached in `globalThis.venueClients`
 - `withVenue()` wrapper resolves DB from request context via AsyncLocalStorage
 - Connection pooling: `DATABASE_CONNECTION_LIMIT` (default 5), `DATABASE_POOL_TIMEOUT` (default 10s)
+
+**If you see a NUC with `DATABASE_URL` pointing at neon.tech — that is a critical offline bug. Fix it.**
+
+### Sync Config (`src/lib/sync/sync-config.ts`)
+
+Every synced model is registered with these fields:
+
+```typescript
+type SyncModelConfig = {
+  model: string               // Prisma model name, e.g. 'order'
+  owner: 'nuc' | 'cloud'     // Who is authoritative
+  direction: 'upstream' | 'downstream' | 'bidirectional'
+  priority: number            // FK dependency order (lower = sync first)
+  batchSize: number           // Rows per sync batch
+  fullResyncAllowed: boolean  // true = cloud-authoritative only; safe to wipe+replace local on corruption
+                              // false = NUC-authoritative; never full-resync, append/update only
+}
+```
+
+**`fullResyncAllowed` rule:** Only set `true` on cloud-authoritative config tables (MenuItem, Employee, Printer, etc.) where the cloud copy is definitively correct. **NEVER** set `true` on NUC-authoritative tables (Order, Payment, Shift) — a full resync would destroy local-only data that hasn't synced yet. If a NUC's high-water mark gets corrupted for an NUC-owned table, the fix is to repair the `syncedAt` field, not a full resync.
+
+**Clock discipline:** All writes use DB-generated `NOW()`. Client timestamps are NEVER trusted for `createdAt`, `updatedAt`, or `syncedAt`. Last-write-wins is only safe when timestamps come from the DB clock.
 
 ### Schema Requirements
 

@@ -18,6 +18,9 @@ import { startCloudEventWorker } from './src/lib/cloud-event-queue'
 import { startOnlineOrderDispatchWorker } from './src/lib/online-order-worker'
 import { startHardwareCommandWorker } from './src/lib/hardware-command-worker'
 import { scaleService } from './src/lib/scale/scale-service'
+import { startUpstreamSyncWorker, stopUpstreamSyncWorker } from './src/lib/sync/upstream-sync-worker'
+import { startDownstreamSyncWorker, stopDownstreamSyncWorker } from './src/lib/sync/downstream-sync-worker'
+import { disconnectNeon } from './src/lib/neon-client'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -127,6 +130,13 @@ async function main() {
     startOnlineOrderDispatchWorker(port)
     startHardwareCommandWorker()
     void scaleService.initialize().catch(console.error)
+
+    // Bidirectional sync workers (NUC ↔ Neon)
+    if (process.env.SYNC_ENABLED === 'true') {
+      startUpstreamSyncWorker()
+      startDownstreamSyncWorker()
+      console.log('[Server] Bidirectional sync workers started (NUC ↔ Neon)')
+    }
   })
 
   // Graceful shutdown
@@ -151,6 +161,13 @@ async function main() {
 
     await masterClient.$disconnect()
     console.log('[Server] Prisma disconnected')
+
+    if (process.env.SYNC_ENABLED === 'true') {
+      stopUpstreamSyncWorker()
+      stopDownstreamSyncWorker()
+    }
+    await disconnectNeon()
+    console.log('[Server] Neon client disconnected')
 
     process.exit(0)
   }

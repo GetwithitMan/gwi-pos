@@ -108,12 +108,13 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
                      ▲ Events (HMAC-signed, fire-and-forget) ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                  LOCAL SERVER (Ubuntu NUC)                        │
-│  Node.js (systemd) + Neon PostgreSQL + Socket.io                 │
-│  Provisioned via installer.run • Works 100% offline              │
+│  Node.js (systemd) + LOCAL PostgreSQL (PRIMARY) + Socket.io     │
+│  Syncs to Neon cloud in background (orders, payments, shifts)   │
+│  Provisioned via installer.run • Works 100% OFFLINE             │
 │  Heartbeat (60s cron) • Sync agent (SSE) • Kiosk mode           │
 └─────────────────────────────────────────────────────────────────┘
               ▲ Local network (WiFi/Ethernet) ▼
-         Terminals (Chromium kiosk) + Phones/iPads (PWA)
+    Terminals (Chromium kiosk) + Phones/iPads (PWA) + Android App
 ```
 
 ### CRITICAL: All Terminals Point to the NUC (MANDATORY)
@@ -132,6 +133,49 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
 - Provide the "Connection lost" banner will ALWAYS show on Vercel
 
 **Before making any deployment or kiosk changes, ALWAYS verify terminals point to the NUC.** The NUC is the single gateway to the cloud — terminals never talk to the cloud directly.
+
+### CRITICAL: Offline-First Architecture (MANDATORY — READ BEFORE TOUCHING ANY DB CODE)
+
+**The POS MUST work with zero internet. This is the entire point of the local NUC.**
+
+```
+IF internet goes down:
+  ✅ Take orders         (local PG, instant)
+  ✅ Process payments    (local PG, instant)
+  ✅ Print tickets       (NUC → LAN printer, no internet needed)
+  ✅ Run KDS             (socket.io on local network)
+  ✅ Clock in/out        (local PG)
+  ⚠️ Online orders       (cloud → NUC, paused until internet returns)
+  ⚠️ Cloud admin         (read-only, shows stale data)
+  ⚠️ Hardware commands   (cloud→NUC, paused until internet returns)
+```
+
+**Rules agents MUST follow:**
+1. **NEVER** write code that queries Neon directly from a POS API route — all `db.*` calls go to local PG
+2. **NEVER** make POS startup, login, order creation, or payment depend on cloud connectivity
+3. **NEVER** set `DATABASE_URL` on a NUC to a neon.tech URL — that destroys offline capability
+4. The `neonClient` (in `src/lib/neon-client.ts`) is **sync-only** — used exclusively by background sync workers, hardware-command-worker, and online-order-worker
+5. All new sync work uses `syncedAt` + `updatedAt` delta queries — never full-table replications
+6. **Clock discipline:** All business writes MUST use DB-generated `NOW()` (Prisma `@default(now())` / `@updatedAt`). **NEVER** accept a client-supplied timestamp for `createdAt`, `updatedAt`, or `syncedAt`. Last-write-wins conflict resolution is only safe when timestamps come from the DB clock, not the caller.
+7. If you see a NUC with `DATABASE_URL=neon.tech` — **that is a critical bug**, file it immediately
+
+**Data ownership rules:**
+| Owner | Models |
+|-------|--------|
+| NUC (source of truth) | Order, OrderItem, Payment, Shift, Drawer, TimeClockEntry, TipLedger, VoidLog, InventoryTransaction |
+| Cloud (source of truth) | MenuItem, Category, ModifierGroup, Modifier, Employee, Role, Table, Section, Printer, KDSScreen, OrderType, TaxRule |
+| Cross-origin | OnlineOrder (cloud creates → NUC dispatches), HardwareCommand (cloud writes → NUC executes) |
+
+### CRITICAL: Android Native App is the PRIMARY Client
+
+**Android native app is the primary POS interface. Web/browser is secondary.**
+
+- All new UI work should be designed mobile-first with Android in mind
+- Touch targets must be large (min 48x48dp), no hover-dependent interactions
+- Socket.io is the nervous system — real-time events are critical for native app responsiveness
+- Performance is non-negotiable: sub-50ms for all POS actions (tap → visual response)
+- The web UI (Chromium kiosk) must remain functional as a fallback, but native Android is the target
+- When building features: if it works fast on Android over WiFi to the NUC, it works everywhere
 
 | Phase | What | Status |
 |-------|------|--------|
@@ -153,7 +197,7 @@ This system is split across **three independent repositories**. Never put Missio
 | **Domain** | `www.barpos.restaurant` | `app.thepasspos.com` | `api.ordercontrolcenter.com` (API) / `{slug}.ordercontrolcenter.com/admin` (UI proxy) |
 | **Venue subdomains** | `{slug}.ordercontrolcenter.com` | N/A | N/A |
 | **Purpose** | POS app (ordering, payments, KDS, floor plan, menu, reports) | Admin console (onboard venues, fleet management, monitoring, billing) | Venue backoffice (event ingestion, reporting, admin dashboard) |
-| **Database** | Neon PostgreSQL — one database per venue (`gwi_pos_{slug}`) | Neon PostgreSQL — single master database | Neon PostgreSQL — single shared cloud database |
+| **Database** | **NUC: Local PG 16 (primary, offline-first)** + Neon as cloud sync target | Neon PostgreSQL — single master database | Neon PostgreSQL — single shared cloud database |
 | **Auth** | Employee PIN login (per-venue) | Clerk B2B (org-level admin users) | HMAC-SHA256 (NUC events), API key (reports) |
 
 **Release workflow:**
@@ -194,16 +238,29 @@ This system is split across **three independent repositories**. Never put Missio
 | TypeScript | 5.9.3 | Type Safety |
 | Tailwind CSS | 4.x | Styling |
 | Prisma | 6.19.2 | ORM |
-| PostgreSQL | Neon | Database (cloud, database-per-venue) |
+| PostgreSQL 16 | Local (NUC) / Neon (cloud sync + dev) | NUC uses local PG as primary; Neon is cloud sync target |
 | Socket.io | 4.x | Real-time cross-terminal updates |
 | Zustand | 5.x | State Management |
 | Zod | 4.x | Validation |
 
 ## Database
 
-**Database Type**: Neon PostgreSQL (database-per-venue)
+**OFFLINE-FIRST — THIS IS NON-NEGOTIABLE**
 
-Each venue gets its own PostgreSQL database on Neon. Multi-tenant isolation is enforced at the database level, with `locationId` as an additional application-level filter.
+| Environment | DATABASE_URL points to | Why |
+|-------------|----------------------|-----|
+| **NUC (production)** | `localhost:5432/pulse_pos` (LOCAL PG 16) | Offline-first, zero-latency, no internet dependency |
+| **Dev (your Mac)** | Neon cloud | No local PG needed for development |
+| **Vercel (online ordering)** | Neon cloud | Serverless, no local disk |
+
+The NUC's **local PostgreSQL is the single source of truth** for all POS operations. Neon is the **cloud sync target** — used for cloud admin dashboards, reports, and online ordering. The POS NEVER requires internet to take orders, process payments, print tickets, or operate KDS.
+
+**Data Ownership:**
+- **NUC owns**: Orders, payments, shifts, voids, inventory transactions, time clock — all transactional data
+- **Cloud owns**: Menu items, employees, settings, printers, hardware config — configuration data that rarely changes during service
+- **Sync**: NUC pushes transactional data to Neon every 5s; Neon pushes config changes to NUC every 15s
+
+Multi-tenant isolation is enforced at the database level, with `locationId` as an additional application-level filter.
 
 ### CRITICAL: Protecting Your Data
 
@@ -227,15 +284,32 @@ npm run db:backup && npm run db:push  # or db:migrate
 - No `reset` or `db:push` in production — migrations only
 - Backup before migrate (automatic)
 - Soft deletes only (never hard delete, use `deletedAt`)
-- PostgreSQL (Neon) for all environments
+- PostgreSQL for all environments — LOCAL PG on NUC, Neon for dev/cloud
+- **NEVER** point a NUC's DATABASE_URL at Neon — that breaks offline operation
 
 ### Environment Variables
 
-Located in `.env.local`:
+**Dev / Vercel** (`.env.local` on your Mac):
 ```
 DATABASE_URL="postgresql://...@neon.tech/gwi_pos?sslmode=require"
 DIRECT_URL="postgresql://...@neon.tech/gwi_pos?sslmode=require"
 ```
+
+**NUC production** (`/opt/gwi-pos/app/.env`):
+```
+# PRIMARY — local PostgreSQL (offline-first)
+DATABASE_URL="postgresql://pulse_pos:xxx@localhost:5432/pulse_pos"
+DIRECT_URL="postgresql://pulse_pos:xxx@localhost:5432/pulse_pos"
+
+# SYNC TARGET — Neon cloud (background sync only)
+NEON_DATABASE_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
+NEON_DIRECT_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
+SYNC_ENABLED=true
+SYNC_UPSTREAM_INTERVAL_MS=5000    # NUC → Neon every 5s
+SYNC_DOWNSTREAM_INTERVAL_MS=15000 # Neon → NUC every 15s
+```
+
+**⚠️ If a NUC's DATABASE_URL points at neon.tech — that is a BUG. Fix it immediately.**
 
 ### CRITICAL: Multi-Tenancy (locationId)
 
@@ -308,8 +382,8 @@ export const GET = withVenue(async (request) => {
 **How it works:**
 1. `server.ts` reads `x-venue-slug` header → sets AsyncLocalStorage context with venue PrismaClient
 2. `withVenue()` fast-path: if context already set (NUC), skips `await headers()` entirely
-3. `db.ts` Proxy reads from AsyncLocalStorage on every DB call → routes to correct Neon database
-4. No slug (local dev) → uses master client
+3. `db.ts` Proxy reads from AsyncLocalStorage on every DB call → routes to correct **local PG database on NUC** (or Neon on dev/Vercel)
+4. No slug (local dev) → uses master client (Neon in dev)
 
 **Key files:** `server.ts`, `src/lib/with-venue.ts`, `src/lib/request-context.ts`, `src/lib/db.ts`
 

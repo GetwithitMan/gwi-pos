@@ -110,9 +110,11 @@ log "Service user: $POSUSER (home: $POSUSER_HOME)"
 header "Installing Essential Tools"
 
 apt-get update -y
-apt-get install -y curl git jq openssl ca-certificates gnupg
+apt-get install -y curl git jq openssl ca-certificates gnupg chrony
+systemctl enable chrony 2>/dev/null || true
+systemctl start chrony 2>/dev/null || true
 
-log "Essential tools installed."
+log "Essential tools + NTP (chrony) installed."
 
 # Network check (after curl is guaranteed installed)
 log "Checking network connectivity..."
@@ -441,14 +443,22 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
 
   log "Secrets decrypted successfully."
 
-  # ── Determine if local PostgreSQL is needed ──
-  if [[ -z "$DATABASE_URL" ]]; then
-    USE_LOCAL_PG=true
-    log "No cloud database URL provided — will set up local PostgreSQL."
-  else
-    USE_LOCAL_PG=false
-    log "Cloud database URL provided — will use Neon."
+  # ── Offline-first: always use local PG, sync to cloud in background ──
+  # If a cloud DATABASE_URL was provided, store it as NEON_DATABASE_URL for sync
+  NEON_DATABASE_URL=""
+  NEON_DIRECT_URL=""
+  SYNC_ENABLED="false"
+  if [[ -n "$DATABASE_URL" ]] && [[ "$DATABASE_URL" != *"localhost"* ]] && [[ "$DATABASE_URL" != *"127.0.0.1"* ]]; then
+    NEON_DATABASE_URL="$DATABASE_URL"
+    NEON_DIRECT_URL="$DIRECT_URL"
+    SYNC_ENABLED="true"
+    log "Cloud database URL provided — storing as NEON_DATABASE_URL for background sync."
+    log "Local PostgreSQL will be primary (offline-first mode)."
+    # Clear cloud URLs — local PG will be set up in the PostgreSQL section
+    DATABASE_URL=""
+    DIRECT_URL=""
   fi
+  USE_LOCAL_PG=true
 
   # ── Write environment file (DEPLOY_TOKEN is never stored here — goes to .git-credentials only) ──
   mkdir -p "$APP_BASE"
@@ -467,9 +477,14 @@ LOCATION_ID="${LOCATION_ID}"
 # Cloud Backoffice (NUC → Cloud event pipeline)
 BACKOFFICE_API_URL="${BACKOFFICE_API_URL}"
 
-# Database
+# Database (local PostgreSQL — primary)
 DATABASE_URL="${DATABASE_URL}"
 DIRECT_URL="${DIRECT_URL}"
+
+# Cloud sync target (Neon — background sync only)
+NEON_DATABASE_URL="${NEON_DATABASE_URL}"
+NEON_DIRECT_URL="${NEON_DIRECT_URL}"
+SYNC_ENABLED="${SYNC_ENABLED}"
 
 # App Configuration
 NODE_ENV="production"
@@ -741,6 +756,12 @@ if [[ "$STATION_ROLE" == "server" ]]; then
     err "Database migration failed. Check DATABASE_URL and PostgreSQL status."
     exit 1
   }
+
+  # Seed local PG from Neon cloud (offline-first mode)
+  if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
+    log "Seeding local PostgreSQL from Neon cloud..."
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && bash scripts/seed-from-neon.sh" || log_warn "Neon seed had warnings (non-fatal — local PG will sync on first run)"
+  fi
 
   log "Building Next.js application..."
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm run build"; then

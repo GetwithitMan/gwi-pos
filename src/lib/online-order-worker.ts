@@ -12,11 +12,19 @@
  *   shared Neon DB with status 'received', and this worker picks it up within
  *   15 seconds and dispatches locally.
  *
+ * OFFLINE-FIRST MODE:
+ *   With local PG as primary DB, the NUC won't see online orders until they're
+ *   pulled from Neon. This worker now queries Neon directly, upserts orders
+ *   into local PG, then dispatches via the existing local endpoint.
+ *
  * 15-second latency is acceptable — customers expect 15–30 min prep time.
  *
  * Only runs on NUC instances (requires POS_LOCATION_ID env var).
  * In cloud/Vercel mode, this worker does not start.
  */
+
+import { neonClient, hasNeonConnection } from './neon-client'
+import { masterClient } from './db'
 
 let workerInterval: ReturnType<typeof setInterval> | null = null
 
@@ -50,6 +58,12 @@ export function stopOnlineOrderDispatchWorker(): void {
 
 async function pollAndDispatch(port: number, locationId: string): Promise<void> {
   try {
+    // If Neon is available, pull online orders from cloud first
+    if (hasNeonConnection()) {
+      await pullOnlineOrdersFromNeon(locationId)
+    }
+
+    // Then dispatch via existing local endpoint (reads from local PG)
     const res = await fetch(
       `http://localhost:${port}/api/internal/dispatch-online-order`,
       {
@@ -77,5 +91,116 @@ async function pollAndDispatch(port: number, locationId: string): Promise<void> 
     }
   } catch {
     // Server might not be ready yet on startup — silently ignore
+  }
+}
+
+// ── Pull online orders from Neon into local PG ─────────────────────────────
+
+function serializeValue(val: unknown): unknown {
+  if (val === null || val === undefined) return null
+  if (val instanceof Date) return val.toISOString()
+  if (typeof val === 'bigint') return val.toString()
+  if (typeof val === 'object') {
+    if ((val as { constructor?: { name?: string } }).constructor?.name === 'Decimal') {
+      return (val as { toString(): string }).toString()
+    }
+    return JSON.stringify(val)
+  }
+  return val
+}
+
+async function upsertRow(tableName: string, row: Record<string, unknown>): Promise<void> {
+  const cols = Object.keys(row).filter((k) => row[k] !== undefined)
+  const values = cols.map((c) => serializeValue(row[c]))
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ')
+  const quotedCols = cols.map((c) => `"${c}"`).join(', ')
+  const updateSet = cols
+    .filter((c) => c !== 'id')
+    .map((c) => `"${c}" = EXCLUDED."${c}"`)
+    .join(', ')
+
+  await masterClient.$executeRawUnsafe(
+    `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}`,
+    ...values
+  )
+}
+
+async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
+  try {
+    // Find received online orders in Neon
+    const orders = await neonClient!.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM "Order" WHERE "locationId" = $1 AND status = 'received' AND source = 'online' AND "deletedAt" IS NULL LIMIT 20`,
+      locationId
+    )
+
+    if (orders.length === 0) return
+
+    console.log(`[OnlineOrderWorker] Found ${orders.length} online order(s) in Neon`)
+
+    for (const { id: orderId } of orders) {
+      try {
+        // Claim the order in Neon (prevent double-pickup)
+        const claimed = await neonClient!.$executeRawUnsafe(
+          `UPDATE "Order" SET status = 'processing' WHERE id = $1 AND status = 'received'`,
+          orderId
+        )
+        if (claimed === 0) continue // Already claimed
+
+        // Get full order row from Neon
+        const [orderRow] = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT * FROM "Order" WHERE id = $1`,
+          orderId
+        )
+        if (!orderRow) continue
+
+        // Get order items
+        const items = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT * FROM "OrderItem" WHERE "orderId" = $1`,
+          orderId
+        )
+
+        // Get modifiers for all items
+        const itemIds = items.map((i) => i.id as string)
+        let modifiers: Record<string, unknown>[] = []
+        if (itemIds.length > 0) {
+          modifiers = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
+            `SELECT * FROM "OrderItemModifier" WHERE "orderItemId" = ANY($1::text[])`,
+            itemIds
+          )
+        }
+
+        // Upsert into local PG (set status back to 'received' for local dispatch)
+        orderRow.status = 'received'
+        await upsertRow('Order', orderRow)
+
+        for (const item of items) {
+          await upsertRow('OrderItem', item)
+        }
+        for (const mod of modifiers) {
+          await upsertRow('OrderItemModifier', mod)
+        }
+
+        console.log(
+          `[OnlineOrderWorker] Pulled order ${orderId} (${items.length} items) from Neon`
+        )
+      } catch (err) {
+        console.error(
+          `[OnlineOrderWorker] Error pulling order ${orderId}:`,
+          err instanceof Error ? err.message : err
+        )
+        // Revert claim in Neon on failure
+        await neonClient!
+          .$executeRawUnsafe(
+            `UPDATE "Order" SET status = 'received' WHERE id = $1 AND status = 'processing'`,
+            orderId
+          )
+          .catch(() => {})
+      }
+    }
+  } catch (err) {
+    console.error(
+      '[OnlineOrderWorker] Neon pull error:',
+      err instanceof Error ? err.message : err
+    )
   }
 }

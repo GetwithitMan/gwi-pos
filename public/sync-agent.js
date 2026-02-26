@@ -103,6 +103,36 @@ function putJsonLocal(urlPath, data) {
   })
 }
 
+function postJsonLocal(urlPath, data) {
+  return new Promise(function(resolve, reject) {
+    var body = JSON.stringify(data)
+    var url = new URL(urlPath, 'http://localhost:3005')
+    var req = http.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, function(res) {
+      var d = ''
+      res.on('data', function(c) { d += c })
+      res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
+function postJsonLocal(urlPath, data) {
+  return new Promise(function(resolve, reject) {
+    var body = JSON.stringify(data)
+    var url = new URL(urlPath, 'http://localhost:3005')
+    var req = http.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, function(res) {
+      var d = ''
+      res.on('data', function(c) { d += c })
+      res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
 // ── Shell exec ─────────────────────────────────────────────────────────────
 function run(cmd, cwd, timeoutSec) {
   try {
@@ -161,6 +191,11 @@ function handleForceUpdate(payload) {
   step('pre-migrate', 'node scripts/nuc-pre-migrate.js', true, 60)
   step('prisma migrate', 'npx prisma migrate deploy', true, 60)
   step('prisma db push', 'npx prisma db push --accept-data-loss', true, 120)
+  // Also migrate Neon cloud database (if configured for offline-first mode)
+  if (env.NEON_DATABASE_URL) {
+    step('neon-pre-migrate', 'NEON_MIGRATE=true node scripts/nuc-pre-migrate.js', true, 60)
+    step('neon-db-push', 'DATABASE_URL=' + JSON.stringify(env.NEON_DATABASE_URL) + ' npx prisma db push --accept-data-loss', true, 120)
+  }
   if (!step('build', 'npm run build', false, 300)) {
     return { ok: false, error: 'build failed', steps: steps }
   }
@@ -247,6 +282,14 @@ async function processCommand(dataStr) {
       } else {
         log('[Sync] Unhandled DATA_CHANGED domain: ' + domain)
         result = { ok: true }
+      }
+
+      // Trigger immediate downstream sync for any DATA_CHANGED event
+      try {
+        await postJsonLocal('/api/internal/trigger-sync', { domain: domain })
+        log('[Sync] Triggered immediate downstream sync for domain: ' + domain)
+      } catch (triggerErr) {
+        log('[Sync] Failed to trigger downstream sync: ' + triggerErr.message)
       }
     } else if (cmd.type === 'UPDATE_PAYMENT_CONFIG') {
       try {

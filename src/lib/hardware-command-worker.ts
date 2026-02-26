@@ -10,6 +10,7 @@
  */
 
 import { masterClient } from './db'
+import { neonClient, hasNeonConnection } from './neon-client'
 import { testPrinterConnection, sendToPrinter } from './printer-connection'
 import {
   buildDocument,
@@ -33,9 +34,15 @@ export function startHardwareCommandWorker() {
   console.log('[HardwareCmd] Worker started (polling every 3s)')
 
   async function processPendingCommands() {
+    // HardwareCommand lives on Neon — cloud admin writes commands, NUC executes
+    if (!hasNeonConnection()) return
+
+    // Use neonClient for HardwareCommand reads/writes (cloud table)
+    const hwClient = neonClient!
+
     try {
       // Find pending commands that haven't expired
-      const commands = await masterClient.hardwareCommand.findMany({
+      const commands = await hwClient.hardwareCommand.findMany({
         where: {
           status: 'PENDING',
           expiresAt: { gt: new Date() },
@@ -46,7 +53,7 @@ export function startHardwareCommandWorker() {
 
       for (const cmd of commands) {
         // Optimistic lock: set to PROCESSING
-        const updated = await masterClient.hardwareCommand.updateMany({
+        const updated = await hwClient.hardwareCommand.updateMany({
           where: { id: cmd.id, status: 'PENDING' },
           data: { status: 'PROCESSING' },
         })
@@ -69,7 +76,7 @@ export function startHardwareCommandWorker() {
               result = { success: false, error: `Unknown command type: ${cmd.commandType}` }
           }
 
-          await masterClient.hardwareCommand.update({
+          await hwClient.hardwareCommand.update({
             where: { id: cmd.id },
             data: {
               status: result.success ? 'COMPLETED' : 'FAILED',
@@ -80,7 +87,7 @@ export function startHardwareCommandWorker() {
           })
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : 'Unknown error'
-          await masterClient.hardwareCommand.update({
+          await hwClient.hardwareCommand.update({
             where: { id: cmd.id },
             data: {
               status: 'FAILED',
@@ -93,7 +100,7 @@ export function startHardwareCommandWorker() {
       }
 
       // Cleanup expired commands older than 5 minutes
-      await masterClient.hardwareCommand.deleteMany({
+      await hwClient.hardwareCommand.deleteMany({
         where: {
           createdAt: { lt: new Date(Date.now() - CLEANUP_AGE) },
         },

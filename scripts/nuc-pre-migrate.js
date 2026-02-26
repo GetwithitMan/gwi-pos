@@ -38,7 +38,21 @@ async function columnExists(prisma, tableName, columnName) {
 }
 
 async function runPrePushMigrations() {
-  const prisma = new PrismaClient()
+  // Support NEON_MIGRATE flag — when set, run migrations against Neon cloud DB
+  const isNeon = process.env.NEON_MIGRATE === 'true'
+  if (isNeon && !process.env.NEON_DATABASE_URL) {
+    console.log(`${PREFIX} NEON_MIGRATE=true but NEON_DATABASE_URL not set — skipping`)
+    return
+  }
+
+  const targetHost = isNeon
+    ? (process.env.NEON_DATABASE_URL || '').split('@')[1]?.split('/')[0] || 'neon'
+    : 'local PG'
+  console.log(`${PREFIX} Target: ${targetHost}`)
+
+  const prisma = isNeon
+    ? new PrismaClient({ datasources: { db: { url: process.env.NEON_DATABASE_URL } } })
+    : new PrismaClient()
 
   try {
     console.log(`${PREFIX} Running pre-push migrations...`)
