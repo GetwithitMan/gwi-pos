@@ -2338,6 +2338,9 @@ model OrderItem {
   // Commission (Skill 29)
   commissionAmount Decimal?
 
+  // Idempotency key for duplicate request prevention
+  idempotencyKey String?
+
   // Shared Table Ownership (Skill 253) - who added this item
   addedByEmployeeId String?
   addedByEmployee   Employee? @relation("OrderItemAddedBy", fields: [addedByEmployeeId], references: [id])

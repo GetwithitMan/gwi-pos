@@ -98,7 +98,7 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { items } = body as { items: NewItem[] }
+    const { items, idempotencyKey } = body as { items: NewItem[], idempotencyKey?: string }
 
     if (!items || items.length === 0) {
       return apiError.badRequest('No items provided', ERROR_CODES.ORDER_EMPTY)
@@ -126,6 +126,31 @@ export const POST = withVenue(async function POST(
             ERROR_CODES.VALIDATION_ERROR
           )
         }
+      }
+    }
+
+    // Idempotency check — if this key was already processed, return current order
+    if (idempotencyKey) {
+      const existing = await db.orderItem.findFirst({
+        where: { orderId, idempotencyKey, deletedAt: null },
+      })
+      if (existing) {
+        const order = await db.order.findUniqueOrThrow({
+          where: { id: orderId },
+          include: {
+            employee: {
+              select: { id: true, displayName: true, firstName: true, lastName: true },
+            },
+            items: {
+              include: {
+                modifiers: true,
+                ingredientModifications: true,
+                pizzaData: true,
+              },
+            },
+          },
+        })
+        return NextResponse.json({ data: mapOrderForResponse(order) })
       }
     }
 
@@ -324,6 +349,8 @@ export const POST = withVenue(async function POST(
             delayMinutes: item.delayMinutes || null,
             // Entertainment/timed rental fields
             blockTimeMinutes: item.blockTimeMinutes || null,
+            // Idempotency key for duplicate prevention
+            idempotencyKey: idempotencyKey || null,
             // Weight-based pricing fields
             soldByWeight: item.soldByWeight || false,
             weight: item.weight ?? null,

@@ -650,7 +650,7 @@ export async function dispatchOrderTotalsUpdate(
 export async function dispatchOpenOrdersChanged(
   locationId: string,
   payload: {
-    trigger: 'created' | 'paid' | 'voided' | 'transferred' | 'reopened' | 'sent'
+    trigger: 'created' | 'paid' | 'voided' | 'transferred' | 'reopened' | 'sent' | 'item_updated'
     orderId?: string
     tableId?: string
     orderNumber?: number
