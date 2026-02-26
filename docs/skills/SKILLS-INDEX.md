@@ -1375,6 +1375,7 @@ These skills emerged during development and are now part of the system:
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
 | 447 | NUC-DEPLOYMENT-PIPELINE | DONE | Infrastructure / NUC Fleet | 345, 399 | End-to-end NUC fleet deployment via Mission Control. Pre-flight DB migrations (nuc-pre-migrate.js): column additions, orphaned FK cleanup, updatedAt backfills, order dedup, Int→Decimal, String→Enum casts. Sync agent fixes: service name resolution (thepasspos/pulse-pos fallback), RE_PROVISION/RELOAD_TERMINALS/RESTART_KIOSK handlers. vercel-build.js enum casts for Vercel/Neon. Prisma schema: ~50 forward @relation + 17 reverse relations. Commits: c554d09, e851c83, 96982b6, fa4c803, 5b28181. |
+| 448 | ARCHITECTURE-AUDIT-FIXES | DONE | Auth / Schema / Perf / UX / Data Integrity | 447 | 15 findings fixed: MC fetch crash guard (offline login), hardcoded URL removed, N+1 batched (send/expo), 14 void prefixes added, 3 cache bypasses eliminated, 3 hard deletes→soft deletes, 48px touch targets, socket debounced refresh, local count updates, polling guard. Schema: deletedAt+syncedAt on all 147 models, Order.source. 17 files, +208/-177. Commit: 6755272. |
 
 ---
 

@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-02-26 — Codebase Architecture Audit Fixes (Skill 448)
+
+**Session:** Fixed 15 findings from full codebase architecture audit. 5 parallel agents: auth hardening, schema sync fields, N+1/fire-and-forget fixes, cache bypass elimination, hard delete/UI/socket improvements. All POS-repo issues resolved; Android deferred.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `6755272` — fix: codebase architecture audit — 15 findings across auth, schema, perf, UX, data integrity
+
+### Deployments
+- POS: pushed to main, Vercel auto-deploy
+
+### Fixes by Category
+
+| # | Category | Fix | Files |
+|---|----------|-----|-------|
+| 1 | Auth (CRITICAL) | MC fetch crash guard — login works offline | venue-login/route.ts |
+| 2 | Auth (MEDIUM) | Remove hardcoded MC URL fallback | venue-login/route.ts |
+| 3 | Perf (HIGH) | N+1 orderItem.update() → batched $transaction | send/route.ts |
+| 4 | Perf (HIGH) | N+1 auditLog.create() → createMany | expo/route.ts |
+| 5 | Perf (HIGH) | orders/route.ts → getLocationSettings() cache | orders/route.ts |
+| 6 | Perf (HIGH) | orders/route.ts menu queries → cache audit (tax rules left, not cached) | orders/route.ts |
+| 7 | Data (HIGH) | seat.delete() → soft delete (3 locations) | seating/route.ts, cleanup-temp-seats.ts |
+| 8 | Perf (HIGH) | Pay route: entertainment reset + table update → fire-and-forget | pay/route.ts |
+| 10 | UX (MEDIUM) | 48px touch targets on daily-counts + quick-adjust buttons | daily-counts/page.tsx, quick-adjust/page.tsx |
+| 11 | Socket (HIGH) | OpenOrdersPanel: debounced refresh replaces full refetch per event | OpenOrdersPanel.tsx |
+| 12 | Socket (HIGH) | useOrderBootstrap: local count inc/dec instead of API call per event | useOrderBootstrap.ts |
+| 13 | Perf (MEDIUM) | Dashboard 60s polling: skip when socket connected | dashboard/page.tsx |
+| 14 | Perf (MEDIUM) | Missing `void` prefix on 14 fire-and-forget calls across 3 files | send, expo, pay routes |
+| 21 | Perf (MEDIUM) | Cache audit: 2 settings routes switched to location cache | tips/route.ts, online-ordering/route.ts |
+| Schema | Data (CRITICAL) | deletedAt + syncedAt on all 147 models, Order.source added | schema.prisma |
+
+### Key Technical Details
+
+- **Auth offline resilience:** MC fetch wrapped in try/catch; missing MISSION_CONTROL_URL skips MC entirely (no hardcoded fallback). Login always falls through to local employee lookup.
+- **Schema completeness:** Every model now has `deletedAt DateTime?` + `syncedAt DateTime?`. Added `source String?` to Order for online ordering attribution.
+- **Fire-and-forget audit:** 14 calls across send/expo/pay routes were missing `void` prefix — socket dispatches, print calls, audit logs, inventory deductions all now properly non-blocking.
+- **Cache utilization:** 3 routes switched from direct DB queries to existing caches (location-cache.ts 5min TTL, menu-cache.ts 60s TTL). 14 other routes audited — already cached or need data not in caches.
+- **Socket efficiency:** OpenOrdersPanel uses 300ms debounced refresh instead of immediate full refetch. useOrderBootstrap uses local count updates (increment/decrement) instead of API calls. Dashboard polling guarded by socket connection state.
+
+### Known Issues / Blockers
+- Prisma migration not created (no DB connection during dev). Schema changes validated via `npx prisma validate` + `npx prisma generate`. Migration will run on next deploy.
+
+---
+
 ## 2026-02-25 — Forensic Audit Deferred Items: Schema Overhaul + UI Decomposition (Complete)
 
 **Session:** Completed all 14 deferred items from the 141-issue forensic audit. 7 schema hardening items (sequential, all touch schema.prisma) and 3 monolithic UI decompositions (parallel). This closes out the entire audit — 141/141 issues resolved.
