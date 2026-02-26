@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
-import { recalculateTotalWithTip } from '@/lib/order-calculations'
+import { recalculateTotalWithTip, calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateCardPrice, roundToCents } from '@/lib/pricing'
+import { getLocationSettings } from '@/lib/location-cache'
+import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -80,6 +83,7 @@ export const GET = withVenue(async function GET(
           tipTotal: true,
           discountTotal: true,
           tableId: true,
+          locationId: true,
           orderType: true,
           createdAt: true,
           updatedAt: true,
@@ -132,6 +136,29 @@ export const GET = withVenue(async function GET(
         return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
       }
 
+      // Compute server-authoritative cash/card totals
+      let panelCashTotal = Number(order.total)
+      let panelCardTotal = Number(order.total)
+      let panelCashDiscountPercent = 0
+      try {
+        const locSettings = await getLocationSettings(order.locationId)
+        const parsed = parseSettings(locSettings as Record<string, unknown>)
+        const dp = parsed?.dualPricing
+        if (dp?.enabled) {
+          panelCashDiscountPercent = dp.cashDiscountPercent ?? 4.0
+          const sub = Number(order.subtotal)
+          const cardSub = calculateCardPrice(sub, panelCashDiscountPercent)
+          const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
+          const cashTax = roundToCents(sub * taxRate)
+          const cardTax = roundToCents(cardSub * taxRate)
+          const disc = Number(order.discountTotal || 0)
+          panelCashTotal = roundToCents(sub + cashTax - disc)
+          panelCardTotal = roundToCents(cardSub + cardTax - disc)
+        }
+      } catch {
+        // Settings unavailable — fall back to order.total
+      }
+
       // Convert Decimal fields to numbers (Prisma returns Decimal objects)
       return NextResponse.json({ data: {
         ...order,
@@ -140,6 +167,9 @@ export const GET = withVenue(async function GET(
         total: Number(order.total),
         tipTotal: Number(order.tipTotal),
         discountTotal: Number(order.discountTotal),
+        cashTotal: panelCashTotal,
+        cardTotal: panelCardTotal,
+        cashDiscountPercent: panelCashDiscountPercent,
         items: order.items.map(item => ({
           ...item,
           price: Number(item.price),
@@ -218,10 +248,36 @@ export const GET = withVenue(async function GET(
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + Number(p.totalAmount), 0)
 
+    // Compute server-authoritative cash/card totals so clients don't need to recalculate
+    // (prevents discrepancies from different client-side tax+surcharge calculation orders)
+    let cashTotal = Number(order.total)
+    let cardTotal = Number(order.total)
+    let cashDiscountPercent = 0
+    try {
+      const locSettings = await getLocationSettings(order.locationId)
+      const parsed = parseSettings(locSettings as Record<string, unknown>)
+      const dualPricing = parsed?.dualPricing
+      if (dualPricing?.enabled) {
+        cashDiscountPercent = dualPricing.cashDiscountPercent ?? 4.0
+        const cashSub = Number(order.subtotal)
+        const cardSub = calculateCardPrice(cashSub, cashDiscountPercent)
+        const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
+        const cashTax = roundToCents(cashSub * taxRate)
+        const cardTax = roundToCents(cardSub * taxRate)
+        cashTotal = roundToCents(cashSub + cashTax - Number(order.discountTotal || 0))
+        cardTotal = roundToCents(cardSub + cardTax - Number(order.discountTotal || 0))
+      }
+    } catch {
+      // Settings unavailable — fall back to order.total for both
+    }
+
     return NextResponse.json({ data: {
       ...response,
       paidAmount,
       version: order.version,
+      cashTotal,
+      cardTotal,
+      cashDiscountPercent,
     } })
   } catch (error) {
     console.error('Failed to fetch order:', error)
