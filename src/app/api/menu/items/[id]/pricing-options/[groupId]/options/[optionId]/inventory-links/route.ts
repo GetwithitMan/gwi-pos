@@ -112,11 +112,31 @@ export const POST = withVenue(async function POST(
   try {
     const { id: menuItemId, groupId, optionId } = await params
     const body = await request.json()
-    const { prepItemId, inventoryItemId, usageQuantity, usageUnit } = body
+    let { prepItemId, inventoryItemId, usageQuantity, usageUnit } = body
+    const { ingredientId } = body
+
+    // If an ingredientId is provided (from IngredientHierarchyPicker), resolve to prepItemId/inventoryItemId
+    if (ingredientId && !prepItemId && !inventoryItemId) {
+      const locationId = await getLocationId()
+      const ingredient = await db.ingredient.findFirst({
+        where: { id: ingredientId, locationId: locationId!, deletedAt: null },
+        select: { prepItemId: true, inventoryItemId: true },
+      })
+      if (ingredient?.prepItemId) {
+        prepItemId = ingredient.prepItemId
+      } else if (ingredient?.inventoryItemId) {
+        inventoryItemId = ingredient.inventoryItemId
+      } else {
+        return NextResponse.json(
+          { error: 'Ingredient has no linked inventory or prep item' },
+          { status: 400 }
+        )
+      }
+    }
 
     if (!prepItemId && !inventoryItemId) {
       return NextResponse.json(
-        { error: 'Either prepItemId or inventoryItemId is required' },
+        { error: 'Either prepItemId, inventoryItemId, or ingredientId is required' },
         { status: 400 }
       )
     }

@@ -91,16 +91,16 @@ export function PricingOptionInventoryLinker({
     }
   }, [expanded, fetchLinks])
 
-  const handleAddLink = async (prepItemId: string) => {
+  const handleAddLink = async (ingredientId: string) => {
     setShowPicker(false)
     setSearchTerm('')
 
     // Optimistic: add a placeholder
-    const libItem = ingredientsLibrary.find(i => i.id === prepItemId)
+    const libItem = ingredientsLibrary.find(i => i.id === ingredientId)
     const optimisticId = `temp-${Date.now()}`
     const optimisticLink: InventoryLink = {
       id: optimisticId,
-      prepItemId,
+      prepItemId: null,
       inventoryItemId: null,
       prepItem: { name: libItem?.name ?? 'Adding...', unitCost: null },
       usageQuantity: 1,
@@ -113,7 +113,7 @@ export function PricingOptionInventoryLinker({
       const res = await fetch(basePath, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prepItemId, usageQuantity: 1, usageUnit: 'each' }),
+        body: JSON.stringify({ ingredientId, usageQuantity: 1, usageUnit: 'each' }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed to add link' }))
