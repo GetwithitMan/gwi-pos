@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.employee.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { role: { select: { id: true, name: true, permissions: true } } } }),
     db.table.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     db.orderType.findMany({ where: { locationId, updatedAt: { gt: since } } }),
-    db.order.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { items: { include: { modifiers: true } } } }),
+    db.order.findMany({ where: { locationId, updatedAt: { gt: since }, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] }, deletedAt: null }, include: { items: { include: { modifiers: true, itemDiscounts: true } }, payments: true } }),
   ])
 
   // Convert Decimal fields to numbers for Android clients
@@ -52,16 +52,36 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
   const mappedOrders = orders.map(order => ({
     ...order,
-    subtotal: order.subtotal != null ? Number(order.subtotal) : null,
-    taxTotal: order.taxTotal != null ? Number(order.taxTotal) : null,
-    total: order.total != null ? Number(order.total) : null,
+    subtotal: Number(order.subtotal ?? 0),
+    taxTotal: Number(order.taxTotal ?? 0),
+    tipTotal: Number(order.tipTotal ?? 0),
+    discountTotal: Number(order.discountTotal ?? 0),
+    total: Number(order.total ?? 0),
+    paidAmount: order.payments.reduce((sum, p) => sum + Number(p.totalAmount ?? 0), 0),
     items: order.items.map(item => ({
       ...item,
-      price: item.price != null ? Number(item.price) : null,
+      price: Number(item.price ?? 0),
+      itemTotal: Number(item.itemTotal ?? 0),
       weight: item.weight != null ? Number(item.weight) : null,
       unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
       grossWeight: item.grossWeight != null ? Number(item.grossWeight) : null,
       tareWeight: item.tareWeight != null ? Number(item.tareWeight) : null,
+      modifiers: item.modifiers.map(mod => ({
+        ...mod,
+        price: Number(mod.price ?? 0),
+      })),
+      itemDiscounts: (item.itemDiscounts ?? []).map(d => ({
+        ...d,
+        amount: Number(d.amount ?? 0),
+        percent: d.percent != null ? Number(d.percent) : null,
+      })),
+    })),
+    payments: (order.payments ?? []).map(p => ({
+      ...p,
+      amount: Number(p.amount ?? 0),
+      tipAmount: Number(p.tipAmount ?? 0),
+      totalAmount: Number(p.totalAmount ?? 0),
+      paymentMethod: p.paymentMethod ?? 'unknown',
     })),
   }))
 
