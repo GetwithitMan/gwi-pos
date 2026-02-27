@@ -24,27 +24,19 @@ import { FavoriteItem } from '@/components/bartender/FavoriteItem'
 import type { FavoriteItemData } from '@/components/bartender/FavoriteItem'
 import {
   type CategoryRows,
-  type CategoryDisplaySettings,
   type ItemSize,
   type ItemsPerRow,
-  type ItemDisplaySettings,
   type ItemCustomization,
   CATEGORY_SIZES,
-  DEFAULT_CATEGORY_SETTINGS,
   FONT_FAMILIES,
   EFFECT_PRESETS,
   GLOW_COLORS,
   ITEM_SIZES,
-  DEFAULT_ITEM_SETTINGS,
   isLightColor,
-  getFavoritesKey,
-  getCategorySettingsKey,
-  getItemSettingsKey,
-  getItemCustomizationsKey,
-  getItemOrderKey,
   COMMON_BAR_MODIFIERS,
   HOT_MODIFIER_CONFIG,
 } from '@/components/bartender/bartender-settings'
+import { useBartenderPreferences } from '@/hooks/useBartenderPreferences'
 
 // ============================================================================
 // TYPES
@@ -210,22 +202,25 @@ export function BartenderView({
     }
   }, [initialMenuItems])
 
+  // Server-synced bartender preferences (replaces 14 localStorage calls)
+  const bartPrefs = useBartenderPreferences({ employeeId, locationId })
+
   // Custom favorites bar
-  const [favorites, setFavorites] = useState<FavoriteItem[]>([])
+  const favorites = bartPrefs.favorites as FavoriteItem[]
   const showFavorites = true
   const [isEditingFavorites, setIsEditingFavorites] = useState(false)
 
   // Category display settings
-  const [categorySettings, setCategorySettings] = useState<CategoryDisplaySettings>(DEFAULT_CATEGORY_SETTINGS)
+  const categorySettings = bartPrefs.categorySettings
   const [isEditingCategories, setIsEditingCategories] = useState(false)
-  const [categoryOrder, setCategoryOrder] = useState<string[]>([]) // Custom order of category IDs
+  const categoryOrder = bartPrefs.categoryOrder
   const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null)
 
   // Item display settings
-  const [itemSettings, setItemSettings] = useState<ItemDisplaySettings>(DEFAULT_ITEM_SETTINGS)
+  const itemSettings = bartPrefs.itemSettings
   const [isEditingItems, setIsEditingItems] = useState(false)
-  const [itemCustomizations, setItemCustomizations] = useState<Record<string, ItemCustomization>>({})
-  const [itemOrder, setItemOrder] = useState<Record<string, string[]>>({}) // categoryId -> menuItemId[]
+  const itemCustomizations = bartPrefs.itemCustomizations as Record<string, ItemCustomization>
+  const itemOrder = bartPrefs.itemOrder
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null)
   const [editingItemId, setEditingItemId] = useState<string | null>(null) // Item being customized
 
@@ -304,9 +299,6 @@ export function BartenderView({
 
   // Refs
   const categoryScrollRef = useRef<HTMLDivElement>(null)
-
-  // Get category order storage key
-  const getCategoryOrderKey = (employeeId: string) => `bartender_category_order_${employeeId}`
 
   // ---------------------------------------------------------------------------
   // COMPUTED
@@ -533,134 +525,12 @@ export function BartenderView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Only run on mount
 
-  // Load favorites from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(getFavoritesKey(employeeId))
-      if (stored) {
-        setFavorites(JSON.parse(stored))
-      }
-    } catch (e) {
-      console.error('Failed to load favorites:', e)
-    }
-  }, [employeeId])
-
-  // Load category settings from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(getCategorySettingsKey(employeeId))
-      if (stored) {
-        setCategorySettings(JSON.parse(stored))
-      }
-    } catch (e) {
-      console.error('Failed to load category settings:', e)
-    }
-  }, [employeeId])
-
-  // Save category settings to localStorage
-  const saveCategorySettings = useCallback((settings: CategoryDisplaySettings) => {
-    try {
-      localStorage.setItem(getCategorySettingsKey(employeeId), JSON.stringify(settings))
-      setCategorySettings(settings)
-    } catch (e) {
-      console.error('Failed to save category settings:', e)
-    }
-  }, [employeeId])
-
-  // Load category order from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(getCategoryOrderKey(employeeId))
-      if (stored) {
-        setCategoryOrder(JSON.parse(stored))
-      }
-    } catch (e) {
-      console.error('Failed to load category order:', e)
-    }
-  }, [employeeId])
-
-  // Save category order to localStorage
-  const saveCategoryOrder = useCallback((order: string[]) => {
-    try {
-      localStorage.setItem(getCategoryOrderKey(employeeId), JSON.stringify(order))
-      setCategoryOrder(order)
-    } catch (e) {
-      console.error('Failed to save category order:', e)
-    }
-  }, [employeeId])
-
-  // Load item settings from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(getItemSettingsKey(employeeId))
-      if (stored) {
-        setItemSettings(JSON.parse(stored))
-      }
-    } catch (e) {
-      console.error('Failed to load item settings:', e)
-    }
-  }, [employeeId])
-
-  // Load item customizations from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(getItemCustomizationsKey(employeeId))
-      if (stored) {
-        setItemCustomizations(JSON.parse(stored))
-      }
-    } catch (e) {
-      console.error('Failed to load item customizations:', e)
-    }
-  }, [employeeId])
-
-  // Save item settings to localStorage
-  const saveItemSettings = useCallback((settings: ItemDisplaySettings) => {
-    try {
-      localStorage.setItem(getItemSettingsKey(employeeId), JSON.stringify(settings))
-      setItemSettings(settings)
-    } catch (e) {
-      console.error('Failed to save item settings:', e)
-    }
-  }, [employeeId])
-
-  // Save item customizations to localStorage
-  const saveItemCustomization = useCallback((menuItemId: string, customization: ItemCustomization | null) => {
-    try {
-      const updated = { ...itemCustomizations }
-      if (customization === null) {
-        delete updated[menuItemId]
-      } else {
-        updated[menuItemId] = customization
-      }
-      localStorage.setItem(getItemCustomizationsKey(employeeId), JSON.stringify(updated))
-      setItemCustomizations(updated)
-    } catch (e) {
-      console.error('Failed to save item customization:', e)
-    }
-  }, [employeeId, itemCustomizations])
-
-  // Save item order for a category
-  const saveItemOrder = useCallback((categoryId: string, order: string[]) => {
-    try {
-      localStorage.setItem(getItemOrderKey(employeeId, categoryId), JSON.stringify(order))
-      setItemOrder(prev => ({ ...prev, [categoryId]: order }))
-    } catch (e) {
-      console.error('Failed to save item order:', e)
-    }
-  }, [employeeId])
-
-  // Load item order for current category
-  useEffect(() => {
-    if (!selectedCategoryId) return
-    try {
-      const stored = localStorage.getItem(getItemOrderKey(employeeId, selectedCategoryId))
-      if (stored) {
-        setItemOrder(prev => ({ ...prev, [selectedCategoryId]: JSON.parse(stored) }))
-      }
-    } catch (e) {
-      console.error('Failed to load item order:', e)
-    }
-  }, [employeeId, selectedCategoryId])
+  // Server-synced save callbacks (delegate to useBartenderPreferences hook)
+  const saveCategorySettings = bartPrefs.setCategorySettings
+  const saveCategoryOrder = bartPrefs.setCategoryOrder
+  const saveItemSettings = bartPrefs.setItemSettings
+  const saveItemCustomization = bartPrefs.setItemCustomization
+  const saveItemOrder = bartPrefs.setItemOrder
 
   // Handle category drag start
   const handleCategoryDragStart = useCallback((categoryId: string) => {
@@ -721,15 +591,8 @@ export function BartenderView({
     setDraggedItemId(null)
   }, [])
 
-  // Save favorites to localStorage
-  const saveFavorites = useCallback((items: FavoriteItem[]) => {
-    try {
-      localStorage.setItem(getFavoritesKey(employeeId), JSON.stringify(items))
-      setFavorites(items)
-    } catch (e) {
-      console.error('Failed to save favorites:', e)
-    }
-  }, [employeeId])
+  // Save favorites (server-synced via useBartenderPreferences)
+  const saveFavorites = bartPrefs.setFavorites
 
   // Add item to favorites
   const addToFavorites = useCallback((item: MenuItem) => {
@@ -1121,17 +984,12 @@ export function BartenderView({
     toast.success('Category order reset')
   }, [saveCategoryOrder])
 
-  // Reset item order for current category
+  // Reset item order for current category (server-synced)
   const resetItemOrder = useCallback(() => {
     if (!selectedCategoryId) return
-    localStorage.removeItem(getItemOrderKey(employeeId, selectedCategoryId))
-    setItemOrder(prev => {
-      const updated = { ...prev }
-      delete updated[selectedCategoryId]
-      return updated
-    })
+    bartPrefs.resetItemOrder(selectedCategoryId)
     toast.success('Item order reset')
-  }, [selectedCategoryId, employeeId])
+  }, [selectedCategoryId, bartPrefs])
 
   // ---------------------------------------------------------------------------
   // RENDER
@@ -1580,8 +1438,7 @@ export function BartenderView({
                     {Object.keys(itemCustomizations).length > 0 && (
                       <button
                         onClick={() => {
-                          localStorage.removeItem(getItemCustomizationsKey(employeeId))
-                          setItemCustomizations({})
+                          bartPrefs.resetAllItemCustomizations()
                           toast.success('Item styles reset')
                         }}
                         className="px-2 h-7 rounded text-xs font-bold bg-orange-600 text-white hover:bg-orange-500 transition-all"

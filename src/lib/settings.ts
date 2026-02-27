@@ -407,6 +407,54 @@ export interface POSLayoutSettings {
   // Coursing — per-employee settings
   coursingCourseCount: number           // How many course buttons to show (default: 5)
   coursingDefaultDelay: number          // Default delay minutes for new courses (0 = fire immediately)
+
+  // Bartender view preferences (server-synced, replaces localStorage)
+  bartender?: BartenderPreferences
+}
+
+// Bartender view preferences — stored inside POSLayoutSettings.bartender
+// Replaces 14 localStorage calls in BartenderView.tsx with server-synced data
+export interface BartenderPreferences {
+  favorites: FavoriteItemRef[]
+  categorySettings: BartenderCategorySettings
+  categoryOrder: string[]                    // Category IDs in display order
+  itemSettings: BartenderItemSettings
+  itemCustomizations: Record<string, BartenderItemCustomization>
+  itemOrder: Record<string, string[]>        // categoryId → menuItemId[] sort order
+}
+
+// Lightweight favorite reference (rich enough to render without re-fetching)
+export interface FavoriteItemRef {
+  menuItemId: string
+  name: string
+  price: number
+  hasModifiers?: boolean
+}
+
+export interface BartenderCategorySettings {
+  rows: 1 | 2
+  size: 'xsmall' | 'small' | 'medium' | 'large' | 'xlarge' | 'blind'
+}
+
+export interface BartenderItemSettings {
+  size: 'compact' | 'normal' | 'large' | 'xlarge'
+  itemsPerRow: 'auto' | 3 | 4 | 5 | 6
+  showPrices: boolean
+  showDualPricing: boolean
+  showQuickPours: boolean
+  useScrolling: boolean
+}
+
+export interface BartenderItemCustomization {
+  backgroundColor?: string
+  textColor?: string
+  highlight?: 'none' | 'glow' | 'border' | 'larger'
+  sortOrder?: number
+  fontStyle?: 'normal' | 'bold' | 'italic' | 'boldItalic'
+  fontFamily?: 'default' | 'rounded' | 'mono' | 'serif' | 'handwritten'
+  glowColor?: string
+  borderColor?: string
+  effect?: 'none' | 'pulse' | 'shimmer' | 'rainbow' | 'neon'
 }
 
 // Default layout settings

@@ -86,7 +86,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   return NextResponse.json({
     data: {
       menu: { categories: mappedCategories },
-      employees: employees.map(e => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, displayName: e.displayName, pin: e.pin, locationId: e.locationId, role: e.role })),
+      employees: employees.map(e => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, displayName: e.displayName, pin: e.pin, locationId: e.locationId, role: e.role, posLayoutSettings: e.posLayoutSettings ?? null })),
       tables,
       orderTypes,
       taxRate,
