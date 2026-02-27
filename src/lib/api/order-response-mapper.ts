@@ -52,6 +52,9 @@ export interface MappedOrderItem {
     percent: number | null
     reason: string | null
   }>
+  // Pricing option (e.g., "Large", "Bowl")
+  pricingOptionId: string | null
+  pricingOptionLabel: string | null
   createdAt: Date
 }
 
@@ -192,6 +195,9 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
       percent: d.percent ? Number(d.percent) : null,
       reason: d.reason,
     })) || [],
+    // Pricing option snapshot
+    pricingOptionId: item.pricingOptionId || null,
+    pricingOptionLabel: item.pricingOptionLabel || null,
     createdAt: item.createdAt,
   }
 }

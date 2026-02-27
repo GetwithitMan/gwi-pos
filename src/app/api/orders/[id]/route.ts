@@ -110,6 +110,7 @@ export const GET = withVenue(async function GET(
               status: true,
               itemTotal: true,
               menuItemId: true,
+              pricingOptionLabel: true,
               createdAt: true,
               modifiers: {
                 where: { deletedAt: null },

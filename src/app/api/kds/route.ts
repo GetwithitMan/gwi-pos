@@ -209,6 +209,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           name: item.menuItem.name,
           quantity: item.quantity,
           categoryName: item.menuItem.category?.name,
+          pricingOptionLabel: item.pricingOptionLabel ?? null,
           specialNotes: item.specialNotes,
           isCompleted: item.isCompleted || false,
           completedAt: item.completedAt?.toISOString() || null,

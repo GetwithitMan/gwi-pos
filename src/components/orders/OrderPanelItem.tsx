@@ -55,6 +55,8 @@ export interface OrderPanelItemData {
   weight?: number | null
   weightUnit?: string | null
   unitPrice?: number | null
+  // Pricing option label (e.g., "Large", "Bowl")
+  pricingOptionLabel?: string | null
 }
 
 interface OrderPanelItemProps {
@@ -356,6 +358,16 @@ export const OrderPanelItem = memo(function OrderPanelItem({
               }}>
               {item.name}
             </span>
+            {item.pricingOptionLabel && (
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 500,
+                color: '#38bdf8',
+                marginLeft: '4px',
+              }}>
+                ({item.pricingOptionLabel})
+              </span>
+            )}
 
             {/* VOIDED / COMPED stamp */}
             {isVoided && (

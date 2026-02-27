@@ -44,6 +44,9 @@ export interface RoutedItem {
   // Category info for grouping
   categoryName: string | null
 
+  // Pricing option label (e.g., "Large", "Bowl")
+  pricingOptionLabel?: string | null
+
   // Weight-based item fields
   soldByWeight?: boolean
   weight?: number | null

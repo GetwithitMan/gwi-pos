@@ -23,6 +23,7 @@ interface KDSItem {
   name: string
   quantity: number
   categoryName: string | null
+  pricingOptionLabel: string | null
   specialNotes: string | null
   isCompleted: boolean
   completedAt: string | null
@@ -781,6 +782,16 @@ function KDSContent() {
                                 <span className="text-blue-400 mr-2">{item.quantity}x</span>
                               )}
                               {item.name}
+                              {item.pricingOptionLabel && (
+                                <span style={{
+                                  fontSize: '12px',
+                                  fontWeight: 600,
+                                  color: '#38bdf8',
+                                  marginLeft: '6px',
+                                }}>
+                                  ({item.pricingOptionLabel})
+                                </span>
+                              )}
                               {/* Course badge (T013) */}
                               {item.courseNumber != null && item.courseNumber >= 0 && (
                                 <span

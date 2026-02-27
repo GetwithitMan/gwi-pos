@@ -232,6 +232,8 @@ export class OrderRouter {
       isEntertainment,
       isBar,
       categoryName: item.menuItem?.category?.name || null,
+      // Pricing option label
+      pricingOptionLabel: item.pricingOptionLabel ?? null,
       // Weight-based item fields
       soldByWeight: item.soldByWeight ?? false,
       weight: item.weight ? Number(item.weight) : null,

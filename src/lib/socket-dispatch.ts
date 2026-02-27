@@ -63,6 +63,8 @@ export async function dispatchNewOrder(
             isPizza: item.isPizza,
             isBar: item.isBar,
             pizzaData: item.pizzaData,
+            // Pricing option label
+            pricingOptionLabel: item.pricingOptionLabel ?? null,
             // Weight-based item fields
             weight: item.weight ? Number(item.weight) : null,
             weightUnit: item.weightUnit ?? null,

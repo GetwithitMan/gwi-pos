@@ -65,6 +65,8 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string }
         delayFiredAt: item.delayFiredAt,
         itemDiscounts: item.itemDiscounts,
         itemTotal: item.itemTotal,
+        // Pricing option label (e.g., "Large", "Bowl")
+        pricingOptionLabel: item.pricingOptionLabel,
         // Weight-based selling
         soldByWeight: item.soldByWeight,
         weight: item.weight,
