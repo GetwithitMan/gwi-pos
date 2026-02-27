@@ -11,8 +11,10 @@ interface InventoryLink {
   id: string
   prepItemId: string | null
   inventoryItemId: string | null
+  ingredientId?: string | null
   prepItem?: { name: string; unitCost: number | null } | null
   inventoryItem?: { name: string; unitCost: number | null } | null
+  ingredient?: { id: string; name: string; unit: string | null } | null
   usageQuantity: number
   usageUnit: string
   calculatedCost: number | null
@@ -408,7 +410,7 @@ function LinkedItemRow({
   onRemove: () => void
   onUpdate: (data: { usageQuantity?: number; usageUnit?: string }) => void
 }) {
-  const name = link.prepItem?.name ?? link.inventoryItem?.name ?? 'Unknown'
+  const name = link.prepItem?.name ?? link.inventoryItem?.name ?? link.ingredient?.name ?? 'Unknown'
   const isTemp = link.id.startsWith('temp-')
 
   const [qty, setQty] = useState(String(link.usageQuantity))

@@ -62,6 +62,14 @@ export const GET = withVenue(async function GET(
             costPerUnit: true,
           },
         },
+        ingredient: {
+          select: {
+            id: true,
+            name: true,
+            standardUnit: true,
+            outputUnit: true,
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     })
@@ -72,6 +80,7 @@ export const GET = withVenue(async function GET(
         pricingOptionId: link.pricingOptionId,
         inventoryItemId: link.inventoryItemId,
         prepItemId: link.prepItemId,
+        ingredientId: link.ingredientId,
         usageQuantity: Number(link.usageQuantity),
         usageUnit: link.usageUnit,
         calculatedCost: link.calculatedCost != null ? Number(link.calculatedCost) : null,
@@ -91,6 +100,13 @@ export const GET = withVenue(async function GET(
               name: link.prepItem.name,
               unit: link.prepItem.outputUnit,
               costPerUnit: link.prepItem.costPerUnit != null ? Number(link.prepItem.costPerUnit) : null,
+            }
+          : null,
+        ingredient: link.ingredient
+          ? {
+              id: link.ingredient.id,
+              name: link.ingredient.name,
+              unit: link.ingredient.outputUnit ?? link.ingredient.standardUnit,
             }
           : null,
       })),
@@ -115,26 +131,27 @@ export const POST = withVenue(async function POST(
     let { prepItemId, inventoryItemId, usageQuantity, usageUnit } = body
     const { ingredientId } = body
 
-    // If an ingredientId is provided (from IngredientHierarchyPicker), resolve to prepItemId/inventoryItemId
+    // ingredientId can be stored directly (from IngredientHierarchyPicker)
+    // Also try to resolve to prepItemId/inventoryItemId for cost calculation
     if (ingredientId && !prepItemId && !inventoryItemId) {
-      const locationId = await getLocationId()
-      const ingredient = await db.ingredient.findFirst({
-        where: { id: ingredientId, locationId: locationId!, deletedAt: null },
-        select: { prepItemId: true, inventoryItemId: true },
-      })
-      if (ingredient?.prepItemId) {
-        prepItemId = ingredient.prepItemId
-      } else if (ingredient?.inventoryItemId) {
-        inventoryItemId = ingredient.inventoryItemId
-      } else {
-        return NextResponse.json(
-          { error: 'Ingredient has no linked inventory or prep item' },
-          { status: 400 }
-        )
+      const loc = await getLocationId()
+      // Walk up parent chain to find an ancestor with prepItem/inventoryItem FK
+      let currentId: string = ingredientId
+      for (let depth = 0; depth < 5; depth++) {
+        const ing = await db.ingredient.findFirst({
+          where: { id: currentId, locationId: loc!, deletedAt: null },
+          select: { prepItemId: true, inventoryItemId: true, parentIngredientId: true },
+        })
+        if (!ing) break
+        if (ing.prepItemId) { prepItemId = ing.prepItemId; break }
+        if (ing.inventoryItemId) { inventoryItemId = ing.inventoryItemId; break }
+        if (!ing.parentIngredientId) break
+        currentId = ing.parentIngredientId
       }
+      // Even if no prepItem/inventoryItem found, ingredientId alone is valid
     }
 
-    if (!prepItemId && !inventoryItemId) {
+    if (!prepItemId && !inventoryItemId && !ingredientId) {
       return NextResponse.json(
         { error: 'Either prepItemId, inventoryItemId, or ingredientId is required' },
         { status: 400 }
@@ -220,6 +237,7 @@ export const POST = withVenue(async function POST(
         pricingOptionId: optionId,
         inventoryItemId: inventoryItemId ?? null,
         prepItemId: prepItemId ?? null,
+        ingredientId: ingredientId ?? null,
         usageQuantity,
         usageUnit: usageUnit.trim(),
         calculatedCost,
@@ -241,6 +259,14 @@ export const POST = withVenue(async function POST(
             costPerUnit: true,
           },
         },
+        ingredient: {
+          select: {
+            id: true,
+            name: true,
+            standardUnit: true,
+            outputUnit: true,
+          },
+        },
       },
     })
 
@@ -259,6 +285,7 @@ export const POST = withVenue(async function POST(
         pricingOptionId: link.pricingOptionId,
         inventoryItemId: link.inventoryItemId,
         prepItemId: link.prepItemId,
+        ingredientId: link.ingredientId,
         usageQuantity: Number(link.usageQuantity),
         usageUnit: link.usageUnit,
         calculatedCost: link.calculatedCost != null ? Number(link.calculatedCost) : null,
@@ -278,6 +305,13 @@ export const POST = withVenue(async function POST(
               name: link.prepItem.name,
               unit: link.prepItem.outputUnit,
               costPerUnit: link.prepItem.costPerUnit != null ? Number(link.prepItem.costPerUnit) : null,
+            }
+          : null,
+        ingredient: link.ingredient
+          ? {
+              id: link.ingredient.id,
+              name: link.ingredient.name,
+              unit: link.ingredient.outputUnit ?? link.ingredient.standardUnit,
             }
           : null,
       },

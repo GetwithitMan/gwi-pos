@@ -1,5 +1,40 @@
 # Menu Domain Changelog
 
+## 2026-02-27 — Unified Size Options + Quick Pick + showOnPos (Skill 456)
+
+### Summary
+Merged size options and quick picks into two mutually-exclusive toggles on the Basics tab. Added per-option `showOnPos` boolean to control POS button visibility. Removed the Quick Pick tab and max-4 creation limits.
+
+### Schema
+- Added `showOnPos Boolean @default(false)` to `PricingOption` model
+
+### UI Changes
+- **Basics tab:** Two mutually-exclusive checkboxes — "Size Options" (priced) and "Quick Pick" (label-only)
+- **Per-option eye icon:** Toggle showOnPos per option row (max 4 enforced in UI)
+- **Quick Pick tab removed:** ItemSettingsModal reduced from 6 to 5 tabs
+- **PricingOptionGroupEditor:** "Add Option" button no longer limited to 4
+
+### API Changes
+- Removed max-4 validation from `pricing-options/route.ts` and `options/route.ts`
+- All GET/POST/PUT responses now include `showOnPos`
+- Session bootstrap, menu route, and single item route serialize `showOnPos`
+
+### POS Display
+- `FloorPlanMenuItem` and `BartenderView` now filter by `option.showOnPos` instead of `group.showAsQuickPick`
+- Display cap remains max 4 buttons via `.slice(0, 4)`
+
+### Android
+- `showOnPos` added to SyncDto, PricingOptionEntity, DtoMappers
+- DAO query changed from `g.showAsQuickPick = 1` to `o.showOnPos = 1`
+- DB v21 → v22 (destructive migration)
+
+### Files
+- **Deleted:** `src/components/menu/QuickPickTab.tsx`
+- **Modified (POS):** 16 files
+- **Modified (Android):** 6 files
+
+---
+
 ## 2026-02-20 — Sprint Sessions 8-14: Per-Modifier Multipliers, Multi-Select Pre-Modifiers
 
 ### T-013 — Per-Modifier Multiplier

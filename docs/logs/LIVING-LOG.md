@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-02-27 — Unified Size Options + Quick Pick + showOnPos (Skill 456)
+
+**Session:** Merged size options and quick picks into a single section on the Basics tab with two mutually-exclusive toggles. Added per-option `showOnPos` eye icon for POS button visibility (max 4 display cap, unlimited creation). Removed the Quick Pick tab entirely. Removed max-4 server-side creation limits. Updated POS display to filter by `option.showOnPos` instead of `group.showAsQuickPick`. Full Android sync wired (DB v22).
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `5e2b1d8` — Unified size options + quick pick on Basics tab, showOnPos per option, remove Quick Pick tab, remove max-4 limits
+
+**GWI Android Register** (`gwi-android-register`):
+- `c7672fe` — Wire showOnPos to Android: SyncDto, PricingOptionEntity, DtoMappers, DAO query (DB v22)
+
+### Deployments
+- POS: pushed to main, Vercel auto-deploy
+- Android: pushed to main
+
+### Features Delivered
+
+| Feature | Description |
+|---------|-------------|
+| **Mutually-Exclusive Toggles** | Basics tab: "Size Options" (priced variants) and "Quick Pick" (label-only) — only one active at a time |
+| **showOnPos Eye Toggle** | Per-option eye icon controls which options appear as POS quick pick buttons |
+| **Max 4 Display Cap** | UI enforces max 4 showOnPos options per group (creation unlimited) |
+| **Quick Pick Tab Removed** | ItemSettingsModal reduced from 6 to 5 tabs — sizing controls moved to Basics |
+| **POS Display Updated** | FloorPlanMenuItem + BartenderView filter by `option.showOnPos` (not group-level) |
+| **Android Sync** | showOnPos field wired through SyncDto → Entity → Mapper → DAO query (DB v22) |
+
+### Files Changed
+
+| Area | New | Modified | Deleted | Total |
+|------|-----|----------|---------|-------|
+| POS | 0 | 16 | 1 | 17 |
+| Android | 0 | 6 | 0 | 6 |
+| **Total** | **0** | **22** | **1** | **23** |
+
+### Known Issues / Blockers
+- None
+
+---
+
 ## 2026-02-27 — Pricing Options & Quick Picks for Food Menu (Skills 454–455)
 
 **Session:** Built complete size variant pricing for food items. Items can now have up to 4 size options (S/M/L, Bowl/Cup) that replace the base price. Each size links to prep items for proper inventory deduction. Added `costAtSale` field for historically accurate food cost reports. PMIX and Sales reports now group by size variant. Quick pick labels (Mild/Medium/Hot) live in their own tab. Full Android sync support (DB v21).

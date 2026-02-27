@@ -499,11 +499,14 @@ export function IngredientHierarchyPicker({
                             {base.needsVerification && (
                               <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
                             )}
-                            {hasChildren ? (
+                            {hasChildren && (
                               <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
-                            ) : (
-                              <span className="text-[9px] text-gray-400 italic shrink-0">+ add prep</span>
                             )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); if (!isBaseExpanded) toggleParent(base.id); setCreatingPrepUnderParent(base.id) }}
+                              className="text-[11px] text-green-600 hover:text-green-700 font-bold shrink-0 px-1"
+                              title="Add prep item"
+                            >+</button>
                           </div>
                           {isBaseExpanded && (
                             <div className="ml-5 border-l-2 border-green-300">
