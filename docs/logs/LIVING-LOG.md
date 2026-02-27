@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-02-26 — Bartender Testing Bug Fixes + Mobile Tabs + Rebrand (Skills 450–453)
+
+**Session:** Fixed 5 POS bugs from bartender testing (3 critical, 2 minor). Refactored mobile tabs page with open/closed views and pagination. Enriched sync delta for Android. Rebranded `pulse-pos` → `thepasspos` across all docs and installer. Added PWA icons and dev memory bump.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `a4ac377` — Fix 5 POS bugs from bartender testing
+- `ab89ccb` — Rebrand pulse-pos → thepasspos across docs and installer
+- `af58ee4` — Refactor mobile tabs page: open/closed views, filters, pagination
+- `723f316` — Enrich sync delta response: payments, discounts, Decimal→Number
+- `79dd23b` — Update schema.sql, increase dev memory limit, add PWA icons
+
+### Deployments
+- POS: pushed 5 commits to main, Vercel auto-deploy (production build `dpl_Gv613BZL88TxYnoyJ3DMhNM7nQLq`)
+
+### Fixes (Skill 450 — Bartender Testing Bug Fixes)
+
+| # | Severity | Bug | Root Cause | Fix |
+|---|----------|-----|------------|-----|
+| 1 | CRITICAL | Cash payment shows "Payment Complete" before server confirms | `setCashComplete(true)` triggers "Complete" screen on tendered ≥ total — before any API call | Renamed screen to "Change Due", button "Done" → "Complete Payment". Real confirmation is modal close after API success. |
+| 2 | MINOR | 409 conflict after failed cash payment | On API failure, UI stays on "Payment Complete" screen — user confused, may retry or create new order | Reset `cashComplete=false` and `cashTendered=0` on both server error and network error paths |
+| 3 | CRITICAL | Split orders leave parent table occupied | `parentTableId` extracted but never freed — table reset only checked `order.tableId` (child's, which is null) | Added parent table `status: 'available'` update after `parentWasMarkedPaid` socket dispatch, with cache invalidation |
+| 4 | MODERATE | Payment buttons hidden on tablet (768×1024) | Items container `flex: 1` without `minHeight: 0` — flex child won't shrink below content, pushes footer off-screen | Added `minHeight: 0` to OrderPanel items container |
+| 5 | MINOR | Shift start modal flashes on every page reload | All shift state is pure `useState` — lost on reload, bootstrap re-check re-triggers modal | Persisted `currentShift` and `shiftChecked` in `sessionStorage`. Mount reads cached values. Clearing shift clears storage. |
+
+### Other Changes
+
+- **Skill 451 (Mobile Tabs Refactor):** Replaced MobileTabCard with MobileOrderCard. Added open/closed view toggle, age filters (all/today/previous/declined), owner filter, closed date presets, cursor-based pagination, debounced socket refresh.
+- **Skill 452 (Sync Delta Enrichment):** Delta endpoint now filters to active order statuses only, includes payments and itemDiscounts, converts all Decimal fields to Number, adds computed `paidAmount`.
+- **Skill 453 (Rebrand + Infra):** `pulse-pos`/`pulse-kiosk` → `thepasspos`/`thepasspos-kiosk` across 13 docs/config files. Regenerated schema.sql. Dev memory limit bumped to 8GB. Added PWA icons (192px, 512px).
+
+### Known Issues / Blockers
+- None
+
+---
+
 ## 2026-02-26 — NUC Sync Hardening: Fruita Grill Live Deployment (Skill 449)
 
 **Session:** Fixed 3 critical NUC sync bugs discovered during Fruita Grill live deployment. Timezone conversion silently shifted all synced timestamps by -7 hours (breaking terminal pairing). PgBouncer cached plan errors from SELECT * queries. OnlineOrderWorker 401 spam from missing env var. All fixes deployed to NUC via MC FORCE_UPDATE — full cloud-to-Android pairing flow verified working.

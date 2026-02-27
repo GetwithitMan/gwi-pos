@@ -1,5 +1,23 @@
 # Orders Domain - Change Log
 
+## 2026-02-26 — Bartender Testing Fixes (`a4ac377`)
+
+### Split Order Table Release
+- When all split children are paid, parent order's table is now freed to `available` status
+- Previously only `order.tableId` (child's) was checked — split children have no `tableId`, so parent table stayed occupied forever
+- Added fire-and-forget table update + snapshot cache invalidation after `parentWasMarkedPaid` socket dispatch
+
+### OrderPanel Tablet Fix
+- Added `minHeight: 0` to items scroll container — payment buttons now visible on 768×1024 viewports
+- Without `minHeight: 0`, flex child wouldn't shrink below content height, pushing footer off-screen
+
+### Shift Modal Flash Fix
+- `useShiftManagement` now persists `currentShift` and `shiftChecked` in `sessionStorage`
+- Page reloads read cached values on mount instead of re-triggering shift start modal
+- Clearing shift (logout) clears both storage keys
+
+---
+
 ## 2026-02-24 — Online Checkout, Combos, Bar Tab & Order Fixes (`743e618`)
 
 ### Online Checkout

@@ -151,6 +151,10 @@
 | 447 | NUC Deployment Pipeline | DONE | Mission Control / DevOps | 302, 307, 308 | End-to-end FORCE_UPDATE cycle: sync agent SSE → git pull → pre-migrate → prisma db push → build → restart. nuc-pre-migrate.js mirrors vercel-build.js for local PG. |
 | 448 | Architecture Audit Fixes | DONE | Global | - | 15 findings: auth offline resilience, schema completeness (deletedAt+syncedAt on all 147 models), N+1 batching, fire-and-forget audit, cache utilization, socket efficiency. |
 | 449 | NUC Sync Hardening | DONE | Cloud Sync, DevOps | 345, 447 | 3 bugs: timestamp timezone conversion (::timestamptz on non-tz columns shifted -7h), PgBouncer cached plan (SELECT * → explicit cols), OnlineOrderWorker 401 spam (missing env guard). Installer updated for UTC. |
+| 450 | Bartender Testing Bug Fixes | DONE | Payments / Orders / UI | - | 5 bugs: cash "Payment Complete"→"Change Due" rename, cash failure UI reset, split order parent table release, OrderPanel tablet minHeight:0, shift modal sessionStorage persistence. Commit: a4ac377. |
+| 451 | Mobile Tabs Refactor | DONE | Tabs / Mobile | - | Open/closed views, age filters (all/today/previous/declined), owner filter, closed date presets, cursor-based pagination, MobileOrderCard component. Commit: af58ee4. |
+| 452 | Sync Delta Enrichment | DONE | Cloud Sync / Android | 449 | Delta returns active orders only, includes payments+itemDiscounts, all Decimals→Number, computed paidAmount. Commit: 723f316. |
+| 453 | Rebrand + Infra | DONE | DevOps / Go-Live | 447 | pulse-pos→thepasspos across 13 files. Schema.sql regenerated. Dev memory 8GB. PWA icons. Commits: ab89ccb, 79dd23b. |
 
 ### Performance Overhaul (Feb 14, 2026)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -1379,6 +1383,15 @@ These skills emerged during development and are now part of the system:
 |-------|------|--------|--------|--------------|-------|
 | 447 | NUC-DEPLOYMENT-PIPELINE | DONE | Infrastructure / NUC Fleet | 345, 399 | End-to-end NUC fleet deployment via Mission Control. Pre-flight DB migrations (nuc-pre-migrate.js): column additions, orphaned FK cleanup, updatedAt backfills, order dedup, Int→Decimal, String→Enum casts. Sync agent fixes: service name resolution (thepasspos/pulse-pos fallback), RE_PROVISION/RELOAD_TERMINALS/RESTART_KIOSK handlers. vercel-build.js enum casts for Vercel/Neon. Prisma schema: ~50 forward @relation + 17 reverse relations. Commits: c554d09, e851c83, 96982b6, fa4c803, 5b28181. |
 | 448 | ARCHITECTURE-AUDIT-FIXES | DONE | Auth / Schema / Perf / UX / Data Integrity | 447 | 15 findings fixed: MC fetch crash guard (offline login), hardcoded URL removed, N+1 batched (send/expo), 14 void prefixes added, 3 cache bypasses eliminated, 3 hard deletes→soft deletes, 48px touch targets, socket debounced refresh, local count updates, polling guard. Schema: deletedAt+syncedAt on all 147 models, Order.source. 17 files, +208/-177. Commit: 6755272. |
+
+### Bartender Testing + Mobile + Rebrand (2026-02-26)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 450 | Bartender Testing Bug Fixes | DONE | Payments / Orders / UI | - | 5 bugs from bartender testing: cash UX rename, failure reset, split table release, tablet viewport, shift persistence. 4 files, +111/-13. Commit: a4ac377. |
+| 451 | Mobile Tabs Refactor | DONE | Tabs / Mobile | - | Open/closed views, filters, pagination, MobileOrderCard. 2 files, +568/-100. Commit: af58ee4. |
+| 452 | Sync Delta Enrichment | DONE | Cloud Sync / Android | 449 | Payments, itemDiscounts, Decimal→Number, computed paidAmount, active-only filter. 1 file, +25/-5. Commit: 723f316. |
+| 453 | Rebrand + Infra | DONE | DevOps / Go-Live | 447 | pulse-pos→thepasspos (13 files). Schema.sql regen. Dev 8GB. PWA icons. Commits: ab89ccb, 79dd23b. |
 
 ---
 

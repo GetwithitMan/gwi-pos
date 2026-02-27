@@ -1,5 +1,12 @@
 # Payments Domain Changelog
 
+## 2026-02-26 — Bartender Testing: Cash Payment UX Fixes (`a4ac377`)
+- **Cash "Payment Complete" → "Change Due"**: Screen shown when cash tendered ≥ total now says "Change Due" (not "Payment Complete"). Button changed from "Done" to "Complete Payment". The server API call happens on button click — true confirmation is the modal closing after success.
+- **Cash failure reset**: When API returns error or network fails, `cashComplete` and `cashTendered` reset to `false`/`0` so UI returns to the cash tendering screen instead of staying on stale "complete" state.
+- **Split order parent table**: When all split children are paid and parent auto-closes, the parent's `tableId` is now freed to `available`. Previously only the child's `tableId` was checked (which is null for split children).
+
+---
+
 ## 2026-02-24 — Payment Hardening & Permission Guards (`743e618`)
 - **close-tab**: Payment record created inside atomic transaction; `tipTotal ?? 0` null-coalesce fix
 - **walkout-retry**: Atomic guard via `updateMany` status filter prevents double-retry; Payment record written in same transaction

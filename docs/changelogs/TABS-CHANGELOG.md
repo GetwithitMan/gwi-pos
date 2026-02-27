@@ -1,5 +1,26 @@
 # Tabs & Bottle Service Domain Changelog
 
+## 2026-02-26 — Mobile Tabs Page Refactor (`af58ee4`)
+
+### View Modes
+- **Open/Closed toggle**: Switch between open orders and closed/paid orders
+- **Age filters** (open view): All, Today, Previous Day, Declined
+- **Owner filter**: Mine vs All (scoped to authenticated employee)
+- **Closed date presets**: Today, Yesterday, This Week
+
+### New Component
+- `MobileOrderCard` replaces `MobileTabCard` — unified card for both open and closed orders
+
+### Pagination
+- Cursor-based pagination for closed orders (50 per page, "Load More" button)
+- Background fetch for previous day count (badge on filter chip)
+
+### Socket Integration
+- Debounced socket refresh (prevents rapid API calls on multiple events)
+- `useRef` for orders state to avoid stale closures in socket handlers
+
+---
+
 ## 2026-02-23 — Start Tab & Add To Tab UX (Skill 413)
 
 ### Start Tab — Inline Status

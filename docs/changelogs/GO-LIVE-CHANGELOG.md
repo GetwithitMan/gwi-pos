@@ -1,5 +1,15 @@
 # Go-Live & Launch Readiness -- Changelog
 
+## 2026-02-26 — Rebrand pulse-pos → thepasspos (`ab89ccb`)
+- **13 files updated**: CLAUDE.md, INSTALL.txt, architecture docs (2), deployment spec, pilot checklist, skill docs (6), installer.run
+- **DB name**: `pulse_pos` → `thepasspos`
+- **Systemd services**: `pulse-pos` → `thepasspos`, `pulse-kiosk` → `thepasspos-kiosk`, `pulse-sync` → `thepasspos-sync`
+- **All docs, examples, and troubleshooting commands** updated to new names
+- **PWA icons**: Added `icon-192.png` and `icon-512.png` to `/public/`
+- **Dev memory**: `NODE_OPTIONS='--max-old-space-size=8192'` added to dev script
+
+---
+
 ## 2026-02-25 — Deployment Pipeline: Vercel Enum Casts + NUC Fleet Deployment (Skill 447)
 
 ### Vercel Build Fix

@@ -1,5 +1,10 @@
 # Floor Plan Domain - Change Log
 
+## 2026-02-26 — Split Order Parent Table Release (`a4ac377`)
+- **Split order table stuck as occupied**: When all split children were paid, parent order was marked `paid` and `parentTableId` was extracted, but the table was never freed. The existing table reset at line 1344 only checked `order.tableId` (the child's table, which is null for split orders). Added parent table `status: 'available'` update after `parentWasMarkedPaid` dispatch with `invalidateSnapshotCache()`.
+
+---
+
 ## 2026-02-23 — Bugfix Sprint A+B: Floor Plan Fixes (B6-B8)
 - **B6**: Snapshot + table GET now include 'sent' and 'in_progress' order statuses — tables with active orders correctly show as occupied on the floor plan (`snapshot.ts`, `tables/[id]/route.ts`)
 - **B7**: Seat drag positions persisted to DB via API call — dragging a seat on the floor plan now saves the new position instead of only updating local state (`SeatNode.tsx`)

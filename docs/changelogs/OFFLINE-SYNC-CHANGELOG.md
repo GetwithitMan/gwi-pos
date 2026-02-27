@@ -1,5 +1,15 @@
 # Offline & Sync Domain Changelog
 
+## 2026-02-26 — Sync Delta Enrichment for Android (`723f316`)
+- **Active status filter**: Delta endpoint now only returns orders with `status IN (draft, open, sent, in_progress, split)` and `deletedAt: null` — closed/paid orders excluded
+- **Payments included**: Order response now includes `payments` array with `amount`, `tipAmount`, `totalAmount`, `paymentMethod` (all Decimal→Number)
+- **Item discounts included**: Order items now include `itemDiscounts` array with `amount`, `percent` (Decimal→Number)
+- **Computed paidAmount**: Each order has `paidAmount` = sum of `payment.totalAmount` — Android can display remaining balance without local calculation
+- **Modifier prices**: `modifiers[].price` now included as Number (was missing)
+- **Null-safe conversions**: All Decimal fields use `Number(field ?? 0)` instead of conditional null checks
+
+---
+
 ## 2026-02-23 — Bugfix Sprint C+D: PWA & Disconnect Banner
 - **#635**: PWA manifest added — standalone display mode, black theme, app-like experience (`public/manifest.json`)
 - **#636**: Service worker — cache-first for static assets, network-first for API calls (`public/sw.js`, `ServiceWorkerRegistration.tsx`)
