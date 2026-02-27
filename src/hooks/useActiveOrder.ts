@@ -722,6 +722,13 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       // Skip events triggered by our own mutations (within 2000ms for slow networks)
       if (Date.now() - lastMutationRef.current < 2000) return
 
+      // If the order was paid or voided, clear it from the panel — don't reload
+      if (payload.trigger === 'paid' || payload.trigger === 'voided') {
+        useOrderStore.getState().clearOrder()
+        options.onOrderCleared?.()
+        return
+      }
+
       loadOrder(orderId)
     }
 
