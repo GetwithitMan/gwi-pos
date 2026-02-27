@@ -12,14 +12,14 @@
 ### Commits
 
 **GWI POS** (`gwi-pos`):
-- `TBD` — Pricing Options & Quick Picks: schema, CRUD API, menu builder UI, POS wiring, inventory linking, reports, costAtSale, Android sync
+- `12ce879` — Pricing Options & Quick Picks: schema, CRUD API, menu builder UI, POS wiring, inventory linking, reports, costAtSale, Android sync
 
 **GWI Android Register** (`gwi-android-register`):
-- `TBD` — Pricing options: Room entities, DAO, sync, Compose sheet, costAtSale (DB v21)
+- `5698f09` — Pricing options: Room entities, DAO, sync, Compose sheet, costAtSale (DB v21)
 
 ### Deployments
-- POS: pending push to main
-- Android: pending push to main
+- POS: pushed to main, Vercel auto-deploy
+- Android: pushed to main
 
 ### Features Delivered
 
