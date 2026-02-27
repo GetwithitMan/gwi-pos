@@ -97,7 +97,7 @@
 | 286 | Tip Bank Team Pools | DONE | Tips | 250, 252, 265 | Admin-defined TipGroupTemplate, clock-in group picker, PRIMARY_SERVER_OWNS_ALL mode, allowStandaloneServers, allowEmployeeCreatedGroups, template CRUD API, eligible API, time-clock integration |
 | 287 | Tip Group Manager Admin UI | DONE | Tips | 252, 256, 283 | ActiveGroupManager component on /settings/tips (Section 9): expandable group cards, member management, add/remove/approve, transfer ownership, close group, stale member detection (>12h), manual adjustment modal |
 | 288 | Group History & Segment Timeline | DONE | Tips | 252, 258 | GroupHistoryTimeline component on /settings/tips (Section 10): group selector, vertical timeline with colored dots (join/leave/segment/close), split % badges, earnings summary table, buildTimeline() merge function |
-| 289 | Edit Item Modal (ItemSettingsModal) | DONE | Menu | 217 | Comprehensive Edit Item modal (5 tabs: Basics, Display, Kitchen, Availability, Tax), image upload, collapsible ingredient cost breakdown, card price read-only, auto-open for new items, live sync |
+| 289 | Edit Item Modal (ItemSettingsModal) | DONE | Menu | 217 | Comprehensive Edit Item modal (6 tabs: Basics, Quick Pick, Display, Kitchen, Availability, Tax), image upload, collapsible ingredient cost breakdown, card price read-only, auto-open for new items, live sync. Basics tab now includes size options toggle (Skill 454). Quick Pick tab (Skill 455) replaces old Pricing Options tab. |
 | 290 | Happy Hour Settings Page | DONE | Settings, Menu | - | Dedicated /settings/happy-hour page extracted from main settings, schedules with day/time selection, discount config, live preview, dead code cleanup |
 | 291 | Ingredient Picker Flow Fix | DONE | Menu | 211, 213 | Fix new items going to Uncategorized: normalize POST→GET data shape in handleIngredientCreated, defer loadMenu() race, needsVerification propagation verified |
 
@@ -155,6 +155,8 @@
 | 451 | Mobile Tabs Refactor | DONE | Tabs / Mobile | - | Open/closed views, age filters (all/today/previous/declined), owner filter, closed date presets, cursor-based pagination, MobileOrderCard component. Commit: af58ee4. |
 | 452 | Sync Delta Enrichment | DONE | Cloud Sync / Android | 449 | Delta returns active orders only, includes payments+itemDiscounts, all Decimals→Number, computed paidAmount. Commit: 723f316. |
 | 453 | Rebrand + Infra | DONE | DevOps / Go-Live | 447 | pulse-pos→thepasspos across 13 files. Schema.sql regenerated. Dev memory 8GB. PWA icons. Commits: ab89ccb, 79dd23b. |
+| 454 | Pricing Options — Size Variants | DONE | Menu / Inventory / Orders | 125, 211, 215, 289 | Size variants for food items (S/M/L, Bowl/Cup). Basics tab toggle, prep item linking, costAtSale snapshot, PMIX/Sales report grouping by size, max 4 enforcement, Android sync (DB v21). 9 new files, 23 modified (POS) + 4 new, 12 modified (Android). |
+| 455 | Quick Pick Labels | DONE | Menu / POS | 454 | Label-only quick picks (Mild/Medium/Hot). Renamed tab from "Pricing Options" to "Quick Pick". showAsQuickPick=true discriminator. Optional prep item linking for inventory. Kitchen chit prints `** LABEL **`. |
 
 ### Performance Overhaul (Feb 14, 2026)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -1392,6 +1394,13 @@ These skills emerged during development and are now part of the system:
 | 451 | Mobile Tabs Refactor | DONE | Tabs / Mobile | - | Open/closed views, filters, pagination, MobileOrderCard. 2 files, +568/-100. Commit: af58ee4. |
 | 452 | Sync Delta Enrichment | DONE | Cloud Sync / Android | 449 | Payments, itemDiscounts, Decimal→Number, computed paidAmount, active-only filter. 1 file, +25/-5. Commit: 723f316. |
 | 453 | Rebrand + Infra | DONE | DevOps / Go-Live | 447 | pulse-pos→thepasspos (13 files). Schema.sql regen. Dev 8GB. PWA icons. Commits: ab89ccb, 79dd23b. |
+
+### Pricing Options & Quick Picks (2026-02-27)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 454 | Pricing Options — Size Variants | DONE | Menu / Inventory / Orders | 125, 211, 215, 289 | Size variants for food (S/M/L, Bowl/Cup). 3 Prisma models + costAtSale field. Basics tab toggle, prep item linking via IngredientHierarchyPicker, costAtSale fire-and-forget snapshot, PMIX/Sales grouped by size, max 4 server+UI enforcement. Inventory link CRUD API (4 endpoints). Android: Room entities, DAO, sync, Compose sheet (DB v21). 9 new + 23 modified files (POS), 4 new + 12 modified (Android). |
+| 455 | Quick Pick Labels | DONE | Menu / POS | 454 | Label-only quick picks (Mild/Medium/Hot/No Spice). Renamed "Pricing Options" tab → "Quick Pick". showAsQuickPick=true discriminator filters groups. Optional prep item linking for inventory. Kitchen chit prints `** LABEL **`. QuickPickTab.tsx replaces PricingOptionsTab.tsx. |
 
 ---
 

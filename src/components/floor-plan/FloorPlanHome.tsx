@@ -31,7 +31,8 @@ import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { useSocket } from '@/hooks/useSocket'
 // useMenuSearch lifted to orders/page.tsx (UnifiedPOSHeader)
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
-import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
+import type { EngineMenuItem, EngineModifier, EngineIngredientMod, EnginePricingOption } from '@/hooks/useOrderingEngine'
+import type { PricingOption } from '@/types'
 // MenuSearchInput, MenuSearchResults lifted to UnifiedPOSHeader
 import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
 import { isTempId, fetchAndMergeOrder } from '@/lib/order-utils'
@@ -73,6 +74,9 @@ interface MenuItem {
   // 86 status (ingredient out of stock)
   is86d?: boolean
   reasons86d?: string[]
+  // Pricing option groups (size/variant pricing)
+  pricingOptionGroups?: import('@/types').PricingOptionGroup[]
+  hasPricingOptions?: boolean
 }
 
 // InlineOrderItem: derived type from the inlineOrderItems memo below.
@@ -162,6 +166,8 @@ interface FloorPlanHomeProps {
   onOpenTimedRental?: (item: MenuItem, onComplete: (price: number, blockMinutes: number) => void) => void
   // Pizza builder modal callback
   onOpenPizzaBuilder?: (item: MenuItem, onComplete: (config: PizzaOrderConfig) => void) => void
+  // Pricing option picker callback (for non-quick-pick items)
+  onOpenPricingOptionPicker?: (item: MenuItem, onComplete: (option: any) => void) => void
   // Order to load (from Open Orders panel) - set this to load an existing order
   orderToLoad?: { id: string; orderNumber: number; tableId?: string; tableName?: string; tabName?: string; orderType: string } | null
   // Callback when order is loaded (to clear the orderToLoad prop)
@@ -209,6 +215,7 @@ export function FloorPlanHome({
   defaultGuestCount = 4,
   onOpenTimedRental,
   onOpenPizzaBuilder,
+  onOpenPricingOptionPicker,
   orderToLoad,
   onOrderLoaded,
   paidOrderId,
@@ -435,6 +442,7 @@ export function FloorPlanHome({
     onOpenModifiers: onOpenModifiers as any, // MenuItem is compatible with EngineMenuItem
     onOpenPizzaBuilder: onOpenPizzaBuilder as any,
     onOpenTimedRental: onOpenTimedRental as any,
+    onOpenPricingOptionPicker: onOpenPricingOptionPicker as any,
   })
 
   // Keyboard shortcut: number keys 1-5 set quantity multiplier when menu is showing
@@ -1370,9 +1378,40 @@ export function FloorPlanHome({
     }
   }, [onRegisterQuickOrderType, handleQuickOrderType])
 
-  // Handle menu item tap - add to order
   // Handle menu item tap — delegates to the ordering engine
   const handleMenuItemTap = engine.handleMenuItemTap
+
+  // Handle quick pick pricing option tap on FloorPlanMenuItem
+  const handleQuickPickTap = useCallback((item: MenuItem, option: PricingOption) => {
+    if (tableRequiredButMissingRef.current) {
+      toast.warning('Tap a table on the floor plan to start an order')
+      return
+    }
+    const isVariant = option.price !== null
+    const itemName = isVariant ? `${item.name} (${option.label})` : item.name
+    const itemPrice = isVariant ? option.price! : item.price
+    const pricingOptionLabel = isVariant ? undefined : option.label
+
+    if (item.hasModifiers) {
+      // Has modifiers — set pricing option then chain to modifier modal
+      engine.handleMenuItemTap({
+        ...item,
+        name: itemName,
+        price: itemPrice,
+        hasPricingOptions: false, // Prevent re-triggering pricing option picker
+      } as EngineMenuItem)
+    } else {
+      // No modifiers — add directly (instant one-tap)
+      engine.addItemDirectly({
+        menuItemId: item.id,
+        name: itemName,
+        price: itemPrice,
+        categoryType: item.categoryType,
+        pricingOptionId: option.id,
+        pricingOptionLabel,
+      })
+    }
+  }, [engine])
 
   // handleSearchSelect lifted to orders/page.tsx (UnifiedPOSHeader)
 
@@ -2253,6 +2292,7 @@ export function FloorPlanHome({
                           onTap={handleMenuItemTap}
                           onContextMenu={handleMenuItemContextMenu}
                           onUnavailable={(reason) => toast.warning(reason)}
+                          onQuickPickTap={handleQuickPickTap}
                         />
                       ))}
                     </div>

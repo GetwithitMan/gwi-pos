@@ -97,6 +97,17 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           linkedBottleProduct: {
             select: { id: true, name: true, tier: true, pourCost: true, pourSizeOz: true, unitCost: true, bottleSizeMl: true, spiritCategory: { select: { name: true } } }
           },
+          pricingOptionGroups: {
+            where: { deletedAt: null },
+            orderBy: { sortOrder: 'asc' },
+            include: {
+              options: {
+                where: { deletedAt: null },
+                orderBy: { sortOrder: 'asc' },
+                select: { id: true, label: true, price: true, priceCC: true, sortOrder: true, isDefault: true, color: true },
+              },
+            },
+          },
           // Include ingredients to check 86 status
           ingredients: {
             where: { deletedAt: null },
@@ -259,6 +270,24 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         soldByWeight: item.soldByWeight,
         weightUnit: item.weightUnit,
         pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
+        // Pricing option groups (size/variant pricing)
+        pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
+          id: group.id,
+          name: group.name,
+          sortOrder: group.sortOrder,
+          isRequired: group.isRequired,
+          showAsQuickPick: group.showAsQuickPick,
+          options: group.options.map((opt: any) => ({
+            id: opt.id,
+            label: opt.label,
+            price: opt.price !== null ? Number(opt.price) : null,
+            priceCC: opt.priceCC !== null ? Number(opt.priceCC) : null,
+            sortOrder: opt.sortOrder,
+            isDefault: opt.isDefault,
+            color: opt.color,
+          })),
+        })) || [],
+        hasPricingOptions: ((item as any).pricingOptionGroups?.length || 0) > 0,
         // 86 status (ingredient out of stock)
         is86d: item.is86d,
         reasons86d: item.reasons86d,

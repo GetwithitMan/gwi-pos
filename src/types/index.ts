@@ -14,6 +14,31 @@ export interface Category {
 }
 
 /**
+ * Pricing option within a pricing option group (e.g., "Small", "Large", "Hot")
+ */
+export interface PricingOption {
+  id: string
+  label: string
+  price: number | null   // null = label-only (no price override)
+  priceCC: number | null  // Cash/card price variant
+  sortOrder: number
+  isDefault: boolean
+  color: string | null
+}
+
+/**
+ * Pricing option group attached to a menu item (e.g., "Choose Size")
+ */
+export interface PricingOptionGroup {
+  id: string
+  name: string
+  sortOrder: number
+  isRequired: boolean
+  showAsQuickPick: boolean
+  options: PricingOption[]
+}
+
+/**
  * Menu item with pricing and availability
  */
 export interface MenuItem {
@@ -46,6 +71,9 @@ export interface MenuItem {
   soldByWeight?: boolean
   weightUnit?: string | null
   pricePerWeightUnit?: number | null
+  // Pricing option groups (size/variant pricing)
+  pricingOptionGroups?: PricingOptionGroup[]
+  hasPricingOptions?: boolean
 }
 
 /**

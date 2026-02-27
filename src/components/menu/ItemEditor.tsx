@@ -1755,6 +1755,11 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           itemId={item.id}
           onClose={() => setShowSettingsModal(false)}
           onSaved={onItemUpdated}
+          ingredientsLibrary={ingredientsLibrary}
+          ingredientCategories={ingredientCategories}
+          locationId={locationId}
+          onIngredientCreated={onIngredientCreated}
+          onCategoryCreated={onCategoryCreated}
         />
       )}
     </div>

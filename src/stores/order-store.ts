@@ -114,6 +114,9 @@ interface OrderItem {
   unitPrice?: number | null
   grossWeight?: number | null
   tareWeight?: number | null
+  // Pricing option (size/variant selection)
+  pricingOptionId?: string
+  pricingOptionLabel?: string
 }
 
 export interface CourseDelay {
@@ -221,6 +224,9 @@ interface LoadedOrderData {
     unitPrice?: number | null
     grossWeight?: number | null
     tareWeight?: number | null
+    // Pricing option
+    pricingOptionId?: string | null
+    pricingOptionLabel?: string | null
   }[]
   subtotal: number
   discountTotal?: number
@@ -472,6 +478,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
       grossWeight: item.grossWeight ?? null,
       tareWeight: item.tareWeight ?? null,
+      // Pricing option
+      pricingOptionId: item.pricingOptionId || undefined,
+      pricingOptionLabel: item.pricingOptionLabel || undefined,
     }))
 
     // Recover any pending items from localStorage before setting state

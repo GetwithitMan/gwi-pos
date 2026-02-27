@@ -10,7 +10,8 @@ import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { isTempId } from '@/lib/order-utils'
-import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
+import type { EngineMenuItem, EngineModifier, EngineIngredientMod, EnginePricingOption } from '@/hooks/useOrderingEngine'
+import { PricingOptionPicker } from '@/components/orders/PricingOptionPicker'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useOrderEditing } from '@/hooks/useOrderEditing'
 import { useTabCreation } from '@/hooks/useTabCreation'
@@ -82,6 +83,8 @@ interface MenuItem {
   pourSizes?: Record<string, number | { label: string; multiplier: number }> | null // { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
   defaultPourSize?: string | null
   spiritTiers?: SpiritTiers | null // Spirit upgrade options by tier
+  pricingOptionGroups?: import('@/types').PricingOptionGroup[]
+  hasPricingOptions?: boolean
 }
 
 // Spirit tier display config - distinct colors for each tier
@@ -232,6 +235,10 @@ export function BartenderView({
     employeeId,
   })
 
+  // Pricing option picker state (for non-quick-pick items)
+  const [pricingPickerItem, setPricingPickerItem] = useState<MenuItem | null>(null)
+  const pricingPickerCallbackRef = useRef<((option: EnginePricingOption) => void) | null>(null)
+
   // === Shared ordering engine (item add, modifier modal coordination) ===
   const engine = useOrderingEngine({
     locationId,
@@ -243,6 +250,10 @@ export function BartenderView({
       existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[],
       existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
     ) => void) | undefined,
+    onOpenPricingOptionPicker: (item, onComplete) => {
+      pricingPickerCallbackRef.current = onComplete
+      setPricingPickerItem(item as unknown as MenuItem)
+    },
   })
 
   // orderItems — read-only projection from Zustand store via useActiveOrder hook
@@ -924,6 +935,35 @@ export function BartenderView({
     setSelectedSpiritTier(null)
   }, [])
 
+  // Handle pricing option quick pick tap
+  const handlePricingOptionClick = useCallback((item: MenuItem, option: { id: string; label: string; price: number | null; color: string | null }) => {
+    const isVariant = option.price !== null
+    const itemName = isVariant ? `${item.name} (${option.label})` : item.name
+    const itemPrice = isVariant ? option.price! : item.price
+    const pricingOptionLabel = isVariant ? undefined : option.label
+
+    if (item.hasModifiers || item.hasOtherModifiers) {
+      // Has modifiers — send through engine with pricing option pre-applied
+      engine.handleMenuItemTap({
+        id: item.id,
+        name: itemName,
+        price: itemPrice,
+        categoryId: item.categoryId,
+        hasModifiers: item.hasModifiers,
+        hasPricingOptions: false, // Prevent re-triggering pricing option picker
+      } as EngineMenuItem)
+    } else {
+      // No modifiers — add directly
+      engine.addItemDirectly({
+        menuItemId: item.id,
+        name: itemName,
+        price: itemPrice,
+        pricingOptionId: option.id,
+        pricingOptionLabel,
+      })
+    }
+  }, [engine])
+
   // Ref guard: prevents double-tap from firing two concurrent send chains
   const sendInProgressRef = useRef(false)
 
@@ -956,6 +996,8 @@ export function BartenderView({
         name: m.name,
         price: m.price,
       })) || [],
+      pricingOptionId: item.pricingOptionId || null,
+      pricingOptionLabel: item.pricingOptionLabel || null,
     }))
 
     // Close UI instantly — don't wait for API calls
@@ -1955,6 +1997,48 @@ export function BartenderView({
                             </div>
                           )}
 
+                          {/* Pricing option quick pick buttons */}
+                          {item.pricingOptionGroups && item.pricingOptionGroups.length > 0 && !isEditingItems && (() => {
+                            const group = item.pricingOptionGroups!.find(g => g.showAsQuickPick && g.options.length > 0)
+                            if (!group) return null
+                            return (
+                              <div className="mt-auto pt-1 flex gap-0.5">
+                                {group.options.slice(0, 4).map(option => {
+                                  const isVariant = option.price !== null
+                                  const displayPrice = isVariant ? option.price! : item.price
+                                  const prices = getDualPrices(displayPrice, dualPricing)
+                                  const shown = dualPricing.enabled ? prices.cardPrice : prices.cashPrice
+                                  const bgColor = option.color || '#6366f1'
+                                  const isHex = bgColor.startsWith('#') || bgColor.startsWith('rgb')
+                                  return (
+                                    <div
+                                      key={option.id}
+                                      role="button"
+                                      tabIndex={0}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handlePricingOptionClick(item, option)
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                          e.stopPropagation()
+                                          handlePricingOptionClick(item, option)
+                                        }
+                                      }}
+                                      className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer min-h-[36px] text-white hover:brightness-110 ${isHex ? '' : bgColor}`}
+                                      style={isHex ? { backgroundColor: bgColor } : undefined}
+                                    >
+                                      <span className="leading-tight">{option.label}</span>
+                                      {isVariant && (
+                                        <span className="text-[10px] opacity-75">{formatCurrency(shown)}</span>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })()}
+
                           {isFavorite && !isEditingItems && (
                             <span className="absolute top-1 right-1 text-amber-400 text-xs">⭐</span>
                           )}
@@ -2031,6 +2115,20 @@ export function BartenderView({
         dualPricing={dualPricing}
         onSelect={handleSpiritSelect}
         onClose={handleCloseSpiritPopup}
+      />
+
+      {/* ====== PRICING OPTION PICKER ====== */}
+      <PricingOptionPicker
+        item={pricingPickerItem}
+        onSelect={(option) => {
+          pricingPickerCallbackRef.current?.(option)
+          setPricingPickerItem(null)
+          pricingPickerCallbackRef.current = null
+        }}
+        onClose={() => {
+          setPricingPickerItem(null)
+          pricingPickerCallbackRef.current = null
+        }}
       />
 
     </div>

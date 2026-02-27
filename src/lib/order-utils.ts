@@ -66,6 +66,9 @@ interface StoreOrderItem {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pizzaConfig?: any
   sourceTableId?: string
+  // Pricing option (size/variant selection)
+  pricingOptionId?: string
+  pricingOptionLabel?: string
 }
 
 /**
@@ -106,6 +109,8 @@ export function buildOrderItemPayload(item: StoreOrderItem, options?: { includeC
     pourSize: item.pourSize ?? null,
     pourMultiplier: item.pourMultiplier ?? null,
     pizzaConfig: item.pizzaConfig,
+    pricingOptionId: item.pricingOptionId ?? null,
+    pricingOptionLabel: item.pricingOptionLabel ?? null,
   }
 }
 

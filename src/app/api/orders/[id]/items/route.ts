@@ -8,11 +8,100 @@ import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-response
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded, dispatchTabItemsUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { calculateIngredientCosts, calculateVariantCost } from '@/lib/inventory/recipe-costing'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
   // CUIDs are typically 25 chars starting with 'c', combo IDs start with 'combo-'
   return modId && !modId.startsWith('combo-') && modId.length >= 20
+}
+
+/**
+ * Calculate cost-at-sale for a single order item (fire-and-forget).
+ * Sums base recipe ingredient costs + liquor recipe costs + pricing option link costs.
+ * Returns null if no recipe/cost data exists.
+ */
+async function calculateCostAtSale(
+  menuItemId: string,
+  pricingOptionId: string | null
+): Promise<number | null> {
+  const menuItem = await db.menuItem.findUnique({
+    where: { id: menuItemId },
+    include: {
+      recipe: {
+        include: {
+          ingredients: {
+            include: {
+              inventoryItem: {
+                select: { storageUnit: true, costPerUnit: true, yieldCostPerUnit: true },
+              },
+              prepItem: {
+                select: { costPerUnit: true },
+              },
+            },
+          },
+        },
+      },
+      recipeIngredients: {
+        where: { deletedAt: null },
+        select: {
+          pourCount: true,
+          bottleProduct: {
+            select: { pourCost: true },
+          },
+        },
+      },
+    },
+  })
+
+  if (!menuItem) return null
+
+  let baseCost = 0
+
+  // Food recipe cost
+  if (menuItem.recipe?.ingredients?.length) {
+    const { totalCost } = calculateIngredientCosts(menuItem.recipe.ingredients)
+    baseCost += totalCost
+  }
+
+  // Liquor recipe cost (from Liquor Builder)
+  if (menuItem.recipeIngredients?.length) {
+    for (const ri of menuItem.recipeIngredients) {
+      const pourCost = ri.bottleProduct?.pourCost ? Number(ri.bottleProduct.pourCost) : 0
+      const pourCount = Number(ri.pourCount) || 1
+      baseCost += pourCost * pourCount
+    }
+  }
+
+  // If no base cost and no pricing option, no cost data to snapshot
+  if (baseCost === 0 && !pricingOptionId) return null
+
+  // Pricing option inventory link costs (additive on top of base)
+  if (pricingOptionId) {
+    const option = await db.pricingOption.findUnique({
+      where: { id: pricingOptionId },
+      include: {
+        inventoryLinks: {
+          where: { deletedAt: null },
+          include: {
+            inventoryItem: {
+              select: { storageUnit: true, costPerUnit: true, yieldCostPerUnit: true },
+            },
+            prepItem: {
+              select: { costPerUnit: true },
+            },
+          },
+        },
+      },
+    })
+
+    if (option?.inventoryLinks?.length) {
+      const { totalCost } = calculateVariantCost(baseCost, option.inventoryLinks)
+      return totalCost
+    }
+  }
+
+  return baseCost > 0 ? baseCost : null
 }
 
 type NewItem = {
@@ -79,6 +168,9 @@ type NewItem = {
   unitPrice?: number    // Price per weight unit
   grossWeight?: number  // Weight before tare subtracted
   tareWeight?: number   // Container weight
+  // Pricing option (size/variant selection)
+  pricingOptionId?: string
+  pricingOptionLabel?: string
 }
 
 /**
@@ -358,6 +450,9 @@ export const POST = withVenue(async function POST(
             unitPrice: item.unitPrice ?? null,
             grossWeight: item.grossWeight ?? null,
             tareWeight: item.tareWeight ?? null,
+            // Pricing option (size/variant selection)
+            pricingOptionId: item.pricingOptionId ?? null,
+            pricingOptionLabel: item.pricingOptionLabel ?? null,
             // Modifiers
             modifiers: {
               create: item.modifiers.map(mod => ({
@@ -530,6 +625,23 @@ export const POST = withVenue(async function POST(
         console.warn('[Auto-Increment] Background check failed:', err)
       })
     }
+
+    // Fire-and-forget: calculate and store costAtSale for each new item
+    void (async () => {
+      try {
+        for (const item of result.createdItems) {
+          const cost = await calculateCostAtSale(item.menuItemId, item.pricingOptionId)
+          if (cost !== null) {
+            await db.orderItem.update({
+              where: { id: item.id },
+              data: { costAtSale: cost },
+            })
+          }
+        }
+      } catch (e) {
+        console.error('[costAtSale] Failed to calculate:', e)
+      }
+    })()
 
     // Format response with complete modifier data
     // Build correlation map for newly created items

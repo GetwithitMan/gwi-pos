@@ -3111,10 +3111,7 @@ async function main() {
   for (const link of burgerIngredientLinks) {
     await prisma.menuItemIngredient.upsert({
       where: {
-        menuItemId_ingredientId: {
-          menuItemId: 'item-5',
-          ingredientId: link.ingredientId,
-        },
+        id: link.id,
       },
       update: {},
       create: {

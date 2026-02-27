@@ -33,13 +33,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid since timestamp' }, { status: 400 })
   }
 
-  const [menuItems, categories, employees, tables, orderTypes, orders] = await Promise.all([
+  const [menuItems, categories, employees, tables, orderTypes, orders, pricingOptionGroups] = await Promise.all([
     db.menuItem.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { ownedModifierGroups: { include: { modifiers: true } } } }),
     db.category.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     db.employee.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { role: { select: { id: true, name: true, permissions: true } } } }),
     db.table.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     db.orderType.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     db.order.findMany({ where: { locationId, updatedAt: { gt: since }, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] }, deletedAt: null }, include: { items: { include: { modifiers: true, itemDiscounts: true } }, payments: true } }),
+    db.pricingOptionGroup.findMany({ where: { locationId, updatedAt: { gt: since }, deletedAt: null }, include: { options: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } } } }),
   ])
 
   // Convert Decimal fields to numbers for Android clients
@@ -62,6 +63,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...item,
       price: Number(item.price ?? 0),
       itemTotal: Number(item.itemTotal ?? 0),
+      costAtSale: item.costAtSale != null ? Number(item.costAtSale) : null,
       weight: item.weight != null ? Number(item.weight) : null,
       unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
       grossWeight: item.grossWeight != null ? Number(item.grossWeight) : null,
@@ -85,7 +87,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })),
   }))
 
+  const mappedPricingOptionGroups = pricingOptionGroups.map(group => ({
+    ...group,
+    options: group.options.map(opt => ({
+      ...opt,
+      price: opt.price != null ? Number(opt.price) : null,
+      priceCC: opt.priceCC != null ? Number(opt.priceCC) : null,
+    })),
+  }))
+
   return NextResponse.json({
-    data: { menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, syncVersion: Date.now() },
+    data: { menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, syncVersion: Date.now() },
   })
 })

@@ -37,6 +37,7 @@ import { usePizzaBuilder } from '@/hooks/usePizzaBuilder'
 import { useOrderPageModals } from './useOrderPageModals'
 import { OrderPageModals } from './OrderPageModals'
 import { WeightCaptureModal } from '@/components/scale/WeightCaptureModal'
+import { PricingOptionPicker } from '@/components/orders/PricingOptionPicker'
 import { SharedOrderPanel } from './components/SharedOrderPanel'
 import { useOrderBootstrap } from './hooks/useOrderBootstrap'
 import { useOrderHandlers } from './hooks/useOrderHandlers'
@@ -155,6 +156,10 @@ export default function OrdersPage() {
   const { showCardTabFlow, setShowCardTabFlow, cardTabOrderId, setCardTabOrderId,
     tabCardInfo, setTabCardInfo } = useCardTabFlow(currentOrder)
 
+  // ── Pricing option picker state ──
+  const [pricingPickerItem, setPricingPickerItem] = useState<any>(null)
+  const pricingPickerCallbackRef = useRef<((option: any) => void) | null>(null)
+
   // ── Per-item discount state ──
   const [itemDiscountTargetId, setItemDiscountTargetId] = useState<string | null>(null)
 
@@ -259,6 +264,10 @@ export default function OrdersPage() {
       inlineTimedRentalCallbackRef.current = onComplete
       setSelectedTimedItem(item as MenuItem)
       setShowTimedRentalModal(true)
+    },
+    onOpenPricingOptionPicker: (item, onComplete) => {
+      pricingPickerCallbackRef.current = onComplete
+      setPricingPickerItem(item)
     },
   })
 
@@ -751,6 +760,10 @@ export default function OrdersPage() {
               setSelectedPizzaItem(item as MenuItem)
               setEditingPizzaItem(null)
               setShowPizzaModal(true)
+            }}
+            onOpenPricingOptionPicker={(item, onComplete) => {
+              pricingPickerCallbackRef.current = onComplete
+              setPricingPickerItem(item)
             }}
             orderToLoad={orderToLoad}
             onOrderLoaded={() => setOrderToLoad(null)}
@@ -1273,6 +1286,20 @@ export default function OrdersPage() {
           onConfirm={handlers.handleAddWeightItem}
         />
       )}
+
+      {/* Pricing Option Picker */}
+      <PricingOptionPicker
+        item={pricingPickerItem}
+        onSelect={(option) => {
+          pricingPickerCallbackRef.current?.(option)
+          setPricingPickerItem(null)
+          pricingPickerCallbackRef.current = null
+        }}
+        onClose={() => {
+          setPricingPickerItem(null)
+          pricingPickerCallbackRef.current = null
+        }}
+      />
     </div>
   )
 }

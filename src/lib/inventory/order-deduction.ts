@@ -102,6 +102,48 @@ export const ORDER_INVENTORY_INCLUDE = {
           },
         },
       },
+      // Pricing option inventory links (additive deduction for size/variant)
+      pricingOption: {
+        include: {
+          inventoryLinks: {
+            where: { deletedAt: null },
+            include: {
+              inventoryItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: true,
+                  department: true,
+                  storageUnit: true,
+                  costPerUnit: true,
+                  yieldCostPerUnit: true,
+                  currentStock: true,
+                },
+              },
+              prepItem: {
+                include: {
+                  ingredients: {
+                    include: {
+                      inventoryItem: {
+                        select: {
+                          id: true,
+                          name: true,
+                          category: true,
+                          department: true,
+                          storageUnit: true,
+                          costPerUnit: true,
+                          yieldCostPerUnit: true,
+                          currentStock: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       modifiers: {
         include: {
           // Spirit substitution: which bottle was actually used for upgrades
@@ -621,6 +663,33 @@ export async function deductInventoryForOrder(
           )
           for (const exp of exploded) {
             if (!removedIngredientIds.has(exp.inventoryItem.id)) {
+              addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
+            }
+          }
+        }
+      }
+
+      // Pricing option inventory links (additive deduction on top of base recipe)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pricingOption = (orderItem as any).pricingOption
+      if (orderItem.pricingOptionId && pricingOption?.inventoryLinks) {
+        for (const link of pricingOption.inventoryLinks) {
+          if (link.inventoryItem) {
+            let linkQty = toNumber(link.usageQuantity) * itemQty
+            // Unit conversion if needed
+            if (link.usageUnit && link.inventoryItem.storageUnit) {
+              const converted = convertUnits(linkQty, link.usageUnit, link.inventoryItem.storageUnit)
+              if (converted !== null) linkQty = converted
+            }
+            addUsage(link.inventoryItem as InventoryItemWithStock, linkQty)
+          } else if (link.prepItem) {
+            // Explode prep item to raw ingredients
+            const exploded = explodePrepItem(
+              link.prepItem as PrepItemWithIngredients,
+              toNumber(link.usageQuantity) * itemQty,
+              link.usageUnit || 'each'
+            )
+            for (const exp of exploded) {
               addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
             }
           }

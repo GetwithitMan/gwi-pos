@@ -113,6 +113,16 @@ async function getMenuForBootstrap(locationId: string) {
             ingredient: { select: { id: true, name: true, is86d: true } },
           },
         },
+        pricingOptionGroups: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            options: {
+              where: { deletedAt: null },
+              orderBy: { sortOrder: 'asc' },
+            },
+          },
+        },
       },
     }),
 
@@ -229,6 +239,24 @@ async function getMenuForBootstrap(locationId: string) {
       soldByWeight: item.soldByWeight,
       weightUnit: item.weightUnit,
       pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
+      // Pricing option groups (size/variant pricing)
+      pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
+        id: group.id,
+        name: group.name,
+        sortOrder: group.sortOrder,
+        isRequired: group.isRequired,
+        showAsQuickPick: group.showAsQuickPick,
+        options: group.options.map((opt: any) => ({
+          id: opt.id,
+          label: opt.label,
+          price: opt.price !== null ? Number(opt.price) : null,
+          priceCC: opt.priceCC !== null ? Number(opt.priceCC) : null,
+          sortOrder: opt.sortOrder,
+          isDefault: opt.isDefault,
+          color: opt.color,
+        })),
+      })) || [],
+      hasPricingOptions: ((item as any).pricingOptionGroups?.length || 0) > 0,
     })),
   }
 

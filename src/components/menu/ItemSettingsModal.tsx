@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { toast } from '@/stores/toast-store'
+import { QuickPickTab } from './QuickPickTab'
+import { SizingOptionsInline } from './SizingOptionsInline'
 
 interface ItemSettings {
   id: string
@@ -35,15 +37,51 @@ interface ItemSettings {
   pricePerWeightUnit: number | null
 }
 
+interface IngredientLibraryItem {
+  id: string
+  name: string
+  category: string | null
+  categoryName: string | null
+  categoryId: string | null
+  parentIngredientId: string | null
+  parentName: string | null
+  needsVerification: boolean
+  allowNo: boolean
+  allowLite: boolean
+  allowOnSide: boolean
+  allowExtra: boolean
+  extraPrice: number
+  allowSwap: boolean
+  swapModifierGroupId: string | null
+  swapUpcharge: number
+}
+
+interface IngredientCategory {
+  id: string
+  code: number
+  name: string
+  icon: string | null
+  color: string | null
+  sortOrder: number
+  isActive: boolean
+  ingredientCount: number
+  needsVerification?: boolean
+}
+
 interface ItemSettingsModalProps {
   itemId: string
   onClose: () => void
   onSaved: () => void
+  ingredientsLibrary?: IngredientLibraryItem[]
+  ingredientCategories?: IngredientCategory[]
+  locationId?: string
+  onIngredientCreated?: (ingredient: IngredientLibraryItem) => void
+  onCategoryCreated?: (category: IngredientCategory) => void
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModalProps) {
+export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary = [], ingredientCategories = [], locationId = '', onIngredientCreated, onCategoryCreated }: ItemSettingsModalProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('basics')
@@ -85,6 +123,9 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
   const [soldByWeight, setSoldByWeight] = useState(false)
   const [weightUnit, setWeightUnit] = useState('lb')
   const [pricePerWeightUnit, setPricePerWeightUnit] = useState('')
+  // Whether size options are active (overrides base price)
+  const [sizesActive, setSizesActive] = useState(false)
+  const handleSizesActiveChange = useCallback((active: boolean) => setSizesActive(active), [])
 
   // Fetch full item data on mount
   useEffect(() => {
@@ -283,6 +324,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
 
   const tabs = [
     { id: 'basics', label: 'Basics' },
+    { id: 'pricing-options', label: 'Quick Pick' },
     { id: 'display', label: 'Display & Channels' },
     { id: 'kitchen', label: 'Kitchen & Print' },
     { id: 'availability', label: 'Availability' },
@@ -333,7 +375,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
                       autoFocus
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className={`grid grid-cols-2 gap-3 ${sizesActive ? 'opacity-50 pointer-events-none' : ''}`}>
                     <div>
                       <label className={labelClass}>Price ($)</label>
                       <input
@@ -344,6 +386,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
                         step="0.01"
                         min="0"
                         className={inputClass}
+                        disabled={sizesActive}
                       />
                     </div>
                     <div>
@@ -397,6 +440,17 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
                       </div>
                     )}
                   </div>
+
+                  {/* Size Options (Pricing Variants) */}
+                  <SizingOptionsInline
+                    itemId={itemId}
+                    onSizesActiveChange={handleSizesActiveChange}
+                    ingredientsLibrary={ingredientsLibrary}
+                    ingredientCategories={ingredientCategories}
+                    locationId={locationId}
+                    onIngredientCreated={onIngredientCreated}
+                    onCategoryCreated={onCategoryCreated}
+                  />
 
                   {/* Ingredient Cost Breakdown — collapsible */}
                   <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -528,6 +582,11 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
                     </label>
                   </div>
                 </>
+              )}
+
+              {/* QUICK PICK TAB */}
+              {activeTab === 'pricing-options' && (
+                <QuickPickTab itemId={itemId} />
               )}
 
               {/* DISPLAY & CHANNELS TAB */}

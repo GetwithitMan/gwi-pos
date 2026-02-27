@@ -19,6 +19,27 @@ import type { PizzaOrderConfig } from '@/types'
 // TYPES
 // ============================================================================
 
+/** Pricing option for engine use */
+export interface EnginePricingOption {
+  id: string
+  label: string
+  price: number | null
+  priceCC: number | null
+  sortOrder: number
+  isDefault: boolean
+  color: string | null
+}
+
+/** Pricing option group for engine use */
+export interface EnginePricingOptionGroup {
+  id: string
+  name: string
+  sortOrder: number
+  isRequired: boolean
+  showAsQuickPick: boolean
+  options: EnginePricingOption[]
+}
+
 /** Menu item shape accepted by the engine (superset of fields used across views) */
 export interface EngineMenuItem {
   id: string
@@ -31,6 +52,8 @@ export interface EngineMenuItem {
   itemType?: string // 'standard' | 'combo' | 'timed_rental' | 'pizza'
   applyPourToModifiers?: boolean
   modifierGroupCount?: number
+  pricingOptionGroups?: EnginePricingOptionGroup[]
+  hasPricingOptions?: boolean
 }
 
 /** Modifier shape returned by ModifierModal and stored on order items */
@@ -75,6 +98,12 @@ export type OnOpenTimedRental = (
   onComplete: (price: number, blockMinutes: number) => void
 ) => void
 
+/** What the engine needs the parent to provide for pricing option picker */
+export type OnOpenPricingOptionPicker = (
+  item: EngineMenuItem,
+  onComplete: (option: EnginePricingOption) => void
+) => void
+
 /** Pending item waiting for modal completion */
 export interface PendingItem {
   type: 'modifier' | 'pizza' | 'timed_rental'
@@ -100,6 +129,7 @@ export interface UseOrderingEngineOptions {
   onOpenModifiers?: OnOpenModifiers
   onOpenPizzaBuilder?: OnOpenPizzaBuilder
   onOpenTimedRental?: OnOpenTimedRental
+  onOpenPricingOptionPicker?: OnOpenPricingOptionPicker
 }
 
 // ============================================================================
@@ -117,6 +147,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
     onOpenModifiers,
     onOpenPizzaBuilder,
     onOpenTimedRental,
+    onOpenPricingOptionPicker,
   } = options
 
   // Use refs for values that change frequently to avoid stale closures
@@ -182,6 +213,8 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
     blockTimeMinutes?: number
     blockTimeStartedAt?: string
     blockTimeExpiresAt?: string
+    pricingOptionId?: string
+    pricingOptionLabel?: string
   }) => {
     ensureOrder()
     const store = useOrderStore.getState()
@@ -215,6 +248,8 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       blockTimeMinutes: item.blockTimeMinutes ?? null,
       blockTimeStartedAt: item.blockTimeStartedAt ?? null,
       blockTimeExpiresAt: item.blockTimeExpiresAt ?? null,
+      pricingOptionId: item.pricingOptionId,
+      pricingOptionLabel: item.pricingOptionLabel,
     })
 
     // Haptic feedback
@@ -435,7 +470,53 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       return
     }
 
-    // 3. Item with modifiers → check defaults, possibly open modal
+    // 3. Item with pricing options (non-quick-pick) → open pricing option picker
+    if (item.hasPricingOptions && item.pricingOptionGroups?.length) {
+      const group = item.pricingOptionGroups[0]
+      if (!group.showAsQuickPick && onOpenPricingOptionPicker) {
+        onOpenPricingOptionPicker(item, (option) => {
+          // Determine name and price based on whether option has a price override
+          const isVariant = option.price !== null
+          const itemName = isVariant ? `${item.name} (${option.label})` : item.name
+          const itemPrice = isVariant ? option.price! : item.price
+          const pricingOptionLabel = isVariant ? undefined : option.label
+
+          if (item.hasModifiers && onOpenModifiers) {
+            // Chain to modifier modal with pricing option pre-set
+            const qtyForModifiers = quantityMultiplierRef.current
+            setPendingItem({ type: 'modifier', menuItem: { ...item, name: itemName, price: itemPrice } })
+            onOpenModifiers({ ...item, name: itemName, price: itemPrice }, (modifiers, ingredientMods) => {
+              addItemDirectly({
+                menuItemId: item.id,
+                name: itemName,
+                price: itemPrice,
+                quantity: qtyForModifiers,
+                modifiers,
+                ingredientModifications: ingredientMods,
+                categoryType: item.categoryType,
+                pricingOptionId: option.id,
+                pricingOptionLabel,
+              })
+              setPendingItem(null)
+            })
+          } else {
+            // No modifiers — add directly
+            addItemDirectly({
+              menuItemId: item.id,
+              name: itemName,
+              price: itemPrice,
+              quantity: quantityMultiplierRef.current,
+              categoryType: item.categoryType,
+              pricingOptionId: option.id,
+              pricingOptionLabel,
+            })
+          }
+        })
+        return
+      }
+    }
+
+    // 4. Item with modifiers → check defaults, possibly open modal
     if (item.hasModifiers && onOpenModifiers) {
       // Check modifier-defaults cache first (avoids fetch on rapid clicks)
       const cached = modifierDefaultsCacheRef.current.get(item.id)
@@ -517,7 +598,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       return
     }
 
-    // 4. Simple item → add directly (with quantity multiplier)
+    // 5. Simple item → add directly (with quantity multiplier)
     addItemDirectly({
       menuItemId: item.id,
       name: item.name,
@@ -525,7 +606,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       quantity: quantityMultiplierRef.current,
       categoryType: item.categoryType,
     })
-  }, [onOpenModifiers, onOpenPizzaBuilder, onOpenTimedRental, addItemDirectly, ensureOrder])
+  }, [onOpenModifiers, onOpenPizzaBuilder, onOpenTimedRental, onOpenPricingOptionPicker, addItemDirectly, ensureOrder])
 
   /**
    * Open modifier modal for editing an existing order item's modifiers.

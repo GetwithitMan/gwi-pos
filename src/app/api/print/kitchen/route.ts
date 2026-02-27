@@ -434,6 +434,7 @@ function buildKitchenTicket(
       cheese: { name: string } | null
     } | null
     _modifierOnlyFor?: string
+    pricingOptionLabel?: string | null
   }>,
   width: number,
   printerType: string = 'thermal',
@@ -620,6 +621,15 @@ function buildKitchenTicket(
     }
     if (allCapsItems) itemName = itemName.toUpperCase()
     content.push(importantLine(itemName, itemNameSize, useRedItemNames, boldItems))
+
+    // Pricing option label-only line (e.g., "** HOT **" for label-only pricing options)
+    if (item.pricingOptionLabel && !item.name.includes(`(${item.pricingOptionLabel})`)) {
+      content.push(toppingSizeCmd)
+      content.push(ESCPOS.BOLD_ON)
+      content.push(line(`  ** ${item.pricingOptionLabel.toUpperCase()} **`))
+      content.push(ESCPOS.BOLD_OFF)
+      content.push(NORMAL)
+    }
 
     // Modifiers - SKIP for pizza items (pizzaData has the organized toppings)
     if (!item.pizzaData) {

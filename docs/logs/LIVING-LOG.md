@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-02-27 — Pricing Options & Quick Picks for Food Menu (Skills 454–455)
+
+**Session:** Built complete size variant pricing for food items. Items can now have up to 4 size options (S/M/L, Bowl/Cup) that replace the base price. Each size links to prep items for proper inventory deduction. Added `costAtSale` field for historically accurate food cost reports. PMIX and Sales reports now group by size variant. Quick pick labels (Mild/Medium/Hot) live in their own tab. Full Android sync support (DB v21).
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `TBD` — Pricing Options & Quick Picks: schema, CRUD API, menu builder UI, POS wiring, inventory linking, reports, costAtSale, Android sync
+
+**GWI Android Register** (`gwi-android-register`):
+- `TBD` — Pricing options: Room entities, DAO, sync, Compose sheet, costAtSale (DB v21)
+
+### Deployments
+- POS: pending push to main
+- Android: pending push to main
+
+### Features Delivered
+
+| Feature | Description |
+|---------|-------------|
+| **Size Variants** | Basics tab toggle "Enable Size Options" — up to 4 sizes with individual prices |
+| **Prep Item Linking** | Each size links to prep items for inventory deduction + cost tracking |
+| **Cost Display** | Per-size ingredient cost shown in menu builder, costAtSale snapshotted on order |
+| **Quick Pick Labels** | "Quick Pick" tab for label-only buttons (Mild/Medium/Hot/No Spice) |
+| **Report Accuracy** | PMIX and Sales reports group "Pizza (Large)" vs "Pizza (Small)" separately |
+| **Max 4 Enforcement** | Server-side + UI max 4 options per group |
+| **Inventory Link API** | 4 new CRUD endpoints for PricingOptionInventoryLink |
+| **Android Sync** | Full sync of pricing options + costAtSale (DB v21, destructive migration) |
+
+### Files Changed
+
+| Area | New | Modified | Total |
+|------|-----|----------|-------|
+| POS | 9 | 23 | 32 |
+| Android | 4 | 12 | 16 |
+| Skills/Docs | 3 | 1 | 4 |
+| **Total** | **16** | **36** | **52** |
+
+### Known Issues / Blockers
+- None
+
+---
+
 ## 2026-02-26 — Bartender Testing Bug Fixes + Mobile Tabs + Rebrand (Skills 450–453)
 
 **Session:** Fixed 5 POS bugs from bartender testing (3 critical, 2 minor). Refactored mobile tabs page with open/closed views and pagination. Enriched sync delta for Android. Rebranded `pulse-pos` → `thepasspos` across all docs and installer. Added PWA icons and dev memory bump.

@@ -122,7 +122,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const dailySales: Record<string, { date: string; orders: number; gross: number; net: number; tax: number; tips: number; guests: number }> = {}
     const hourlySales: Record<number, { hour: number; orders: number; gross: number }> = {}
     const categorySales: Record<string, { name: string; quantity: number; gross: number }> = {}
-    const itemSales: Record<string, { name: string; quantity: number; gross: number; category: string; soldByWeight: boolean; totalWeight: number; weightUnit: string | null }> = {}
+    const itemSales: Record<string, { name: string; pricingOptionLabel: string | null; quantity: number; gross: number; category: string; soldByWeight: boolean; totalWeight: number; weightUnit: string | null }> = {}
     const employeeSales: Record<string, { name: string; orders: number; gross: number; tips: number; itemCount: number }> = {}
     const tableSales: Record<string, { name: string; orders: number; gross: number; guests: number; avgTicket: number; turnTime: number[]; avgTurnTimeMinutes?: number }> = {}
     const seatSales: Record<number, { seat: number; itemCount: number; gross: number }> = {}
@@ -231,8 +231,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       order.items.forEach(item => {
         itemCount += item.quantity
 
-        const itemId = item.menuItemId
-        const itemName = item.menuItem.name
+        const itemId = item.pricingOptionLabel
+          ? `${item.menuItemId}::${item.pricingOptionLabel}`
+          : item.menuItemId
+        const itemName = item.pricingOptionLabel
+          ? `${item.menuItem.name} (${item.pricingOptionLabel})`
+          : item.menuItem.name
         const categoryId = item.menuItem.categoryId
         const categoryName = categoryMap.get(categoryId) || 'Unknown'
         const itemTotal = Number(item.itemTotal)
@@ -248,7 +252,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         const isByWeight = item.soldByWeight === true
         const itemWeight = isByWeight && item.weight ? Number(item.weight) * item.quantity : 0
         if (!itemSales[itemId]) {
-          itemSales[itemId] = { name: itemName, quantity: 0, gross: 0, category: categoryName, soldByWeight: isByWeight, totalWeight: 0, weightUnit: isByWeight ? (item.weightUnit || 'lb') : null }
+          itemSales[itemId] = { name: itemName, pricingOptionLabel: item.pricingOptionLabel || null, quantity: 0, gross: 0, category: categoryName, soldByWeight: isByWeight, totalWeight: 0, weightUnit: isByWeight ? (item.weightUnit || 'lb') : null }
         }
         itemSales[itemId].quantity += item.quantity
         itemSales[itemId].gross += itemTotal

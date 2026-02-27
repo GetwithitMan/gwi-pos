@@ -120,17 +120,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Aggregate waste data
     const wasteMap = new Map<string, { name: string, categoryName: string, quantity: number, lostRevenue: number, lostCost: number, status: string }>()
     for (const item of wasteItems) {
-      const key = `${item.menuItemId}-${item.status}`
+      const key = item.pricingOptionLabel
+        ? `${item.menuItemId}::${item.pricingOptionLabel}-${item.status}`
+        : `${item.menuItemId}-${item.status}`
       const lostRevenue = Number(item.itemTotal)
-      const lostCost = item.menuItem.cost ? Number(item.menuItem.cost) * item.quantity : 0
+      const wasteCostUnit = item.costAtSale != null ? Number(item.costAtSale) : (item.menuItem.cost ? Number(item.menuItem.cost) : 0)
+      const lostCost = wasteCostUnit * item.quantity
       if (wasteMap.has(key)) {
         const existing = wasteMap.get(key)!
         existing.quantity += item.quantity
         existing.lostRevenue += lostRevenue
         existing.lostCost += lostCost
       } else {
+        const wasteName = item.pricingOptionLabel
+          ? `${item.menuItem.name} (${item.pricingOptionLabel})`
+          : item.menuItem.name
         wasteMap.set(key, {
-          name: item.menuItem.name,
+          name: wasteName,
           categoryName: item.menuItem.category.name,
           quantity: item.quantity,
           lostRevenue,
@@ -143,7 +149,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const wasteData = {
       totalItems: wasteItems.reduce((sum, i) => sum + i.quantity, 0),
       totalLostRevenue: wasteItems.reduce((sum, i) => sum + Number(i.itemTotal), 0),
-      totalLostCost: wasteItems.reduce((sum, i) => sum + (i.menuItem.cost ? Number(i.menuItem.cost) * i.quantity : 0), 0),
+      totalLostCost: wasteItems.reduce((sum, i) => {
+        const cost = i.costAtSale != null ? Number(i.costAtSale) : (i.menuItem.cost ? Number(i.menuItem.cost) : 0)
+        return sum + cost * i.quantity
+      }, 0),
       items: Array.from(wasteMap.values()).sort((a, b) => b.lostRevenue - a.lostRevenue),
     }
 
@@ -156,6 +165,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const itemMap = new Map<string, {
       menuItemId: string
       name: string
+      pricingOptionLabel: string | null
       categoryId: string
       categoryName: string
       quantity: number
@@ -172,10 +182,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     for (const item of orderItems) {
       const menuItem = item.menuItem
-      const key = menuItem.id
+      const key = item.pricingOptionLabel
+        ? `${menuItem.id}::${item.pricingOptionLabel}`
+        : menuItem.id
+      const displayName = item.pricingOptionLabel
+        ? `${menuItem.name} (${item.pricingOptionLabel})`
+        : menuItem.name
 
       const itemTotal = Number(item.itemTotal)
-      const itemCost = menuItem.cost ? Number(menuItem.cost) * item.quantity : 0
+      const unitCost = item.costAtSale != null ? Number(item.costAtSale) : (menuItem.cost ? Number(menuItem.cost) : 0)
+      const itemCost = unitCost * item.quantity
       const modifierTotal = Number(item.modifierTotal)
 
       totalRevenue += itemTotal
@@ -201,7 +217,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       } else {
         itemMap.set(key, {
           menuItemId: menuItem.id,
-          name: menuItem.name,
+          name: displayName,
+          pricingOptionLabel: item.pricingOptionLabel || null,
           categoryId: menuItem.categoryId,
           categoryName: menuItem.category.name,
           quantity: item.quantity,

@@ -687,6 +687,11 @@ model Location {
   timedSessions TimedSession[]
   auditLogs     AuditLog[]
 
+  // Pricing Options (per-item size/variant pricing)
+  pricingOptionGroups         PricingOptionGroup[]
+  pricingOptions              PricingOption[]
+  pricingOptionInventoryLinks PricingOptionInventoryLink[]
+
   @@index([organizationId])
 }
 
@@ -1491,6 +1496,9 @@ model MenuItem {
 
   // C-SCHEMA-1: Reverse relations (batch 2)
   coupons            Coupon[]             @relation("CouponFreeItem")
+
+  // Pricing Options (per-item size/variant pricing groups)
+  pricingOptionGroups PricingOptionGroup[]
 
   @@unique([locationId, sku])
   // @@index([locationId]) — removed: redundant with compound indexes below
@@ -2351,6 +2359,14 @@ model OrderItem {
   // Idempotency key for duplicate request prevention
   idempotencyKey String?
 
+  // Pricing Option - selected size/variant at time of order
+  pricingOptionId    String?
+  pricingOption      PricingOption? @relation(fields: [pricingOptionId], references: [id])
+  pricingOptionLabel String? // Snapshot of option label (e.g., "Large", "Bowl")
+
+  // Cost snapshot at time of sale (for historically accurate food cost reports)
+  costAtSale Decimal? // Total ingredient cost (base recipe + pricing option links) at time of order
+
   // Shared Table Ownership (Skill 253) - who added this item
   addedByEmployeeId String?
   addedByEmployee   Employee? @relation("OrderItemAddedBy", fields: [addedByEmployeeId], references: [id])
@@ -2386,6 +2402,8 @@ model OrderItem {
   @@index([orderId, status, deletedAt])
   @@index([locationId, status, kitchenStatus])
   @@index([menuItemId, createdAt]) // PMIX report: product mix by item over time range
+  @@index([pricingOptionId])
+  @@index([menuItemId, pricingOptionId]) // PMIX/Sales: group by item + size variant
 }
 
 model OrderItemModifier {
@@ -4276,6 +4294,9 @@ model InventoryItem {
   // Daily prep count deductions
   dailyPrepCountTransactions DailyPrepCountTransaction[]
 
+  // Pricing Option inventory links
+  pricingOptionInventoryLinks PricingOptionInventoryLink[]
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -4353,6 +4374,9 @@ model PrepItem {
 
   // Ingredients that link to this prep item for deduction
   ingredientLinks Ingredient[] @relation("IngredientPrepLink")
+
+  // Pricing Option inventory links
+  pricingOptionInventoryLinks PricingOptionInventoryLink[]
 
   isActive Boolean @default(true)
 
@@ -4470,6 +4494,95 @@ model ModifierInventoryLink {
   syncedAt  DateTime?
 
   @@index([locationId])
+  @@index([inventoryItemId])
+  @@index([prepItemId])
+}
+
+// ============================================
+// PRICING OPTIONS (per-item size/variant pricing)
+// Groups of options like "Size" (Small/Medium/Large) or "Portion" (Cup/Bowl)
+// Each option can have its own price, inventory deduction, and ingredient overrides
+// ============================================
+
+model PricingOptionGroup {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  name            String // e.g., "Size", "Portion", "Spice Level"
+  sortOrder       Int     @default(0)
+  isRequired      Boolean @default(false)
+  showAsQuickPick Boolean @default(false)
+
+  // Relations
+  options PricingOption[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([menuItemId])
+  @@index([locationId, menuItemId, deletedAt])
+}
+
+model PricingOption {
+  id         String             @id @default(cuid())
+  locationId String
+  location   Location           @relation(fields: [locationId], references: [id])
+  groupId    String
+  group      PricingOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  label     String // e.g., "Small", "Hot", "Bowl"
+  price     Decimal? // NULL = label-only, no price change
+  priceCC   Decimal? // Dual pricing credit card price
+  sortOrder Int      @default(0)
+  isDefault Boolean  @default(false)
+  color     String? // Hex color for POS button
+
+  // Relations
+  inventoryLinks      PricingOptionInventoryLink[]
+  orderItems          OrderItem[]
+  menuItemIngredients MenuItemIngredient[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([groupId])
+  @@index([groupId, deletedAt])
+}
+
+model PricingOptionInventoryLink {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  pricingOptionId String
+  pricingOption   PricingOption @relation(fields: [pricingOptionId], references: [id], onDelete: Cascade)
+
+  // Link to either inventory item OR prep item
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  prepItemId      String?
+  prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
+
+  // Usage amount when this pricing option is selected
+  usageQuantity  Decimal
+  usageUnit      String
+  calculatedCost Decimal?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([pricingOptionId])
   @@index([inventoryItemId])
   @@index([prepItemId])
 }
@@ -5361,6 +5474,10 @@ model MenuItemIngredient {
   ingredientId String
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
 
+  // Pricing Option - links ingredient usage to a specific pricing option (e.g., "Large" uses more cheese)
+  pricingOptionId String?
+  pricingOption   PricingOption? @relation(fields: [pricingOptionId], references: [id])
+
   // Legacy field - kept for backwards compatibility
   isIncluded Boolean @default(true) // Comes on item by default?
 
@@ -5385,11 +5502,12 @@ model MenuItemIngredient {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  @@unique([menuItemId, ingredientId])
+  @@unique([menuItemId, ingredientId, pricingOptionId])
   @@index([locationId])
   @@index([menuItemId])
   @@index([locationId, ingredientId])
   @@index([menuItemId, deletedAt])
+  @@index([pricingOptionId])
 }
 
 // ============================================

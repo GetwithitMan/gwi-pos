@@ -3,6 +3,7 @@
 import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { StockBadge } from '@/components/menu/StockBadge'
+import type { PricingOptionGroup, PricingOption } from '@/types'
 
 interface MenuItem {
   id: string
@@ -28,6 +29,8 @@ interface MenuItem {
   stockIngredientName?: string | null
   is86d?: boolean
   reasons86d?: string[]
+  pricingOptionGroups?: PricingOptionGroup[]
+  hasPricingOptions?: boolean
 }
 
 export interface FloorPlanMenuItemProps {
@@ -40,9 +43,10 @@ export interface FloorPlanMenuItemProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onContextMenu: (e: React.MouseEvent, item: any) => void
   onUnavailable: (reason: string) => void
+  onQuickPickTap?: (item: MenuItem, option: PricingOption) => void
 }
 
-export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customStyle, inQuickBar, pricing, onTap, onContextMenu, onUnavailable }: FloorPlanMenuItemProps) {
+export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customStyle, inQuickBar, pricing, onTap, onContextMenu, onUnavailable, onQuickPickTap }: FloorPlanMenuItemProps) {
   const isItem86d = item.is86d || item.stockStatus === 'out'
   const bgColor = isItem86d
     ? 'rgba(100, 100, 100, 0.3)'
@@ -50,6 +54,12 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
   const textColor = isItem86d
     ? '#6b7280'
     : (customStyle?.textColor || '#e2e8f0')
+
+  // Quick pick buttons: first group with showAsQuickPick=true
+  const quickPickGroup = !isItem86d
+    ? item.pricingOptionGroups?.find(g => g.showAsQuickPick && g.options.length > 0)
+    : undefined
+  const hasQuickPicks = !!quickPickGroup
 
   return (
     <motion.button
@@ -74,7 +84,7 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '20px 16px',
+        padding: hasQuickPicks ? '12px 8px 8px' : '20px 16px',
         background: bgColor,
         backdropFilter: isItem86d ? undefined : 'blur(12px)',
         WebkitBackdropFilter: isItem86d ? undefined : 'blur(12px)',
@@ -82,7 +92,7 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
         boxShadow: isItem86d ? undefined : '0 4px 12px rgba(0, 0, 0, 0.3)',
         borderRadius: '14px',
         cursor: isItem86d ? 'not-allowed' : 'pointer',
-        minHeight: '110px',
+        minHeight: hasQuickPicks ? '130px' : '110px',
         transition: 'all 0.15s ease',
         position: 'relative',
         opacity: isItem86d ? 0.6 : 1,
@@ -146,23 +156,79 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
           fontWeight: 500,
           color: textColor,
           textAlign: 'center',
-          marginBottom: '8px',
+          marginBottom: hasQuickPicks ? '4px' : '8px',
           lineHeight: 1.3,
           textDecoration: isItem86d ? 'line-through' : 'none',
         }}
       >
         {item.name}
       </span>
-      <span
-        style={{
-          fontSize: '15px',
-          fontWeight: 600,
-          color: isItem86d ? '#6b7280' : '#22c55e',
-        }}
-      >
-        ${pricing.isDualPricingEnabled ? (item.price * (1 + pricing.cashDiscountRate / 100)).toFixed(2) : item.price.toFixed(2)}
-      </span>
-      {item.hasModifiers && !isItem86d && (
+      {/* Hide base price when quick picks are shown */}
+      {!hasQuickPicks && (
+        <span
+          style={{
+            fontSize: '15px',
+            fontWeight: 600,
+            color: isItem86d ? '#6b7280' : '#22c55e',
+          }}
+        >
+          ${pricing.isDualPricingEnabled ? (item.price * (1 + pricing.cashDiscountRate / 100)).toFixed(2) : item.price.toFixed(2)}
+        </span>
+      )}
+      {/* Quick pick pricing option buttons */}
+      {hasQuickPicks && quickPickGroup && (
+        <div style={{ display: 'flex', gap: '3px', width: '100%', marginTop: 'auto', paddingTop: '4px' }}>
+          {quickPickGroup.options.slice(0, 4).map(option => {
+            const isVariant = option.price !== null
+            const displayPrice = isVariant ? option.price! : item.price
+            const adjustedPrice = pricing.isDualPricingEnabled
+              ? displayPrice * (1 + pricing.cashDiscountRate / 100)
+              : displayPrice
+            const bgClass = option.color || '#6366f1'
+            const isHex = bgClass.startsWith('#') || bgClass.startsWith('rgb')
+            return (
+              <div
+                key={option.id}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onQuickPickTap?.(item, option)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    onQuickPickTap?.(item, option)
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  padding: '3px 2px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  color: 'white',
+                  backgroundColor: isHex ? bgClass : undefined,
+                  transition: 'filter 0.15s',
+                  minHeight: '32px',
+                  justifyContent: 'center',
+                }}
+                className={isHex ? 'hover:brightness-110' : `${bgClass} hover:brightness-110`}
+              >
+                <span style={{ lineHeight: 1.2 }}>{option.label}</span>
+                {isVariant && (
+                  <span style={{ fontSize: '9px', opacity: 0.8 }}>${adjustedPrice.toFixed(2)}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {item.hasModifiers && !isItem86d && !hasQuickPicks && (
         <span
           style={{
             fontSize: '11px',

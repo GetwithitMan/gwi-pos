@@ -35,6 +35,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               include: { modifiers: { where: { deletedAt: null } } },
               orderBy: { sortOrder: 'asc' },
             },
+            pricingOptionGroups: {
+              where: { deletedAt: null },
+              include: { options: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } } },
+              orderBy: { sortOrder: 'asc' },
+            },
           },
           orderBy: { sortOrder: 'asc' },
         },
@@ -67,6 +72,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       price: item.price != null ? Number(item.price) : null,
       cost: item.cost != null ? Number(item.cost) : null,
       pricePerWeightUnit: item.pricePerWeightUnit != null ? Number(item.pricePerWeightUnit) : null,
+      pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
+        ...group,
+        options: group.options?.map((opt: any) => ({
+          ...opt,
+          price: opt.price != null ? Number(opt.price) : null,
+          priceCC: opt.priceCC != null ? Number(opt.priceCC) : null,
+        })),
+      })),
     })),
   }))
 
