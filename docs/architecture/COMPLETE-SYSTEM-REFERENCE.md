@@ -181,7 +181,7 @@ Terminal → 192.168.1.100:3005/orders
 | **OS** | Ubuntu 22.04+ |
 | **Hardware** | Intel NUC mini PCs |
 | **Installer** | `public/installer.run` (~1,454 lines) |
-| **Services** | `pulse-pos` (Node.js), `pulse-kiosk` (Chromium), `pulse-sync` (SSE agent), `postgresql`, `x11vnc` |
+| **Services** | `thepasspos` (Node.js), `thepasspos-kiosk` (Chromium), `thepasspos-sync` (SSE agent), `postgresql`, `x11vnc` |
 | **Roles** | Server (full stack) or Terminal (kiosk only, points to server IP) |
 
 **Provisioning Steps:**
@@ -458,7 +458,7 @@ npm start     → NODE_ENV=production node -r ./preload.js server.js
 │          NUC SERVER (Ubuntu 22.04, Intel NUC)                   │
 │  Node.js custom server + Socket.io (port 3005)                  │
 │  PostgreSQL 16 (gwi_pos_{slug}) | systemd services              │
-│  pulse-pos | pulse-kiosk | pulse-sync | heartbeat cron          │
+│  thepasspos | thepasspos-kiosk | thepasspos-sync | heartbeat cron          │
 │  Works 100% offline — queues events for cloud                   │
 └─────────────────────────────────────────────────────────────────┘
         ▲ Local WiFi/Ethernet (Socket.io + REST) ▼

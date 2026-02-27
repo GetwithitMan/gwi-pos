@@ -87,7 +87,7 @@ NUC (installer.run)                     Cloud (app.thepasspos.com)
 
 ### 3. PostgreSQL Setup (lines ~350-450, server role only)
 - Installs PostgreSQL 16
-- Creates `pulse_pos` database and user
+- Creates `thepasspos` database and user
 - Configures password from encrypted secrets
 
 ### 4. POS Application Install (lines ~450-700, server role only)
@@ -96,22 +96,22 @@ NUC (installer.run)                     Cloud (app.thepasspos.com)
 - `npm ci --production`
 - `npx prisma generate` + `npx prisma db push`
 - `npm run build`
-- Creates `pulse-pos.service` (Node.js: `node -r ./preload.js server.js`)
+- Creates `thepasspos.service` (Node.js: `node -r ./preload.js server.js`)
 
 ### 5. Kiosk Setup (lines ~700-820, both roles)
 - Desktop launcher (`.desktop` file) for KDE Plasma
 - KDE autostart entry
-- `pulse-kiosk.service` as systemd fallback
+- `thepasspos-kiosk.service` as systemd fallback
 - Chromium flags: `--kiosk --start-fullscreen --no-first-run --disable-translate --noerrdialogs`
 - Auto-login configuration for `posuser`
 
 ### 6. Sudoers Rules (lines 822-834)
 Allows POS Node.js process to manage kiosk:
 ```
-posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-pos
-posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop pulse-kiosk
-posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl start pulse-kiosk
-posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-kiosk
+posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos
+posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
+posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
+posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
 posuser ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
 ```
 
@@ -128,7 +128,7 @@ posuser ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
 - `sync-agent.js` at `/opt/gwi-pos/sync-agent.js`
 - Connects to MC SSE stream (`/api/fleet/commands/stream`)
 - Receives FORCE_UPDATE, UPDATE_CONFIG, FORCE_SYNC commands
-- Runs as `pulse-sync.service` systemd unit
+- Runs as `thepasspos-sync.service` systemd unit
 - Auto-reconnects with exponential backoff (1s → 30s)
 
 ### 9. Backup Script (lines ~1100-1200, server role only)
@@ -167,7 +167,7 @@ Hidden 5-tap zone in top-left corner (64×64px, invisible).
 - Works on every page (login, orders, admin, KDS, etc.)
 
 **`/api/system/exit-kiosk/route.ts`** — Server API:
-- Production: `sudo systemctl stop pulse-kiosk; sudo pkill -f "chromium.*localhost"`
+- Production: `sudo systemctl stop thepasspos-kiosk; sudo pkill -f "chromium.*localhost"`
 - Dev: Returns `{ ok: true, dev: true }` (no-op)
 - Sudoers allows `posuser` to run these without password
 

@@ -249,7 +249,7 @@ This system is split across **three independent repositories**. Never put Missio
 
 | Environment | DATABASE_URL points to | Why |
 |-------------|----------------------|-----|
-| **NUC (production)** | `localhost:5432/pulse_pos` (LOCAL PG 16) | Offline-first, zero-latency, no internet dependency |
+| **NUC (production)** | `localhost:5432/thepasspos` (LOCAL PG 16) | Offline-first, zero-latency, no internet dependency |
 | **Dev (your Mac)** | Neon cloud | No local PG needed for development |
 | **Vercel (online ordering)** | Neon cloud | Serverless, no local disk |
 
@@ -298,8 +298,8 @@ DIRECT_URL="postgresql://...@neon.tech/gwi_pos?sslmode=require"
 **NUC production** (`/opt/gwi-pos/app/.env`):
 ```
 # PRIMARY — local PostgreSQL (offline-first)
-DATABASE_URL="postgresql://pulse_pos:xxx@localhost:5432/pulse_pos"
-DIRECT_URL="postgresql://pulse_pos:xxx@localhost:5432/pulse_pos"
+DATABASE_URL="postgresql://thepasspos:xxx@localhost:5432/thepasspos"
+DIRECT_URL="postgresql://thepasspos:xxx@localhost:5432/thepasspos"
 
 # SYNC TARGET — Neon cloud (background sync only)
 NEON_DATABASE_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
@@ -742,9 +742,9 @@ curl -sSL https://gwi-pos.vercel.app/installer.run | sudo bash
 
 ### What the Installer Does
 1. **Registration** — RSA-2048 keypair + hardware fingerprint → `POST /api/fleet/register` → RSA-encrypted secrets back
-2. **PostgreSQL** — Installs PG 16, creates `pulse_pos` database (server role only)
-3. **POS App** — Git clone → `npm ci` → `prisma db push` → `npm run build` → `pulse-pos.service` (systemd)
-4. **Kiosk** — Chromium in kiosk mode via `pulse-kiosk.service` + KDE/GNOME autostart
+2. **PostgreSQL** — Installs PG 16, creates `thepasspos` database (server role only)
+3. **POS App** — Git clone → `npm ci` → `prisma db push` → `npm run build` → `thepasspos.service` (systemd)
+4. **Kiosk** — Chromium in kiosk mode via `thepasspos-kiosk.service` + KDE/GNOME autostart
 5. **Heartbeat** — 60s cron: HMAC-signed JSON with CPU/memory/disk/localIp/posLocationId → MC
 6. **Sync Agent** — SSE listener for cloud commands (FORCE_UPDATE, KILL_SWITCH, etc.)
 7. **Backups** — Daily `pg_dump` at 4 AM, 7-day retention

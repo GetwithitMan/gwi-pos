@@ -9,7 +9,7 @@
 ## Pre-Shift Setup
 
 ### Hardware & Network
-- [ ] NUC server boots and `pulse-pos.service` starts automatically — Expected: POS loads at `localhost:3000` within 30 seconds
+- [ ] NUC server boots and `thepasspos.service` starts automatically — Expected: POS loads at `localhost:3000` within 30 seconds
 - [ ] Terminal (Chromium kiosk) auto-launches to POS login screen — Expected: Full-screen kiosk with no browser chrome visible
 - [ ] Second terminal connects to server via local network — Expected: `http://<server-ip>:3000` loads login screen
 - [ ] iPad/phone PWA connects via WiFi — Expected: PWA loads with touch-optimized layout

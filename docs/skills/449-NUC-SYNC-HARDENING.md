@@ -27,7 +27,7 @@ When inserting a `timestamptz` value into a `timestamp without time zone` column
 1. **Code fix** (`78dbc7c`): `buildCast()` now distinguishes between column types:
    - `timestamp with time zone` → `::timestamptz` (correct, PG stores as UTC)
    - `timestamp without time zone` → `::timestamp` (no conversion, stored as-is)
-2. **Infrastructure fix**: `ALTER DATABASE pulse_pos SET timezone = 'UTC'` on the NUC
+2. **Infrastructure fix**: `ALTER DATABASE thepasspos SET timezone = 'UTC'` on the NUC
 3. **Installer fix**: All future NUCs get UTC timezone at provisioning time
 
 ### Affected Files
@@ -42,7 +42,7 @@ If timestamps from Neon arrive wrong on a NUC:
 SHOW timezone;  -- Should be 'UTC'
 
 -- If not UTC, fix it:
-ALTER DATABASE pulse_pos SET timezone = 'UTC';
+ALTER DATABASE thepasspos SET timezone = 'UTC';
 -- Then restart the POS service
 ```
 

@@ -46,7 +46,7 @@ Mission Control UI ("Repair Git" button)
     │                         2. Clears git lock files
     │                         3. Writes .git-credentials
     │                         4. Downloads new sync-agent.js from GitHub via curl
-    │                         5. Restarts pulse-sync
+    │                         5. Restarts thepasspos-sync
     │                       Also sends CANCEL_REBOOT as a safety net
     │
     └─ Full Deploy mode ──► SCHEDULE_REBOOT fleet command (same injection vector)
@@ -55,7 +55,7 @@ Mission Control UI ("Repair Git" button)
                               npm install
                               prisma generate + migrate
                               npm run build
-                              restart pulse-pos
+                              restart thepasspos
                               update sync-agent.js
                             Takes 5-10 minutes. Sends CANCEL_REBOOT as safety net.
 ```
@@ -156,7 +156,7 @@ Located in the server list row inside `ServerActions.tsx`.
 **Success messages:**
 
 - Bootstrap: "Credentials written and sync agent updated. The NUC will reconnect in ~30 seconds. Run FORCE_UPDATE to deploy the latest app version."
-- Full Deploy: "Full deploy queued. This takes 5-10 minutes. The NUC will restart pulse-pos when complete."
+- Full Deploy: "Full deploy queued. This takes 5-10 minutes. The NUC will restart thepasspos when complete."
 
 ---
 

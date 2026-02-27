@@ -32,8 +32,8 @@ The primary NUC at each venue. Runs the full POS stack locally for offline opera
 - RealVNC (optional, for remote support)
 
 **Systemd Services:**
-- `pulse-pos` — Node.js POS server (`node -r ./preload.js server.js`)
-- `pulse-kiosk` — Chromium in kiosk mode pointing to `http://localhost:3000`
+- `thepasspos` — Node.js POS server (`node -r ./preload.js server.js`)
+- `thepasspos-kiosk` — Chromium in kiosk mode pointing to `http://localhost:3000`
 
 ### Terminal
 
@@ -44,7 +44,7 @@ Additional display terminals at the venue (bar screens, host stand, etc.). No lo
 - RealVNC (optional)
 
 **Systemd Services:**
-- `pulse-kiosk` — Chromium in kiosk mode pointing to server URL (e.g., `http://192.168.1.50:3000`)
+- `thepasspos-kiosk` — Chromium in kiosk mode pointing to server URL (e.g., `http://192.168.1.50:3000`)
 
 ## Installation Flow
 
@@ -78,13 +78,13 @@ curl installer.run | sudo bash
         │    ├─ Create DB + user (idempotent)
         │    ├─ Clone/pull repo → /opt/gwi-pos/app
         │    ├─ npm ci + prisma generate + db push + build
-        │    ├─ Create pulse-pos.service
-        │    ├─ Create pulse-kiosk.service (→ localhost:3000)
+        │    ├─ Create thepasspos.service
+        │    ├─ Create thepasspos-kiosk.service (→ localhost:3000)
         │    ├─ Install backup-pos.sh + cron (4 AM)
         │    └─ Start services (wait for health check)
         │
         ├─── Terminal branch ────────────────
-        │    ├─ Create pulse-kiosk.service (→ server URL)
+        │    ├─ Create thepasspos-kiosk.service (→ server URL)
         │    └─ Start kiosk service
         │
         ├─ RealVNC enrollment (if token provided)
@@ -114,7 +114,7 @@ curl installer.run | sudo bash
 
 ## Systemd Services
 
-### pulse-pos.service (Server only)
+### thepasspos.service (Server only)
 
 ```ini
 [Unit]
@@ -135,12 +135,12 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-### pulse-kiosk.service (Both roles)
+### thepasspos-kiosk.service (Both roles)
 
 ```ini
 [Unit]
 Description=GWI POS Kiosk
-After=graphical.target [pulse-pos.service for server]
+After=graphical.target [thepasspos.service for server]
 
 [Service]
 User=<posuser>
@@ -241,9 +241,9 @@ Re-running `installer.run` on an existing installation:
 ### Factory Reset
 
 ```bash
-sudo systemctl stop pulse-pos pulse-kiosk
+sudo systemctl stop thepasspos thepasspos-kiosk
 sudo rm -rf /opt/gwi-pos
-sudo rm -f /etc/systemd/system/pulse-pos.service /etc/systemd/system/pulse-kiosk.service
+sudo rm -f /etc/systemd/system/thepasspos.service /etc/systemd/system/thepasspos-kiosk.service
 sudo systemctl daemon-reload
 ```
 
@@ -270,14 +270,14 @@ The installer validates venue domains against these parent domains:
 
 ```bash
 # Service management
-sudo systemctl status pulse-pos       # Check POS server
-sudo systemctl status pulse-kiosk     # Check kiosk
-sudo journalctl -u pulse-pos -f       # Tail POS logs
-sudo journalctl -u pulse-kiosk -f     # Tail kiosk logs
+sudo systemctl status thepasspos       # Check POS server
+sudo systemctl status thepasspos-kiosk     # Check kiosk
+sudo journalctl -u thepasspos -f       # Tail POS logs
+sudo journalctl -u thepasspos-kiosk -f     # Tail kiosk logs
 
 # Manual restart
-sudo systemctl restart pulse-pos
-sudo systemctl restart pulse-kiosk
+sudo systemctl restart thepasspos
+sudo systemctl restart thepasspos-kiosk
 
 # Manual backup
 sudo -u <posuser> /opt/gwi-pos/backup-pos.sh

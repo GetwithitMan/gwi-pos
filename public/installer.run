@@ -591,13 +591,13 @@ if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   systemctl enable postgresql
   systemctl start postgresql
 
-  DB_USER="pulse_pos"
-  DB_NAME="pulse_pos"
+  DB_USER="thepasspos"
+  DB_NAME="thepasspos"
 
   # Reuse existing password from .env on re-runs; generate random on first install
   EXISTING_DB_PW=""
   if [[ -f "$ENV_FILE" ]]; then
-    EXISTING_DB_PW=$(grep -oP '(?<=pulse_pos:)[^@]+' "$ENV_FILE" 2>/dev/null | head -1 || echo "")
+    EXISTING_DB_PW=$(grep -oP '(?<=thepasspos:)[^@]+' "$ENV_FILE" 2>/dev/null | head -1 || echo "")
   fi
   if [[ -n "$EXISTING_DB_PW" ]]; then
     DB_PASSWORD="$EXISTING_DB_PW"
@@ -936,11 +936,11 @@ BACKUP_DIR=/opt/gwi-pos/backups
 RETENTION_DAYS=7
 
 if [ -f /opt/gwi-pos/.env ]; then
-  DB_NAME=$(grep -oP '^DB_NAME=\K.*' /opt/gwi-pos/.env 2>/dev/null || echo "pulse_pos")
-  DB_USER=$(grep -oP '^DB_USER=\K.*' /opt/gwi-pos/.env 2>/dev/null || echo "pulse_pos")
+  DB_NAME=$(grep -oP '^DB_NAME=\K.*' /opt/gwi-pos/.env 2>/dev/null || echo "thepasspos")
+  DB_USER=$(grep -oP '^DB_USER=\K.*' /opt/gwi-pos/.env 2>/dev/null || echo "thepasspos")
 else
-  DB_NAME="${DB_NAME:-pulse_pos}"
-  DB_USER="${DB_USER:-pulse_pos}"
+  DB_NAME="${DB_NAME:-thepasspos}"
+  DB_USER="${DB_USER:-thepasspos}"
 fi
 
 mkdir -p "$BACKUP_DIR"

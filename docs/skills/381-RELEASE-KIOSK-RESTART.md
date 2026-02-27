@@ -72,7 +72,7 @@ Default is `false` — most releases do not require a kiosk restart. Only releas
 At the end of `handleForceUpdate`, after the build completes successfully:
 
 1. Checks if `payload.postDeployAction === 'RELOAD_TERMINALS'`
-2. If present, waits **5 seconds** for the POS server to restart and become healthy (the build process restarts the `pulse-pos` systemd service)
+2. If present, waits **5 seconds** for the POS server to restart and become healthy (the build process restarts the `thepasspos` systemd service)
 3. POSTs to `http://localhost:3005/api/internal/reload-terminals`
 4. This triggers the `system:reload` socket event, which the `SystemReloadListener` component picks up on every terminal, causing `window.location.reload()`
 
@@ -84,7 +84,7 @@ Admin creates release (requiresKioskRestart: true)
     -> MC creates FORCE_UPDATE command with postDeployAction: 'RELOAD_TERMINALS'
       -> NUC sync agent receives command via SSE
         -> Sync agent runs git pull, npm ci, prisma generate, prisma db push, npm run build
-          -> Sync agent restarts pulse-pos service
+          -> Sync agent restarts thepasspos service
             -> Waits 5 seconds for POS server to come up
               -> POSTs to /api/internal/reload-terminals
                 -> POS emits system:reload via Socket.io
@@ -94,7 +94,7 @@ Admin creates release (requiresKioskRestart: true)
 
 ### Why 5 Seconds?
 
-The POS server (Next.js + custom server.ts) typically takes 2-4 seconds to restart after `systemctl restart pulse-pos`. The 5-second delay provides a margin to ensure the server is accepting requests before the reload-terminals POST is sent. If the server is not yet ready, the POST will fail silently (the terminals will still eventually load the new version on their next natural page navigation or heartbeat-triggered check).
+The POS server (Next.js + custom server.ts) typically takes 2-4 seconds to restart after `systemctl restart thepasspos`. The 5-second delay provides a margin to ensure the server is accepting requests before the reload-terminals POST is sent. If the server is not yet ready, the POST will fail silently (the terminals will still eventually load the new version on their next natural page navigation or heartbeat-triggered check).
 
 ## Testing / Verification
 

@@ -8,13 +8,13 @@
 
 ## Overview
 
-On every startup of the `pulse-sync` systemd service, the sync agent now checks GitHub for a newer version of itself. If the file has changed, it replaces itself atomically and immediately exits — causing systemd to restart it with the new code. If content is identical or any check fails, startup continues normally.
+On every startup of the `thepasspos-sync` systemd service, the sync agent now checks GitHub for a newer version of itself. If the file has changed, it replaces itself atomically and immediately exits — causing systemd to restart it with the new code. If content is identical or any check fails, startup continues normally.
 
 ---
 
 ## Problem and Motivation
 
-Skill 399 introduced a self-copy mechanism inside `FORCE_UPDATE`: after a successful deploy, the handler copies the freshly-built `public/sync-agent.js` to `/opt/gwi-pos/sync-agent.js` and restarts `pulse-sync`. This covers the happy path — the NUC is online and receives the fleet command.
+Skill 399 introduced a self-copy mechanism inside `FORCE_UPDATE`: after a successful deploy, the handler copies the freshly-built `public/sync-agent.js` to `/opt/gwi-pos/sync-agent.js` and restarts `thepasspos-sync`. This covers the happy path — the NUC is online and receives the fleet command.
 
 Two gaps remained:
 
@@ -97,7 +97,7 @@ The function `checkBootUpdate(done)` runs at the very start of the sync agent, b
 | Credentials file missing | ~0ms (skips immediately) |
 | GitHub returns non-200 or tiny body | < 1 second to receive error, then normal startup |
 
-The worst case is a 15-second delay before `connectStream()` runs. This is acceptable on boot — systemd does not mark the service as failed during this window, and the NUC's POS app starts independently under the `pulse-pos` service.
+The worst case is a 15-second delay before `connectStream()` runs. This is acceptable on boot — systemd does not mark the service as failed during this window, and the NUC's POS app starts independently under the `thepasspos` service.
 
 ---
 
@@ -106,7 +106,7 @@ The worst case is a 15-second delay before `connectStream()` runs. This is accep
 | | Updated by boot self-update |
 |---|---|
 | `public/sync-agent.js` → `/opt/gwi-pos/sync-agent.js` | Yes |
-| POS app code (`pulse-pos`, Next.js build) | No |
+| POS app code (`thepasspos`, Next.js build) | No |
 | Database schema | No |
 | Any other file on the NUC | No |
 
@@ -121,14 +121,14 @@ These are two independent update paths. Either can update the sync agent:
 | Path | Trigger | When it fires |
 |------|---------|---------------|
 | FORCE_UPDATE self-copy (Skill 399) | Fleet command delivered via SSE | When NUC is online and MC sends the command |
-| Boot self-update (this skill) | Every `pulse-sync` startup | On every reboot, crash-restart, or manual `systemctl restart pulse-sync` |
+| Boot self-update (this skill) | Every `thepasspos-sync` startup | On every reboot, crash-restart, or manual `systemctl restart thepasspos-sync` |
 
-If both fire in sequence (e.g., FORCE_UPDATE restarts pulse-sync, which then runs checkBootUpdate on the new agent), the boot check compares the already-updated file to GitHub and finds them identical — no-op.
+If both fire in sequence (e.g., FORCE_UPDATE restarts thepasspos-sync, which then runs checkBootUpdate on the new agent), the boot check compares the already-updated file to GitHub and finds them identical — no-op.
 
 The FORCE_UPDATE handler for reference (Skill 399):
 ```javascript
 fs.copyFileSync(newAgentPath, '/opt/gwi-pos/sync-agent.js')
-setTimeout(() => run('sudo systemctl restart pulse-sync', ...), 15000)
+setTimeout(() => run('sudo systemctl restart thepasspos-sync', ...), 15000)
 ```
 
 ---

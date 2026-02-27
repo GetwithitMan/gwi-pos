@@ -421,7 +421,7 @@ Any new query pattern that filters on multiple columns MUST:
 
 | Environment | DATABASE_URL | Purpose |
 |-------------|-------------|---------|
-| **NUC (production)** | `localhost:5432/pulse_pos` | PRIMARY — offline-first, all POS ops |
+| **NUC (production)** | `localhost:5432/thepasspos` | PRIMARY — offline-first, all POS ops |
 | **Dev (Mac)** | Neon cloud | Convenience — no local PG needed |
 | **Vercel (online ordering)** | Neon cloud | Serverless, no local disk |
 
@@ -429,7 +429,7 @@ Any new query pattern that filters on multiple columns MUST:
 
 The `neonClient` (at `src/lib/neon-client.ts`) is used **exclusively by background sync workers**. POS API routes NEVER use it.
 
-- Local NUC: Local PostgreSQL 16 (installed by installer.run, always at `localhost:5432/pulse_pos`)
+- Local NUC: Local PostgreSQL 16 (installed by installer.run, always at `localhost:5432/thepasspos`)
 - Dev / Vercel: Neon PostgreSQL (one database per venue: `gwi_pos_{slug}`)
 - Per-venue PrismaClient cached in `globalThis.venueClients`
 - `withVenue()` wrapper resolves DB from request context via AsyncLocalStorage

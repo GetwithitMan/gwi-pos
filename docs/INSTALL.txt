@@ -65,23 +65,23 @@ PART 2: MANAGING THE NUC
 
 CHECK SERVICE STATUS
 --------------------------------------------------------------------------------
-    sudo systemctl status pulse-pos        # POS server (server role)
-    sudo systemctl status pulse-kiosk      # Kiosk browser (both roles)
+    sudo systemctl status thepasspos        # POS server (server role)
+    sudo systemctl status thepasspos-kiosk      # Kiosk browser (both roles)
 
 VIEW LOGS
 --------------------------------------------------------------------------------
-    sudo journalctl -u pulse-pos -f        # Tail POS server logs
-    sudo journalctl -u pulse-kiosk -f      # Tail kiosk logs
+    sudo journalctl -u thepasspos -f        # Tail POS server logs
+    sudo journalctl -u thepasspos-kiosk -f      # Tail kiosk logs
 
 RESTART SERVICES
 --------------------------------------------------------------------------------
-    sudo systemctl restart pulse-pos       # Restart POS server
-    sudo systemctl restart pulse-kiosk     # Restart kiosk browser
+    sudo systemctl restart thepasspos       # Restart POS server
+    sudo systemctl restart thepasspos-kiosk     # Restart kiosk browser
 
 STOP SERVICES
 --------------------------------------------------------------------------------
-    sudo systemctl stop pulse-kiosk        # Stop kiosk only
-    sudo systemctl stop pulse-pos          # Stop POS server
+    sudo systemctl stop thepasspos-kiosk        # Stop kiosk only
+    sudo systemctl stop thepasspos          # Stop POS server
 
 
 ================================================================================
@@ -107,7 +107,7 @@ PART 4: DATABASE MANAGEMENT
 
 DATABASE LOCATION
 --------------------------------------------------------------------------------
-    PostgreSQL: pulse_pos database (local)
+    PostgreSQL: thepasspos database (local)
 
 MANUAL BACKUP
 --------------------------------------------------------------------------------
@@ -125,10 +125,10 @@ LIST BACKUPS
 
 RESTORE FROM BACKUP
 --------------------------------------------------------------------------------
-    sudo systemctl stop pulse-pos
+    sudo systemctl stop thepasspos
     gunzip < /opt/gwi-pos/backups/pos-YYYYMMDD-HHMMSS.sql.gz | \
-      sudo -u postgres psql pulse_pos
-    sudo systemctl start pulse-pos
+      sudo -u postgres psql thepasspos
+    sudo systemctl start thepasspos
 
 
 ================================================================================
@@ -138,7 +138,7 @@ PART 5: TROUBLESHOOTING
 POS WON'T START
 --------------------------------------------------------------------------------
 Check logs:
-    sudo journalctl -u pulse-pos --lines 50
+    sudo journalctl -u thepasspos --lines 50
 
 Check PostgreSQL:
     sudo systemctl status postgresql
@@ -152,7 +152,7 @@ Check if POS is ready:
     curl -s http://localhost:3000/api/health
 
 Check kiosk logs:
-    sudo journalctl -u pulse-kiosk --lines 20
+    sudo journalctl -u thepasspos-kiosk --lines 20
 
 DATABASE ERRORS
 --------------------------------------------------------------------------------
@@ -160,7 +160,7 @@ Check PostgreSQL is running:
     sudo systemctl status postgresql
 
 Connect to database:
-    sudo -u postgres psql pulse_pos
+    sudo -u postgres psql thepasspos
 
 REMOTE ACCESS (RealVNC)
 --------------------------------------------------------------------------------
@@ -173,10 +173,10 @@ FACTORY RESET
 --------------------------------------------------------------------------------
 WARNING: This deletes ALL data including the database.
 
-    sudo systemctl stop pulse-pos pulse-kiosk
+    sudo systemctl stop thepasspos thepasspos-kiosk
     sudo rm -rf /opt/gwi-pos
-    sudo rm -f /etc/systemd/system/pulse-pos.service
-    sudo rm -f /etc/systemd/system/pulse-kiosk.service
+    sudo rm -f /etc/systemd/system/thepasspos.service
+    sudo rm -f /etc/systemd/system/thepasspos-kiosk.service
     sudo systemctl daemon-reload
 
 Then re-run the installer.
@@ -191,8 +191,8 @@ Environment:        /opt/gwi-pos/.env
 Backups:            /opt/gwi-pos/backups/
 Backup script:      /opt/gwi-pos/backup-pos.sh
 Installer copy:     /opt/gwi-pos/installer.run
-POS service:        /etc/systemd/system/pulse-pos.service
-Kiosk service:      /etc/systemd/system/pulse-kiosk.service
+POS service:        /etc/systemd/system/thepasspos.service
+Kiosk service:      /etc/systemd/system/thepasspos-kiosk.service
 Desktop launcher:   /usr/share/applications/gwi-pos.desktop
 
 

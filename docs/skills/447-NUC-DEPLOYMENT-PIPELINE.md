@@ -80,7 +80,7 @@ When a schema change would fail `prisma db push` on tables with existing data:
 
 NUC services may have different names depending on installer version:
 - **Current:** `thepasspos`, `thepasspos-sync`, `thepasspos-kiosk`
-- **Legacy:** `pulse-pos`, `pulse-sync`, `pulse-kiosk`
+- **Legacy:** `thepasspos`, `thepasspos-sync`, `thepasspos-kiosk`
 
 Sync agent tries current name first, falls back to legacy.
 
@@ -122,5 +122,5 @@ diff /opt/gwi-pos/sync-agent.js /opt/gwi-pos/app/public/sync-agent.js
 cd /opt/gwi-pos/app && node scripts/nuc-pre-migrate.js
 
 # Check database state
-psql pulse_pos -c "SELECT data_type FROM information_schema.columns WHERE table_name='Payment' AND column_name='paymentMethod'"
+psql thepasspos -c "SELECT data_type FROM information_schema.columns WHERE table_name='Payment' AND column_name='paymentMethod'"
 ```
