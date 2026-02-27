@@ -1444,7 +1444,7 @@ export const OrderPanel = memo(function OrderPanel({
       )}
 
       {/* Items list (scrollable) */}
-      <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+      <div ref={scrollContainerRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px' }}>
         {hasItems ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {renderPendingItems()}

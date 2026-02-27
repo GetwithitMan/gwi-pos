@@ -283,10 +283,22 @@ export const POST = withVenue(withTiming(async function POST(
       // Return 200 (not 400) for already-paid orders so offline sync queues
       // treat this as success and stop retrying. The payment already went through.
       if (order.status === 'paid' || order.status === 'closed') {
+        // Include all fields Android's PayOrderData expects so Moshi doesn't choke
+        const existingPayment = await db.payment.findFirst({
+          where: { orderId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
+        })
         return NextResponse.json({ data: {
           success: true,
           alreadyPaid: true,
           orderId,
+          paymentId: existingPayment?.id ?? 'already-paid',
+          amount: existingPayment ? Number(existingPayment.amount) : Number(order.total),
+          tipAmount: existingPayment ? Number(existingPayment.tipAmount) : 0,
+          totalAmount: existingPayment ? Number(existingPayment.totalAmount) : Number(order.total),
+          paymentMethod: existingPayment?.paymentMethod ?? body.paymentMethod ?? 'cash',
+          newOrderBalance: 0,
           orderStatus: order.status,
           message: `Order already ${order.status}`,
         } })
@@ -1186,10 +1198,26 @@ export const POST = withVenue(withTiming(async function POST(
       })
     } catch (txError) {
       if (txError instanceof Error && txError.message === 'ORDER_ALREADY_PAID') {
-        return NextResponse.json(
-          { error: 'Order already paid or closed by another terminal' },
-          { status: 409 }
-        )
+        // Return 200 (not 409) so offline outbox queues treat this as success.
+        // The order was already paid — mission accomplished.
+        const existingPayment = await db.payment.findFirst({
+          where: { orderId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
+        })
+        const freshOrder = await db.order.findUnique({ where: { id: orderId }, select: { total: true, status: true } })
+        return NextResponse.json({ data: {
+          success: true,
+          alreadyPaid: true,
+          orderId,
+          paymentId: existingPayment?.id ?? 'already-paid',
+          amount: existingPayment ? Number(existingPayment.amount) : Number(freshOrder?.total ?? 0),
+          tipAmount: existingPayment ? Number(existingPayment.tipAmount) : 0,
+          totalAmount: existingPayment ? Number(existingPayment.totalAmount) : Number(freshOrder?.total ?? 0),
+          paymentMethod: existingPayment?.paymentMethod ?? 'cash',
+          newOrderBalance: 0,
+          orderStatus: freshOrder?.status ?? 'paid',
+        } })
       }
 
       // W1-P3: If DB transaction failed but card was already charged at Datacap,
@@ -1259,6 +1287,18 @@ export const POST = withVenue(withTiming(async function POST(
       }).catch(() => {})
       void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
       invalidateSnapshotCache(order.locationId)
+
+      // Free the parent order's table (child split orders have no tableId)
+      if (parentTableId) {
+        void db.table.update({
+          where: { id: parentTableId },
+          data: { status: 'available' },
+        }).then(() => {
+          invalidateSnapshotCache(order.locationId)
+        }).catch(err => {
+          console.error('[Pay] Parent table status reset failed:', err)
+        })
+      }
     }
 
     // If order is fully paid, reset entertainment items and table status
@@ -1453,11 +1493,25 @@ export const POST = withVenue(withTiming(async function POST(
       loyaltyPointsEarned: pointsEarned || null,
     }
 
-    // Return response
+    // Return response — includes flat fields for Android's PayOrderData DTO
+    const primaryPayment = createdPayments[0]
+    const finalStatus = newPaidTotal >= orderTotal - paidTolerance ? 'paid' : 'partial'
+    const finalBalance = newPaidTotal >= orderTotal - paidTolerance ? 0 : Math.max(0, orderTotal - newPaidTotal)
     return NextResponse.json({ data: {
       success: true,
+      // Flat fields for Android compatibility
+      orderId,
+      paymentId: primaryPayment?.id ?? null,
+      amount: primaryPayment ? Number(primaryPayment.amount) : 0,
+      tipAmount: primaryPayment ? Number(primaryPayment.tipAmount) : 0,
+      totalAmount: primaryPayment ? Number(primaryPayment.totalAmount) : 0,
+      paymentMethod: primaryPayment?.paymentMethod ?? 'cash',
+      newOrderBalance: finalBalance,
+      orderStatus: finalStatus,
+      // Full payment list for web POS
       payments: createdPayments.map(p => ({
         id: p.id,
+        paymentMethod: p.paymentMethod,
         method: p.paymentMethod,
         amount: Number(p.amount),
         tipAmount: Number(p.tipAmount),
@@ -1470,8 +1524,7 @@ export const POST = withVenue(withTiming(async function POST(
         authCode: p.authCode,
         status: p.status,
       })),
-      orderStatus: newPaidTotal >= orderTotal - paidTolerance ? 'paid' : 'partial',
-      remainingBalance: newPaidTotal >= orderTotal - paidTolerance ? 0 : Math.max(0, orderTotal - newPaidTotal),
+      remainingBalance: finalBalance,
       receiptData,
       // Loyalty info
       loyaltyPointsEarned: pointsEarned,

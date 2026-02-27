@@ -726,6 +726,8 @@ export function PaymentModal({
           if (await handleVersionConflict(res, orderId)) return
           const data = await res.json().catch(() => ({}))
           toast.error(`Cash payment failed: ${data.error || 'Server error'}`)
+          setCashComplete(false)
+          setCashTendered(0)
           return
         }
         completePaymentTiming(cashTiming, 'success')
@@ -733,6 +735,8 @@ export function PaymentModal({
       } catch {
         completePaymentTiming(cashTiming, 'error')
         toast.error('Cash payment failed — check network connection')
+        setCashComplete(false)
+        setCashTendered(0)
       } finally {
         setIsProcessing(false)
       }
@@ -1529,7 +1533,7 @@ export function PaymentModal({
           {step === 'cash' && cashComplete && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', paddingTop: 16 }}>
               <div style={{ fontSize: 48, lineHeight: 1 }}>💵</div>
-              <h3 style={{ ...sectionLabelStyle, fontSize: 22, textAlign: 'center', margin: 0 }}>Payment Complete</h3>
+              <h3 style={{ ...sectionLabelStyle, fontSize: 22, textAlign: 'center', margin: 0 }}>Change Due</h3>
 
               <div style={{ ...infoPanelStyle('rgba(34, 197, 94, 0.12)'), width: '100%' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 16, fontFamily: 'ui-monospace, monospace' }}>
@@ -1563,7 +1567,7 @@ export function PaymentModal({
                     background: '#16a34a',
                   }}
                 >
-                  {isProcessing ? 'Processing...' : 'Done'}
+                  {isProcessing ? 'Processing...' : 'Complete Payment'}
                 </button>
               </div>
 
