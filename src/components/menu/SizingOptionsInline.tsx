@@ -6,8 +6,6 @@ import { PricingOptionRow } from './PricingOptionRow'
 import { PricingOptionInventoryLinker } from './PricingOptionInventoryLinker'
 import type { IngredientLibraryItem } from './IngredientHierarchyPicker'
 
-const MAX_SIZE_OPTIONS = 4
-
 interface IngredientCategory {
   id: string
   code: number
@@ -52,13 +50,18 @@ export function SizingOptionsInline({
     deleteOption,
   } = usePricingOptions(itemId)
 
-  // The sizing group is the one NOT marked as quick pick
+  // Size group = NOT quick pick; Quick pick group = showAsQuickPick
   const sizeGroup = groups.find(g => !g.showAsQuickPick)
+  const quickPickGroup = groups.find(g => g.showAsQuickPick)
   const hasSizes = !!sizeGroup
-  const optionCount = sizeGroup?.options.length ?? 0
-  const atMax = optionCount >= MAX_SIZE_OPTIONS
+  const hasQuickPick = !!quickPickGroup
+  const activeGroup = sizeGroup || quickPickGroup
+  const optionCount = activeGroup?.options.length ?? 0
   const sizesActive = hasSizes && optionCount > 0
   const hasIngredientData = ingredientsLibrary.length > 0
+
+  // Count how many options have showOnPos checked (for max 4 display cap)
+  const showOnPosCount = activeGroup?.options.filter(o => o.showOnPos).length ?? 0
 
   // Notify parent about sizing state changes via effect
   const prevActiveRef = useRef(sizesActive)
@@ -77,58 +80,80 @@ export function SizingOptionsInline({
     )
   }
 
-  const handleToggleOn = async () => {
+  const handleEnableSizes = async () => {
+    // If quick pick exists, remove it first
+    if (quickPickGroup) {
+      await deleteGroup(quickPickGroup.id)
+    }
     await addGroup('Sizes', false)
   }
 
-  const handleToggleOff = () => {
+  const handleEnableQuickPick = async () => {
+    // If size group exists, remove it first
     if (sizeGroup) {
-      deleteGroup(sizeGroup.id)
+      await deleteGroup(sizeGroup.id)
+    }
+    await addGroup('Quick Picks', true)
+  }
+
+  const handleDisable = () => {
+    if (activeGroup) {
+      deleteGroup(activeGroup.id)
     }
   }
 
   return (
     <div className="border border-gray-200 rounded-xl p-3 space-y-3">
-      <div className="flex items-center justify-between">
+      {/* Toggle row: two mutually exclusive checkboxes */}
+      <div className="flex items-center gap-4">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={hasSizes}
-            onChange={(e) => e.target.checked ? handleToggleOn() : handleToggleOff()}
+            onChange={(e) => e.target.checked ? handleEnableSizes() : handleDisable()}
             disabled={saving}
             className="w-4 h-4 rounded"
           />
-          <span className="text-sm font-medium text-gray-700">Enable Size Options</span>
-          <span className="text-[11px] text-gray-400">(e.g. S/M/L, Bowl/Cup)</span>
+          <span className="text-sm font-medium text-gray-700">Size Options</span>
+          <span className="text-[11px] text-gray-400">(S/M/L, Bowl/Cup)</span>
         </label>
-        {hasSizes && (
-          <span className="text-[11px] text-gray-400">{optionCount}/{MAX_SIZE_OPTIONS}</span>
-        )}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={hasQuickPick}
+            onChange={(e) => e.target.checked ? handleEnableQuickPick() : handleDisable()}
+            disabled={saving}
+            className="w-4 h-4 rounded"
+          />
+          <span className="text-sm font-medium text-gray-700">Quick Pick</span>
+          <span className="text-[11px] text-gray-400">(Mild/Medium/Hot)</span>
+        </label>
       </div>
 
-      {hasSizes && sizeGroup && (
+      {activeGroup && (
         <>
-          {sizesActive && (
+          {sizesActive && hasSizes && (
             <p className="text-[11px] text-amber-600 bg-amber-50 px-2 py-1 rounded-lg">
               Base price is overridden by size options below.
             </p>
           )}
 
-          {sizeGroup.options.length > 0 ? (
+          {activeGroup.options.length > 0 ? (
             <div className="divide-y divide-gray-100">
-              {sizeGroup.options.map(opt => (
+              {activeGroup.options.map(opt => (
                 <div key={opt.id}>
                   <PricingOptionRow
                     option={opt}
-                    onUpdate={(data) => updateOption(sizeGroup.id, opt.id, data)}
-                    onDelete={() => deleteOption(sizeGroup.id, opt.id)}
+                    showOnPosCount={showOnPosCount}
+                    onUpdate={(data) => updateOption(activeGroup.id, opt.id, data)}
+                    onDelete={() => deleteOption(activeGroup.id, opt.id)}
                   />
                   {/* Inventory linker for saved options (only if ingredient data is available) */}
-                  {hasIngredientData && (
+                  {hasIngredientData && hasSizes && (
                     <PricingOptionInventoryLinker
                       optionId={opt.id}
                       itemId={itemId}
-                      groupId={sizeGroup.id}
+                      groupId={activeGroup.id}
                       ingredientsLibrary={ingredientsLibrary}
                       ingredientCategories={ingredientCategories}
                       locationId={locationId}
@@ -140,19 +165,21 @@ export function SizingOptionsInline({
               ))}
             </div>
           ) : (
-            <p className="text-xs text-gray-400 text-center py-1">No sizes yet. Add one below.</p>
+            <p className="text-xs text-gray-400 text-center py-1">
+              No {hasSizes ? 'sizes' : 'quick picks'} yet. Add one below.
+            </p>
           )}
 
           <button
             type="button"
-            onClick={() => addOption(sizeGroup.id, 'New Size')}
-            disabled={saving || atMax}
+            onClick={() => addOption(activeGroup.id, hasSizes ? 'New Size' : 'New Pick')}
+            disabled={saving}
             className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            {atMax ? `Max ${MAX_SIZE_OPTIONS} sizes` : 'Add Size'}
+            {hasSizes ? 'Add Size' : 'Add Quick Pick'}
           </button>
         </>
       )}

@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { toast } from '@/stores/toast-store'
-import { QuickPickTab } from './QuickPickTab'
 import { SizingOptionsInline } from './SizingOptionsInline'
 
 interface ItemSettings {
@@ -324,7 +323,6 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
 
   const tabs = [
     { id: 'basics', label: 'Basics' },
-    { id: 'pricing-options', label: 'Quick Pick' },
     { id: 'display', label: 'Display & Channels' },
     { id: 'kitchen', label: 'Kitchen & Print' },
     { id: 'availability', label: 'Availability' },
@@ -582,11 +580,6 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                     </label>
                   </div>
                 </>
-              )}
-
-              {/* QUICK PICK TAB */}
-              {activeTab === 'pricing-options' && (
-                <QuickPickTab itemId={itemId} />
               )}
 
               {/* DISPLAY & CHANNELS TAB */}

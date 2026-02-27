@@ -253,6 +253,7 @@ async function getMenuForBootstrap(locationId: string) {
           priceCC: opt.priceCC !== null ? Number(opt.priceCC) : null,
           sortOrder: opt.sortOrder,
           isDefault: opt.isDefault,
+          showOnPos: opt.showOnPos ?? false,
           color: opt.color,
         })),
       })) || [],

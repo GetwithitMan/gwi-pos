@@ -13,7 +13,7 @@ export const POST = withVenue(async function POST(
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
-    const { label, price, priceCC, sortOrder, isDefault, color } = body
+    const { label, price, priceCC, sortOrder, isDefault, showOnPos, color } = body
 
     if (!label?.trim()) {
       return NextResponse.json(
@@ -39,17 +39,6 @@ export const POST = withVenue(async function POST(
       return NextResponse.json(
         { error: 'Pricing option group not found' },
         { status: 404 }
-      )
-    }
-
-    // Enforce max 4 options per group
-    const optionCount = await db.pricingOption.count({
-      where: { groupId, deletedAt: null },
-    })
-    if (optionCount >= 4) {
-      return NextResponse.json(
-        { error: 'Maximum 4 options per group' },
-        { status: 400 }
       )
     }
 
@@ -80,6 +69,7 @@ export const POST = withVenue(async function POST(
         priceCC: priceCC ?? null,
         sortOrder: finalSortOrder,
         isDefault: isDefault ?? false,
+        showOnPos: showOnPos ?? false,
         color: color ?? null,
       },
     })
@@ -103,6 +93,7 @@ export const POST = withVenue(async function POST(
           priceCC: option.priceCC != null ? Number(option.priceCC) : null,
           sortOrder: option.sortOrder,
           isDefault: option.isDefault,
+          showOnPos: option.showOnPos,
           color: option.color,
         },
       },

@@ -4541,6 +4541,7 @@ model PricingOption {
   priceCC   Decimal? // Dual pricing credit card price
   sortOrder Int      @default(0)
   isDefault Boolean  @default(false)
+  showOnPos Boolean  @default(false) // Show as quick pick button on POS (max 4 displayed)
   color     String? // Hex color for POS button
 
   // Relations
@@ -4565,11 +4566,13 @@ model PricingOptionInventoryLink {
   pricingOptionId String
   pricingOption   PricingOption @relation(fields: [pricingOptionId], references: [id], onDelete: Cascade)
 
-  // Link to either inventory item OR prep item
+  // Link to inventory item, prep item, OR ingredient (from hierarchy picker)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   prepItemId      String?
   prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
+  ingredientId    String?
+  ingredient      Ingredient?    @relation(fields: [ingredientId], references: [id])
 
   // Usage amount when this pricing option is selected
   usageQuantity  Decimal
@@ -4585,6 +4588,7 @@ model PricingOptionInventoryLink {
   @@index([pricingOptionId])
   @@index([inventoryItemId])
   @@index([prepItemId])
+  @@index([ingredientId])
 }
 
 // Inventory count session
@@ -5368,6 +5372,7 @@ model Ingredient {
 
   // C-SCHEMA-1: Added reverse relations
   orderItemIngredients OrderItemIngredient[]
+  pricingOptionInventoryLinks PricingOptionInventoryLink[]
 
   @@index([locationId])
   @@index([locationId, name])

@@ -284,6 +284,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
             priceCC: opt.priceCC !== null ? Number(opt.priceCC) : null,
             sortOrder: opt.sortOrder,
             isDefault: opt.isDefault,
+            showOnPos: opt.showOnPos ?? false,
             color: opt.color,
           })),
         })) || [],

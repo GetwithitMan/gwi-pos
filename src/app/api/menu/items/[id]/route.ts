@@ -124,6 +124,7 @@ export const GET = withVenue(async function GET(
             priceCC: opt.priceCC !== null ? Number(opt.priceCC) : null,
             sortOrder: opt.sortOrder,
             isDefault: opt.isDefault,
+            showOnPos: opt.showOnPos ?? false,
             color: opt.color,
           })),
         })) || [],

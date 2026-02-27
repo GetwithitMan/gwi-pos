@@ -77,6 +77,7 @@ export const PUT = withVenue(async function PUT(
             priceCC: opt.priceCC != null ? Number(opt.priceCC) : null,
             sortOrder: opt.sortOrder,
             isDefault: opt.isDefault,
+            showOnPos: opt.showOnPos,
             color: opt.color,
           })),
         },

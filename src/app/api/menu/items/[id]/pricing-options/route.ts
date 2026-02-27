@@ -53,6 +53,7 @@ export const GET = withVenue(async function GET(
             priceCC: opt.priceCC != null ? Number(opt.priceCC) : null,
             sortOrder: opt.sortOrder,
             isDefault: opt.isDefault,
+            showOnPos: opt.showOnPos,
             color: opt.color,
           })),
         })),
@@ -104,14 +105,6 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Validate inline options count
-    if (options?.length > 4) {
-      return NextResponse.json(
-        { error: 'Maximum 4 options per group' },
-        { status: 400 }
-      )
-    }
-
     // Get max sort order for this menu item's groups
     const maxSort = await db.pricingOptionGroup.aggregate({
       where: { locationId, menuItemId, deletedAt: null },
@@ -136,6 +129,7 @@ export const POST = withVenue(async function POST(
                     priceCC?: number | null
                     sortOrder?: number
                     isDefault?: boolean
+                    showOnPos?: boolean
                     color?: string | null
                   },
                   index: number
@@ -146,6 +140,7 @@ export const POST = withVenue(async function POST(
                   priceCC: opt.priceCC ?? null,
                   sortOrder: opt.sortOrder ?? index,
                   isDefault: opt.isDefault ?? false,
+                  showOnPos: opt.showOnPos ?? false,
                   color: opt.color ?? null,
                 })
               ),
@@ -186,6 +181,7 @@ export const POST = withVenue(async function POST(
             priceCC: opt.priceCC != null ? Number(opt.priceCC) : null,
             sortOrder: opt.sortOrder,
             isDefault: opt.isDefault,
+            showOnPos: opt.showOnPos,
             color: opt.color,
           })),
         },

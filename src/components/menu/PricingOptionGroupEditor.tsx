@@ -9,7 +9,7 @@ interface PricingOptionGroupEditorProps {
   onUpdateGroup: (data: Partial<Pick<PricingOptionGroup, 'name' | 'isRequired' | 'showAsQuickPick'>>) => void
   onDeleteGroup: () => void
   onAddOption: (label: string) => void
-  onUpdateOption: (optionId: string, data: { label?: string; price?: number | null; isDefault?: boolean; color?: string | null }) => void
+  onUpdateOption: (optionId: string, data: { label?: string; price?: number | null; isDefault?: boolean; showOnPos?: boolean; color?: string | null }) => void
   onDeleteOption: (optionId: string) => void
 }
 
@@ -92,6 +92,7 @@ export function PricingOptionGroupEditor({
               <PricingOptionRow
                 key={opt.id}
                 option={opt}
+                showOnPosCount={group.options.filter(o => o.showOnPos).length}
                 onUpdate={(data) => onUpdateOption(opt.id, data)}
                 onDelete={() => onDeleteOption(opt.id)}
               />
@@ -101,13 +102,12 @@ export function PricingOptionGroupEditor({
         <button
           type="button"
           onClick={() => onAddOption('New Option')}
-          disabled={group.options.length >= 4}
-          className="mt-2 text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="mt-2 text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          {group.options.length >= 4 ? 'Max 4 options' : 'Add Option'}
+          Add Option
         </button>
       </div>
 

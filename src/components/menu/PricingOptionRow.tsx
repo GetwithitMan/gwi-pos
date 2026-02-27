@@ -13,13 +13,16 @@ interface PricingOptionRowProps {
     label: string
     price: number | null
     isDefault: boolean
+    showOnPos: boolean
     color: string | null
   }
-  onUpdate: (data: { label?: string; price?: number | null; isDefault?: boolean; color?: string | null }) => void
+  /** How many options in this group already have showOnPos=true */
+  showOnPosCount?: number
+  onUpdate: (data: { label?: string; price?: number | null; isDefault?: boolean; showOnPos?: boolean; color?: string | null }) => void
   onDelete: () => void
 }
 
-export function PricingOptionRow({ option, onUpdate, onDelete }: PricingOptionRowProps) {
+export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelete }: PricingOptionRowProps) {
   const [label, setLabel] = useState(option.label)
   const [price, setPrice] = useState(option.price != null ? String(option.price) : '')
   const [showColors, setShowColors] = useState(false)
@@ -60,6 +63,9 @@ export function PricingOptionRow({ option, onUpdate, onDelete }: PricingOptionRo
       onUpdate({ price: finalPrice })
     }
   }
+
+  // Can toggle showOnPos on if currently off and fewer than 4 are checked, or if currently on (to uncheck)
+  const canToggleShowOnPos = option.showOnPos || showOnPosCount < 4
 
   return (
     <div className="flex items-center gap-2 py-1.5">
@@ -130,6 +136,29 @@ export function PricingOptionRow({ option, onUpdate, onDelete }: PricingOptionRo
           </div>
         )}
       </div>
+
+      {/* Show on POS eye toggle */}
+      <button
+        type="button"
+        onClick={() => canToggleShowOnPos && onUpdate({ showOnPos: !option.showOnPos })}
+        disabled={!canToggleShowOnPos}
+        className={`p-1 rounded transition-colors shrink-0 ${
+          option.showOnPos
+            ? 'text-blue-600'
+            : canToggleShowOnPos
+              ? 'text-gray-300 hover:text-gray-400'
+              : 'text-gray-200 cursor-not-allowed'
+        }`}
+        title={option.showOnPos ? 'Shown on POS' : showOnPosCount >= 4 ? 'Max 4 shown on POS' : 'Show on POS'}
+      >
+        <svg className="w-5 h-5" fill={option.showOnPos ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+          {option.showOnPos ? (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          ) : (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+          )}
+        </svg>
+      </button>
 
       {/* Default star */}
       <button

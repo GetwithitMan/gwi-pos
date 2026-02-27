@@ -23,6 +23,7 @@ export interface PricingOption {
   priceCC: number | null  // Cash/card price variant
   sortOrder: number
   isDefault: boolean
+  showOnPos: boolean     // Show as quick pick button on POS (max 4 displayed)
   color: string | null
 }
 

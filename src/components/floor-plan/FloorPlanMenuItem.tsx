@@ -55,11 +55,11 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
     ? '#6b7280'
     : (customStyle?.textColor || '#e2e8f0')
 
-  // Quick pick buttons: first group with showAsQuickPick=true
-  const quickPickGroup = !isItem86d
-    ? item.pricingOptionGroups?.find(g => g.showAsQuickPick && g.options.length > 0)
-    : undefined
-  const hasQuickPicks = !!quickPickGroup
+  // Quick pick buttons: options with showOnPos=true from any group (max 4)
+  const quickPickOptions = !isItem86d
+    ? (item.pricingOptionGroups ?? []).flatMap(g => g.options.filter(o => o.showOnPos)).slice(0, 4)
+    : []
+  const hasQuickPicks = quickPickOptions.length > 0
 
   return (
     <motion.button
@@ -176,9 +176,9 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
         </span>
       )}
       {/* Quick pick pricing option buttons */}
-      {hasQuickPicks && quickPickGroup && (
+      {hasQuickPicks && (
         <div style={{ display: 'flex', gap: '3px', width: '100%', marginTop: 'auto', paddingTop: '4px' }}>
-          {quickPickGroup.options.slice(0, 4).map(option => {
+          {quickPickOptions.map(option => {
             const isVariant = option.price !== null
             const displayPrice = isVariant ? option.price! : item.price
             const adjustedPrice = pricing.isDualPricingEnabled

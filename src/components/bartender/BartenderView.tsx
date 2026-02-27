@@ -1999,11 +1999,11 @@ export function BartenderView({
 
                           {/* Pricing option quick pick buttons */}
                           {item.pricingOptionGroups && item.pricingOptionGroups.length > 0 && !isEditingItems && (() => {
-                            const group = item.pricingOptionGroups!.find(g => g.showAsQuickPick && g.options.length > 0)
-                            if (!group) return null
+                            const quickPickOptions = item.pricingOptionGroups!.flatMap(g => g.options.filter(o => o.showOnPos)).slice(0, 4)
+                            if (quickPickOptions.length === 0) return null
                             return (
                               <div className="mt-auto pt-1 flex gap-0.5">
-                                {group.options.slice(0, 4).map(option => {
+                                {quickPickOptions.map(option => {
                                   const isVariant = option.price !== null
                                   const displayPrice = isVariant ? option.price! : item.price
                                   const prices = getDualPrices(displayPrice, dualPricing)

@@ -11,6 +11,7 @@ export interface PricingOption {
   priceCC: number | null
   sortOrder: number
   isDefault: boolean
+  showOnPos: boolean
   color: string | null
 }
 
@@ -140,7 +141,7 @@ export function usePricingOptions(itemId: string) {
   const updateOption = useCallback(async (
     groupId: string,
     optionId: string,
-    data: Partial<Pick<PricingOption, 'label' | 'price' | 'isDefault' | 'color' | 'sortOrder'>>
+    data: Partial<Pick<PricingOption, 'label' | 'price' | 'isDefault' | 'showOnPos' | 'color' | 'sortOrder'>>
   ) => {
     // Optimistic update
     setGroups(prev => prev.map(g => {

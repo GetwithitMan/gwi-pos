@@ -13,7 +13,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id: menuItemId, groupId, optionId } = await params
     const body = await request.json()
-    const { label, price, priceCC, sortOrder, isDefault, color } = body
+    const { label, price, priceCC, sortOrder, isDefault, showOnPos, color } = body
 
     const locationId = await getLocationId()
     if (!locationId) {
@@ -57,6 +57,7 @@ export const PUT = withVenue(async function PUT(
         ...(priceCC !== undefined && { priceCC: priceCC ?? null }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(isDefault !== undefined && { isDefault }),
+        ...(showOnPos !== undefined && { showOnPos }),
         ...(color !== undefined && { color: color ?? null }),
       },
     })
@@ -80,6 +81,7 @@ export const PUT = withVenue(async function PUT(
           priceCC: updated.priceCC != null ? Number(updated.priceCC) : null,
           sortOrder: updated.sortOrder,
           isDefault: updated.isDefault,
+          showOnPos: updated.showOnPos,
           color: updated.color,
         },
       },
