@@ -15,7 +15,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
-import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
+import { calculateCardPrice, calculateCashPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -211,11 +211,13 @@ export const POST = withVenue(withTiming(async function POST(
     // ─── Normalize legacy / Android offline-sync payment format ───────────
     // Old callers (and PendingPayment offline queue) send a flat object:
     //   { paymentMethodId: "cash", amount: 123, tipAmount: 0, employeeId: "..." }
+    // Android native sends:
+    //   { paymentMethod: "cash", amount: 159.12, tipAmount: 0, employeeId: "..." }
     // The Zod schema expects:
     //   { payments: [{ method: "cash", amount: 123 }], employeeId: "..." }
     // Transform the flat shape so both formats are accepted.
-    if (!body.payments && (body.paymentMethodId || body.method || body.amount)) {
-      const method = body.paymentMethodId || body.method || 'cash'
+    if (!body.payments && (body.paymentMethodId || body.paymentMethod || body.method || body.amount)) {
+      const method = body.paymentMethodId || body.paymentMethod || body.method || 'cash'
       body = {
         payments: [{
           method,
@@ -465,11 +467,17 @@ export const POST = withVenue(withTiming(async function POST(
     const hasCashPayment = payments.some(p => p.method === 'cash')
     let validationRemaining = remaining
     if (hasCashPayment) {
+      // Dual pricing: order.total is the card price. Cash payments send the
+      // cash-discounted amount, so validation must compare against the cash price.
+      const dualPricing = settings.dualPricing
+      if (dualPricing?.enabled) {
+        validationRemaining = calculateCashPrice(remaining, dualPricing.cashDiscountPercent)
+      }
       if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
-        validationRemaining = applyPriceRounding(remaining, settings.priceRounding, 'cash')
+        validationRemaining = applyPriceRounding(validationRemaining, settings.priceRounding, 'cash')
       } else if (settings.payments.cashRounding !== 'none') {
         validationRemaining = roundAmount(
-          remaining,
+          validationRemaining,
           settings.payments.cashRounding,
           settings.payments.roundingDirection
         )
@@ -1062,7 +1070,13 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Mark as paid if fully paid
-    if (newPaidTotal >= orderTotal - paidTolerance) {
+    // Dual pricing: orderTotal is the card price. When paying cash, the effective
+    // total is the cash-discounted price, so we compare against that instead.
+    let effectiveTotal = orderTotal
+    if (hasCash && settings.dualPricing?.enabled) {
+      effectiveTotal = calculateCashPrice(orderTotal, settings.dualPricing.cashDiscountPercent)
+    }
+    if (newPaidTotal >= effectiveTotal - paidTolerance) {
       updateData.status = 'paid'
       updateData.paidAt = new Date()
       updateData.closedAt = new Date()
@@ -1135,7 +1149,7 @@ export const POST = withVenue(withTiming(async function POST(
           })
         }
         const orderUpdateResult = await tx.order.updateMany({
-          where: { id: orderId, status: { in: ['open', 'in_progress'] } },
+          where: { id: orderId, status: { in: ['draft', 'open', 'sent', 'in_progress'] } },
           data: { ...updateData, version: { increment: 1 } },
         })
         if (orderUpdateResult.count === 0) {
@@ -1515,8 +1529,8 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Return response — includes flat fields for Android's PayOrderData DTO
     const primaryPayment = createdPayments[0]
-    const finalStatus = newPaidTotal >= orderTotal - paidTolerance ? 'paid' : 'partial'
-    const finalBalance = newPaidTotal >= orderTotal - paidTolerance ? 0 : Math.max(0, orderTotal - newPaidTotal)
+    const finalStatus = newPaidTotal >= effectiveTotal - paidTolerance ? 'paid' : 'partial'
+    const finalBalance = newPaidTotal >= effectiveTotal - paidTolerance ? 0 : Math.max(0, effectiveTotal - newPaidTotal)
     return NextResponse.json({ data: {
       success: true,
       // Flat fields for Android compatibility

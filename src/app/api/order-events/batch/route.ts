@@ -15,6 +15,7 @@ import {
   getPaidAmountCents,
   getTipTotalCents,
   getItemCount,
+  getItemTotalCents,
   getHasHeldItems,
 } from '@/lib/order-events/types'
 import { reduce } from '@/lib/order-events/reducer'
@@ -259,6 +260,103 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } catch (err) {
       console.error(
         `[order-events/batch] Bridge sync to Order failed for ${orderId}:`,
+        err
+      )
+    }
+  }
+
+  // ── Bridge sync: OrderState.items → legacy OrderItem table ───────────
+  // Keeps the legacy OrderItem table in sync so GET /api/orders/[id],
+  // POST /api/orders/[id]/pay, reports, and KDS all see event-sourced items.
+  for (const [orderId, state] of orderStates) {
+    try {
+      const activeItems = Object.values(state.items)
+      // Get existing item IDs for this order to detect removals
+      const existingItems = await db.orderItem.findMany({
+        where: { orderId, deletedAt: null },
+        select: { id: true },
+      })
+      const activeItemIds = new Set(activeItems.map((i) => i.lineItemId))
+
+      // Soft-delete items that no longer exist in the event-sourced state
+      const removedIds = existingItems
+        .filter((e) => !activeItemIds.has(e.id))
+        .map((e) => e.id)
+      if (removedIds.length > 0) {
+        await db.orderItem.updateMany({
+          where: { id: { in: removedIds } },
+          data: { deletedAt: new Date(), status: 'voided' },
+        })
+      }
+
+      // Upsert each active item
+      for (const item of activeItems) {
+        const itemTotalCents = getItemTotalCents(item)
+        await db.orderItem.upsert({
+          where: { id: item.lineItemId },
+          create: {
+            id: item.lineItemId,
+            locationId,
+            orderId,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            price: item.priceCents / 100,
+            quantity: item.quantity,
+            specialNotes: item.specialNotes ?? null,
+            seatNumber: item.seatNumber ?? null,
+            courseNumber: item.courseNumber ?? null,
+            isHeld: item.isHeld,
+            kitchenStatus: (item.kitchenStatus as any) ?? 'pending',
+            soldByWeight: item.soldByWeight,
+            weight: item.weight ?? null,
+            weightUnit: item.weightUnit ?? null,
+            unitPrice: item.unitPriceCents != null ? item.unitPriceCents / 100 : null,
+            grossWeight: item.grossWeight ?? null,
+            tareWeight: item.tareWeight ?? null,
+            status: (item.status as any) ?? 'active',
+            isCompleted: item.isCompleted,
+            resendCount: item.resendCount,
+            delayMinutes: item.delayMinutes ?? null,
+            itemTotal: itemTotalCents / 100,
+            modifierTotal: 0,
+            pricingOptionId: item.pricingOptionId ?? null,
+            pricingOptionLabel: item.pricingOptionLabel ?? null,
+            costAtSale: item.costAtSaleCents != null ? item.costAtSaleCents / 100 : null,
+            pourSize: item.pourSize ?? null,
+            pourMultiplier: item.pourMultiplier ?? null,
+          },
+          update: {
+            name: item.name,
+            price: item.priceCents / 100,
+            quantity: item.quantity,
+            specialNotes: item.specialNotes ?? null,
+            seatNumber: item.seatNumber ?? null,
+            courseNumber: item.courseNumber ?? null,
+            isHeld: item.isHeld,
+            kitchenStatus: (item.kitchenStatus as any) ?? undefined,
+            soldByWeight: item.soldByWeight,
+            weight: item.weight ?? null,
+            weightUnit: item.weightUnit ?? null,
+            unitPrice: item.unitPriceCents != null ? item.unitPriceCents / 100 : null,
+            grossWeight: item.grossWeight ?? null,
+            tareWeight: item.tareWeight ?? null,
+            status: (item.status as any) ?? undefined,
+            isCompleted: item.isCompleted,
+            resendCount: item.resendCount,
+            delayMinutes: item.delayMinutes ?? null,
+            itemTotal: itemTotalCents / 100,
+            pricingOptionId: item.pricingOptionId ?? null,
+            pricingOptionLabel: item.pricingOptionLabel ?? null,
+            costAtSale: item.costAtSaleCents != null ? item.costAtSaleCents / 100 : null,
+            pourSize: item.pourSize ?? null,
+            pourMultiplier: item.pourMultiplier ?? null,
+            deletedAt: null, // Un-delete if re-added
+          },
+        })
+      }
+    } catch (err) {
+      console.error(
+        `[order-events/batch] OrderItem bridge sync failed for ${orderId}:`,
         err
       )
     }
