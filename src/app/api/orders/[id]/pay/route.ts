@@ -15,7 +15,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
-import { calculateCardPrice, calculateCashPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
+import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -467,12 +467,12 @@ export const POST = withVenue(withTiming(async function POST(
     const hasCashPayment = payments.some(p => p.method === 'cash')
     let validationRemaining = remaining
     if (hasCashPayment) {
-      // Dual pricing: order.total is the card price. Cash payments send the
-      // cash-discounted amount, so validation must compare against the cash price.
-      const dualPricing = settings.dualPricing
-      if (dualPricing?.enabled) {
-        validationRemaining = calculateCashPrice(remaining, dualPricing.cashDiscountPercent)
-      }
+      // Dual pricing: order.total IS the cash price (stored price model).
+      // Card price = order.total * (1 + cashDiscountPercent/100).
+      // Cash payments must match the stored total — do NOT call calculateCashPrice()
+      // on `remaining` because it is already the cash price; doing so would
+      // incorrectly reduce the threshold a second time.
+      // (No adjustment needed here — validationRemaining stays as `remaining`.)
       if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
         validationRemaining = applyPriceRounding(validationRemaining, settings.priceRounding, 'cash')
       } else if (settings.payments.cashRounding !== 'none') {
@@ -1070,12 +1070,13 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Mark as paid if fully paid
-    // Dual pricing: orderTotal is the card price. When paying cash, the effective
-    // total is the cash-discounted price, so we compare against that instead.
-    let effectiveTotal = orderTotal
-    if (hasCash && settings.dualPricing?.enabled) {
-      effectiveTotal = calculateCashPrice(orderTotal, settings.dualPricing.cashDiscountPercent)
-    }
+    // Dual pricing: orderTotal IS the cash price (stored price model).
+    // Card price = orderTotal * (1 + cashDiscountPercent/100).
+    // For cash payments effectiveTotal is simply orderTotal — do NOT call
+    // calculateCashPrice() on it, which would incorrectly reduce it a second time.
+    // Cash rounding (applied earlier to validationRemaining) is handled separately;
+    // the paid-detection threshold here uses the raw cash total.
+    const effectiveTotal = orderTotal
     if (newPaidTotal >= effectiveTotal - paidTolerance) {
       updateData.status = 'paid'
       updateData.paidAt = new Date()

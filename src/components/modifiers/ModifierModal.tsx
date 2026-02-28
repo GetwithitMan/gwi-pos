@@ -293,6 +293,7 @@ export function ModifierModal({
               getModifiersByTier={getModifiersByTier}
               getTieredPrice={getTieredPrice}
               getExcludedModifierIds={getExcludedModifierIds}
+              cardPriceMultiplier={cpm}
             />
 
             {/* Recursively render grandchildren */}
@@ -317,6 +318,7 @@ export function ModifierModal({
                   getModifiersByTier={getModifiersByTier}
                   getTieredPrice={getTieredPrice}
                   getExcludedModifierIds={getExcludedModifierIds}
+                  cardPriceMultiplier={cpm}
                 />
               </div>
             ))}
@@ -431,6 +433,7 @@ export function ModifierModal({
                           getModifiersByTier={getModifiersByTier}
                           getTieredPrice={getTieredPrice}
                           getExcludedModifierIds={getExcludedModifierIds}
+                          cardPriceMultiplier={cpm}
                         />
                       ))}
                     </div>
@@ -461,6 +464,7 @@ export function ModifierModal({
                             getModifiersByTier={getModifiersByTier}
                             getTieredPrice={getTieredPrice}
                             getExcludedModifierIds={getExcludedModifierIds}
+                            cardPriceMultiplier={cpm}
                           />
                         </div>
                       ))}

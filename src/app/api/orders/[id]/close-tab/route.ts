@@ -9,7 +9,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
-import { roundToCents } from '@/lib/pricing'
+import { roundToCents, calculateCardPrice } from '@/lib/pricing'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Close tab by capturing against cards
@@ -102,8 +102,15 @@ export const POST = withVenue(async function POST(
       .slice(0, 4)
     if (tipSuggestions.length === 0) tipSuggestions.push(15, 18, 20, 25)
 
-    // Calculate purchase amount from order total
-    const purchaseAmount = Number(order.total) - Number(order.tipTotal)
+    // Calculate purchase amount from order total.
+    // Tab closes are always card payments (pre-auth capture), so if dual pricing is
+    // enabled we must capture the card price, not the stored cash price.
+    // Pricing model: stored order.total = cash price; card price = cash price × (1 + cashDiscountPercent/100)
+    const cashBaseAmount = Number(order.total) - Number(order.tipTotal)
+    const dualPricing = locSettings.dualPricing
+    const purchaseAmount = dualPricing?.enabled
+      ? calculateCardPrice(cashBaseAmount, dualPricing.cashDiscountPercent ?? 4.0)
+      : cashBaseAmount
     let gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
 
     // Bottle service auto-gratuity: apply if no explicit tip was provided

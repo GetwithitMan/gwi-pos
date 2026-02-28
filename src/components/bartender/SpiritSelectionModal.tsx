@@ -60,6 +60,8 @@ export function SpiritSelectionModal({ item, selectedTier, dualPricing, onSelect
               const totalPrice = item.price + spirit.price
               const prices = getDualPrices(totalPrice, dualPricing)
               const displayPrice = dualPricing.enabled ? prices.cardPrice : prices.cashPrice
+              const upgradePrices = getDualPrices(spirit.price, dualPricing)
+              const upgradeDisplayPrice = dualPricing.enabled ? upgradePrices.cardPrice : upgradePrices.cashPrice
               return (
                 <button
                   key={spirit.id}
@@ -71,7 +73,7 @@ export function SpiritSelectionModal({ item, selectedTier, dualPricing, onSelect
                     {formatCurrency(displayPrice)}
                   </div>
                   {spirit.price > 0 && (
-                    <div className="text-white/60 text-[10px]">+{formatCurrency(spirit.price)}</div>
+                    <div className="text-white/60 text-[10px]">+{formatCurrency(upgradeDisplayPrice)}</div>
                   )}
                 </button>
               )

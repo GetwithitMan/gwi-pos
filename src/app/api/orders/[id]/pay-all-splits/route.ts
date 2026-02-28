@@ -7,6 +7,7 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { parseSettings } from '@/lib/settings'
+import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 
 const PayAllSplitsSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit']),
@@ -96,11 +97,24 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Calculate combined total (W2-P2: round to avoid floating-point drift)
-    const combinedTotal = Math.round(unpaidSplits.reduce((sum, s) => sum + Number(s.total), 0) * 100) / 100
-
     // Parse settings before tx — needed for loyalty inside tx and tips outside
     const settings = parseSettings(parentOrder.location.settings)
+
+    // Dual pricing: determine if card surcharge applies to this payment method
+    const dualPricing = settings.dualPricing
+    const isCard = method !== 'cash'
+    const dualPricingApplies = dualPricing.enabled && isCard && (
+      (method === 'credit' && dualPricing.applyToCredit) ||
+      (method === 'debit' && dualPricing.applyToDebit)
+    )
+
+    // Calculate combined total (W2-P2: round to avoid floating-point drift)
+    // For card payments with dual pricing, use card price (cash price × (1 + %))
+    const combinedTotal = roundToCents(unpaidSplits.reduce((sum, s) => {
+      const cashAmt = Number(s.total)
+      const amt = dualPricingApplies ? calculateCardPrice(cashAmt, dualPricing.cashDiscountPercent) : cashAmt
+      return sum + amt
+    }, 0))
 
     // Process all payments atomically
     const now = new Date()
@@ -109,7 +123,12 @@ export const POST = withVenue(async function POST(
       // Create a payment and mark each unpaid split as paid
       for (const split of unpaidSplits) {
         // W2-P2: Round each split total to avoid floating-point imprecision
-        const splitTotal = Math.round(Number(split.total) * 100) / 100
+        // Dual pricing: split.total is the cash price. For card payments with dual
+        // pricing enabled, charge the card price = cash price × (1 + discount%).
+        const cashSplitTotal = roundToCents(Number(split.total))
+        const splitTotal = dualPricingApplies
+          ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
+          : cashSplitTotal
 
         await tx.payment.create({
           data: {
