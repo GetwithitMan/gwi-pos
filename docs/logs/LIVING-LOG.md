@@ -5,6 +5,71 @@
 
 ---
 
+## 2026-02-27 — Android Payment Hardening + Dual Pricing Fix + Cash Rounding (Skills 457–459)
+
+**Session:** Massive Android hardening pass across payment lifecycle, order state management, and real-time sync. Fixed 14 core bugs (stale payCash totals, double-tap race via Mutex, draft payment guard, persisted closed-order guards). Applied 6 post-audit refinements. Added 4 socket layer optimizations (conflate, debounce, Dispatchers.Default, reconnection tuning). Fixed inverted dual pricing display (card price was showing surcharge — correct model: base price IS card price, cash gets discount). Implemented full cash rounding pipeline on Android matching web POS Skill 327 (nickel/dime/quarter/dollar × nearest/up/down). DB v25.
+
+### Commits
+
+**GWI Android Register** (`gwi-android-register`):
+- `d283f1f` — fix: comprehensive payment/order lifecycle hardening + UX fixes (12 files, +595/-313)
+- *(uncommitted)* — fix: dual pricing inversion + cash rounding implementation (5 files, +112/-29)
+
+### Deployments
+- Android: `d283f1f` pushed to main
+- Dual pricing + cash rounding: pending commit + push
+
+### Features Delivered
+
+| Feature | Description |
+|---------|-------------|
+| **payCash Stale Total Fix** | Total captured AFTER `ensureOrderReadyForPayment()` — prevents stale totals after item sync |
+| **addItemMutex** | Kotlin Mutex serializes 4 grid-tap add-item variants — taps queued, never dropped |
+| **Persisted Closed Guards** | `recentlyClosedOrderIds` survives process death via SharedPreferences with wall-clock timestamps |
+| **Draft Payment Guard** | `ensureOrderReadyForPayment()` blocks payments on offline drafts (Room `isOfflineDraft` check) |
+| **Flow-Based Debounce** | `SharedFlow.debounce(150ms)` replaces cancel-restart — guaranteed refresh delivery under event pressure |
+| **Socket Optimizations** | `.conflate()` on Room/KDS flows, `Dispatchers.Default` for JSON parsing, reconnection 800ms/5s/12s |
+| **Socket Dedup TTL 60s** | Event dedup window increased from 30s to 60s for high-latency retries |
+| **Dual Pricing Fix** | Base price = card price (no surcharge). Cash price = base - discount. Display corrected across OrderPanel, PaymentSheet, payCash |
+| **Cash Rounding** | Full pipeline: BootstrapWorker → SyncMeta → OrderViewModel `applyCashRounding()` (integer cents) → OrderPanel + PaymentSheet display → payCash sends rounded amount |
+| **Hardware Failure Snackbar** | Cash drawer failure shows "Cash drawer unavailable — open manually" |
+| **PaymentLog Dedup** | `OnConflictStrategy.IGNORE` with composite unique index — crash-retry safe |
+| **Quick Pick Label Display** | `pricingOptionLabel` rendered in order panel items |
+| **Outbox Sync Guards** | Send/Pay buttons disabled when order has pending outbox entries |
+
+### Fixes Summary
+
+| # | Severity | Fix |
+|---|----------|-----|
+| 1 | CRITICAL | payCash stale total — captured after ensureOrderReadyForPayment |
+| 2 | CRITICAL | addItemMutex — Mutex serializes grid-tap variants |
+| 3 | CRITICAL | Dual pricing inverted — card was showing surcharge |
+| 4 | HIGH | Draft payment guard — isOfflineDraft Room check |
+| 5 | HIGH | syncPendingItems missing refreshTotals() |
+| 6 | HIGH | Persisted closed guards — SharedPreferences |
+| 7 | HIGH | Flow-based debounce — guaranteed delivery |
+| 8 | HIGH | Outbox sync guards — buttons disabled during sync |
+| 9 | MEDIUM | Cash rounding — full pipeline matching web POS |
+| 10 | MEDIUM | Socket reconnection tuning — LAN-optimized |
+| 11 | MEDIUM | Dedup TTL 60s |
+| 12 | MEDIUM | Hardware failure snackbar |
+| 13 | MEDIUM | SystemClock.elapsedRealtime() for throttle |
+| 14 | MEDIUM | OrderPanel rounding sign formatting fix |
+
+### Files Changed
+
+| Area | New | Modified | Total |
+|------|-----|----------|-------|
+| Android (d283f1f) | 0 | 12 | 12 |
+| Android (uncommitted) | 0 | 5 | 5 |
+| Skills/Docs | 3 | 2 | 5 |
+| **Total** | **3** | **19** | **22** |
+
+### Known Issues / Blockers
+- Dual pricing + cash rounding changes not yet committed (pending this session)
+
+---
+
 ## 2026-02-27 — Unified Size Options + Quick Pick + showOnPos (Skill 456)
 
 **Session:** Merged size options and quick picks into a single section on the Basics tab with two mutually-exclusive toggles. Added per-option `showOnPos` eye icon for POS button visibility (max 4 display cap, unlimited creation). Removed the Quick Pick tab entirely. Removed max-4 server-side creation limits. Updated POS display to filter by `option.showOnPos` instead of `group.showAsQuickPick`. Full Android sync wired (DB v22).

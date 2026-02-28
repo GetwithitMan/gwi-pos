@@ -1,5 +1,27 @@
 # Orders Domain - Change Log
 
+## 2026-02-27 — Android: Order Lifecycle Hardening (Skill 457, `d283f1f`)
+
+### Double-Tap Race Condition
+- `addItemMutex` (Kotlin `Mutex`) serializes 4 grid-tap add-item variants: `addItem`, `addItemWithPourSize`, `addItemWithSpirit`, `addItemWithPricingOption`. Taps are queued (not dropped). Sheet variants (modifiers, combos, pizza, weight) keep existing `isAddingItem` guard.
+
+### Order State Management
+- **Persisted closed guards**: `recentlyClosedOrderIds` written to SharedPreferences with wall-clock timestamps, restored on process restart via `restorePersistedClosedGuards()`. TTL bumped 60→90s.
+- **Double snackbar prevention**: "Closed elsewhere" snackbar only fires in `observeOpenOrdersFromCache` orderGone path (not `handleOrderRemoved`)
+- **syncPendingItems refreshTotals**: Added `refreshTotals()` call after successful item sync
+
+### Real-Time Sync
+- **Flow-based debounce**: `SharedFlow.debounce(150ms)` replaces cancel-restart pattern for socket refresh — guaranteed delivery under event pressure
+- **conflate()**: Room open-orders Flow and KDS item status Flow now conflate to latest snapshot
+- **Dispatchers.Default**: KDS + menuItemChanged JSON parsing offloaded from main thread
+- **Socket.IO tuning**: reconnectionDelay 2s→800ms, max 30s→5s, timeout 12s (LAN-optimized)
+- **Dedup TTL**: Event deduplication window 30s→60s
+
+### Quick Pick Labels
+- `pricingOptionLabel` now rendered below item name in order panel ("• Large", "• Hot", etc.)
+
+---
+
 ## 2026-02-26 — Bartender Testing Fixes (`a4ac377`)
 
 ### Split Order Table Release

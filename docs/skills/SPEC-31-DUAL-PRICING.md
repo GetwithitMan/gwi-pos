@@ -347,4 +347,21 @@ dual_pricing:
 
 ---
 
-*Last Updated: January 27, 2026*
+## Android Implementation
+
+**Skill 458** (2026-02-27): Fixed inverted dual pricing display on Android.
+
+**Key rule:** The default/base price stored on the server IS the credit card price. Cash gets a discount (not card gets a surcharge).
+
+| What | Card | Cash |
+|------|------|------|
+| Total displayed | `total` (no modification) | `total - surchargeTotal` |
+| Label | (none) | "Cash Discount (X%)" in green |
+| PaymentSheet | Full total | Discounted total + "Cash discount applied: -$X.XX" |
+| Amount sent to server | `total` | `total - cashDiscount` |
+
+The Android bug was: `cardTotal = total + surchargeTotal` (adding surcharge ON TOP of what was already the card price). Fix: `cardTotal = total`, `cashTotal = total - surchargeTotal`.
+
+---
+
+*Last Updated: February 27, 2026*

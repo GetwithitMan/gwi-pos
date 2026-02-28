@@ -1,5 +1,30 @@
 # Payments Domain Changelog
 
+## 2026-02-27 — Android: Payment Lifecycle Hardening + Dual Pricing + Cash Rounding (Skills 457–459)
+
+### Payment Lifecycle Hardening (`d283f1f`)
+- **payCash stale total fix (CRITICAL)**: Total captured AFTER `ensureOrderReadyForPayment()` — `syncPendingItems()` may have changed server-side totals before payment
+- **Draft payment guard**: `ensureOrderReadyForPayment()` blocks payment on offline drafts (Room `isOfflineDraft` check + `draft_` prefix)
+- **Null order guard**: Returns false with user-facing error when `cachedOrderDao.findById()` returns null
+- **PaymentLog IGNORE strategy**: `OnConflictStrategy.IGNORE` on insert — crash-retry duplicates silently skipped
+- **Outbox sync guards**: Payment buttons disabled when order has pending outbox entries (`hasPendingSync`)
+- **Cash drawer failure UX**: `openCashDrawer()` catches exceptions, emits "Cash drawer unavailable — open manually" snackbar
+
+### Dual Pricing Display Fix (Skill 458)
+- **Inverted model fixed**: Android was adding surcharge to card price (wrong). Correct: base price IS card price, cash gets discount
+- **OrderPanel**: Removed "Card Surcharge +$X", added "Cash Discount (X%)" green line when cash selected
+- **PaymentSheet**: Card shows full total, cash shows discounted total with "Cash discount applied: -$X.XX"
+- **payCash**: Sends `cashTotalCents = orderTotal - cashDiscount` to server
+
+### Cash Rounding (Skill 459)
+- **Full pipeline**: BootstrapWorker syncs `cashRounding` + `roundingDirection` from `locationSettings.payments` → SyncMeta
+- **Integer arithmetic**: `applyCashRounding()` operates in cents (Long) — nickel(5)/dime(10)/quarter(25)/dollar(100) × nearest/up/down
+- **Display**: Rounding delta shown in OrderPanel ("Rounding +/-$X.XX") and PaymentSheet
+- **Payment**: `payCash()` applies rounding to cash total before sending to server
+- **Sign formatting**: Fixed `$-0.03` → `-$0.03` in both OrderPanel and PaymentSheet
+
+---
+
 ## 2026-02-26 — Bartender Testing: Cash Payment UX Fixes (`a4ac377`)
 - **Cash "Payment Complete" → "Change Due"**: Screen shown when cash tendered ≥ total now says "Change Due" (not "Payment Complete"). Button changed from "Done" to "Complete Payment". The server API call happens on button click — true confirmation is the modal closing after success.
 - **Cash failure reset**: When API returns error or network fails, `cashComplete` and `cashTendered` reset to `false`/`0` so UI returns to the cash tendering screen instead of staying on stale "complete" state.

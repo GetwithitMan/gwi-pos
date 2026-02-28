@@ -1404,6 +1404,14 @@ These skills emerged during development and are now part of the system:
 | 455 | Quick Pick Labels | DONE | Menu / POS | 454 | Label-only quick picks (Mild/Medium/Hot/No Spice). showAsQuickPick=true discriminator. Optional prep item linking. Kitchen chit `** LABEL **`. Superseded by Skill 456 (Quick Pick tab removed, merged into Basics). |
 | 456 | Unified Size Options + Quick Pick + showOnPos | DONE | Menu / POS / Android | 454, 455 | **Merged size options and quick picks into Basics tab.** Two mutually-exclusive checkboxes: "Size Options" (priced variants) and "Quick Pick" (label-only). Per-option `showOnPos` eye icon toggle controls POS button visibility (max 4 display cap, unlimited creation). Deleted QuickPickTab.tsx and removed Quick Pick tab from ItemSettingsModal. Removed max-4 server-side creation limits. POS display (FloorPlanMenuItem, BartenderView) now filters by `option.showOnPos` instead of `group.showAsQuickPick`. Schema: `showOnPos Boolean @default(false)` on PricingOption. All API routes updated (GET/POST/PUT responses include showOnPos). Session bootstrap + menu route + single item route all serialize showOnPos. Android: `showOnPos` added to SyncDto, PricingOptionEntity, DtoMappers; DAO query filters `o.showOnPos=1`; DB v22 destructive migration. **POS commits:** `5e2b1d8` (17 files, +122/-152). **Android commit:** `c7672fe` (6 files, +6/-2). |
 
+### Android Payment/Order Hardening + Dual Pricing + Cash Rounding (2026-02-27)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 457 | Android Payment & Order Lifecycle Hardening | DONE | Android / Payments / Orders / Sync | 430-446 | 14 core fixes + 6 refinements + 4 socket optimizations. payCash stale total, addItemMutex (double-tap), persisted closed guards, draft payment guard, Flow-based debounce, conflate, Dispatchers.Default for JSON parsing, Socket.IO reconnection tuning (800ms/5s/12s), dedup TTL 60s. DB v25. Commit: d283f1f. |
+| 458 | Android Dual Pricing Display Fix | DONE | Android / Payments / UI | 31, 457 | Fixed inverted dual pricing: base price IS card price, cash gets discount. Was adding surcharge to card (wrong). Flipped OrderPanel, PaymentSheet, payCash total calculation. |
+| 459 | Android Cash Rounding | DONE | Android / Payments | 327, 458 | Cash rounding on Android matching web POS. BootstrapWorker syncs cashRounding+roundingDirection from locationSettings.payments→SyncMeta. applyCashRounding() in integer cents (nickel/dime/quarter/dollar × nearest/up/down). Wired into refreshTotals, payCash, OrderPanel, PaymentSheet. 5 files. |
+
 ---
 
 ## Next Session Priority (2026-02-11+)

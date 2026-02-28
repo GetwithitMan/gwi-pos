@@ -99,3 +99,12 @@ const paidTolerance = (hasCash && settings.priceRounding?.enabled)
   ? parseFloat(settings.priceRounding.increment) / 2
   : 0.01
 ```
+
+## Android Parity
+
+**Skill 459** (2026-02-27) implements the same cash rounding pipeline on Android:
+- BootstrapWorker syncs `cashRounding` + `roundingDirection` from `locationSettings.payments` → SyncMeta
+- `applyCashRounding()` in `OrderViewModel` operates in integer cents (no floating-point)
+- Rounding delta displayed in OrderPanel and PaymentSheet
+- `payCash()` sends rounded amount to server
+- Uses the legacy `cashRounding` path (not `priceRounding`), which is sufficient since both produce identical results

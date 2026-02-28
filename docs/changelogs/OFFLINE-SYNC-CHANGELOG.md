@@ -1,5 +1,16 @@
 # Offline & Sync Domain Changelog
 
+## 2026-02-27 — Android: Sync & Socket Hardening (Skill 457, `d283f1f`)
+- **Flow-based debounce**: Socket-triggered refresh now uses `SharedFlow.debounce(150ms)` — guaranteed delivery under rapid event pressure. Replaces cancel-restart pattern that could starve refreshes.
+- **conflate() on Room Flow**: `observeOpenOrders()` conflated so UI only processes latest snapshot during rapid DB updates
+- **Dispatchers.Default for JSON**: KDS item status and menuItemChanged socket handlers parse JSON on Default dispatcher (off main thread)
+- **Socket.IO reconnection tuning**: `reconnectionDelay` 2s→800ms, `reconnectionDelayMax` 30s→5s, `timeout` 12s. Optimized for LAN — NUC is 1 hop away, restaurant Wi-Fi recovers quickly.
+- **Dedup TTL 60s**: Event deduplication window bumped from 30s to 60s for high-latency network retries
+- **SystemClock.elapsedRealtime()**: Menu sync throttle uses monotonic clock — immune to wall-clock jumps
+- **Bootstrap cash rounding sync**: BootstrapWorker now extracts `cashRounding` + `roundingDirection` from `locationSettings.payments` → SyncMeta
+
+---
+
 ## 2026-02-26 — Sync Delta Enrichment for Android (`723f316`)
 - **Active status filter**: Delta endpoint now only returns orders with `status IN (draft, open, sent, in_progress, split)` and `deletedAt: null` — closed/paid orders excluded
 - **Payments included**: Order response now includes `payments` array with `amount`, `tipAmount`, `totalAmount`, `paymentMethod` (all Decimal→Number)
