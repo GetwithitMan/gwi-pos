@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-02-28 — Dual Pricing — Admin UI Card Price Auto-Population
+
+**Session Summary:** Added auto-calculated card price display to every cash price input across all admin menu builders. Card price is derived from the cash discount rate configured in Settings → General → Processing Program using `calculateCardPrice(cashPrice, cashDiscountPercent)`. Display is read-only, only shown when dual pricing is enabled and price > 0.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `8394777` — feat: auto-populate card price across all menu builder price inputs
+
+### Files Changed (6 files, +132/-20)
+
+- `src/components/menu/ItemSettingsModal.tsx` — Card price shows actual calculated value (was "Auto from cash discount" placeholder) + weight-based price
+- `src/components/menu/PricingOptionRow.tsx` — Card price on size options + quick picks
+- `src/components/menu/ItemEditor.tsx` — Card price on new modifier form (top-level + child groups)
+- `src/app/(admin)/liquor-builder/page.tsx` — Drink base price, pour size display, per-modifier prices
+- `src/app/(admin)/combos/page.tsx` — Combo price, compare price, item overrides, modifier overrides, list display
+- `src/app/(admin)/timed-rentals/page.tsx` — Rate per minute, happy hour, prepaid packages, item list
+
+### Key Pattern
+
+All locations use `useOrderSettings()` → `dualPricing.cashDiscountPercent` → `calculateCardPrice()` from `src/lib/pricing.ts`. Consistent `text-xs text-gray-400` or `text-xs text-indigo-400` styling.
+
+### Bugs / Blockers
+None.
+
+---
+
 ## 2026-02-28 — Legacy Order Migration Audit (3-Agent Team)
 
 **Session:** Deployed a 3-agent audit team to map the full NUC legacy Order table migration surface area. The audit cataloged every Prisma mutation and read query on `Order`/`OrderItem` across the entire codebase, plus a field-by-field comparison of `OrderSnapshot` vs `Order`. Results saved as a formal audit document and a 6-task migration plan.

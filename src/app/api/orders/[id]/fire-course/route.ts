@@ -5,6 +5,7 @@ import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST /api/orders/[id]/fire-course - Fire items for a specific course
 // Used by coursing system to send delayed courses to kitchen
@@ -183,6 +184,24 @@ export const POST = withVenue(async function POST(
       orderId: order.id,
       changes: ['course-fired', `course-${courseNumber}`],
     }).catch(() => {})
+
+    // Emit event-sourced domain events (fire-and-forget)
+    void emitOrderEvents(order.locationId, id, [
+      ...order.items.map(item => ({
+        type: 'ITEM_UPDATED' as const,
+        payload: {
+          lineItemId: item.id,
+          kitchenStatus: 'sent',
+          courseStatus: 'fired',
+          ...(item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes ? {
+            blockTimeMinutes: item.blockTimeMinutes,
+            blockTimeStartedAt: now.toISOString(),
+            blockTimeExpiresAt: new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000).toISOString(),
+          } : {}),
+        },
+      })),
+      { type: 'ORDER_SENT' as const, payload: { sentItemIds: updatedItemIds } },
+    ])
 
     // Deduct prep stock for fired items (fire and forget)
     deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {

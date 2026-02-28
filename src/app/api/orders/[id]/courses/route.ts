@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 // Default course names for display
 const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
@@ -185,6 +186,7 @@ export const POST = withVenue(async function POST(
       })
 
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['courseMode'] }).catch(() => {})
+      void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { courseMode })
 
       return NextResponse.json({ data: {
         success: true,
@@ -200,6 +202,7 @@ export const POST = withVenue(async function POST(
       })
 
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['currentCourse'] }).catch(() => {})
+      void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { currentCourse: courseNumber })
 
       return NextResponse.json({ data: {
         success: true,
@@ -216,7 +219,13 @@ export const POST = withVenue(async function POST(
     }
 
     switch (action) {
-      case 'fire':
+      case 'fire': {
+        // Query item IDs before batch update for event emission
+        const fireItemIds = (await db.orderItem.findMany({
+          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending', isHeld: false },
+          select: { id: true },
+        })).map(i => i.id)
+
         // Fire all items in this course (excluding held items unless explicitly including them)
         const firedItems = await db.orderItem.updateMany({
           where: {
@@ -243,13 +252,28 @@ export const POST = withVenue(async function POST(
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(() => {})
 
+        // Emit event-sourced events for fired items
+        if (fireItemIds.length > 0) {
+          void emitOrderEvents(order.locationId, orderId, fireItemIds.map(id => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: id, courseStatus: 'fired' },
+          })))
+        }
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsFired: firedItems.count,
         } })
+      }
 
-      case 'fire_all':
+      case 'fire_all': {
+        // Query item IDs before batch update for event emission
+        const fireAllItemIds = (await db.orderItem.findMany({
+          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['pending'] } },
+          select: { id: true },
+        })).map(i => i.id)
+
         // Fire all items in this course including held items
         const allFiredItems = await db.orderItem.updateMany({
           where: {
@@ -276,13 +300,28 @@ export const POST = withVenue(async function POST(
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(() => {})
 
+        // Emit event-sourced events for fired items
+        if (fireAllItemIds.length > 0) {
+          void emitOrderEvents(order.locationId, orderId, fireAllItemIds.map(id => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: id, courseStatus: 'fired', isHeld: false },
+          })))
+        }
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsFired: allFiredItems.count,
         } })
+      }
 
-      case 'hold':
+      case 'hold': {
+        // Query item IDs before batch update for event emission
+        const holdItemIds = (await db.orderItem.findMany({
+          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending' },
+          select: { id: true },
+        })).map(i => i.id)
+
         // Hold all pending items in this course
         const heldItems = await db.orderItem.updateMany({
           where: {
@@ -299,13 +338,28 @@ export const POST = withVenue(async function POST(
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-held'] }).catch(() => {})
 
+        // Emit event-sourced events for held items
+        if (holdItemIds.length > 0) {
+          void emitOrderEvents(order.locationId, orderId, holdItemIds.map(id => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: id, isHeld: true },
+          })))
+        }
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsHeld: heldItems.count,
         } })
+      }
 
-      case 'release':
+      case 'release': {
+        // Query item IDs before batch update for event emission
+        const releaseItemIds = (await db.orderItem.findMany({
+          where: { orderId, courseNumber, status: 'active', deletedAt: null, isHeld: true },
+          select: { id: true },
+        })).map(i => i.id)
+
         // Release hold on all items in this course
         const releasedItems = await db.orderItem.updateMany({
           where: {
@@ -322,13 +376,28 @@ export const POST = withVenue(async function POST(
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-released'] }).catch(() => {})
 
+        // Emit event-sourced events for released items
+        if (releaseItemIds.length > 0) {
+          void emitOrderEvents(order.locationId, orderId, releaseItemIds.map(id => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: id, isHeld: false },
+          })))
+        }
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsReleased: releasedItems.count,
         } })
+      }
 
-      case 'mark_ready':
+      case 'mark_ready': {
+        // Query item IDs before batch update for event emission
+        const readyItemIds = (await db.orderItem.findMany({
+          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: 'fired' },
+          select: { id: true },
+        })).map(i => i.id)
+
         // Mark all fired items in course as ready
         const readyItems = await db.orderItem.updateMany({
           where: {
@@ -346,13 +415,28 @@ export const POST = withVenue(async function POST(
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-ready'] }).catch(() => {})
 
+        // Emit event-sourced events for ready items
+        if (readyItemIds.length > 0) {
+          void emitOrderEvents(order.locationId, orderId, readyItemIds.map(id => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: id, courseStatus: 'ready', kitchenStatus: 'ready' },
+          })))
+        }
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsReady: readyItems.count,
         } })
+      }
 
-      case 'mark_served':
+      case 'mark_served': {
+        // Query item IDs before batch update for event emission
+        const servedItemIds = (await db.orderItem.findMany({
+          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['fired', 'ready'] } },
+          select: { id: true },
+        })).map(i => i.id)
+
         // Mark all ready items in course as served
         const servedItems = await db.orderItem.updateMany({
           where: {
@@ -370,11 +454,20 @@ export const POST = withVenue(async function POST(
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-served'] }).catch(() => {})
 
+        // Emit event-sourced events for served items
+        if (servedItemIds.length > 0) {
+          void emitOrderEvents(order.locationId, orderId, servedItemIds.map(id => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: id, courseStatus: 'served', kitchenStatus: 'delivered' },
+          })))
+        }
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsServed: servedItems.count,
         } })
+      }
 
       default:
         return NextResponse.json(

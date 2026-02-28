@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
@@ -303,6 +304,36 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             details: { action, status, stationId: body.stationId }
           }))
         }).catch(err => console.error('[AuditLog] Expo audit failed:', err))
+      }
+
+      // Event sourcing: emit ITEM_UPDATED events (fire-and-forget)
+      if (action === 'serve' || status === 'served') {
+        void emitOrderEvents(locationId, orderId, itemIds.map((id: string) => ({
+          type: 'ITEM_UPDATED' as const,
+          payload: { lineItemId: id, kitchenStatus: 'delivered', isCompleted: true },
+        })))
+      } else if (action === 'update_status' && status) {
+        const ksMap: Record<string, string> = { cooking: 'cooking', ready: 'ready', pending: 'pending' }
+        const ks = ksMap[status]
+        if (ks) {
+          void emitOrderEvents(locationId, orderId, itemIds.map((id: string) => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: id, kitchenStatus: ks },
+          })))
+        }
+      } else if (action === 'bump_order') {
+        // Query bumped items then emit
+        void (async () => {
+          const bumpedOrderId = body.orderId || orderId
+          const bumpedItems = await db.orderItem.findMany({
+            where: { orderId: bumpedOrderId, kitchenStatus: 'delivered', isCompleted: true, deletedAt: null },
+            select: { id: true },
+          })
+          void emitOrderEvents(locationId, bumpedOrderId, bumpedItems.map(item => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: item.id, kitchenStatus: 'delivered', isCompleted: true },
+          })))
+        })().catch(err => console.error('[order-events] Expo bump emit failed:', err))
       }
     }
 

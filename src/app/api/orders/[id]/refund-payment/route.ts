@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
@@ -193,6 +194,13 @@ export const POST = withVenue(async function POST(
         },
       }),
     ])
+
+    // Emit PAYMENT_VOIDED event (fire-and-forget)
+    void emitOrderEvent(order.locationId, id, 'PAYMENT_VOIDED', {
+      paymentId,
+      reason: refundReason,
+      employeeId: managerId,
+    })
 
     // Bug 8: Proportional tip reduction on partial/full refund (fire-and-forget)
     const paymentTipAmount = Number(payment.tipAmount)

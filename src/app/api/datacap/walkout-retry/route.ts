@@ -8,6 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { logger } from '@/lib/logger'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST - Retry capture for a walkout tab (manual trigger)
 // Also used by cron/scheduler for auto-retry
@@ -88,7 +89,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
         // BUG #459 FIX: Update OrderCard, Order status, and create Payment record
         const captureAmount = Number(retry.amount)
-        await db.$transaction([
+        const [, , createdPayment] = await db.$transaction([
           db.orderCard.update({
             where: { id: orderCard.id },
             data: {
@@ -124,6 +125,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               status: 'completed',
             },
           }),
+        ])
+
+        // Emit PAYMENT_APPLIED + ORDER_CLOSED events (fire-and-forget)
+        const paymentMethod = orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
+        void emitOrderEvents(locationId, retry.orderId, [
+          {
+            type: 'PAYMENT_APPLIED',
+            payload: {
+              paymentId: createdPayment.id,
+              method: paymentMethod,
+              amountCents: Math.round(captureAmount * 100),
+              tipCents: 0,
+              totalCents: Math.round(captureAmount * 100),
+              cardBrand: orderCard.cardType || 'unknown',
+              cardLast4: orderCard.cardLast4,
+              status: 'approved',
+            },
+          },
+          {
+            type: 'ORDER_CLOSED',
+            payload: { closedStatus: 'paid' },
+          },
         ])
 
         return NextResponse.json({

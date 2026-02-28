@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST - Advance to next course
 // Marks current course as served and fires the next course
@@ -101,6 +102,24 @@ export const POST = withVenue(async function POST(
         changes: ['course-advanced', `course-${nextCourse}`],
       }).catch(() => {})
 
+      // Emit event-sourced domain events (fire-and-forget)
+      const advanceEvents: Array<{ type: 'ITEM_UPDATED' | 'ORDER_METADATA_UPDATED'; payload: Record<string, unknown> }> = []
+      if (markServed) {
+        for (const item of currentCourseItems) {
+          advanceEvents.push({ type: 'ITEM_UPDATED', payload: { lineItemId: item.id, courseStatus: 'served', kitchenStatus: 'delivered' } })
+        }
+      }
+      const nextCourseFireIds = order.items
+        .filter(item => item.courseNumber === nextCourse && item.courseStatus === 'pending' && !item.isHeld)
+        .map(item => item.id)
+      for (const itemId of nextCourseFireIds) {
+        advanceEvents.push({ type: 'ITEM_UPDATED', payload: { lineItemId: itemId, courseStatus: 'fired' } })
+      }
+      advanceEvents.push({ type: 'ORDER_METADATA_UPDATED', payload: { currentCourse: nextCourse } })
+      if (advanceEvents.length > 0) {
+        void emitOrderEvents(order.locationId, orderId, advanceEvents)
+      }
+
       return NextResponse.json({ data: {
         success: true,
         previousCourse: currentCourse,
@@ -115,6 +134,14 @@ export const POST = withVenue(async function POST(
       orderId,
       changes: ['courses-complete'],
     }).catch(() => {})
+
+    // Emit event-sourced events for served items (fire-and-forget)
+    if (markServed && currentCourseItems.length > 0) {
+      void emitOrderEvents(order.locationId, orderId, currentCourseItems.map(item => ({
+        type: 'ITEM_UPDATED' as const,
+        payload: { lineItemId: item.id, courseStatus: 'served', kitchenStatus: 'delivered' },
+      })))
+    }
 
     // No more courses
     return NextResponse.json({ data: {

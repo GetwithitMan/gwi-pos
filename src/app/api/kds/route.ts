@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -416,6 +417,31 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             }
           }).catch(err => console.error('[AuditLog] KDS audit failed:', err))
         }
+      }
+
+      // Event sourcing: emit ITEM_UPDATED events (fire-and-forget)
+      if (action === 'complete' || action === 'bump_order') {
+        void emitOrderEvents(locationId, orderId, itemIds.map((id: string) => ({
+          type: 'ITEM_UPDATED' as const,
+          payload: { lineItemId: id, isCompleted: true },
+        })))
+      } else if (action === 'uncomplete') {
+        void emitOrderEvents(locationId, orderId, itemIds.map((id: string) => ({
+          type: 'ITEM_UPDATED' as const,
+          payload: { lineItemId: id, isCompleted: false },
+        })))
+      } else if (action === 'resend') {
+        // Need updated resendCount — query then emit
+        void (async () => {
+          const updated = await db.orderItem.findMany({
+            where: { id: { in: itemIds } },
+            select: { id: true, resendCount: true },
+          })
+          void emitOrderEvents(locationId, orderId, updated.map(item => ({
+            type: 'ITEM_UPDATED' as const,
+            payload: { lineItemId: item.id, resendCount: item.resendCount || 0, kitchenStatus: 'pending' },
+          })))
+        })().catch(err => console.error('[order-events] KDS resend emit failed:', err))
       }
     }
 

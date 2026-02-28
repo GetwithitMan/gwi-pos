@@ -4,6 +4,7 @@ import { OrderItemStatus } from '@prisma/client'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 interface SplitRequest {
   type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'get_splits'
@@ -222,6 +223,19 @@ export const POST = withVenue(async function POST(
         }, { async: true }).catch(() => {})
       }
 
+      // Emit order events for each new split order (fire-and-forget)
+      for (const s of splitOrders) {
+        void emitOrderEvent(order.locationId, s.id, 'ORDER_CREATED', {
+          locationId: order.locationId,
+          employeeId: order.employeeId,
+          orderType: order.orderType,
+          tableId: order.tableId,
+          guestCount: 1,
+          orderNumber: s.orderNumber,
+          displayNumber: s.displayNumber,
+        })
+      }
+
       return NextResponse.json({ data: {
         type: 'even',
         parentOrder: {
@@ -396,6 +410,44 @@ export const POST = withVenue(async function POST(
         orderId: newOrder.id,
         tableId: order.tableId || undefined,
       }, { async: true }).catch(() => {})
+
+      // Emit order events for new split order (fire-and-forget)
+      void emitOrderEvents(order.locationId, newOrder.id, [
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            locationId: order.locationId,
+            employeeId: order.employeeId,
+            orderType: order.orderType,
+            tableId: order.tableId,
+            guestCount: 1,
+            orderNumber: newOrder.orderNumber,
+            displayNumber: newOrder.displayNumber,
+          },
+        },
+        ...newOrder.items.map(item => ({
+          type: 'ITEM_ADDED' as const,
+          payload: {
+            lineItemId: item.id,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            priceCents: Math.round(Number(item.price) * 100),
+            quantity: item.quantity,
+            isHeld: false,
+            soldByWeight: false,
+            seatNumber: item.seatNumber,
+            specialNotes: item.specialNotes,
+          },
+        })),
+      ])
+
+      // Emit ITEM_REMOVED on parent for each moved item (fire-and-forget)
+      for (const itemId of itemIds) {
+        void emitOrderEvent(order.locationId, order.id, 'ITEM_REMOVED', {
+          lineItemId: itemId,
+          reason: 'split_by_item',
+        })
+      }
 
       return NextResponse.json({ data: {
         type: 'by_item',
@@ -611,6 +663,53 @@ export const POST = withVenue(async function POST(
         }, { async: true }).catch(() => {})
       }
 
+      // Emit order events for each seat split order (fire-and-forget)
+      // We need to re-query to get full item data for the events since splitOrders
+      // is a mapped summary. The db.order.create calls above already include items.
+      // Reconstruct from the seat groupings:
+      for (const seatNumber of sortedSeats) {
+        const seatItems = itemsBySeat.get(seatNumber) || []
+        const matchingSplit = splitOrders.find(s => s.seatNumber === seatNumber)
+        if (!matchingSplit || seatItems.length === 0) continue
+
+        void emitOrderEvents(order.locationId, matchingSplit.id, [
+          {
+            type: 'ORDER_CREATED',
+            payload: {
+              locationId: order.locationId,
+              employeeId: order.employeeId,
+              orderType: order.orderType,
+              tableId: order.tableId,
+              guestCount: 1,
+              orderNumber: matchingSplit.orderNumber,
+              displayNumber: matchingSplit.displayNumber,
+            },
+          },
+          ...seatItems.map(item => ({
+            type: 'ITEM_ADDED' as const,
+            payload: {
+              lineItemId: item.id, // Original item ID (new items have new IDs in the split order)
+              menuItemId: item.menuItemId,
+              name: item.name,
+              priceCents: Math.round(Number(item.price) * 100),
+              quantity: item.quantity,
+              isHeld: false,
+              soldByWeight: false,
+              seatNumber: item.seatNumber,
+              specialNotes: item.specialNotes,
+            },
+          })),
+        ])
+      }
+
+      // Emit ITEM_REMOVED on parent for each moved item (fire-and-forget)
+      for (const itemId of itemIdsToRemove) {
+        void emitOrderEvent(order.locationId, order.id, 'ITEM_REMOVED', {
+          lineItemId: itemId,
+          reason: 'split_by_seat',
+        })
+      }
+
       return NextResponse.json({ data: {
         type: 'by_seat',
         parentOrder: {
@@ -815,6 +914,50 @@ export const POST = withVenue(async function POST(
           orderId: s.id,
           tableId: s.tableId || undefined,
         }, { async: true }).catch(() => {})
+      }
+
+      // Emit order events for each table split order (fire-and-forget)
+      for (const tableId of tablesWithItems) {
+        const tableItems = itemsByTable.get(tableId) || []
+        const matchingSplit = splitOrders.find(s => s.tableId === tableId)
+        if (!matchingSplit || tableItems.length === 0) continue
+
+        void emitOrderEvents(order.locationId, matchingSplit.id, [
+          {
+            type: 'ORDER_CREATED',
+            payload: {
+              locationId: order.locationId,
+              employeeId: order.employeeId,
+              orderType: order.orderType,
+              tableId: tableId,
+              guestCount: 1,
+              orderNumber: matchingSplit.orderNumber,
+              displayNumber: matchingSplit.displayNumber,
+            },
+          },
+          ...tableItems.map(item => ({
+            type: 'ITEM_ADDED' as const,
+            payload: {
+              lineItemId: item.id,
+              menuItemId: item.menuItemId,
+              name: item.name,
+              priceCents: Math.round(Number(item.price) * 100),
+              quantity: item.quantity,
+              isHeld: false,
+              soldByWeight: false,
+              seatNumber: item.seatNumber,
+              specialNotes: item.specialNotes,
+            },
+          })),
+        ])
+      }
+
+      // Emit ITEM_REMOVED on parent for each moved item (fire-and-forget)
+      for (const itemId of itemIdsToRemove) {
+        void emitOrderEvent(order.locationId, order.id, 'ITEM_REMOVED', {
+          lineItemId: itemId,
+          reason: 'split_by_table',
+        })
       }
 
       return NextResponse.json({ data: {
