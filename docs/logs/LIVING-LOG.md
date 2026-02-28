@@ -13,8 +13,9 @@
 
 **GWI POS** (`gwi-pos`):
 - `8394777` — feat: auto-populate card price across all menu builder price inputs
+- `8bdd4bd` — fix: dual pricing — card price for tab close, splits, pay validation, modifiers, spirits
 
-### Files Changed (6 files, +132/-20)
+### Files Changed (11 files total)
 
 - `src/components/menu/ItemSettingsModal.tsx` — Card price shows actual calculated value (was "Auto from cash discount" placeholder) + weight-based price
 - `src/components/menu/PricingOptionRow.tsx` — Card price on size options + quick picks
@@ -26,6 +27,16 @@
 ### Key Pattern
 
 All locations use `useOrderSettings()` → `dualPricing.cashDiscountPercent` → `calculateCardPrice()` from `src/lib/pricing.ts`. Consistent `text-xs text-gray-400` or `text-xs text-indigo-400` styling.
+
+### Bug Fixes
+
+| # | Bug | File | Fix |
+|---|-----|------|-----|
+| 1 | ModifierModal grid view showing cash prices | `ModifierModal.tsx` | Added `cardPriceMultiplier={cpm}` to 4 missing renders |
+| 2 | Pay route validation threshold too low | `pay/route.ts` | Removed erroneous `calculateCashPrice()` — order.total IS the cash price |
+| 3 | Close-tab charging cash price for card payments | `close-tab/route.ts` | Applied `calculateCardPrice()` to capture amount |
+| 4 | Pay-all-splits charging cash price for card payments | `pay-all-splits/route.ts` | Applied `calculateCardPrice()` per split for card payments |
+| 5 | Spirit upgrade label showing cash price | `SpiritSelectionModal.tsx` | Shows card-adjusted price via `getDualPrices()` |
 
 ### Bugs / Blockers
 None.

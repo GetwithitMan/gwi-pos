@@ -363,6 +363,17 @@ Pattern: `useOrderSettings()` → `calculateCardPrice(price, cashDiscountPct)` �
 
 ---
 
+### Bug Fixes (2026-02-28)
+
+Commit `8bdd4bd` — Fixed 5 dual pricing bugs:
+1. `ModifierModal.tsx` — 4 `ModifierGroupSection` renders missing `cardPriceMultiplier` (grid view, child/grandchild groups showed cash prices)
+2. `pay/route.ts` — Validation called `calculateCashPrice(order.total)` but order.total IS already the cash price, making threshold too low
+3. `close-tab/route.ts` — Tab captures sent cash price for card payments instead of card price
+4. `pay-all-splits/route.ts` — Split payments sent cash price for card payments
+5. `SpiritSelectionModal.tsx` — Spirit upgrade label showed cash price instead of card price
+
+---
+
 ## Android Implementation
 
 **Skill 458** (2026-02-27): Fixed inverted dual pricing display on Android.

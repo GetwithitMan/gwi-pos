@@ -1,5 +1,18 @@
 # Payments Domain Changelog
 
+### 2026-02-28 — Dual Pricing Bug Fixes
+
+**Commit:** `8bdd4bd`
+
+Fixed 5 dual pricing bugs found during front-end audit:
+- **pay/route.ts**: Removed erroneous `calculateCashPrice()` call on `order.total` which is already the cash price — validation threshold was set too low
+- **close-tab/route.ts**: Card tab closes now charge the card price via `calculateCardPrice()` instead of the stored cash price
+- **pay-all-splits/route.ts**: Card split payments now charge the card price per split when dual pricing is enabled
+- **ModifierModal.tsx**: Added `cardPriceMultiplier` to 4 missing `ModifierGroupSection` renders (grid view, child/grandchild groups)
+- **SpiritSelectionModal.tsx**: Spirit upgrade label now shows card-adjusted price
+
+---
+
 ## 2026-02-27 — Android: Payment Lifecycle Hardening + Dual Pricing + Cash Rounding (Skills 457–459)
 
 ### Payment Lifecycle Hardening (`d283f1f`)
