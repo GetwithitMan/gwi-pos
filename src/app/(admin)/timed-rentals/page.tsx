@@ -10,6 +10,8 @@ import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
 import { useSocket } from '@/hooks/useSocket'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
+import { calculateCardPrice } from '@/lib/pricing'
 
 import type { EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals'
 import {
@@ -88,6 +90,9 @@ function TimedRentalsContent() {
   const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
   const { socket, isConnected } = useSocket()
+  const { dualPricing } = useOrderSettings()
+  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
+  const isDualPricingEnabled = dualPricing.enabled !== false
   const [sessions, setSessions] = useState<TimedSession[]>([])
   const [timedItems, setTimedItems] = useState<TimedItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -412,6 +417,11 @@ function TimedRentalsContent() {
                         <div className="text-sm text-gray-500">
                           {formatCurrency(item.timedPricing?.perHour || item.price)}/hr
                         </div>
+                        {isDualPricingEnabled && (item.timedPricing?.perHour || item.price) > 0 && (
+                          <div className="text-xs text-gray-400">
+                            Card: {formatCurrency(calculateCardPrice(item.timedPricing?.perHour || item.price, cashDiscountPct))}/hr
+                          </div>
+                        )}
                       </div>
                     </div>
                     {item.blockTimeMinutes && (
@@ -616,6 +626,9 @@ function TimedRentalsContent() {
                     />
                     <span className="text-gray-500 text-sm">/min</span>
                     <span className="text-gray-400 text-sm ml-1">(${(builderForm.ratePerMinute * 60).toFixed(2)}/hr)</span>
+                    {isDualPricingEnabled && builderForm.ratePerMinute > 0 && (
+                      <span className="text-xs text-gray-400 ml-1">Card: ${calculateCardPrice(builderForm.ratePerMinute * 60, cashDiscountPct).toFixed(2)}/hr</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 ml-auto">
                     <span className="text-gray-500 text-sm">Grace:</span>
@@ -653,6 +666,9 @@ function TimedRentalsContent() {
                       />
                       <span className="text-gray-500 text-sm">/min</span>
                       <span className="text-amber-600 text-sm ml-1">(${((builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) * 60).toFixed(2)}/hr)</span>
+                      {isDualPricingEnabled && (builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) > 0 && (
+                        <span className="text-xs text-gray-400 ml-1">Card: ${calculateCardPrice((builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) * 60, cashDiscountPct).toFixed(2)}/hr</span>
+                      )}
                     </>
                   )}
                 </label>
@@ -703,6 +719,9 @@ function TimedRentalsContent() {
                         />
                         {savings > 0 && (
                           <span className="text-green-600 text-xs">(saves ${savings.toFixed(2)})</span>
+                        )}
+                        {isDualPricingEnabled && pkg.price > 0 && (
+                          <span className="text-xs text-gray-400">Card: ${calculateCardPrice(pkg.price, cashDiscountPct).toFixed(2)}</span>
                         )}
                         <button
                           type="button"

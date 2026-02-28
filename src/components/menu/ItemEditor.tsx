@@ -1066,6 +1066,11 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                         min="0"
                       />
                     )}
+                    {addingType === 'item' && isDualPricingEnabled && parseFloat(newModPrice) > 0 && (
+                      <span className="text-[9px] text-indigo-400 font-semibold whitespace-nowrap">
+                        card {formatCurrency(calculateCardPrice(parseFloat(newModPrice) || 0, cashDiscountPct))}
+                      </span>
+                    )}
                     <Button
                       size="sm"
                       variant="primary"
@@ -1704,6 +1709,11 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                                       step="0.01"
                                       min="0"
                                     />
+                                  )}
+                                  {addingType === 'item' && isDualPricingEnabled && parseFloat(newModPrice) > 0 && (
+                                    <span className="text-[9px] text-indigo-400 font-semibold whitespace-nowrap">
+                                      card {formatCurrency(calculateCardPrice(parseFloat(newModPrice) || 0, cashDiscountPct))}
+                                    </span>
                                   )}
                                   <Button
                                     size="sm"

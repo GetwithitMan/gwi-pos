@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
+import { calculateCardPrice } from '@/lib/pricing'
 
 const PRESET_COLORS = [
   '#EF4444', '#F97316', '#EAB308', '#22C55E',
@@ -25,6 +27,9 @@ interface PricingOptionRowProps {
 export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelete }: PricingOptionRowProps) {
   const [label, setLabel] = useState(option.label)
   const [price, setPrice] = useState(option.price != null ? String(option.price) : '')
+  const { dualPricing } = useOrderSettings()
+  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
+  const isDualPricingEnabled = dualPricing.enabled !== false
   const [showColors, setShowColors] = useState(false)
   const colorRef = useRef<HTMLDivElement>(null)
 
@@ -80,18 +85,25 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
       />
 
       {/* Price */}
-      <div className="relative w-20 shrink-0">
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
-        <input
-          type="number"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-          onBlur={handlePriceBlur}
-          placeholder="—"
-          step="0.01"
-          min="0"
-          className="w-full pl-5 pr-1 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
-        />
+      <div className="shrink-0">
+        <div className="relative w-20">
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
+          <input
+            type="number"
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            onBlur={handlePriceBlur}
+            placeholder="—"
+            step="0.01"
+            min="0"
+            className="w-full pl-5 pr-1 py-1.5 border border-gray-200 rounded-lg text-sm text-right focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+          />
+        </div>
+        {isDualPricingEnabled && parseFloat(price) > 0 && (
+          <div className="text-xs text-gray-400 text-right mt-0.5">
+            Card: ${calculateCardPrice(parseFloat(price), cashDiscountPct).toFixed(2)}
+          </div>
+        )}
       </div>
 
       {/* Color dot */}

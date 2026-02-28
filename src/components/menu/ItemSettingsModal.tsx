@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { toast } from '@/stores/toast-store'
 import { SizingOptionsInline } from './SizingOptionsInline'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
+import { calculateCardPrice } from '@/lib/pricing'
 
 interface ItemSettings {
   id: string
@@ -125,6 +127,11 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
   // Whether size options are active (overrides base price)
   const [sizesActive, setSizesActive] = useState(false)
   const handleSizesActiveChange = useCallback((active: boolean) => setSizesActive(active), [])
+
+  // Dual pricing
+  const { dualPricing } = useOrderSettings()
+  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
+  const isDualPricingEnabled = dualPricing.enabled !== false
 
   // Fetch full item data on mount
   useEffect(() => {
@@ -390,9 +397,18 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                     <div>
                       <label className={labelClass}>Card Price ($)</label>
                       <div className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-600">
-                        {priceCC != null ? `$${priceCC.toFixed(2)}` : 'Auto from cash discount'}
+                        {priceCC != null
+                          ? `$${priceCC.toFixed(2)}`
+                          : isDualPricingEnabled && parseFloat(price) > 0
+                            ? `$${calculateCardPrice(parseFloat(price), cashDiscountPct).toFixed(2)}`
+                            : 'Auto from cash discount'}
                       </div>
-                      <p className="text-[11px] text-gray-400 mt-0.5">Auto-calculated from cash discount settings.</p>
+                      {isDualPricingEnabled && parseFloat(price) > 0 && priceCC == null && (
+                        <p className="text-xs text-gray-400 mt-0.5">Auto-calculated ({cashDiscountPct}% cash discount)</p>
+                      )}
+                      {(!isDualPricingEnabled || !(parseFloat(price) > 0)) && (
+                        <p className="text-[11px] text-gray-400 mt-0.5">Auto-calculated from cash discount settings.</p>
+                      )}
                     </div>
                   </div>
 
@@ -434,6 +450,9 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                             min="0"
                             className={inputClass}
                           />
+                          {isDualPricingEnabled && parseFloat(pricePerWeightUnit) > 0 && (
+                            <p className="text-xs text-gray-400 mt-0.5">Card: ${calculateCardPrice(parseFloat(pricePerWeightUnit), cashDiscountPct).toFixed(2)}</p>
+                          )}
                         </div>
                       </div>
                     )}

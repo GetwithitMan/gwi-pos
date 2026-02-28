@@ -8,6 +8,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
+import { calculateCardPrice } from '@/lib/pricing'
 
 interface Modifier {
   id: string
@@ -78,6 +80,9 @@ interface Category {
 export default function CombosPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/combos' })
   const employee = useAuthStore(s => s.employee)
+  const { dualPricing } = useOrderSettings()
+  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
+  const isDualPricingEnabled = dualPricing.enabled !== false
   const [combos, setCombos] = useState<Combo[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
@@ -368,9 +373,16 @@ export default function CombosPage() {
                         <p className="text-sm text-gray-500 mt-1">{combo.description}</p>
                       )}
                       <div className="flex items-center gap-4 mt-2">
-                        <span className="text-lg font-bold text-green-600">
-                          {formatCurrency(combo.price)}
-                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-lg font-bold text-green-600">
+                            {formatCurrency(combo.price)}
+                          </span>
+                          {isDualPricingEnabled && combo.price > 0 && (
+                            <span className="text-xs text-gray-400">
+                              Card: {formatCurrency(calculateCardPrice(combo.price, cashDiscountPct))}
+                            </span>
+                          )}
+                        </div>
                         {combo.template?.comparePrice && (
                           <span className="text-sm text-gray-400 line-through">
                             {formatCurrency(combo.template.comparePrice)}
@@ -531,6 +543,11 @@ export default function CombosPage() {
                     className="w-full border rounded px-3 py-2"
                     required
                   />
+                  {isDualPricingEnabled && parseFloat(formData.price) > 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Card: {formatCurrency(calculateCardPrice(parseFloat(formData.price), cashDiscountPct))}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Compare Price (A la carte total)</label>
@@ -542,6 +559,11 @@ export default function CombosPage() {
                     className="w-full border rounded px-3 py-2"
                     placeholder="Shows savings vs ordering separately"
                   />
+                  {isDualPricingEnabled && parseFloat(formData.comparePrice) > 0 && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Card: {formatCurrency(calculateCardPrice(parseFloat(formData.comparePrice), cashDiscountPct))}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center">
                   <label className="flex items-center gap-2">
@@ -637,6 +659,11 @@ export default function CombosPage() {
                               className="w-full border rounded px-2 py-1 text-sm"
                               placeholder={comp.menuItem ? `Default: ${formatCurrency(comp.menuItem.price)}` : 'Select item first'}
                             />
+                            {isDualPricingEnabled && comp.itemPriceOverride != null && comp.itemPriceOverride > 0 && (
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                Card: {formatCurrency(calculateCardPrice(comp.itemPriceOverride, cashDiscountPct))}
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -676,6 +703,11 @@ export default function CombosPage() {
                                             className="w-full border rounded px-2 py-1 text-xs"
                                             placeholder="Override price"
                                           />
+                                          {isDualPricingEnabled && currentOverride != null && currentOverride > 0 && (
+                                            <p className="text-xs text-gray-400 mt-0.5">
+                                              Card: {formatCurrency(calculateCardPrice(currentOverride, cashDiscountPct))}
+                                            </p>
+                                          )}
                                         </div>
                                       </div>
                                     )

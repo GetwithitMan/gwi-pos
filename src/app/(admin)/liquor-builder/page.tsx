@@ -14,6 +14,8 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { RecipeBuilder } from '@/components/menu/RecipeBuilder'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
 import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
+import { calculateCardPrice } from '@/lib/pricing'
 import { SpiritCategory, BottleProduct } from './types'
 import { CategoryModal } from './CategoryModal'
 import { CreateMenuItemModal } from './CreateMenuItemModal'
@@ -104,6 +106,11 @@ function LiquorBuilderContent() {
 
   // Filter state
   const [selectedMenuCategoryId, setSelectedMenuCategoryId] = useState<string>('')
+
+  // Dual pricing settings
+  const { dualPricing } = useOrderSettings()
+  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
+  const isDualPricingEnabled = dualPricing.enabled !== false
 
   // Socket ref for real-time updates
   const socketRef = useRef<any>(null)
@@ -887,6 +894,9 @@ function LiquorBuilderContent() {
                           className="w-full border rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                         />
                       </div>
+                      {isDualPricingEnabled && parseFloat(editingDrinkPrice) > 0 && (
+                        <p className="text-xs text-indigo-400 mt-1">Card: ${calculateCardPrice(parseFloat(editingDrinkPrice) || 0, cashDiscountPct).toFixed(2)}</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
@@ -1499,9 +1509,16 @@ function LiquorBuilderContent() {
                         </label>
                       )}
                       {Object.keys(enabledPourSizes).length > 0 && (
-                        <p className="text-xs text-gray-400 mt-1 ml-6">
-                          Price on POS: base price × multiplier (e.g. ${(parseFloat(editingDrinkPrice) || 0).toFixed(2)} × 1.5 = ${((parseFloat(editingDrinkPrice) || 0) * 1.5).toFixed(2)} for Tall)
-                        </p>
+                        <>
+                          <p className="text-xs text-gray-400 mt-1 ml-6">
+                            Price on POS: base price × multiplier (e.g. ${(parseFloat(editingDrinkPrice) || 0).toFixed(2)} × 1.5 = ${((parseFloat(editingDrinkPrice) || 0) * 1.5).toFixed(2)} for Tall)
+                          </p>
+                          {isDualPricingEnabled && parseFloat(editingDrinkPrice) > 0 && (
+                            <p className="text-xs text-indigo-400 mt-0.5 ml-6">
+                              Card: ${calculateCardPrice((parseFloat(editingDrinkPrice) || 0) * 1.5, cashDiscountPct).toFixed(2)} for Tall
+                            </p>
+                          )}
+                        </>
                       )}
                     </>
                   )}
@@ -1610,6 +1627,9 @@ function LiquorBuilderContent() {
                                             className="w-full pl-4 pr-1 py-1 text-sm border rounded text-right focus:outline-none focus:ring-1 focus:ring-purple-400"
                                           />
                                         </div>
+                                        {isDualPricingEnabled && (mod.price || 0) > 0 && (
+                                          <p className="text-xs text-indigo-400 text-right mt-0.5">Card: ${calculateCardPrice(mod.price || 0, cashDiscountPct).toFixed(2)}</p>
+                                        )}
                                       </div>
 
                                       {/* Active toggle */}
