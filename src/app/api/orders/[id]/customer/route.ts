@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // PUT - Link or unlink customer to/from order
 export const PUT = withVenue(async function PUT(
@@ -55,6 +56,11 @@ export const PUT = withVenue(async function PUT(
       where: { id: orderId },
       data: { customerId: customerId || null },
     })
+
+    // Fire-and-forget event emission
+    void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+      customerId: customerId || null,
+    }).catch(console.error)
 
     // Fire-and-forget socket dispatch for cross-terminal sync
     void dispatchOrderUpdated(order.locationId, {

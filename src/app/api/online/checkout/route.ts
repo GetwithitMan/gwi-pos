@@ -27,6 +27,7 @@ import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // ─── Request Body Shape ───────────────────────────────────────────────────────
 
@@ -405,6 +406,38 @@ export async function POST(request: NextRequest) {
         select: { id: true, orderNumber: true },
       })
     })
+
+    // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
+    void (async () => {
+      const createdItems = await venueDb.orderItem.findMany({
+        where: { orderId: order.id },
+        select: { id: true, menuItemId: true, name: true, price: true, quantity: true },
+      })
+      await emitOrderEvents(locationId, order.id, [
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            locationId,
+            employeeId,
+            orderType,
+            guestCount: 1,
+            orderNumber: order.orderNumber,
+          },
+        },
+        ...createdItems.map(item => ({
+          type: 'ITEM_ADDED' as const,
+          payload: {
+            lineItemId: item.id,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            priceCents: Math.round(Number(item.price) * 100),
+            quantity: item.quantity,
+            isHeld: false,
+            soldByWeight: false,
+          },
+        })),
+      ])
+    })().catch(console.error)
 
     // ── 8. Charge the card via Datacap PayAPI ─────────────────────────────────
 

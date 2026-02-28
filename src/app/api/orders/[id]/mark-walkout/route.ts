@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Mark an open tab as a walkout and create retry records
 export const POST = withVenue(async function POST(
@@ -53,6 +54,13 @@ export const POST = withVenue(async function POST(
         walkoutMarkedBy: employeeId,
       },
     })
+
+    // Fire-and-forget event emission
+    void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+      isWalkout: true,
+      walkoutAt: now.toISOString(),
+      walkoutMarkedBy: employeeId,
+    }).catch(console.error)
 
     // Fire-and-forget socket dispatch for cross-terminal sync
     void dispatchOpenOrdersChanged(order.locationId, {

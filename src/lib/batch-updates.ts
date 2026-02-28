@@ -12,38 +12,6 @@ import { db } from '@/lib/db'
 // ============================================================================
 
 /**
- * Batch update multiple order items at once
- *
- * Instead of:
- *   for (const item of items) {
- *     await db.orderItem.update({ where: { id: item.id }, data: {...} })
- *   }
- *
- * Use:
- *   await batchUpdateOrderItems(items.map(item => ({
- *     id: item.id,
- *     kitchenStatus: 'sent',
- *     firedAt: now,
- *   })))
- *
- * @param updates - Array of { id, ...fields } to update
- * @returns Array of updated items
- */
-export async function batchUpdateOrderItems(
-  updates: Array<{ id: string; [key: string]: unknown }>
-): Promise<void> {
-  // Use transaction to batch updates
-  await db.$transaction(
-    updates.map(({ id, ...data }) =>
-      db.orderItem.update({
-        where: { id },
-        data,
-      })
-    )
-  )
-}
-
-/**
  * Batch update order item statuses (optimized for common case)
  *
  * @param itemIds - Array of order item IDs

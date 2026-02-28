@@ -7,6 +7,7 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -94,6 +95,12 @@ export const POST = withVenue(async function POST(
 
         dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
 
+        // Event emission: capture retry failed
+        void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+          captureRetryCount: updated?.captureRetryCount || 0,
+          lastCaptureError: 'Retry failed - all cards declined',
+        }).catch(console.error)
+
         return NextResponse.json({
           data: { success: false, error: 'All cards declined on retry', retryCount: updated?.captureRetryCount || 0 },
         })
@@ -141,6 +148,27 @@ export const POST = withVenue(async function POST(
 
       dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any, orderId }, { async: true }).catch(() => {})
       if (order.tableId) dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+
+      // Event emission: retry capture succeeded — payment applied + order closed
+      void emitOrderEvents(locationId, orderId, [
+        {
+          type: 'PAYMENT_APPLIED',
+          payload: {
+            paymentId: orderId, // No individual payment ID available from batch tx
+            method: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+            amountCents: Math.round(purchaseAmount * 100),
+            tipCents: 0,
+            totalCents: Math.round(purchaseAmount * 100),
+            cardBrand: capturedCard.cardType || 'unknown',
+            cardLast4: capturedCard.cardLast4,
+            status: 'completed',
+          },
+        },
+        {
+          type: 'ORDER_CLOSED',
+          payload: { closedStatus: 'paid', reason: 'Retry capture succeeded' },
+        },
+      ]).catch(console.error)
 
       return NextResponse.json({
         data: {
@@ -197,6 +225,25 @@ export const POST = withVenue(async function POST(
       dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any, orderId }, { async: true }).catch(() => {})
       if (order.tableId) dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
 
+      // Event emission: cash retry payment applied + order closed
+      void emitOrderEvents(locationId, orderId, [
+        {
+          type: 'PAYMENT_APPLIED',
+          payload: {
+            paymentId: orderId,
+            method: 'cash',
+            amountCents: Math.round(paymentAmount * 100),
+            tipCents: Math.round((Number(order.tipTotal) || 0) * 100),
+            totalCents: Math.round(paymentAmount * 100),
+            status: 'completed',
+          },
+        },
+        {
+          type: 'ORDER_CLOSED',
+          payload: { closedStatus: 'paid', reason: 'Retry capture — cash fallback' },
+        },
+      ]).catch(console.error)
+
       return NextResponse.json({ data: { success: true, paymentMethod: 'cash', amount: paymentAmount } })
 
     } else if (retryMode === 'manager_void') {
@@ -249,6 +296,12 @@ export const POST = withVenue(async function POST(
 
       dispatchOpenOrdersChanged(locationId, { trigger: 'voided' as any, orderId }, { async: true }).catch(() => {})
       if (order.tableId) dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+
+      // Event emission: manager voided the declined tab
+      void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
+        closedStatus: 'voided',
+        reason: 'Manager voided declined capture tab',
+      }).catch(console.error)
 
       return NextResponse.json({ data: { success: true, action: 'voided' } })
     }

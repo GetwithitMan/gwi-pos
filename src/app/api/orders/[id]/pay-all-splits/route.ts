@@ -8,6 +8,7 @@ import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { parseSettings } from '@/lib/settings'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 const PayAllSplitsSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit']),
@@ -214,6 +215,37 @@ export const POST = withVenue(async function POST(
     if (parentOrder.tableId) {
       void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
     }
+
+    // Event emission: PAYMENT_APPLIED + ORDER_CLOSED per split, then parent ORDER_CLOSED
+    for (const split of unpaidSplits) {
+      const cashSplitTotal = roundToCents(Number(split.total))
+      const splitTotal = dualPricingApplies
+        ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
+        : cashSplitTotal
+      void emitOrderEvents(split.locationId, split.id, [
+        {
+          type: 'PAYMENT_APPLIED',
+          payload: {
+            paymentId: split.id,
+            method,
+            amountCents: Math.round(splitTotal * 100),
+            tipCents: 0,
+            totalCents: Math.round(splitTotal * 100),
+            ...(cardBrand && { cardBrand }),
+            ...(cardLast4 && { cardLast4 }),
+            status: 'completed',
+          },
+        },
+        {
+          type: 'ORDER_CLOSED',
+          payload: { closedStatus: 'paid' },
+        },
+      ]).catch(console.error)
+    }
+    void emitOrderEvent(parentOrder.locationId, parentOrderId, 'ORDER_CLOSED', {
+      closedStatus: 'paid',
+      reason: `All ${unpaidSplits.length} splits paid`,
+    }).catch(console.error)
 
     // Fire-and-forget: inventory deductions for each split child (parent has zero items after split)
     for (const split of unpaidSplits) {

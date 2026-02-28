@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST - Merge another order into this one
 export const POST = withVenue(async function POST(
@@ -190,6 +191,17 @@ export const POST = withVenue(async function POST(
       orderId: targetOrderId,
       tableId: targetOrder.tableId || undefined,
     }, { async: true }).catch(() => {})
+
+    // Event emission: target order received merged items
+    void emitOrderEvent(targetOrder.locationId, targetOrderId, 'ORDER_METADATA_UPDATED', {
+      reason: `Merged ${movedItems.count} items from order #${sourceOrder.orderNumber}`,
+    }).catch(console.error)
+
+    // Event emission: source order voided after merge
+    void emitOrderEvent(targetOrder.locationId, sourceOrderId, 'ORDER_CLOSED', {
+      closedStatus: 'voided',
+      reason: `Merged into order #${targetOrder.orderNumber}`,
+    }).catch(console.error)
 
     // Return updated target order
     const updatedOrder = await db.order.findUnique({

@@ -5,6 +5,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchTabUpdated } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Check if tab needs auto-increment and fire IncrementalAuth if so
 // Called after adding items to a tab. Fires silently in the background.
@@ -137,6 +138,11 @@ export const POST = withVenue(async function POST(
             data: { preAuthAmount: newAuthAmount, version: { increment: 1 } },
           }),
         ])
+
+        // Fire-and-forget event emission
+        void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+          preAuthAmount: Math.round(newAuthAmount * 100),
+        }).catch(console.error)
 
         // Fire-and-forget socket dispatch for cross-terminal sync
         void dispatchTabUpdated(locationId, {

@@ -4,6 +4,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Re-authorize (IncrementalAuth) when bottle service tab exceeds deposit
 // Called when bartender acknowledges re-auth alert, or manually from tab management
@@ -71,6 +72,14 @@ export const POST = withVenue(async function POST(
           preAuthAmount: newAuthAmount,
         },
       })
+
+      // Fire-and-forget event emission
+      void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+        preAuthAmount: Math.round(newAuthAmount * 100),
+        preAuthId: defaultCard.recordNo,
+        preAuthLast4: defaultCard.cardLast4,
+        preAuthCardBrand: defaultCard.cardType || null,
+      }).catch(console.error)
 
       // Fire-and-forget socket dispatch for cross-terminal sync
       void dispatchOrderUpdated(order.locationId, {

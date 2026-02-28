@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { dispatchOrderUpdated, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export const POST = withVenue(async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { removeAtSeatNumber } = await req.json()
@@ -48,13 +49,18 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
         },
       })
 
-      // Get order for locationId and tableId (needed for socket dispatch)
+      // Get order for locationId, tableId, and seat counts (needed for socket dispatch + events)
       const orderData = await tx.order.findUnique({
         where: { id: orderId },
-        select: { locationId: true, tableId: true },
+        select: { locationId: true, tableId: true, baseSeatCount: true, extraSeatCount: true },
       })
 
       if (orderData) {
+        // Event emission: seat removed — guest count decreased
+        void emitOrderEvent(orderData.locationId, orderId, 'GUEST_COUNT_CHANGED', {
+          count: orderData.baseSeatCount + orderData.extraSeatCount,
+        }).catch(console.error)
+
         // Dispatch socket events (fire-and-forget, outside transaction)
         void dispatchOrderUpdated(orderData.locationId, { orderId, changes: ['seats'] }).catch(() => {})
         if (orderData.tableId) {

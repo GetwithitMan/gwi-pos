@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Void an unclosed tab (releases all card holds)
 // Fires VoidSaleByRecordNo for each authorized OrderCard
@@ -80,6 +81,14 @@ export const POST = withVenue(async function POST(
         notes: reason ? `Tab voided: ${reason}` : order.notes,
       },
     })
+
+    // Fire-and-forget event emission
+    if (allVoided) {
+      void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
+        closedStatus: 'voided',
+        reason: reason || 'Tab voided',
+      }).catch(console.error)
+    }
 
     // Dispatch socket events for voided tab (fire-and-forget)
     if (allVoided) {

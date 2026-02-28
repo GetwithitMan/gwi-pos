@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 const PORT = process.env.PORT || '3005'
 
@@ -69,6 +70,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // Already claimed by a concurrent cycle — skip
         continue
       }
+
+      // Fire-and-forget event emission for dispatch claim
+      void emitOrderEvent(order.locationId, order.id, 'ORDER_METADATA_UPDATED', {
+        status: 'open',
+        source: 'online',
+        dispatchedAt: new Date().toISOString(),
+      }).catch(console.error)
 
       // ── Call the existing send pipeline ──────────────────────────────────
       // /api/orders/[id]/send handles:

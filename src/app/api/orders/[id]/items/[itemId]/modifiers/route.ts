@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // PUT - Update modifiers on an existing order item
 export const PUT = withVenue(async function PUT(
@@ -74,6 +75,12 @@ export const PUT = withVenue(async function PUT(
         },
       })
     })
+
+    // Fire-and-forget event emission
+    void emitOrderEvent(order.locationId, orderId, 'ITEM_UPDATED', {
+      lineItemId: itemId,
+      modifiersJson: JSON.stringify(modifiers || []),
+    }).catch(console.error)
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

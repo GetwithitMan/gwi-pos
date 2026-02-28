@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // ============================================
 // POST - Create a new empty check on a split order
@@ -100,6 +101,19 @@ export const POST = withVenue(async function POST(
       trigger: 'split',
       tableId: parentOrder.tableId || undefined,
     }).catch(() => {})
+
+    // Event emission: new empty split check created
+    void emitOrderEvent(parentOrder.locationId, newOrder.id, 'ORDER_CREATED', {
+      locationId: parentOrder.locationId,
+      employeeId: parentOrder.employeeId,
+      orderType: parentOrder.orderType,
+      tableId: parentOrder.tableId,
+      guestCount: 1,
+      orderNumber: parentOrder.orderNumber,
+      displayNumber: newOrder.displayNumber,
+      parentOrderId: id,
+      splitIndex: newOrder.splitIndex,
+    }).catch(console.error)
 
     return NextResponse.json(
       { data: {

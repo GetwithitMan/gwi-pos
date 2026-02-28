@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 interface TransferItemsRequest {
   toOrderId: string
@@ -208,6 +209,18 @@ export const POST = withVenue(async function POST(
       orderId: fromOrderId,
       tableId: fromOrder.tableId || undefined,
     }, { async: true }).catch(() => {})
+
+    // Event emission: items removed from source order
+    const sourceItemEvents = itemIds.map((lineItemId: string) => ({
+      type: 'ITEM_REMOVED' as const,
+      payload: { lineItemId, reason: `Transferred to order ${toOrderId}` },
+    }))
+    void emitOrderEvents(fromOrder.locationId, fromOrderId, sourceItemEvents).catch(console.error)
+
+    // Event emission: items added to target order (metadata-level — individual item payloads not available from updateMany)
+    void emitOrderEvent(fromOrder.locationId, toOrderId, 'ORDER_METADATA_UPDATED', {
+      reason: `Received ${itemIds.length} items transferred from order ${fromOrderId}`,
+    }).catch(console.error)
 
     return NextResponse.json({ data: {
       success: true,

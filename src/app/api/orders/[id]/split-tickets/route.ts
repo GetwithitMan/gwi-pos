@@ -9,6 +9,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 // ============================================
 // Validation Schemas
@@ -520,6 +521,27 @@ export const POST = withVenue(async function POST(
       tableId: parentOrder.tableId || undefined,
     }).catch(() => {})
 
+    // Event emission: ORDER_CREATED for each new split child
+    for (const split of createdSplits) {
+      void emitOrderEvent(parentOrder.locationId, split.id, 'ORDER_CREATED', {
+        locationId: parentOrder.locationId,
+        employeeId: parentOrder.employeeId,
+        orderType: parentOrder.orderType,
+        tableId: parentOrder.tableId,
+        guestCount: 1,
+        orderNumber: parentOrder.orderNumber,
+        displayNumber: split.displayNumber,
+        parentOrderId: parentOrder.id,
+        splitIndex: split.splitIndex,
+      }).catch(console.error)
+    }
+
+    // Event emission: parent order status changed to 'split'
+    void emitOrderEvent(parentOrder.locationId, id, 'ORDER_CLOSED', {
+      closedStatus: 'split',
+      reason: `Split into ${createdSplits.length} tickets`,
+    }).catch(console.error)
+
     return NextResponse.json({ data: {
       message: 'Split tickets created successfully',
       parentOrderId: parentOrder.id,
@@ -667,6 +689,12 @@ export const PATCH = withVenue(async function PATCH(
         tableId: parentOrder.tableId || undefined,
       }).catch(() => {})
 
+      // Event emission: item updated (split into fractions)
+      void emitOrderEvent(parentOrder.locationId, fromSplitId, 'ITEM_UPDATED', {
+        lineItemId: itemId,
+        specialNotes: `Split ${ways} ways`,
+      }).catch(console.error)
+
       return NextResponse.json({ data: { message: `Item split ${ways} ways` } })
     }
 
@@ -755,6 +783,15 @@ export const PATCH = withVenue(async function PATCH(
       trigger: 'split',
       tableId: parentOrder.tableId || undefined,
     }).catch(() => {})
+
+    // Event emission: item moved between splits
+    void emitOrderEvent(parentOrder.locationId, fromSplitId, 'ITEM_REMOVED', {
+      lineItemId: itemId,
+      reason: `Moved to split ${toSplitId}`,
+    }).catch(console.error)
+    void emitOrderEvent(parentOrder.locationId, toSplitId, 'ORDER_METADATA_UPDATED', {
+      reason: `Received item ${itemId} from split ${fromSplitId}`,
+    }).catch(console.error)
 
     return NextResponse.json({ data: { message: 'Item moved successfully' } })
   } catch (error) {
@@ -886,6 +923,17 @@ export const DELETE = withVenue(async function DELETE(
     if (parentOrder.tableId) {
       void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
     }
+
+    // Event emission: split children closed, parent reopened
+    for (const split of parentOrder.splitOrders) {
+      void emitOrderEvent(parentOrder.locationId, split.id, 'ORDER_CLOSED', {
+        closedStatus: 'cancelled',
+        reason: 'Splits merged back to parent',
+      }).catch(console.error)
+    }
+    void emitOrderEvent(parentOrder.locationId, id, 'ORDER_REOPENED', {
+      reason: 'Splits merged back to parent',
+    }).catch(console.error)
 
     return NextResponse.json({ data: {
       message: 'Split tickets merged successfully',

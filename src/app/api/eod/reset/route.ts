@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { emitToLocation } from '@/lib/socket-server'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * POST /api/eod/reset
@@ -196,6 +197,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
     })
+
+    // Emit ORDER_METADATA_UPDATED for rolled-over orders (fire-and-forget)
+    if (staleOpenOrders.length > 0) {
+      void Promise.all(
+        staleOpenOrders.map(o =>
+          emitOrderEvent(locationId, o.id, 'ORDER_METADATA_UPDATED', {
+            rolledOverAt: now.toISOString(),
+            rolledOverFrom: `EOD reset${employeeId ? ` by employee ${employeeId}` : ''}`,
+          })
+        )
+      ).catch(console.error)
+    }
 
     // Notify all terminals about rolled-over orders
     if (staleOpenOrders.length > 0) {

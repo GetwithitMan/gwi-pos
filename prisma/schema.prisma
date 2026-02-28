@@ -2070,6 +2070,9 @@ model OrderType {
 // ORDERS (Skill 04)
 // ============================================
 
+/// @deprecated LEGACY TABLE — being replaced by OrderSnapshot via event-sourced pipeline.
+/// All mutations MUST emit events via emitOrderEvent(). New reads should use OrderSnapshot.
+/// See CLAUDE.md "Event-Sourced Order Writes" section.
 model Order {
   id         String   @id @default(cuid())
   locationId String
@@ -2271,6 +2274,9 @@ model Order {
   @@index([locationId, businessDayDate])
 }
 
+/// @deprecated LEGACY TABLE — being replaced by OrderItemSnapshot via event-sourced pipeline.
+/// All mutations MUST emit events via emitOrderEvent(). New reads should use OrderItemSnapshot.
+/// See CLAUDE.md "Event-Sourced Order Writes" section.
 model OrderItem {
   id         String   @id @default(cuid())
   locationId String

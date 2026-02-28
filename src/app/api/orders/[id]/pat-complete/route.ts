@@ -7,6 +7,7 @@ import {
   dispatchTabUpdated,
   dispatchFloorPlanUpdate,
 } from '@/lib/socket-dispatch'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST /api/orders/[id]/pat-complete
 // Called by pay-at-table after all datacap payments complete.
@@ -144,6 +145,42 @@ export const POST = withVenue(async function POST(
     if (order.tableId) {
       dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
     }
+
+    // Event emission: pay-at-table completed — payment(s) applied + order closed
+    const patEvents: Array<{ type: 'PAYMENT_APPLIED' | 'ORDER_CLOSED'; payload: Record<string, unknown> }> = []
+    if (splits && splits.length > 0) {
+      for (const split of splits) {
+        patEvents.push({
+          type: 'PAYMENT_APPLIED',
+          payload: {
+            paymentId: orderId, // No individual IDs from loop creates
+            method: 'card',
+            amountCents: Math.round(split.amount * 100),
+            tipCents: Math.round((split.tipAmount ?? 0) * 100),
+            totalCents: Math.round((split.amount + (split.tipAmount ?? 0)) * 100),
+            status: 'completed',
+          },
+        })
+      }
+    } else {
+      const baseAmount = totalPaid - (tipAmount ?? 0)
+      patEvents.push({
+        type: 'PAYMENT_APPLIED',
+        payload: {
+          paymentId: orderId,
+          method: 'card',
+          amountCents: Math.round(baseAmount * 100),
+          tipCents: Math.round((tipAmount ?? 0) * 100),
+          totalCents: Math.round(totalPaid * 100),
+          status: 'completed',
+        },
+      })
+    }
+    patEvents.push({
+      type: 'ORDER_CLOSED',
+      payload: { closedStatus: 'paid', reason: 'Pay-at-table completed' },
+    })
+    void emitOrderEvents(locationId, orderId, patEvents).catch(console.error)
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

@@ -6,6 +6,7 @@ import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitCloudEvent } from '@/lib/cloud-events'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 
@@ -175,6 +176,7 @@ export const PUT = withVenue(async function PUT(
       // Update shift + process tip distribution atomically
       // Open order check is inside the transaction to prevent TOCTOU race condition
       // Server-side computation of grossTips/tipOutTotal/netTips (BUG #417/#421 fix)
+      let transferredOrderIds: string[] = []
       const updatedShift = await db.$transaction(async (tx) => {
         // Check if employee has open orders (requireCloseTabsBeforeShift setting)
         const locationSettings = await getLocationSettings(shift.locationId)
@@ -194,6 +196,18 @@ export const PUT = withVenue(async function PUT(
           if (openOrderCount > 0) {
             // Manager override: transfer orders and proceed
             if (forceClose && requestingEmployeeId !== shift.employeeId) {
+              // Capture order IDs before bulk update for event emission
+              const ordersToTransfer = await tx.order.findMany({
+                where: {
+                  locationId: shift.locationId,
+                  employeeId: shift.employeeId,
+                  status: { in: ['open', 'sent', 'in_progress', 'split'] },
+                  deletedAt: null,
+                },
+                select: { id: true },
+              })
+              transferredOrderIds = ordersToTransfer.map(o => o.id)
+
               await tx.order.updateMany({
                 where: {
                   locationId: shift.locationId,
@@ -296,6 +310,17 @@ export const PUT = withVenue(async function PUT(
 
         return closed
       })
+
+      // Emit ORDER_METADATA_UPDATED for each transferred order (fire-and-forget)
+      if (transferredOrderIds.length > 0) {
+        void Promise.all(
+          transferredOrderIds.map(oid =>
+            emitOrderEvent(shift.locationId, oid, 'ORDER_METADATA_UPDATED', {
+              employeeId: requestingEmployeeId,
+            })
+          )
+        ).catch(console.error)
+      }
 
       // Real-time cross-terminal update
       void emitToLocation(shift.locationId, 'shifts:changed', { action: 'closed', shiftId: id, employeeId: shift.employeeId }).catch(() => {})

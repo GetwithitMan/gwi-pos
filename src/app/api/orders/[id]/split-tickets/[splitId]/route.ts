@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // ============================================
 // DELETE - Delete an empty split check
@@ -175,6 +176,19 @@ export const DELETE = withVenue(async function DELETE(
     invalidateSnapshotCache(parentOrder.locationId)
     if (parentOrder.tableId) {
       void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
+    }
+
+    // Event emission: split check deleted/cancelled
+    void emitOrderEvent(parentOrder.locationId, splitId, 'ORDER_CLOSED', {
+      closedStatus: 'cancelled',
+      reason: merged ? 'Last split — auto-merged back to parent' : 'Empty check deleted',
+    }).catch(console.error)
+
+    // If auto-merged, parent was reopened
+    if (merged) {
+      void emitOrderEvent(parentOrder.locationId, id, 'ORDER_REOPENED', {
+        reason: 'Last split auto-merged back to parent',
+      }).catch(console.error)
     }
 
     if (merged) {

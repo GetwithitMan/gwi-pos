@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // GET - Get tab details
 export const GET = withVenue(async function GET(
@@ -203,6 +204,23 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    // Fire-and-forget event emission
+    void emitOrderEvent(tab.locationId, id, 'ORDER_METADATA_UPDATED', {
+      ...(tabName !== undefined ? { tabName: tabName || null } : {}),
+      ...(releasePreAuth ? {
+        preAuthId: null,
+        preAuthAmount: null,
+        preAuthLast4: null,
+        preAuthCardBrand: null,
+      } : {}),
+      ...(preAuth && preAuth.cardLast4 ? {
+        preAuthId: updated.preAuthId,
+        preAuthAmount: updated.preAuthAmount ? Math.round(Number(updated.preAuthAmount) * 100) : null,
+        preAuthLast4: updated.preAuthLast4,
+        preAuthCardBrand: updated.preAuthCardBrand,
+      } : {}),
+    }).catch(console.error)
+
     return NextResponse.json({ data: {
       id: updated.id,
       tabName: updated.tabName || `Tab #${updated.orderNumber}`,
@@ -275,6 +293,12 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await db.order.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    // Fire-and-forget event emission
+    void emitOrderEvent(tab.locationId, id, 'ORDER_CLOSED', {
+      closedStatus: 'cancelled',
+      reason: 'Empty tab deleted',
+    }).catch(console.error)
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

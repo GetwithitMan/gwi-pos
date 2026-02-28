@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // Helper to calculate commission for an item
 function calculateItemCommission(
@@ -165,10 +166,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       ordersUpdated++
     }
 
-    // Event emission note: This is a batch admin tool that may touch hundreds of orders.
-    // Commission fields (commissionAmount, commissionTotal) are not part of any existing
-    // event payload type, and emitting per-order events for a retroactive batch fix would
-    // be excessive. Skipping individual event emission for this admin-only repair tool.
+    // Fire-and-forget event emission per order (batch — commission fix)
+    for (const [orderId, data] of Object.entries(orderUpdates)) {
+      const itemEvents = data.items.map((item) => ({
+        type: 'ITEM_UPDATED' as const,
+        payload: {
+          lineItemId: item.id,
+          commissionAmount: itemUpdates.find((u) => u.id === item.id)?.commissionAmount ?? 0,
+        },
+      }))
+      void emitOrderEvents(
+        data.items[0]?.locationId || '',
+        orderId,
+        [
+          ...itemEvents,
+          { type: 'ORDER_METADATA_UPDATED' as const, payload: { commissionTotal: data.totalCommission } },
+        ]
+      ).catch(console.error)
+    }
 
     return NextResponse.json({ data: {
       dryRun: false,

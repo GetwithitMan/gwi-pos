@@ -166,6 +166,36 @@ IF internet goes down:
 | Cloud (source of truth) | MenuItem, Category, ModifierGroup, Modifier, Employee, Role, Table, Section, Printer, KDSScreen, OrderType, TaxRule |
 | Cross-origin | OnlineOrder (cloud creates → NUC dispatches), HardwareCommand (cloud writes → NUC executes) |
 
+### CRITICAL: Event-Sourced Order Writes (MANDATORY — READ BEFORE TOUCHING ANY ORDER CODE)
+
+**Every Order/OrderItem mutation MUST emit domain events. No exceptions.**
+
+The POS is migrating from direct Order table writes to a full event-sourced pipeline:
+- `OrderEvent` → `OrderReducer` → `OrderSnapshot` / `OrderItemSnapshot`
+- The `Order` and `OrderItem` tables are **LEGACY** — they will be removed
+- `OrderSnapshot` and `OrderItemSnapshot` are the **future source of truth**
+
+**Rules for ALL agents and developers:**
+
+1. **NEVER** add a `db.order.create/update/delete` or `db.orderItem.create/update/delete` without a corresponding `emitOrderEvent()` or `emitOrderEvents()` call
+2. **NEVER** create new read queries against `db.order` or `db.orderItem` — use `db.orderSnapshot` / `db.orderItemSnapshot` instead
+3. **Event emission is MANDATORY** for every Order/OrderItem mutation — the event log is the source of truth
+4. **Fire-and-forget pattern**: `void emitOrderEvent(db, { ... }).catch(console.error)` — events must not block the response
+5. **17 event types available**: ORDER_CREATED, ITEM_ADDED, ITEM_REMOVED, ITEM_UPDATED, ORDER_SENT, PAYMENT_APPLIED, PAYMENT_VOIDED, ORDER_CLOSED, ORDER_REOPENED, DISCOUNT_APPLIED, DISCOUNT_REMOVED, TAB_OPENED, TAB_CLOSED, GUEST_COUNT_CHANGED, NOTE_CHANGED, ORDER_METADATA_UPDATED, COMP_VOID_APPLIED
+
+**Key files:**
+- Event types & state: `src/lib/order-events/types.ts`
+- Pure reducer: `src/lib/order-events/reducer.ts`
+- Snapshot projector: `src/lib/order-events/projector.ts`
+- Event emitter: `src/lib/order-events/emitter.ts`
+- Tests: `src/lib/order-events/__tests__/reducer.test.ts` (19 golden-master tests)
+
+**Migration status:**
+- Phase A (schema fill): ✅ Done — 46+19 fields, 11 indexes on snapshots
+- Phase B (event emission): ✅ Done — all write paths emit events
+- Phase C (flip reads): ✅ Partial — 20 reads switched, ~260 remain (blocked by relations)
+- Phase D (kill legacy writes): 🔄 In Progress — guardrails added, dead code removed
+
 ### CRITICAL: Android Native App is the PRIMARY Client
 
 **Android native app is the primary POS interface. Web/browser is secondary.**

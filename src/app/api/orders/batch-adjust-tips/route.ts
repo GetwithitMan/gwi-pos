@@ -5,6 +5,7 @@ import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 interface TipAdjustment {
   orderId: string
@@ -147,6 +148,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
       }
     })
+
+    // Fire-and-forget event emission per order
+    for (const info of dispatchInfos) {
+      void emitOrderEvent(info.locationId, info.orderId, 'ORDER_METADATA_UPDATED', {
+        tipTotalCents: Math.round(info.tipTotal * 100),
+        totalCents: Math.round(info.total * 100),
+      }).catch(console.error)
+    }
 
     // Fire-and-forget tip allocations (BUG #412 fix — mirror single adjust-tip)
     for (const alloc of allocationInfos) {

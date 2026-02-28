@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { headers } from 'next/headers'
+import { orderWriteGuardExtension } from './order-write-guard'
 import { getRequestPrisma } from './request-context'
 
 if (!process.env.DATABASE_URL) {
@@ -120,7 +121,10 @@ function createPrismaClient(url?: string) {
     },
   })
 
-  return extended as unknown as PrismaClient
+  // Chain: soft-delete guard (reads) → legacy write guard (Order/OrderItem writes)
+  const guarded = extended.$extends(orderWriteGuardExtension)
+
+  return guarded as unknown as PrismaClient
 }
 
 /**

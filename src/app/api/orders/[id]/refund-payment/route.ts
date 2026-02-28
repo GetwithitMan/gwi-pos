@@ -225,6 +225,10 @@ export const POST = withVenue(async function POST(
               where: { id },
               data: { tipTotal: newOrderTipTotal },
             })
+            // Fire-and-forget event emission for tip update
+            void emitOrderEvent(order.locationId, id, 'ORDER_METADATA_UPDATED', {
+              tipTotalCents: Math.round(newOrderTipTotal * 100),
+            }).catch(console.error)
           } catch (err) {
             console.error('[refund-payment] Failed to adjust tip proportionally:', err)
           }

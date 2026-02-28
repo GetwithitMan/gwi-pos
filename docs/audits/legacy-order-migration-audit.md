@@ -252,6 +252,29 @@ Phase A (schema) ─┬─→ Phase B-HIGH (critical events) ──┐
 
 ---
 
+## Phase D Status (2026-02-28)
+
+### Completed
+
+| Item | Details |
+|------|---------|
+| **Phase B — Event emission** | ✅ All write paths now emit OrderEvents. The 11 HIGH, 10 MEDIUM, and 5 LOW priority routes from Gap 2 all have dual-write coverage (legacy + event emission). |
+| **Phase C — Read flip (partial)** | ✅ 20 read-only queries switched from `db.order`/`db.orderItem` to `db.orderSnapshot`/`db.orderItemSnapshot`. These are non-relation, non-transactional reads (open order lists, summary counts, status checks). |
+| **Prisma write guard middleware** | ✅ Added middleware that logs warnings on any `db.order.create/update/delete` or `db.orderItem.create/update/delete` call that does NOT have a corresponding event emission. Acts as a guardrail during transition — will become a hard block in Phase D-FINAL. |
+| **Dead code removal** | ✅ Removed unused legacy helper functions, duplicate query patterns, and obsolete order-fetching utilities that were superseded by snapshot queries. |
+| **CLAUDE.md updated** | ✅ Added "CRITICAL: Event-Sourced Order Writes" section with strict rules: no new legacy writes without events, no new reads against Order/OrderItem tables, fire-and-forget event pattern enforced. |
+
+### Remaining Work
+
+| Item | Blocker | Estimated Scope |
+|------|---------|-----------------|
+| **Switch ~260 relation-dependent reads** | These queries use Prisma `include` to join Order → Payment, Order → Employee, Order → Table, OrderItem → MenuItem, etc. OrderSnapshot does not yet have these relations. Requires either: (a) adding Prisma relations to snapshot models, or (b) denormalizing the joined fields into the snapshot. | ~260 queries across ~80 files |
+| **Report queries** | Daily, shift, PMIX, and tip reports depend on Order joins with Payment, Employee, and Shift tables. Need compound indexes on snapshots + relation strategy before switching. | ~18 report queries |
+| **Transaction-bound reads** | ~35 reads inside `db.$transaction` blocks (pay, send, split) must stay on legacy Order table until writes themselves move to event-only. These cannot be switched independently. | ~35 queries |
+| **Kill legacy writes (Phase D-FINAL)** | All 50+ mutation sites must write ONLY via event → reduce → project. Legacy Order/OrderItem tables become read-only archives. Blocked on relation-dependent reads being switched first. | Future phase |
+
+---
+
 ## Appendix: Audit Agents
 
 | Agent | Lens | Key Finding |

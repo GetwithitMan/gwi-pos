@@ -4,6 +4,7 @@ import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { calculateOrbitRadius, findCollisionFreePosition } from '@/lib/seat-utils'
 import { dispatchFloorPlanUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 /**
  * Atomic Seat Management API (Skill 121)
@@ -485,6 +486,13 @@ export const POST = withVenue(async function POST(
         throw new Error(`Unknown action: ${action}`)
       }
     })
+
+    // Event emission: seat count changed
+    if (locationIdForDispatch) {
+      void emitOrderEvent(locationIdForDispatch, orderId, 'GUEST_COUNT_CHANGED', {
+        count: result.newTotalSeats,
+      }).catch(console.error)
+    }
 
     // Dispatch socket event so other terminals know about seat changes
     if (locationIdForDispatch) {
