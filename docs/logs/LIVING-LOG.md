@@ -5,6 +5,82 @@
 
 ---
 
+## 2026-02-28 — Event-Sourced Order Bridge: Full Implementation + Agent Team Audit
+
+**Session:** Completed the Event-Sourced Order Bridge across all 4 phases (NUC Phases 1-3, Android Phase 4). Then deployed an 8-agent audit team (5 auditors + 3 verifiers) to forensically review the entire flow. The audit found 2 critical bugs, 4 high-priority issues, and 4 medium issues — all fixed, verified, and pushed in the same session.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `a0089ba` — feat: event-sourced order bridge Phases 1-3 — schema, pipeline, NUC integration (35 files, +3362 lines)
+- `f40ea58` — fix: event-sourced order bridge audit — ITEM_ADDED 21 fields, ORDER_REOPENED reason, voided item guard (3 files)
+
+**GWI Android Register** (`gwi-android-register`):
+- `625ddd1` — feat: event-sourced order bridge Phase 4 — batch sync, socket bridge, reconnect catch-up (9 files)
+- `fc28b92` — fix: event bridge audit — pagination loop, field validation, atomic batch marks (3 files)
+
+### Deployments
+- POS: `f40ea58` pushed to main → Vercel auto-deploy
+- Android: `fc28b92` pushed to main
+
+### Features Delivered
+
+| Feature | Description |
+|---------|-------------|
+| **17 Domain Event Types** | ORDER_CREATED, ITEM_ADDED/REMOVED/UPDATED, ORDER_SENT, PAYMENT_APPLIED/VOIDED, ORDER_CLOSED/REOPENED, DISCOUNT_APPLIED/REMOVED, TAB_OPENED/CLOSED, GUEST_COUNT_CHANGED, NOTE_CHANGED, ORDER_METADATA_UPDATED, COMP_VOID_APPLIED |
+| **Pure Reducer** | 483-line TypeScript reducer — deterministic (OrderState, Event) → OrderState |
+| **Projector** | OrderState → Prisma OrderSnapshot + OrderItemSnapshot projection |
+| **Fire-and-Forget Emitter** | 14 API routes wired with event emission — non-blocking |
+| **Batch Sync Endpoint** | POST /api/order-events/batch — Postgres SEQUENCE for monotonic serverSequence |
+| **Event Replay Endpoint** | GET /api/sync/events — paginated cursor-based replay |
+| **Android Batch Sync** | EventSyncWorker rewritten for single batch POST (was 13-case REST shim) |
+| **Socket Event Bridge** | Real-time `order:event` from NUC → Android Room event store |
+| **Reconnect Catch-Up** | On socket reconnect, paginated replay fills event gaps for all tracked orders |
+| **Golden-Master Tests** | 19 reducer tests against 9 shared JSON fixtures |
+
+### Audit Findings (8-Agent Team)
+
+| # | Severity | Issue | Fix |
+|---|----------|-------|-----|
+| 1 | **CRITICAL** | ITEM_ADDED event only emitting 7 of 21 fields (modifiers, seating, weight, pricing, pour data lost) | Serialized all 21 fields from createdItems |
+| 2 | **CRITICAL** | catchUpOrderEvents fetched only 1 page, ignoring hasMore=true (>200 events lost) | Added pagination loop with cursor advancement |
+| 3 | HIGH | ORDER_REOPENED emitted empty payload, missing reason field | Added reason to payload |
+| 4 | HIGH | handleOrderSent fired voided/comped items to kitchen | Added `item.status === 'active'` guard |
+| 5 | MEDIUM | ingestRemoteEvent used getString (throws on missing field) | Added required field validation before extraction |
+| 6 | MEDIUM | markSynced/markRejected loop not atomic | Added @Transaction markBatchResults on OrderEventDao |
+
+**Debunked claims:** Batch worker correctly separates accepted/rejected (not blind). Closed-order guard exists (12 types blocked, 5 bypass). Socket event includes serverSequence. TabClosed tip fields handled via separate PAYMENT_APPLIED event.
+
+### Audit Agent Team
+
+| Agent | Scope | Findings |
+|-------|-------|----------|
+| reducer-auditor | Types, reducer, projector | 3 critical + 5 edge cases |
+| api-auditor | Batch/replay endpoints, route wiring | ITEM_ADDED truncation (critical) |
+| android-auditor | EventSyncWorker, OrderRepository, DAOs | Pagination gap, field extraction |
+| contract-auditor | Cross-repo field-by-field match | All contracts verified — perfect match |
+| edge-case-auditor | Race conditions, test coverage, migration | Pagination, reconnect race, test gaps |
+| verify-item-added | Fact-check ITEM_ADDED claim | Confirmed: 14 missing fields |
+| verify-batch-handling | Fact-check batch rejection | Debunked: handling is correct |
+| verify-closed-guard | Fact-check closed-order guard | Confirmed: guard exists and works |
+
+### Files Changed
+
+| Area | New | Modified | Total |
+|------|-----|----------|-------|
+| POS (Phases 1-3) | ~20 | ~15 | 35 |
+| POS (audit fix) | 0 | 3 | 3 |
+| Android (Phase 4) | 0 | 9 | 9 |
+| Android (audit fix) | 0 | 3 | 3 |
+| **Total** | **~20** | **~30** | **~50** |
+
+### Known Issues / Blockers
+- NUC live integration testing pending (NUC unavailable for a few days)
+- 8 event types lack dedicated fixture tests (ITEM_UPDATED, ORDER_REOPENED edge cases, etc.)
+- Reconnect race (catchUp + EventSyncWorker concurrent) — not data-loss but causes triple replayAndProject; needs per-orderId sync lock (future)
+
+---
+
 ## 2026-02-27 — Android Payment Hardening + Dual Pricing Fix + Cash Rounding (Skills 457–459)
 
 **Session:** Massive Android hardening pass across payment lifecycle, order state management, and real-time sync. Fixed 14 core bugs (stale payCash totals, double-tap race via Mutex, draft payment guard, persisted closed-order guards). Applied 6 post-audit refinements. Added 4 socket layer optimizations (conflate, debounce, Dispatchers.Default, reconnection tuning). Fixed inverted dual pricing display (card price was showing surcharge — correct model: base price IS card price, cash gets discount). Implemented full cash rounding pipeline on Android matching web POS Skill 327 (nickel/dime/quarter/dollar × nearest/up/down). DB v25.
