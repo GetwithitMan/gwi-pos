@@ -25,9 +25,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
-    // Check for duplicate sync (idempotency) — read from OrderSnapshot
+    // Check for duplicate sync (idempotency) — read from Order (where sync creates records)
     if (offlineId) {
-      const existing = await db.orderSnapshot.findFirst({
+      const existing = await db.order.findFirst({
         where: {
           locationId,
           offlineId,
