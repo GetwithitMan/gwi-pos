@@ -4,6 +4,7 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -192,6 +193,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         },
       })
+    }
+
+    // Emit order events for each affected order (fire-and-forget)
+    if (action === 'void') {
+      for (const id of orderIds) {
+        void emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
+          closedStatus: 'voided',
+          reason: reason || 'Bulk void',
+        })
+      }
+    } else if (action === 'cancel') {
+      for (const id of orderIds) {
+        void emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
+          closedStatus: 'cancelled',
+          reason: reason || 'Bulk cancel',
+        })
+      }
+    } else if (action === 'transfer') {
+      for (const id of orderIds) {
+        void emitOrderEvent(locationId, id, 'ORDER_METADATA_UPDATED', {
+          employeeId: toEmployeeId,
+        })
+      }
     }
 
     // Dispatch socket update

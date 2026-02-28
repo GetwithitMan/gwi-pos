@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -86,6 +87,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         recoveredAt: new Date().toISOString(),
       },
     },
+  })
+
+  // Emit ORDER_METADATA_UPDATED for the tabStatus recovery (fire-and-forget)
+  void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+    tabName: null,
+    tableId: null,
+    tableName: null,
+    employeeId: employeeId || null,
   })
 
   return NextResponse.json({

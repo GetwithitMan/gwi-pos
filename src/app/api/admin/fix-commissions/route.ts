@@ -165,6 +165,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       ordersUpdated++
     }
 
+    // Event emission note: This is a batch admin tool that may touch hundreds of orders.
+    // Commission fields (commissionAmount, commissionTotal) are not part of any existing
+    // event payload type, and emitting per-order events for a retroactive batch fix would
+    // be excessive. Skipping individual event emission for this admin-only repair tool.
+
     return NextResponse.json({ data: {
       dryRun: false,
       message: 'Commission fix complete',

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * POST /api/system/cleanup-stale-orders
@@ -95,6 +96,14 @@ export const POST = withVenue(async (request) => {
     })
 
     logger.log(`[cleanup-stale-orders] Closed ${result.count} stale draft orders for location ${locationId}`)
+
+    // Emit ORDER_CLOSED events for each cancelled order (fire-and-forget)
+    for (const id of ids) {
+      void emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
+        closedStatus: 'cancelled',
+        reason: `Auto-cancelled: stale $0 draft (older than ${maxAgeHours}h)`,
+      })
+    }
 
     return NextResponse.json({
       data: {

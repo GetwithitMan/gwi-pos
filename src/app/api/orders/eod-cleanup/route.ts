@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -78,6 +79,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       await db.table.updateMany({
         where: { id: { in: toResetTableIds } },
         data: { status: 'available' },
+      })
+    }
+
+    // Emit ORDER_CLOSED events for each cancelled order (fire-and-forget)
+    for (const id of toCancelIds) {
+      void emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
+        closedStatus: 'cancelled',
+        reason: 'EOD cleanup: stale empty order from previous business day',
       })
     }
 
