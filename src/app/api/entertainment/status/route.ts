@@ -77,7 +77,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       .map(el => el.currentOrderId!)
 
     const linkedOrders = orderIds.length > 0
-      ? await db.order.findMany({
+      ? await db.orderSnapshot.findMany({
           where: { id: { in: orderIds } },
           select: {
             id: true,

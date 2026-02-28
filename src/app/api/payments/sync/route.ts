@@ -68,12 +68,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Resolve the order ID
     let resolvedOrderId = orderId
 
-    // If we only have localOrderId, find the synced order
+    // If we only have localOrderId, find the synced order — read from OrderSnapshot
     if (!resolvedOrderId && localOrderId) {
-      const syncedOrder = await db.order.findFirst({
+      const syncedOrder = await db.orderSnapshot.findFirst({
         where: {
           offlineLocalId: localOrderId,
         },
+        select: { id: true },
       })
 
       if (!syncedOrder) {

@@ -289,7 +289,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Calculate labor cost as percentage of sales (if we have sales data)
     let laborCostPercent = null
     try {
-      const salesFilter: Record<string, unknown> = { locationId, status: { in: ['completed', 'paid'] } }
+      const salesFilter: Record<string, unknown> = { locationId, status: { in: ['completed', 'paid'] }, deletedAt: null }
       if (startDate || endDate) {
         const dateRange: Record<string, Date> = {}
         if (startDate) dateRange.gte = new Date(startDate)
@@ -299,11 +299,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           { businessDayDate: null, createdAt: dateRange },
         ]
       }
-      const salesAgg = await db.order.aggregate({
+      const salesAgg = await db.orderSnapshot.aggregate({
         where: salesFilter,
-        _sum: { subtotal: true },
+        _sum: { subtotalCents: true },
       })
-      const totalSales = Number(salesAgg._sum.subtotal) || 0
+      const totalSales = (salesAgg._sum.subtotalCents || 0) / 100
       if (totalSales > 0) {
         laborCostPercent = Math.round((totalLaborCost / totalSales) * 10000) / 100
       }

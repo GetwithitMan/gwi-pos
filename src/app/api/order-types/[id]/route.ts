@@ -158,8 +158,8 @@ export const DELETE = withVenue(async function DELETE(
       } })
     }
 
-    // Check if any orders use this type
-    const ordersUsingType = await db.order.count({
+    // Check if any orders use this type (read from snapshot)
+    const ordersUsingType = await db.orderSnapshot.count({
       where: { orderTypeId: id },
     })
 

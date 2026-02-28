@@ -25,22 +25,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
-    // Check for duplicate sync (idempotency)
+    // Check for duplicate sync (idempotency) — read from OrderSnapshot
     if (offlineId) {
-      const existing = await db.order.findFirst({
+      const existing = await db.orderSnapshot.findFirst({
         where: {
           locationId,
           offlineId,
         },
+        select: { id: true },
       })
 
       if (existing) {
-        // Already synced - return the existing order
+        // Already synced - return the existing order ID
         return NextResponse.json(
           {
             message: 'Order already synced',
             existingOrderId: existing.id,
-            order: existing,
           },
           { status: 409 }
         )

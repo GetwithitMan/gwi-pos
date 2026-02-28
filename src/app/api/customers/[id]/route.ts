@@ -71,8 +71,20 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    // Total count for pagination
-    const totalOrders = await db.order.count({ where: ordersWhere })
+    // Total count for pagination (read from snapshot)
+    const totalOrders = await db.orderSnapshot.count({
+      where: {
+        customerId: id,
+        status: { in: ['completed', 'paid'] },
+        deletedAt: null,
+        ...(startDate || endDate ? {
+          createdAt: {
+            ...(startDate ? { gte: new Date(startDate) } : {}),
+            ...(endDate ? { lte: new Date(endDate) } : {}),
+          },
+        } : {}),
+      },
+    })
 
     // Get favorite items (most ordered)
     const favoriteItems = await db.orderItem.groupBy({

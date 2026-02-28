@@ -20,8 +20,8 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    // Find all open orders for this employee
-    const openOrders = await db.order.findMany({
+    // Find all open orders for this employee (read from snapshot)
+    const openOrders = await db.orderSnapshot.findMany({
       where: {
         employeeId,
         locationId,
@@ -32,15 +32,10 @@ export const GET = withVenue(async function GET(
         orderNumber: true,
         tabName: true,
         orderType: true,
-        total: true,
+        totalCents: true,
         guestCount: true,
         createdAt: true,
-        table: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
+        tableName: true,
         items: {
           select: {
             id: true,
@@ -59,9 +54,9 @@ export const GET = withVenue(async function GET(
         id: order.id,
         orderNumber: order.orderNumber,
         tabName: order.tabName,
-        tableName: order.table?.name || null,
+        tableName: order.tableName || null,
         orderType: order.orderType,
-        total: Number(order.total),
+        total: order.totalCents / 100,
         guestCount: order.guestCount,
         itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
         createdAt: order.createdAt.toISOString(),

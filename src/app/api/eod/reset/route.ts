@@ -65,7 +65,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
 
-    const staleOpenOrders = await db.order.findMany({
+    // Read from OrderSnapshot (event-sourced projection) — cents-based fields
+    const staleOpenOrders = await db.orderSnapshot.findMany({
       where: {
         locationId,
         status: 'open',
@@ -75,7 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       select: {
         id: true,
         orderNumber: true,
-        total: true,
+        totalCents: true,
         createdAt: true,
       },
     })
@@ -94,7 +95,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             orders: staleOpenOrders.map(o => ({
               id: o.id,
               orderNumber: o.orderNumber,
-              total: Number(o.total),
+              total: o.totalCents / 100,
               createdAt: o.createdAt.toISOString(),
             })),
           },
@@ -160,7 +161,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               entityId: order.id,
               details: {
                 orderNumber: order.orderNumber,
-                total: Number(order.total),
+                total: order.totalCents / 100,
                 createdAt: order.createdAt.toISOString(),
                 message: 'Order open for more than 24 hours detected during EOD reset',
               },
@@ -274,7 +275,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const getDayStartTime = (getSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const getBusinessDayStart = getCurrentBusinessDay(getDayStartTime).start
 
-    const staleOrderCount = await db.order.count({
+    // Read from OrderSnapshot (event-sourced projection)
+    const staleOrderCount = await db.orderSnapshot.count({
       where: {
         locationId,
         status: 'open',
@@ -283,7 +285,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    const openOrderCount = await db.order.count({
+    const openOrderCount = await db.orderSnapshot.count({
       where: {
         locationId,
         status: 'open',

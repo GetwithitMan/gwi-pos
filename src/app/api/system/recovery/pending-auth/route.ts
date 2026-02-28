@@ -18,7 +18,8 @@ const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 export const GET = withVenue(async function GET() {
   const fiveMinAgo = new Date(Date.now() - STALE_THRESHOLD_MS)
 
-  const staleOrders = await db.order.findMany({
+  // Read from OrderSnapshot (event-sourced projection)
+  const staleOrders = await db.orderSnapshot.findMany({
     where: {
       tabStatus: 'pending_auth',
       updatedAt: { lt: fiveMinAgo },

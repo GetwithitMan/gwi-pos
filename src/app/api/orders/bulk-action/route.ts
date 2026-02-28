@@ -21,8 +21,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields: orderIds, action, employeeId' }, { status: 400 })
     }
 
-    // Verify first order to get locationId
-    const firstOrder = await db.order.findFirst({
+    // Verify first order to get locationId — read from OrderSnapshot
+    const firstOrder = await db.orderSnapshot.findFirst({
       where: { id: orderIds[0], deletedAt: null },
       select: { locationId: true },
     })
@@ -93,8 +93,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     } else if (action === 'cancel') {
       // Cancel action: soft-delete draft/open/split orders with no preAuth
-      // First check for preAuth — those must be voided, not cancelled
-      const ordersWithPreAuth = await db.order.findMany({
+      // First check for preAuth — those must be voided, not cancelled (read from OrderSnapshot)
+      const ordersWithPreAuth = await db.orderSnapshot.findMany({
         where: {
           id: { in: orderIds },
           preAuthId: { not: null },

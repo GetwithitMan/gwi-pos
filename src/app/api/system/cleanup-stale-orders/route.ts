@@ -37,14 +37,15 @@ export const POST = withVenue(async (request) => {
     cutoff.setHours(cutoff.getHours() - maxAgeHours)
 
     // Find stale draft orders: status='draft' or 'open', total=$0, no items sent, older than cutoff
-    const staleOrders = await db.order.findMany({
+    // Read from OrderSnapshot (event-sourced projection) — cents-based fields
+    const staleOrders = await db.orderSnapshot.findMany({
       where: {
         locationId,
         status: { in: ['draft', 'open'] },
-        total: 0,
-        subtotal: 0,
+        totalCents: 0,
+        subtotalCents: 0,
         sentAt: null,
-        paidAt: null,
+        paidAmountCents: 0,
         createdAt: { lt: cutoff },
         deletedAt: null,
       },
@@ -52,13 +53,13 @@ export const POST = withVenue(async (request) => {
         id: true,
         orderNumber: true,
         createdAt: true,
-        _count: { select: { items: true } },
+        itemCount: true,
       },
     })
 
     // Filter to only truly empty orders (0 items) to avoid closing orders
     // that have items but happen to have $0 total (e.g., comped orders)
-    const emptyStaleOrders = staleOrders.filter(o => o._count.items === 0)
+    const emptyStaleOrders = staleOrders.filter(o => o.itemCount === 0)
 
     if (dryRun) {
       return NextResponse.json({

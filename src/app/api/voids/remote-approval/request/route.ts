@@ -63,8 +63,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Fetch the order to get order number
-    const order = await db.order.findUnique({
+    // Fetch the order to get order number (read from snapshot)
+    const order = await db.orderSnapshot.findUnique({
       where: { id: orderId },
       select: { id: true, orderNumber: true, locationId: true },
     })

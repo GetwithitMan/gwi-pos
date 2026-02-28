@@ -245,10 +245,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ...(employeeId ? { employeeId } : {}),
         },
       }),
-      // 6. Commission from orders (businessDayDate OR-fallback)
-      db.order.findMany({
+      // 6. Commission from order snapshots (businessDayDate OR-fallback)
+      db.orderSnapshot.findMany({
         where: {
           locationId,
+          deletedAt: null,
           status: { in: ['completed', 'paid'] },
           commissionTotal: { gt: 0 },
           ...(employeeId ? { employeeId } : {}),
@@ -341,10 +342,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    // Process commission from orders
+    // Process commission from order snapshots (commissionTotal is already in cents)
     orders.forEach(order => {
       if (!employeePayroll[order.employeeId]) return
-      employeePayroll[order.employeeId].commissionTotal += Number(order.commissionTotal)
+      employeePayroll[order.employeeId].commissionTotal += order.commissionTotal / 100
     })
 
     // 6. Calculate final totals for each employee

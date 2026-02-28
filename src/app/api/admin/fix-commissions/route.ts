@@ -206,8 +206,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    // Count order items that need fixing
-    const orderItemsNeedingFix = await db.orderItem.count({
+    // Count order items that need fixing (read from snapshot)
+    const orderItemsNeedingFix = await db.orderItemSnapshot.count({
       where: {
         menuItemId: { in: menuItemsWithCommission.map(mi => mi.id) },
         OR: [
@@ -218,8 +218,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    // Count orders with commission already tracked
-    const ordersWithCommission = await db.order.count({
+    // Count orders with commission already tracked (read from snapshot)
+    const ordersWithCommission = await db.orderSnapshot.count({
       where: {
         commissionTotal: { gt: 0 },
         ...(locationId ? { locationId } : {}),

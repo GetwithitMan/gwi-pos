@@ -24,7 +24,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
 
     // Find stale orders: draft/open, whose businessDayDate is before the current business day, not deleted
-    const staleOrders = await db.order.findMany({
+    // Read from OrderSnapshot (event-sourced projection) — cents-based fields
+    const staleOrders = await db.orderSnapshot.findMany({
       where: {
         locationId,
         deletedAt: null,
@@ -36,12 +37,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
       select: {
         id: true,
-        total: true,
+        totalCents: true,
         tableId: true,
-        items: {
-          where: { deletedAt: null },
-          select: { id: true },
-        },
+        itemCount: true,
       },
     })
 
@@ -50,7 +48,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let rolledForward = 0
 
     for (const order of staleOrders) {
-      const hasBalance = Number(order.total) > 0 && order.items.length > 0
+      const hasBalance = order.totalCents > 0 && order.itemCount > 0
       if (hasBalance) {
         // Orders with a balance roll forward
         rolledForward++
