@@ -62,6 +62,54 @@ async function main() {
       }
     }
 
+    // ── Type 3: Route-A split parents — status='open' but have children ──
+    // split/route.ts (even + by_item) never set status='split' on the parent.
+    // Children can't be paid because pay/route.ts requires parentOrder.status === 'split'.
+    // Fix: set those parents to 'split' so the children become payable.
+    console.log(`\n${PREFIX} === Type 3: Route-A split parents (open with children) ===`)
+
+    const routeAWhere: any = {
+      status: { in: ['open', 'sent', 'in_progress'] },
+      deletedAt: null,
+    }
+    if (locationId) routeAWhere.locationId = locationId
+
+    const openParentCandidates = await prisma.order.findMany({
+      where: {
+        ...routeAWhere,
+        splitOrders: { some: {} }, // has at least one child
+      },
+      select: { id: true, orderNumber: true, status: true, locationId: true },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    console.log(`${PREFIX} Found ${openParentCandidates.length} open orders with split children`)
+
+    let routeAFixed = 0
+    for (const parent of openParentCandidates) {
+      // Only promote to 'split' if at least one child is still open/unpaid
+      const openChildren = await prisma.order.count({
+        where: {
+          parentOrderId: parent.id,
+          status: { notIn: ['paid', 'cancelled', 'voided', 'completed'] },
+          deletedAt: null,
+        },
+      })
+      if (openChildren === 0) continue // all children already done — leave for Type 2 to handle
+
+      routeAFixed++
+      if (!dryRun) {
+        await prisma.order.update({
+          where: { id: parent.id },
+          data: { status: 'split', version: { increment: 1 } },
+        })
+        console.log(`${PREFIX}   Fixed: ${parent.id} (order #${parent.orderNumber}, was ${parent.status} → split)`)
+      } else {
+        console.log(`${PREFIX}   [dry-run] Would fix: ${parent.id} (order #${parent.orderNumber}, was ${parent.status} → split)`)
+      }
+    }
+    console.log(`${PREFIX} Fixed ${routeAFixed} Route-A split parents`)
+
     // ── Type 2: Stranded split parents ────────────────────────────
     console.log(`\n${PREFIX} === Type 2: Stranded split parents ===`)
 
@@ -111,6 +159,7 @@ async function main() {
     // ── Summary ───────────────────────────────────────────────────
     console.log(`\n${PREFIX} === Summary ===`)
     console.log(`${PREFIX}   Empty zombies ${dryRun ? 'found' : 'cancelled'}: ${zombies.length}`)
+    console.log(`${PREFIX}   Route-A parents ${dryRun ? 'found' : 'fixed'} → split: ${routeAFixed}`)
     console.log(`${PREFIX}   Stranded splits ${dryRun ? 'found' : 'closed'}: ${strandedCount}`)
     if (dryRun) console.log(`${PREFIX}   (dry run — no changes were made)`)
   } finally {
