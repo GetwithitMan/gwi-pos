@@ -214,7 +214,9 @@ export const POST = withVenue(async function POST(
     })
 
     // Emit ORDER_REOPENED event (fire-and-forget)
-    void emitOrderEvent(order.locationId, orderId, 'ORDER_REOPENED', {})
+    void emitOrderEvent(order.locationId, orderId, 'ORDER_REOPENED', {
+      reason: reason || null,
+    })
 
     // Dispatch socket events for reopened order (fire-and-forget)
     void dispatchOpenOrdersChanged(order.locationId, {

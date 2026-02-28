@@ -653,8 +653,28 @@ export const POST = withVenue(async function POST(
         name: item.name,
         priceCents: Math.round(Number(item.price) * 100),
         quantity: item.quantity,
+        modifiersJson: item.modifiers?.length
+          ? JSON.stringify(item.modifiers.map((m: any) => ({
+              id: m.id, modifierId: m.modifierId, name: m.name,
+              price: Number(m.price), quantity: m.quantity,
+              preModifier: m.preModifier, depth: m.depth,
+            })))
+          : null,
+        specialNotes: item.specialNotes || null,
+        seatNumber: item.seatNumber ?? null,
+        courseNumber: item.courseNumber ?? null,
         isHeld: item.isHeld || false,
         soldByWeight: item.soldByWeight || false,
+        weight: item.weight ? Number(item.weight) : null,
+        weightUnit: item.weightUnit || null,
+        unitPriceCents: item.unitPrice ? Math.round(Number(item.unitPrice) * 100) : null,
+        grossWeight: item.grossWeight ? Number(item.grossWeight) : null,
+        tareWeight: item.tareWeight ? Number(item.tareWeight) : null,
+        pricingOptionId: item.pricingOptionId || null,
+        pricingOptionLabel: item.pricingOptionLabel || null,
+        costAtSaleCents: item.costAtSale ? Math.round(Number(item.costAtSale) * 100) : null,
+        pourSize: item.pourSize || null,
+        pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
       },
     })))
 

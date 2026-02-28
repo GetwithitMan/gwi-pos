@@ -146,7 +146,7 @@ function handleOrderSent(
   const updatedItems: Record<string, OrderLineItem> = {}
   for (const [id, item] of Object.entries(state.items)) {
     const shouldProcess = sendAll || sentSet.has(id)
-    if (shouldProcess && !item.isHeld && item.kitchenStatus !== 'FIRED') {
+    if (shouldProcess && !item.isHeld && item.kitchenStatus !== 'FIRED' && item.status === 'active') {
       updatedItems[id] = {
         ...item,
         kitchenStatus: 'FIRED',
