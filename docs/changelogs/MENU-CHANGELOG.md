@@ -1,5 +1,25 @@
 # Menu Domain Changelog
 
+## 2026-02-28 — Card Price Auto-Display in All Menu Builders
+
+### Summary
+Added auto-calculated card price display next to every cash price input in the admin menu builders. The card price is derived from the cash discount rate in Settings → General → Processing Program using `calculateCardPrice()`.
+
+**Commit:** `8394777`
+
+### Locations Updated
+- **ItemSettingsModal** — Base price now shows actual card price (was placeholder text), weight-based price added
+- **PricingOptionRow** — Size options and quick pick items
+- **ItemEditor** — New modifier form (top-level and child groups)
+- **Liquor Builder** — Drink base price, pour size calculations, per-modifier prices
+- **Combos** — Base price, compare price, component item overrides, modifier overrides, list display
+- **Timed Rentals** — Rate per minute, happy hour, prepaid packages, item list display
+
+### Pattern
+`useOrderSettings()` → `calculateCardPrice(price, cashDiscountPct)` → read-only `text-xs text-gray-400` display. Only shown when dual pricing enabled and price > 0.
+
+---
+
 ## 2026-02-27 — Unified Size Options + Quick Pick + showOnPos (Skill 456)
 
 ### Summary

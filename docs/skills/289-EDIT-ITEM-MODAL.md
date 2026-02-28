@@ -34,6 +34,7 @@ Created `ItemSettingsModal` — a comprehensive Edit Item modal accessible from 
 **Card Price:**
 - Read-only display (auto-calculated from cash discount settings)
 - Not editable — prevents manual override conflicts
+- As of commit `8394777`, the Basics tab shows the actual calculated card price (e.g., "$10.40") instead of the previous "Auto from cash discount" placeholder text. Weight-based price also shows its card equivalent.
 
 **Image Upload:**
 - Drag-and-drop or click to select

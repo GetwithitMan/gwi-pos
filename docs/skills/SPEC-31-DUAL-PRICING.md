@@ -347,6 +347,22 @@ dual_pricing:
 
 ---
 
+### Admin UI — Card Price Auto-Display (2026-02-28)
+
+Commit `8394777` added auto-calculated card price display to every cash price input in the admin menu builders. The card price is derived from the cash discount rate in Settings → General → Processing Program.
+
+**Files updated:**
+- `ItemSettingsModal.tsx` — Base price, weight-based price
+- `PricingOptionRow.tsx` — Size options, quick picks
+- `ItemEditor.tsx` — New modifier form
+- `liquor-builder/page.tsx` — Drink price, pour sizes, modifiers
+- `combos/page.tsx` — All combo price fields
+- `timed-rentals/page.tsx` — Rates, packages
+
+Pattern: `useOrderSettings()` → `calculateCardPrice(price, cashDiscountPct)` → read-only display.
+
+---
+
 ## Android Implementation
 
 **Skill 458** (2026-02-27): Fixed inverted dual pricing display on Android.
