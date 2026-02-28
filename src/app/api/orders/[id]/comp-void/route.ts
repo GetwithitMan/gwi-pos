@@ -4,7 +4,7 @@ import { deductInventoryForVoidedItem, restorePrepStockForVoid, restoreInventory
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals, recalculatePercentDiscounts, getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
-import { roundToCents } from '@/lib/pricing'
+import { roundToCents, calculateCardPrice } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
@@ -430,12 +430,26 @@ export const POST = withVenue(async function POST(
       if (reversiblePayments.length > 0) {
         try {
           const datacapClient = await getDatacapClient(order.locationId)
-          // H-FIN-6: Cap total refund at the sum of refundable amounts across all payments
+              // H-FIN-6: Cap total refund at the sum of refundable amounts across all payments
           // to prevent refunding more than was originally paid
           const totalRefundable = reversiblePayments.reduce(
             (sum, p) => sum + Math.max(0, Number(p.totalAmount) - Number(p.refundedAmount ?? 0)), 0
           )
-          let remainingRefund = Math.min(itemTotal, totalRefundable)
+          // Dual pricing fix: when the customer was charged the card price (credit/debit with dual
+          // pricing enabled), the refund must use the card price — not the stored cash price.
+          const dualPricing = settings.dualPricing
+          const cashDiscountPercent = dualPricing.cashDiscountPercent || 4.0
+          const allReversibleAreCard = reversiblePayments.every(
+            (p) => ['credit', 'debit'].includes(p.paymentMethod)
+          )
+          const appliesForCard = dualPricing.enabled && (
+            (dualPricing.applyToCredit && reversiblePayments.some((p) => p.paymentMethod === 'credit')) ||
+            (dualPricing.applyToDebit  && reversiblePayments.some((p) => p.paymentMethod === 'debit'))
+          )
+          const refundBase = (allReversibleAreCard && appliesForCard)
+            ? calculateCardPrice(itemTotal, cashDiscountPercent)
+            : itemTotal
+          let remainingRefund = Math.min(refundBase, totalRefundable)
           for (const payment of reversiblePayments) {
             try {
               if (shouldAutoClose) {

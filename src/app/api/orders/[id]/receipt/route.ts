@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings } from '@/lib/settings'
+import { calculateCardPrice } from '@/lib/pricing'
 
 // GET - Get receipt data for an order
 export const GET = withVenue(async function GET(
@@ -123,7 +125,22 @@ export const GET = withVenue(async function GET(
       discountTotal: Number(order.discountTotal),
       taxTotal: Number(order.taxTotal),
       tipTotal: Number(order.tipTotal),
-      total: Number(order.total),
+      // For cash discount (dual pricing) model: order.total IS the cash price.
+      // If the order was paid by card with dual pricing, show the card price as the total.
+      total: (() => {
+        const settings = parseSettings(order.location.settings)
+        const dualPricing = settings.dualPricing
+        if (dualPricing.enabled) {
+          const hasCardPayment = order.payments.some(
+            p => (p.paymentMethod === 'credit' && dualPricing.applyToCredit) ||
+                 (p.paymentMethod === 'debit' && dualPricing.applyToDebit)
+          )
+          if (hasCardPayment) {
+            return calculateCardPrice(Number(order.total), dualPricing.cashDiscountPercent)
+          }
+        }
+        return Number(order.total)
+      })(),
       createdAt: order.createdAt.toISOString(),
       paidAt: order.paidAt?.toISOString() || null,
       // Loyalty data

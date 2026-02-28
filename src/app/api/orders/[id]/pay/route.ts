@@ -1498,7 +1498,20 @@ export const POST = withVenue(withTiming(async function POST(
       discountTotal: Number(order.discountTotal),
       taxTotal: Number(order.taxTotal),
       tipTotal: Number(order.tipTotal),
-      total: Number(order.total),
+      // For cash discount (dual pricing) model: order.total IS the cash price.
+      // If any payment was charged at the card price, show the card total on the receipt.
+      total: (() => {
+        const dualPricing = settings.dualPricing
+        if (dualPricing.enabled) {
+          const hasCardPayment = createdPayments.some(
+            p => (p as any).pricingMode === 'card'
+          )
+          if (hasCardPayment) {
+            return calculateCardPrice(Number(order.total), dualPricing.cashDiscountPercent)
+          }
+        }
+        return Number(order.total)
+      })(),
       createdAt: order.createdAt.toISOString(),
       paidAt: new Date().toISOString(),
       customer: order.customer ? {
