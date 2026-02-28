@@ -146,6 +146,7 @@ npm run db:studio    # Prisma Studio
 | PM Mode / teams | `docs/guides/PM-MODE-GUIDE.md` | — |
 | Code review | `docs/CODE-REVIEW-CHECKLIST.md` | — |
 | Error handling | `docs/development/ERROR-HANDLING-STANDARDS.md` | — |
+| Pre-launch testing | `docs/planning/PRE-LAUNCH-CHECKLIST.md` | — |
 
 ## Living Log & Documentation
 

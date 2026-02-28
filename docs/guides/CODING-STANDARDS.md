@@ -59,15 +59,39 @@ const { field, other } = useStore()
 
 ---
 
+## Custom Server & Build Pipeline
+
+The POS uses a **custom Node.js server** (`server.ts`) that wraps Next.js. Required for Socket.io + multi-tenant DB routing.
+
+```
+npm run dev   → dotenv -e .env.local -- tsx -r ./preload.js server.ts
+npm start     → NODE_ENV=production node -r ./preload.js server.js
+npm run build → prisma generate && next build && node scripts/build-server.mjs
+```
+
+**`preload.js`** polyfills `globalThis.AsyncLocalStorage` for Node 20 compatibility (Next.js 16 expects it globally). Must load via `-r ./preload.js` BEFORE any imports.
+
+---
+
 ## API Route Conventions
 
-### Wrapper & Auth
+### `withVenue()` — Multi-Tenant DB Routing
+
+Every route **must** be wrapped with `withVenue()` from `src/lib/with-venue.ts`.
+
 ```typescript
 export const GET = withVenue(async (req, { venue }) => {
   // venue.locationId is guaranteed
 })
 ```
-Every route **must** be wrapped with `withVenue()` from `src/lib/with-venue.ts`.
+
+**How the 3-tier proxy works:**
+1. `server.ts` reads `x-venue-slug` header → sets AsyncLocalStorage context with venue's PrismaClient
+2. `withVenue()` fast-path: if ALS context already set (NUC), skips `await headers()` entirely
+3. `db.ts` Proxy reads from AsyncLocalStorage on every DB call → routes to correct **local PG on NUC** (or Neon on dev/Vercel)
+4. No slug (local dev) → uses master client (Neon)
+
+**Key files:** `server.ts`, `src/lib/with-venue.ts`, `src/lib/request-context.ts`, `src/lib/db.ts`
 
 ### Response Format
 ```typescript

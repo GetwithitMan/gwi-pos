@@ -121,6 +121,30 @@ Every POS terminal, kiosk, SmartTab, and browser **MUST** connect to the local N
 | Local dev | Neon cloud (personal branch) |
 | Vercel (cloud deploy) | Neon cloud |
 
+### Environment Variables
+
+**Dev / Vercel** (`.env.local` on your Mac):
+```
+DATABASE_URL="postgresql://...@neon.tech/gwi_pos?sslmode=require"
+DIRECT_URL="postgresql://...@neon.tech/gwi_pos?sslmode=require"
+```
+
+**NUC production** (`/opt/gwi-pos/app/.env`):
+```
+# PRIMARY — local PostgreSQL (offline-first)
+DATABASE_URL="postgresql://thepasspos:xxx@localhost:5432/thepasspos"
+DIRECT_URL="postgresql://thepasspos:xxx@localhost:5432/thepasspos"
+
+# SYNC TARGET — Neon cloud (background sync only)
+NEON_DATABASE_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
+NEON_DIRECT_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
+SYNC_ENABLED=true
+SYNC_UPSTREAM_INTERVAL_MS=5000    # NUC → Neon every 5s
+SYNC_DOWNSTREAM_INTERVAL_MS=15000 # Neon → NUC every 15s
+```
+
+**If a NUC's `DATABASE_URL` points at `neon.tech` — that is a BUG. Fix it immediately.**
+
 ### Schema Convention for New Models
 
 Every new Prisma model **MUST** include:
