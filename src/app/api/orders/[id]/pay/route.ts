@@ -27,7 +27,7 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { calculateCharge, type EntertainmentPricing } from '@/lib/entertainment-pricing'
 import { getLocationTaxRate } from '@/lib/order-calculations'
-import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { ingestAndProject, type IngestEvent, type IngestResult } from '@/lib/order-events/ingester'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -194,10 +194,9 @@ export const POST = withVenue(withTiming(async function POST(
         .reduce((sum, p) => sum + Number(p.totalAmount), 0)
       const zeroRemaining = Number(order.total) - zeroAlreadyPaid
       if (zeroRemaining <= 0) {
-        await db.order.update({
-          where: { id: orderId },
-          data: { status: 'paid', paidAt: new Date() },
-        })
+        await ingestAndProject(db as any, orderId, order.locationId, [
+          { type: 'ORDER_CLOSED', payload: { closedStatus: 'paid' } }
+        ])
         return NextResponse.json({ data: {
           success: true,
           orderId,
@@ -442,10 +441,9 @@ export const POST = withVenue(withTiming(async function POST(
 
     // If order total is $0 (e.g., all items voided), close the order without payment
     if (remaining <= 0 && alreadyPaid === 0) {
-      await db.order.update({
-        where: { id: orderId },
-        data: { status: 'paid', paidAt: new Date() },
-      })
+      await ingestAndProject(db as any, orderId, order.locationId, [
+        { type: 'ORDER_CLOSED', payload: { closedStatus: 'paid' } }
+      ])
       return NextResponse.json({ data: {
         success: true,
         orderId,
@@ -550,8 +548,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Payments from special types (loyalty, gift card, house account) are created
     // inside their own transactions. Default payments (cash, card) are collected
     // and created atomically with the order status update below.
-    const createdPayments: Awaited<ReturnType<typeof db.payment.create>>[] = []
-    const pendingDefaultRecords: Record<string, unknown>[] = []
+    const allPendingPayments: Record<string, unknown>[] = []
     let totalTips = 0
     let alreadyPaidInLoop = 0
 
@@ -784,7 +781,7 @@ export const POST = withVenue(withTiming(async function POST(
               loyaltyPoints: { decrement: payment.pointsUsed! },
             },
           })
-          return tx.payment.create({ data: paymentRecord })
+          return { success: true }
         }).catch((err: Error) => {
           if (err.message.startsWith('LOYALTY_INSUFFICIENT:')) {
             const pts = parseInt(err.message.split(':')[1], 10)
@@ -800,7 +797,7 @@ export const POST = withVenue(withTiming(async function POST(
           )
         }
 
-        createdPayments.push(loyaltyResult)
+        allPendingPayments.push(paymentRecord)
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'gift_card') {
@@ -886,7 +883,7 @@ export const POST = withVenue(withTiming(async function POST(
               }
             }
           })
-          return tx.payment.create({ data: paymentRecord })
+          return { success: true }
         }).catch((err: Error) => {
           // Convert transaction errors to HTTP responses
           if (err.message === 'GC_NOT_FOUND') {
@@ -913,7 +910,7 @@ export const POST = withVenue(withTiming(async function POST(
           )
         }
 
-        createdPayments.push(gcResult)
+        allPendingPayments.push(paymentRecord)
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'house_account') {
@@ -985,13 +982,11 @@ export const POST = withVenue(withTiming(async function POST(
             }
           })
 
-          return tx.payment.create({
-            data: {
-              ...paymentRecord,
-              transactionId: `HA:${freshAccount.id}`,
-              authCode: freshAccount.name,
-            }
-          })
+          // Set extra fields on paymentRecord for bridge override
+          paymentRecord.transactionId = `HA:${freshAccount.id}`
+          paymentRecord.authCode = freshAccount.name
+
+          return { success: true }
         }).catch((err: Error) => {
           if (err.message === 'HA_NOT_FOUND') {
             return { error: 'House account not found', status: 404 } as const
@@ -1029,12 +1024,12 @@ export const POST = withVenue(withTiming(async function POST(
           )
         }
 
-        createdPayments.push(haResult)
+        allPendingPayments.push(paymentRecord)
         totalTips += payment.tipAmount || 0
         continue
       }
 
-      pendingDefaultRecords.push(paymentRecord)
+      allPendingPayments.push(paymentRecord)
       totalTips += payment.tipAmount || 0
       alreadyPaidInLoop += payment.amount
     }
@@ -1108,141 +1103,71 @@ export const POST = withVenue(withTiming(async function POST(
       newAverageTicket = newTotal / newOrders
     }
 
-    // PAYMENT-SAFETY: NEVER OPTIMISTIC PAID
-    // The order status transitions to 'paid' ONLY inside this atomic $transaction, AFTER
-    // all Payment records are created. For card payments, the gateway auth happens CLIENT-SIDE
-    // before this route is called — the route validates proof of authorization (datacapRecordNo +
-    // datacapRefNumber + cardLast4) in the Zod + field validation above. The updateMany uses
-    // `where: { status: { in: ['open', 'in_progress'] } }` as a DB-level guard against double-pay.
+    // ── Build payment events ──────────────────────────────────────────
+    const paymentEvents: IngestEvent[] = []
+    const bridgeOverrides: Record<string, Record<string, unknown>> = {}
+
+    for (const record of allPendingPayments) {
+      const rec = record as any
+      const paymentId = rec.id || crypto.randomUUID()
+
+      // Ensure the record has an ID for bridge override keying
+      rec.id = paymentId
+
+      paymentEvents.push({
+        type: 'PAYMENT_APPLIED',
+        payload: {
+          paymentId,
+          method: rec.paymentMethod,
+          amountCents: Math.round(Number(rec.amount) * 100),
+          tipCents: Math.round(Number(rec.tipAmount ?? 0) * 100),
+          totalCents: Math.round(Number(rec.totalAmount) * 100),
+          cardBrand: rec.cardBrand ?? null,
+          cardLast4: rec.cardLast4 ?? null,
+          status: 'approved',
+        },
+      })
+
+      // All the extra Payment fields that aren't in the domain event
+      bridgeOverrides[paymentId] = { ...rec }
+      // Remove fields already in the event payload to avoid conflicts
+      delete bridgeOverrides[paymentId].amount
+      delete bridgeOverrides[paymentId].tipAmount
+      delete bridgeOverrides[paymentId].totalAmount
+      delete bridgeOverrides[paymentId].paymentMethod
+      delete bridgeOverrides[paymentId].cardBrand
+      delete bridgeOverrides[paymentId].cardLast4
+      delete bridgeOverrides[paymentId].status
+      delete bridgeOverrides[paymentId].orderId
+      delete bridgeOverrides[paymentId].locationId
+    }
+
+    // Add ORDER_CLOSED if fully paid
+    const orderIsPaid = newPaidTotal >= effectiveTotal - paidTolerance
+    if (orderIsPaid) {
+      paymentEvents.push({
+        type: 'ORDER_CLOSED',
+        payload: { closedStatus: 'paid' },
+      })
+    }
+
+    // ── Ingest synchronously ──────────────────────────────────────────
+    timing.start('db-pay')
+    let ingestResult: IngestResult
     let parentWasMarkedPaid = false
     let parentTableId: string | null = null
-
-    timing.start('db-pay')
     try {
-      await db.$transaction(async (tx) => {
-        // W1-P5: Lock parent row FIRST to prevent split payment race condition.
-        // Two siblings paying concurrently must serialize here so "all siblings paid?"
-        // check is always consistent.
-        if (order.parentOrderId) {
-          await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
-        }
-
-        for (const record of pendingDefaultRecords) {
-          const created = await tx.payment.create({ data: record as Parameters<typeof tx.payment.create>[0]['data'] })
-          createdPayments.push(created)
-
-          // Audit log: payment processed
-          await tx.auditLog.create({
-            data: {
-              locationId: order.locationId,
-              employeeId: employeeId || null,
-              action: 'payment_processed',
-              entityType: 'payment',
-              entityId: created.id,
-              details: {
-                paymentMethod: created.paymentMethod,
-                amount: Number(created.amount),
-                tipAmount: Number(created.tipAmount),
-                orderId,
-                orderNumber: order.orderNumber,
-              },
-            },
-          })
-        }
-        const orderUpdateResult = await tx.order.updateMany({
-          where: { id: orderId, status: { in: ['draft', 'open', 'sent', 'in_progress'] } },
-          data: { ...updateData, version: { increment: 1 } },
-        })
-        if (orderUpdateResult.count === 0) {
-          throw new Error('ORDER_ALREADY_PAID')
-        }
-
-        // Audit log: order closed (when fully paid)
-        if (updateData.status === 'paid') {
-          await tx.auditLog.create({
-            data: {
-              locationId: order.locationId,
-              employeeId: employeeId || null,
-              action: 'order_closed',
-              entityType: 'order',
-              entityId: orderId,
-              details: {
-                orderNumber: order.orderNumber,
-                totalPaid: newPaidTotal,
-                paymentCount: createdPayments.length,
-                paymentMethods: [...new Set(createdPayments.map(p => p.paymentMethod))],
-              },
-            },
-          })
-        }
-
-        // Award loyalty points atomically with the payment (moved inside transaction)
-        if (pointsEarned > 0 && order.customer) {
-          await tx.customer.update({
-            where: { id: order.customer.id },
-            data: {
-              loyaltyPoints: { increment: pointsEarned },
-              totalSpent: { increment: Number(order.total) },
-              totalOrders: { increment: 1 },
-              lastVisit: new Date(),
-              averageTicket: newAverageTicket!,
-            },
-          })
-        }
-
-        // W1-P5: Check if all split siblings are paid and mark parent as paid.
-        // Parent row was already locked at the top of this transaction, so the
-        // sibling status read is guaranteed to be serialized.
-        if (updateData.status === 'paid' && order.parentOrderId) {
-          const allSiblings = await tx.order.findMany({
-            where: { parentOrderId: order.parentOrderId },
-            select: { id: true, status: true },
-          })
-
-          const allSiblingsPaid = allSiblings.every(s => s.status === 'paid')
-
-          if (allSiblingsPaid) {
-            const parentResult = await tx.order.update({
-              where: { id: order.parentOrderId },
-              data: { status: 'paid', paidAt: new Date(), closedAt: new Date() },
-              select: { tableId: true },
-            })
-            parentWasMarkedPaid = true
-            parentTableId = parentResult.tableId
-          }
-        }
+      ingestResult = await ingestAndProject(db as any, orderId, order.locationId, paymentEvents, {
+        paymentBridgeOverrides: bridgeOverrides,
+        employeeId: employeeId || undefined,
       })
-    } catch (txError) {
-      if (txError instanceof Error && txError.message === 'ORDER_ALREADY_PAID') {
-        // Return 200 (not 409) so offline outbox queues treat this as success.
-        // The order was already paid — mission accomplished.
-        const existingPayment = await db.payment.findFirst({
-          where: { orderId },
-          orderBy: { createdAt: 'desc' },
-          select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
-        })
-        const freshOrder = await db.order.findUnique({ where: { id: orderId }, select: { total: true, status: true } })
-        return NextResponse.json({ data: {
-          success: true,
-          alreadyPaid: true,
-          orderId,
-          paymentId: existingPayment?.id ?? 'already-paid',
-          amount: existingPayment ? Number(existingPayment.amount) : Number(freshOrder?.total ?? 0),
-          tipAmount: existingPayment ? Number(existingPayment.tipAmount) : 0,
-          totalAmount: existingPayment ? Number(existingPayment.totalAmount) : Number(freshOrder?.total ?? 0),
-          paymentMethod: existingPayment?.paymentMethod ?? 'cash',
-          newOrderBalance: 0,
-          orderStatus: freshOrder?.status ?? 'paid',
-        } })
-      }
-
-      // W1-P3: If DB transaction failed but card was already charged at Datacap,
-      // attempt automatic void to prevent invisible charges (customer charged, no POS record).
-      const cardRecordsToVoid = pendingDefaultRecords.filter(
+    } catch (ingestError) {
+      // W1-P3: If ingestion failed but card was already charged at Datacap,
+      // attempt automatic void to prevent invisible charges
+      const cardRecordsToVoid = allPendingPayments.filter(
         (r: any) => (r.paymentMethod === 'credit' || r.paymentMethod === 'debit') && r.datacapRecordNo
       )
       if (cardRecordsToVoid.length > 0 && terminalId) {
-        // Fire-and-forget void attempts — log results but don't block error response
         void (async () => {
           try {
             const terminal = await db.terminal.findUnique({
@@ -1279,7 +1204,6 @@ export const POST = withVenue(withTiming(async function POST(
           }
         })()
 
-        // Return specific error so client knows reversal was attempted
         return NextResponse.json(
           {
             error: 'Payment approved but recording failed — automatic reversal attempted. Check Datacap portal to confirm.',
@@ -1289,9 +1213,130 @@ export const POST = withVenue(withTiming(async function POST(
         )
       }
 
-      throw txError // Re-throw unexpected errors to the outer catch
+      throw ingestError
     }
-    timing.end('db-pay', 'Payment transaction')
+    timing.end('db-pay', 'Payment ingestion')
+
+    // Handle already-paid race
+    if (ingestResult.alreadyPaid) {
+      const existingPayment = await db.payment.findFirst({
+        where: { orderId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
+      })
+      const freshOrder = await db.order.findUnique({ where: { id: orderId }, select: { total: true, status: true } })
+      return NextResponse.json({ data: {
+        success: true,
+        alreadyPaid: true,
+        orderId,
+        paymentId: existingPayment?.id ?? 'already-paid',
+        amount: existingPayment ? Number(existingPayment.amount) : Number(freshOrder?.total ?? 0),
+        tipAmount: existingPayment ? Number(existingPayment.tipAmount) : 0,
+        totalAmount: existingPayment ? Number(existingPayment.totalAmount) : Number(freshOrder?.total ?? 0),
+        paymentMethod: existingPayment?.paymentMethod ?? 'cash',
+        newOrderBalance: 0,
+        orderStatus: freshOrder?.status ?? 'paid',
+      } })
+    }
+
+    // Post-ingestion: split parent check (own tx with FOR UPDATE lock)
+    if (orderIsPaid && order.parentOrderId) {
+      try {
+        await db.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
+          const allSiblings = await tx.order.findMany({
+            where: { parentOrderId: order.parentOrderId! },
+            select: { id: true, status: true },
+          })
+          const terminalStatuses = ['paid', 'cancelled', 'voided', 'completed']
+          const allSiblingsDone = allSiblings.every(s => terminalStatuses.includes(s.status))
+          if (allSiblingsDone) {
+            const parentResult = await tx.order.update({
+              where: { id: order.parentOrderId! },
+              data: { status: 'paid', paidAt: new Date(), closedAt: new Date() },
+              select: { tableId: true },
+            })
+            parentWasMarkedPaid = true
+            parentTableId = parentResult.tableId
+          }
+        })
+      } catch (err) {
+        console.error('[Pay] Split parent check failed:', err)
+      }
+    }
+
+    // Post-ingestion: loyalty points earning (fire-and-forget)
+    if (orderIsPaid && pointsEarned > 0 && order.customer) {
+      void db.customer.update({
+        where: { id: order.customer.id },
+        data: {
+          loyaltyPoints: { increment: pointsEarned },
+          totalSpent: { increment: Number(order.total) },
+          totalOrders: { increment: 1 },
+          lastVisit: new Date(),
+          averageTicket: newAverageTicket!,
+        },
+      }).catch(err => console.error('Post-ingestion loyalty update failed:', err))
+    }
+
+    // Post-ingestion: audit logs (fire-and-forget)
+    for (const bp of ingestResult.bridgedPayments) {
+      void db.auditLog.create({
+        data: {
+          locationId: order.locationId,
+          employeeId: employeeId || null,
+          action: 'payment_processed',
+          entityType: 'payment',
+          entityId: bp.id,
+          details: {
+            paymentMethod: bp.paymentMethod,
+            amount: bp.amount,
+            tipAmount: bp.tipAmount,
+            orderId,
+            orderNumber: order.orderNumber,
+          },
+        },
+      }).catch(console.error)
+    }
+
+    if (orderIsPaid) {
+      void db.auditLog.create({
+        data: {
+          locationId: order.locationId,
+          employeeId: employeeId || null,
+          action: 'order_closed',
+          entityType: 'order',
+          entityId: orderId,
+          details: {
+            orderNumber: order.orderNumber,
+            totalPaid: newPaidTotal,
+            paymentCount: ingestResult.bridgedPayments.length,
+            paymentMethods: [...new Set(ingestResult.bridgedPayments.map(p => p.paymentMethod))],
+          },
+        },
+      }).catch(console.error)
+    }
+
+    // Post-ingestion: update fields not in event state (fire-and-forget)
+    if (orderIsPaid) {
+      void db.order.update({
+        where: { id: orderId },
+        data: {
+          businessDayDate: businessDayStart,
+          primaryPaymentMethod: updateData.primaryPaymentMethod,
+          tipTotal: newTipTotal,
+          version: { increment: 1 },
+        },
+      }).catch(console.error)
+    } else {
+      void db.order.update({
+        where: { id: orderId },
+        data: {
+          tipTotal: newTipTotal,
+          ...(updateData.primaryPaymentMethod ? { primaryPaymentMethod: updateData.primaryPaymentMethod } : {}),
+        },
+      }).catch(console.error)
+    }
 
     // Dispatch socket events when parent order was auto-closed (after transaction commit)
     if (parentWasMarkedPaid) {
@@ -1318,7 +1363,7 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // If order is fully paid, reset entertainment items and table status
-    if (updateData.status === 'paid') {
+    if (orderIsPaid) {
       void db.menuItem.updateMany({
         where: {
           currentOrderId: orderId,
@@ -1359,7 +1404,13 @@ export const POST = withVenue(withTiming(async function POST(
           locationId: order.locationId,
           orderId,
           primaryEmployeeId: tipOwnerEmployeeId,
-          createdPayments,
+          createdPayments: ingestResult.bridgedPayments.map(bp => ({
+            id: bp.id,
+            paymentMethod: bp.paymentMethod,
+            amount: bp.amount,
+            tipAmount: bp.tipAmount,
+            totalAmount: bp.totalAmount,
+          })),
           totalTipsDollars: totalTips,
           tipBankSettings: settings.tipBank,
           // kind: 'tip' (default — voluntary gratuity from customer)
@@ -1385,7 +1436,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Chain: cleanup must finish BEFORE dispatch so snapshot doesn't still see temp seats
       void cleanupTemporarySeats(orderId)
         .then(() => {
-          if (order.tableId && updateData.status === 'paid') {
+          if (order.tableId && orderIsPaid) {
             return dispatchFloorPlanUpdate(order.locationId, { async: true })
           }
         })
@@ -1406,18 +1457,18 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Dispatch payment:processed for each created payment (fire-and-forget)
-    for (const p of createdPayments) {
+    for (const p of ingestResult.bridgedPayments) {
       void dispatchPaymentProcessed(order.locationId, { orderId, paymentId: p.id, status: 'completed', sourceTerminalId: terminalId || undefined }).catch(() => {})
     }
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     // Include sourceTerminalId so receiving clients can suppress "closed on another terminal" banners
-    if (updateData.status === 'paid') {
+    if (orderIsPaid) {
       void dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined, sourceTerminalId: terminalId || undefined }, { async: true }).catch(() => {})
     }
 
     // Notify CFD that receipt was sent — transitions CFD to thank-you screen (fire-and-forget)
-    if (updateData.status === 'paid') {
+    if (orderIsPaid) {
       dispatchCFDReceiptSent(order.locationId, {
         orderId: order.id,
         total: Number(order.total),
@@ -1425,7 +1476,7 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Emit cloud event for fully paid orders (fire-and-forget)
-    if (updateData.status === 'paid') {
+    if (orderIsPaid) {
       void emitCloudEvent('order_paid', {
         orderId: order.id,
         orderNumber: order.orderNumber,
@@ -1433,18 +1484,18 @@ export const POST = withVenue(withTiming(async function POST(
         employeeId: order.employeeId,
         customerId: order.customerId,
         orderType: order.orderType,
-        paidAt: updateData.paidAt,
+        paidAt: new Date(),
         subtotal: Number(order.subtotal),
         taxTotal: Number(order.taxTotal),
         tipTotal: newTipTotal,
         discountTotal: Number(order.discountTotal),
         total: Number(order.total),
-        payments: createdPayments.map(p => ({
+        payments: ingestResult.bridgedPayments.map(p => ({
           id: p.id,
           method: p.paymentMethod,
-          amount: Number(p.amount),
-          tipAmount: Number(p.tipAmount),
-          totalAmount: Number(p.totalAmount),
+          amount: p.amount,
+          tipAmount: p.tipAmount,
+          totalAmount: p.totalAmount,
           cardLast4: p.cardLast4 ?? null,
         })),
       }).catch(console.error)
@@ -1483,11 +1534,11 @@ export const POST = withVenue(withTiming(async function POST(
           preModifier: mod.preModifier,
         })),
       })),
-      payments: createdPayments.map(p => ({
+      payments: ingestResult.bridgedPayments.map(p => ({
         method: p.paymentMethod,
-        amount: Number(p.amount),
-        tipAmount: Number(p.tipAmount),
-        totalAmount: Number(p.totalAmount),
+        amount: p.amount,
+        tipAmount: p.tipAmount,
+        totalAmount: p.totalAmount,
         cardBrand: p.cardBrand,
         cardLast4: p.cardLast4,
         authCode: p.authCode,
@@ -1503,7 +1554,7 @@ export const POST = withVenue(withTiming(async function POST(
       total: (() => {
         const dualPricing = settings.dualPricing
         if (dualPricing.enabled) {
-          const hasCardPayment = createdPayments.some(
+          const hasCardPayment = ingestResult.bridgedPayments.some(
             p => (p as any).pricingMode === 'card'
           )
           if (hasCardPayment) {
@@ -1522,48 +1573,29 @@ export const POST = withVenue(withTiming(async function POST(
       loyaltyPointsEarned: pointsEarned || null,
     }
 
-    // Emit order events for each payment (fire-and-forget)
-    for (const p of createdPayments) {
-      void emitOrderEvent(order.locationId, orderId, 'PAYMENT_APPLIED', {
-        paymentId: p.id,
-        method: p.paymentMethod,
-        amountCents: Math.round(Number(p.amount) * 100),
-        tipCents: Math.round(Number(p.tipAmount || 0) * 100),
-        totalCents: Math.round(Number(p.totalAmount) * 100),
-        cardBrand: p.cardBrand ?? null,
-        cardLast4: p.cardLast4 ?? null,
-        status: 'approved',
-      })
-    }
-    if (updateData.status === 'paid') {
-      void emitOrderEvent(order.locationId, orderId, 'ORDER_CLOSED', {
-        closedStatus: 'paid',
-      })
-    }
-
     // Return response — includes flat fields for Android's PayOrderData DTO
-    const primaryPayment = createdPayments[0]
-    const finalStatus = newPaidTotal >= effectiveTotal - paidTolerance ? 'paid' : 'partial'
-    const finalBalance = newPaidTotal >= effectiveTotal - paidTolerance ? 0 : Math.max(0, effectiveTotal - newPaidTotal)
+    const primaryPayment = ingestResult.bridgedPayments[0]
+    const finalStatus = orderIsPaid ? 'paid' : 'partial'
+    const finalBalance = orderIsPaid ? 0 : Math.max(0, effectiveTotal - newPaidTotal)
     return NextResponse.json({ data: {
       success: true,
       // Flat fields for Android compatibility
       orderId,
       paymentId: primaryPayment?.id ?? null,
-      amount: primaryPayment ? Number(primaryPayment.amount) : 0,
-      tipAmount: primaryPayment ? Number(primaryPayment.tipAmount) : 0,
-      totalAmount: primaryPayment ? Number(primaryPayment.totalAmount) : 0,
+      amount: primaryPayment ? primaryPayment.amount : 0,
+      tipAmount: primaryPayment ? primaryPayment.tipAmount : 0,
+      totalAmount: primaryPayment ? primaryPayment.totalAmount : 0,
       paymentMethod: primaryPayment?.paymentMethod ?? 'cash',
       newOrderBalance: finalBalance,
       orderStatus: finalStatus,
       // Full payment list for web POS
-      payments: createdPayments.map(p => ({
+      payments: ingestResult.bridgedPayments.map(p => ({
         id: p.id,
         paymentMethod: p.paymentMethod,
         method: p.paymentMethod,
-        amount: Number(p.amount),
-        tipAmount: Number(p.tipAmount),
-        totalAmount: Number(p.totalAmount),
+        amount: p.amount,
+        tipAmount: p.tipAmount,
+        totalAmount: p.totalAmount,
         amountTendered: p.amountTendered ? Number(p.amountTendered) : null,
         changeGiven: p.changeGiven ? Number(p.changeGiven) : null,
         roundingAdjustment: p.roundingAdjustment ? Number(p.roundingAdjustment) : null,

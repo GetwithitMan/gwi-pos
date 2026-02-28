@@ -65,9 +65,11 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           locationId,
           status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
           deletedAt: null,
-          // Exclude empty draft shells ($0 orders with no items) — these are
-          // pre-created when tapping a table and abandoned before adding items
-          NOT: { status: 'draft', itemCount: 0 },
+          // Exclude empty shells: abandoned drafts and zombie orders (all items transferred away)
+          NOT: [
+            { status: 'draft', itemCount: 0 },
+            { status: { in: ['open', 'sent', 'in_progress'] }, itemCount: 0, total: { lte: 0 } },
+          ],
           ...(employeeId ? { employeeId } : {}),
           ...(orderType ? { orderType } : {}),
           ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),
@@ -248,8 +250,11 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         locationId,
         status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
         deletedAt: null,
-        // Exclude empty draft shells ($0 orders with no items)
-        NOT: { status: 'draft', itemCount: 0 },
+        // Exclude empty shells: abandoned drafts and zombie orders (all items transferred away)
+        NOT: [
+          { status: 'draft', itemCount: 0 },
+          { status: { in: ['open', 'sent', 'in_progress'] }, itemCount: 0, total: { lte: 0 } },
+        ],
         ...(employeeId ? { employeeId } : {}),
         ...(orderType ? { orderType } : {}),
         ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),

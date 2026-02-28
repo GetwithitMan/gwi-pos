@@ -116,6 +116,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Transfer items in a transaction
+    let sourceWasCancelled = false
     await db.$transaction(async (tx) => {
       // Move items to destination order
       await tx.orderItem.updateMany({
@@ -182,6 +183,15 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // Auto-cancel source order if all items were transferred out
+      if (sourceItems.length === 0) {
+        await tx.order.update({
+          where: { id: fromOrderId },
+          data: { status: 'cancelled', closedAt: new Date() },
+        })
+        sourceWasCancelled = true
+      }
+
       // Create audit log
       await tx.auditLog.create({
         data: {
@@ -209,6 +219,17 @@ export const POST = withVenue(async function POST(
       orderId: fromOrderId,
       tableId: fromOrder.tableId || undefined,
     }, { async: true }).catch(() => {})
+
+    if (sourceWasCancelled) {
+      void emitOrderEvent(fromOrder.locationId, fromOrderId, 'ORDER_CANCELLED', {
+        reason: 'All items transferred out',
+      }).catch(console.error)
+      void dispatchOpenOrdersChanged(fromOrder.locationId, {
+        trigger: 'voided',
+        orderId: fromOrderId,
+        tableId: fromOrder.tableId || undefined,
+      }, { async: true }).catch(() => {})
+    }
 
     // Event emission: items removed from source order
     const sourceItemEvents = itemIds.map((lineItemId: string) => ({
