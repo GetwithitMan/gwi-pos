@@ -19,7 +19,7 @@ import {
   getHasHeldItems,
 } from '@/lib/order-events/types'
 import { reduce } from '@/lib/order-events/reducer'
-import { applyProjection } from '@/lib/order-events/projector'
+import { applyProjection, bridgeLegacyFieldsToSnapshot } from '@/lib/order-events/projector'
 
 async function authenticateTerminal(
   request: NextRequest
@@ -398,6 +398,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } catch (err) {
       console.error(
         `[order-events/batch] Payment bridge sync failed for order ${pe.orderId}:`,
+        err
+      )
+    }
+  }
+
+  // ── Bridge sync: legacy Order/OrderItem → OrderSnapshot/OrderItemSnapshot ──
+  // After projection creates snapshots from event state, and the Order/OrderItem
+  // bridge syncs have run, copy extra fields (customerId, preAuth, walkout, etc.)
+  // from the legacy tables into the snapshots. This ensures snapshots are complete
+  // even for fields not yet carried by domain events.
+  for (const orderId of affectedOrderIds) {
+    try {
+      await bridgeLegacyFieldsToSnapshot(db as any, orderId)
+    } catch (err) {
+      console.error(
+        `[order-events/batch] Legacy→Snapshot bridge failed for ${orderId}:`,
         err
       )
     }

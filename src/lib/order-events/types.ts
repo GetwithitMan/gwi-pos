@@ -242,6 +242,20 @@ export interface OrderLineItem {
   pourSize?: string | null
   pourMultiplier?: number | null
   itemDiscounts: Record<string, ItemDiscount>
+
+  // --- New snapshot bridge fields (optional, safe defaults) ---
+  firedAt?: string | null
+  delayStartedAt?: string | null
+  completedAt?: string | null
+  courseStatus?: string | null
+  blockTimeMinutes?: number | null
+  blockTimeStartedAt?: string | null
+  blockTimeExpiresAt?: string | null
+  addedByEmployeeId?: string | null
+  cardPrice?: number | null
+  voidReason?: string | null
+  modifierTotal?: number
+  itemTotal?: number
 }
 
 export interface OrderState {
@@ -265,6 +279,26 @@ export interface OrderState {
   payments: Record<string, OrderPayment>
   discounts: Record<string, OrderDiscount>
   isClosed: boolean
+
+  // --- New snapshot bridge fields (optional, safe defaults) ---
+  parentOrderId?: string | null
+  splitIndex?: number | null
+  orderTypeId?: string | null
+  sentAt?: string | null
+  reopenedAt?: string | null
+  reopenReason?: string | null
+  currentCourse?: number
+  courseMode?: string
+  customerId?: string | null
+  source?: string | null
+  preAuthId?: string | null
+  preAuthAmount?: number | null
+  preAuthLast4?: string | null
+  preAuthCardBrand?: string | null
+  isBottleService?: boolean
+  isWalkout?: boolean
+  offlineId?: string | null
+  version?: number
 }
 
 // ── Computed helpers (pure functions on OrderState) ──────────────────
@@ -404,5 +438,25 @@ export function emptyOrderState(orderId: string): OrderState {
     payments: {},
     discounts: {},
     isClosed: false,
+
+    // New snapshot bridge fields — safe defaults
+    parentOrderId: null,
+    splitIndex: null,
+    orderTypeId: null,
+    sentAt: null,
+    reopenedAt: null,
+    reopenReason: null,
+    currentCourse: 0,
+    courseMode: 'off',
+    customerId: null,
+    source: null,
+    preAuthId: null,
+    preAuthAmount: null,
+    preAuthLast4: null,
+    preAuthCardBrand: null,
+    isBottleService: false,
+    isWalkout: false,
+    offlineId: null,
+    version: 0,
   }
 }

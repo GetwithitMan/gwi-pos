@@ -5,6 +5,70 @@
 
 ---
 
+## 2026-02-28 — Legacy Order Migration Audit (3-Agent Team)
+
+**Session:** Deployed a 3-agent audit team to map the full NUC legacy Order table migration surface area. The audit cataloged every Prisma mutation and read query on `Order`/`OrderItem` across the entire codebase, plus a field-by-field comparison of `OrderSnapshot` vs `Order`. Results saved as a formal audit document and a 6-task migration plan.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `63c922a` — docs: legacy Order table migration audit — 185 mutations, 180+ reads, schema gaps
+
+### Deployments
+- POS: `63c922a` pushed to main → Vercel auto-deploy
+
+### Audit Findings (3-Agent Team)
+
+| Agent | Scope | Key Finding |
+|-------|-------|-------------|
+| **legacy-writes-auditor** | Every `db.order.*`/`db.orderItem.*` mutation | 185 mutations across 50+ files; only 35% emit events |
+| **legacy-reads-auditor** | Every read from Order/OrderItem | 180+ queries across 99 files; ~64 switchable to snapshots, ~35 transaction-bound |
+| **schema-gap-auditor** | OrderSnapshot vs Order field comparison | 40-50% complete; 16 fields missing on OrderSnapshot, 15 on OrderItemSnapshot |
+
+### Migration Surface Area
+
+| Metric | Count |
+|--------|-------|
+| Total mutation sites | ~185 across 50+ files |
+| Dual-write (legacy + event) | ~15 routes (35%) |
+| Legacy-only (no event) | ~35 routes (65%) |
+| Read paths | 180+ across 99 files |
+| Snapshot schema completeness | ~40-50% |
+| New event types needed | ~10 (COURSE_FIRED, ITEM_VOIDED, ORDER_SPLIT, etc.) |
+
+### HIGH Priority Legacy-Only Routes (No Events)
+
+| Route | Mutations | Impact |
+|-------|-----------|--------|
+| `orders/[id]/split/` | 11 mutations | Split checks invisible to event stream |
+| `orders/[id]/comp-void/` | item void + totals recalc | Voids not tracked |
+| `orders/[id]/void-payment/` | payment state changes | Payment voids missing |
+| `orders/[id]/refund-payment/` | tip/total adjustments | Refunds untracked |
+| `kds/` + `kds/expo/` | 7 mutations | KDS state silent to POS terminals |
+| `orders/[id]/courses/` | 10 mutations | Multi-course dining untracked |
+
+### Migration Plan (4 Phases, 6 Tasks)
+
+| Phase | Task | Blocked By |
+|-------|------|-----------|
+| A | Fill OrderSnapshot schema (+31 fields, relations, 14+ indexes) | — |
+| B-HIGH | Add events to 11 critical routes (splits, voids, KDS, courses) | A |
+| B-MED | Add events to 10 medium routes (discounts, tips, tabs, transfers) | A |
+| B-LOW | Add events to 5 admin/system routes | A |
+| C | Flip ~64 read paths to OrderSnapshot | A, B-HIGH, B-MED |
+| D | Kill legacy writes — all mutations through event pipeline | All above |
+
+### Artifacts
+- **Audit report:** `docs/audits/legacy-order-migration-audit.md` (269 lines)
+
+### Known Issues / Blockers
+- Phase A (schema fill) is the critical path — everything else is blocked on it
+- ~10 new event types needed beyond the current 17
+- ~35 write-workflow reads must stay on legacy Order (transaction-bound) even after migration
+- NUC live testing still pending (NUC unavailable)
+
+---
+
 ## 2026-02-28 — Event-Sourced Order Bridge: Full Implementation + Agent Team Audit
 
 **Session:** Completed the Event-Sourced Order Bridge across all 4 phases (NUC Phases 1-3, Android Phase 4). Then deployed an 8-agent audit team (5 auditors + 3 verifiers) to forensically review the entire flow. The audit found 2 critical bugs, 4 high-priority issues, and 4 medium issues — all fixed, verified, and pushed in the same session.

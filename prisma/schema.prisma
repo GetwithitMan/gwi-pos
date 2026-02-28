@@ -7698,6 +7698,85 @@ model OrderSnapshot {
   isClosed           Boolean             @default(false)
   lastEventSequence  Int /// Last serverSequence processed
   items              OrderItemSnapshot[]
+
+  // --- Customer & Attribution ---
+  customerId              String?
+  source                  String?   /// "online", "kiosk", "pos"
+
+  // --- Split Orders ---
+  parentOrderId           String?
+  splitIndex              Int?
+
+  // --- Order Type ---
+  orderTypeId             String?
+  customFields            Json?
+
+  // --- Seating ---
+  baseSeatCount           Int       @default(0)
+  extraSeatCount          Int       @default(0)
+  seatVersion             Int       @default(0)
+  seatTimestamps          Json?
+
+  // --- Tabs ---
+  tabNickname             String?
+
+  // --- Dual Pricing ---
+  primaryPaymentMethod    String?   /// 'cash' or 'card'
+
+  // --- Commission ---
+  commissionTotal         Int       @default(0) /// cents
+
+  // --- Reopen ---
+  reopenedAt              DateTime?
+  reopenedBy              String?   /// Employee ID
+  reopenReason            String?
+
+  // --- Timing ---
+  openedAt                DateTime? /// When order was opened
+  sentAt                  DateTime? /// Sent to kitchen
+
+  // --- Pre-Auth (Bar Tabs) ---
+  preAuthId               String?
+  preAuthAmount           Int?      /// cents
+  preAuthLast4            String?
+  preAuthCardBrand        String?
+  preAuthExpiresAt        DateTime?
+  preAuthRecordNo         String?
+
+  // --- Bottle Service ---
+  isBottleService         Boolean   @default(false)
+  bottleServiceCurrentSpend Int?    /// cents
+
+  // --- Walkout ---
+  isWalkout               Boolean   @default(false)
+  walkoutAt               DateTime?
+  walkoutMarkedBy         String?
+
+  // --- Tab Rollover ---
+  rolledOverAt            DateTime?
+  rolledOverFrom          String?
+
+  // --- Decline Retry ---
+  captureDeclinedAt       DateTime?
+  captureRetryCount       Int       @default(0)
+  lastCaptureError        String?
+
+  // --- Coursing ---
+  currentCourse           Int       @default(0)
+  courseMode               String    @default("off")
+
+  // --- Offline ---
+  offlineId               String?
+  offlineLocalId          String?
+  offlineTimestamp         DateTime?
+  offlineTerminalId       String?
+
+  // --- Business Day ---
+  businessDayDate         DateTime?
+
+  // --- Concurrency ---
+  version                 Int       @default(0)
+
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   deletedAt          DateTime?
@@ -7706,6 +7785,13 @@ model OrderSnapshot {
   @@index([locationId])
   @@index([locationId, status])
   @@index([locationId, isClosed])
+  @@index([locationId, status, createdAt])
+  @@index([locationId, openedAt])
+  @@index([locationId, tabStatus])
+  @@index([locationId, parentOrderId])
+  @@index([employeeId])
+  @@index([locationId, offlineId])
+  @@index([locationId, businessDayDate])
   @@map("order_snapshots")
 }
 
@@ -7744,6 +7830,53 @@ model OrderItemSnapshot {
   pourSize           String?
   pourMultiplier     Float?
   itemDiscountsJson  Json?
+
+  // --- Hold & Fire ---
+  holdUntil          DateTime?
+  firedAt            DateTime?
+  delayStartedAt     DateTime?
+
+  // --- KDS ---
+  completedAt        DateTime?
+
+  // --- Resend ---
+  lastResentAt       DateTime?
+  resendNote         String?
+
+  // --- Entertainment ---
+  blockTimeMinutes   Int?
+  blockTimeStartedAt DateTime?
+  blockTimeExpiresAt DateTime?
+
+  // --- Course ---
+  courseStatus        String?       /// 'pending', 'ready', 'served'
+
+  // --- Waste ---
+  wasMade            Boolean?      /// Made before void?
+
+  // --- Pricing ---
+  modifierTotal      Int           @default(0) /// cents
+  itemTotal          Int           @default(0) /// cents
+  cardPrice          Int?          /// cents (dual pricing)
+
+  // --- Commission ---
+  commissionAmount   Int?          /// cents
+
+  // --- Tax ---
+  isTaxInclusive     Boolean       @default(false)
+
+  // --- Ownership ---
+  addedByEmployeeId  String?
+
+  // --- Category ---
+  categoryType       String?
+
+  // --- Void ---
+  voidReason         String?
+
+  // --- Idempotency ---
+  idempotencyKey     String?
+
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
   deletedAt          DateTime?
@@ -7751,5 +7884,9 @@ model OrderItemSnapshot {
 
   @@index([snapshotId])
   @@index([locationId])
+  @@index([snapshotId, kitchenStatus])
+  @@index([snapshotId, status])
+  @@index([locationId, kitchenStatus])
+  @@index([menuItemId, createdAt])
   @@map("order_item_snapshots")
 }
