@@ -9,6 +9,7 @@ import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlan
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { calculateIngredientCosts, calculateVariantCost } from '@/lib/inventory/recipe-costing'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
@@ -642,6 +643,20 @@ export const POST = withVenue(async function POST(
         console.error('[costAtSale] Failed to calculate:', e)
       }
     })()
+
+    // Emit ITEM_ADDED events for each new item (fire-and-forget)
+    void emitOrderEvents(result.updatedOrder.locationId, orderId, result.createdItems.map((item: any) => ({
+      type: 'ITEM_ADDED' as const,
+      payload: {
+        lineItemId: item.id,
+        menuItemId: item.menuItemId,
+        name: item.name,
+        priceCents: Math.round(Number(item.price) * 100),
+        quantity: item.quantity,
+        isHeld: item.isHeld || false,
+        soldByWeight: item.soldByWeight || false,
+      },
+    })))
 
     // Format response with complete modifier data
     // Build correlation map for newly created items

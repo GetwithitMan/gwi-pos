@@ -1,0 +1,44 @@
+{
+  "description": "Add items, apply order discount and item discount, verify totals",
+  "orderId": "order-3",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": { "locationId": "loc-1", "employeeId": "emp-1", "orderType": "dine_in" }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i1", "menuItemId": "m1", "name": "Steak", "priceCents": 3500, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i2", "menuItemId": "m2", "name": "Salad", "priceCents": 1200, "quantity": 1 }
+    },
+    {
+      "type": "DISCOUNT_APPLIED",
+      "payload": {
+        "discountId": "od-1", "type": "fixed", "value": 5.0,
+        "amountCents": 500, "reason": "happy hour"
+      }
+    },
+    {
+      "type": "DISCOUNT_APPLIED",
+      "payload": {
+        "discountId": "id-1", "type": "percent", "value": 10.0,
+        "amountCents": 350, "lineItemId": "i1", "reason": "loyalty"
+      }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-3",
+    "status": "open",
+    "subtotalCents": 4350,
+    "discountTotalCents": 850,
+    "itemCount": 2,
+    "isClosed": false,
+    "items": {
+      "i1": { "name": "Steak", "priceCents": 3500, "totalCents": 3150 },
+      "i2": { "name": "Salad", "priceCents": 1200, "totalCents": 1200 }
+    }
+  }
+}

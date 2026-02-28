@@ -27,6 +27,7 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { calculateCharge, type EntertainmentPricing } from '@/lib/entertainment-pricing'
 import { getLocationTaxRate } from '@/lib/order-calculations'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -1491,6 +1492,25 @@ export const POST = withVenue(withTiming(async function POST(
       } : null,
       loyaltyPointsRedeemed: null,
       loyaltyPointsEarned: pointsEarned || null,
+    }
+
+    // Emit order events for each payment (fire-and-forget)
+    for (const p of createdPayments) {
+      void emitOrderEvent(order.locationId, orderId, 'PAYMENT_APPLIED', {
+        paymentId: p.id,
+        method: p.paymentMethod,
+        amountCents: Math.round(Number(p.amount) * 100),
+        tipCents: Math.round(Number(p.tipAmount || 0) * 100),
+        totalCents: Math.round(Number(p.totalAmount) * 100),
+        cardBrand: p.cardBrand ?? null,
+        cardLast4: p.cardLast4 ?? null,
+        status: 'approved',
+      })
+    }
+    if (updateData.status === 'paid') {
+      void emitOrderEvent(order.locationId, orderId, 'ORDER_CLOSED', {
+        closedStatus: 'paid',
+      })
     }
 
     // Return response — includes flat fields for Android's PayOrderData DTO

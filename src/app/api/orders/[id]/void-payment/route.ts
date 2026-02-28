@@ -6,6 +6,7 @@ import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate } from '@/lib/socke
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * Voids a payment — handles both Datacap (card) and DB in a single atomic flow.
@@ -223,6 +224,13 @@ export const POST = withVenue(async function POST(
       }
       throw dbError
     }
+
+    // Emit order event for voided payment (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'PAYMENT_VOIDED', {
+      paymentId: payment.id,
+      reason: reason || null,
+      employeeId: managerId || null,
+    })
 
     // Dispatch socket events for voided payment (fire-and-forget)
     void dispatchPaymentProcessed(order.locationId, {

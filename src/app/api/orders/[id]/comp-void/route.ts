@@ -12,6 +12,7 @@ import { getDatacapClient } from '@/lib/datacap/helpers'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -517,6 +518,15 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Emit order event for comp/void (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'COMP_VOID_APPLIED', {
+      lineItemId: itemId,
+      action,
+      reason: reason || null,
+      employeeId,
+      approvedById: effectiveApprovedById || null,
+    })
+
     // W1-K1: Dispatch KDS event so voided items disappear from KDS screens
     void emitToLocation(order.locationId, 'kds:item-status', {
       orderId,
@@ -785,6 +795,15 @@ export const PUT = withVenue(async function PUT(
       })
 
       return { totals: txTotals }
+    })
+
+    // Emit order event for item restore (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'COMP_VOID_APPLIED', {
+      lineItemId: itemId,
+      action: item.status === 'comped' ? 'uncomp' : 'unvoid',
+      reason: null,
+      employeeId,
+      approvedById: null,
     })
 
     // Fire-and-forget side effects OUTSIDE the transaction

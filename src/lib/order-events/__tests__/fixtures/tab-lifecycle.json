@@ -1,0 +1,38 @@
+{
+  "description": "Create order, open tab, add items, close tab — verify tabStatus transitions",
+  "orderId": "order-6",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": { "locationId": "loc-1", "employeeId": "emp-1", "orderType": "bar_tab" }
+    },
+    {
+      "type": "TAB_OPENED",
+      "payload": { "cardLast4": "5678", "preAuthId": "pre-1", "tabName": "Mike" }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i1", "menuItemId": "m1", "name": "IPA", "priceCents": 800, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i2", "menuItemId": "m2", "name": "Shot", "priceCents": 1000, "quantity": 2 }
+    },
+    {
+      "type": "TAB_CLOSED",
+      "payload": { "employeeId": "emp-1", "tipCents": 500, "adjustedAmountCents": 3300 }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-6",
+    "status": "open",
+    "tabStatus": "closed",
+    "subtotalCents": 2800,
+    "itemCount": 3,
+    "isClosed": false,
+    "items": {
+      "i1": { "name": "IPA", "priceCents": 800, "totalCents": 800 },
+      "i2": { "name": "Shot", "priceCents": 1000, "quantity": 2, "totalCents": 2000 }
+    }
+  }
+}

@@ -5,6 +5,7 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket
 import { calculateSimpleOrderTotals, getLocationTaxRate } from '@/lib/order-calculations'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -211,6 +212,9 @@ export const POST = withVenue(async function POST(
         userAgent: request.headers.get('user-agent'),
       },
     })
+
+    // Emit ORDER_REOPENED event (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'ORDER_REOPENED', {})
 
     // Dispatch socket events for reopened order (fire-and-forget)
     void dispatchOpenOrdersChanged(order.locationId, {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeAuthCode, generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 import type { OrderStatus } from '@prisma/client'
 
 // GET - List open tabs with pagination
@@ -242,6 +243,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
     })
+
+    // Emit order event for tab creation (fire-and-forget)
+    void emitOrderEvent(resolvedLocationId, tab.id, 'ORDER_CREATED', {
+      locationId: resolvedLocationId,
+      employeeId,
+      orderType: 'bar_tab',
+      guestCount: 1,
+      orderNumber: tab.orderNumber,
+      tabName: tab.tabName || null,
+    })
+    if (preAuth && preAuth.cardLast4 && tab.preAuthId) {
+      void emitOrderEvent(resolvedLocationId, tab.id, 'TAB_OPENED', {
+        cardLast4: preAuth.cardLast4,
+        preAuthId: tab.preAuthId,
+        tabName: tab.tabName || null,
+      })
+    }
 
     return NextResponse.json({ data: {
       id: tab.id,

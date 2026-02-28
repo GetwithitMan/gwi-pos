@@ -6,6 +6,7 @@ import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged } from '@/lib/sock
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -315,6 +316,15 @@ export const POST = withVenue(async function POST(
       },
     })
 
+    // Emit order event for discount applied (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
+      discountId: discount.id,
+      type: discountPercent != null ? 'percent' : 'fixed',
+      value: discountPercent ?? discountAmount,
+      amountCents: Math.round(Number(discount.amount) * 100),
+      reason: body.reason || null,
+    })
+
     // Fire-and-forget socket dispatches for cross-terminal sync
     void dispatchOrderTotalsUpdate(order.locationId, orderId, {
       subtotal: totals.subtotal,
@@ -459,6 +469,11 @@ export const DELETE = withVenue(async function DELETE(
         total: totals.total,
         version: { increment: 1 },
       },
+    })
+
+    // Emit order event for discount removed (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+      discountId,
     })
 
     // Fire-and-forget socket dispatches for cross-terminal sync

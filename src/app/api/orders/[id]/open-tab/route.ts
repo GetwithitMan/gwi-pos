@@ -5,6 +5,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchTabUpdated, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * Normalize cardholder name from card reader.
@@ -282,6 +283,13 @@ export const POST = withVenue(async function POST(
         },
       }),
     ])
+
+    // Emit order event for tab opened (fire-and-forget)
+    void emitOrderEvent(locationId, orderId, 'TAB_OPENED', {
+      cardLast4: finalCardLast4,
+      preAuthId: preAuthResponse.authCode || null,
+      tabName: finalCardholderName || order.tabName || null,
+    })
 
     // Fire-and-forget socket dispatches for cross-terminal sync
     void dispatchTabUpdated(locationId, {

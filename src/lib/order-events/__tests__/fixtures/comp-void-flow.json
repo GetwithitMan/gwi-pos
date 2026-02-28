@@ -1,0 +1,42 @@
+{
+  "description": "Add 3 items, comp one, void another — subtotal excludes both",
+  "orderId": "order-5",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": { "locationId": "loc-1", "employeeId": "emp-1", "orderType": "dine_in" }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i1", "menuItemId": "m1", "name": "Burger", "priceCents": 1500, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i2", "menuItemId": "m2", "name": "Wings", "priceCents": 1200, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i3", "menuItemId": "m3", "name": "Beer", "priceCents": 700, "quantity": 1 }
+    },
+    {
+      "type": "COMP_VOID_APPLIED",
+      "payload": { "lineItemId": "i2", "action": "comp", "employeeId": "emp-1", "reason": "wrong order" }
+    },
+    {
+      "type": "COMP_VOID_APPLIED",
+      "payload": { "lineItemId": "i3", "action": "void", "employeeId": "emp-1", "reason": "customer changed mind" }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-5",
+    "status": "open",
+    "subtotalCents": 1500,
+    "itemCount": 1,
+    "isClosed": false,
+    "items": {
+      "i1": { "name": "Burger", "status": "active", "totalCents": 1500 },
+      "i2": { "name": "Wings", "status": "comped" },
+      "i3": { "name": "Beer", "status": "voided" }
+    }
+  }
+}

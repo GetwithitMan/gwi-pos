@@ -1,0 +1,37 @@
+{
+  "description": "Add 3 items, remove 1, verify 2 remain",
+  "orderId": "order-2",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": { "locationId": "loc-1", "employeeId": "emp-1", "orderType": "dine_in" }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i1", "menuItemId": "m1", "name": "Wings", "priceCents": 1199, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i2", "menuItemId": "m2", "name": "Nachos", "priceCents": 999, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i3", "menuItemId": "m3", "name": "Beer", "priceCents": 700, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_REMOVED",
+      "payload": { "lineItemId": "i2" }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-2",
+    "status": "open",
+    "subtotalCents": 1899,
+    "itemCount": 2,
+    "isClosed": false,
+    "items": {
+      "i1": { "name": "Wings", "priceCents": 1199, "totalCents": 1199 },
+      "i3": { "name": "Beer", "priceCents": 700, "totalCents": 700 }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "description": "Create order and add 3 items, verify totals",
+  "orderId": "order-1",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": {
+        "locationId": "loc-1",
+        "employeeId": "emp-1",
+        "orderType": "dine_in",
+        "guestCount": 2,
+        "orderNumber": 10,
+        "displayNumber": "10"
+      }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": {
+        "lineItemId": "item-1",
+        "menuItemId": "menu-1",
+        "name": "Cheeseburger",
+        "priceCents": 1299,
+        "quantity": 1
+      }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": {
+        "lineItemId": "item-2",
+        "menuItemId": "menu-2",
+        "name": "Fries",
+        "priceCents": 499,
+        "quantity": 2
+      }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": {
+        "lineItemId": "item-3",
+        "menuItemId": "menu-3",
+        "name": "Soda",
+        "priceCents": 299,
+        "quantity": 1
+      }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-1",
+    "status": "open",
+    "locationId": "loc-1",
+    "subtotalCents": 2596,
+    "discountTotalCents": 0,
+    "itemCount": 4,
+    "isClosed": false,
+    "items": {
+      "item-1": { "name": "Cheeseburger", "priceCents": 1299, "quantity": 1, "totalCents": 1299 },
+      "item-2": { "name": "Fries", "priceCents": 499, "quantity": 2, "totalCents": 998 },
+      "item-3": { "name": "Soda", "priceCents": 299, "quantity": 1, "totalCents": 299 }
+    }
+  }
+}

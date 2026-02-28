@@ -1,0 +1,32 @@
+{
+  "description": "Close order then try to add item — item should NOT be added",
+  "orderId": "order-7",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": { "locationId": "loc-1", "employeeId": "emp-1", "orderType": "dine_in" }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i1", "menuItemId": "m1", "name": "Salad", "priceCents": 1100, "quantity": 1 }
+    },
+    {
+      "type": "ORDER_CLOSED",
+      "payload": { "closedStatus": "paid" }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i2", "menuItemId": "m2", "name": "Dessert", "priceCents": 800, "quantity": 1 }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-7",
+    "status": "paid",
+    "subtotalCents": 1100,
+    "itemCount": 1,
+    "isClosed": true,
+    "items": {
+      "i1": { "name": "Salad", "priceCents": 1100, "totalCents": 1100 }
+    }
+  }
+}

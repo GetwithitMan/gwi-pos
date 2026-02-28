@@ -15,6 +15,7 @@ import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -134,6 +135,17 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           details: { orderNumber: order.orderNumber, orderType, tableId: tableId || null },
         },
       }).catch(() => {})
+
+      // Emit ORDER_CREATED event for draft (fire-and-forget)
+      void emitOrderEvent(locationId, order.id, 'ORDER_CREATED', {
+        locationId,
+        employeeId,
+        orderType,
+        tableId: tableId || null,
+        guestCount: initialSeatCount,
+        orderNumber: order.orderNumber,
+        displayNumber: null,
+      })
 
       // Link reservation to this draft order (fire-and-forget)
       if (reservationId) {
@@ -525,6 +537,34 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         },
       },
     })
+
+    // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
+    void emitOrderEvents(locationId, order.id, [
+      {
+        type: 'ORDER_CREATED',
+        payload: {
+          locationId,
+          employeeId,
+          orderType,
+          tableId: tableId || null,
+          guestCount: order.guestCount,
+          orderNumber: order.orderNumber,
+          displayNumber: null,
+        },
+      },
+      ...order.items.map((item: any) => ({
+        type: 'ITEM_ADDED' as const,
+        payload: {
+          lineItemId: item.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          priceCents: Math.round(Number(item.price) * 100),
+          quantity: item.quantity,
+          isHeld: item.isHeld || false,
+          soldByWeight: item.soldByWeight || false,
+        },
+      })),
+    ])
 
     // Use mapper for complete response with correlationId support
     const response = {

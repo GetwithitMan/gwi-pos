@@ -314,6 +314,16 @@ async function runPrePushMigrations() {
       }
     }
 
+    // --- Postgres SEQUENCE for event-sourced order serverSequence ---
+    try {
+      await prisma.$executeRawUnsafe(
+        `CREATE SEQUENCE IF NOT EXISTS order_event_server_seq START 1 INCREMENT 1`
+      )
+      console.log(`${PREFIX}   order_event_server_seq SEQUENCE ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED creating order_event_server_seq:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

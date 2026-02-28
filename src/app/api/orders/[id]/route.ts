@@ -10,6 +10,7 @@ import { dispatchOrderTotalsUpdate, dispatchOrderUpdated } from '@/lib/socket-di
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 
 // GET - Get order details
 export const GET = withVenue(async function GET(
@@ -446,6 +447,28 @@ export const PUT = withVenue(async function PUT(
 
     // Dispatch order:updated for metadata changes (fire-and-forget)
     void dispatchOrderUpdated(updatedOrder.locationId, { orderId: id, changes: Object.keys(updateData) }).catch(() => {})
+
+    // Emit order events for metadata changes (fire-and-forget)
+    const orderEvents: Array<{ type: 'GUEST_COUNT_CHANGED' | 'NOTE_CHANGED' | 'ORDER_METADATA_UPDATED' | 'ORDER_CLOSED'; payload: Record<string, unknown> }> = []
+    if (guestCount !== undefined) {
+      orderEvents.push({ type: 'GUEST_COUNT_CHANGED', payload: { count: guestCount } })
+    }
+    if (notes !== undefined) {
+      orderEvents.push({ type: 'NOTE_CHANGED', payload: { note: notes } })
+    }
+    if (tabName !== undefined || tableId !== undefined || employeeId !== undefined) {
+      const metaPayload: Record<string, unknown> = {}
+      if (tabName !== undefined) metaPayload.tabName = tabName
+      if (tableId !== undefined) metaPayload.tableId = tableId
+      if (employeeId !== undefined) metaPayload.employeeId = employeeId
+      orderEvents.push({ type: 'ORDER_METADATA_UPDATED', payload: metaPayload })
+    }
+    if (status !== undefined && ['closed', 'void', 'cancelled'].includes(status)) {
+      orderEvents.push({ type: 'ORDER_CLOSED', payload: { closedStatus: status } })
+    }
+    if (orderEvents.length > 0) {
+      void emitOrderEvents(updatedOrder.locationId, id, orderEvents)
+    }
 
     // FIX-011: Dispatch real-time totals update if tip changed (fire-and-forget)
     if (tipTotal !== undefined) {

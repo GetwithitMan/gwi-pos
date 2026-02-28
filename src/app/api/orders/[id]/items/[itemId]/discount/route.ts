@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 interface ApplyItemDiscountRequest {
   type: 'percent' | 'fixed'
@@ -146,6 +147,16 @@ export const POST = withVenue(async function POST(
       select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
     })
 
+    // Emit order event for item discount applied (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
+      discountId: itemDiscount.id,
+      type: body.type,
+      value: body.value,
+      amountCents: Math.round(Number(itemDiscount.amount) * 100),
+      reason: body.reason || null,
+      lineItemId: itemId,
+    })
+
     // Fire-and-forget socket dispatch
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'created',
@@ -249,6 +260,12 @@ export const DELETE = withVenue(async function DELETE(
         total: newTotal,
       },
       select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
+    })
+
+    // Emit order event for item discount removed (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+      discountId,
+      lineItemId: itemId,
     })
 
     // Fire-and-forget socket dispatch

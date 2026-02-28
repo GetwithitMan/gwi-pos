@@ -4,6 +4,7 @@ import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { calculateOrderTotals, calculateOrderSubtotal, recalculatePercentDiscounts, type LocationTaxSettings } from '@/lib/order-calculations'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
 export const PUT = withVenue(async function PUT(
@@ -275,8 +276,23 @@ export const PUT = withVenue(async function PUT(
         orderId: order.id,
       }).catch(() => {})
 
+      // Emit ITEM_UPDATED event for quantity change (fire-and-forget)
+      void emitOrderEvent(order.locationId, orderId, 'ITEM_UPDATED', {
+        lineItemId: itemId,
+        quantity: updateData.quantity,
+      })
+
       return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
     }
+
+    // Emit ITEM_UPDATED event with only changed fields (fire-and-forget)
+    const itemUpdatedPayload: Record<string, unknown> = { lineItemId: itemId }
+    if (updateData.isHeld !== undefined) itemUpdatedPayload.isHeld = updateData.isHeld
+    if (updateData.specialNotes !== undefined) itemUpdatedPayload.specialNotes = updateData.specialNotes
+    if (updateData.courseNumber !== undefined) itemUpdatedPayload.courseNumber = updateData.courseNumber
+    if (updateData.seatNumber !== undefined) itemUpdatedPayload.seatNumber = updateData.seatNumber
+    if (updateData.courseStatus !== undefined) itemUpdatedPayload.kitchenStatus = updateData.courseStatus
+    void emitOrderEvent(order.locationId, orderId, 'ITEM_UPDATED', itemUpdatedPayload)
 
     await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
 
@@ -400,6 +416,11 @@ export const DELETE = withVenue(async function DELETE(
     await db.orderItem.update({
       where: { id: itemId },
       data: { deletedAt: now, status: 'removed' },
+    })
+
+    // Emit ITEM_REMOVED event (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'ITEM_REMOVED', {
+      lineItemId: itemId,
     })
 
     // Recalculate totals from remaining active items

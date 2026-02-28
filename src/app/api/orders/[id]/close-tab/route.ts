@@ -10,6 +10,7 @@ import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { roundToCents } from '@/lib/pricing'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -361,6 +362,26 @@ export const POST = withVenue(async function POST(
           })
         ),
     ])
+
+    // Emit order events for tab close (fire-and-forget)
+    void emitOrderEvent(locationId, orderId, 'TAB_CLOSED', {
+      employeeId,
+      tipCents: Math.round(finalTipAmount * 100),
+      adjustedAmountCents: Math.round(totalCaptured * 100),
+    })
+    void emitOrderEvent(locationId, orderId, 'PAYMENT_APPLIED', {
+      paymentId: capturedCard.id,
+      method: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+      amountCents: Math.round(purchaseAmount * 100),
+      tipCents: Math.round(finalTipAmount * 100),
+      totalCents: Math.round(totalCaptured * 100),
+      cardBrand: capturedCard.cardType || null,
+      cardLast4: capturedCard.cardLast4 || null,
+      status: 'approved',
+    })
+    void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
+      closedStatus: 'paid',
+    })
 
     // Deduct inventory (food + liquor) — fire-and-forget to not block payment
     void deductInventoryForOrder(orderId, employeeId).catch(err => {

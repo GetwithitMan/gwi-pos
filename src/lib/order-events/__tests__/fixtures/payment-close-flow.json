@@ -1,0 +1,50 @@
+{
+  "description": "Create order, add items, pay, close — full lifecycle with payment voided and re-paid",
+  "orderId": "order-9",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": { "locationId": "loc-1", "employeeId": "emp-1", "orderType": "dine_in" }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i1", "menuItemId": "m1", "name": "Pasta", "priceCents": 1800, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i2", "menuItemId": "m2", "name": "Bread", "priceCents": 500, "quantity": 1 }
+    },
+    {
+      "type": "ORDER_SENT",
+      "payload": { "sentItemIds": [] }
+    },
+    {
+      "type": "PAYMENT_APPLIED",
+      "payload": { "paymentId": "p1", "method": "card", "amountCents": 2300, "tipCents": 400, "totalCents": 2700, "cardBrand": "Visa", "cardLast4": "4242", "status": "approved" }
+    },
+    {
+      "type": "PAYMENT_VOIDED",
+      "payload": { "paymentId": "p1", "reason": "wrong card", "employeeId": "emp-1" }
+    },
+    {
+      "type": "PAYMENT_APPLIED",
+      "payload": { "paymentId": "p2", "method": "cash", "amountCents": 2300, "tipCents": 300, "totalCents": 2600, "status": "approved" }
+    },
+    {
+      "type": "ORDER_CLOSED",
+      "payload": { "closedStatus": "paid" }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-9",
+    "status": "paid",
+    "subtotalCents": 2300,
+    "itemCount": 2,
+    "paidAmountCents": 2600,
+    "isClosed": true,
+    "items": {
+      "i1": { "name": "Pasta", "priceCents": 1800, "totalCents": 1800, "kitchenStatus": "FIRED" },
+      "i2": { "name": "Bread", "priceCents": 500, "totalCents": 500, "kitchenStatus": "FIRED" }
+    }
+  }
+}

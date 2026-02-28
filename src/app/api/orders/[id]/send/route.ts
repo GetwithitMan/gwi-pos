@@ -8,6 +8,7 @@ import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -236,6 +237,11 @@ export const POST = withVenue(withTiming(async function POST(
       },
     }).catch(err => {
       console.error('[API /orders/[id]/send] Audit log failed:', err)
+    })
+
+    // Emit ORDER_SENT event (fire-and-forget)
+    void emitOrderEvent(order.locationId, id, 'ORDER_SENT', {
+      sentItemIds: updatedItemIds,
     })
 
     // Dispatch open orders update with 'sent' trigger — delta-only, no full snapshot reload

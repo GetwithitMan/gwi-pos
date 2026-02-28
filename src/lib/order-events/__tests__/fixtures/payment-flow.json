@@ -1,0 +1,46 @@
+{
+  "description": "Create, add items, send, pay, close — full lifecycle",
+  "orderId": "order-4",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": { "locationId": "loc-1", "employeeId": "emp-1", "orderType": "dine_in", "guestCount": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i1", "menuItemId": "m1", "name": "Pizza", "priceCents": 1800, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i2", "menuItemId": "m2", "name": "Wine", "priceCents": 1200, "quantity": 1 }
+    },
+    {
+      "type": "ORDER_SENT",
+      "payload": { "sentItemIds": ["i1", "i2"] }
+    },
+    {
+      "type": "PAYMENT_APPLIED",
+      "payload": {
+        "paymentId": "pay-1", "method": "card",
+        "amountCents": 3000, "tipCents": 600, "totalCents": 3600,
+        "cardBrand": "Visa", "cardLast4": "1234", "status": "approved"
+      }
+    },
+    {
+      "type": "ORDER_CLOSED",
+      "payload": { "closedStatus": "paid" }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-4",
+    "status": "paid",
+    "subtotalCents": 3000,
+    "paidAmountCents": 3600,
+    "itemCount": 2,
+    "isClosed": true,
+    "items": {
+      "i1": { "name": "Pizza", "kitchenStatus": "FIRED", "isHeld": false },
+      "i2": { "name": "Wine", "kitchenStatus": "FIRED", "isHeld": false }
+    }
+  }
+}

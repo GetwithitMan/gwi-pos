@@ -176,6 +176,7 @@ IF internet goes down:
 - Performance is non-negotiable: sub-50ms for all POS actions (tap → visual response)
 - The web UI (Chromium kiosk) must remain functional as a fallback, but native Android is the target
 - When building features: if it works fast on Android over WiFi to the NUC, it works everywhere
+- **Android uses event-sourced orders** — all order mutations go through an append-only event log, a pure reducer, and projection adapters. See `gwi-android-register/CLAUDE.md` and `gwi-android-register/docs/ARCHITECTURE.md` for the full event stream architecture. The NUC API must accept and assign `serverSequence` to incoming events from the Android app.
 
 | Phase | What | Status |
 |-------|------|--------|
@@ -186,23 +187,23 @@ IF internet goes down:
 
 **Full architecture details:** See `/docs/architecture/GWI-ARCHITECTURE.md`
 
-### Three Separate Repos & Deployments
+### Four Separate Repos & Deployments
 
-This system is split across **three independent repositories**. Never put Mission Control features in the POS repo, backoffice features in the POS repo, or vice versa.
+This system is split across **four independent repositories**. Never put Mission Control features in the POS repo, backoffice features in the POS repo, or vice versa.
 
-| | GWI POS | GWI Mission Control | GWI Backoffice |
-|---|---------|-------------------|----------------|
-| **Repo** | `gwi-pos` | `gwi-mission-control` | `gwi-backoffice` |
-| **Local path** | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-pos` | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-mission-control` | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-backoffice` |
-| **Domain** | `www.barpos.restaurant` | `app.thepasspos.com` | `api.ordercontrolcenter.com` (API) / `{slug}.ordercontrolcenter.com/admin` (UI proxy) |
-| **Venue subdomains** | `{slug}.ordercontrolcenter.com` | N/A | N/A |
-| **Purpose** | POS app (ordering, payments, KDS, floor plan, menu, reports) | Admin console (onboard venues, fleet management, monitoring, billing) | Venue backoffice (event ingestion, reporting, admin dashboard) |
-| **Database** | **NUC: Local PG 16 (primary, offline-first)** + Neon as cloud sync target | Neon PostgreSQL — single master database | Neon PostgreSQL — single shared cloud database |
-| **Auth** | Employee PIN login (per-venue) | Clerk B2B (org-level admin users) | HMAC-SHA256 (NUC events), API key (reports) |
+| | GWI POS | GWI Android Register | GWI Mission Control | GWI Backoffice |
+|---|---------|---------------------|-------------------|----------------|
+| **Repo** | `gwi-pos` | `gwi-android-register` | `gwi-mission-control` | `gwi-backoffice` |
+| **Local path** | `.../GWI-POS FULL/gwi-pos` | `.../GWI-POS FULL/gwi-android-register` | `.../GWI-POS FULL/gwi-mission-control` | `.../GWI-POS FULL/gwi-backoffice` |
+| **Platform** | Next.js (NUC + Vercel) | Kotlin / Jetpack Compose (Android) | Next.js (Vercel) | Java 25 + Spring Boot |
+| **Purpose** | POS server + web UI | Native Android POS client | Fleet management, billing | Event ingestion, reporting |
+| **Database** | Local PG 16 (NUC) + Neon (sync) | Room (SQLite, event-sourced orders) | Neon PostgreSQL | Neon PostgreSQL |
+| **Auth** | Employee PIN login | Employee PIN via NUC API | Clerk B2B | HMAC-SHA256 |
 
 **Release workflow:**
 1. New POS features → commit & push to `gwi-pos` → Vercel auto-deploys to `barpos.restaurant` / `*.ordercontrolcenter.com`
-2. New MC features → commit & push to `gwi-mission-control` → Vercel auto-deploys to `app.thepasspos.com`
+2. New Android features → commit & push to `gwi-android-register` → build APK → distribute via GitHub Releases or MC push
+3. New MC features → commit & push to `gwi-mission-control` → Vercel auto-deploys to `app.thepasspos.com`
 
 **What lives WHERE:**
 
@@ -212,12 +213,17 @@ This system is split across **three independent repositories**. Never put Missio
 | Server heartbeat, sync, license validation | **Mission Control** |
 | Venue onboarding, organization management | **Mission Control** |
 | Fleet dashboard, server monitoring | **Mission Control** |
-| POS ordering, payments, KDS, floor plan | **POS** |
+| POS server API, web UI, KDS, floor plan | **POS** |
 | Menu builder, modifiers, ingredients | **POS** |
 | Reports (daily, shift, PMIX, tips) | **POS** |
 | Employee management, roles, permissions | **POS** |
 | Hardware (printers, KDS screens, payment readers) | **POS** |
 | Venue settings (name, address, timezone) | **POS** |
+| Native Android POS UI, touch ordering | **Android Register** |
+| Event-sourced order state, OrderReducer | **Android Register** |
+| Datacap reader integration (USB/BT) | **Android Register** |
+| CAS PD-II scale integration | **Android Register** |
+| APK self-update, device pairing | **Android Register** |
 | Event ingestion, cloud sync | **Backoffice** |
 | Cloud reporting (daily totals, trends) | **Backoffice** |
 | Venue admin dashboard | **Backoffice** |
@@ -227,7 +233,9 @@ This system is split across **three independent repositories**. Never put Missio
 - Add POS ordering/menu/payment logic to the MC repo
 - Add event ingestion or cloud reporting to the POS repo
 - Duplicate payment/order models that exist in the backoffice schema
+- Put Android-specific UI code in the POS repo (Android has its own Compose UI)
 - Duplicate models that exist in the other repo's schema
+- Put Android Compose UI or Room entities in any repo other than `gwi-android-register`
 
 ## Tech Stack
 
@@ -368,7 +376,7 @@ npm run build → prisma generate && next build && node scripts/build-server.mjs
 
 ### Multi-Tenant DB Routing (`withVenue`)
 
-All 348 API routes are wrapped with `withVenue()` from `src/lib/with-venue.ts`:
+All API routes are wrapped with `withVenue()` from `src/lib/with-venue.ts`:
 
 ```typescript
 import { withVenue } from '@/lib/with-venue'
@@ -526,7 +534,7 @@ gwi-pos/
 │   │   ├── (pos)/       # POS interface
 │   │   ├── (admin)/     # Admin pages
 │   │   ├── (kds)/       # Kitchen Display System
-│   │   └── api/         # API routes (348 routes, all wrapped with withVenue)
+│   │   └── api/         # API routes (all wrapped with withVenue)
 │   ├── components/      # React components
 │   ├── hooks/           # Custom hooks
 │   ├── stores/          # Zustand stores

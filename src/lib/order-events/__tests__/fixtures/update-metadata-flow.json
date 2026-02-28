@@ -1,0 +1,45 @@
+{
+  "description": "Create order, add items, update guest count + notes + metadata, send to kitchen",
+  "orderId": "order-8",
+  "events": [
+    {
+      "type": "ORDER_CREATED",
+      "payload": { "locationId": "loc-1", "employeeId": "emp-1", "orderType": "dine_in", "guestCount": 1, "tableId": "table-1" }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i1", "menuItemId": "m1", "name": "Steak", "priceCents": 2500, "quantity": 1 }
+    },
+    {
+      "type": "ITEM_ADDED",
+      "payload": { "lineItemId": "i2", "menuItemId": "m2", "name": "Wine", "priceCents": 1200, "quantity": 2 }
+    },
+    {
+      "type": "GUEST_COUNT_CHANGED",
+      "payload": { "count": 4 }
+    },
+    {
+      "type": "NOTE_CHANGED",
+      "payload": { "note": "Anniversary dinner" }
+    },
+    {
+      "type": "ORDER_METADATA_UPDATED",
+      "payload": { "tableId": "table-5", "tableName": "Booth 5", "employeeId": "emp-2" }
+    },
+    {
+      "type": "ORDER_SENT",
+      "payload": { "sentItemIds": ["i1", "i2"] }
+    }
+  ],
+  "expectedState": {
+    "orderId": "order-8",
+    "status": "sent",
+    "subtotalCents": 4900,
+    "itemCount": 3,
+    "isClosed": false,
+    "items": {
+      "i1": { "name": "Steak", "priceCents": 2500, "totalCents": 2500, "kitchenStatus": "FIRED" },
+      "i2": { "name": "Wine", "priceCents": 1200, "quantity": 2, "totalCents": 2400, "kitchenStatus": "FIRED" }
+    }
+  }
+}

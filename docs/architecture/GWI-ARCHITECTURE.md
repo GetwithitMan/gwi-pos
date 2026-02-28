@@ -102,7 +102,7 @@ Only after the POS is production-ready.
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | Application | Next.js 16.x | POS frontend + API |
-| Database | PostgreSQL 15 | Local data storage (fast) |
+| Database | PostgreSQL 16 | Local data storage (fast) |
 | Real-time | Socket.io | Instant KDS/terminal updates |
 | Container | Docker Compose | Deployment + auto-restart |
 | Updates | Watchtower | Pull new images automatically |
