@@ -97,7 +97,24 @@ npm run db:studio    # Prisma Studio
 ### Custom Server
 `server.ts` wraps Next.js for Socket.io + multi-tenant DB routing. All API routes use `withVenue()` from `src/lib/with-venue.ts`. See `docs/guides/CODING-STANDARDS.md` for patterns.
 
+### Key Model Hierarchy
+`Organization` → `Location` → `Category` → `MenuItem` → `OrderItem` → `OrderItemModifier`
+`ModifierGroup` → `Modifier` | `Order` → `OrderItem` | `OrderSnapshot` → `OrderItemSnapshot`
+
+### Key Feature Quick-Ref
+| Feature | Detail |
+|---------|--------|
+| Category types | `food`, `drinks`, `liquor`, `entertainment`, `combos`, `retail` |
+| Modifier types | JSON array, multi-select: `universal`, `food`, `liquor`, `retail`, `entertainment`, `combo` |
+| Pour sizes | `shot` (1.0x), `double` (2.0x), `tall` (1.5x), `short` (0.75x) — `MenuItem.pourSizes` |
+| Stacking | `allowStacking: true` — tap same modifier twice for 2x |
+| Linked items | `Modifier.linkedMenuItemId` — spirit upgrades with price/inventory tracking |
+| Timed rentals | Block time (fixed) or per-minute billing, timer auto-start on send |
+| Tip sharing | Auto tip-outs at shift close → payroll. See `docs/domains/TIPS-DOMAIN.md` |
+
 ## Doc Routing Table
+
+**MANDATORY: Before editing code in any domain below, READ the linked guide doc first.** The guide contains rules that are not repeated here. Violating them creates bugs.
 
 | Working On | Read First | Key Files |
 |------------|-----------|-----------|

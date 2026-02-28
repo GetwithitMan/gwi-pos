@@ -190,3 +190,122 @@ openModal()
 | JSON fields | Use for structured data (`modifierTypes`, `pourSizes`) |
 | Soft deletes | `deletedAt: new Date()` — required for Android sync |
 | Sort order | Include `sortOrder` field on lists that users can reorder |
+
+---
+
+## Project Structure
+
+```
+gwi-pos/
+├── server.ts            # Custom server (Socket.io + multi-tenant routing)
+├── preload.js           # AsyncLocalStorage polyfill (loaded via -r flag)
+├── prisma/              # Schema, seed, migrations
+├── public/
+│   └── installer.run    # NUC provisioning script (~1,454 lines)
+├── src/
+│   ├── app/
+│   │   ├── (auth)/      # Login pages
+│   │   ├── (pos)/       # POS interface
+│   │   ├── (admin)/     # Admin pages
+│   │   ├── (kds)/       # Kitchen Display System
+│   │   └── api/         # API routes (all wrapped with withVenue)
+│   ├── components/      # React components
+│   ├── hooks/           # Custom hooks
+│   ├── stores/          # Zustand stores
+│   ├── lib/
+│   │   ├── db.ts              # Prisma client (3-tier Proxy: ALS → headers → master)
+│   │   ├── with-venue.ts      # Route handler wrapper for multi-tenant isolation
+│   │   ├── request-context.ts # AsyncLocalStorage for per-request tenant context
+│   │   ├── socket-server.ts   # Socket.io server init + emitToLocation/emitToTags
+│   │   ├── shared-socket.ts   # Client-side singleton socket connection
+│   │   ├── menu-cache.ts      # In-memory menu cache (60s TTL)
+│   │   ├── location-cache.ts  # Location settings cache
+│   │   ├── datacap/           # All payment processing code
+│   │   ├── escpos/            # ESC/POS printing protocol
+│   │   ├── order-events/      # Event-sourced order pipeline
+│   │   └── inventory-calculations.ts  # Deduction engine
+│   └── types/           # TypeScript types
+├── docs/
+│   ├── skills/          # Skill docs (347+ skills)
+│   ├── changelogs/      # Domain changelogs
+│   ├── domains/         # Domain reference docs
+│   └── guides/          # Guide docs (you are here)
+└── CLAUDE.md            # Routing file
+```
+
+---
+
+## Application Routes
+
+### POS Routes
+| Route | Description |
+|-------|-------------|
+| `/login` | PIN-based login |
+| `/orders` | Main POS order screen |
+| `/kds` | Kitchen Display System |
+| `/kds/entertainment` | Entertainment KDS |
+
+### Admin Routes (via hamburger menu)
+| Route | Description |
+|-------|-------------|
+| `/menu` | Menu management |
+| `/modifiers` | Modifier group management |
+| `/employees` | Employee management |
+| `/tables` | Floor plan / table layout |
+| `/settings` | System settings |
+| `/settings/order-types` | Order types config |
+| `/settings/tip-outs` | Tip-out rules |
+| `/reports` | Sales and labor reports |
+| `/reports/daily` | Daily store report (EOD) |
+| `/customers` | Customer management |
+| `/reservations` | Reservation system |
+| `/ingredients` | Food inventory |
+| `/inventory` | Inventory tracking |
+| `/liquor-builder` | Liquor/spirit recipe builder |
+
+---
+
+## Inventory & Recipe Costing
+
+### Modifier Instruction Multipliers
+| Instruction | Multiplier |
+|-------------|------------|
+| NO, HOLD, REMOVE | 0.0 |
+| LITE, LIGHT, EASY | 0.5 |
+| NORMAL, REGULAR | 1.0 |
+| EXTRA, DOUBLE | 2.0 |
+| TRIPLE, 3X | 3.0 |
+
+Configurable per-location in InventorySettings. "No" logic: skips base recipe deduction entirely.
+
+### Auto-Deduction (fire-and-forget)
+- **Order Paid** → `deductInventoryForOrder()` (transaction type: `sale`)
+- **Item Voided** → `deductInventoryForVoidedItem()` (transaction type: `waste`)
+- Two-path modifier deduction: Path A (`ModifierInventoryLink`) takes precedence over Path B (`Modifier.ingredientId` fallback)
+
+**Key files:** `src/lib/inventory-calculations.ts`, `/api/orders/[id]/pay/route.ts`, `/api/orders/[id]/comp-void/route.ts`
+
+---
+
+## Hardware & Printing
+
+### Printer Types & Roles
+- Types: `thermal` (receipts), `impact` (kitchen)
+- Roles: `receipt`, `kitchen`, `bar`
+
+### Print Route Priority
+`PrintRoute > Item printer > Category printer > Default`
+- Backup printer failover with configurable timeout
+- Per-modifier print routing: `follow` (default), `also`, `only`
+
+### ESC/POS Protocol
+| Printer | Double size | Normal |
+|---------|------------|--------|
+| Thermal | `GS ! 0x11` | `GS ! 0x00` |
+| Impact | `ESC ! 0x30` | `ESC ! 0x00` |
+| Two-color | `ESC r 0x01` (red) | `ESC r 0x00` (black) |
+
+### KDS Device Security
+256-bit token + httpOnly cookie + 5-min pairing code. Optional static IP binding. See `docs/skills/102-KDS-DEVICE-SECURITY.md`.
+
+**Key files:** `src/lib/escpos/`, `src/lib/printer-connection.ts`, `/api/print/kitchen/route.ts`
