@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-02-28 — Cross-Terminal Integration Test (7-Agent Team)
+
+**Session:** Full integration test of Android→NUC→Web→KDS flow across all 4 phases. Solo run + 7-agent parallel team (android-agent, web-agent, nuc-verifier, kds-agent, socket-watcher, payment-agent, report-agent). 279 socket events captured. All phases completed.
+
+### Results
+- **12 PASS, 2 PARTIAL PASS, 1 UNTESTABLE (edit lock — socket only), 0 FAIL**
+- Core flows (payment, void, split, transfer, concurrent writes, idempotency) all production-ready
+
+### Launch Blockers Found (P0)
+1. **`order:created` socket fires on kitchen send, not creation** — clients miss creation event entirely
+2. **Payment underpayment silently accepted** — Order #44 paid $0.19 short, marked as "paid"
+3. **`fire-course` Prisma bug** — `{ in: [courseNumber, null] }` invalid for course 1; blocks course-gated ordering
+
+### Other Key Findings
+- `sentAt` null after kitchen send (F18)
+- `courseMode: "on"` required for course gating — not set by default or documented
+- Reopen has undocumented 60-second cooldown gate (forceReopen doesn't bypass it)
+- Daily vs Sales report gross sales mismatch (~$31 gap — different date filter queries)
+- `POST /items` crashes if `modifiers` field omitted; also requires `price` in body
+- Delta sync: Bearer token required (not cookies); lookback limit ~30 min; paid orders excluded
+
+### Timing
+- Socket events: < 100ms ✓ | Payment off list: < 200ms ✓ | Delta sync: ~1.3s ✓ | KDS appear: ~1.7s (marginal)
+
+### No commits — test-only session
+
+---
+
 ## 2026-02-28 — Legacy Order Migration: Full Pipeline (Phases A-D)
 
 **Session:** Executed the complete 4-phase legacy Order table migration using agent teams across 6 commits. Every Order/OrderItem mutation in the codebase now emits domain events. Dead legacy code deleted. Prisma write guard and CLAUDE.md rules prevent regression.

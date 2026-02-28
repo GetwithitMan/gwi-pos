@@ -1,3 +1,23 @@
+## ⚠️ MANDATORY RULE (Updated Feb 28, 2026 — CLAUDE.md)
+
+**ALL new reads MUST use OrderSnapshot. Order table is LEGACY.**
+
+Per CLAUDE.md Section 5.5 (Event-Sourced Order Writes):
+> "NEVER create new read queries against `db.order` or `db.orderItem` — use `db.orderSnapshot` / `db.orderItemSnapshot` instead"
+
+**Implications:**
+1. **This document (19 switchable reads):** Legacy cleanup — migrate existing reads
+2. **Any new feature** adding Order reads: MUST target OrderSnapshot from day 1
+3. **No exceptions:** Rule enforced in code review
+
+**Migration phases:**
+- ✅ **Phase A** (done): Schema — OrderSnapshot/OrderItemSnapshot fully populated
+- ✅ **Phase B** (done): Event emission — all writes emit events  
+- 🔄 **Phase C** (in progress): Flip reads — switch legacy 19 scalar reads NOW (this list), then relation-dependent reads after Phase C-1
+- 🔄 **Phase D** (in progress): Kill legacy writes — remove db.order.create/update/delete, keep OrderEvent-only
+
+---
+
 # PHASE C: FINAL SWITCHABLE READS LIST
 
 **Scope:** Scalar-only reads that can switch NOW (no transactions, no relations, no include:)

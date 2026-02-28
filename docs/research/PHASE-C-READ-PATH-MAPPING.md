@@ -1,6 +1,28 @@
 # Phase C Read Path Mapping — Comprehensive Analysis
 
 **Date:** 2026-02-28  
+**CRITICAL UPDATE:** CLAUDE.md now mandates "NEVER create new read queries against db.order — use db.orderSnapshot instead" (Feb 28, 2026)
+
+---
+
+## ⚠️ NEW MANDATORY RULE
+
+**All new Order/OrderItem reads MUST target OrderSnapshot. Legacy Order table is being phased out.**
+
+This affects:
+- **New feature work:** Any code adding Order reads must use OrderSnapshot instead
+- **This document:** Maps 280 existing reads for legacy cleanup
+- **Future:** No new db.order.find* queries allowed (enforced in PR review)
+
+**Why:** Order table is LEGACY. The system is migrating to:
+- **OrderSnapshot** + **OrderItemSnapshot** = source of truth (event-sourced)
+- **OrderEvent** = immutable log of all mutations
+- **Order** + **OrderItem** = being phased out (Phase D in progress)
+
+---
+
+
+**Date:** 2026-02-28  
 **Total Read Operations Found:** 280 (157 db.order + 37 db.orderItem + 52 tx.order + 34 tx.orderItem)
 
 ---
