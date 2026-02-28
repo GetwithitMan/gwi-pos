@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Check if employee has open tabs/orders
@@ -108,6 +109,16 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Query affected orders first (updateMany doesn't return IDs)
+    const affectedOrders = await db.order.findMany({
+      where: {
+        employeeId,
+        locationId,
+        status: { in: ['open', 'sent', 'in_progress'] },
+      },
+      select: { id: true },
+    })
+
     // Transfer all open orders to target employee
     const result = await db.order.updateMany({
       where: {
@@ -119,6 +130,13 @@ export const POST = withVenue(async function POST(
         employeeId: targetEmployeeId,
       },
     })
+
+    // Emit order events for each transferred order (fire-and-forget)
+    for (const order of affectedOrders) {
+      void emitOrderEvent(locationId, order.id, 'ORDER_METADATA_UPDATED', {
+        employeeId: targetEmployeeId,
+      })
+    }
 
     return NextResponse.json({ data: {
       success: true,

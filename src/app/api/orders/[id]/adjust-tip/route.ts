@@ -5,6 +5,7 @@ import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -103,6 +104,18 @@ export const PATCH = withVenue(async function PATCH(
       total: newOrderTotal,
       commissionTotal: Number(order.commissionTotal || 0),
     }, { async: true }).catch(() => {})
+
+    // Emit order event for tip adjustment (fire-and-forget)
+    void emitOrderEvent(order.locationId, orderId, 'PAYMENT_APPLIED', {
+      paymentId: payment.id,
+      method: payment.paymentMethod,
+      amountCents: Math.round(Number(payment.amount) * 100),
+      tipCents: Math.round(newTipAmount * 100),
+      totalCents: Math.round(newTotalAmount * 100),
+      cardBrand: payment.cardBrand || null,
+      cardLast4: payment.cardLast4 || null,
+      status: payment.status,
+    })
 
     // Bug 2: Trigger tip allocation for the adjusted tip amount (fire-and-forget)
     if (newTipAmount > 0 && order.employeeId) {

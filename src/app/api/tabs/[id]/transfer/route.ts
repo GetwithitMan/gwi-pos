@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 
 interface TransferRequest {
@@ -125,6 +126,11 @@ export const POST = withVenue(async function POST(
           reason: reason || null,
         },
       },
+    })
+
+    // Emit order event for tab transfer (fire-and-forget)
+    void emitOrderEvent(tab.locationId, tabId, 'ORDER_METADATA_UPDATED', {
+      employeeId: toEmployeeId,
     })
 
     // Dispatch socket event (fire-and-forget)

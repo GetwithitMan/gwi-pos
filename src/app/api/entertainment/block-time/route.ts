@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Start block time for an order item
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -101,6 +102,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         blockTimeExpiresAt: true,
         menuItemId: true,
       },
+    })
+
+    // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync
+    void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
+      lineItemId: orderItemId,
+      blockTimeMinutes: minutes,
+      blockTimeStartedAt: now.toISOString(),
+      blockTimeExpiresAt: expiresAt.toISOString(),
     })
 
     // Update the menu item status to in_use
@@ -252,6 +261,13 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       },
     })
 
+    // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync (extend)
+    void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
+      lineItemId: orderItemId,
+      blockTimeMinutes: newTotalMinutes,
+      blockTimeExpiresAt: newExpiresAt.toISOString(),
+    })
+
     // Dispatch socket updates (fire-and-forget)
     dispatchFloorPlanUpdate(orderItem.order.locationId, { async: true })
     dispatchEntertainmentStatusChanged(orderItem.order.locationId, {
@@ -380,6 +396,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
         sessionStartedAt: null,
         sessionExpiresAt: null,
       },
+    })
+
+    // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync (stop)
+    void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
+      lineItemId: orderItemId,
+      blockTimeMinutes: orderItem.blockTimeMinutes,
+      blockTimeExpiresAt: now.toISOString(),
     })
 
     // Dispatch socket updates (fire-and-forget)

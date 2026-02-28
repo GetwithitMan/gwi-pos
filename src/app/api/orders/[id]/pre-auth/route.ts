@@ -5,6 +5,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * POST /api/orders/[id]/pre-auth
@@ -107,6 +108,13 @@ export const POST = withVenue(async function POST(
     await db.order.update({
       where: { id: orderId },
       data: { preAuthAmount },
+    })
+
+    // Fire-and-forget: emit TAB_OPENED event for event-sourced sync
+    void emitOrderEvent(locationId, orderId, 'TAB_OPENED', {
+      preAuthId: recordNo,
+      cardLast4: response.cardLast4 || '????',
+      tabName: response.cardholderName || null,
     })
 
     // Fire-and-forget: notify all terminals a card was added

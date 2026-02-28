@@ -126,6 +126,12 @@ export const POST = withVenue(async function POST(
           orderId,
         }, { async: true }).catch(() => {})
 
+        // Emit order event for discount removed via toggle (fire-and-forget)
+        void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+          discountId: alreadyApplied.id,
+          lineItemId: null,
+        })
+
         return NextResponse.json({ data: {
           toggled: 'off',
           removedDiscountId: alreadyApplied.id,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Transfer table to another server
@@ -110,6 +111,13 @@ export const POST = withVenue(async function POST(
         },
       },
     })
+
+    // Emit order events for each transferred order (fire-and-forget)
+    for (const order of openOrders) {
+      void emitOrderEvent(table.locationId, order.id, 'ORDER_METADATA_UPDATED', {
+        employeeId: toEmployeeId,
+      })
+    }
 
     // Notify POS terminals of table transfer
     dispatchFloorPlanUpdate(table.locationId, { async: true })

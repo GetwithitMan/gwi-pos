@@ -16,6 +16,7 @@ import {
 } from '@/lib/escpos/commands'
 import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings, RouteSpecificSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 interface PrintKitchenRequest {
   orderId: string
@@ -375,6 +376,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: { id: { in: itemsToPrint.map(i => i.id) } },
         data: { kitchenStatus: 'cooking' },
       })
+
+      // Fire-and-forget: emit ITEM_UPDATED per item for event-sourced sync
+      void emitOrderEvents(order.locationId, order.id, itemsToPrint.map(item => ({
+        type: 'ITEM_UPDATED' as const,
+        payload: { lineItemId: item.id, kitchenStatus: 'cooking' },
+      })))
     }
 
     return NextResponse.json({ data: {

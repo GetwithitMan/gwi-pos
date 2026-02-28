@@ -94,6 +94,13 @@ export const POST = withVenue(async function POST(
           select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
         })
         void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
+
+        // Emit order event for item discount removed via toggle (fire-and-forget)
+        void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+          discountId: alreadyApplied.id,
+          lineItemId: itemId,
+        })
+
         return NextResponse.json({
           data: {
             toggled: 'off',

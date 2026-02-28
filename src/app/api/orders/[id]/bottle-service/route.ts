@@ -5,6 +5,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Open a bottle service tab (with tier selection + deposit pre-auth)
 export const POST = withVenue(async function POST(
@@ -147,6 +148,18 @@ export const POST = withVenue(async function POST(
         },
       }),
     ])
+
+    // Fire-and-forget: emit order event for event-sourced sync
+    void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+      isBottleService: true,
+      tierId,
+      depositAmount,
+      minimumSpend: Number(tier.minimumSpend),
+      preAuthId: preAuthResponse.authCode,
+      cardLast4: finalCardLast4,
+      cardType: finalCardType,
+      tabName: finalCardholderName || order.tabName,
+    })
 
     // Fire-and-forget socket dispatch for cross-terminal sync
     void dispatchOrderUpdated(order.locationId, {
