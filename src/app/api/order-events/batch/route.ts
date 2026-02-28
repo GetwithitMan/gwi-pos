@@ -6,8 +6,16 @@ import {
   type BatchEventInput,
   type BatchEventResponse,
   type OrderEventPayload,
+  type OrderState,
   ORDER_EVENT_TYPES,
   emptyOrderState,
+  getSubtotalCents,
+  getDiscountTotalCents,
+  getTotalCents,
+  getPaidAmountCents,
+  getTipTotalCents,
+  getItemCount,
+  getHasHeldItems,
 } from '@/lib/order-events/types'
 import { reduce } from '@/lib/order-events/reducer'
 import { applyProjection } from '@/lib/order-events/projector'
@@ -82,6 +90,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const accepted: BatchEventResponse['accepted'] = []
   const rejected: BatchEventResponse['rejected'] = []
   const affectedOrderIds = new Set<string>()
+  const newPaymentEvents: { orderId: string; payload: Record<string, unknown> }[] = []
 
   for (const evt of events) {
     try {
@@ -142,6 +151,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       accepted.push({ eventId: evt.eventId, serverSequence })
       affectedOrderIds.add(evt.orderId)
+
+      // Track new PAYMENT_APPLIED events for bridge sync to legacy Payment table
+      if (evt.type === 'PAYMENT_APPLIED' && evt.payloadJson) {
+        newPaymentEvents.push({
+          orderId: evt.orderId,
+          payload: (evt.payloadJson ?? {}) as Record<string, unknown>,
+        })
+      }
     } catch (err) {
       rejected.push({
         eventId: evt.eventId || 'unknown',
@@ -150,7 +167,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
   }
 
-  // Re-project snapshots for all affected orders
+  // Re-project snapshots for all affected orders + collect states for bridge sync
+  const orderStates = new Map<string, OrderState>()
   for (const orderId of affectedOrderIds) {
     try {
       // Load all events for this order in canonical order
@@ -176,10 +194,112 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // Project into snapshots
       await applyProjection(db as any, state, locationId, lastSequence)
+      orderStates.set(orderId, state)
     } catch (err) {
       // Projection failure is non-fatal — events are already persisted
       console.error(
         `[order-events/batch] Projection failed for order ${orderId}:`,
+        err
+      )
+    }
+  }
+
+  // ── Bridge sync: OrderState → legacy Order table ──────────────────────
+  // Temporary: keeps the legacy Order table in sync until all reads are
+  // switched to OrderSnapshot. This is what makes GET /api/orders/open
+  // return correct status/totals for event-sourced orders.
+  const closedStatuses = ['paid', 'closed', 'completed', 'voided', 'cancelled']
+  for (const [orderId, state] of orderStates) {
+    try {
+      const isNowClosed = closedStatuses.includes(state.status)
+      const subtotal = getSubtotalCents(state) / 100
+      const discountTotal = getDiscountTotalCents(state) / 100
+      const taxTotal = state.taxTotalCents / 100
+      const tipTotal = getTipTotalCents(state) / 100
+      const total = getTotalCents(state) / 100
+
+      await db.order.upsert({
+        where: { id: orderId },
+        create: {
+          id: orderId,
+          locationId,
+          employeeId: state.employeeId,
+          orderType: state.orderType,
+          orderNumber: state.orderNumber,
+          displayNumber: state.displayNumber,
+          tableId: state.tableId,
+          tabName: state.tabName,
+          guestCount: state.guestCount,
+          status: state.status as any,
+          notes: state.notes,
+          subtotal,
+          discountTotal,
+          taxTotal,
+          tipTotal,
+          total,
+          itemCount: getItemCount(state),
+          ...(isNowClosed ? { paidAt: new Date(), closedAt: new Date() } : {}),
+        },
+        update: {
+          status: state.status as any,
+          subtotal,
+          discountTotal,
+          taxTotal,
+          tipTotal,
+          total,
+          itemCount: getItemCount(state),
+          notes: state.notes,
+          guestCount: state.guestCount,
+          tableId: state.tableId,
+          tabName: state.tabName,
+          ...(isNowClosed ? { paidAt: new Date(), closedAt: new Date() } : {}),
+          ...(state.status === 'sent' ? { sentAt: new Date() } : {}),
+        },
+      })
+    } catch (err) {
+      console.error(
+        `[order-events/batch] Bridge sync to Order failed for ${orderId}:`,
+        err
+      )
+    }
+  }
+
+  // ── Bridge sync: PAYMENT_APPLIED → legacy Payment table ──────────────
+  // Creates Payment records so reports, shift close, and other code that
+  // queries the Payment table sees event-sourced payments.
+  const paymentMethodMap: Record<string, string> = {
+    cash: 'cash',
+    card: 'card',
+    credit: 'card',
+    debit: 'card',
+    gift_card: 'giftcard',
+    house_account: 'houseaccount',
+  }
+  for (const pe of newPaymentEvents) {
+    try {
+      const p = pe.payload
+      const paymentId = p.paymentId as string
+      if (!paymentId) continue
+
+      await db.payment.upsert({
+        where: { id: paymentId },
+        create: {
+          id: paymentId,
+          locationId,
+          orderId: pe.orderId,
+          amount: ((p.amountCents as number) ?? 0) / 100,
+          tipAmount: ((p.tipCents as number) ?? 0) / 100,
+          totalAmount: ((p.totalCents as number) ?? 0) / 100,
+          paymentMethod: (paymentMethodMap[p.method as string] ?? 'other') as any,
+          cardBrand: (p.cardBrand as string) ?? null,
+          cardLast4: (p.cardLast4 as string) ?? null,
+          status: p.status === 'pending' ? 'pending' : ('completed' as any),
+        },
+        update: {}, // Idempotent — don't overwrite existing Payment
+      })
+    } catch (err) {
+      console.error(
+        `[order-events/batch] Payment bridge sync failed for order ${pe.orderId}:`,
         err
       )
     }
