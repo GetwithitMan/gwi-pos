@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string }; error?: never } | { terminal?: never; error: NextResponse }> {
   const authHeader = request.headers.get('authorization')
@@ -96,6 +97,42 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
 
       synced.orders.push({ offlineId: orderData.offlineId, serverId: created.id })
+
+      // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
+      void (async () => {
+        const createdWithItems = await db.order.findUnique({
+          where: { id: created.id },
+          include: { items: true },
+        })
+        if (createdWithItems) {
+          await emitOrderEvents(locationId, created.id, [
+            {
+              type: 'ORDER_CREATED',
+              payload: {
+                locationId,
+                employeeId: orderData.employeeId,
+                orderType: null,
+                tableId: orderData.tableId || null,
+                guestCount: 1,
+                orderNumber: created.orderNumber,
+                displayNumber: null,
+              },
+            },
+            ...(createdWithItems.items || []).map((item: any) => ({
+              type: 'ITEM_ADDED' as const,
+              payload: {
+                lineItemId: item.id,
+                menuItemId: item.menuItemId,
+                name: item.name,
+                priceCents: Math.round(Number(item.price) * 100),
+                quantity: item.quantity,
+                isHeld: false,
+                soldByWeight: false,
+              },
+            })),
+          ])
+        }
+      })().catch(console.error)
 
       // Fire-and-forget socket notification
       void emitToLocation(locationId, 'orders:list-changed', { orderId: created.id }).catch(console.error)

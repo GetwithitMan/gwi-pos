@@ -407,38 +407,6 @@ export async function POST(request: NextRequest) {
       })
     })
 
-    // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
-    void (async () => {
-      const createdItems = await venueDb.orderItem.findMany({
-        where: { orderId: order.id },
-        select: { id: true, menuItemId: true, name: true, price: true, quantity: true },
-      })
-      await emitOrderEvents(locationId, order.id, [
-        {
-          type: 'ORDER_CREATED',
-          payload: {
-            locationId,
-            employeeId,
-            orderType,
-            guestCount: 1,
-            orderNumber: order.orderNumber,
-          },
-        },
-        ...createdItems.map(item => ({
-          type: 'ITEM_ADDED' as const,
-          payload: {
-            lineItemId: item.id,
-            menuItemId: item.menuItemId,
-            name: item.name,
-            priceCents: Math.round(Number(item.price) * 100),
-            quantity: item.quantity,
-            isHeld: false,
-            soldByWeight: false,
-          },
-        })),
-      ])
-    })().catch(console.error)
-
     // ── 8. Charge the card via Datacap PayAPI ─────────────────────────────────
 
     let payApiResult
@@ -509,7 +477,61 @@ export async function POST(request: NextRequest) {
       }),
     ])
 
-    // ── 11. Return success ─────────────────────────────────────────────────────
+    // ── 11. Emit events AFTER payment success (fire-and-forget) ────────────────
+
+    void (async () => {
+      const createdItems = await venueDb.orderItem.findMany({
+        where: { orderId: order.id },
+        select: { id: true, menuItemId: true, name: true, price: true, quantity: true },
+      })
+      const paymentRecord = await venueDb.payment.findFirst({
+        where: { orderId: order.id },
+        select: { id: true },
+      })
+      await emitOrderEvents(locationId, order.id, [
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            locationId,
+            employeeId,
+            orderType,
+            guestCount: 1,
+            orderNumber: order.orderNumber,
+          },
+        },
+        ...createdItems.map(item => ({
+          type: 'ITEM_ADDED' as const,
+          payload: {
+            lineItemId: item.id,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            priceCents: Math.round(Number(item.price) * 100),
+            quantity: item.quantity,
+            isHeld: false,
+            soldByWeight: false,
+          },
+        })),
+        {
+          type: 'PAYMENT_APPLIED' as const,
+          payload: {
+            paymentId: paymentRecord?.id ?? crypto.randomUUID(),
+            method: 'card',
+            amountCents: Math.round(total * 100),
+            tipCents: Math.round(tip * 100),
+            totalCents: Math.round(chargeAmount * 100),
+            cardBrand: body.cardBrand ?? payApiResult.brand ?? null,
+            cardLast4: body.cardLast4 ?? (payApiResult.account ? payApiResult.account.slice(-4) : null),
+            status: 'approved',
+          },
+        },
+        {
+          type: 'ORDER_CLOSED' as const,
+          payload: { closedStatus: 'paid' },
+        },
+      ])
+    })().catch(console.error)
+
+    // ── 12. Return success ─────────────────────────────────────────────────────
 
     const prepTimeMinutes =
       (onlineSettings?.prepTime as number | undefined) ?? 20

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST sync an offline order
 // This handles orders that were created while the terminal was offline
@@ -195,6 +196,36 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         orderId: completeOrder.id,
         tableId: completeOrder.tableId || undefined,
       }, { async: true }).catch(() => {})
+    }
+
+    // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
+    if (completeOrder) {
+      void emitOrderEvents(locationId, order.id, [
+        {
+          type: 'ORDER_CREATED',
+          payload: {
+            locationId,
+            employeeId,
+            orderType: null,
+            tableId: tableId || null,
+            guestCount: 1,
+            orderNumber: order.orderNumber,
+            displayNumber: null,
+          },
+        },
+        ...(completeOrder.items || []).map((item: any) => ({
+          type: 'ITEM_ADDED' as const,
+          payload: {
+            lineItemId: item.id,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            priceCents: Math.round(Number(item.price) * 100),
+            quantity: item.quantity,
+            isHeld: false,
+            soldByWeight: false,
+          },
+        })),
+      ]).catch(console.error)
     }
 
     return NextResponse.json({ data: {

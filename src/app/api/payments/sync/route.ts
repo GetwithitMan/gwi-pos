@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * POST /api/payments/sync
@@ -168,6 +169,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       return newPayment
     })
+
+    // Emit PAYMENT_APPLIED event (fire-and-forget)
+    void emitOrderEvent(order.locationId, resolvedOrderId, 'PAYMENT_APPLIED', {
+      paymentId: payment.id,
+      method: payment.paymentMethod,
+      amountCents: Math.round(Number(payment.amount) * 100),
+      tipCents: Math.round(Number(payment.tipAmount || 0) * 100),
+      totalCents: Math.round(Number(payment.totalAmount) * 100),
+      cardBrand: payment.cardBrand ?? null,
+      cardLast4: payment.cardLast4 ?? null,
+      status: 'approved',
+    }).catch(console.error)
+
+    // Check if this payment closed the order, emit ORDER_CLOSED if so (fire-and-forget)
+    void db.order.findUnique({ where: { id: resolvedOrderId }, select: { status: true } })
+      .then(updated => {
+        if (updated?.status === 'paid') {
+          return emitOrderEvent(order.locationId, resolvedOrderId, 'ORDER_CLOSED', {
+            closedStatus: 'paid',
+          })
+        }
+      })
+      .catch(console.error)
 
     // Fetch complete payment with relations
     const completePayment = await db.payment.findUnique({

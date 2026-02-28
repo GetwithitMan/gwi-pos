@@ -264,7 +264,7 @@ export const POST = withVenue(async function POST(
         throw new Error('Cannot modify seats on a closed order')
       }
 
-      locationIdForDispatch = order.table?.locationId ?? null
+      locationIdForDispatch = order.table?.locationId ?? order.locationId
 
       // Optimistic locking check
       if (seatVersion !== undefined && order.seatVersion !== seatVersion) {
