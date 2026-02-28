@@ -5,6 +5,72 @@
 
 ---
 
+## 2026-02-28 — Legacy Order Migration: Full Pipeline (Phases A-D)
+
+**Session:** Executed the complete 4-phase legacy Order table migration using agent teams across 6 commits. Every Order/OrderItem mutation in the codebase now emits domain events. Dead legacy code deleted. Prisma write guard and CLAUDE.md rules prevent regression.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `8b80346` — feat: Phase A — fill OrderSnapshot/OrderItemSnapshot schema (+46/+19 fields, 11 indexes, bridge sync)
+- `c924222` — feat: Phase B-HIGH — add event emission to 11 critical write paths (KDS, courses, splits, payments)
+- `dddf223` — feat: Phase B-MED — add event emission to 10 medium-priority write paths (discounts, tips, tabs, transfers)
+- `39a5c7f` — feat: Phase B-LOW — add event emission to 5 admin/system write paths
+- `44f1adb` — feat: Phase C — switch 20 read-only queries from Order to OrderSnapshot (15 files)
+- `e7418c3` — feat: Phase D — kill legacy-only write patterns, add guardrails (31 files, +582/-122)
+
+### Deployments
+- POS: `e7418c3` pushed to main → Vercel auto-deploy
+
+### Phase Breakdown
+
+| Phase | What | Files | Agent Team |
+|-------|------|-------|-----------|
+| **A** | Schema fill: 46 fields on OrderSnapshot, 19 on OrderItemSnapshot, 11 compound indexes, bridge sync function | 4 | 5 agents (researcher, schema, projector, bridge, build) |
+| **B-HIGH** | Event emission for 11 critical routes: KDS complete/bump/resend, expo serve/bump, courses fire/hold/serve, fire-course, advance-course, refund-payment, walkout-retry, split | 8 | 5 agents (researcher, kds, course, payment, split, build) |
+| **B-MED** | Event emission for 10 medium routes: discount toggle-off, item discount toggle-off, adjust-tip, tab transfer, employee open-tabs transfer, table transfer, bottle-service, pre-auth, block-time, kitchen print | 10 | 4 agents (discount-tip, tab-transfer, specialty, build) |
+| **B-LOW** | Event emission for 5 admin routes: cleanup-stale-orders, eod-cleanup, recovery/pending-auth, bulk-action, fix-commissions (documented skip) | 5 | 2 agents (admin, build) |
+| **C** | Switch 20 scalar-only reads to OrderSnapshot: labor/payroll reports, cleanup/EOD/recovery system jobs, customer count, entertainment status, order-type check, void approval, open tabs | 15 | 4 agents (reports, system, misc, build) |
+| **D** | Kill 25 remaining legacy-only writes, delete dead code, add Prisma write guard, deprecate Order/OrderItem in schema, update CLAUDE.md | 31 | 6 agents (auditor, events-simple, events-complex, events-system, cleanup, build) |
+
+### Phase D Details (Final Cleanup)
+
+**Event emission added to 25 remaining routes:**
+- 12 simple metadata: customer, mark-walkout, void-tab, auto-increment, bottle-service/re-auth, tabs PUT/DELETE, batch-adjust-tips, refund-payment tip, dispatch-online-order, item modifiers, fix-commissions POST
+- 10 complex transactions: retry-capture (4 paths), pat-complete, seating (2 routes), merge, transfer-items, split-tickets (3 routes), pay-all-splits
+- 3 system: shift force-close, EOD rollover, online checkout
+
+**Dead code removed:**
+- `src/lib/soft-delete.ts` — deleted entirely (zero callers for softDeleteOrder/softDeleteOrderItem)
+- `batchUpdateOrderItems()` — removed from batch-updates.ts (zero callers)
+
+**Guardrails added:**
+- `src/lib/order-write-guard.ts` — Prisma `$extends` middleware logs `[LEGACY_ORDER_WRITE]` warnings on direct Order/OrderItem mutations
+- Wired into `src/lib/db.ts` — every PrismaClient instance gets the guard
+- `prisma/schema.prisma` — Order and OrderItem models marked `@deprecated`
+- `CLAUDE.md` — New CRITICAL section: "Event-Sourced Order Writes (MANDATORY)" with 5 strict rules
+
+### Migration Final State
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Write paths with event emission | ~15 (35%) | **ALL** (100%) |
+| Reads on OrderSnapshot | 0 | 20 |
+| Dead legacy functions | 3 | 0 |
+| Schema completeness (OrderSnapshot) | ~40-50% | ~95% |
+| Architectural guardrails | None | Prisma guard + CLAUDE.md rules + schema deprecation |
+
+### Remaining Work (Future)
+- ~260 reads still on legacy Order (blocked by missing relations: payments, discounts, employee names, menuItem)
+- Phase C-2: Denormalize employee/customer display names onto snapshot
+- Phase C-4: Hot path reads (orders list, KDS, floor plan) need full relation denormalization
+- 3 sync pipeline routes intentionally kept on legacy (sync/outbox, orders/sync, payments/sync — receive data from source NUCs)
+
+### Bugs / Blockers
+None.
+
+---
+
 ## 2026-02-28 — Dual Pricing — Admin UI Card Price Auto-Population
 
 **Session Summary:** Added auto-calculated card price display to every cash price input across all admin menu builders. Card price is derived from the cash discount rate configured in Settings → General → Processing Program using `calculateCardPrice(cashPrice, cashDiscountPercent)`. Display is read-only, only shown when dual pricing is enabled and price > 0.
