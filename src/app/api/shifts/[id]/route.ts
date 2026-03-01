@@ -586,6 +586,37 @@ async function calculateShiftSummary(
     },
   })
 
+  // SAF (Store-and-Forward) payment tracking for shift close visibility
+  const safPendingPayments = await db.payment.findMany({
+    where: {
+      employeeId,
+      safStatus: 'APPROVED_SAF_PENDING_UPLOAD',
+      processedAt: {
+        gte: startTime,
+        lte: endTime,
+      },
+      order: { locationId },
+    },
+    select: { amount: true, tipAmount: true },
+  })
+  const safPendingCount = safPendingPayments.length
+  const safPendingTotal = safPendingPayments.reduce((sum, p) => sum + Number(p.amount) + Number(p.tipAmount), 0)
+
+  const safFailedPayments = await db.payment.findMany({
+    where: {
+      employeeId,
+      safStatus: { in: ['UPLOAD_FAILED', 'NEEDS_ATTENTION'] },
+      processedAt: {
+        gte: startTime,
+        lte: endTime,
+      },
+      order: { locationId },
+    },
+    select: { amount: true, tipAmount: true },
+  })
+  const safFailedCount = safFailedPayments.length
+  const safFailedTotal = safFailedPayments.reduce((sum, p) => sum + Number(p.amount) + Number(p.tipAmount), 0)
+
   return {
     totalSales: Math.round(totalSales * 100) / 100,
     cashSales: Math.round(cashSales * 100) / 100,
@@ -606,6 +637,11 @@ async function calculateShiftSummary(
       barSales: Math.round(barSales * 100) / 100,
       netSales: Math.round(netSales * 100) / 100,
     },
+    // SAF (Store-and-Forward) pending upload tracking
+    safPendingCount,
+    safPendingTotal: Math.round(safPendingTotal * 100) / 100,
+    safFailedCount,
+    safFailedTotal: Math.round(safFailedTotal * 100) / 100,
   }
 }
 

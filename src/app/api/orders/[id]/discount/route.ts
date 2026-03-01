@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
@@ -131,6 +131,26 @@ export const POST = withVenue(async function POST(
           discountId: alreadyApplied.id,
           lineItemId: null,
         })
+
+        // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+        void dispatchOrderSummaryUpdated(order.locationId, {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          status: order.status,
+          tableId: order.tableId || null,
+          tableName: null,
+          tabName: order.tabName || null,
+          guestCount: order.guestCount ?? 0,
+          employeeId: order.employeeId || null,
+          subtotalCents: Math.round(totals.subtotal * 100),
+          taxTotalCents: Math.round(totals.taxTotal * 100),
+          discountTotalCents: Math.round(totals.discountTotal * 100),
+          tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+          totalCents: Math.round(totals.total * 100),
+          itemCount: order.itemCount ?? 0,
+          updatedAt: new Date().toISOString(),
+          locationId: order.locationId,
+        }, { async: true }).catch(() => {})
 
         return NextResponse.json({ data: {
           toggled: 'off',
@@ -348,6 +368,26 @@ export const POST = withVenue(async function POST(
       orderId,
     }, { async: true }).catch(() => {})
 
+    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    void dispatchOrderSummaryUpdated(order.locationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      tableId: order.tableId || null,
+      tableName: null,
+      tabName: order.tabName || null,
+      guestCount: order.guestCount ?? 0,
+      employeeId: order.employeeId || null,
+      subtotalCents: Math.round(totals.subtotal * 100),
+      taxTotalCents: Math.round(totals.taxTotal * 100),
+      discountTotalCents: Math.round(totals.discountTotal * 100),
+      tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+      totalCents: Math.round(totals.total * 100),
+      itemCount: order.itemCount ?? 0,
+      updatedAt: new Date().toISOString(),
+      locationId: order.locationId,
+    }, { async: true }).catch(() => {})
+
     return NextResponse.json({ data: {
       discount: {
         id: discount.id,
@@ -497,6 +537,26 @@ export const DELETE = withVenue(async function DELETE(
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'created',
       orderId,
+    }, { async: true }).catch(() => {})
+
+    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    void dispatchOrderSummaryUpdated(order.locationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      tableId: order.tableId || null,
+      tableName: null,
+      tabName: order.tabName || null,
+      guestCount: order.guestCount ?? 0,
+      employeeId: order.employeeId || null,
+      subtotalCents: Math.round(totals.subtotal * 100),
+      taxTotalCents: Math.round(totals.taxTotal * 100),
+      discountTotalCents: Math.round(totals.discountTotal * 100),
+      tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+      totalCents: Math.round(totals.total * 100),
+      itemCount: order.itemCount ?? 0,
+      updatedAt: new Date().toISOString(),
+      locationId: order.locationId,
     }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {

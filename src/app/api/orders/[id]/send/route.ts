@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
-import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
@@ -246,6 +246,27 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Dispatch open orders update with 'sent' trigger — delta-only, no full snapshot reload
     void dispatchOpenOrdersChanged(order.locationId, { trigger: 'sent', orderId: order.id, tableId: order.tableId || undefined, orderNumber: order.orderNumber, status: 'occupied' }, { async: true }).catch(() => {})
+
+    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    // Send route transitions draft→open but doesn't change totals; emit status change
+    void dispatchOrderSummaryUpdated(order.locationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status === 'draft' ? 'open' : order.status,
+      tableId: order.tableId || null,
+      tableName: order.tabName || null,
+      tabName: order.tabName || null,
+      guestCount: order.guestCount ?? 0,
+      employeeId: order.employeeId || null,
+      subtotalCents: Math.round(Number(order.subtotal) * 100),
+      taxTotalCents: Math.round(Number(order.taxTotal) * 100),
+      discountTotalCents: Math.round(Number(order.discountTotal) * 100),
+      tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+      totalCents: Math.round(Number(order.total) * 100),
+      itemCount: order.itemCount ?? 0,
+      updatedAt: new Date().toISOString(),
+      locationId: order.locationId,
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

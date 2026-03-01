@@ -86,10 +86,15 @@ export async function dispatchNewOrder(
         await emitToTags(manifest.matchedTags, 'kds:order-received', orderEvent, locationId)
       }
 
-      // Also emit to location for general awareness
+      // Also emit to location for general awareness (enriched for Android)
       await emitToLocation(locationId, 'order:created', {
         orderId: routingResult.order.orderId,
         orderNumber: routingResult.order.orderNumber,
+        orderType: routingResult.order.orderType,
+        tableName: routingResult.order.tableName,
+        tabName: routingResult.order.tabName,
+        employeeName: routingResult.order.employeeName,
+        createdAt: routingResult.order.createdAt.toISOString(),
         stations: routingResult.manifests.map((m) => m.stationName),
       })
 
@@ -968,6 +973,122 @@ export function dispatchCFDReceiptSent(locationId: string, data: {
   total: number
 }): void {
   void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, data).catch(console.error)
+}
+
+// ==================== Order Summary Events (Android cross-terminal sync) ====================
+
+/**
+ * Order summary payload for cross-terminal sync.
+ * Android can upsert this directly into its open-orders list.
+ * All monetary values are in cents (integers) for Long compatibility.
+ */
+export interface OrderSummaryPayload {
+  orderId: string
+  orderNumber: number
+  status: string
+  tableId: string | null
+  tableName: string | null
+  tabName: string | null
+  guestCount: number
+  employeeId: string | null
+  subtotalCents: number
+  taxTotalCents: number
+  discountTotalCents: number
+  tipTotalCents: number
+  totalCents: number
+  itemCount: number
+  updatedAt: string       // ISO timestamp
+  locationId: string
+}
+
+/**
+ * Build an OrderSummaryPayload from a Prisma order object.
+ * Accepts any shape that has the required fields (Order, updatedOrder, etc.)
+ */
+export function buildOrderSummary(order: any): OrderSummaryPayload {
+  return {
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    status: order.status,
+    tableId: order.tableId || null,
+    tableName: order.table?.name || null,
+    tabName: order.tabName || null,
+    guestCount: order.guestCount ?? 0,
+    employeeId: order.employeeId || null,
+    subtotalCents: Math.round(Number(order.subtotal) * 100),
+    taxTotalCents: Math.round(Number(order.taxTotal) * 100),
+    discountTotalCents: Math.round(Number(order.discountTotal) * 100),
+    tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+    totalCents: Math.round(Number(order.total) * 100),
+    itemCount: order.itemCount ?? 0,
+    updatedAt: (order.updatedAt ?? new Date()).toISOString?.() ?? new Date().toISOString(),
+    locationId: order.locationId,
+  }
+}
+
+/**
+ * Dispatch order:summary-updated event for Android cross-terminal sync.
+ *
+ * Fires ALONGSIDE existing events (order:totals-updated, orders:list-changed).
+ * Android terminals upsert this payload into their open-orders list.
+ *
+ * Called from: addItems, sendToKitchen, applyDiscount, comp/void, pay, close-tab.
+ */
+export async function dispatchOrderSummaryUpdated(
+  locationId: string,
+  summary: OrderSummaryPayload,
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:summary-updated', summary)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch order:summary-updated:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async order:summary-updated failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch order:closed event when an order is paid/closed/voided/cancelled.
+ *
+ * Android terminals remove this order from their open-orders list.
+ */
+export async function dispatchOrderClosed(
+  locationId: string,
+  payload: {
+    orderId: string
+    status: string           // 'paid' | 'closed' | 'voided' | 'cancelled'
+    closedAt: string         // ISO timestamp
+    closedByEmployeeId: string | null
+    locationId: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:closed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch order:closed:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async order:closed failed:', err))
+    return true
+  }
+
+  return doEmit()
 }
 
 // ==================== Scale Events ====================

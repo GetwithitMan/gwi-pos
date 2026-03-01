@@ -16,7 +16,7 @@ import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
@@ -104,6 +104,8 @@ interface PaymentInput {
   entryMethod?: string
   signatureData?: string
   amountAuthorized?: number
+  // SAF (Store-and-Forward) — transaction stored offline on reader
+  storedOffline?: boolean
   // Simulated - will be replaced with real processor
   simulate?: boolean
 }
@@ -133,6 +135,8 @@ const PaymentInputSchema = z.object({
   entryMethod: z.string().optional(),
   signatureData: z.string().optional(),
   amountAuthorized: z.number().positive().optional(),
+  // SAF (Store-and-Forward) — transaction stored offline on reader, pending upload
+  storedOffline: z.boolean().optional(),
   // Simulated
   simulate: z.boolean().optional(),
 })
@@ -590,6 +594,8 @@ export const POST = withVenue(withTiming(async function POST(
         signatureData?: string
         amountAuthorized?: number
         amountRequested?: number
+        isOfflineCapture?: boolean
+        safStatus?: string
         cashDiscountAmount?: number
         priceBeforeDiscount?: number
         pricingMode?: string
@@ -707,7 +713,9 @@ export const POST = withVenue(withTiming(async function POST(
             signatureData: payment.signatureData,
             amountAuthorized: payment.amountAuthorized,
             amountRequested: payment.amount,
+            ...(payment.storedOffline && { isOfflineCapture: true }),
           }),
+          safStatus: payment.storedOffline ? 'APPROVED_SAF_PENDING_UPLOAD' : 'APPROVED_ONLINE',
         }
       } else if (payment.method === 'loyalty_points') {
         // Loyalty points redemption
@@ -1465,6 +1473,15 @@ export const POST = withVenue(withTiming(async function POST(
     // Include sourceTerminalId so receiving clients can suppress "closed on another terminal" banners
     if (orderIsPaid) {
       void dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined, sourceTerminalId: terminalId || undefined }, { async: true }).catch(() => {})
+
+      // Dispatch order:closed for Android cross-terminal sync (fire-and-forget)
+      void dispatchOrderClosed(order.locationId, {
+        orderId: order.id,
+        status: 'paid',
+        closedAt: new Date().toISOString(),
+        closedByEmployeeId: employeeId || null,
+        locationId: order.locationId,
+      }, { async: true }).catch(() => {})
     }
 
     // Notify CFD that receipt was sent — transitions CFD to thank-you screen (fire-and-forget)

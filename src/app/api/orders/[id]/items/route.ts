@@ -5,7 +5,7 @@ import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, calc
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded, dispatchTabItemsUpdated } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded, dispatchTabItemsUpdated, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { calculateIngredientCosts, calculateVariantCost } from '@/lib/inventory/recipe-costing'
@@ -716,6 +716,9 @@ export const POST = withVenue(async function POST(
     if (result.updatedOrder.tableId) {
       dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(() => {})
     }
+
+    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    void dispatchOrderSummaryUpdated(result.updatedOrder.locationId, buildOrderSummary(result.updatedOrder), { async: true }).catch(() => {})
 
     // If this is a bar tab, notify phone that items updated
     if (result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.status === 'open') {

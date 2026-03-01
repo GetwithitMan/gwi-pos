@@ -9,7 +9,7 @@ import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { getLocationSettings } from '@/lib/location-cache'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -589,6 +589,9 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     if (tableId) {
       dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
     }
+
+    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    void dispatchOrderSummaryUpdated(locationId, buildOrderSummary(order), { async: true }).catch(() => {})
 
     return NextResponse.json({ data: response })
   } catch (error) {

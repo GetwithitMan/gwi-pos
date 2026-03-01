@@ -314,6 +314,38 @@ async function runPrePushMigrations() {
       }
     }
 
+    // --- SAF payment status fields (v1.12.0) ---
+    const safFields = [
+      ['safStatus',     'TEXT',        null],
+      ['safUploadedAt', 'TIMESTAMPTZ', null],
+      ['safError',      'TEXT',        null],
+    ]
+    for (const [column, type] of safFields) {
+      try {
+        const exists = await columnExists(prisma, 'Payment', column)
+        if (!exists) {
+          console.log(`${PREFIX}   Adding Payment.${column}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "Payment" ADD COLUMN "${column}" ${type}`)
+          console.log(`${PREFIX}   Done — Payment.${column} added`)
+        }
+      } catch (err) {
+        console.error(`${PREFIX}   FAILED Payment.${column}:`, err.message)
+      }
+    }
+    // Index on safStatus for SAF pending queue queries
+    try {
+      const [safIdx] = await prisma.$queryRawUnsafe(
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'Payment' AND indexname = 'Payment_safStatus_idx'`
+      )
+      if (!safIdx) {
+        console.log(`${PREFIX}   Creating Payment_safStatus_idx...`)
+        await prisma.$executeRawUnsafe(`CREATE INDEX "Payment_safStatus_idx" ON "Payment" ("safStatus")`)
+        console.log(`${PREFIX}   Done`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Payment_safStatus_idx:`, err.message)
+    }
+
     // --- Postgres SEQUENCE for event-sourced order serverSequence ---
     try {
       await prisma.$executeRawUnsafe(

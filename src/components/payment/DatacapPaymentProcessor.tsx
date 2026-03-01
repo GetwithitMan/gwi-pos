@@ -7,6 +7,7 @@ import { useDatacap, DatacapResult } from '@/hooks/useDatacap'
 import { SwapConfirmationModal } from './SwapConfirmationModal'
 import { ReaderStatusIndicator } from './ReaderStatusIndicator'
 import { formatCurrency } from '@/lib/utils'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 
 interface DatacapPaymentProcessorProps {
   orderId: string
@@ -97,6 +98,42 @@ export function DatacapPaymentProcessor({
       }
     },
   })
+
+  // SAF auto-forward: when a SAF transaction was stored offline, register a one-time
+  // socket reconnect listener to trigger SAF forward for this reader when WAN returns
+  const safForwardFiredRef = useRef(false)
+  useEffect(() => {
+    if (processingStatus !== 'approved_saf') return
+    if (safForwardFiredRef.current) return
+    if (!reader?.id || !locationId) return
+
+    const readerIdForForward = readerId || reader.id
+
+    const socket = getSharedSocket()
+    const onReconnect = () => {
+      safForwardFiredRef.current = true
+      // Fire-and-forget SAF forward — reader will upload all queued transactions
+      void fetch('/api/datacap/saf/forward', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId, readerId: readerIdForForward }),
+      }).catch((err) => {
+        console.error('[DatacapPaymentProcessor] SAF forward failed:', err)
+      })
+    }
+
+    // If socket is already connected, fire immediately (WAN may be back)
+    if (socket.connected) {
+      onReconnect()
+    } else {
+      socket.once('connect', onReconnect)
+    }
+
+    return () => {
+      socket.off('connect', onReconnect)
+      releaseSharedSocket()
+    }
+  }, [processingStatus, reader?.id, readerId, locationId])
 
   const totalToCharge = amount + tipAmount
   const tipBasis = subtotal || amount
@@ -227,6 +264,8 @@ export function DatacapPaymentProcessor({
         return 'Authorizing...'
       case 'approved':
         return 'APPROVED'
+      case 'approved_saf':
+        return 'APPROVED (OFFLINE)'
       case 'declined':
         return 'DECLINED'
       case 'error':
@@ -377,7 +416,7 @@ export function DatacapPaymentProcessor({
         </div>
       </div>
 
-      {/* Success Overlay */}
+      {/* Success Overlay — Online Approval */}
       <AnimatePresence>
         {processingStatus === 'approved' && !partialResult && (
           <motion.div
@@ -393,9 +432,25 @@ export function DatacapPaymentProcessor({
         )}
       </AnimatePresence>
 
+      {/* SAF Approval Overlay — Stored Offline (Amber) */}
+      <AnimatePresence>
+        {processingStatus === 'approved_saf' && !partialResult && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-amber-600 flex flex-col items-center justify-center z-50 rounded-3xl"
+          >
+            <CheckBadgeIcon className="w-24 h-24 text-white mb-4" />
+            <h2 className="text-3xl font-black text-white">APPROVED</h2>
+            <p className="text-amber-100 font-bold mt-2">Stored offline — will upload when connected</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Partial Approval Overlay */}
       <AnimatePresence>
-        {processingStatus === 'approved' && partialResult && (
+        {(processingStatus === 'approved' || processingStatus === 'approved_saf') && partialResult && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

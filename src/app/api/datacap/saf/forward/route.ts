@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
+import { db } from '@/lib/db'
+import { logger } from '@/lib/logger'
 
 interface SAFForwardRequest {
   locationId: string
@@ -9,8 +11,21 @@ interface SAFForwardRequest {
 
 /**
  * POST /api/datacap/saf/forward
- * Forward all offline-stored SAF transactions to the processor
+ * Forward all offline-stored SAF transactions to the processor.
  * Datacap certification test 18.3
+ *
+ * CRITICAL — NO RE-AUTHORIZATION:
+ * This route ONLY submits the already-approved SAF batch stored on the reader
+ * to the payment processor. It does NOT create new authorizations or re-charge
+ * any cards. The card approval already happened at the reader during the
+ * original transaction (SAF mode). This call simply uploads that stored batch.
+ *
+ * The Datacap SAF_FORWARD_ALL tran code is an admin/batch operation — it tells
+ * the reader to upload its stored offline transactions. No card data is sent,
+ * no new auth is requested.
+ *
+ * After forwarding, we update all APPROVED_SAF_PENDING_UPLOAD Payment records
+ * for this reader to UPLOAD_SUCCESS (or UPLOAD_FAILED on error).
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -25,11 +40,39 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const client = await requireDatacapClient(locationId)
 
     const response = await client.safForwardAll(readerId)
+    const success = response.cmdStatus === 'Success'
+    const safForwarded = parseInt(response.safForwarded || '0', 10)
+
+    // Update Payment records: SAF_PENDING_UPLOAD → UPLOAD_SUCCESS or UPLOAD_FAILED
+    // Only update payments that are still pending upload for this reader
+    const newStatus = success ? 'UPLOAD_SUCCESS' : 'UPLOAD_FAILED'
+    const updateData: Record<string, unknown> = {
+      safStatus: newStatus,
+      safUploadedAt: success ? new Date() : undefined,
+    }
+    if (!success) {
+      updateData.safError = response.textResponse || response.cmdStatus || 'SAF forward failed'
+    }
+
+    const updated = await db.payment.updateMany({
+      where: {
+        paymentReaderId: readerId,
+        safStatus: 'APPROVED_SAF_PENDING_UPLOAD',
+        order: { locationId },
+      },
+      data: updateData,
+    })
+
+    logger.log('datacap', `SAF forward complete: ${safForwarded} forwarded, ${updated.count} payment records updated to ${newStatus}`, {
+      readerId, locationId, safForwarded, updatedCount: updated.count, success,
+    })
 
     return Response.json({
       data: {
-        success: response.cmdStatus === 'Success',
-        safForwarded: parseInt(response.safForwarded || '0', 10),
+        success,
+        safForwarded,
+        paymentsUpdated: updated.count,
+        newStatus,
         sequenceNo: response.sequenceNo,
       },
     })

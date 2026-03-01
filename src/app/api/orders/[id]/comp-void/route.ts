@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals, recalculatePercentDiscounts, getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { getDatacapClient } from '@/lib/datacap/helpers'
@@ -639,6 +639,37 @@ export const POST = withVenue(async function POST(
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch order totals update:', err)
     })
+
+    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    void dispatchOrderSummaryUpdated(order.locationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: shouldAutoClose ? 'cancelled' : order.status,
+      tableId: order.tableId || null,
+      tableName: null,
+      tabName: order.tabName || null,
+      guestCount: order.guestCount ?? 0,
+      employeeId: order.employeeId || null,
+      subtotalCents: Math.round(totals.subtotal * 100),
+      taxTotalCents: Math.round(totals.taxTotal * 100),
+      discountTotalCents: Math.round(totals.discountTotal * 100),
+      tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+      totalCents: Math.round(totals.total * 100),
+      itemCount: activeItems.reduce((sum, i) => sum + i.quantity, 0),
+      updatedAt: new Date().toISOString(),
+      locationId: order.locationId,
+    }, { async: true }).catch(() => {})
+
+    // Dispatch order:closed when all items voided/comped (auto-close)
+    if (shouldAutoClose) {
+      void dispatchOrderClosed(order.locationId, {
+        orderId: order.id,
+        status: 'cancelled',
+        closedAt: new Date().toISOString(),
+        closedByEmployeeId: employeeId,
+        locationId: order.locationId,
+      }, { async: true }).catch(() => {})
+    }
 
     // If this was a split child, also dispatch parent order totals update
     if (order.parentOrderId && parentTotals) {

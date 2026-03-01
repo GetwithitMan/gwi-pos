@@ -8,7 +8,8 @@ export type DatacapProcessingStatus =
   | 'checking_reader'   // Verifying reader identity
   | 'waiting_card'      // Waiting for customer to tap/insert/swipe
   | 'authorizing'       // Transaction sent to processor
-  | 'approved'          // Payment approved
+  | 'approved'          // Payment approved (online)
+  | 'approved_saf'      // Payment approved but stored offline (SAF — pending upload)
   | 'declined'          // Payment declined
   | 'error'             // Reader error or timeout
 
@@ -56,6 +57,9 @@ export interface DatacapResult {
 
   // Signature (chargeback defense)
   signatureData?: string // Base64 signature from reader
+
+  // SAF (Store-and-Forward) — transaction stored offline on reader, pending upload
+  storedOffline?: boolean
 }
 
 // Datacap device info response
@@ -145,7 +149,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
   const readerRef = useRef<PaymentReader | null>(null)
 
   // Computed values
-  const isProcessing = processingStatus !== 'idle' && processingStatus !== 'approved' && processingStatus !== 'declined' && processingStatus !== 'error'
+  const isProcessing = processingStatus !== 'idle' && processingStatus !== 'approved' && processingStatus !== 'approved_saf' && processingStatus !== 'declined' && processingStatus !== 'error'
   const boundReaderId = reader?.id || null
   const canSwap = !!backupReader && backupReader.id !== reader?.id
 
@@ -478,6 +482,12 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         const isPartialApproval = amountAuthorized > 0 &&
           (amountForPartialCheck - amountAuthorized) > 0.01
 
+        // Detect SAF (Store-and-Forward) — transaction stored offline on reader
+        const storedOffline = txResult.storedOffline === true ||
+          txResult.StoredOffline === 'Yes' ||
+          (typeof txResult.textResponse === 'string' && txResult.textResponse.toUpperCase().includes('STORED OFFLINE')) ||
+          (typeof txResult.TextResponse === 'string' && txResult.TextResponse.toUpperCase().includes('STORED OFFLINE'))
+
         // Parse Datacap response
         const result: DatacapResult = {
           approved: txResult.approved || txResult.status === 'APPROVED' || txResult.ResponseCode === '00',
@@ -497,10 +507,13 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
           // Signature capture (Base64 from reader for chargeback defense)
           signatureData: txResult.signatureData || txResult.SignatureData ||
                          txResult.Signature || txResult.signature,
+
+          // SAF status
+          storedOffline,
         }
 
         if (result.approved) {
-          setProcessingStatus('approved')
+          setProcessingStatus(storedOffline ? 'approved_saf' : 'approved')
           onSuccess?.(result)
         } else {
           setProcessingStatus('declined')

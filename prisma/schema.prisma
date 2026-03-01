@@ -2527,6 +2527,12 @@ model Payment {
   offlineCapturedAt DateTime? // When it was queued for offline capture
   offlineTerminalId String? // Which terminal processed this offline
 
+  // SAF (Store-and-Forward) status tracking
+  // Values: APPROVED_ONLINE, APPROVED_SAF_PENDING_UPLOAD, UPLOAD_SUCCESS, UPLOAD_FAILED, NEEDS_ATTENTION
+  safStatus         String?   // null for cash/non-card; set for all card payments
+  safUploadedAt     DateTime? // When SAF batch was uploaded to processor
+  safError          String?   // Last SAF upload error message (UPLOAD_FAILED/NEEDS_ATTENTION)
+
   // Dual Pricing / Cash Discount (Visa Compliance)
   cashDiscountAmount  Decimal? // Amount of cash discount applied (null if no dual pricing)
   priceBeforeDiscount Decimal? // Original card price before cash discount
@@ -2569,6 +2575,7 @@ model Payment {
   @@index([processedAt])
   @@index([employeeId])
   @@index([isOfflineCapture])
+  @@index([safStatus])
   @@index([needsReconciliation])
   @@index([locationId, createdAt])
   @@index([locationId, paymentMethod, createdAt])

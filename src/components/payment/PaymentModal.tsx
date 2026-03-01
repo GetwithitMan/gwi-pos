@@ -63,6 +63,8 @@ interface PendingPayment {
   entryMethod?: string
   signatureData?: string
   amountAuthorized?: number
+  // SAF (Store-and-Forward) — transaction stored offline on reader
+  storedOffline?: boolean
 }
 
 interface GiftCardInfo {
@@ -666,6 +668,7 @@ export function PaymentModal({
       entryMethod: result.entryMethod,
       signatureData: result.signatureData,
       amountAuthorized: result.amountAuthorized,
+      storedOffline: result.storedOffline,
     }
     processPayments([...pendingPayments, payment], pendingPayments)
   }
@@ -691,6 +694,7 @@ export function PaymentModal({
         entryMethod: p.entryMethod,
         signatureData: p.signatureData,
         amountAuthorized: p.amountAuthorized,
+        storedOffline: p.storedOffline,
       } : {}),
     })),
     employeeId,
@@ -998,6 +1002,9 @@ export function PaymentModal({
                       <span style={{ color: '#a5b4fc' }}>
                         {'\u2713'} {PAYMENT_METHOD_LABELS[p.method] ?? p.method}
                         {p.cardLast4 ? ` \u2022\u2022\u2022${p.cardLast4}` : ''}
+                        {p.storedOffline && (
+                          <span style={{ marginLeft: 6, fontSize: 10, color: '#f59e0b', background: 'rgba(245, 158, 11, 0.15)', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>SAF</span>
+                        )}
                       </span>
                       <span style={{ fontFamily: 'ui-monospace, monospace', color: '#c7d2fe' }}>
                         {formatCurrency(p.amount + p.tipAmount)}
@@ -1015,7 +1022,7 @@ export function PaymentModal({
 
               <h3 style={sectionLabelStyle}>Select Payment Method</h3>
 
-              {/* Disconnected warning — block payments when no server connection */}
+              {/* Disconnected warning — card payments disabled, cash still available */}
               {!isConnected && (
                 <div style={{
                   padding: '12px 16px',
@@ -1037,7 +1044,7 @@ export function PaymentModal({
                     flexShrink: 0,
                   }} />
                   <span style={{ color: '#f87171', fontSize: 14, fontWeight: 600 }}>
-                    Payment unavailable — no connection to server
+                    Card payments unavailable — no connection to server. Cash accepted.
                   </span>
                 </div>
               )}
@@ -1151,7 +1158,6 @@ export function PaymentModal({
               {paymentSettings.acceptCash && (
                 <button
                   onClick={() => handleSelectMethod('cash')}
-                  disabled={!isConnected}
                   style={{
                     width: '100%',
                     height: 72,
@@ -1162,9 +1168,8 @@ export function PaymentModal({
                     borderRadius: 12,
                     border: '1px solid rgba(34, 197, 94, 0.3)',
                     background: 'rgba(34, 197, 94, 0.08)',
-                    cursor: !isConnected ? 'not-allowed' : 'pointer',
+                    cursor: 'pointer',
                     textAlign: 'left' as const,
-                    opacity: !isConnected ? 0.5 : 1,
                   }}
                 >
                   <span style={{ fontSize: 28 }}>💵</span>
@@ -1184,7 +1189,7 @@ export function PaymentModal({
               {paymentSettings.acceptCash && cashTotal > 0 && (
                 <button
                   onClick={handleCashExact}
-                  disabled={isProcessing || !isConnected}
+                  disabled={isProcessing}
                   style={{
                     width: '100%',
                     height: 56,
@@ -1195,9 +1200,9 @@ export function PaymentModal({
                     borderRadius: 12,
                     border: '2px solid rgba(34, 197, 94, 0.5)',
                     background: 'rgba(34, 197, 94, 0.2)',
-                    cursor: (isProcessing || !isConnected) ? 'not-allowed' : 'pointer',
+                    cursor: isProcessing ? 'not-allowed' : 'pointer',
                     textAlign: 'left' as const,
-                    opacity: (isProcessing || !isConnected) ? 0.5 : 1,
+                    opacity: isProcessing ? 0.5 : 1,
                   }}
                 >
                   <span style={{ fontSize: 22, color: '#22c55e', fontWeight: 900 }}>$</span>

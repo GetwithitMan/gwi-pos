@@ -28,6 +28,11 @@ interface ShiftSummary {
     barSales: number
     netSales: number
   }
+  // SAF (Store-and-Forward) pending upload tracking
+  safPendingCount?: number
+  safPendingTotal?: number
+  safFailedCount?: number
+  safFailedTotal?: number
 }
 
 interface ShiftData {
@@ -765,6 +770,35 @@ export function ShiftCloseoutModal({
                           </div>
                         )}
                       </div>
+                    </Card>
+                  )}
+
+                  {((summary.safPendingCount ?? 0) > 0 || (summary.safFailedCount ?? 0) > 0) && (
+                    <Card className={`p-4 ${(summary.safFailedCount ?? 0) > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+                      <div className="text-sm font-medium mb-2">Offline Card Payments (SAF)</div>
+                      <div className="space-y-1">
+                        {(summary.safPendingCount ?? 0) > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-amber-700">Pending Upload</span>
+                            <span className="font-medium text-amber-700">
+                              {summary.safPendingCount} — {formatCurrency(summary.safPendingTotal ?? 0)}
+                            </span>
+                          </div>
+                        )}
+                        {(summary.safFailedCount ?? 0) > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-red-700">Failed / Needs Attention</span>
+                            <span className="font-medium text-red-700">
+                              {summary.safFailedCount} — {formatCurrency(summary.safFailedTotal ?? 0)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {(summary.safFailedCount ?? 0) > 0
+                          ? 'Failed uploads need manager attention before closing shift.'
+                          : 'These payments were approved offline and will upload when internet returns.'}
+                      </p>
                     </Card>
                   )}
 
