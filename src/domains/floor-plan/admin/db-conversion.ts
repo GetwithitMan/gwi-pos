@@ -170,9 +170,16 @@ export function fixtureToElement(fixture: Omit<Fixture, 'id'> | Fixture): Partia
 
   const rotation = fixture.geometry.type === 'rectangle' ? (fixture.geometry.rotation || 0) : 0;
 
+  // Map fixture category → FloorPlanElementType enum (entertainment|decoration|barrier|stage)
+  const elementType =
+    fixture.category === 'barrier' || fixture.category === 'surface' ? 'barrier' :
+    fixture.category === 'zone' || fixture.category === 'passage' ||
+    fixture.category === 'clearance' || fixture.category === 'decorative' ? 'decoration' :
+    'barrier';
+
   return {
     name: fixture.label,
-    elementType: 'fixture',
+    elementType,
     visualType: fixture.type,
     geometry: dbGeometry,
     posX: feetToPixels(posX),
