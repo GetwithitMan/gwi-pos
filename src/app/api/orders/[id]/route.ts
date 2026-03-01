@@ -149,13 +149,15 @@ export const GET = withVenue(async function GET(
         if (dp?.enabled) {
           panelCashDiscountPercent = dp.cashDiscountPercent ?? 4.0
           const sub = Number(order.subtotal)
-          const cardSub = calculateCardPrice(sub, panelCashDiscountPercent)
-          const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
-          const cashTax = roundToCents(sub * taxRate)
-          const cardTax = roundToCents(cardSub * taxRate)
           const disc = Number(order.discountTotal || 0)
-          panelCashTotal = roundToCents(sub + cashTax - disc)
-          panelCardTotal = roundToCents(cardSub + cardTax - disc)
+          const discountedCashSub = Math.max(0, sub - disc)
+          const cardSub = calculateCardPrice(sub, panelCashDiscountPercent)
+          const discountedCardSub = Math.max(0, cardSub - disc)
+          const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
+          const cashTax = roundToCents(discountedCashSub * taxRate)
+          const cardTax = roundToCents(discountedCardSub * taxRate)
+          panelCashTotal = roundToCents(discountedCashSub + cashTax)
+          panelCardTotal = roundToCents(discountedCardSub + cardTax)
         }
       } catch {
         // Settings unavailable — fall back to order.total
@@ -262,12 +264,15 @@ export const GET = withVenue(async function GET(
       if (dualPricing?.enabled) {
         cashDiscountPercent = dualPricing.cashDiscountPercent ?? 4.0
         const cashSub = Number(order.subtotal)
+        const disc = Number(order.discountTotal || 0)
+        const discountedCashSub = Math.max(0, cashSub - disc)
         const cardSub = calculateCardPrice(cashSub, cashDiscountPercent)
+        const discountedCardSub = Math.max(0, cardSub - disc)
         const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
-        const cashTax = roundToCents(cashSub * taxRate)
-        const cardTax = roundToCents(cardSub * taxRate)
-        cashTotal = roundToCents(cashSub + cashTax - Number(order.discountTotal || 0))
-        cardTotal = roundToCents(cardSub + cardTax - Number(order.discountTotal || 0))
+        const cashTax = roundToCents(discountedCashSub * taxRate)
+        const cardTax = roundToCents(discountedCardSub * taxRate)
+        cashTotal = roundToCents(discountedCashSub + cashTax)
+        cardTotal = roundToCents(discountedCardSub + cardTax)
       }
     } catch {
       // Settings unavailable — fall back to order.total for both

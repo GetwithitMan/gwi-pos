@@ -189,9 +189,12 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      discountName = body.name || (body.type === 'percent' ? `${body.value}% Off` : `$${body.value} Off`)
+      // Normalize type: accept 'percent'/'PERCENTAGE'/'Percent' and 'fixed'/'FIXED'/'Fixed'/'FLAT'
+      const normalizedType = body.type.toLowerCase().startsWith('percent') ? 'percent' : 'fixed'
 
-      if (body.type === 'percent') {
+      discountName = body.name || (normalizedType === 'percent' ? `${body.value}% Off` : `$${body.value} Off`)
+
+      if (normalizedType === 'percent') {
         if (body.value > 100) {
           return NextResponse.json(
             { error: 'Percentage cannot exceed 100%' },
