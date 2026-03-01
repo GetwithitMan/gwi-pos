@@ -15,6 +15,7 @@ import {
   dispatchCFDShowOrder,
   dispatchCFDPaymentStarted,
   dispatchCFDTipPrompt,
+  dispatchCFDSignatureRequest,
   dispatchCFDReceiptSent,
 } from '@/lib/socket-dispatch'
 
@@ -36,6 +37,9 @@ export const POST = withVenue(async (request: Request) => {
         break
       case 'tip-prompt':
         dispatchCFDTipPrompt(locationId, payload)
+        break
+      case 'signature-request':
+        dispatchCFDSignatureRequest(locationId, payload)
         break
       case 'receipt-sent':
         dispatchCFDReceiptSent(locationId, payload)

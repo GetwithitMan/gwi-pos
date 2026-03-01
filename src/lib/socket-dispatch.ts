@@ -943,6 +943,20 @@ export function dispatchCFDTipPrompt(locationId: string, data: {
 }
 
 /**
+ * Dispatch CFD signature-request event
+ *
+ * Called when the payment terminal requires a signature from the customer.
+ * Transitions the CFD to the signature capture screen.
+ */
+export function dispatchCFDSignatureRequest(locationId: string, data: {
+  terminalId?: string
+  orderId: string
+  transactionId?: string
+}): void {
+  void emitToLocation(locationId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch(console.error)
+}
+
+/**
  * Dispatch CFD receipt-sent event
  *
  * Called after a successful payment DB write when the order is fully paid.
