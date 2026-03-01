@@ -221,7 +221,8 @@ export const POST = withVenue(async function POST(
     }, { async: true }).catch(() => {})
 
     if (sourceWasCancelled) {
-      void emitOrderEvent(fromOrder.locationId, fromOrderId, 'ORDER_CANCELLED', {
+      void emitOrderEvent(fromOrder.locationId, fromOrderId, 'ORDER_CLOSED', {
+        closedStatus: 'cancelled',
         reason: 'All items transferred out',
       }).catch(console.error)
       void dispatchOpenOrdersChanged(fromOrder.locationId, {
