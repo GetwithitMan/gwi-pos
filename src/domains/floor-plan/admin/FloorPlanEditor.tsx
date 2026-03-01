@@ -119,11 +119,12 @@ export function FloorPlanEditor({
     try {
       const response = await fetch(`/api/sections?locationId=${locationId}`);
       if (response.ok) {
-        const data = await response.json();
-        setDbSections(data.sections || []);
+        const json = await response.json();
+        const sections = json.data?.sections || json.sections || [];
+        setDbSections(sections);
         // Auto-select first section if none selected
-        if (data.sections?.length > 0 && !selectedRoomId) {
-          setSelectedRoomId(data.sections[0].id);
+        if (sections.length > 0 && !selectedRoomId) {
+          setSelectedRoomId(sections[0].id);
         }
       }
     } catch (error) {
@@ -145,8 +146,8 @@ export function FloorPlanEditor({
     try {
       const response = await fetch(`/api/floor-plan-elements?locationId=${locationId}&sectionId=${selectedRoomId}`);
       if (response.ok) {
-        const data = await response.json();
-        setDbElements(data.elements || []);
+        const json = await response.json();
+        setDbElements(json.data?.elements || json.elements || []);
       }
     } catch (error) {
       logger.error('Failed to fetch floor plan elements:', error);
@@ -167,9 +168,9 @@ export function FloorPlanEditor({
     try {
       const response = await fetch(`/api/tables?locationId=${locationId}&sectionId=${selectedRoomId}&includeSeats=true`);
       if (response.ok) {
-        const data = await response.json();
+        const json = await response.json();
         // Map API response to EditorTable format
-        const editorTables: EditorTable[] = (data.tables || []).map((t: Record<string, unknown>) => ({
+        const editorTables: EditorTable[] = (json.data?.tables || json.tables || []).map((t: Record<string, unknown>) => ({
           id: t.id as string,
           name: t.name as string,
           abbreviation: t.abbreviation as string | null,
