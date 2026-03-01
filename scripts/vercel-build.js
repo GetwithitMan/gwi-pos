@@ -316,6 +316,68 @@ async function runPrePushMigrations() {
   console.log('[vercel-build] Pre-push migrations complete')
 }
 
+/**
+ * Sync schema to all venue databases on this Neon project.
+ *
+ * Each venue uses its own DB (gwi_pos_{slug}) on the same Neon endpoint.
+ * Vercel build only syncs the master gwi_pos DB by default; this step
+ * ensures existing venue DBs stay in sync after schema changes.
+ *
+ * New venues are handled at provision time (via /api/internal/provision),
+ * so they always start with the correct schema — this only covers existing ones.
+ */
+async function syncVenueSchemas() {
+  const { neon } = require('@neondatabase/serverless')
+  const sql = neon(process.env.DATABASE_URL)
+
+  // Enumerate all venue DBs on this Neon project (same credentials, different DB name)
+  const venueRows = await sql`
+    SELECT datname FROM pg_database
+    WHERE datname LIKE 'gwi_pos_%' AND datname != 'gwi_pos'
+    ORDER BY datname
+  `
+
+  if (venueRows.length === 0) {
+    console.log('[vercel-build] No venue databases found, skipping venue sync')
+    return
+  }
+
+  console.log(`[vercel-build] Syncing schema for ${venueRows.length} venue database(s)...`)
+
+  // Replace the DB name portion of a postgres URL (e.g. /gwi_pos? → /gwi_pos_foo?)
+  function swapDb(url, dbName) {
+    return url.replace(/\/[^/?]+(\?|$)/, `/${dbName}$1`)
+  }
+
+  const basePooler = process.env.DATABASE_URL
+  const baseDirect = process.env.DIRECT_URL || process.env.DATABASE_URL
+
+  for (const { datname } of venueRows) {
+    const venuePooler = swapDb(basePooler, datname)
+    const venueDirect = swapDb(baseDirect, datname)
+
+    console.log(`[vercel-build]   → ${datname}`)
+    try {
+      // 1. Run pre-push migrations (adds columns that can't be added by db push alone)
+      execSync('node scripts/nuc-pre-migrate.js', {
+        stdio: 'inherit',
+        env: { ...process.env, NEON_MIGRATE: 'true', NEON_DATABASE_URL: venueDirect },
+      })
+
+      // 2. Push full Prisma schema
+      execSync('npx prisma db push --skip-generate --accept-data-loss', {
+        stdio: 'inherit',
+        env: { ...process.env, DATABASE_URL: venuePooler, DIRECT_URL: venueDirect },
+      })
+    } catch (err) {
+      // Log but don't fail the build — a single venue schema error shouldn't block deploy
+      console.error(`[vercel-build]   FAILED ${datname}:`, err.message)
+    }
+  }
+
+  console.log('[vercel-build] Venue schema sync complete')
+}
+
 async function main() {
   // Generate Prisma client
   console.log('[vercel-build] Running prisma generate...')
@@ -324,12 +386,15 @@ async function main() {
   // Run pre-push migrations before db push
   await runPrePushMigrations()
 
-  // Sync schema to Neon PostgreSQL
+  // Sync schema to Neon PostgreSQL (master DB)
   // --skip-generate: already ran above
   // --accept-data-loss: required for safe type casts (e.g. Float→Decimal) and
   // new unique constraints. Pre-push migrations above handle the real data safety.
-  console.log('[vercel-build] Running prisma db push...')
+  console.log('[vercel-build] Running prisma db push (master)...')
   execSync('npx prisma db push --skip-generate --accept-data-loss', { stdio: 'inherit' })
+
+  // Sync schema to all existing venue DBs (same Neon project, different DB name per venue)
+  await syncVenueSchemas()
 
   // Build Next.js
   console.log('[vercel-build] Running next build...')
