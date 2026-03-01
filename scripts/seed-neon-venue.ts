@@ -124,16 +124,57 @@ async function seedMenu(local: PrismaClient, neon: PrismaClient) {
   log(`${count} menu items`)
 }
 
+// ─── Sections ────────────────────────────────────────────────────────────────
+
+async function seedSections(local: PrismaClient, neon: PrismaClient): Promise<Record<string, string>> {
+  console.log('\n[neon] Seeding sections (rooms)...')
+  await neon.section.deleteMany({ where: { locationId: TARGET_LOC } })
+  const sections = await local.section.findMany({
+    where: { locationId: SOURCE_LOC, deletedAt: null },
+    orderBy: { sortOrder: 'asc' },
+  })
+  const sectionIdMap: Record<string, string> = {}
+  for (const s of sections) {
+    const created = await neon.section.create({
+      data: {
+        locationId: TARGET_LOC,
+        name: s.name,
+        color: s.color,
+        sortOrder: s.sortOrder,
+        widthFeet: s.widthFeet,
+        heightFeet: s.heightFeet,
+        gridSizeFeet: s.gridSizeFeet,
+      },
+    })
+    sectionIdMap[s.id] = created.id
+  }
+  log(`${sections.length} sections`)
+  return sectionIdMap
+}
+
 // ─── Tables ─────────────────────────────────────────────────────────────────
 
-async function seedTables(local: PrismaClient, neon: PrismaClient) {
+async function seedTables(local: PrismaClient, neon: PrismaClient, sectionIdMap: Record<string, string> = {}) {
   console.log('\n[neon] Seeding tables...')
-  const sourceTables = await local.table.findMany({ where: { locationId: SOURCE_LOC } })
-  // Upsert by name
+  const sourceTables = await local.table.findMany({
+    where: { locationId: SOURCE_LOC, isActive: true, deletedAt: null },
+  })
   await neon.table.deleteMany({ where: { locationId: TARGET_LOC } })
   for (const t of sourceTables) {
+    const newSectionId = t.sectionId ? (sectionIdMap[t.sectionId] ?? null) : null
     await neon.table.create({
-      data: { locationId: TARGET_LOC, name: t.name, capacity: t.capacity },
+      data: {
+        locationId: TARGET_LOC,
+        name: t.name,
+        capacity: t.capacity,
+        sectionId: newSectionId,
+        posX: t.posX,
+        posY: t.posY,
+        rotation: t.rotation,
+        shape: t.shape,
+        width: t.width,
+        height: t.height,
+      },
     })
   }
   log(`${sourceTables.length} tables`)
@@ -215,8 +256,9 @@ async function main() {
   const neon = client(NEON_VENUE_URL)
 
   try {
+    const sectionIdMap = await seedSections(local, neon)
     await seedMenu(local, neon)
-    await seedTables(local, neon)
+    await seedTables(local, neon, sectionIdMap)
     await seedOrderTypes(local, neon)
     await seedRolesAndEmployees(local, neon)
     await seedDrawers(local, neon)
