@@ -265,6 +265,7 @@ export function FloorPlanEditor({
   const handleFixtureCreate = useCallback(
     async (fixture: Omit<Fixture, 'id'>) => {
       if (useDatabase) {
+        if (!locationId || !selectedRoomId) return;
         try {
           const elementData = fixtureToElement(fixture);
           const response = await fetch('/api/floor-plan-elements', {
@@ -272,13 +273,17 @@ export function FloorPlanEditor({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               sectionId: selectedRoomId,
-              locationId: locationId || '',
+              locationId,
               ...elementData,
             }),
           });
           if (response.ok) {
             await fetchElements();
             setRefreshKey((prev) => prev + 1);
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            logger.error('Failed to create fixture:', errData.error || response.statusText);
+            toast.error(`Failed to create fixture: ${errData.error || response.statusText}`);
           }
         } catch (error) {
           logger.error('Failed to create element:', error);
@@ -520,7 +525,7 @@ export function FloorPlanEditor({
     width: number;
     height: number;
   }) => {
-    if (!locationId) return;
+    if (!locationId || !selectedRoomId) return;
 
     try {
       const response = await fetch('/api/floor-plan-elements', {
@@ -542,11 +547,17 @@ export function FloorPlanEditor({
       });
 
       if (response.ok) {
-        const data = await response.json();
-        const newFixture = elementToFixture(data.element, selectedRoomId || '');
-        setDbElements(prev => [...prev, data.element]);
-        setPlacedEntertainmentIds(prev => [...prev, element.linkedMenuItemId]);
-        setRefreshKey((prev) => prev + 1);
+        const json = await response.json();
+        const newElement = json.data?.element || json.element;
+        if (newElement) {
+          setDbElements(prev => [...prev, newElement]);
+          setPlacedEntertainmentIds(prev => [...prev, element.linkedMenuItemId]);
+          setRefreshKey((prev) => prev + 1);
+        }
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        logger.error('Failed to add entertainment:', errData.error || response.statusText);
+        toast.error(`Failed to add entertainment: ${errData.error || response.statusText}`);
       }
     } catch (error) {
       logger.error('Failed to add entertainment:', error);
