@@ -85,9 +85,9 @@ export function AddEntertainmentPalette({
         `/api/menu/items?locationId=${locationId}`
       )
       if (response.ok) {
-        const data = await response.json()
-        // Filter to only items in entertainment category
-        const entertainmentOnly = (data.items || []).filter(
+        const json = await response.json()
+        const allItems = json.data?.items || json.items || []
+        const entertainmentOnly = allItems.filter(
           (item: EntertainmentMenuItem) => item.categoryType === 'entertainment'
         )
         setEntertainmentItems(entertainmentOnly)
