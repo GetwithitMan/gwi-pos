@@ -1447,6 +1447,9 @@ model MenuItem {
   weightUnit         String? // "lb" | "kg" | "oz" | "g"
   pricePerWeightUnit Decimal? // Price per weight unit (e.g. 5.99/lb)
 
+  // Customer-Facing Display (CFD) - featured items shown on idle screen
+  isFeaturedCfd Boolean @default(false)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
