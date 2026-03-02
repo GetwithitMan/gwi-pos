@@ -356,6 +356,94 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED creating order_event_server_seq:`, err.message)
     }
 
+    // --- CFD: Add CFD_DISPLAY to TerminalCategory enum ---
+    try {
+      const [enumVal] = await prisma.$queryRawUnsafe(
+        `SELECT 1 FROM pg_enum WHERE enumlabel = 'CFD_DISPLAY' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'TerminalCategory') LIMIT 1`
+      )
+      if (!enumVal) {
+        console.log(`${PREFIX}   Adding CFD_DISPLAY to TerminalCategory enum...`)
+        await prisma.$executeRawUnsafe(`ALTER TYPE "TerminalCategory" ADD VALUE 'CFD_DISPLAY'`)
+        console.log(`${PREFIX}   Done — TerminalCategory.CFD_DISPLAY added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED TerminalCategory.CFD_DISPLAY:`, err.message)
+    }
+
+    // --- CFD: New Terminal columns for CFD pairing ---
+    const cfdTerminalFields = [
+      ['cfdTerminalId',     'TEXT',               null],
+      ['cfdIpAddress',      'TEXT',               null],
+      ['cfdConnectionMode', `TEXT DEFAULT 'usb'`, null],
+    ]
+    for (const [column] of cfdTerminalFields) {
+      try {
+        const exists = await columnExists(prisma, 'Terminal', column)
+        if (!exists) {
+          const colDef = cfdTerminalFields.find(([c]) => c === column)[1]
+          console.log(`${PREFIX}   Adding Terminal.${column}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "Terminal" ADD COLUMN "${column}" ${colDef}`)
+          console.log(`${PREFIX}   Done — Terminal.${column} added`)
+        }
+      } catch (err) {
+        console.error(`${PREFIX}   FAILED Terminal.${column}:`, err.message)
+      }
+    }
+
+    // --- CFD: Index on Terminal.cfdTerminalId ---
+    try {
+      const [idx] = await prisma.$queryRawUnsafe(
+        `SELECT indexname FROM pg_indexes WHERE tablename = 'Terminal' AND indexname = 'Terminal_cfdTerminalId_idx'`
+      )
+      if (!idx) {
+        console.log(`${PREFIX}   Creating Terminal_cfdTerminalId_idx...`)
+        await prisma.$executeRawUnsafe(`CREATE INDEX "Terminal_cfdTerminalId_idx" ON "Terminal" ("cfdTerminalId")`)
+        console.log(`${PREFIX}   Done`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Terminal_cfdTerminalId_idx:`, err.message)
+    }
+
+    // --- CFD: Create CfdSettings table ---
+    try {
+      const [table] = await prisma.$queryRawUnsafe(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'CfdSettings' LIMIT 1`
+      )
+      if (!table) {
+        console.log(`${PREFIX}   Creating CfdSettings table...`)
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE "CfdSettings" (
+            "id"                       TEXT NOT NULL,
+            "locationId"               TEXT NOT NULL,
+            "tipMode"                  TEXT NOT NULL DEFAULT 'pre_tap',
+            "tipStyle"                 TEXT NOT NULL DEFAULT 'percent',
+            "tipOptions"               TEXT NOT NULL DEFAULT '18,20,22,25',
+            "tipShowNoTip"             BOOLEAN NOT NULL DEFAULT true,
+            "signatureEnabled"         BOOLEAN NOT NULL DEFAULT true,
+            "signatureThresholdCents"  INTEGER NOT NULL DEFAULT 2500,
+            "receiptEmailEnabled"      BOOLEAN NOT NULL DEFAULT true,
+            "receiptSmsEnabled"        BOOLEAN NOT NULL DEFAULT true,
+            "receiptPrintEnabled"      BOOLEAN NOT NULL DEFAULT true,
+            "receiptTimeoutSeconds"    INTEGER NOT NULL DEFAULT 30,
+            "tabMode"                  TEXT NOT NULL DEFAULT 'token_only',
+            "tabPreAuthAmountCents"    INTEGER NOT NULL DEFAULT 100,
+            "idlePromoEnabled"         BOOLEAN NOT NULL DEFAULT false,
+            "idleWelcomeText"          TEXT DEFAULT 'Welcome!',
+            "createdAt"                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            "updatedAt"               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            "deletedAt"                TIMESTAMPTZ,
+            "syncedAt"                 TIMESTAMPTZ,
+            CONSTRAINT "CfdSettings_pkey" PRIMARY KEY ("id"),
+            CONSTRAINT "CfdSettings_locationId_key" UNIQUE ("locationId")
+          )
+        `)
+        await prisma.$executeRawUnsafe(`CREATE INDEX "CfdSettings_locationId_idx" ON "CfdSettings" ("locationId")`)
+        console.log(`${PREFIX}   Done — CfdSettings table created`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED CfdSettings table:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

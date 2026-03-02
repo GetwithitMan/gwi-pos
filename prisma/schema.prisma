@@ -137,6 +137,7 @@ enum TerminalPlatform {
 enum TerminalCategory {
   FIXED_STATION
   HANDHELD
+  CFD_DISPLAY
 }
 
 enum PaymentProvider {
@@ -617,6 +618,7 @@ model Location {
   paymentReaders    PaymentReader[]
   readerLogs        PaymentReaderLog[]
   scales            Scale[]
+  cfdSettings       CfdSettings?
 
   // Order Cards (multi-card tabs)
   orderCards OrderCard[]
@@ -5910,6 +5912,13 @@ model Terminal {
   scaleId String?
   scale   Scale?  @relation(fields: [scaleId], references: [id])
 
+  // CFD Pairing (PAX A3700 Customer-Facing Display)
+  cfdTerminalId     String?   // ID of paired CFD terminal record (the A3700)
+  cfdTerminal       Terminal? @relation("TerminalCFD", fields: [cfdTerminalId], references: [id])
+  cfdRegisterFor    Terminal[] @relation("TerminalCFD")
+  cfdIpAddress      String?   // A3700 LAN IP address for DC Direct TCP connection
+  cfdConnectionMode String?   @default("usb") // "usb" | "bluetooth"
+
   sortOrder Int @default(0)
 
   createdAt DateTime  @default(now())
@@ -5935,6 +5944,48 @@ model Terminal {
   @@index([paymentReaderId])
   @@index([scaleId])
   @@index([platform])
+  @@index([cfdTerminalId])
+}
+
+// ============================================
+// CFD SETTINGS — Per-location Customer-Facing Display configuration
+// ============================================
+
+model CfdSettings {
+  id         String   @id @default(cuid())
+  locationId String   @unique
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Tip configuration
+  tipMode             String  @default("pre_tap")     // "pre_tap" | "post_auth"
+  tipStyle            String  @default("percent")     // "percent" | "dollar"
+  tipOptions          String  @default("18,20,22,25") // comma-separated values
+  tipShowNoTip        Boolean @default(true)
+
+  // Signature
+  signatureEnabled         Boolean @default(true)
+  signatureThresholdCents  Int     @default(2500) // $25.00
+
+  // Receipt delivery
+  receiptEmailEnabled   Boolean @default(true)
+  receiptSmsEnabled     Boolean @default(true)
+  receiptPrintEnabled   Boolean @default(true)
+  receiptTimeoutSeconds Int     @default(30)
+
+  // Tab / card-on-file mode
+  tabMode               String  @default("token_only") // "token_only" | "pre_auth" | "both"
+  tabPreAuthAmountCents Int     @default(100) // $1.00 default hold amount
+
+  // Idle screen
+  idlePromoEnabled  Boolean @default(false)
+  idleWelcomeText   String? @default("Welcome!")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
 }
 
 // Scale - Weight measurement devices (CAS PD-II, etc.)

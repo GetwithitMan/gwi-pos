@@ -17,7 +17,7 @@
 
 import type { RoutingResult } from '@/types/routing'
 import type { WeightReading } from '@/lib/scale/scale-protocol'
-import { emitToLocation, emitToTags, emitToRoom } from '@/lib/socket-server'
+import { emitToLocation, emitToTags, emitToRoom, emitToTerminal } from '@/lib/socket-server'
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 
@@ -905,7 +905,7 @@ export async function dispatchTipGroupUpdate(
  * Called when the payment modal opens with order data.
  * Sends order line items and totals to the Customer-Facing Display.
  */
-export function dispatchCFDShowOrder(locationId: string, data: {
+export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
   orderId: string
   orderNumber: number
@@ -914,7 +914,11 @@ export function dispatchCFDShowOrder(locationId: string, data: {
   tax: number
   total: number
 }): void {
-  void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
+  }
 }
 
 /**
@@ -923,13 +927,17 @@ export function dispatchCFDShowOrder(locationId: string, data: {
  * Called when the card reader is activated for a transaction.
  * Transitions the CFD from the order screen to the payment screen.
  */
-export function dispatchCFDPaymentStarted(locationId: string, data: {
+export function dispatchCFDPaymentStarted(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
   orderId: string
   amount: number
   paymentMethod: string
 }): void {
-  void emitToLocation(locationId, CFD_EVENTS.PAYMENT_STARTED, data).catch(console.error)
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PAYMENT_STARTED, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.PAYMENT_STARTED, data).catch(console.error)
+  }
 }
 
 /**
@@ -938,13 +946,17 @@ export function dispatchCFDPaymentStarted(locationId: string, data: {
  * Called when the tip selection step is shown to the cashier.
  * Optionally mirrors tip options to the CFD screen.
  */
-export function dispatchCFDTipPrompt(locationId: string, data: {
+export function dispatchCFDTipPrompt(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
   orderId: string
   subtotal: number
   suggestedTips: Array<{ label: string; percent: number; amount: number }>
 }): void {
-  void emitToLocation(locationId, CFD_EVENTS.TIP_PROMPT, data).catch(console.error)
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.TIP_PROMPT, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.TIP_PROMPT, data).catch(console.error)
+  }
 }
 
 /**
@@ -953,12 +965,16 @@ export function dispatchCFDTipPrompt(locationId: string, data: {
  * Called when the payment terminal requires a signature from the customer.
  * Transitions the CFD to the signature capture screen.
  */
-export function dispatchCFDSignatureRequest(locationId: string, data: {
+export function dispatchCFDSignatureRequest(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
   orderId: string
   transactionId?: string
 }): void {
-  void emitToLocation(locationId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch(console.error)
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch(console.error)
+  }
 }
 
 /**
@@ -967,12 +983,16 @@ export function dispatchCFDSignatureRequest(locationId: string, data: {
  * Called after a successful payment DB write when the order is fully paid.
  * Transitions the CFD to the receipt/thank-you screen.
  */
-export function dispatchCFDReceiptSent(locationId: string, data: {
+export function dispatchCFDReceiptSent(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
   orderId: string
   total: number
 }): void {
-  void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, data).catch(console.error)
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.RECEIPT_SENT, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, data).catch(console.error)
+  }
 }
 
 // ==================== Order Summary Events (Android cross-terminal sync) ====================

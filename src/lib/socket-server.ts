@@ -23,7 +23,7 @@ import { db } from '@/lib/db'
 import { verifySessionToken, POS_SESSION_COOKIE } from '@/lib/auth-session'
 
 // Dynamic import for socket.io (optional dependency)
-let io: typeof import('socket.io').Server | null = null
+const io: typeof import('socket.io').Server | null = null
 
 /**
  * Send emit request to standalone ws-server via HTTP IPC.
@@ -557,6 +557,20 @@ export async function emitToLocation(locationId: string, event: string, data: un
     return true
   }
   return emitViaIPC({ type: 'location', target: locationId, event, data })
+}
+
+/**
+ * Emit to a specific terminal's room (for CFD events, pay-at-table, etc.)
+ * Room name: terminal:{terminalId}
+ */
+export async function emitToTerminal(terminalId: string, event: string, data: unknown): Promise<boolean> {
+  const room = `terminal:${terminalId}`
+  if (globalForSocket.socketServer) {
+    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] emitToTerminal: ${event} → ${room}`)
+    globalForSocket.socketServer.to(room).emit(event, data)
+    return true
+  }
+  return emitViaIPC({ type: 'room', target: room, event, data })
 }
 
 /**

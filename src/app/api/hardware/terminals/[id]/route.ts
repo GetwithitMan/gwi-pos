@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 
 // GET single terminal
@@ -42,6 +41,16 @@ export const GET = withVenue(async function GET(
               name: true,
               ipAddress: true,
               isOnline: true,
+            },
+          },
+          cfdTerminal: {
+            select: {
+              id: true,
+              name: true,
+              category: true,
+              cfdIpAddress: true,
+              cfdConnectionMode: true,
+              lastSeenAt: true,
             },
           },
           scale: {
@@ -130,6 +139,10 @@ export const PUT = withVenue(async function PUT(
       readerFailoverTimeout,
       // Scale binding
       scaleId,
+      // CFD pairing
+      cfdTerminalId,
+      cfdIpAddress,
+      cfdConnectionMode,
     } = body
 
     // Check terminal exists
@@ -253,6 +266,10 @@ export const PUT = withVenue(async function PUT(
       ...(paymentProvider !== undefined && { paymentProvider }),
       ...(backupPaymentReaderId !== undefined && { backupPaymentReaderId: backupPaymentReaderId || null }),
       ...(readerFailoverTimeout !== undefined && { readerFailoverTimeout }),
+      // CFD pairing
+      ...(cfdTerminalId !== undefined && { cfdTerminalId: cfdTerminalId || null }),
+      ...(cfdIpAddress !== undefined && { cfdIpAddress: cfdIpAddress || null }),
+      ...(cfdConnectionMode !== undefined && { cfdConnectionMode: cfdConnectionMode || null }),
     }
     const baseInclude = {
       receiptPrinter: {
@@ -289,6 +306,16 @@ export const PUT = withVenue(async function PUT(
           name: true,
           ipAddress: true,
           isOnline: true,
+        },
+      },
+      cfdTerminal: {
+        select: {
+          id: true,
+          name: true,
+          category: true,
+          cfdIpAddress: true,
+          cfdConnectionMode: true,
+          lastSeenAt: true,
         },
       },
     }
