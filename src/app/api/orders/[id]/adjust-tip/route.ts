@@ -6,6 +6,8 @@ import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { requireDatacapClient } from '@/lib/datacap/helpers'
+import { parseError } from '@/lib/datacap/xml-parser'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -53,6 +55,31 @@ export const PATCH = withVenue(async function PATCH(
         { error: 'Payment not found' },
         { status: 404 }
       )
+    }
+
+    // If card payment: adjust gratuity on the Datacap reader before updating DB
+    if (payment.datacapRecordNo && payment.paymentReaderId) {
+      try {
+        const datacapClient = await requireDatacapClient(order.locationId)
+        const datacapResponse = await datacapClient.adjustGratuity(payment.paymentReaderId, {
+          recordNo: payment.datacapRecordNo,
+          purchaseAmount: Number(payment.amount),
+          gratuityAmount: newTipAmount,
+        })
+        const datacapError = parseError(datacapResponse)
+        if (datacapError || datacapResponse.cmdStatus !== 'Approved') {
+          return NextResponse.json(
+            { error: datacapError?.text ?? 'Datacap declined the tip adjustment' },
+            { status: 422 }
+          )
+        }
+      } catch (datacapErr) {
+        console.error('Datacap adjustGratuity failed:', datacapErr)
+        return NextResponse.json(
+          { error: 'Could not reach card reader to adjust tip' },
+          { status: 503 }
+        )
+      }
     }
 
     const oldTipAmount = Number(payment.tipAmount)
