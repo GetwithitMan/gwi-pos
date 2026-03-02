@@ -5,13 +5,17 @@ import {
   type BatchEventInput,
   type BatchEventResponse,
   ORDER_EVENT_TYPES,
+  getSubtotalCents,
+  getTotalCents,
+  type OrderState,
 } from '@/lib/order-events/types'
 import { ingestAndProject, type IngestEvent } from '@/lib/order-events/ingester'
+import { emitToTerminal } from '@/lib/socket-server'
 
 async function authenticateTerminal(
   request: NextRequest
 ): Promise<
-  | { terminal: { id: string; locationId: string; name: string }; error?: never }
+  | { terminal: { id: string; locationId: string; name: string; cfdTerminalId: string | null }; error?: never }
   | { terminal?: never; error: NextResponse }
 > {
   const authHeader = request.headers.get('authorization')
@@ -26,7 +30,7 @@ async function authenticateTerminal(
   }
   const terminal = await db.terminal.findFirst({
     where: { deviceToken: token, deletedAt: null },
-    select: { id: true, locationId: true, name: true },
+    select: { id: true, locationId: true, name: true, cfdTerminalId: true },
   })
   if (!terminal) {
     return {
@@ -112,10 +116,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   // Process each order through the shared ingestion pipeline
+  // Collect projected states for CFD dispatch
+  const projectedStates = new Map<string, OrderState>()
   for (const [orderId, orderEvents] of validatedByOrder) {
     try {
       const result = await ingestAndProject(db as any, orderId, locationId, orderEvents)
       accepted.push(...result.accepted)
+      projectedStates.set(orderId, result.state)
     } catch (err) {
       // If ingestion fails for an order, reject all its events
       for (const evt of orderEvents) {
@@ -125,6 +132,56 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
       }
     }
+  }
+
+  // Fire-and-forget: dispatch cfd:show-order to the paired CFD terminal
+  // Uses projected state returned by ingestAndProject — no extra DB query needed
+  const cfdTerminalId = auth.terminal.cfdTerminalId
+  if (cfdTerminalId && projectedStates.size > 0) {
+    void (async () => {
+      for (const [orderId, state] of projectedStates) {
+        try {
+          // Only dispatch for open/active orders (not paid/voided/closed)
+          if (['paid', 'closed', 'completed', 'voided', 'cancelled'].includes(state.status)) continue
+
+          const activeItems = Object.values(state.items).filter(
+            (item) => item.status !== 'voided' && item.status !== 'cancelled'
+          )
+          if (activeItems.length === 0) continue
+
+          const payload = {
+            orderId,
+            items: activeItems.map((item) => {
+              // modifiersJson is a JSON string on OrderLineItem; parse it to extract names
+              let modifierLines: string[] = []
+              if (item.modifiersJson) {
+                try {
+                  const mods = JSON.parse(item.modifiersJson) as Array<{ name?: string } | string>
+                  modifierLines = mods
+                    .map((m) => (typeof m === 'string' ? m : (m.name ?? '')))
+                    .filter(Boolean)
+                } catch {
+                  // Ignore malformed modifiersJson
+                }
+              }
+              return {
+                name: item.name,
+                quantity: item.quantity,
+                priceCents: item.priceCents,
+                modifierLines,
+              }
+            }),
+            subtotalCents: getSubtotalCents(state),
+            taxCents: state.taxTotalCents,
+            totalCents: getTotalCents(state),
+          }
+
+          void emitToTerminal(cfdTerminalId, 'cfd:show-order', payload)
+        } catch (err) {
+          console.warn('[CFD] Failed to dispatch cfd:show-order for order', orderId, err)
+        }
+      }
+    })()
   }
 
   return NextResponse.json({

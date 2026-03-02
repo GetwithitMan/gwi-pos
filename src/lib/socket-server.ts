@@ -103,7 +103,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       if (deviceToken && typeof deviceToken === 'string') {
         const terminal = await db.terminal.findFirst({
           where: { deviceToken, deletedAt: null },
-          select: { id: true, locationId: true, name: true, platform: true },
+          select: { id: true, locationId: true, name: true, platform: true, cfdTerminalId: true },
         })
         if (!terminal) {
           return next(new Error('Invalid device token'))
@@ -113,6 +113,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         socket.data.platform = terminal.platform
         socket.data.locationId = terminal.locationId
         socket.data.authenticated = true
+        socket.data.cfdTerminalId = terminal.cfdTerminalId ?? null
         return next()
       }
 
@@ -443,6 +444,58 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         console.error(JSON.stringify({ event: 'sync_completed', socketId: socket.id, error: String(err) }))
       }
     })
+
+    // ==================== CFD Relay ====================
+
+    // Register → CFD: relay payment flow events to the paired CFD display.
+    // These events come FROM the register (Android app) and must reach the A3700 terminal.
+    const CFD_REGISTER_TO_CFD_EVENTS = [
+      'cfd:payment-started',
+      'cfd:tip-prompt',
+      'cfd:processing',
+      'cfd:approved',
+      'cfd:declined',
+      'cfd:idle',
+    ]
+    for (const cfdEvent of CFD_REGISTER_TO_CFD_EVENTS) {
+      socket.on(cfdEvent, (data: unknown) => {
+        try {
+          const cfdTerminalId = socket.data.cfdTerminalId as string | null | undefined
+          if (!cfdTerminalId) return
+          void emitToTerminal(cfdTerminalId, cfdEvent, data)
+        } catch (err) {
+          console.error(JSON.stringify({ event: cfdEvent, socketId: socket.id, error: String(err) }))
+        }
+      })
+    }
+
+    // CFD → Register: relay customer responses back to the paired register.
+    // These events come FROM the A3700 CFD and must reach the register terminal.
+    const CFD_TO_REGISTER_EVENTS = [
+      'cfd:tip-selected',
+      'cfd:signature-done',
+      'cfd:receipt-choice',
+    ]
+    for (const cfdEvent of CFD_TO_REGISTER_EVENTS) {
+      socket.on(cfdEvent, (data: unknown) => {
+        try {
+          const myTerminalId = socket.data.terminalId as string | undefined
+          if (!myTerminalId) return
+          // Find the register terminal that has this CFD paired
+          void db.terminal.findFirst({
+            where: { cfdTerminalId: myTerminalId, deletedAt: null },
+            select: { id: true },
+          }).then(register => {
+            if (!register) return
+            void emitToTerminal(register.id, cfdEvent, data)
+          }).catch((err: unknown) => {
+            console.error(JSON.stringify({ event: cfdEvent, lookupFailed: true, error: String(err) }))
+          })
+        } catch (err) {
+          console.error(JSON.stringify({ event: cfdEvent, socketId: socket.id, error: String(err) }))
+        }
+      })
+    }
 
     // ==================== Connection Lifecycle ====================
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
-async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string }; error?: never } | { terminal?: never; error: NextResponse }> {
+async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string; cfdTerminalId: string | null }; error?: never } | { terminal?: never; error: NextResponse }> {
   const authHeader = request.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) {
@@ -10,7 +10,7 @@ async function authenticateTerminal(request: NextRequest): Promise<{ terminal: {
   }
   const terminal = await db.terminal.findFirst({
     where: { deviceToken: token, deletedAt: null },
-    select: { id: true, locationId: true, name: true },
+    select: { id: true, locationId: true, name: true, cfdTerminalId: true },
   })
   if (!terminal) {
     return { error: NextResponse.json({ error: 'Invalid token' }, { status: 401 }) }
@@ -23,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -77,7 +77,58 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         fillColor: true, opacity: true, status: true, currentOrderId: true,
       },
     }),
+    db.cfdSettings.findFirst({ where: { locationId, deletedAt: null } }),
   ])
+
+  // Collect child modifier groups via BFS (supports unlimited nesting depth).
+  // ownedModifierGroups only carries top-level groups; child groups are referenced
+  // by Modifier.childModifierGroupId and must be fetched separately so Android
+  // can cache them in Room for on-demand lookup.
+  const fetchedGroupIds = new Set<string>(
+    categories.flatMap(cat =>
+      cat.menuItems.flatMap(item =>
+        (item as any).ownedModifierGroups?.map((g: any) => g.id as string) ?? []
+      )
+    )
+  )
+  let wave: string[] = []
+  categories.forEach(cat => {
+    cat.menuItems.forEach(item => {
+      ;(item as any).ownedModifierGroups?.forEach((g: any) => {
+        g.modifiers?.forEach((m: any) => {
+          if (m.childModifierGroupId && !fetchedGroupIds.has(m.childModifierGroupId)) {
+            wave.push(m.childModifierGroupId)
+            fetchedGroupIds.add(m.childModifierGroupId)
+          }
+        })
+      })
+    })
+  })
+  const childModifierGroups: any[] = []
+  while (wave.length > 0) {
+    const groups = await db.modifierGroup.findMany({
+      where: { id: { in: wave }, deletedAt: null },
+      include: { modifiers: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } } },
+      orderBy: { sortOrder: 'asc' },
+    })
+    const nextWave: string[] = []
+    for (const g of groups) {
+      // Normalize Decimal price fields on each modifier
+      const mappedMods = g.modifiers.map((m: any) => ({
+        ...m,
+        price: m.price != null ? Number(m.price) : 0,
+        extraPrice: m.extraPrice != null ? Number(m.extraPrice) : null,
+      }))
+      childModifierGroups.push({ ...g, modifiers: mappedMods })
+      g.modifiers.forEach((m: any) => {
+        if (m.childModifierGroupId && !fetchedGroupIds.has(m.childModifierGroupId)) {
+          nextWave.push(m.childModifierGroupId)
+          fetchedGroupIds.add(m.childModifierGroupId)
+        }
+      })
+    }
+    wave = nextWave
+  }
 
   const settings = (location?.settings || {}) as Record<string, unknown>
   const taxRate = ((settings?.tax as Record<string, unknown>)?.defaultRate as number ?? 0) / 100
@@ -116,7 +167,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
   return NextResponse.json({
     data: {
-      menu: { categories: mappedCategories },
+      menu: { categories: mappedCategories, childModifierGroups },
       employees: employees.map(e => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, displayName: e.displayName, pin: e.pin, locationId: e.locationId, role: e.role, posLayoutSettings: e.posLayoutSettings ?? null })),
       tables,
       orderTypes,
@@ -127,6 +178,27 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       sections: sections.map(s => ({ id: s.id, name: s.name, color: s.color, sortOrder: s.sortOrder })),
       floorPlanElements,
       syncVersion: Date.now(),
+      terminalConfig: {
+        terminalId: auth.terminal.id,
+        locationId: auth.terminal.locationId,
+        cfdTerminalId: auth.terminal.cfdTerminalId ?? null,
+      },
+      cfdSettings: cfdSettings ? {
+        tipMode: cfdSettings.tipMode,
+        tipStyle: cfdSettings.tipStyle,
+        tipOptions: cfdSettings.tipOptions,
+        tipShowNoTip: cfdSettings.tipShowNoTip,
+        signatureEnabled: cfdSettings.signatureEnabled,
+        signatureThresholdCents: cfdSettings.signatureThresholdCents,
+        receiptEmailEnabled: cfdSettings.receiptEmailEnabled,
+        receiptSmsEnabled: cfdSettings.receiptSmsEnabled,
+        receiptPrintEnabled: cfdSettings.receiptPrintEnabled,
+        receiptTimeoutSeconds: cfdSettings.receiptTimeoutSeconds,
+        tabMode: cfdSettings.tabMode,
+        tabPreAuthAmountCents: cfdSettings.tabPreAuthAmountCents,
+        idlePromoEnabled: cfdSettings.idlePromoEnabled,
+        idleWelcomeText: cfdSettings.idleWelcomeText,
+      } : null,
     },
   })
 })
