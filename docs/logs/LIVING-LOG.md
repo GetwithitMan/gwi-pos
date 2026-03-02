@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-03-02 — Refund Flow (Skill 465)
+
+### Completed
+
+**Refund Payment (P1 gap):**
+- NUC `refund-payment/route.ts` — auto-resolves `paymentReaderId` from DB when not sent by client; card refunds call Datacap `emvReturn`; cash refunds are DB-only; partial/full refund support; proportional tip reduction; tip chargeback
+- Android `RefundSheet.kt` (new) — MoneyTextFieldState amount (capped at payment total), required reason field, manager PIN, red "Process Refund" CTA
+- Android `OrderStateTypes.kt` — `OrderSheet.Refund(paymentId, maxAmountDollars, paymentMethod)`
+- Android `OrderDtos.kt` — `RefundPaymentRequest` / `RefundPaymentResponse` / `RefundPaymentData`
+- Android `GwiApiService.kt` — `refundPayment()` POST endpoint
+- Android `OrderViewModel.kt` — `showRefund()` / `dismissRefund()` / `processRefund()` (PIN verify → API)
+- Android `VoidPaymentSheet.kt` — red "Refund" button on each non-voided payment row
+- Android `OrderSheets.kt` — Refund branch: dismiss void sheet → open refund sheet
+
+### Commits
+- NUC: `27a9051` — auto-resolve paymentReaderId in refund route
+- Android: `62051c2` — refund flow (7 files, +325 lines)
+
+---
+
 ## 2026-03-02 — Tip Adjustment + Edit Modifiers P1 Gaps (Skill 464)
 
 ### Completed
