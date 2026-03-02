@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-03-02 — Gift Card Payment (Skill 466)
+
+### Completed
+
+**Gift Card Payment (P1 gap):**
+- Android-only change — NUC pay route already handled `method: "gift_card"` with `giftCardNumber` field
+- `OrderDtos.kt`: Added `GiftCardData`, `GiftCardLookupResponse` DTOs; `giftCardNumber: String?` field on `PayOrderRequest`
+- `GwiApiService.kt`: Added `GET api/gift-cards/{id}` → `lookupGiftCard(cardNumber, locationId)` endpoint
+- `PayOrderUseCase.kt`: Added `payGiftCard(orderId, giftCardNumber, amountCents, employeeId)` — NUC-required, creates payment log, calls `payOrder` with `method=gift_card`
+- `OrderViewModel.kt`: Added gift card state (`giftCardNumber/Balance/Id/isChecking/Error`); `checkGiftCardBalance()` → lookup → validate active; `payGiftCard()` → same pattern as `payCard`; `resetGiftCardState()` on dismiss
+- `PaymentSheet.kt`: 3-way method toggle (Card | Cash | **Gift Card**); gift card UI: card# text input → "Check Balance" → green balance display → amount field pre-filled to min(balance, remaining) → "Apply Gift Card" button
+- `OrderSheets.kt`: All gift card callbacks wired; `resetGiftCardState()` called on sheet dismiss
+
+### Commits
+- Android: `78fdb35` — gift card payment (6 files, +299 lines)
+
+---
+
 ## 2026-03-02 — Refund Flow (Skill 465)
 
 ### Completed
