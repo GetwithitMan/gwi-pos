@@ -413,3 +413,37 @@ export const DELETE = withVenue(async function DELETE(
     )
   }
 })
+
+// PATCH partial update (e.g. toggling isFeaturedCfd)
+export const PATCH = withVenue(async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const body = await request.json()
+
+    const allowedFields: Record<string, true> = { isFeaturedCfd: true }
+    const data: Record<string, unknown> = {}
+    for (const key of Object.keys(body)) {
+      if (allowedFields[key]) {
+        data[key] = body[key]
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+    }
+
+    const item = await db.menuItem.update({
+      where: { id },
+      data,
+      select: { id: true, name: true, isFeaturedCfd: true },
+    })
+
+    return NextResponse.json({ data: { item } })
+  } catch (error) {
+    console.error('Failed to patch menu item:', error)
+    return NextResponse.json({ error: 'Failed to update item' }, { status: 500 })
+  }
+})

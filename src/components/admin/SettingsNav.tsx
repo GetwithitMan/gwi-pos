@@ -131,6 +131,14 @@ const settingsSections: SettingsSection[] = [
     ],
   },
   {
+    title: 'Staff & Shifts',
+    icon: '⏰',
+    permission: PERMISSIONS.SETTINGS_TEAM,
+    items: [
+      { name: 'Clock-Out & Shifts', href: '/settings/staff' },
+    ],
+  },
+  {
     title: 'Payments',
     icon: '💳',
     permission: PERMISSIONS.SETTINGS_PAYMENTS,
@@ -175,6 +183,7 @@ const settingsSections: SettingsSection[] = [
       { name: 'Terminals', href: '/settings/hardware/terminals' },
       { name: 'Payment Readers', href: '/settings/hardware/payment-readers' },
       { name: 'Prep Stations', href: '/settings/hardware/prep-stations' },
+      { name: 'Customer Display', href: '/settings/hardware/cfd' },
     ],
   },
   {

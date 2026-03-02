@@ -270,6 +270,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         soldByWeight: item.soldByWeight,
         weightUnit: item.weightUnit,
         pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
+        // CFD featured
+        isFeaturedCfd: item.isFeaturedCfd,
         // Pricing option groups (size/variant pricing)
         pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
           id: group.id,
