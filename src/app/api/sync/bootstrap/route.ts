@@ -23,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -38,6 +38,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             pricingOptionGroups: {
               where: { deletedAt: null },
               include: { options: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } } },
+              orderBy: { sortOrder: 'asc' },
+            },
+            ingredients: {
+              where: { deletedAt: null },
+              include: {
+                ingredient: {
+                  select: { id: true, name: true, allowNo: true, allowLite: true, allowExtra: true, allowOnSide: true, extraPrice: true },
+                },
+              },
               orderBy: { sortOrder: 'asc' },
             },
           },
@@ -59,6 +68,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.paymentReader.findMany({ where: { locationId, deletedAt: null } }),
     db.printer.findMany({ where: { locationId, deletedAt: null } }),
     db.section.findMany({ where: { locationId, deletedAt: null }, orderBy: { sortOrder: 'asc' } }),
+    db.floorPlanElement.findMany({
+      where: { locationId, deletedAt: null, isVisible: true, elementType: 'entertainment' },
+      select: {
+        id: true, name: true, elementType: true, visualType: true,
+        linkedMenuItemId: true, sectionId: true,
+        posX: true, posY: true, width: true, height: true, rotation: true,
+        fillColor: true, opacity: true, status: true, currentOrderId: true,
+      },
+    }),
   ])
 
   const settings = (location?.settings || {}) as Record<string, unknown>
@@ -80,6 +98,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           priceCC: opt.priceCC != null ? Number(opt.priceCC) : null,
         })),
       })),
+      ingredientLinks: (item as any).ingredients?.map((link: any) => ({
+        id: link.id,
+        ingredientId: link.ingredientId,
+        name: link.ingredient.name,
+        isIncluded: link.isIncluded,
+        // Per-item overrides; fall back to ingredient defaults
+        allowNo: link.allowNo ?? link.ingredient.allowNo,
+        allowLite: link.allowLite ?? link.ingredient.allowLite,
+        allowExtra: link.allowExtra ?? link.ingredient.allowExtra,
+        allowOnSide: link.allowOnSide ?? link.ingredient.allowOnSide,
+        extraPrice: link.extraPrice != null ? Number(link.extraPrice) : (link.ingredient.extraPrice != null ? Number(link.ingredient.extraPrice) : null),
+        sortOrder: link.sortOrder,
+      })) ?? [],
     })),
   }))
 
@@ -94,6 +125,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       paymentReaders,
       printers,
       sections: sections.map(s => ({ id: s.id, name: s.name, color: s.color, sortOrder: s.sortOrder })),
+      floorPlanElements,
       syncVersion: Date.now(),
     },
   })
