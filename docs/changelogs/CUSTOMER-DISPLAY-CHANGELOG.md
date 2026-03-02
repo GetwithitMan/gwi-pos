@@ -1,5 +1,50 @@
 # Customer Display Domain Changelog
 
+## 2026-03-02 — CFD Phase 3: Register Wiring + Pairing (Skill 463)
+
+### NUC Backend — Commit `995cb03`
+
+**`bootstrap/route.ts`:**
+- `terminalConfig` now includes `terminalId`, `locationId`, and `cfdTerminalId`
+- `cfdSettings` added to bootstrap response (tip/signature/receipt/tab/idle config)
+
+**`socket-server.ts` bidirectional CFD relay:**
+- Auth middleware: `socket.data.cfdTerminalId` cached from DB
+- Register→CFD relay (6 events): `cfd:payment-started`, `cfd:tip-prompt`, `cfd:processing`, `cfd:approved`, `cfd:declined`, `cfd:idle` forwarded to `terminal:{cfdTerminalId}`
+- CFD→Register relay (3 events): `cfd:tip-selected`, `cfd:signature-done`, `cfd:receipt-choice` reverse-looked-up to register room via `cfdTerminalId` FK
+
+**`order-events/batch/route.ts`:**
+- After ingestion: auto-dispatches `cfd:show-order` from projected `OrderState` (cents payload, zero extra DB queries)
+
+### Android Register — Commit `795dd66`
+
+**CFD wiring:**
+- `TokenProvider`: `getCfdTerminalId()` / `setCfdTerminalId()` in EncryptedSharedPreferences
+- `SyncDto`: `TerminalConfigDto(terminalId, locationId, cfdTerminalId)` + `CfdSettingsDto` (14 fields)
+- `BootstrapWorker`: stores `cfdTerminalId` + 7 `SyncMeta` keys from `CfdSettings`
+- `SocketEvent.CfdTipSelected(tipAmountCents: Long)` — new sealed class variant
+- `SocketManager`: `registerCfdListeners()` dispatches `cfd:tip-selected` as `CfdTipSelected`
+- `OrderSyncController`: pass-through for `CfdTipSelected`
+- `PaymentManager`: `loadCfdConfig()` from SyncMeta; `collectCfdTip()` race-free (async started before emitting `cfd:tip-prompt`, 60s timeout); `gratuity` field set on `DatacapAmountFields`
+
+### gwi-cfd — Commit `d17a50b`
+
+**Real pairing screen (`AppNavigation.kt`):**
+- Two `OutlinedTextField`s: NUC Base URL + Device Token
+- OkHttp `GET {nucUrl}/api/sync/bootstrap` with Bearer auth
+- Parses `data.terminalConfig.terminalId` + `.locationId`
+- Stores 4 credentials (nucBaseUrl, deviceToken, terminalId, locationId) via `TokenProvider`
+- `onPaired()` transitions to main socket-connected flow
+
+**Build fixes:**
+- `kotlinOptions { jvmTarget }` → `kotlin { compilerOptions { jvmTarget.set(JVM_17) } }`
+- Added `implementation("androidx.appcompat:appcompat:1.7.0")`
+- `CfdSocketManager`: `?.ifBlank { null }` on nullable String
+- `CfdOrderScreen`: `animateItemPlacement(tween(...))` → `animateItem(placementSpec = tween(...))`
+- `themes.xml`: `Theme.AppCompat.Light.NoActionBar`
+
+---
+
 ## 2026-03-02 — PAX A3700 CFD System — Phase 1 + Phase 2 (Skills 461-462)
 
 ### Phase 1: NUC Backend (Skill 461) — Commit `54b97da`

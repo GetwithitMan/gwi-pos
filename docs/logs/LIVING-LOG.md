@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-03-02 — CFD Phase 3 (Register Wiring + Pairing) + B/P Split Mode — Skill 463
+
+**Session:** Completed the full CFD pre-tap tip flow wire-up across all three repos. Built a real pairing screen for gwi-cfd. Fixed gwi-cfd build issues. Also landed B/P split mode (v1.12.0).
+
+### Phase 3 — CFD Register Wiring (Skill 463)
+
+**NUC — Commit `995cb03` (3 files, +189/-7):**
+- `bootstrap/route.ts`: now returns `terminalConfig { terminalId, locationId, cfdTerminalId }` + full `cfdSettings` object
+- `socket-server.ts`: auth middleware caches `socket.data.cfdTerminalId`; bidirectional CFD relay — 6 register→CFD events forwarded to `terminal:{cfdTerminalId}`, 3 CFD→register events reverse-looked-up to register room
+- `order-events/batch/route.ts`: auto-dispatches `cfd:show-order` with cents payload from projected `OrderState` after ingestion (zero extra DB queries)
+
+**Android Register — Commit `795dd66` (23 files, +1381/-318):**
+- `TokenProvider`: `getCfdTerminalId()` + `setCfdTerminalId()`; stored in EncryptedSharedPreferences
+- `SyncDto`: `TerminalConfigDto(terminalId, locationId, cfdTerminalId)` + `CfdSettingsDto` (14 fields)
+- `BootstrapWorker`: stores `cfdTerminalId` + 7 `SyncMeta` keys from CfdSettings
+- `SocketEvent.CfdTipSelected(tipAmountCents: Long)` + `SocketManager` listener for `cfd:tip-selected`
+- `OrderSyncController`: pass-through branch for `CfdTipSelected`
+- `PaymentManager`: `collectCfdTip()` race-free (`coroutineScope { async { flow.first() } }` started BEFORE emitting `cfd:tip-prompt`); gratuity passed to `DatacapAmountFields`
+
+**gwi-cfd — Commit `d17a50b` (6 files, +170/-28):**
+- `AppNavigation`: real `CfdPairingScreen` — OkHttp GET `/api/sync/bootstrap`, parses `terminalId`+`locationId`, stores 4 credentials, calls `onPaired()`
+- Build fixes: `kotlinOptions→kotlin.compilerOptions`, appcompat dep, nullable `.ifBlank` fix, `animateItemPlacement→animateItem(tween)`, `Theme.AppCompat.Light.NoActionBar`
+
+### B/P Split Mode — v1.12.0 (in Android commit `795dd66`)
+- `MenuDao.getCategoryTypesForItems()` — JOIN query returns category type per menu item ID
+- `OrderUiState.menuItemCategoryTypes` map populated after each item update
+- `SplitCheckSheet`: B/P two-column read-only layout; default seat→B/P→even; "Split B/P" button → `POST /split by_item`
+
+---
+
 ## 2026-03-02 — PAX A3700 CFD System — Phase 1 (NUC Backend) + Phase 2 (Android App)
 
 **Session:** Built complete Customer Facing Display system for PAX A3700. Two-phase implementation: NUC backend schema/socket/routes (Skill 461) + brand-new gwi-cfd Android project (Skill 462).
