@@ -14,7 +14,6 @@
  */
 
 import { PrismaClient } from '@prisma/client'
-import { hash } from 'bcryptjs'
 
 const ORG_ID  = 'cmm7zv5y0000604js1umry0ch'
 const LOC_ID  = 'cmm802vg50001ceud43jxhtnl'

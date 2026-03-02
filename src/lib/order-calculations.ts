@@ -440,7 +440,7 @@ export function calculateSimpleOrderTotals(
  * @returns The new total discount amount (sum of all discount amounts)
  */
 export async function recalculatePercentDiscounts(
-  tx: { orderDiscount: { findMany: Function; update: Function } },
+  tx: { orderDiscount: { findMany: (...args: any[]) => Promise<any>; update: (...args: any[]) => Promise<any> } },
   orderId: string,
   newSubtotal: number
 ): Promise<number> {

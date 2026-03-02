@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useRef } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { FloorPlanSeat } from './use-floor-plan'
 
@@ -37,6 +37,7 @@ export const SeatNode = memo(function SeatNode({
 }: SeatNodeProps) {
   const seatSize = 24
   const isDraggingRef = useRef(false)
+  const [isDragging, setIsDragging] = useState(false)
   const startPosRef = useRef({ x: 0, y: 0 })
 
   // Position: table center offset + relative seat position
@@ -52,6 +53,7 @@ export const SeatNode = memo(function SeatNode({
     e.stopPropagation()
     e.preventDefault()
     isDraggingRef.current = true
+    setIsDragging(true)
     startPosRef.current = { x: e.clientX, y: e.clientY }
     onDragStart?.(seat.id)
 
@@ -77,6 +79,7 @@ export const SeatNode = memo(function SeatNode({
     if (!isDraggingRef.current) return
 
     isDraggingRef.current = false
+    setIsDragging(false)
     const element = e.currentTarget as HTMLElement
     element.releasePointerCapture(e.pointerId)
 
@@ -135,7 +138,7 @@ export const SeatNode = memo(function SeatNode({
         cursor: isEditable ? 'move' : 'pointer',
         zIndex: isSelected ? 20 : 10,
         transform: `rotate(${seat.angle}deg)`,
-        transition: isDraggingRef.current ? 'none' : 'box-shadow 0.2s, border 0.2s',
+        transition: isDragging ? 'none' : 'box-shadow 0.2s, border 0.2s',
         touchAction: 'none',
       }}
       title={`Seat ${seat.label} - ${seat.seatType}`}

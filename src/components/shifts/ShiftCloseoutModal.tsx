@@ -219,7 +219,7 @@ export function ShiftCloseoutModal({
         fetchTipData()
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [isOpen])
 
   // Fetch shift summary - called after cash is declared (for reveal step) or by manager preview

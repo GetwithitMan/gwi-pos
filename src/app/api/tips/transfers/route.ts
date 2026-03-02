@@ -11,7 +11,6 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import {
   postToTipLedger,
-  getLedgerBalance,
   getLedgerEntries,
   dollarsToCents,
   centsToDollars,

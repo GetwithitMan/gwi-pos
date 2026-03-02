@@ -6,7 +6,6 @@
  */
 
 import type { TableStatus, StatusTransition, StatusTrigger } from '../types'
-import { TABLE_STATUSES } from '../index'
 
 /**
  * Valid status transitions

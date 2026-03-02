@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import Link from 'next/link'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'

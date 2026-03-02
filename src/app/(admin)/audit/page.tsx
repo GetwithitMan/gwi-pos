@@ -229,7 +229,7 @@ export default function AuditLogBrowserPage() {
     if (locationId && currentEmployee?.id && hasAccess) {
       fetchAuditLog(0)
     }
-  }, [locationId, currentEmployee?.id, hasAccess]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [locationId, currentEmployee?.id, hasAccess])  
 
   // ------------------------------------------
   // Handlers

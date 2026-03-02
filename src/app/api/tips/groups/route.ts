@@ -6,8 +6,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAnyPermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { TipGroupStatus } from '@prisma/client'
 import { startTipGroup } from '@/lib/domain/tips/tip-groups'

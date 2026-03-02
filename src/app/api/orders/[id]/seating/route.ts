@@ -4,7 +4,7 @@ import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { calculateOrbitRadius, findCollisionFreePosition } from '@/lib/seat-utils'
 import { dispatchFloorPlanUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
-import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * Atomic Seat Management API (Skill 121)

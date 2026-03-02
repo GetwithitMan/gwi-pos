@@ -256,7 +256,7 @@ export function useEventSubscription<T extends EventName>(
 
     const unsubscribe = subscribe(event, callback, channelFilter)
     return unsubscribe
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [subscribe, isConnected, event, channelFilter?.type, channelFilter?.id, ...deps])
 }
 

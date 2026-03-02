@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice, applyPriceRounding, calculateSurcharge } from '@/lib/pricing'
-import { calculateTip, getQuickCashAmounts, calculateChange, PAYMENT_METHOD_LABELS } from '@/lib/payment'
+import { calculateTip, getQuickCashAmounts, PAYMENT_METHOD_LABELS } from '@/lib/payment'
 import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings, PricingProgram } from '@/lib/settings'
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
@@ -259,7 +259,7 @@ export function PaymentModal({
       .catch(err => {
         console.error('[CFD] Failed to dispatch cfd:show-order:', err)
       })
-  }, [isOpen, orderId, locationId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, orderId, locationId])  
 
   // Listen for tab:updated socket events (increment status indicator)
   // W3-3: Listener active even when modal is closed so toast fires immediately

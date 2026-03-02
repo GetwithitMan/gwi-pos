@@ -17,7 +17,7 @@ import { FloorCanvasAPI } from '../canvas';
 // STATE (In production, this would come from the database)
 // =============================================================================
 
-let tables: Map<string, Table> = new Map();
+const tables: Map<string, Table> = new Map();
 
 // =============================================================================
 // CRUD OPERATIONS

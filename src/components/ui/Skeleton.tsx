@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+
 /**
  * CSS-only shimmer skeleton placeholders.
  * No external libraries — uses a gradient animation.
@@ -35,10 +37,11 @@ export function MenuGridSkeleton({ count = 12 }: { count?: number }) {
 
 /** Category tab bar skeleton. */
 export function CategoryTabsSkeleton({ count = 6 }: { count?: number }) {
+  const [widths] = useState(() => Array.from({ length: count }, () => 80 + Math.random() * 40))
   return (
     <div className="flex gap-2 p-2 overflow-hidden">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="skeleton-shimmer rounded-lg h-10 flex-shrink-0" style={{ width: 80 + Math.random() * 40 }} />
+        <div key={i} className="skeleton-shimmer rounded-lg h-10 flex-shrink-0" style={{ width: widths[i] }} />
       ))}
       <SkeletonStyles />
     </div>

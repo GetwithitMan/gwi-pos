@@ -445,7 +445,7 @@ export function useModifierSelections(
     }
     loadInitialChildren()
     // Intentionally only run when initialized changes (once)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [initialized])
 
   // Build child→parent group mapping: childGroupId → parentGroupId

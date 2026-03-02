@@ -10,6 +10,34 @@ import type {
 // Preview modes for the live preview
 export type PreviewMode = 'kitchen' | 'receipt' | 'entertainment'
 
+function getDividerChar(style: string) {
+  switch (style) {
+    case 'double': return '═'
+    case 'star': return '*'
+    case 'dot': return '·'
+    case 'thick': return '█'
+    case 'blank': return ' '
+    default: return '-'
+  }
+}
+
+function Divider({ config, charWidth }: { config: { style: string }; charWidth: number }) {
+  return (
+    <div className="text-slate-400 select-none overflow-hidden whitespace-nowrap text-xs my-1">
+      {getDividerChar(config.style).repeat(charWidth)}
+    </div>
+  )
+}
+
+function TwoCol({ left, right, bold = false }: { left: string; right: string; bold?: boolean }) {
+  return (
+    <div className={`flex justify-between ${bold ? 'font-bold' : ''}`}>
+      <span>{left}</span>
+      <span>{right}</span>
+    </div>
+  )
+}
+
 export interface TicketPreviewProps {
   settings: PrintTemplateSettings
   globalSettings: GlobalReceiptSettings
@@ -42,18 +70,6 @@ export function TicketPreview({
       return () => clearTimeout(timer)
     }
   }, [settings, previewMode])
-
-  // Helpers
-  const getDividerChar = (style: string) => {
-    switch (style) {
-      case 'double': return '═'
-      case 'star': return '*'
-      case 'dot': return '·'
-      case 'thick': return '█'
-      case 'blank': return ' '
-      default: return '-'
-    }
-  }
 
   const getModPrefix = () => {
     switch (settings.modifiers.prefix) {
@@ -101,20 +117,6 @@ export function TicketPreview({
       default: return 'text-left'
     }
   }
-
-  const Divider = ({ config }: { config: { style: string } }) => (
-    <div className="text-slate-400 select-none overflow-hidden whitespace-nowrap text-xs my-1">
-      {getDividerChar(config.style).repeat(charWidth)}
-    </div>
-  )
-
-  // Two-column line helper for receipts
-  const TwoCol = ({ left, right, bold = false }: { left: string; right: string; bold?: boolean }) => (
-    <div className={`flex justify-between ${bold ? 'font-bold' : ''}`}>
-      <span>{left}</span>
-      <span>{right}</span>
-    </div>
-  )
 
   // Sample data values
   const sampleData: Record<string, string> = {
@@ -181,7 +183,7 @@ export function TicketPreview({
         })}
 
       {/* Header Divider */}
-      <Divider config={settings.dividers.afterHeader} />
+      <Divider config={settings.dividers.afterHeader} charWidth={charWidth} />
 
       {/* === KITCHEN MODE === */}
       {previewMode === 'kitchen' && (
@@ -191,7 +193,7 @@ export function TicketPreview({
             {/* Category Header */}
             {settings.categories.enabled && (
               <>
-                {settings.categories.dividerAbove && <Divider config={settings.dividers.betweenCategories} />}
+                {settings.categories.dividerAbove && <Divider config={settings.dividers.betweenCategories} charWidth={charWidth} />}
                 <div
                   className={`
                     ${getSizeClass(settings.categories.size)}
@@ -302,7 +304,7 @@ export function TicketPreview({
             </div>
           )}
 
-          <Divider config={{ style: 'dash' }} />
+          <Divider config={{ style: 'dash' }} charWidth={charWidth} />
 
           {/* TOTALS */}
           <div className="text-xs space-y-0.5">
@@ -343,7 +345,7 @@ export function TicketPreview({
           {/* TIP SECTION */}
           {settings.receipt.tipLine && (
             <>
-              <Divider config={{ style: 'dash' }} />
+              <Divider config={{ style: 'dash' }} charWidth={charWidth} />
               <div className={`
                 text-xs mt-2
                 ${settings.receipt.tipSectionStyle?.frame === 'box' ? 'border border-black p-2' : ''}
@@ -419,7 +421,7 @@ export function TicketPreview({
             </div>
           </div>
 
-          <Divider config={{ style: 'double' }} />
+          <Divider config={{ style: 'double' }} charWidth={charWidth} />
 
           {/* Guest Name */}
           {settings.entertainment?.showGuestName && (
@@ -439,7 +441,7 @@ export function TicketPreview({
             </div>
           )}
 
-          <Divider config={{ style: 'dash' }} />
+          <Divider config={{ style: 'dash' }} charWidth={charWidth} />
 
           {/* Table/Lane Assignment */}
           {settings.entertainment?.showTableAssignment && (
@@ -467,7 +469,7 @@ export function TicketPreview({
           {/* Price */}
           {settings.entertainment?.showPrice && (
             <>
-              <Divider config={{ style: 'dash' }} />
+              <Divider config={{ style: 'dash' }} charWidth={charWidth} />
               <div className="text-sm font-bold text-center my-2">
                 $15.00 / hour
               </div>
@@ -477,7 +479,7 @@ export function TicketPreview({
           {/* Instructions */}
           {settings.entertainment?.showInstructions && (
             <>
-              <Divider config={{ style: 'dash' }} />
+              <Divider config={{ style: 'dash' }} charWidth={charWidth} />
               <div className="text-xs mt-2">
                 <div className="font-bold">{settings.entertainment?.instructionsLabel || 'Instructions:'}</div>
                 <div className="italic mt-1">Birthday party - please bring cake at 8pm</div>
@@ -509,7 +511,7 @@ export function TicketPreview({
       )}
 
       {/* Footer Divider */}
-      <Divider config={settings.dividers.beforeFooter} />
+      <Divider config={settings.dividers.beforeFooter} charWidth={charWidth} />
 
       {/* Duplicate Header */}
       {settings.footer.duplicateHeader && (

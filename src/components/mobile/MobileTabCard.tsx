@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
 
 interface MobileTabCardProps {
@@ -32,8 +33,15 @@ export default function MobileTabCard({ tab, onTap }: MobileTabCardProps) {
   const isAuthFailed = tab.tabStatus === 'auth_failed'
   const timeOpen = new Date(tab.openedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 
+  // Update every minute so elapsed time stays current
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
   // Calculate time elapsed
-  const elapsed = Date.now() - new Date(tab.openedAt).getTime()
+  const elapsed = now - new Date(tab.openedAt).getTime()
   const hours = Math.floor(elapsed / (1000 * 60 * 60))
   const minutes = Math.floor((elapsed % (1000 * 60 * 60)) / (1000 * 60))
   const timeElapsed = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { TerminalCategory } from '@prisma/client'
-import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 
 // GET all terminals for a location

@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import {
   OUTPUT_UNITS,
   UNIT_CATEGORIES,
-  getUnitPrecision,
 } from '@/lib/units'
 import type { Ingredient, IngredientCategory, InventoryItemRef, PrepItemRef } from './IngredientLibrary'
 
@@ -387,7 +386,7 @@ export function InventoryItemEditor({
             {/* What's inside */}
             <div className="space-y-2 pt-3 border-t border-blue-200">
               <h3 className="font-bold text-blue-900 text-lg flex items-center gap-2">
-                <span>📋</span> What's inside?
+                <span>📋</span> What&apos;s inside?
               </h3>
               <p className="text-sm text-blue-700">How much usable product is in each {formData.purchaseUnit || 'unit'}?</p>
               <div className="flex items-center gap-3 flex-wrap">
@@ -450,7 +449,7 @@ export function InventoryItemEditor({
               Save the item first, then you can add recipe components.
             </p>
             <div className="p-4 bg-orange-100 rounded-lg border border-orange-200 text-center text-orange-700">
-              💡 Click "Create Inventory Item" below, then edit to add recipe ingredients.
+              💡 Click &quot;Create Inventory Item&quot; below, then edit to add recipe ingredients.
             </div>
           </div>
         )}

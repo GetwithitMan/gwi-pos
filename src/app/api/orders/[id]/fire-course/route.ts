@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { KitchenStatus, CourseStatus } from '@prisma/client'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'

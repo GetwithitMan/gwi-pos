@@ -256,8 +256,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let totalTaxFromExclusive = 0
     let totalSurcharge = 0
     let totalTips = 0
-    let totalGratuity = 0
-    let totalRefunds = 0
+    const totalGratuity = 0
+    const totalRefunds = 0
     let totalCommission = 0
 
     // Sales by category

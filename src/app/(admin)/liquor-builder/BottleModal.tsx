@@ -166,7 +166,7 @@ export function BottleModal({
       setAlcoholSubtype('')
       setVintage('')
     }
-  }, [spiritCategoryId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [spiritCategoryId])  
 
   // When beer container type changes, pick first matching size
   useEffect(() => {
@@ -175,7 +175,7 @@ export function BottleModal({
     if (sizes && !sizes.find(s => s.value.toString() === bottleSizeMl)) {
       setBottleSizeMl(sizes[0].value.toString())
     }
-  }, [containerType]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [containerType])  
 
   // ─── Available sizes for the current mode ────────────────────────────────
   const availableSizes = isBeer

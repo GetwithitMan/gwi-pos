@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, use, Suspense } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import MobileTabActions from '@/components/mobile/MobileTabActions'
 
@@ -78,7 +79,7 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
     }
 
     checkAuth()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])  
 
   useEffect(() => {
     if (!authChecked) return
@@ -135,9 +136,9 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
         <p className="text-white/50">Tab not found</p>
-        <a href="/mobile/tabs" className="text-blue-400">
+        <Link href="/mobile/tabs" className="text-blue-400">
           Back to Tabs
-        </a>
+        </Link>
       </div>
     )
   }
@@ -150,11 +151,11 @@ function MobileTabDetailContent({ tabId }: { tabId: string }) {
       {/* Header */}
       <div className="p-4 border-b border-white/10">
         <div className="flex items-center gap-3 mb-1">
-          <a href="/mobile/tabs" className="text-white/40 hover:text-white/60">
+          <Link href="/mobile/tabs" className="text-white/40 hover:text-white/60">
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
             </svg>
-          </a>
+          </Link>
           <div className="flex-1">
             <h1 className="text-lg font-bold">{displayName}</h1>
             <p className="text-white/40 text-sm">Opened {timeOpen}</p>

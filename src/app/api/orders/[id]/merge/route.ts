@@ -6,7 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
-import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Merge another order into this one
 export const POST = withVenue(async function POST(

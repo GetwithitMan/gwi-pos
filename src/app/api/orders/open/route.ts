@@ -40,7 +40,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // Instead of OR: [{businessDayDate: {gte}}, {businessDayDate: null, createdAt: {gte}}]
     // which forces bitmap OR scans, we run two parallel queries each hitting indexes directly
     const businessDayMode = previousDay ? 'previous' as const : (rolledOver === 'true' ? 'none' as const : 'current' as const)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     async function batchBusinessDayQuery(findManyArgs: any, mode = businessDayMode): Promise<any[]> {
       if (mode === 'none') {
         return db.order.findMany(findManyArgs)
@@ -313,10 +313,10 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
     // Get waitlist entries linked to these orders
     const orderIds = orders.map(o => o.id)
-    let waitlistByOrder: Record<string, { position: number; menuItemName: string }[]> = {}
+    const waitlistByOrder: Record<string, { position: number; menuItemName: string }[]> = {}
 
     // Get active entertainment items linked to these orders
-    let entertainmentByOrder: Record<string, {
+    const entertainmentByOrder: Record<string, {
       menuItemId: string
       menuItemName: string
       status: string

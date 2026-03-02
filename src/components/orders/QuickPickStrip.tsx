@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect, memo, type CSSProperties } from 'react'
+import { useState, useCallback, useRef, useEffect, memo } from 'react'
 
 interface QuickPickStripProps {
   selectedItemId?: string | null

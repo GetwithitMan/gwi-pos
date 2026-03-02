@@ -31,13 +31,14 @@ interface FixtureLike {
   posY: number
   width: number
   height: number
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   geometry?: any
   thickness?: number
 }
 
 interface UseFloorPlanDragOptions {
   containerRef: RefObject<HTMLDivElement | null>
+  tables: TableLike[]
   tablesRef: RefObject<TableLike[]>
   fixturesRef: RefObject<FixtureLike[]>
   autoScaleRef: RefObject<number>
@@ -66,6 +67,7 @@ interface UseFloorPlanDragResult {
 
 export function useFloorPlanDrag({
   containerRef,
+  tables,
   tablesRef,
   fixturesRef,
   autoScaleRef,
@@ -183,7 +185,6 @@ export function useFloorPlanDrag({
   const ghostPreview = useMemo((): GhostPreview | null => {
     if (!draggedTableId || !dropTargetTableId || !lastDropPosition) return null
 
-    const tables = tablesRef.current
     const sourceTable = tables.find(t => t.id === draggedTableId)
     const targetTable = tables.find(t => t.id === dropTargetTableId)
     if (!sourceTable || !targetTable) return null
@@ -213,7 +214,7 @@ export function useFloorPlanDrag({
       height: sourceTable.height,
       side,
     }
-  }, [draggedTableId, dropTargetTableId, lastDropPosition, tablesRef])
+  }, [draggedTableId, dropTargetTableId, lastDropPosition, tables])
 
   return {
     handlePointerMove,

@@ -78,7 +78,7 @@ export function useOrderPanelCallbacks({
 
   const onItemNoteEdit = useCallback((itemId: string, currentNote?: string) => {
     activeOrder.openNoteEditor(itemId, currentNote)
-  }, [activeOrder.openNoteEditor])
+  }, [activeOrder])
 
   const onItemCourseChange = useCallback((itemId: string, course: number | null) => {
     // Persist to DB + update local state (not just local)

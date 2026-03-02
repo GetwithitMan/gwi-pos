@@ -8,7 +8,6 @@ import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
-import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 

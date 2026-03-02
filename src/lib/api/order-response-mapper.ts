@@ -109,7 +109,7 @@ interface MappedPizzaConfig {
  * @param item - Database OrderItem record (Prisma result with includes)
  * @param correlationId - Optional correlation ID to echo back for client-side tracking
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function mapOrderItemForResponse(item: any, correlationId?: string): MappedOrderItem {
   return {
     id: item.id,
@@ -235,7 +235,7 @@ export interface MappedOrder {
   version: number
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function mapOrderForResponse(order: any): MappedOrder {
   return {
     id: order.id,

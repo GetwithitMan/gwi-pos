@@ -6,7 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useSocket } from '@/hooks/useSocket'
 import { motion, AnimatePresence } from 'framer-motion'
-import { formatCurrency, formatTime } from '@/lib/utils'
+import { formatCurrency } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
 
 interface TabOrder {

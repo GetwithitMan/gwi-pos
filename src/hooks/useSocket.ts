@@ -9,36 +9,36 @@
  * Returns { socket, isConnected } — callers use socket.on/off directly.
  */
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type { Socket } from 'socket.io-client'
 
 export function useSocket(): { socket: Socket | null; isConnected: boolean } {
   const [isConnected, setIsConnected] = useState(false)
-  const socketRef = useRef<Socket | null>(null)
+  const [socket, setSocket] = useState<Socket | null>(null)
 
   useEffect(() => {
-    const socket = getSharedSocket()
-    socketRef.current = socket
+    const s = getSharedSocket()
+    setSocket(s)
 
     const onConnect = () => setIsConnected(true)
     const onDisconnect = () => setIsConnected(false)
 
-    socket.on('connect', onConnect)
-    socket.on('disconnect', onDisconnect)
+    s.on('connect', onConnect)
+    s.on('disconnect', onDisconnect)
 
     // If already connected (shared socket created by another consumer)
-    if (socket.connected) {
+    if (s.connected) {
       setIsConnected(true)
     }
 
     return () => {
-      socket.off('connect', onConnect)
-      socket.off('disconnect', onDisconnect)
-      socketRef.current = null
+      s.off('connect', onConnect)
+      s.off('disconnect', onDisconnect)
+      setSocket(null)
       releaseSharedSocket()
     }
   }, [])
 
-  return { socket: socketRef.current, isConnected }
+  return { socket, isConnected }
 }

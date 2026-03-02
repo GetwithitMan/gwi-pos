@@ -167,7 +167,7 @@ export default function OpenOrdersManagerPage() {
   // Initial load
   useEffect(() => {
     if (locationId) fetchOrders()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [locationId, showRolledOverOnly])
 
   // ─── Fetch available tables for reassign ──────────────────────────────────

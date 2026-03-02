@@ -192,15 +192,15 @@ export function useSplitCheck({ orderId, items, defaultMode }: UseSplitCheckOpti
 
     const total = checks.reduce((sum, c) => sum + c.subtotal, 0)
     return [checks, mode, total]
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Intentionally empty — initialize once
+   
+  }, [defaultMode, items])
 
   const [checks, setChecks] = useState<SplitCheck[]>(initChecks)
   const [splitMode, setSplitMode] = useState<SplitMode>(initMode)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const [evenWays, setEvenWays] = useState(2)
   const originalSnapshotRef = useRef<SplitCheck[]>(deepClone(initChecks))
-  const originalTotalRef = useRef<number>(initTotal)
+  const [originalTotal] = useState(initTotal)
   const originalModeRef = useRef<SplitMode>(initMode)
   const nextCheckNumRef = useRef<number>(initChecks.length + 1)
   const nextShareIdRef = useRef<number>(items.length + 1)
@@ -210,8 +210,6 @@ export function useSplitCheck({ orderId, items, defaultMode }: UseSplitCheckOpti
     () => checks.reduce((sum, c) => sum + c.subtotal, 0),
     [checks]
   )
-
-  const originalTotal = originalTotalRef.current
 
   const { hasIntegrityIssue, integrityIssues } = useMemo(() => {
     const issues: string[] = []

@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server'
 import { venueDbName } from '@/lib/db'
-import { neon, Pool } from '@neondatabase/serverless'
+import { Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
 import path from 'path'
 
 // Allow up to 60s — schema diff + apply to Neon typically takes 10-30s
 export const maxDuration = 60
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type Row = Record<string, any>
 
 /**

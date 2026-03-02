@@ -13,7 +13,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
 import type { OrderItem, MenuItem, PizzaOrderConfig, SelectedModifier } from '@/types'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
-import type { DatacapResult } from '@/hooks/useDatacap'
 import type { ComboTemplate } from '@/hooks/useComboBuilder'
 
 const PaymentModal = lazy(() => import('@/components/payment/PaymentModal').then(m => ({ default: m.PaymentModal })))

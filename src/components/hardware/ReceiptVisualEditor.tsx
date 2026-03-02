@@ -559,7 +559,7 @@ export function ReceiptVisualEditor({
               {/* Collapsing */}
               <Section title="Item Collapsing" defaultOpen={false}>
                 <p className="text-xs text-slate-400 mb-3">
-                  Collapse: "2x Burger" vs print each item separately for seat modifications
+                  Collapse: &quot;2x Burger&quot; vs print each item separately for seat modifications
                 </p>
                 <div className="space-y-3">
                   <Toggle label="Collapse identical items" checked={settings.collapsing.enabled} onChange={(v) => update('collapsing', 'enabled', v)} />

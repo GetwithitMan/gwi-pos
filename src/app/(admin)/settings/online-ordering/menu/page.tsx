@@ -206,7 +206,7 @@ export default function OnlineMenuPage() {
   const toggleCatExpanded = (catId: string) => {
     setExpandedCats(prev => {
       const next = new Set(prev)
-      next.has(catId) ? next.delete(catId) : next.add(catId)
+      if (next.has(catId)) { next.delete(catId) } else { next.add(catId) }
       return next
     })
   }
@@ -214,7 +214,7 @@ export default function OnlineMenuPage() {
   const toggleModGroupExpanded = (key: string) => {
     setExpandedModGroups(prev => {
       const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
+      if (next.has(key)) { next.delete(key) } else { next.add(key) }
       return next
     })
   }

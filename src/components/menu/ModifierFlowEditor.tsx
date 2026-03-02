@@ -103,7 +103,7 @@ export function ModifierFlowEditor({
     }
 
     loadGroupData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [item?.id, selectedGroupId])
   // Note: refreshKey intentionally excluded — external refreshes (from ItemEditor saves)
   // should NOT wipe this panel's state mid-edit. Panel reloads on group selection change only.

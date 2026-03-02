@@ -52,7 +52,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = limitParam ? Math.max(1, Math.min(500, parseInt(limitParam, 10) || 50)) : 50
     const offset = offsetParam ? Math.max(0, parseInt(offsetParam, 10) || 0) : 0
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const where: Record<string, any> = {
       locationId,
       deletedAt: null,

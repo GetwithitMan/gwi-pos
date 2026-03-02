@@ -99,7 +99,7 @@ export default function TipAdjustmentReportPage() {
     if (employee?.location?.id) {
       loadReport()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [employee?.location?.id])
 
   // ---------------------------------------------------------------------------

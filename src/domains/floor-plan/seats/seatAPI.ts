@@ -14,7 +14,7 @@ import { generateSeatPositions, generateBoothSeats } from './seatLayout';
 // STATE (In production, this would come from the database)
 // =============================================================================
 
-let seats: Map<string, Seat> = new Map();
+const seats: Map<string, Seat> = new Map();
 
 // =============================================================================
 // CRUD OPERATIONS

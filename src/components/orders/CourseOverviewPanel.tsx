@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { CourseIndicator } from './CourseIndicator'
 
 interface CourseItem {
   id: string

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
@@ -119,7 +119,7 @@ export function RemoteVoidApprovalModal({
   useEffect(() => {
     if (state !== 'pending' || !approvalId || !socket || !isConnected) return
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onApprovalUpdate = (data: any) => {
       if (data.approvalId !== approvalId) return
 

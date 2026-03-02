@@ -13,7 +13,7 @@ import { useIngredientOperations } from './useIngredientOperations'
 import { useModifierGroupManager } from './useModifierGroupManager'
 import { useModifierEditor } from './useModifierEditor'
 import { useIngredientCreation } from './useIngredientCreation'
-import type { Ingredient, IngredientLibraryItem, IngredientCategory, Modifier, ModifierGroup, MenuItem } from './item-editor-types'
+import type { IngredientLibraryItem, IngredientCategory, Modifier, ModifierGroup, MenuItem } from './item-editor-types'
 
 // Re-export types for external consumers
 export type { IngredientLibraryItem } from './item-editor-types'

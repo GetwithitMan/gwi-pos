@@ -1486,7 +1486,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Notify CFD that receipt was sent — transitions CFD to thank-you screen (fire-and-forget)
     if (orderIsPaid) {
-      dispatchCFDReceiptSent(order.locationId, {
+      dispatchCFDReceiptSent(order.locationId, null, {
         orderId: order.id,
         total: Number(order.total),
       })

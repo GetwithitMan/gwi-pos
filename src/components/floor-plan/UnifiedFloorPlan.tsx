@@ -2,12 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useFloorPlanStore, FloorPlanTable, FloorPlanSection, SeatPattern } from './use-floor-plan'
+import { useFloorPlanStore, FloorPlanTable, SeatPattern } from './use-floor-plan'
 import { TableNode } from './TableNode'
 import { TableInfoPanel } from './TableInfoPanel'
 import { TableEditPanel } from './panels/TableEditPanel'
 import { RoomTabs } from './RoomTabs'
-import { calculateAttachSide, calculateAttachPosition } from './table-positioning'
 import './styles/floor-plan.css'
 import { logger } from '@/lib/logger'
 import { useSocket } from '@/hooks/useSocket'
@@ -100,7 +99,7 @@ export function UnifiedFloorPlan({
       logger.log('[UnifiedFloorPlan] floor-plan:updated — full reload (structure change)')
       loadFloorPlanData()
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onOrdersListChanged = (data: any) => {
       const { trigger, tableId } = data || {}
       logger.log(`[UnifiedFloorPlan] orders:list-changed trigger=${trigger} tableId=${tableId}`)
@@ -118,7 +117,7 @@ export function UnifiedFloorPlan({
       logger.log('[UnifiedFloorPlan] order:updated — full reload')
       loadFloorPlanData()
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onTotalsUpdated = (data: any) => {
       const { orderId, totals } = data || {}
       if (orderId && totals) {
@@ -132,7 +131,7 @@ export function UnifiedFloorPlan({
       }
       loadFloorPlanData()
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onTableStatusChanged = (data: any) => {
       const { tableId, status: newStatus } = data || {}
       if (tableId && newStatus) {
@@ -969,7 +968,7 @@ export function UnifiedFloorPlan({
             </p>
             {mode === 'admin' && (
               <p style={{ fontSize: '12px', marginTop: '4px', opacity: 0.6 }}>
-                Click "Add Table" to get started
+                Click &quot;Add Table&quot; to get started
               </p>
             )}
           </div>

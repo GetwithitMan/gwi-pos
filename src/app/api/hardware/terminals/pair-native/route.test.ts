@@ -14,7 +14,7 @@ const mockDb = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/with-venue', () => ({
-  withVenue: (handler: Function) => handler,
+  withVenue: (handler: (...args: unknown[]) => unknown) => handler,
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))

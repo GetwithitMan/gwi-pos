@@ -86,7 +86,7 @@ export interface SnapshotElement {
   elementType: string
   visualType: string | null
   linkedMenuItemId: string | null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   linkedMenuItem: any
   sectionId: string | null
   section: { id: string; name: string; color: string | null } | null
@@ -95,7 +95,7 @@ export interface SnapshotElement {
   width: number | null
   height: number | null
   rotation: number | null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   geometry: any
   thickness: number | null
   fillColor: string | null
@@ -108,7 +108,7 @@ export interface SnapshotElement {
   isLocked: boolean
   isVisible: boolean
   waitlistCount: number
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   waitlistEntries: any[]
 }
 

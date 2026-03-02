@@ -64,7 +64,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // If searching by card last 4, we need to join through payment
-    let receipts
     if (cardLast4) {
       // Find payments with this card
       const payments = await db.payment.findMany({
@@ -75,7 +74,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where.paymentId = { in: paymentIds }
     }
 
-    receipts = await db.digitalReceipt.findMany({
+    const receipts = await db.digitalReceipt.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       skip: offset,

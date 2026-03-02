@@ -215,10 +215,12 @@ async function seedRolesAndEmployees(local: PrismaClient, neon: PrismaClient) {
     where: { locationId: SOURCE_LOC, isActive: true },
   })
   for (const e of emps) {
+    const mappedRoleId = e.roleId ? roleIdMap[e.roleId] : undefined
+    if (!mappedRoleId) continue
     await neon.employee.create({
       data: {
         locationId: TARGET_LOC,
-        roleId: e.roleId ? (roleIdMap[e.roleId] ?? null) : null,
+        roleId: mappedRoleId,
         firstName: e.firstName,
         lastName: e.lastName,
         pin: e.pin,

@@ -13,7 +13,6 @@ import { emitToLocation } from '@/lib/socket-server'
 import {
   type OrderEventPayload,
   type OrderState,
-  ORDER_EVENT_TYPES,
   emptyOrderState,
   getSubtotalCents,
   getDiscountTotalCents,

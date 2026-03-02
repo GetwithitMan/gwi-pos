@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { saveDraftOrder } from '@/lib/draft-order-persistence'
+import { useOrderStore } from '@/stores/order-store'
 
 interface AvailableRole {
   id: string
@@ -70,8 +71,6 @@ export const useAuthStore = create<AuthState>()(
         const { employee, locationId } = get()
         if (locationId && employee?.id) {
           try {
-            // Dynamic import avoided: order-store may already be loaded
-            const { useOrderStore } = require('@/stores/order-store')
             const order = useOrderStore.getState().currentOrder
             if (order && order.items.length > 0) {
               saveDraftOrder(locationId, employee.id, order)

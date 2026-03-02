@@ -349,7 +349,7 @@ export function PizzaVisualBuilder({
   const handleToppingClick = (topping: PizzaTopping) => {
     const existing = selectedToppings.find(t => t.toppingId === topping.id)
     const maxSections = data?.config.maxSections || 8
-    let sectionsToAdd = activeSections.length > 0 ? [...activeSections] : Array.from({ length: maxSections }, (_, i) => i)
+    const sectionsToAdd = activeSections.length > 0 ? [...activeSections] : Array.from({ length: maxSections }, (_, i) => i)
 
     if (existing) {
       const sameSections = existing.sections.length === sectionsToAdd.length &&
@@ -395,7 +395,7 @@ export function PizzaVisualBuilder({
   // Handle sauce click - works like toppings with sections
   const handleSauceClick = (sauce: PizzaSauce) => {
     const maxSections = data?.config.maxSections || 8
-    let sectionsToAdd = activeSections.length > 0 ? [...activeSections] : Array.from({ length: maxSections }, (_, i) => i)
+    const sectionsToAdd = activeSections.length > 0 ? [...activeSections] : Array.from({ length: maxSections }, (_, i) => i)
 
     const existing = selectedSauces.find(s => s.sauceId === sauce.id)
 
@@ -431,7 +431,7 @@ export function PizzaVisualBuilder({
   // Handle cheese click - works like toppings with sections
   const handleCheeseClick = (cheese: PizzaCheese) => {
     const maxSections = data?.config.maxSections || 8
-    let sectionsToAdd = activeSections.length > 0 ? [...activeSections] : Array.from({ length: maxSections }, (_, i) => i)
+    const sectionsToAdd = activeSections.length > 0 ? [...activeSections] : Array.from({ length: maxSections }, (_, i) => i)
 
     const existing = selectedCheeses.find(c => c.cheeseId === cheese.id)
 

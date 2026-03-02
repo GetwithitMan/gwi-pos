@@ -54,9 +54,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
   // `connected` reflects whether the scale device is responding (via scale:status events),
   // NOT whether the socket transport is connected.
   const [scaleConnected, setScaleConnected] = useState(false)
-  const readingRef = useRef(reading)
-  readingRef.current = reading
-  const lastGrossWeightRef = useRef<number | null>(null)
+  const [lastGrossWeight, setLastGrossWeight] = useState<number | null>(null)
   // Track last scale:weight timestamp — if no reading within heartbeat window, mark disconnected
   const lastWeightAtRef = useRef<number>(0)
 
@@ -82,7 +80,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
       if (!scaleConnected) setScaleConnected(true)
       // Track last gross weight for tare computation
       if (data.grossNet === 'gross') {
-        lastGrossWeightRef.current = data.weight
+        setLastGrossWeight(data.weight)
       }
       setReading({
         weight: data.weight,
@@ -149,11 +147,10 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
   }, [scaleId])
 
   const captureWeight = useCallback((): WeightReadingState | null => {
-    const current = readingRef.current
-    if (current.weight === null || !current.stable) return null
-    if (current.weight <= 0) return null
-    return { ...current }
-  }, [])
+    if (reading.weight === null || !reading.stable) return null
+    if (reading.weight <= 0) return null
+    return { ...reading }
+  }, [reading])
 
   // No scale bound — return disconnected defaults
   if (!scaleId) {
@@ -177,7 +174,7 @@ export function useScale(scaleId: string | null | undefined): UseScaleReturn {
     connected: scaleConnected,
     grossNet: reading.grossNet,
     overCapacity: reading.overCapacity,
-    lastGrossWeight: lastGrossWeightRef.current,
+    lastGrossWeight,
     tare,
     captureWeight,
   }

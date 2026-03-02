@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
-import { useAuthStore } from '@/stores/auth-store'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { Button } from '@/components/ui/button'
 import { EntertainmentItemCard } from '@/components/entertainment/EntertainmentItemCard'
@@ -29,7 +28,7 @@ export default function EntertainmentKDSPage() {
   const [selectedEntryForSeat, setSelectedEntryForSeat] = useState<WaitlistEntry | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   const [socketConnected, setSocketConnected] = useState(false)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const socketRef = useRef<any>(null)
 
   // Get location ID from employee context

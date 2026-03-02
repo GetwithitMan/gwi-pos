@@ -16,7 +16,6 @@ import type {
   AdjustParams,
   VoidParams,
   ReturnParams,
-  DevicePromptParams,
   CollectCardParams,
   PartialReversalParams,
   SaleByRecordParams,

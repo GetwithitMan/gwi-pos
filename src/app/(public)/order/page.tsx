@@ -18,6 +18,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import Image from 'next/image'
 
 // ─── Datacap Hosted Token Global ─────────────────────────────────────────────
 // Loaded from CDN script tag below. Declared here to satisfy TypeScript.
@@ -178,7 +179,7 @@ function ItemModal({ item, onClose, onAdd }: ItemModalProps) {
       <div className="w-full max-w-lg bg-gray-900 rounded-2xl overflow-hidden shadow-2xl">
         {/* Header */}
         {item.imageUrl && (
-          <img src={item.imageUrl} alt={item.name} className="w-full h-48 object-cover" />
+          <Image src={item.imageUrl} alt={item.name} width={600} height={192} className="w-full h-48 object-cover" />
         )}
         <div className="p-5">
           <div className="flex justify-between items-start mb-1">
@@ -323,57 +324,6 @@ function OnlineOrderPageInner() {
       .finally(() => setMenuLoading(false))
   }, [locationId])
 
-  // ── Load Datacap script when entering payment step ──────────────────────────
-
-  useEffect(() => {
-    if (step !== 'payment') return
-    if (datacapInitialized.current) return
-
-    const env = process.env.NEXT_PUBLIC_DATACAP_ENV ?? 'cert'
-    const scriptSrc =
-      env === 'production'
-        ? 'https://token.dcap.com/v1/client/hosted'
-        : 'https://token-cert.dcap.com/v1/client/hosted'
-
-    const existing = document.querySelector(`script[src="${scriptSrc}"]`)
-    if (existing) {
-      initDatacap()
-      return
-    }
-
-    const script = document.createElement('script')
-    script.src = scriptSrc
-    script.async = true
-    script.onload = () => initDatacap()
-    script.onerror = () => setPaymentError('Failed to load payment form. Please refresh.')
-    document.body.appendChild(script)
-
-    return () => {
-      // Cleanup listener on unmount
-      try {
-        DatacapHostedWebToken.removeMessageEventListener()
-      } catch {
-        // library may not be loaded yet
-      }
-    }
-  }, [step])
-
-  function initDatacap() {
-    const tokenKey = process.env.NEXT_PUBLIC_DATACAP_PAYAPI_TOKEN_KEY ?? ''
-    if (!tokenKey) {
-      setPaymentError('Payment system not configured. Please contact the venue.')
-      return
-    }
-    try {
-      DatacapHostedWebToken.init(tokenKey, 'datacap-token-iframe', handleDatacapToken)
-      datacapInitialized.current = true
-      setDatacapReady(true)
-    } catch (err) {
-      console.error('Datacap init error:', err)
-      setPaymentError('Failed to initialize payment form. Please refresh.')
-    }
-  }
-
   // ── Handle Datacap token callback ───────────────────────────────────────────
 
   const handleDatacapToken = useCallback(async (resp: DatacapTokenResponse) => {
@@ -434,6 +384,57 @@ function OnlineOrderPageInner() {
       setPaymentLoading(false)
     }
   }, [locationId, cartItems, customerName, customerEmail, customerPhone, specialNotes])
+
+  // ── Load Datacap script when entering payment step ──────────────────────────
+
+  const initDatacap = useCallback(() => {
+    const tokenKey = process.env.NEXT_PUBLIC_DATACAP_PAYAPI_TOKEN_KEY ?? ''
+    if (!tokenKey) {
+      setPaymentError('Payment system not configured. Please contact the venue.')
+      return
+    }
+    try {
+      DatacapHostedWebToken.init(tokenKey, 'datacap-token-iframe', handleDatacapToken)
+      datacapInitialized.current = true
+      setDatacapReady(true)
+    } catch (err) {
+      console.error('Datacap init error:', err)
+      setPaymentError('Failed to initialize payment form. Please refresh.')
+    }
+  }, [handleDatacapToken, setPaymentError, setDatacapReady])
+
+  useEffect(() => {
+    if (step !== 'payment') return
+    if (datacapInitialized.current) return
+
+    const env = process.env.NEXT_PUBLIC_DATACAP_ENV ?? 'cert'
+    const scriptSrc =
+      env === 'production'
+        ? 'https://token.dcap.com/v1/client/hosted'
+        : 'https://token-cert.dcap.com/v1/client/hosted'
+
+    const existing = document.querySelector(`script[src="${scriptSrc}"]`)
+    if (existing) {
+      initDatacap()
+      return
+    }
+
+    const script = document.createElement('script')
+    script.src = scriptSrc
+    script.async = true
+    script.onload = () => initDatacap()
+    script.onerror = () => setPaymentError('Failed to load payment form. Please refresh.')
+    document.body.appendChild(script)
+
+    return () => {
+      // Cleanup listener on unmount
+      try {
+        DatacapHostedWebToken.removeMessageEventListener()
+      } catch {
+        // library may not be loaded yet
+      }
+    }
+  }, [step, initDatacap, setPaymentError])
 
   // ── Cart operations ─────────────────────────────────────────────────────────
 
@@ -585,9 +586,11 @@ function OnlineOrderPageInner() {
                   }`}
                 >
                   {item.imageUrl && (
-                    <img
+                    <Image
                       src={item.imageUrl}
                       alt={item.name}
+                      width={80}
+                      height={80}
                       className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
                     />
                   )}

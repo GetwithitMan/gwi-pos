@@ -90,7 +90,7 @@ export default function OrderTypesPage() {
         })
 
         if (response.ok) {
-          employee?.location?.id && loadOrderTypes(employee.location.id)
+          if (employee?.location?.id) loadOrderTypes(employee.location.id)
           setShowModal(false)
           setEditingType(null)
         } else {
@@ -110,7 +110,7 @@ export default function OrderTypesPage() {
         })
 
         if (response.ok) {
-          employee?.location?.id && loadOrderTypes(employee.location.id)
+          if (employee?.location?.id) loadOrderTypes(employee.location.id)
           setShowModal(false)
           setEditingType(null)
         } else {
@@ -140,7 +140,7 @@ export default function OrderTypesPage() {
       })
 
       if (response.ok) {
-        employee?.location?.id && loadOrderTypes(employee.location.id)
+        if (employee?.location?.id) loadOrderTypes(employee.location.id)
       }
     } catch (error) {
       console.error('Failed to delete order type:', error)
@@ -179,7 +179,7 @@ export default function OrderTypesPage() {
           {orderTypes.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               <p>No order types configured.</p>
-              <p className="text-sm mt-2">Click "Initialize System Types" to set up default order types.</p>
+              <p className="text-sm mt-2">Click &quot;Initialize System Types&quot; to set up default order types.</p>
               <button
                 onClick={async () => {
                   try {
@@ -189,7 +189,7 @@ export default function OrderTypesPage() {
                       body: JSON.stringify({ locationId: employee?.location?.id }),
                     })
                     if (response.ok) {
-                      employee?.location?.id && loadOrderTypes(employee.location.id)
+                      if (employee?.location?.id) loadOrderTypes(employee.location.id)
                     }
                   } catch (error) {
                     console.error('Failed to initialize order types:', error)

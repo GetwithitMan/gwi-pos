@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
-import { recalculateTotalWithTip, calculateOrderTotals } from '@/lib/order-calculations'
+import { recalculateTotalWithTip } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
-import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
+import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // GET - Get order details
 export const GET = withVenue(async function GET(

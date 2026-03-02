@@ -75,7 +75,7 @@ export default function TaxRulesPage() {
     } catch (error) {
       console.error('Failed to load categories:', error)
     }
-  }, [employee?.location?.id])
+  }, [employee])
 
   useEffect(() => {
     if (employee?.location?.id) {

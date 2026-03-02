@@ -2,9 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
-import { formatCurrency } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
 
 interface Customer {

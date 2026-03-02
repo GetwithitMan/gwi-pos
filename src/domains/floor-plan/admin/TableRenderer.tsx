@@ -8,8 +8,7 @@
  */
 
 import React from 'react';
-import { FloorCanvasAPI } from '../canvas';
-import type { EditorTable, EditorSeat, TableShape } from './types';
+import type { EditorTable } from './types';
 import { SeatRenderer } from './SeatRenderer';
 
 // Stable empty Set to avoid re-renders from default parameter recreation

@@ -10,7 +10,7 @@
  * usePricing) and adds the missing "glue layer" for item selection → modal → store.
  */
 
-import { useCallback, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { toast } from '@/stores/toast-store'
 import type { PizzaOrderConfig } from '@/types'
@@ -152,15 +152,10 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
 
   // Use refs for values that change frequently to avoid stale closures
   const seatNumberRef = useRef(seatNumber)
-  seatNumberRef.current = seatNumber
   const sourceTableIdRef = useRef(sourceTableId)
-  sourceTableIdRef.current = sourceTableId
   const tableIdRef = useRef(tableId)
-  tableIdRef.current = tableId
   const guestCountRef = useRef(guestCount)
-  guestCountRef.current = guestCount
   const defaultOrderTypeRef = useRef(defaultOrderType)
-  defaultOrderTypeRef.current = defaultOrderType
 
   // Modifier-defaults cache: avoids redundant fetches on rapid clicks
   // Map<menuItemId, { mods, allSatisfied, fetchedAt }>
@@ -177,7 +172,14 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
   // Quantity multiplier — defaults to 1, auto-resets after each item add
   const [quantityMultiplier, setQuantityMultiplier] = useState(1)
   const quantityMultiplierRef = useRef(1)
-  quantityMultiplierRef.current = quantityMultiplier
+  useEffect(() => {
+    seatNumberRef.current = seatNumber
+    sourceTableIdRef.current = sourceTableId
+    tableIdRef.current = tableId
+    guestCountRef.current = guestCount
+    defaultOrderTypeRef.current = defaultOrderType
+    quantityMultiplierRef.current = quantityMultiplier
+  })
 
   /** Reset multiplier back to 1 */
   const resetQuantity = useCallback(() => {

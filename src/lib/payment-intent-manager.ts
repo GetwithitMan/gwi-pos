@@ -1,6 +1,6 @@
 'use client'
 
-import { offlineDb, PaymentIntent, PaymentIntentStatus } from './offline-db'
+import { offlineDb, PaymentIntent } from './offline-db'
 import { logger } from './logger'
 import { uuid } from './uuid'
 

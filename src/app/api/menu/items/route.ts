@@ -88,7 +88,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       status: StockStatus
       lowestIngredient?: { name: string; stock: number; threshold: number }
     } {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const itemWithIngredients = item as any
       if (!includeStock || !itemWithIngredients.ingredients) {
         return { status: 'in_stock' }
@@ -97,7 +97,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       let worstStatus: StockStatus = 'in_stock'
       let lowestIngredient: { name: string; stock: number; threshold: number } | undefined
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       for (const link of itemWithIngredients.ingredients) {
         const ing = link.ingredient
         if (!ing || !ing.isDailyCountItem) continue

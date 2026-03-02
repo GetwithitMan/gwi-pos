@@ -170,7 +170,7 @@ export default function CrewTipBankPage() {
   useEffect(() => {
     setOffset(0)
     fetchLedger(0, false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [employee, dateRange, sourceTypeFilter])
 
   const handleLoadMore = () => {

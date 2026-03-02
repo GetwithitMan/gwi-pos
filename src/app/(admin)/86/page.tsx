@@ -228,7 +228,7 @@ export default function Quick86Page() {
                   )}
                   {item.parentIs86d && !item.is86d && (
                     <span className="text-xs text-orange-600">
-                      (parent 86'd)
+                      (parent 86&apos;d)
                     </span>
                   )}
                   {hasChildren && (

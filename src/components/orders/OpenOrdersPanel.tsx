@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
@@ -10,7 +10,6 @@ import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
 import { TabTransferModal } from './TabTransferModal'
 import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
 import { toast } from '@/stores/toast-store'
-import { isSharedSocketConnected } from '@/lib/shared-socket'
 
 interface OpenOrder {
   id: string
@@ -225,6 +224,7 @@ export function OpenOrdersPanel({
   const [viewMode, setViewMode] = useState<'open' | 'closed'>('open')
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const deferredSearchQuery = useDeferredValue(searchQuery)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [ageFilter, setAgeFilter] = useState<'all' | 'today' | 'previous' | 'declined'>('all')
@@ -408,55 +408,61 @@ export function OpenOrdersPanel({
     }
   }
 
-  // Sort and filter — hide split children from top-level list (they nest under parent)
-  const displayOrders = viewMode === 'open'
-    ? orders.filter(o => !o.parentOrderId)  // Hide split children
-    : closedOrders
-  let filteredOrders = [...displayOrders]
+  // Sort and filter — hide split children from top-level list (they nest under parent).
+  // useDeferredValue on searchQuery keeps the text input responsive while the list
+  // recomputes; the full chain is memoized so unrelated re-renders are free.
+  const filteredOrders = useMemo(() => {
+    const displayOrders = viewMode === 'open'
+      ? orders.filter(o => !o.parentOrderId)  // Hide split children
+      : closedOrders
+    let result = [...displayOrders]
 
-  if (filter === 'mine' && employeeId) {
-    filteredOrders = filteredOrders.filter(o => o.employee.id === employeeId)
-  }
-  if (typeFilter) {
-    filteredOrders = filteredOrders.filter(o => o.orderType === typeFilter)
-  }
-  // Age filter — 'previous' and 'today' are handled server-side via the API;
-  // client-side we just filter 'declined' which is a status flag on current-day orders
-  if (ageFilter === 'declined') {
-    filteredOrders = filteredOrders.filter(o => o.isCaptureDeclined)
-  }
-  if (searchQuery.trim()) {
-    const query = searchQuery.toLowerCase().trim()
-    filteredOrders = filteredOrders.filter(o => {
-      const tabName = o.tabName?.toLowerCase() || ''
-      const tableName = o.table?.name?.toLowerCase() || ''
-      const customerName = o.customer?.name?.toLowerCase() || ''
-      const cardholderName = o.cardholderName?.toLowerCase() || ''
-      const cardLast4 = o.preAuth?.last4 || ''
-      const orderNum = String(o.orderNumber)
-      const displayNum = o.displayNumber || ''
-      const empName = o.employee.name?.toLowerCase() || ''
-      return tabName.includes(query) || tableName.includes(query) || customerName.includes(query) ||
-        cardholderName.includes(query) || cardLast4.includes(query) ||
-        orderNum.includes(query) || displayNum.includes(query) || empName.includes(query)
-    })
-  }
-
-  // Client-side sort (for fields not supported by API sort)
-  filteredOrders.sort((a, b) => {
-    const nameA = (a.tabName || a.customer?.name || `Order #${a.orderNumber}`).toLowerCase()
-    const nameB = (b.tabName || b.customer?.name || `Order #${b.orderNumber}`).toLowerCase()
-    switch (sortBy) {
-      case 'newest': return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      case 'oldest': return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      case 'alpha_first': return nameA.localeCompare(nameB)
-      case 'alpha_last': return nameB.localeCompare(nameA)
-      case 'total_high': return getDisplayTotal(b) - getDisplayTotal(a)
-      case 'total_low': return getDisplayTotal(a) - getDisplayTotal(b)
-      case 'employee': return a.employee.name.localeCompare(b.employee.name)
-      default: return 0
+    if (filter === 'mine' && employeeId) {
+      result = result.filter(o => o.employee.id === employeeId)
     }
-  })
+    if (typeFilter) {
+      result = result.filter(o => o.orderType === typeFilter)
+    }
+    // Age filter — 'previous' and 'today' are handled server-side via the API;
+    // client-side we just filter 'declined' which is a status flag on current-day orders
+    if (ageFilter === 'declined') {
+      result = result.filter(o => o.isCaptureDeclined)
+    }
+    if (deferredSearchQuery.trim()) {
+      const query = deferredSearchQuery.toLowerCase().trim()
+      result = result.filter(o => {
+        const tabName = o.tabName?.toLowerCase() || ''
+        const tableName = o.table?.name?.toLowerCase() || ''
+        const customerName = o.customer?.name?.toLowerCase() || ''
+        const cardholderName = o.cardholderName?.toLowerCase() || ''
+        const cardLast4 = o.preAuth?.last4 || ''
+        const orderNum = String(o.orderNumber)
+        const displayNum = o.displayNumber || ''
+        const empName = o.employee.name?.toLowerCase() || ''
+        return tabName.includes(query) || tableName.includes(query) || customerName.includes(query) ||
+          cardholderName.includes(query) || cardLast4.includes(query) ||
+          orderNum.includes(query) || displayNum.includes(query) || empName.includes(query)
+      })
+    }
+
+    // Client-side sort (for fields not supported by API sort)
+    result.sort((a, b) => {
+      const nameA = (a.tabName || a.customer?.name || `Order #${a.orderNumber}`).toLowerCase()
+      const nameB = (b.tabName || b.customer?.name || `Order #${b.orderNumber}`).toLowerCase()
+      switch (sortBy) {
+        case 'newest': return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        case 'oldest': return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        case 'alpha_first': return nameA.localeCompare(nameB)
+        case 'alpha_last': return nameB.localeCompare(nameA)
+        case 'total_high': return getDisplayTotal(b) - getDisplayTotal(a)
+        case 'total_low': return getDisplayTotal(a) - getDisplayTotal(b)
+        case 'employee': return a.employee.name.localeCompare(b.employee.name)
+        default: return 0
+      }
+    })
+
+    return result
+  }, [viewMode, orders, closedOrders, filter, employeeId, typeFilter, ageFilter, deferredSearchQuery, sortBy])
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString)
@@ -485,6 +491,8 @@ export function OpenOrdersPanel({
     return { primary, secondary }
   }
 
+  // Used only for type-filter chip counts (unfiltered display set)
+  const displayOrders = viewMode === 'open' ? orders.filter(o => !o.parentOrderId) : closedOrders
   const typeCounts = displayOrders.reduce((acc, o) => {
     acc[o.orderType] = (acc[o.orderType] || 0) + 1
     return acc
@@ -613,7 +621,7 @@ export function OpenOrdersPanel({
         key={order.id}
         onClick={() => {
           if (isPaidOrClosed) { setClosedOrderModalOrder(order); return }
-          onViewOrder ? onViewOrder(order) : onSelectOrder(order)
+          if (onViewOrder) { onViewOrder(order) } else { onSelectOrder(order) }
         }}
         className={`p-3 rounded-xl transition-all border ${
           isPaidOrClosed

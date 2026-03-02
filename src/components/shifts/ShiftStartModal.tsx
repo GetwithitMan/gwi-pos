@@ -89,7 +89,7 @@ export function ShiftStartModal({
     if (isOpen && mode === 'none') {
       handleStartShift()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [isOpen, mode])
 
   const handleStartShift = async () => {

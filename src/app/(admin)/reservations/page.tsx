@@ -562,7 +562,7 @@ function ReservationModal({
         })))
       })
       .catch(() => {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [])
 
   async function handleSubmit(e: React.FormEvent) {

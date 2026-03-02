@@ -276,7 +276,7 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
                 <Sep />
                 {onOpenSettings && <DropItem label="Settings" onClick={() => { setShowEmployeeMenu(false); onOpenSettings() }} />}
                 <Sep />
-                <DropItem label="Clock Out" color="#f87171" onClick={() => { setShowEmployeeMenu(false); onOpenTimeClock ? onOpenTimeClock() : onLogout() }} />
+                <DropItem label="Clock Out" color="#f87171" onClick={() => { setShowEmployeeMenu(false); if (onOpenTimeClock) { onOpenTimeClock() } else { onLogout() } }} />
               </div>
             </motion.div>
           )}

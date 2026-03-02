@@ -67,7 +67,7 @@ function MobileTabsContent() {
       router.replace(loginUrl)
     }
     checkAuth()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])  
 
   // ── Load open orders ──
   const loadOpenOrders = useCallback(async (forPreviousDay = false) => {

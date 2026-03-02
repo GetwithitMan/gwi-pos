@@ -131,7 +131,7 @@ function ReceiptPreview({ settings }: { settings: PizzaPrintSettings }) {
         <div className="mt-2 text-xs text-gray-600">Total toppings: 4</div>
       )}
       {settings.footer?.repeatSizeAtBottom && (
-        <div className="mt-1 font-bold">LARGE - 14"</div>
+        <div className="mt-1 font-bold">LARGE - 14&quot;</div>
       )}
 
       {/* Divider */}
@@ -582,7 +582,7 @@ export function PizzaPrintSettingsEditor({ settings, onSave, onClose }: PizzaPri
                     <label className="flex items-center gap-2 p-2 bg-gray-50 rounded text-sm">
                       <input type="checkbox" checked={localSettings.header?.showSizeInches ?? true}
                         onChange={(e) => updateSettings('header', { showSizeInches: e.target.checked })} className="w-4 h-4" />
-                      Show Inches (14")
+                      Show Inches (14&quot;)
                     </label>
                     <label className="flex items-center gap-2 p-2 bg-gray-50 rounded text-sm">
                       <input type="checkbox" checked={localSettings.header?.showCrustProminent ?? true}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import {
@@ -160,7 +160,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
     try {
       let url = '/api/hardware/payment-readers'
       let method = 'POST'
-      let body: Record<string, unknown> = {
+      const body: Record<string, unknown> = {
         locationId,
         name: form.name.trim(),
         connectionType: form.connectionType,

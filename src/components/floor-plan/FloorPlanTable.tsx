@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FloorPlanTable as TableType, FloorPlanSeat } from './use-floor-plan'
 import { SeatInfo, determineSeatStatus, SEAT_STATUS_COLORS } from '@/lib/seat-utils'
-import { type TableRect, type Point } from '@/lib/table-geometry'
 
 interface FloorPlanTableProps {
   table: TableType

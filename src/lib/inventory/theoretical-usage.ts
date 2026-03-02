@@ -9,7 +9,6 @@ import { db } from '@/lib/db'
 import type {
   CalculateTheoreticalUsageParams,
   InventoryItemData,
-  MultiplierSettings,
   PrepItemWithIngredients,
   TheoreticalUsageItem,
   TheoreticalUsageResult,
@@ -189,9 +188,9 @@ export async function calculateTheoreticalUsage(
             removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
           }
           // Check ingredient path (fallback)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           else if ((mod.modifier as any)?.ingredient?.inventoryItem?.id) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             removedIngredientIds.add((mod.modifier as any).ingredient.inventoryItem.id)
           }
         }
@@ -229,7 +228,7 @@ export async function calculateTheoreticalUsage(
 
       // Process liquor recipe ingredients (RecipeIngredient -> BottleProduct -> InventoryItem)
       // This handles cocktails created via the Liquor Builder
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const recipeIngredients = (orderItem.menuItem as any)?.recipeIngredients
       if (recipeIngredients && Array.isArray(recipeIngredients)) {
         for (const ing of recipeIngredients) {
@@ -283,7 +282,7 @@ export async function calculateTheoreticalUsage(
         }
 
         // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const ingredient = (mod.modifier as any)?.ingredient
         if (ingredient?.inventoryItem) {
           const stdQty = toNumber(ingredient.standardQuantity) || 1

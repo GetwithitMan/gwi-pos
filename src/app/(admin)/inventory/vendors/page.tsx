@@ -41,8 +41,8 @@ export default function VendorsPage() {
 
   // Refs to break circular dependency with hook callbacks
   const showInactiveRef = useRef(false)
-  showInactiveRef.current = showInactive
   const setItemsRef = useRef<React.Dispatch<React.SetStateAction<Vendor[]>> | null>(null)
+  useEffect(() => { showInactiveRef.current = showInactive })
 
   const locationId = employee?.location?.id
 
@@ -73,7 +73,7 @@ export default function VendorsPage() {
     },
   })
 
-  setItemsRef.current = crud.setItems
+  useEffect(() => { setItemsRef.current = crud.setItems })
 
   const {
     items: vendors,

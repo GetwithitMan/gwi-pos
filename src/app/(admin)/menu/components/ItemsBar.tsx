@@ -1,6 +1,7 @@
 'use client'
 
 import { RefObject } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import type { MenuItem, Category } from '../types'
@@ -41,9 +42,9 @@ export function ItemsBar({
           {selectedCategoryData?.name} Items
         </span>
         {selectedCategoryData?.categoryType === 'liquor' && (
-          <a href="/liquor-builder" className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full hover:bg-purple-200">
+          <Link href="/liquor-builder" className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full hover:bg-purple-200">
             → Bottles & Recipes in Liquor Builder
-          </a>
+          </Link>
         )}
         {selectedCategoryData?.categoryType === 'entertainment' && (
           <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">

@@ -185,7 +185,7 @@ function resolveClient(): PrismaClient {
   // supports synchronous property access (backward-compat layer).
   try {
     const headersList = headers()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const slug = (headersList as any).get('x-venue-slug') as string | null
     if (slug) {
       return getDbForVenue(slug)

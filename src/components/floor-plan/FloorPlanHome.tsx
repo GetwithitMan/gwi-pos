@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense, useTransition } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useFloorPlanStore, FloorPlanTable, FloorPlanSection, FloorPlanElement } from './use-floor-plan'
 import { FloorPlanEntertainment } from './FloorPlanEntertainment'
@@ -31,12 +31,12 @@ import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { useSocket } from '@/hooks/useSocket'
 // useMenuSearch lifted to orders/page.tsx (UnifiedPOSHeader)
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
-import type { EngineMenuItem, EngineModifier, EngineIngredientMod, EnginePricingOption } from '@/hooks/useOrderingEngine'
+import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
 import type { PricingOption } from '@/types'
 // MenuSearchInput, MenuSearchResults lifted to UnifiedPOSHeader
 import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
 import { isTempId, fetchAndMergeOrder } from '@/lib/order-utils'
-import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
+import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
 import { useOrderEditing } from '@/hooks/useOrderEditing'
 import './styles/floor-plan.css'
 
@@ -238,6 +238,7 @@ export function FloorPlanHome({
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [allMenuItems, setAllMenuItems] = useState<MenuItem[]>(initialMenuItems || []) // Full menu, loaded once
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])       // Filtered by category
+  const [isCategoryPending, startCategoryTransition] = useTransition()
   const loadingMenuItems = false // Always false — loading handled by parent
 
   // Sync from parent when props update (e.g., parent's loadMenu completes after mount)
@@ -261,9 +262,11 @@ export function FloorPlanHome({
 
   // Refs for stable callbacks (avoid stale closures + prevent callback recreation)
   const selectedCategoryIdRef = useRef(selectedCategoryId)
-  selectedCategoryIdRef.current = selectedCategoryId
   const allMenuItemsRef = useRef(allMenuItems)
-  allMenuItemsRef.current = allMenuItems
+  useEffect(() => {
+    selectedCategoryIdRef.current = selectedCategoryId
+    allMenuItemsRef.current = allMenuItems
+  })
 
   // Open orders count — also reported to parent for UnifiedPOSHeader badge
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
@@ -337,7 +340,7 @@ export function FloorPlanHome({
       setActiveOrderType(currentOrder.orderType || null)
       setShowOrderPanel(true)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []) // Only on mount
 
   // === Shared order hook (single source of truth for order items) ===
@@ -404,7 +407,7 @@ export function FloorPlanHome({
       categoryType: item.categoryType,
       splitLabel: item.splitLabel,
     }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
 
   // Per-seat color mapping: which seats have items (for color-coding on table)
@@ -648,19 +651,23 @@ export function FloorPlanHome({
 
   // FIX: Ref to always access latest tables data (avoids stale closure issues)
   const tablesRef = useRef(tables)
-  tablesRef.current = tables
   // Optimistic grace period: timestamp until which socket-triggered full refreshes are deferred
   const optimisticGraceRef = useRef<number>(0)
 
   // Ref for fixtures/elements data (for collision detection)
   const fixturesRef = useRef(elements)
-  fixturesRef.current = elements
+  useEffect(() => {
+    tablesRef.current = tables
+    fixturesRef.current = elements
+  })
 
   // FIX: Refs for auto-scale values (needed in handlePointerMove for coordinate transformation)
   const autoScaleRef = useRef(autoScale)
-  autoScaleRef.current = autoScale
   const autoScaleOffsetRef = useRef(autoScaleOffset)
-  autoScaleOffsetRef.current = autoScaleOffset
+  useEffect(() => {
+    autoScaleRef.current = autoScale
+    autoScaleOffsetRef.current = autoScaleOffset
+  })
 
   // Helper to get best seat count - use MAX of capacity and actual seats, plus any extra seats
   const getTableSeatCount = useCallback((t: FloorPlanTable): number => {
@@ -756,7 +763,7 @@ export function FloorPlanHome({
     if (initialCategories === undefined) {
       loadCategories()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [locationId, initialSnapshot])
 
   // Socket.io: primary update mechanism for all floor plan data
@@ -829,13 +836,13 @@ export function FloorPlanHome({
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
     // Floor plan layout changes from another terminal (structure change — full reload)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onFloorPlanUpdated = () => {
       logger.log('[FloorPlanHome] floor-plan:updated — full reload (structure change)')
       refreshAll()
     }
     // Open orders list changed (create/send/pay/void)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onOrdersListChanged = (data: any) => {
       const { trigger, tableId, orderNumber, status } = data || {}
       logger.log(`[FloorPlanHome] orders:list-changed trigger=${trigger} tableId=${tableId}`)
@@ -860,7 +867,7 @@ export function FloorPlanHome({
       }
     }
     // Order totals changed — delta patch the table's displayed total
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onTotalsUpdated = (data: any) => {
       const { orderId, totals } = data || {}
       if (orderId && totals) {
@@ -873,7 +880,7 @@ export function FloorPlanHome({
       }
     }
     // Explicit table status change
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onTableStatusChanged = (data: any) => {
       const { tableId, status: newStatus } = data || {}
       if (tableId && newStatus) {
@@ -889,7 +896,7 @@ export function FloorPlanHome({
       loadFloorPlanData(false)
     }
     // EOD reset complete — show manager summary overlay
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const onEodReset = (data: any) => {
       logger.log('[FloorPlanHome] eod:reset-complete received', data)
       toast.success('End of day reset complete')
@@ -919,7 +926,7 @@ export function FloorPlanHome({
       socket.off('entertainment:session-update', onEntertainmentUpdate)
       socket.off('eod:reset-complete', onEodReset)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [socket, isConnected])
 
   // Parent-triggered refresh (e.g., after send-to-kitchen in orders page)
@@ -932,7 +939,7 @@ export function FloorPlanHome({
       }, 3000)
       return () => clearTimeout(timer)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [refreshTrigger])
 
   // Instant local table status: When items are added to a table order,
@@ -1128,33 +1135,37 @@ export function FloorPlanHome({
   // Filters from allMenuItems client-side instead of making per-category API calls
   // Use a ref so the useCallback closure always sees the latest value
   const tableRequiredButMissingRef = useRef(tableRequiredButMissing)
-  tableRequiredButMissingRef.current = tableRequiredButMissing
+  useEffect(() => { tableRequiredButMissingRef.current = tableRequiredButMissing })
 
   const handleCategoryClick = useCallback((categoryId: string | null) => {
     if (tableRequiredButMissingRef.current) {
       toast.warning('Tap a table on the floor plan to start an order')
       return
     }
-    if (!categoryId) {
-      // "All" was clicked - show tables
-      setSelectedCategoryId(null)
-      setViewMode('tables')
-      setMenuItems([])
-      return
-    }
+    // Grid re-render is non-urgent — wrap all state updates so the floor plan
+    // stays responsive while the item grid filters and redraws
+    startCategoryTransition(() => {
+      if (!categoryId) {
+        // "All" was clicked - show tables
+        setSelectedCategoryId(null)
+        setViewMode('tables')
+        setMenuItems([])
+        return
+      }
 
-    // Toggle behavior: clicking same category deselects it
-    if (categoryId === selectedCategoryIdRef.current) {
-      setSelectedCategoryId(null)
-      setViewMode('tables')
-      setMenuItems([])
-      return
-    }
+      // Toggle behavior: clicking same category deselects it
+      if (categoryId === selectedCategoryIdRef.current) {
+        setSelectedCategoryId(null)
+        setViewMode('tables')
+        setMenuItems([])
+        return
+      }
 
-    // Select new category — instant client-side filter (0ms, no API call)
-    setSelectedCategoryId(categoryId)
-    setViewMode('menu')
-    setMenuItems(allMenuItemsRef.current.filter(item => item.categoryId === categoryId))
+      // Select new category — instant client-side filter (0ms, no API call)
+      setSelectedCategoryId(categoryId)
+      setViewMode('menu')
+      setMenuItems(allMenuItemsRef.current.filter(item => item.categoryId === categoryId))
+    })
   }, [])
 
 
@@ -1893,6 +1904,7 @@ export function FloorPlanHome({
     isColliding,
   } = useFloorPlanDrag({
     containerRef,
+    tables,
     tablesRef,
     fixturesRef,
     autoScaleRef,
@@ -2280,6 +2292,8 @@ export function FloorPlanHome({
                         display: 'grid',
                         gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
                         gap: '16px',
+                        opacity: isCategoryPending ? 0.5 : 1,
+                        transition: 'opacity 0.15s',
                       }}
                     >
                       {menuItems.map((item) => (

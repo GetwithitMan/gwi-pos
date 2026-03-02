@@ -3,7 +3,6 @@
 import { formatCurrency } from '@/lib/utils'
 import type { SelectedModifier, Modifier, ModifierGroup } from '@/types'
 import { PRE_MODIFIER_CONFIG, type SpiritTier, SPIRIT_TIER_CONFIG, hasPreModifier } from './useModifierSelections'
-import { useState } from 'react'
 import { EightySixBadge } from './EightySixBadge'
 import { toast } from '@/stores/toast-store'
 

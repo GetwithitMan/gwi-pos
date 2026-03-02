@@ -24,8 +24,8 @@ let pixelsPerFoot = DEFAULT_PIXELS_PER_FOOT;
 // STATE (In production, this would come from the database)
 // =============================================================================
 
-let floorPlans: Map<string, FloorPlan> = new Map();
-let fixtures: Map<string, Fixture> = new Map();
+const floorPlans: Map<string, FloorPlan> = new Map();
+const fixtures: Map<string, Fixture> = new Map();
 let activeRoomId: string | null = null;
 
 // =============================================================================

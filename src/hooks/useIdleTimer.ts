@@ -31,7 +31,7 @@ export function useIdleTimer() {
   const logout = useAuthStore(s => s.logout)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
-  const lastActivityRef = useRef(Date.now())
+  const lastActivityRef = useRef<number>(0)
   const warningShownRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 

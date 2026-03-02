@@ -174,7 +174,7 @@ export function AddPreparationModal({
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-sm font-bold">2</span>
-              <h3 className="font-semibold text-gray-900">What's the yield?</h3>
+              <h3 className="font-semibold text-gray-900">What&apos;s the yield?</h3>
             </div>
 
             <div className="flex items-center gap-3">

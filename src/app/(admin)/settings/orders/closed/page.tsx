@@ -176,7 +176,7 @@ export default function ClosedOrdersPage() {
   // Initial load
   useEffect(() => {
     if (locationId) fetchOrders()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [locationId])
 
   const handleSearch = () => {

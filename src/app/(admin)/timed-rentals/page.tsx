@@ -15,12 +15,10 @@ import { calculateCardPrice } from '@/lib/pricing'
 
 import type { EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals'
 import {
-  getPricingSummary,
   DEFAULT_PRICING,
   DEFAULT_PREPAID_PACKAGES,
   getPackageSavings,
   type PrepaidPackage,
-  type HappyHourConfig,
 } from '@/lib/entertainment-pricing'
 
 interface TimedSession {
@@ -801,7 +799,7 @@ function TimedRentalsContent() {
                   <label className="block text-sm text-gray-600 mb-1">Select Item</label>
                   {timedItems.length === 0 ? (
                     <p className="text-sm text-gray-500">
-                      No timed rental items configured. Add items with type "timed_rental" in the menu.
+                      No timed rental items configured. Add items with type &quot;timed_rental&quot; in the menu.
                     </p>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">

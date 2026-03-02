@@ -147,7 +147,7 @@ export const POST = withVenue(async function POST(
     }))
 
     // Check for collisions if requested
-    let collisionResult: CollisionResult = { hasCollisions: false, collisions: [] }
+    const collisionResult: CollisionResult = { hasCollisions: false, collisions: [] }
 
     if (checkCollisions) {
       // Skip collision checks if table hasn't been positioned yet

@@ -572,7 +572,7 @@ export const OrderPanel = memo(function OrderPanel({
       setCheckOverviewItems(Array.from(groups.values()).sort((a, b) => b.qty - a.qty))
       setCheckOverviewTotal(total)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [showCheckOverview, splitInfo?.allSplitIds?.length])
 
   const renderPendingItems = () => {

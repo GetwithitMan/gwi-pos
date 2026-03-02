@@ -47,7 +47,7 @@ export function MenuSearchResults({
       {/* Header */}
       <div className="sticky top-0 bg-gray-900 border-b border-gray-700 p-3 flex items-center justify-between">
         <span className="text-gray-400 text-sm">
-          Results for "{query}"
+          Results for &quot;{query}&quot;
           {results && ` (${results.totalMatches} found)`}
         </span>
         <button
@@ -68,7 +68,7 @@ export function MenuSearchResults({
 
       {/* No Results */}
       {!isSearching && results && results.totalMatches === 0 && (
-        <div className="p-8 text-center text-gray-400">No items found for "{query}"</div>
+        <div className="p-8 text-center text-gray-400">No items found for &quot;{query}&quot;</div>
       )}
 
       {/* Results */}

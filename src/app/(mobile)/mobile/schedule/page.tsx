@@ -194,7 +194,7 @@ function MobileScheduleContent() {
     }
 
     checkAuth()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])  
 
   // Resolve locationId from localStorage if not in query params
   useEffect(() => {

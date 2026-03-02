@@ -8,7 +8,7 @@
  * Uses real API routes for persistence and socket events for real-time sync.
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EditorCanvasDB } from './EditorCanvasDB';
 import { FixtureToolbar } from './FixtureToolbar';

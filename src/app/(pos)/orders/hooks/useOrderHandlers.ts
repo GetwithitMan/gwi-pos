@@ -2,14 +2,10 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
-import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import { buildPizzaModifiers, getPizzaBasePrice } from '@/lib/pizza-order-utils'
 import { debugPizzaPricing } from '@/lib/pizza-helpers'
-import { calculateCardPrice } from '@/lib/pricing'
 import { formatCurrency } from '@/lib/utils'
 import { OfflineManager } from '@/lib/offline-manager'
-import { isTempId } from '@/lib/order-utils'
-import { fetchAndLoadSplitOrder } from '@/lib/split-order-loader'
 import { toast } from '@/stores/toast-store'
 import type {
   MenuItem,

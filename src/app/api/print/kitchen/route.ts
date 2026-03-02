@@ -7,14 +7,11 @@ import {
   buildDocument,
   buildDocumentNoCut,
   line,
-  boldLine,
-  largeLine,
   divider,
-  twoColumnLine,
   ESCPOS,
   PAPER_WIDTH,
 } from '@/lib/escpos/commands'
-import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings, RouteSpecificSettings } from '@/types/print'
+import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 

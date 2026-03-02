@@ -51,13 +51,15 @@ function PayAtTableContent() {
 
   // Refs for volatile state so socket handler always has fresh values
   const currentSplitRef = useRef(currentSplit)
-  currentSplitRef.current = currentSplit
   const splitCountRef = useRef(splitCount)
-  splitCountRef.current = splitCount
   const tipAmountRef = useRef(tipAmount)
-  tipAmountRef.current = tipAmount
   const orderRef = useRef(order)
-  orderRef.current = order
+  useEffect(() => {
+    currentSplitRef.current = currentSplit
+    splitCountRef.current = splitCount
+    tipAmountRef.current = tipAmount
+    orderRef.current = order
+  })
 
   // Wire socket for real-time payment sync with POS terminal
   useEffect(() => {

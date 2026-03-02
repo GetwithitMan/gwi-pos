@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/modal'
-import { OrderTypeConfig, WorkflowRules, OrderCustomFields, FieldDefinition } from '@/types/order-types'
+import { OrderTypeConfig, OrderCustomFields, FieldDefinition } from '@/types/order-types'
 import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 
 // Icons mapping

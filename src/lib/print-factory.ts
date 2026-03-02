@@ -26,9 +26,8 @@ import {
   buildDocument,
   buildDocumentNoCut,
   PAPER_WIDTH,
-  text,
 } from '@/lib/escpos/commands'
-import type { TemplateType, RoutedItem, OrderContext, PizzaItemData } from '@/types/routing'
+import type { TemplateType, RoutedItem, OrderContext } from '@/types/routing'
 import {
   type PizzaPrintSettings,
   type PrintTemplateSettings,
@@ -547,7 +546,7 @@ export class PrintTemplateFactory {
           seatPrefix = formatSeatNumber(item.seatNumber, s.seats.format) + ': '
         }
 
-        let itemName = s.items.caps ? item.name.toUpperCase() : item.name
+        const itemName = s.items.caps ? item.name.toUpperCase() : item.name
         const itemText = `${qty.before}${seatPrefix}${itemName}${qty.after}`
 
         // Apply item formatting
@@ -980,7 +979,7 @@ export class PrintTemplateFactory {
     for (const item of data.items) {
       // Build T-S notation prefix
       const positionPrefix = formatPositionPrefix(item)
-      let itemLine = `${positionPrefix}${item.quantity}x ${item.name}`.toUpperCase()
+      const itemLine = `${positionPrefix}${item.quantity}x ${item.name}`.toUpperCase()
 
       content.push(ESCPOS.BOLD_ON)
       content.push(line(itemLine))

@@ -354,9 +354,9 @@ export async function deductInventoryForVoidedItem(
           removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
         }
         // Check ingredient path (fallback)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         else if ((mod.modifier as any)?.ingredient?.inventoryItem?.id) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           removedIngredientIds.add((mod.modifier as any).ingredient.inventoryItem.id)
         }
       }
@@ -364,7 +364,7 @@ export async function deductInventoryForVoidedItem(
 
     // Combo expansion: if this voided item is a combo, expand to its component menu items
     // and process each component's recipe for waste deduction
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const isCombo = (orderItem.menuItem as any)?.itemType === 'combo'
     if (isCombo) {
       const comboTemplate = await db.comboTemplate.findFirst({
@@ -455,7 +455,7 @@ export async function deductInventoryForVoidedItem(
           }
 
           // Process liquor recipe ingredients
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           const compRecipeIngs = (compMenuItem as any)?.recipeIngredients
           if (compRecipeIngs && Array.isArray(compRecipeIngs)) {
             for (const ing of compRecipeIngs) {
@@ -469,7 +469,7 @@ export async function deductInventoryForVoidedItem(
           }
 
           // Process direct bottle link
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           const linkedBottle = (compMenuItem as any)?.linkedBottleProduct
           if (linkedBottle?.inventoryItem && (!compRecipeIngs || compRecipeIngs.length === 0)) {
             const pourSizeOz = toNumber(linkedBottle.pourSizeOz) || 1.5
@@ -483,7 +483,7 @@ export async function deductInventoryForVoidedItem(
     // Process recipe ingredients (skip for combos — handled above)
     if (!isCombo && orderItem.menuItem?.recipe) {
       // BUG #381: apply pour multiplier (matches paid path)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
       for (const ing of orderItem.menuItem.recipe.ingredients) {
         if (ing.inventoryItem && removedIngredientIds.has(ing.inventoryItem.id)) {
@@ -511,7 +511,7 @@ export async function deductInventoryForVoidedItem(
 
     // Process liquor recipe ingredients (RecipeIngredient -> BottleProduct -> InventoryItem)
     // This handles cocktails created via the Liquor Builder (skip for combos — handled above)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const recipeIngredients = (orderItem.menuItem as any)?.recipeIngredients
     if (!isCombo && recipeIngredients && Array.isArray(recipeIngredients)) {
       // BUG #382: Build spirit substitution map (matches paid path)
@@ -519,7 +519,7 @@ export async function deductInventoryForVoidedItem(
       // tells us which bottle was actually used instead of the recipe's default.
       const spiritSubstitutions = new Map<string, { inventoryItem: InventoryItemWithStock; pourSizeOz: number | null }>()
       for (const mod of orderItem.modifiers) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const lb = (mod as any).modifier?.linkedBottleProduct
         if (lb?.spiritCategoryId && lb.inventoryItem) {
           spiritSubstitutions.set(lb.spiritCategoryId, {
@@ -552,7 +552,7 @@ export async function deductInventoryForVoidedItem(
           toNumber(ing.bottleProduct?.pourSizeOz) ??
           1.5
         // BUG #381: apply pour multiplier (matches paid path)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
         const totalOz = pourCount * pourSizeOz * itemQty * pourMult
 
@@ -564,15 +564,15 @@ export async function deductInventoryForVoidedItem(
     // Process direct bottle link on MenuItem (simple spirit items like "Fireball Shot")
     // Only deduct if there are NO recipeIngredients — prevents double-counting
     // (skip for combos — handled above)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const linkedBottle = (orderItem.menuItem as any)?.linkedBottleProduct
     if (!isCombo && linkedBottle?.inventoryItem && (!recipeIngredients || recipeIngredients.length === 0)) {
       const pourSizeOz =
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         toNumber((orderItem.menuItem as any)?.linkedPourSizeOz) ??
         toNumber(linkedBottle.pourSizeOz) ??
         1.5
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
       const totalOz = pourSizeOz * itemQty * pourMult
 
@@ -587,9 +587,9 @@ export async function deductInventoryForVoidedItem(
 
       // BUG #381: per-modifier liteMultiplier/extraMultiplier overrides (matches paid path)
       const preModifier = mod.preModifier
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const perModSettings: typeof multiplierSettings = { ...multiplierSettings } as any
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const modRecord = (mod.modifier as any)
       if (modRecord?.liteMultiplier !== null && modRecord?.liteMultiplier !== undefined) {
         (perModSettings as any).multiplierLite = Number(modRecord.liteMultiplier)
@@ -619,7 +619,7 @@ export async function deductInventoryForVoidedItem(
       }
 
       // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const ingredient = (mod.modifier as any)?.ingredient
       if (ingredient?.inventoryItem) {
         const stdQty = toNumber(ingredient.standardQuantity) || 1

@@ -44,7 +44,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
   // Store callbacks in a ref so socket listeners always call the latest version
   // without triggering reconnection when callbacks change
   const callbacksRef = useRef(options)
-  callbacksRef.current = options
+  useEffect(() => { callbacksRef.current = options })
 
   useEffect(() => {
     if (!locationId || !enabled) return

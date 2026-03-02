@@ -63,7 +63,7 @@ interface StoreOrderItem {
   blockTimeMinutes?: number | null
   pourSize?: string | null       // T-006
   pourMultiplier?: number | null // T-006
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   pizzaConfig?: any
   sourceTableId?: string
   // Pricing option (size/variant selection)
@@ -175,10 +175,10 @@ export function isReopened(order: ReopenableOrder | null | undefined): boolean {
 
 export interface MergedOrderData {
   /** Raw API response (top-level order) */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   raw: any
   /** Merged items (from split children if split, otherwise from order itself) */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   items: any[]
   subtotal: number
   taxTotal: number
@@ -189,14 +189,14 @@ export interface MergedOrderData {
 /** Merge split ticket data into a flat items array with totals */
 function mergeSplitTickets(
   splitRes: Response,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
 ): Promise<{ items: any[]; subtotal: number; taxTotal: number; tipTotal: number; total: number } | null> {
   return splitRes.json().then(rawSplit => {
     const splitData = rawSplit.data ?? rawSplit
     const splits = splitData.splitOrders || []
     if (!Array.isArray(splits) || splits.length === 0) return null
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const items: any[] = []
     let subtotal = 0, taxTotal = 0, tipTotal = 0, total = 0
     for (const split of splits) {

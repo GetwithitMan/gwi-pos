@@ -42,7 +42,7 @@ export interface CFDSignatureRequestEvent {
 }
 
 /** POS → CFD: Payment processing */
-export interface CFDProcessingEvent {}
+export type CFDProcessingEvent = Record<string, never>
 
 /** POS → CFD: Payment approved */
 export interface CFDApprovedEvent {
@@ -58,7 +58,7 @@ export interface CFDDeclinedEvent {
 }
 
 /** POS → CFD: Return to idle */
-export interface CFDIdleEvent {}
+export type CFDIdleEvent = Record<string, never>
 
 /** CFD → POS: Customer selected tip */
 export interface CFDTipSelectedEvent {

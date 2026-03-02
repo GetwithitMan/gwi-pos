@@ -14,7 +14,6 @@ import {
   getCategorySettingsKey,
   getItemSettingsKey,
   getItemCustomizationsKey,
-  getItemOrderKey,
   DEFAULT_CATEGORY_SETTINGS,
   DEFAULT_ITEM_SETTINGS,
 } from '@/components/bartender/bartender-settings'

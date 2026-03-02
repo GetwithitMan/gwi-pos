@@ -77,7 +77,7 @@ const SLOW_THRESHOLDS: Record<string, number> = {
 }
 const DEFAULT_SLOW_THRESHOLD = 500
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type RouteHandler = (req: NextRequest, context?: any) => Promise<NextResponse | Response>
 
 /**

@@ -14,9 +14,16 @@ import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 import { calculateCardPrice } from '@/lib/pricing'
 import { isTempId } from '@/lib/order-utils'
 import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
+import dynamic from 'next/dynamic'
 import { FloorPlanHome } from '@/components/floor-plan'
 import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
-import { BartenderView } from '@/components/bartender'
+
+// BartenderView (~2K lines) is only rendered for the 'bartender' role.
+// Dynamic import keeps it out of the main POS bundle for all other roles.
+const BartenderView = dynamic(
+  () => import('@/components/bartender/BartenderView').then(m => ({ default: m.BartenderView })),
+  { ssr: false }
+)
 import { UnifiedPOSHeader } from '@/components/orders/UnifiedPOSHeader'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { useQuickPick } from '@/hooks/useQuickPick'
@@ -42,8 +49,7 @@ import { SharedOrderPanel } from './components/SharedOrderPanel'
 import { useOrderBootstrap } from './hooks/useOrderBootstrap'
 import { useOrderHandlers } from './hooks/useOrderHandlers'
 import type { MenuItem, PizzaOrderConfig } from '@/types'
-import type { WorkflowRules } from '@/types/order-types'
-import type { ViewMode, OrderToLoad, QuickBarItem, TabCardInfo } from './types'
+import type { ViewMode, OrderToLoad, QuickBarItem } from './types'
 
 // DEFERRED: Replace with dynamic terminal ID from device provisioning
 const TERMINAL_ID = 'terminal-1'

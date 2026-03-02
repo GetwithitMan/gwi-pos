@@ -247,7 +247,7 @@ export function AddEntertainmentPalette({
                       className="mb-6"
                     >
                       <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-3 block">
-                        2. Choose Visual Style for "{selectedMenuItem.name}"
+                        2. Choose Visual Style for &quot;{selectedMenuItem.name}&quot;
                       </label>
                       <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-3">
                         {ENTERTAINMENT_VISUAL_OPTIONS.map((option) => (

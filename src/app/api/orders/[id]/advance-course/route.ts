@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
-import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST - Advance to next course
 // Marks current course as served and fires the next course

@@ -121,7 +121,7 @@ export function NewTabModal({
             />
           )}
           <p className="text-xs text-gray-500 mt-1">
-            Leave blank to use "Tab #{'{'}number{'}'}"
+            Leave blank to use &quot;Tab #{'{'}number{'}'}&quot;
           </p>
         </div>
 

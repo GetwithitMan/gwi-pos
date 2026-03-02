@@ -20,7 +20,7 @@ import type { EventProvider, ProviderConfig } from './provider'
 import { DEFAULT_PROVIDER_CONFIG } from './provider'
 
 // Socket.io types (optional dependency)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type Socket = any
 
 /**
@@ -48,7 +48,7 @@ export class SocketEventProvider implements EventProvider {
   private onConnectErrorHandler: ((error: Error) => void) | null = null
   private onReconnectAttemptHandler: ((attempt: number) => void) | null = null
   private onReconnectFailedHandler: (() => void) | null = null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   private onAnyHandler: ((eventName: string, data: any) => void) | null = null
 
   constructor(config?: Partial<ProviderConfig>) {

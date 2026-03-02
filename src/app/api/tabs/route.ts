@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
-import { generateFakeAuthCode, generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
+import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import type { OrderStatus } from '@prisma/client'

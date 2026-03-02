@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Image from 'next/image'
 import { Modal } from '@/components/ui/modal'
 import { toast } from '@/stores/toast-store'
 import { SizingOptionsInline } from './SizingOptionsInline'
@@ -575,7 +576,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                       <label className={labelClass}>Image</label>
                       {imageUrl ? (
                         <div className="flex items-center gap-2">
-                          <img src={imageUrl} alt="Item" className="w-10 h-10 rounded-lg object-cover border" />
+                          <Image src={imageUrl} alt="Item" width={40} height={40} className="w-10 h-10 rounded-lg object-cover border" />
                           <button
                             type="button"
                             onClick={() => setImageUrl('')}

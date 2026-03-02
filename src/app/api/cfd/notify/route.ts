@@ -3,8 +3,8 @@
  *
  * Client-side socket.emit() does NOT broadcast to other clients.
  * This route accepts CFD event payloads and dispatches them server-side
- * via emitToLocation(), which properly broadcasts to all clients in the
- * location room (including the CFD screen).
+ * via emitToTerminal() (if cfdTerminalId provided) or emitToLocation() (fallback),
+ * which properly broadcasts to the CFD screen.
  *
  * Fire-and-forget from client: `void fetch('/api/cfd/notify', ...).catch(() => {})`
  */
@@ -22,7 +22,7 @@ import {
 export const POST = withVenue(async (request: Request) => {
   try {
     const body = await request.json()
-    const { event, locationId, payload } = body
+    const { event, locationId, payload, cfdTerminalId = null } = body
 
     if (!event || !locationId || !payload) {
       return NextResponse.json({ error: 'Missing event, locationId, or payload' }, { status: 400 })
@@ -30,19 +30,19 @@ export const POST = withVenue(async (request: Request) => {
 
     switch (event) {
       case 'show-order':
-        dispatchCFDShowOrder(locationId, payload)
+        dispatchCFDShowOrder(locationId, cfdTerminalId, payload)
         break
       case 'payment-started':
-        dispatchCFDPaymentStarted(locationId, payload)
+        dispatchCFDPaymentStarted(locationId, cfdTerminalId, payload)
         break
       case 'tip-prompt':
-        dispatchCFDTipPrompt(locationId, payload)
+        dispatchCFDTipPrompt(locationId, cfdTerminalId, payload)
         break
       case 'signature-request':
-        dispatchCFDSignatureRequest(locationId, payload)
+        dispatchCFDSignatureRequest(locationId, cfdTerminalId, payload)
         break
       case 'receipt-sent':
-        dispatchCFDReceiptSent(locationId, payload)
+        dispatchCFDReceiptSent(locationId, cfdTerminalId, payload)
         break
       default:
         return NextResponse.json({ error: `Unknown CFD event: ${event}` }, { status: 400 })

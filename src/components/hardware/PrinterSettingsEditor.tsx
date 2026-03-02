@@ -86,7 +86,7 @@ export function PrinterSettingsEditor({
                   <option value="large">Large</option>
                   <option value="xlarge">Extra Large</option>
                 </select>
-                <p className="text-xs text-gray-500 mt-1">e.g., "2x Pepperoni Pizza"</p>
+                <p className="text-xs text-gray-500 mt-1">e.g., &quot;2x Pepperoni Pizza&quot;</p>
               </div>
 
               <div>
@@ -148,7 +148,7 @@ export function PrinterSettingsEditor({
                   />
                   <div>
                     <span className="font-medium">RESEND</span>
-                    <p className="text-xs text-gray-500">Print "RESEND" banner in red</p>
+                    <p className="text-xs text-gray-500">Print &quot;RESEND&quot; banner in red</p>
                   </div>
                 </label>
 
@@ -161,7 +161,7 @@ export function PrinterSettingsEditor({
                   />
                   <div>
                     <span className="font-medium">NO Items (Critical)</span>
-                    <p className="text-xs text-gray-500">Print "NO [ingredient]" in red for allergies</p>
+                    <p className="text-xs text-gray-500">Print &quot;NO [ingredient]&quot; in red for allergies</p>
                   </div>
                 </label>
 
@@ -200,7 +200,7 @@ export function PrinterSettingsEditor({
                   />
                   <div>
                     <span className="font-medium">Headers</span>
-                    <p className="text-xs text-gray-500">Print "KITCHEN" and order number in red</p>
+                    <p className="text-xs text-gray-500">Print &quot;KITCHEN&quot; and order number in red</p>
                   </div>
                 </label>
               </div>

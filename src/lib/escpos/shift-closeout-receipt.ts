@@ -1,7 +1,6 @@
 import {
   buildDocument,
   twoColumnLine,
-  centeredLine,
   boldLine,
   largeLine,
   divider,

@@ -106,7 +106,7 @@ export default function ForecastingPage() {
     if (employee?.location?.id) {
       loadReport()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [employee?.location?.id])
 
   if (!hydrated) return null

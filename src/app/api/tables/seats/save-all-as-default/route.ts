@@ -66,7 +66,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Save current seat positions as default
     const result = await db.$transaction(async (tx) => {
-      let savedCount = seats.length
+      const savedCount = seats.length
 
       // Audit log
       await tx.auditLog.create({

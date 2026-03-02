@@ -7,7 +7,7 @@ import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-re
 import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
-import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
+import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
 import { getLocationSettings } from '@/lib/location-cache'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'

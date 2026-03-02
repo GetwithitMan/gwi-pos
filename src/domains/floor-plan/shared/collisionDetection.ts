@@ -353,7 +353,7 @@ export function findNearestValidPosition(
 // EXPORT DEFAULT
 // =============================================================================
 
-export default {
+const collisionDetection = {
   rectRectCollision,
   circleRectCollision,
   lineRectCollision,
@@ -361,3 +361,4 @@ export default {
   checkTableAllFixturesCollision,
   findNearestValidPosition,
 }
+export default collisionDetection

@@ -13,13 +13,13 @@ const { mockDb, mockTx } = vi.hoisted(() => {
   const mockDb = {
     terminal: { findFirst: vi.fn() },
     order: { findFirst: vi.fn() },
-    $transaction: vi.fn((fn: Function) => fn(mockTx)),
+    $transaction: vi.fn((fn: (tx: typeof mockTx) => unknown) => fn(mockTx)),
   }
   return { mockDb, mockTx }
 })
 
 vi.mock('@/lib/with-venue', () => ({
-  withVenue: (handler: Function) => handler,
+  withVenue: (handler: (...args: unknown[]) => unknown) => handler,
 }))
 
 vi.mock('@/lib/db', () => ({ db: mockDb }))

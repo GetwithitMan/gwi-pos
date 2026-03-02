@@ -8,12 +8,10 @@ import {
   getUnitPrecision,
   getUnitCategory,
   getSuggestedUnits,
-  type UnitDefinition,
 } from '@/lib/units'
 import {
   calculateYield,
   formatTransformation,
-  canConvert,
 } from '@/lib/unit-conversions'
 import { useIngredientCost } from '@/hooks/useIngredientCost'
 import type { Ingredient, IngredientCategory, InventoryItemRef } from './IngredientLibrary'

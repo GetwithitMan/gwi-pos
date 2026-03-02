@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, useTransition, useDeferredValue } from 'react'
 import { motion } from 'framer-motion'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
@@ -10,7 +10,7 @@ import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { isTempId } from '@/lib/order-utils'
-import type { EngineMenuItem, EngineModifier, EngineIngredientMod, EnginePricingOption } from '@/hooks/useOrderingEngine'
+import type { EngineMenuItem, EnginePricingOption } from '@/hooks/useOrderingEngine'
 import { PricingOptionPicker } from '@/components/orders/PricingOptionPicker'
 import { useLongPress } from '@/hooks/useLongPress'
 import { useOrderEditing } from '@/hooks/useOrderEditing'
@@ -24,7 +24,6 @@ import { FavoriteItem } from '@/components/bartender/FavoriteItem'
 import type { FavoriteItemData } from '@/components/bartender/FavoriteItem'
 import {
   type CategoryRows,
-  type ItemSize,
   type ItemsPerRow,
   type ItemCustomization,
   CATEGORY_SIZES,
@@ -158,6 +157,7 @@ export function BartenderView({
 
   // Tabs
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null)
+  const [, startTabTransition] = useTransition()
 
   // Multi-terminal editing awareness
   useOrderEditing(selectedTabId, locationId)
@@ -279,7 +279,7 @@ export function BartenderView({
       voidReason: item.voidReason,
       wasMade: item.wasMade,
     }))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [activeOrder.items])
 
   // Tab creation (shared POST logic between "New Tab" modal and quick-tab button)
@@ -288,6 +288,8 @@ export function BartenderView({
   const [searchQuery, setSearchQuery] = useState('')
   const [isSearchExpanded, setIsSearchExpanded] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [isCategoryPending, startCategoryTransition] = useTransition()
+  const deferredSearchQuery = useDeferredValue(searchQuery)
 
   // W3-11: Hot modifier cache — menuItemId → matching common bar modifiers
   const [hotModifierCache, setHotModifierCache] = useState<Record<string, { id: string; name: string; price: number }[]>>({})
@@ -421,11 +423,12 @@ export function BartenderView({
 
 
   // W3-10: Search-filtered items — when search is active, filter across all items regardless of category
+  // useDeferredValue keeps the text input responsive; filtering runs a frame behind on large menus
   const searchFilteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return null // null = not searching
-    const query = searchQuery.toLowerCase().trim()
+    if (!deferredSearchQuery.trim()) return null // null = not searching
+    const query = deferredSearchQuery.toLowerCase().trim()
     return allMenuItems.filter(item => item.name.toLowerCase().includes(query))
-  }, [searchQuery, allMenuItems])
+  }, [deferredSearchQuery, allMenuItems])
 
   // Items to actually display — search results override category/paginated items
   const finalDisplayedItems = searchFilteredItems ?? displayedMenuItems
@@ -459,7 +462,7 @@ export function BartenderView({
     if (initialCategories === undefined) {
       loadCategories()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [locationId])
 
   // W3-11: Fetch hot modifiers for liquor items in current category
@@ -522,7 +525,7 @@ export function BartenderView({
     if (storeOrder?.id && !storeOrder.id.startsWith('local-') && storeOrder.items.length > 0) {
       setSelectedTabId(storeOrder.id)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []) // Only run on mount
 
   // Server-synced save callbacks (delegate to useBartenderPreferences hook)
@@ -714,16 +717,22 @@ export function BartenderView({
   // handleSwitchToFloorPlan removed — view switching now in UnifiedPOSHeader
 
   const handleSelectTab = useCallback((tabId: string) => {
-    setSelectedTabId(tabId)
+    setSelectedTabId(tabId)                    // immediate: highlights selected tab
     if (isTabPanelExpanded) {
-      setIsTabPanelExpanded(false)
+      startTabTransition(() => {
+        setIsTabPanelExpanded(false)           // non-urgent: unmounts list of order cards
+      })
     }
   }, [isTabPanelExpanded])
 
   const handleCategoryClick = useCallback((categoryId: string) => {
-    setSelectedCategoryId(categoryId)
-    filterMenuItemsByCategory(categoryId)
-    // W3-10: Clear search when switching categories
+    // Grid re-render is non-urgent — button highlights + items update atomically
+    // when the transition commits, keeping tap interactions responsive meanwhile
+    startCategoryTransition(() => {
+      setSelectedCategoryId(categoryId)
+      filterMenuItemsByCategory(categoryId)
+    })
+    // W3-10: Clear search immediately (mode change, not a heavy render)
     if (searchQuery) {
       setSearchQuery('')
       setIsSearchExpanded(false)
@@ -898,7 +907,7 @@ export function BartenderView({
         setTabRefreshTrigger(t => t + 1)
       }
     })()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [])
 
   // --- Tab creation hook (replaces handleCreateTab + handleQuickTab) ---
@@ -1631,7 +1640,7 @@ export function BartenderView({
                 <>
                   {/* Items Grid - Dynamic based on settings */}
                   <div
-                    className={`flex-1 grid gap-2 min-h-0 ${itemSettings.useScrolling || searchQuery.trim() ? 'overflow-y-auto content-start scrollbar-hide' : 'auto-rows-fr'}`}
+                    className={`flex-1 grid gap-2 min-h-0 transition-opacity ${isCategoryPending ? 'opacity-50' : ''} ${itemSettings.useScrolling || searchQuery.trim() ? 'overflow-y-auto content-start scrollbar-hide' : 'auto-rows-fr'}`}
                     style={{ gridTemplateColumns: `repeat(${effectiveItemsPerRow}, 1fr)` }}
                   >
                     {finalDisplayedItems.map(item => {

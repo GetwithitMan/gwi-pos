@@ -6,7 +6,7 @@
 
 import { Decimal } from '@prisma/client/runtime/library'
 import { db } from '@/lib/db'
-import type { InventoryDeductionResult, InventoryItemData, MultiplierSettings, PrepItemWithIngredients } from './types'
+import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
 
@@ -449,9 +449,9 @@ export async function deductInventoryForOrder(
       if ((orderItem.menuItem as any)?.itemType === 'combo') continue
       // For weight-based items, the deduction multiplier uses net weight from scale
       // (e.g., 2 bags of 0.5 lb each → 0.5 × 2 = 1.0 lb total deduction)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const soldByWeight = (orderItem.menuItem as any)?.soldByWeight === true
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const itemWeight = soldByWeight ? toNumber((orderItem as any).weight) : 0
       const itemQty = (soldByWeight && itemWeight > 0)
         ? itemWeight * orderItem.quantity
@@ -466,9 +466,9 @@ export async function deductInventoryForOrder(
             removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
           }
           // Check ingredient path (fallback)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           else if ((mod.modifier as any)?.ingredient?.inventoryItem?.id) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             removedIngredientIds.add((mod.modifier as any).ingredient.inventoryItem.id)
           }
         }
@@ -477,7 +477,7 @@ export async function deductInventoryForOrder(
       // Process recipe ingredients (MenuItemRecipe system)
       if (orderItem.menuItem?.recipe) {
         // T-006: apply pour size multiplier once per order item
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
         for (const ing of orderItem.menuItem.recipe.ingredients) {
           // Skip ingredients that were explicitly removed with "NO" modifier
@@ -511,13 +511,13 @@ export async function deductInventoryForOrder(
       // This handles cocktails created via the Liquor Builder.
       // Spirit upgrades (e.g. Call/Premium/Top shelf) are reflected by OrderItemModifier.linkedBottleProductId —
       // when set, that bottle's InventoryItem is deducted instead of the recipe's default bottle.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const recipeIngredients = (orderItem.menuItem as any)?.recipeIngredients
       if (recipeIngredients && Array.isArray(recipeIngredients)) {
         // Build spirit substitution map: spiritCategoryId → linked bottle's inventory info
         const spiritSubstitutions = new Map<string, { inventoryItem: InventoryItemWithStock; pourSizeOz: number | null }>()
         for (const mod of orderItem.modifiers) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           const lb = (mod as any).linkedBottleProduct
           if (lb?.spiritCategoryId && lb.inventoryItem) {
             spiritSubstitutions.set(lb.spiritCategoryId, {
@@ -551,7 +551,7 @@ export async function deductInventoryForOrder(
             toNumber(ing.bottleProduct?.pourSizeOz) ??
             1.5
           // T-006: apply pour size multiplier once per order item
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
           const totalOz = pourCount * pourSizeOz * itemQty * pourMult
 
@@ -563,15 +563,15 @@ export async function deductInventoryForOrder(
       // Process direct bottle link on MenuItem (simple spirit items like "Fireball Shot")
       // Only deduct if there are NO recipeIngredients — prevents double-counting for drinks
       // that have both a linked bottle AND recipe ingredients.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const linkedBottle = (orderItem.menuItem as any)?.linkedBottleProduct
       if (linkedBottle?.inventoryItem && (!recipeIngredients || recipeIngredients.length === 0)) {
         const pourSizeOz =
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           toNumber((orderItem.menuItem as any)?.linkedPourSizeOz) ??
           toNumber(linkedBottle.pourSizeOz) ??
           1.5
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const pourMult = toNumber((orderItem as any).pourMultiplier) || 1
         const totalOz = pourSizeOz * itemQty * pourMult
 
@@ -590,7 +590,7 @@ export async function deductInventoryForOrder(
         const preModifier = mod.preModifier
         const normalized = preModifier?.toUpperCase().trim()
         const perModSettings: typeof multiplierSettings = { ...multiplierSettings }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const modRecord = (mod.modifier as any)
         if (modRecord?.liteMultiplier !== null && modRecord?.liteMultiplier !== undefined) {
           perModSettings.multiplierLite = Number(modRecord.liteMultiplier)
@@ -631,7 +631,7 @@ export async function deductInventoryForOrder(
         }
 
         // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const ingredient = (mod.modifier as any)?.ingredient
         if (ingredient?.inventoryItem) {
           const stdQty = toNumber(ingredient.standardQuantity) || 1
@@ -670,7 +670,7 @@ export async function deductInventoryForOrder(
       }
 
       // Pricing option inventory links (additive deduction on top of base recipe)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const pricingOption = (orderItem as any).pricingOption
       if (orderItem.pricingOptionId && pricingOption?.inventoryLinks) {
         for (const link of pricingOption.inventoryLinks) {

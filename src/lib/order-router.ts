@@ -19,7 +19,6 @@ import type {
   RoutingResult,
   OrderContext,
   PizzaItemData,
-  AtomicPrintConfig,
 } from '@/types/routing'
 
 /**

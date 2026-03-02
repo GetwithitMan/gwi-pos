@@ -309,7 +309,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
         </div>
 
         <p className="text-[10px] text-gray-400 mt-2">
-          "Inventory Link" deducts from stock each time this option is ordered (e.g. link "Lime" to your lime ingredient).
+          &quot;Inventory Link&quot; deducts from stock each time this option is ordered (e.g. link &quot;Lime&quot; to your lime ingredient).
         </p>
       </div>
 

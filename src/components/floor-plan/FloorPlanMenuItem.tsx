@@ -38,9 +38,9 @@ export interface FloorPlanMenuItemProps {
   customStyle?: { bgColor?: string | null; textColor?: string | null } | null
   inQuickBar: boolean
   pricing: { isDualPricingEnabled: boolean; cashDiscountRate: number }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   onTap: (item: any) => void
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   onContextMenu: (e: React.MouseEvent, item: any) => void
   onUnavailable: (reason: string) => void
   onQuickPickTap?: (item: MenuItem, option: PricingOption) => void

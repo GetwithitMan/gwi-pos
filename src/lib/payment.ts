@@ -1,7 +1,6 @@
 // Payment Utilities
 // Skill 30: Payment Processing
 
-import type { PaymentSettings } from './settings'
 
 // Re-export rounding functions from domain module
 // This maintains backward compatibility while keeping logic in dedicated module

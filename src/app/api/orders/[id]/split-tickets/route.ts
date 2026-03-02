@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate } from '@/lib/order-calculations'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
-import { validateRequest, idSchema } from '@/lib/validations'
+import { validateRequest } from '@/lib/validations'
 import { z } from 'zod'
 import { calculateSplitTicketPricing, type OrderItemInput, type RoundingIncrement } from '@/lib/split-pricing'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
-import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // ============================================
 // Validation Schemas

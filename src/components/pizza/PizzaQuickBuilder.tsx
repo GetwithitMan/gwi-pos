@@ -6,7 +6,6 @@ import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import type {
   MenuItem,
-  PizzaConfig,
   PizzaSize,
   PizzaCrust,
   PizzaSauce,

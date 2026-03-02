@@ -19,7 +19,6 @@ import {
   SEAT_HIT_RADIUS,
   SEAT_COLLISION_RADIUS,
   SEAT_BOUNDARY_DISTANCE,
-  SEAT_MIN_DISTANCE,
   // Canvas constants
   CANVAS_WIDTH,
   CANVAS_HEIGHT,
@@ -151,6 +150,10 @@ export function EditorCanvas({
     fitToScreen,
     resetZoom,
   } = useZoomPan({ zoomControlRef, onZoomChange });
+
+  // Mirror canvasRef.current to state so screenToFloor doesn't close over a ref
+  const [canvasEl, setCanvasEl] = useState<HTMLDivElement | null>(null)
+  useEffect(() => { setCanvasEl(canvasRef.current) }, [canvasRef])
 
   // In database mode, use the dbFloorPlan prop; otherwise use in-memory API
   const [floorPlan, setFloorPlan] = useState(
@@ -373,9 +376,9 @@ export function EditorCanvas({
 
   const screenToFloor = useCallback(
     (screenX: number, screenY: number): Point => {
-      return screenToFloorFn(screenX, screenY, canvasRef.current, zoom, floorPlan?.gridSizeFeet);
+      return screenToFloorFn(screenX, screenY, canvasEl, zoom, floorPlan?.gridSizeFeet);
     },
-    [floorPlan, zoom]
+    [canvasEl, floorPlan, zoom]
   );
 
   // Handle resize start for tables
@@ -840,8 +843,8 @@ export function EditorCanvas({
           x: FloorCanvasAPI.feetToPixels(point.x),
           y: FloorCanvasAPI.feetToPixels(point.y),
         };
-        let absoluteX = pointPx.x - seatDragOffset.x;
-        let absoluteY = pointPx.y - seatDragOffset.y;
+        const absoluteX = pointPx.x - seatDragOffset.x;
+        const absoluteY = pointPx.y - seatDragOffset.y;
 
         // CLAMP to valid zone instead of rejecting
         // Transform to table-local coordinates for boundary check
@@ -1315,8 +1318,8 @@ export function EditorCanvas({
           const rotation = (table.rotation || 0) * Math.PI / 180;
 
           // Calculate absolute position from preview
-          let finalRelX = seatDragPreview.relativeX;
-          let finalRelY = seatDragPreview.relativeY;
+          const finalRelX = seatDragPreview.relativeX;
+          const finalRelY = seatDragPreview.relativeY;
 
           // Convert to absolute for collision check
           const absX = tableCenterX + (finalRelX * Math.cos(rotation) - finalRelY * Math.sin(rotation));

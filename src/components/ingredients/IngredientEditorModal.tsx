@@ -133,7 +133,7 @@ export function IngredientEditorModal({
                     <span>❓</span> Unclassified Item
                   </div>
                   <h2 className="text-xl font-bold text-gray-900 mb-2">
-                    What kind of item is "{ingredient?.name}"?
+                    What kind of item is &quot;{ingredient?.name}&quot;?
                   </h2>
                   <p className="text-gray-600">Help us classify this item correctly</p>
                 </>
@@ -143,7 +143,7 @@ export function IngredientEditorModal({
                     <span>🔄</span> Change Item Type
                   </div>
                   <h2 className="text-xl font-bold text-gray-900 mb-2">
-                    Convert "{ingredient?.name}" to:
+                    Convert &quot;{ingredient?.name}&quot; to:
                   </h2>
                   <p className="text-gray-600">Choose the new item type</p>
                 </>

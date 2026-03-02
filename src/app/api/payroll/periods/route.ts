@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { PayrollPeriodStatus } from '@prisma/client'
-import { calculateTaxes } from '@/lib/payroll/tax-calculator'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List payroll periods

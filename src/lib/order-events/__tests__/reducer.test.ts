@@ -10,7 +10,6 @@ import { describe, it, expect } from 'vitest'
 import { replay } from '../reducer'
 import {
   type OrderEventPayload,
-  type OrderState,
   getSubtotalCents,
   getDiscountTotalCents,
   getItemTotalCents,

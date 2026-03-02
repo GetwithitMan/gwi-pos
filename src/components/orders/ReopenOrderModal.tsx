@@ -141,7 +141,7 @@ export function ReopenOrderModal({
               <div>
                 <p className="font-semibold">Warning</p>
                 <p className="text-xs mt-1 text-amber-300">
-                  Reopening this order will change its status to 'open' and it will appear
+                  Reopening this order will change its status to &apos;open&apos; and it will appear
                   in the Open Orders panel. This should only be done if you need to make
                   changes to the order.
                 </p>

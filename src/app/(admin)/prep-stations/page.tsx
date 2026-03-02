@@ -108,7 +108,7 @@ export default function PrepStationsPage() {
     } catch (error) {
       console.error('Failed to load menu data:', error)
     }
-  }, [employee?.location?.id])
+  }, [employee])
 
   useEffect(() => {
     if (employee?.location?.id) {
@@ -253,7 +253,7 @@ export default function PrepStationsPage() {
                 <p className="text-sm text-blue-700 mt-1">
                   Create stations for each kitchen area (Kitchen, Bar, Expo, etc.).
                   Assign categories or individual items to each station. When orders are sent to kitchen,
-                  items will route to their assigned station's KDS screen.
+                  items will route to their assigned station&apos;s KDS screen.
                 </p>
               </div>
             </div>

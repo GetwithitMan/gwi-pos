@@ -2,7 +2,7 @@
 
 import { memo } from 'react'
 import { getSeatBgColor, getSeatTextColor } from '@/lib/seat-utils'
-import type { SplitItemShare, SplitCheck } from '@/hooks/useSplitCheck'
+import type { SplitCheck } from '@/hooks/useSplitCheck'
 
 export interface SplitCheckCardProps {
   check: SplitCheck

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext, useContext, useCallback } from 'react'
 import { formatCurrency } from '@/lib/utils'
 
 interface ModifierGroup {
@@ -49,6 +49,86 @@ interface ItemTreeViewProps {
 
 type ExpandedState = Record<string, boolean>
 
+interface TreeViewContextValue {
+  expanded: Record<string, boolean>
+  toggle: (key: string) => void
+  isNodeSelected: (type: string, id: string) => boolean
+  onSelectNode?: (nodeType: string, nodeId: string) => void
+}
+
+const TreeViewCtx = createContext<TreeViewContextValue | null>(null)
+
+function TreeNode({
+  label,
+  nodeKey,
+  icon,
+  children,
+  isLeaf = false,
+  onClick,
+  badge,
+  depth = 0,
+  nodeType,
+  nodeId,
+  isRequired = false,
+  isEmpty = false,
+}: {
+  label: string
+  nodeKey: string
+  icon?: React.ReactNode
+  children?: React.ReactNode
+  isLeaf?: boolean
+  onClick?: () => void
+  badge?: React.ReactNode
+  depth?: number
+  nodeType?: string
+  nodeId?: string
+  isRequired?: boolean
+  isEmpty?: boolean
+}) {
+  const { expanded, toggle, isNodeSelected, onSelectNode } = useContext(TreeViewCtx)!
+  const isExpanded = expanded[nodeKey]
+  const isSelected = nodeType && nodeId ? isNodeSelected(nodeType, nodeId) : false
+  const indent = depth * 16
+
+  return (
+    <div style={{ marginLeft: indent }}>
+      <div
+        className={`flex items-center gap-1 py-1 px-2 rounded cursor-pointer transition-colors text-sm ${
+          isSelected
+            ? 'bg-blue-100 text-blue-800'
+            : 'hover:bg-blue-50/50'
+        }`}
+        onClick={() => {
+          if (!isLeaf) toggle(nodeKey)
+          if (onClick) onClick()
+          if (onSelectNode && nodeType && nodeId) onSelectNode(nodeType, nodeId)
+        }}
+      >
+        {!isLeaf ? (
+          <span className="flex items-center gap-0.5">
+            <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+              ▶
+            </span>
+            {isRequired && <span className="w-1.5 h-1.5 rounded-full bg-red-500" title="Required" />}
+          </span>
+        ) : (
+          <span className="w-3" />
+        )}
+        {icon && <span className="text-gray-500">{icon}</span>}
+        <span className={`flex-1 truncate ${isLeaf ? 'text-gray-600' : 'font-medium'} ${isEmpty ? 'italic text-gray-400' : ''}`}>
+          {label}
+        </span>
+        {badge}
+      </div>
+      {!isLeaf && isExpanded && children && (
+        <div className="ml-2 border-l border-gray-200">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: ItemTreeViewProps) {
   const [itemOwnedGroups, setItemOwnedGroups] = useState<ModifierGroup[]>([])
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
@@ -80,89 +160,18 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
       .finally(() => setLoading(false))
   }, [item?.id, refreshKey])
 
-  const toggle = (key: string) => {
+  const toggle = useCallback((key: string) => {
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
-  }
+  }, [])
 
-  const isNodeSelected = (type: string, id: string) => {
+  const isNodeSelected = useCallback((type: string, id: string) => {
     return selectedNode?.type === type && selectedNode?.id === id
-  }
+  }, [selectedNode])
 
   if (!item) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 p-4">
         <p className="text-sm">Select an item to view its structure</p>
-      </div>
-    )
-  }
-
-  // Tree node component
-  const TreeNode = ({
-    label,
-    nodeKey,
-    icon,
-    children,
-    isLeaf = false,
-    onClick,
-    badge,
-    depth = 0,
-    nodeType,
-    nodeId,
-    isRequired = false,
-    isEmpty = false,
-  }: {
-    label: string
-    nodeKey: string
-    icon?: React.ReactNode
-    children?: React.ReactNode
-    isLeaf?: boolean
-    onClick?: () => void
-    badge?: React.ReactNode
-    depth?: number
-    nodeType?: string
-    nodeId?: string
-    isRequired?: boolean
-    isEmpty?: boolean
-  }) => {
-    const isExpanded = expanded[nodeKey]
-    const isSelected = nodeType && nodeId ? isNodeSelected(nodeType, nodeId) : false
-    const indent = depth * 16
-
-    return (
-      <div style={{ marginLeft: indent }}>
-        <div
-          className={`flex items-center gap-1 py-1 px-2 rounded cursor-pointer transition-colors text-sm ${
-            isSelected
-              ? 'bg-blue-100 text-blue-800'
-              : 'hover:bg-blue-50/50'
-          }`}
-          onClick={() => {
-            if (!isLeaf) toggle(nodeKey)
-            if (onClick) onClick()
-            if (onSelectNode && nodeType && nodeId) onSelectNode(nodeType, nodeId)
-          }}
-        >
-          {!isLeaf ? (
-            <span className="flex items-center gap-0.5">
-              <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-                ▶
-              </span>
-              {isRequired && <span className="w-1.5 h-1.5 rounded-full bg-red-500" title="Required" />}
-            </span>
-          ) : (
-            <span className="w-3" />
-          )}
-          {icon && <span className="text-gray-500">{icon}</span>}
-          <span className={`flex-1 truncate ${isLeaf ? 'text-gray-600' : 'font-medium'} ${isEmpty ? 'italic text-gray-400' : ''}`}>
-            {label}
-          </span>
-          {badge}
-        </div>
-        {!isLeaf && isExpanded && children && (
-          <div className="ml-2 border-l border-gray-200">
-            {children}
-          </div>
-        )}
       </div>
     )
   }
@@ -227,6 +236,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
   }
 
   return (
+    <TreeViewCtx.Provider value={{ expanded, toggle, isNodeSelected, onSelectNode }}>
     <div className="h-full flex flex-col bg-white border-r">
       {/* Header */}
       <div className="p-3 border-b bg-gray-50">
@@ -358,5 +368,6 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
         )}
       </div>
     </div>
+  </TreeViewCtx.Provider>
   )
 }

@@ -4,21 +4,14 @@ import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import type { DualPricingSettings } from '@/lib/settings'
-import type { MenuItem, ModifierGroup, SelectedModifier, Modifier } from '@/types'
+import type { MenuItem, ModifierGroup, SelectedModifier } from '@/types'
 import './modifier-modal.css'
 import {
   useModifierSelections,
-  DEFAULT_POUR_SIZE_CONFIG,
-  SPIRIT_TIER_CONFIG,
-  PRE_MODIFIER_CONFIG,
   getPourSizeMultiplier,
   getPourSizeLabel,
   type IngredientModification,
-  type IngredientModificationType,
-  type MenuItemIngredient,
-  type SpiritTier,
   type PourSizeValue,
-  type PourSizeKey,
 } from './useModifierSelections'
 import { SwapPicker } from './SwapPicker'
 import { IngredientsSection } from './IngredientsSection'

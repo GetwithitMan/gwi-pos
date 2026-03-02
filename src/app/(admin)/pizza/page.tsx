@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'

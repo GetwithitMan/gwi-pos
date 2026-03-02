@@ -23,13 +23,9 @@
 
 import { PrismaClient } from '@prisma/client'
 import type { OrderEventType } from '../src/lib/order-events/types'
-import {
-  emptyOrderState,
-  getSubtotalCents,
-  getTotalCents,
-  getItemCount,
-} from '../src/lib/order-events/types'
-import { reduce, replay } from '../src/lib/order-events/reducer'
+
+
+import { replay } from '../src/lib/order-events/reducer'
 import {
   projectSnapshot,
   projectItemSnapshots,

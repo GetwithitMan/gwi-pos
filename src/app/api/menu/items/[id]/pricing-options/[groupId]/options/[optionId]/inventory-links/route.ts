@@ -128,7 +128,8 @@ export const POST = withVenue(async function POST(
   try {
     const { id: menuItemId, groupId, optionId } = await params
     const body = await request.json()
-    let { prepItemId, inventoryItemId, usageQuantity, usageUnit } = body
+    let { prepItemId, inventoryItemId } = body
+    const { usageQuantity, usageUnit } = body
     const { ingredientId } = body
 
     // ingredientId can be stored directly (from IngredientHierarchyPicker)

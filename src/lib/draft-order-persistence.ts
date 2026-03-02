@@ -38,7 +38,7 @@ export interface DraftOrder {
  * Save the current order store snapshot to localStorage.
  * Returns true if a draft was actually saved (i.e. there were items).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type AnyOrderItem = Record<string, any>
 
 export function saveDraftOrder(

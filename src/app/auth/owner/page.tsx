@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { useAuthStore } from '@/stores/auth-store'
 
 function OwnerAuthContent() {
@@ -69,12 +70,12 @@ function OwnerAuthContent() {
           Access Denied
         </h1>
         <p className="text-gray-400 mb-6">{errorMsg}</p>
-        <a
+        <Link
           href="/admin-login"
           className="inline-block px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
         >
           Return to Login
-        </a>
+        </Link>
       </div>
     )
   }
