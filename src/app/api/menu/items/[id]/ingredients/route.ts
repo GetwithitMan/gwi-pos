@@ -111,10 +111,11 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
     }
 
-    // Verify all ingredient IDs exist
+    // Verify all ingredient IDs exist (no locationId filter — the ingredient may have been
+    // created under a different session locationId; the link record stamps menuItem.locationId)
     const ingredientIds = ingredients.map(i => i.ingredientId)
     const existingIngredients = await db.ingredient.findMany({
-      where: { id: { in: ingredientIds }, locationId: menuItem.locationId, deletedAt: null },
+      where: { id: { in: ingredientIds }, deletedAt: null },
       select: { id: true },
     })
     const existingIds = new Set(existingIngredients.map(i => i.id))
