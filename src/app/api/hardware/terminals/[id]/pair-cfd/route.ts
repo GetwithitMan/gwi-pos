@@ -11,7 +11,7 @@ export const POST = withVenue(async function POST(
     const { id } = await params
     const body = await request.json()
 
-    const { cfdTerminalId, cfdIpAddress, cfdConnectionMode } = body
+    const { cfdTerminalId, cfdIpAddress, cfdConnectionMode, cfdSerialNumber } = body
 
     // Validate required field
     if (!cfdTerminalId) {
@@ -55,6 +55,7 @@ export const POST = withVenue(async function POST(
         cfdTerminalId,
         cfdIpAddress: cfdIpAddress || null,
         cfdConnectionMode: cfdConnectionMode || 'usb',
+        cfdSerialNumber: cfdSerialNumber || null,
       },
       include: {
         cfdTerminal: {
@@ -64,6 +65,7 @@ export const POST = withVenue(async function POST(
             category: true,
             cfdIpAddress: true,
             cfdConnectionMode: true,
+            cfdSerialNumber: true,
             lastSeenAt: true,
           },
         },

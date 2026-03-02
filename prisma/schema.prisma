@@ -5918,6 +5918,7 @@ model Terminal {
   cfdRegisterFor    Terminal[] @relation("TerminalCFD")
   cfdIpAddress      String?   // A3700 LAN IP address for DC Direct TCP connection
   cfdConnectionMode String?   @default("usb") // "usb" | "bluetooth"
+  cfdSerialNumber   String?   // PAX A3700 serial number (reported by device)
 
   sortOrder Int @default(0)
 

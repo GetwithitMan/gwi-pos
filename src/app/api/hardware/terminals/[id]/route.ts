@@ -50,6 +50,7 @@ export const GET = withVenue(async function GET(
               category: true,
               cfdIpAddress: true,
               cfdConnectionMode: true,
+              cfdSerialNumber: true,
               lastSeenAt: true,
             },
           },
@@ -143,6 +144,7 @@ export const PUT = withVenue(async function PUT(
       cfdTerminalId,
       cfdIpAddress,
       cfdConnectionMode,
+      cfdSerialNumber,
     } = body
 
     // Check terminal exists
@@ -270,6 +272,7 @@ export const PUT = withVenue(async function PUT(
       ...(cfdTerminalId !== undefined && { cfdTerminalId: cfdTerminalId || null }),
       ...(cfdIpAddress !== undefined && { cfdIpAddress: cfdIpAddress || null }),
       ...(cfdConnectionMode !== undefined && { cfdConnectionMode: cfdConnectionMode || null }),
+      ...(cfdSerialNumber !== undefined && { cfdSerialNumber: cfdSerialNumber || null }),
     }
     const baseInclude = {
       receiptPrinter: {
@@ -315,6 +318,7 @@ export const PUT = withVenue(async function PUT(
           category: true,
           cfdIpAddress: true,
           cfdConnectionMode: true,
+          cfdSerialNumber: true,
           lastSeenAt: true,
         },
       },
