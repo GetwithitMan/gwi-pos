@@ -5,6 +5,32 @@
 
 ---
 
+## 2026-03-02 — Tip Adjustment + Edit Modifiers P1 Gaps (Skill 464)
+
+### Completed
+
+**Tip Adjustment after Card Payment (P1):**
+- NUC `src/app/api/orders/[id]/adjust-tip/route.ts` — now calls `DatacapClient.adjustGratuity()` before DB update when `payment.datacapRecordNo + payment.paymentReaderId` present; 422 on decline, 503 if reader unreachable; cash payments pass through unchanged
+- Android `TipAdjustmentSheet.kt` (new) — MoneyTextFieldState tip input, manager PIN, Confirm/Cancel
+- Android `OrderStateTypes.kt` — `OrderSheet.TipAdjustment(paymentId, purchaseAmountDollars, currentTipDollars)`
+- Android `OrderDtos.kt` — `AdjustTipRequest(paymentId, newTipAmount, managerId, reason)`
+- Android `GwiApiService.kt` — `adjustOrderTip()` PATCH endpoint
+- Android `OrderViewModel.kt` — `showTipAdjustment()`, `dismissTipAdjustment()`, `adjustTip()` (PIN verify + network call)
+- Android `VoidPaymentSheet.kt` — "Adjust Tip" TextButton on non-voided card rows; `onAdjustTip` callback
+- Android `OrderSheets.kt` — `TipAdjustment` branch wired: dismiss void sheet → open tip sheet
+
+**Edit Modifiers on Pending Items (P1 — wiring was missing):**
+- Android `OrderItemControls.kt` — tap pending item w/ modifiers → `onEditModifiers()`
+- Android `OrderPanel.kt` — propagates `onEditModifiers` through entire component tree
+- Android `OrderMainContent.kt` — wires to `viewModel.showEditItemModifiers(orderItem)`
+- Android `ModifierSheet.kt` — `initialModifiers` param + `LaunchedEffect` to pre-populate existing selections (ingredients, groups, child groups); `showEditItemModifiers()` was already in ViewModel
+
+### Commits
+- NUC: `e100bb0` — Datacap call in adjust-tip route
+- Android: `ea71b19` — tip adjustment + edit modifiers (11 files, +482/-17)
+
+---
+
 ## 2026-03-02 — Multi-tender / Split Payment — Android commit `4138d36`
 
 **Session:** Implemented the last remaining P0 Android gap. After 1-of-21 audit found only multi-tender missing, built and shipped it.
