@@ -1,5 +1,53 @@
 # Customer Display Domain Changelog
 
+## 2026-03-02 — PAX A3700 CFD System — Phase 1 + Phase 2 (Skills 461-462)
+
+### Phase 1: NUC Backend (Skill 461) — Commit `54b97da`
+
+**Schema additions:**
+- `TerminalCategory.CFD_DISPLAY` enum value
+- `Terminal`: `cfdTerminalId`, `cfdTerminal` (self-relation), `cfdIpAddress`, `cfdConnectionMode`
+- `CfdSettings` model: full per-location CFD configuration (tip, signature, receipt, tab, idle)
+- `Location.cfdSettings` reverse relation
+
+**Socket targeting:**
+- `emitToTerminal(terminalId, event, data)` in `socket-server.ts` — targeted dispatch to `terminal:{id}` room
+- All 5 `dispatchCFD*` functions accept optional `cfdTerminalId` param, fall back to location broadcast if null
+
+**New API routes:**
+- `POST /api/hardware/terminals/[id]/pair-cfd` — links A3700 CFD to register, auto-sets CFD_DISPLAY category
+- `DELETE /api/hardware/terminals/[id]/pair-cfd` — unlinks
+- `GET/PUT /api/hardware/cfd-settings` — per-location CFD config with full validation
+
+**Migration:** `nuc-pre-migrate.js` — 4 idempotent SQL cases for all new schema
+
+### Phase 2: GWI CFD Android App (Skill 462) — Commit `9cc8123`
+
+New repo at `gwi-cfd/`. Full Android Jetpack Compose app for PAX A3700.
+
+**Architecture:** Stateless kiosk (no Room, no WorkManager). NUC socket is sole data source.
+
+**State machine — 8 screens:**
+| State | Trigger | Auto-exit |
+|-------|---------|-----------|
+| `Idle` | `cfd:idle` or timeout | — |
+| `Order` | `cfd:show-order` | — |
+| `TipPrompt` | `cfd:tip-prompt` | After tip selected |
+| `SignaturePrompt` | `cfd:signature-request` | After sign/skip |
+| `Processing` | `cfd:processing` | — |
+| `Approved` | `cfd:approved` | 4s → Idle (unless ReceiptSent) |
+| `Declined` | `cfd:declined` | 3s → Idle |
+| `ReceiptOptions` | `cfd:receipt-sent` | Countdown → auto-skip |
+
+**Key design decisions:**
+- Socket joins `terminal:{cfdTerminalId}` room (not location room) for targeted dispatch
+- Signature encoded as Base64 stroke path data (no bitmap allocation)
+- Receipt countdown in ViewModel (`remainingSeconds`), animated progress bar on screen
+- `AnimatedContent` 300ms fade between all state transitions
+- Amber disconnection banner slides in when NUC socket drops
+
+---
+
 ## 2026-02-23 — Chaos Test Fixes (Skill 416)
 
 ### Bug 15 (MEDIUM): No Max Tip Validation on CFD

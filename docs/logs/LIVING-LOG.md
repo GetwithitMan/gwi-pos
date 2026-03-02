@@ -5,6 +5,129 @@
 
 ---
 
+## 2026-03-02 — PAX A3700 CFD System — Phase 1 (NUC Backend) + Phase 2 (Android App)
+
+**Session:** Built complete Customer Facing Display system for PAX A3700. Two-phase implementation: NUC backend schema/socket/routes (Skill 461) + brand-new gwi-cfd Android project (Skill 462).
+
+### Phase 1 — NUC Backend (Skills 461) — Commit: `54b97da`
+
+**Schema (`prisma/schema.prisma`):**
+- `TerminalCategory`: added `CFD_DISPLAY` enum value
+- `Terminal`: `cfdTerminalId`, `cfdTerminal` self-relation, `cfdIpAddress`, `cfdConnectionMode String? @default("usb")`
+- `CfdSettings` model: full per-location config (tipMode/tipStyle/tipOptions/tipShowNoTip, signatureEnabled/thresholdCents, receiptEmail/Sms/Print/TimeoutSeconds, tabMode/preAuthAmountCents, idlePromoEnabled/idleWelcomeText)
+- `Location.cfdSettings` reverse relation
+
+**Socket (`src/lib/socket-server.ts`):**
+- `emitToTerminal(terminalId, event, data)` — targeted `terminal:{id}` room dispatch (falls through IPC same as emitToRoom)
+
+**Dispatch (`src/lib/socket-dispatch.ts`):**
+- All 5 `dispatchCFD*` functions: added `cfdTerminalId: string | null` param — uses `emitToTerminal` if set, falls back to `emitToLocation`
+
+**Routes (new files):**
+- `POST /api/hardware/terminals/[id]/pair-cfd` — links CFD terminal to register, sets CFD_DISPLAY category
+- `DELETE /api/hardware/terminals/[id]/pair-cfd` — unlinks CFD terminal
+- `GET /api/hardware/cfd-settings` — returns CfdSettings or defaults
+- `PUT /api/hardware/cfd-settings` — upserts CfdSettings with full validation
+
+**Terminal PUT** (`src/app/api/hardware/terminals/[id]/route.ts`): added CFD fields to body destructure + baseData
+
+**Migration** (`scripts/nuc-pre-migrate.js`): 4 idempotent SQL cases — CFD_DISPLAY enum, 3 Terminal columns, index, CfdSettings table
+
+### Phase 2 — GWI CFD Android App (Skill 462) — Commit: `9cc8123`
+
+**Repo:** `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-cfd/` — new git repo, first commit
+
+**Stack:** Kotlin/Compose, Hilt 2.59.2, Socket.io-client 2.1.0, minSdk 26, no Room, no WorkManager
+
+**Architecture:** Stateless kiosk — NUC socket is sole data source. State machine driven by 9 inbound CFD events.
+
+| Layer | Files |
+|-------|-------|
+| Socket | `CfdEvents.kt` (event constants + 9 sealed CfdEvent types + CfdOrderItem), `CfdSocketManager.kt` (joins `terminal:{id}` room, 3 outbound emitters) |
+| State | `CfdScreenState.kt` (8 sealed states), `CfdViewModel.kt` (timers, calculateTipCents, receipt countdown) |
+| Screens | `CfdIdleScreen`, `CfdOrderScreen`, `CfdTipScreen`, `CfdSignatureScreen`, `CfdPaymentScreens` (Processing/Approved/Declined), `CfdReceiptScreen` |
+| Nav | `AppNavigation.kt` (AnimatedContent, amber disconnect banner, pairing fallback) |
+
+**Key behaviors:**
+- Approved → 4s auto-idle (cancelled if ReceiptSent arrives first)
+- Declined → 3s auto-idle
+- Receipt countdown in ViewModel, animated LinearProgressIndicator on screen
+- Signature: path drawing canvas → Base64 stroke encoding (lightweight, decodable)
+- Disconnection: amber banner slides in when socket drops
+
+### Next Steps (Phase 3)
+1. Register app: emit `cfd:show-order` on order mutations, `cfd:payment-started`/`cfd:tip-prompt` from payment flow
+2. CFD initial pairing flow — provisioning A3700 with nucBaseUrl + deviceToken
+3. Back office UI — settings pages for CfdSettings model
+4. Test on physical PAX L1400 + PAX A3700 hardware
+
+---
+
+## 2026-03-02 — Android Ingredient Section Debug + Bootstrap Fix
+
+**Session:** Debugged why ingredient section wasn't rendering. Fixed `ensureBootstrap()` to always run on startup. Confirmed data flow end-to-end.
+
+### Bootstrap Fix (no commit needed — `ensureBootstrap()` was already fixed in prior session)
+
+**Root cause:** `ensureBootstrap()` had `if (categories.isEmpty())` guard, so returning users never re-ran bootstrap to get new server-side fields like `ingredientLinks`. Fixed to always schedule bootstrap using `ExistingWorkPolicy.KEEP`.
+
+**Data confirmed in DB:** Classic Burger has 4 ingredients (Hamburger Patty, Ketchup, American Cheese 1 slice, Sesame Bun). Ingredient section renders correctly in the modifier sheet.
+
+### SQLite WAL Debugging Note
+
+When checking Room DB by pulling `.db` file via `adb`, always pull BOTH `.db` AND `.db-wal` files together. Python's `sqlite3` module correctly merges WAL when both files are in the same directory. Pulling only the main `.db` file shows stale data (WAL not checkpointed yet).
+
+### DB Overlap Investigated
+
+Local Postgres (`gwi_pos_dev`) has 3 soft-deleted old seed items (`item-5` Classic Burger, `item-6` Grilled Salmon, `item-7` Ribeye Steak) replaced by new CUID items. The old items had more ingredient links; the new items have fewer. Android correctly excludes soft-deleted items. **No code fix needed** — add ingredients to active items via admin UI if desired.
+
+**Invariant confirmed:** `ensureBootstrap()` always fires on startup, so reinstalling is safe — even a wiped Room DB re-bootstraps all data including `ingredientLinks`.
+
+---
+
+## 2026-03-02 — Android ModifierSheet Redesign + Ingredient Section Fix
+
+**Session:** Redesigned `ModifierSheet.kt` from chip layout to tab-based layout matching web POS UI. Fixed ingredient section showing wrong data (modifier options instead of real ingredients). Fixed `buildRequests()` double-prefix bug.
+
+### Commits
+
+**GWI POS** (`gwi-pos`):
+- `1079272` — feat(sync): add ingredientLinks to bootstrap menu items (1 file)
+
+**GWI Android** (`gwi-android-register`):
+- `9094233` — fix(modifier-sheet): use real ingredient data instead of pre-mod heuristic (11 files, 1 new)
+
+### ModifierSheet UI Redesign
+
+Complete rewrite of `ModifierSheet.kt`:
+- Square tab buttons per modifier group (red/green/indigo borders for required state)
+- Full-width list rows replacing FlowRow chips; inline pre-mod bar and child groups
+- Collapsible ingredient section at top (amber badge showing change count)
+- Steps/All toggle; running total footer
+- Real `IngredientLinkInfo` data (from `MenuItemEntity.ingredientLinks`) — heuristic removed entirely
+
+### Ingredient Section Bug Fix
+
+**Root cause:** Heuristic `modifiers[group.id]?.any { it.allowNo || it.allowLite || it.allowExtra || it.allowOnSide }` misidentified the "Side Choice" modifier group as an ingredient group because its options had `allowNo = true`. Classic Burger showed Fries, Salad, Ranch Dressing in the ingredient section instead of Hamburger Patty.
+
+**Fix (full stack):**
+1. **POS bootstrap** — added `ingredients` include to menu item query; serves `ingredientLinks[]` per item (per-item override → ingredient defaults)
+2. **Android `IngredientLinkInfo.kt`** — new domain model (`@JsonClass(generateAdapter = true)`)
+3. **`MenuItemEntity.ingredientLinks`** — new typed column (`List<IngredientLinkInfo>?`) via Moshi TypeConverter
+4. **DB v34** — `MIGRATION_33_34`: `ALTER TABLE menu_items ADD COLUMN ingredientLinks TEXT DEFAULT NULL`
+5. **`ModifierSheet.kt`** — parameter `ingredientLinks: List<IngredientLinkInfo>`, separate `selectedIngredients` state map; ingredient section only shown when `!isBarCategory && ingredientLinks.isNotEmpty()`
+6. **`buildRequests()` fix** — `name = sel.name` (plain); `preModifier` carries semantic token → fixes "NO No Lettuce" double-prefix in order panel
+
+### Misc Fix
+
+- **Pairing code expiry** — code `298101` had expired (5-min TTL); generated fresh code `560942` for "Android Dev" terminal via direct DB update
+
+### Skill Doc
+
+- `docs/skills/460-ANDROID-MODIFIER-SHEET-REDESIGN-AND-INGREDIENT-FIX.md`
+
+---
+
 ## 2026-02-28 — Cross-Terminal Integration Test (7-Agent Team)
 
 **Session:** Full integration test of Android→NUC→Web→KDS flow across all 4 phases. Solo run + 7-agent parallel team (android-agent, web-agent, nuc-verifier, kds-agent, socket-watcher, payment-agent, report-agent). 279 socket events captured. All phases completed.
