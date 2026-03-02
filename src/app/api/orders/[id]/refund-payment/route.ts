@@ -125,11 +125,12 @@ export const POST = withVenue(async function POST(
     const isCardPayment =
       payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
 
-    if (isCardPayment && readerId && payment.datacapRecordNo) {
-      await validateReader(readerId, order.locationId)
+    const effectiveReaderId = readerId ?? payment.paymentReaderId ?? null
+    if (isCardPayment && effectiveReaderId && payment.datacapRecordNo) {
+      await validateReader(effectiveReaderId, order.locationId)
       const client = await requireDatacapClient(order.locationId)
 
-      const response = await client.emvReturn(readerId, {
+      const response = await client.emvReturn(effectiveReaderId, {
         recordNo: payment.datacapRecordNo,
         invoiceNo: order.orderNumber?.toString() ?? id,
         amount: refundAmount,
