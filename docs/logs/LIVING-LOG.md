@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-03-02 — Multi-tender / Split Payment — Android commit `4138d36`
+
+**Session:** Implemented the last remaining P0 Android gap. After 1-of-21 audit found only multi-tender missing, built and shipped it.
+
+**3 files changed (+94/-22):**
+- `OrderViewModel.kt`: `AppliedPayment` data class; `appliedPayments` + `paymentRemainingBalance` fields in `OrderUiState`; `showPayment()` captures remaining; `dismissPayment()` resets; `payCash()` partial/final paths; `payCard()` uses remaining balance
+- `OrderSheets.kt`: passes `appliedPayments` + `paymentRemainingBalance`-based total to `PaymentSheet`
+- `PaymentSheet.kt`: "Paid so far" section (method+amount list, HorizontalDivider, amber remaining); `isPartialCash` detection; button label "Pay $X Cash (partial)"; enabled when `cashCents > 0` (was `>= total + tip`)
+
+**Flow:** $20 cash on $35 order → "Paid so far: Cash $20.00 | Remaining: $15.00" → pick Card → processes final $15 + tip → order closes. 0 remaining P0 gaps.
+
+---
+
 ## 2026-03-02 — CFD Phase 3 (Register Wiring + Pairing) + B/P Split Mode — Skill 463
 
 **Session:** Completed the full CFD pre-tap tip flow wire-up across all three repos. Built a real pairing screen for gwi-cfd. Fixed gwi-cfd build issues. Also landed B/P split mode (v1.12.0).
