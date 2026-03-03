@@ -168,7 +168,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   return NextResponse.json({
     data: {
       menu: { categories: mappedCategories, childModifierGroups },
-      employees: employees.map(e => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, displayName: e.displayName, pin: e.pin, locationId: e.locationId, role: e.role, posLayoutSettings: e.posLayoutSettings ?? null })),
+      // PIN hash intentionally excluded — Android must use POST /api/auth/verify-pin instead of local bcrypt compare.
+      // Coordinated removal: update Android before deploying this change to production.
+      employees: employees.map(e => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, displayName: e.displayName, locationId: e.locationId, role: e.role, posLayoutSettings: e.posLayoutSettings ?? null })),
       tables,
       orderTypes,
       taxRate,
