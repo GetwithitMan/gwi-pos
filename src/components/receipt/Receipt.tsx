@@ -75,6 +75,13 @@ export interface ReceiptData {
   surchargeAmount?: number | null
   surchargePercent?: number | null
   surchargeDisclosure?: string | null
+  // Dual pricing breakdown (present when dual pricing + card payment)
+  cardSubtotal?: number
+  cardTax?: number
+  cardTotal?: number
+  cashSubtotal?: number
+  cashTax?: number
+  cashTotal?: number
 }
 
 interface ReceiptProps {
@@ -254,36 +261,83 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
       {/* Totals */}
       {showPrices && (
         <div className="border-b border-dashed border-gray-400 pb-3 mb-3">
-          <div className="flex justify-between text-xs">
-            <span>Subtotal:</span>
-            <span>{formatCurrency(data.subtotal)}</span>
-          </div>
-          {data.discountTotal > 0 && (
-            <div className="flex justify-between text-xs text-green-600">
-              <span>Discount:</span>
-              <span>-{formatCurrency(data.discountTotal)}</span>
-            </div>
+          {data.cardSubtotal != null ? (
+            <>
+              {/* Dual pricing layout — card-first */}
+              <div className="flex justify-between text-xs">
+                <span>Subtotal:</span>
+                <span>{formatCurrency(data.cardSubtotal)}</span>
+              </div>
+              {data.discountTotal > 0 && (
+                <div className="flex justify-between text-xs text-green-600">
+                  <span>Discount:</span>
+                  <span>-{formatCurrency(data.discountTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs">
+                <span>Tax:</span>
+                <span>{formatCurrency(data.cardTax!)}</span>
+              </div>
+              {data.tipTotal > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span>Tip:</span>
+                  <span>{formatCurrency(data.tipTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-bold text-base mt-2 pt-2 border-t border-gray-300">
+                <span>Card Total:</span>
+                <span>{formatCurrency(data.cardTotal!)}</span>
+              </div>
+              <div className="mt-2 pt-2 border-t border-gray-300">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Cash Total:</span>
+                  <span>{formatCurrency(data.cashTotal!)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 pl-2">
+                  <span>Cash Subtotal:</span>
+                  <span>{formatCurrency(data.cashSubtotal!)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-400 pl-2">
+                  <span>Cash Tax:</span>
+                  <span>{formatCurrency(data.cashTax!)}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Standard single-total layout */}
+              <div className="flex justify-between text-xs">
+                <span>Subtotal:</span>
+                <span>{formatCurrency(data.subtotal)}</span>
+              </div>
+              {data.discountTotal > 0 && (
+                <div className="flex justify-between text-xs text-green-600">
+                  <span>Discount:</span>
+                  <span>-{formatCurrency(data.discountTotal)}</span>
+                </div>
+              )}
+              {data.surchargeAmount != null && data.surchargeAmount > 0 && (
+                <div className="flex justify-between text-xs text-yellow-600">
+                  <span>Credit Card Surcharge{data.surchargePercent ? ` (${data.surchargePercent}%)` : ''}:</span>
+                  <span>+{formatCurrency(data.surchargeAmount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs">
+                <span>Tax:</span>
+                <span>{formatCurrency(data.taxTotal)}</span>
+              </div>
+              {data.tipTotal > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span>Tip:</span>
+                  <span>{formatCurrency(data.tipTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between font-bold mt-2 pt-2 border-t border-gray-300">
+                <span>TOTAL:</span>
+                <span>{formatCurrency(data.total)}</span>
+              </div>
+            </>
           )}
-          {data.surchargeAmount != null && data.surchargeAmount > 0 && (
-            <div className="flex justify-between text-xs text-yellow-600">
-              <span>Credit Card Surcharge{data.surchargePercent ? ` (${data.surchargePercent}%)` : ''}:</span>
-              <span>+{formatCurrency(data.surchargeAmount)}</span>
-            </div>
-          )}
-          <div className="flex justify-between text-xs">
-            <span>Tax:</span>
-            <span>{formatCurrency(data.taxTotal)}</span>
-          </div>
-          {data.tipTotal > 0 && (
-            <div className="flex justify-between text-xs">
-              <span>Tip:</span>
-              <span>{formatCurrency(data.tipTotal)}</span>
-            </div>
-          )}
-          <div className="flex justify-between font-bold mt-2 pt-2 border-t border-gray-300">
-            <span>TOTAL:</span>
-            <span>{formatCurrency(data.total)}</span>
-          </div>
         </div>
       )}
 

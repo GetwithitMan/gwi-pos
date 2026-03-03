@@ -77,6 +77,17 @@ export const GET = withVenue(async function GET(
       )
     }
 
+    // Determine dual pricing state before formatting
+    const settings = parseSettings(order.location.settings)
+    const dualPricing = settings.dualPricing
+    const dualPricingEnabled = dualPricing.enabled
+    const cashDiscountPercent = dualPricing.cashDiscountPercent
+    const hasCardPayment = dualPricingEnabled && order.payments.some(
+      p => (p.paymentMethod === 'credit' && dualPricing.applyToCredit) ||
+           (p.paymentMethod === 'debit' && dualPricing.applyToDebit)
+    )
+    const isDualCard = dualPricingEnabled && hasCardPayment
+
     // Format receipt data
     const receiptData = {
       id: order.id,
@@ -99,8 +110,8 @@ export const GET = withVenue(async function GET(
         id: item.id,
         name: item.name,
         quantity: item.quantity,
-        price: Number(item.price),
-        itemTotal: Number(item.itemTotal),
+        price: isDualCard ? calculateCardPrice(Number(item.price), cashDiscountPercent) : Number(item.price),
+        itemTotal: isDualCard ? calculateCardPrice(Number(item.itemTotal), cashDiscountPercent) : Number(item.itemTotal),
         specialNotes: item.specialNotes,
         status: item.status,
         modifiers: item.modifiers.map(mod => ({
@@ -127,20 +138,26 @@ export const GET = withVenue(async function GET(
       tipTotal: Number(order.tipTotal),
       // For cash discount (dual pricing) model: order.total IS the cash price.
       // If the order was paid by card with dual pricing, show the card price as the total.
-      total: (() => {
-        const settings = parseSettings(order.location.settings)
-        const dualPricing = settings.dualPricing
-        if (dualPricing.enabled) {
-          const hasCardPayment = order.payments.some(
-            p => (p.paymentMethod === 'credit' && dualPricing.applyToCredit) ||
-                 (p.paymentMethod === 'debit' && dualPricing.applyToDebit)
-          )
-          if (hasCardPayment) {
-            return calculateCardPrice(Number(order.total), dualPricing.cashDiscountPercent)
-          }
+      total: isDualCard
+        ? calculateCardPrice(Number(order.total), cashDiscountPercent)
+        : Number(order.total),
+      // Dual pricing breakdown fields (only present when dual pricing + card payment)
+      ...(isDualCard ? (() => {
+        const cashTotal = Number(order.total)
+        const cashNetSubtotal = Number(order.subtotal) - Number(order.discountTotal)
+        const cardSubtotal = calculateCardPrice(cashNetSubtotal, cashDiscountPercent)
+        const cardTotal = calculateCardPrice(cashTotal, cashDiscountPercent)
+        const cashTax = Number(order.taxTotal)
+        const cardTax = calculateCardPrice(cashTax, cashDiscountPercent)
+        return {
+          cardSubtotal,
+          cardTax,
+          cardTotal,
+          cashSubtotal: cashNetSubtotal,
+          cashTax,
+          cashTotal,
         }
-        return Number(order.total)
-      })(),
+      })() : {}),
       createdAt: order.createdAt.toISOString(),
       paidAt: order.paidAt?.toISOString() || null,
       // Loyalty data
