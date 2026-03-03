@@ -150,7 +150,11 @@ export function PermissionSection({
                   {/* Select-all checkbox (indeterminate style) */}
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); onToggleGroup(groupKeys) }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const nonCriticalKeys = groupKeys.filter(k => getPermissionMeta(k).risk !== 'CRITICAL')
+                      onToggleGroup(nonCriticalKeys)
+                    }}
                     className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
                       allSelected
                         ? 'bg-blue-600 border-blue-600'

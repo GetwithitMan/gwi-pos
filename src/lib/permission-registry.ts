@@ -1170,6 +1170,9 @@ export function getVisiblePermissionKeys(
     // Advanced toggle overrides all filtering
     if (showAdvanced) return true
 
+    // roleType applicableTo filter — hide permissions not applicable to this role type
+    if (!meta.applicableTo.includes(roleType)) return false
+
     // Risk-based filtering by access level
     if (accessLevel === 'STAFF' && (meta.risk === 'HIGH' || meta.risk === 'CRITICAL')) {
       return false
@@ -1178,8 +1181,6 @@ export function getVisiblePermissionKeys(
       return false
     }
 
-    // roleType filtering: FOH/BOH still see ADMIN-tagged keys, just prefer their own
-    // All roles see all remaining keys — roleType is used for sorting/emphasis, not hiding
     return true
   })
 }
