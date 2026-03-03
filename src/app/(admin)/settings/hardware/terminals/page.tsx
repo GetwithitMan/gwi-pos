@@ -5,6 +5,8 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Modal } from '@/components/ui/modal'
 import { TerminalFailoverManager } from '@/components/hardware/TerminalFailoverManager'
 import { useAuthStore } from '@/stores/auth-store'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { toast } from '@/stores/toast-store'
 
 interface Printer {
   id: string
@@ -125,6 +127,32 @@ export default function TerminalsPage() {
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // Subscribe to real-time terminal status changes
+  useEffect(() => {
+    if (!locationId) return
+    const socket = getSharedSocket()
+
+    const onStatusChanged = (payload: { terminalId: string; isOnline: boolean; lastSeenAt: string | null }) => {
+      setTerminals(prev => {
+        const terminal = prev.find(t => t.id === payload.terminalId)
+        if (terminal && terminal.isOnline && !payload.isOnline) {
+          toast.error(`${terminal.name} went offline`)
+        }
+        return prev.map(t =>
+          t.id === payload.terminalId
+            ? { ...t, isOnline: payload.isOnline, lastSeenAt: payload.lastSeenAt ?? t.lastSeenAt }
+            : t
+        )
+      })
+    }
+
+    socket.on('terminal:status_changed', onStatusChanged)
+    return () => {
+      socket.off('terminal:status_changed', onStatusChanged)
+      releaseSharedSocket()
+    }
+  }, [locationId])
 
   const handleGeneratePairingCode = async (terminalId: string) => {
     try {
