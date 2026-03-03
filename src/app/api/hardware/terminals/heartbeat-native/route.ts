@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 // POST terminal heartbeat for native apps (Android/iOS) - Bearer token auth
@@ -77,6 +78,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
+    // Capture offline→online transition before updating
+    const wasOffline = !terminal.isOnline
+
     // Update last seen
     await db.terminal.update({
       where: { id: terminal.id },
@@ -94,6 +98,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         } : {}),
       },
     })
+
+    // Notify admin browsers of offline→online transition
+    if (wasOffline) {
+      void emitToLocation(terminal.locationId, 'terminal:status_changed', {
+        terminalId: terminal.id,
+        isOnline: true,
+        lastSeenAt: new Date().toISOString(),
+        source: 'heartbeat_reconnected',
+      })
+      void db.auditLog.create({
+        data: {
+          locationId: terminal.locationId,
+          action: 'terminal_reconnected',
+          entityType: 'terminal',
+          entityId: terminal.id,
+          details: { source: 'heartbeat_native', appVersion: appVersion ?? null },
+        },
+      }).catch(console.error)
+    }
 
     return NextResponse.json({ data: {
       success: true,

@@ -61,6 +61,64 @@ const connectedTerminals = new Map<string, {
   connectedAt: Date
 }>()
 
+async function markTerminalOffline(terminalId: string, locationId: string, reason: string, socketId: string): Promise<void> {
+  try {
+    await db.terminal.update({
+      where: { id: terminalId },
+      data: { isOnline: false },
+    })
+    void emitToLocation(locationId, 'terminal:status_changed', {
+      terminalId,
+      isOnline: false,
+      lastSeenAt: null,
+      source: 'socket_disconnect',
+      reason,
+    })
+    void db.auditLog.create({
+      data: {
+        locationId,
+        action: 'terminal_disconnected',
+        entityType: 'terminal',
+        entityId: terminalId,
+        details: { reason, socketId },
+      },
+    }).catch(console.error)
+  } catch (err) {
+    console.error('[Socket] markTerminalOffline failed:', err)
+  }
+}
+
+async function markTerminalOnline(terminalId: string, locationId: string): Promise<void> {
+  try {
+    const terminal = await db.terminal.findFirst({
+      where: { id: terminalId, deletedAt: null },
+      select: { isOnline: true },
+    })
+    if (!terminal || terminal.isOnline) return // already online, skip
+    await db.terminal.update({
+      where: { id: terminalId },
+      data: { isOnline: true, lastSeenAt: new Date() },
+    })
+    void emitToLocation(locationId, 'terminal:status_changed', {
+      terminalId,
+      isOnline: true,
+      lastSeenAt: new Date().toISOString(),
+      source: 'socket_reconnect',
+    })
+    void db.auditLog.create({
+      data: {
+        locationId,
+        action: 'terminal_reconnected',
+        entityType: 'terminal',
+        entityId: terminalId,
+        details: { source: 'join_station' },
+      },
+    }).catch(console.error)
+  } catch (err) {
+    console.error('[Socket] markTerminalOnline failed:', err)
+  }
+}
+
 /**
  * Initialize Socket.io server
  */
@@ -275,6 +333,9 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
         // Acknowledge successful join
         socket.emit('joined', { success: true, rooms: socket.rooms.size })
+
+        // Mark terminal online on (re)connection — fire-and-forget
+        void markTerminalOnline(terminalId, locationId)
       } catch (err) {
         console.error(JSON.stringify({ event: 'join_station', socketId: socket.id, terminalId, error: String(err) }))
       }
@@ -501,13 +562,20 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
     socket.on('disconnect', (reason: string) => {
       try {
-        // Clean up terminal tracking
+        // Path A: browser/KDS terminals registered via join_station
+        let handled = false
         for (const [terminalId, info] of connectedTerminals.entries()) {
           if (info.socketId === socket.id) {
             connectedTerminals.delete(terminalId)
             if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} disconnected: ${reason}`)
+            void markTerminalOffline(terminalId, info.locationId, reason, socket.id)
+            handled = true
             break
           }
+        }
+        // Path B: Android native — auth middleware sets socket.data.terminalId
+        if (!handled && socket.data.terminalId && socket.data.locationId) {
+          void markTerminalOffline(socket.data.terminalId, socket.data.locationId, reason, socket.id)
         }
       } catch (err) {
         console.error(JSON.stringify({ event: 'disconnect', socketId: socket.id, error: String(err) }))
@@ -546,6 +614,34 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Cleaned ${cleaned} stale terminal entries`)
     }
   }, 5 * 60 * 1000) // Every 5 minutes
+
+  // 60s sweep: mark stale terminals offline (no heartbeat for >2 min)
+  setInterval(async () => {
+    try {
+      const stale = await db.terminal.findMany({
+        where: {
+          isOnline: true,
+          lastSeenAt: { lt: new Date(Date.now() - 120_000) },
+          deletedAt: null,
+        },
+        select: { id: true, locationId: true },
+      })
+      for (const t of stale) {
+        await db.terminal.update({ where: { id: t.id }, data: { isOnline: false } })
+        void emitToLocation(t.locationId, 'terminal:status_changed', {
+          terminalId: t.id,
+          isOnline: false,
+          lastSeenAt: null,
+          source: 'heartbeat_timeout',
+        })
+      }
+      if (stale.length > 0 && process.env.DEBUG_SOCKETS) {
+        console.log(`[Socket] Stale sweep: marked ${stale.length} terminal(s) offline`)
+      }
+    } catch (err) {
+      console.error('[Socket] Stale heartbeat sweep failed:', err)
+    }
+  }, 60_000)
 
   // Store in global so API routes can emit events (survives HMR)
   setSocketServer(socketServer)
