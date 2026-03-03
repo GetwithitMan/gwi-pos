@@ -81,6 +81,10 @@ export const POST = withVenue(async function POST(
       where: { id: orderId },
       include: {
         location: true,
+        payments: {
+          where: { deletedAt: null },
+          select: { id: true, status: true },
+        },
         items: {
           where: { id: itemId },
           include: {
@@ -95,6 +99,15 @@ export const POST = withVenue(async function POST(
       return NextResponse.json(
         { error: 'Order not found' },
         { status: 404 }
+      )
+    }
+
+    // Block modifications if any completed payment exists
+    const hasCompletedPayment = order.payments?.some(p => p.status === 'completed') || false
+    if (hasCompletedPayment) {
+      return NextResponse.json(
+        { error: 'Cannot void/comp item on order with recorded payments. Void the payment first.' },
+        { status: 400 }
       )
     }
 

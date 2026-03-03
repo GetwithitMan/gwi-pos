@@ -337,6 +337,21 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // C1: Block payment if any active items have not been sent to kitchen
+    const unsentItems = order.items.filter(
+      i => i.kitchenStatus === 'pending' && i.status === 'active'
+    )
+    if (unsentItems.length > 0) {
+      return NextResponse.json(
+        {
+          code: 'UNSENT_KITCHEN_ITEMS',
+          error: `Cannot pay order with ${unsentItems.length} unsent item(s). Send all items to kitchen first.`,
+          unsentItemIds: unsentItems.map(i => i.id),
+        },
+        { status: 400 }
+      )
+    }
+
     // Get settings for rounding
     const settings = parseSettings(order.location.settings)
 
@@ -1084,6 +1099,14 @@ export const POST = withVenue(withTiming(async function POST(
       updateData.status = 'paid'
       updateData.paidAt = new Date()
       updateData.closedAt = new Date()
+    } else if (newPaidTotal > 0) {
+      // Partial payment received — lock order from silent abandonment
+      if (order.status === 'open' || order.status === 'draft') {
+        updateData.status = 'in_progress'
+      }
+      if (!order.paidAt) {
+        updateData.paidAt = new Date()
+      }
     }
 
     // Pre-compute loyalty points BEFORE the transaction (avoid nested findUnique inside tx)
