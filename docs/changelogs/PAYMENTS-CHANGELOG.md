@@ -1,5 +1,22 @@
 # Payments Domain Changelog
 
+## 2026-03-03 — Audit Remediation: Payment Flow Guards (Skill 478)
+
+### Added
+- **Unsent kitchen items block payment** — `POST /api/orders/[id]/pay` returns `UNSENT_KITCHEN_ITEMS` (400) if any item is in PENDING kitchen status. Android `PayOrderUseCase.ensureOrderReadyForPayment()` enforces same rule client-side.
+- **In-flight payment blocks item adds** — `POST /api/orders/[id]/items` now rejects when any payment has `status='pending'` (previously only blocked on `completed`). Variable renamed `hasActivePayment`.
+- **Comp/void blocked after completed payment** — `POST /api/orders/[id]/comp-void` checks `hasCompletedPayment` before allowing void/comp.
+- **Partial payment moves order to `in_progress`** — POS sets `in_progress` status when `newPaidTotal > 0` and order not fully paid.
+
+### Android
+- `appliedPayments` seeded from `PaymentLogEntity` (CONFIRMED records) on `showPayment()` open — partial payment state survives sheet dismiss/reopen
+- `PaymentLogDao.getForOrderByStatus(orderId, status)` query added
+- Voided payments sync reactively: `OrderSyncController` handles `payment:processed` socket events with `status=voided` → inserts `PAYMENT_VOIDED` event → `replayAndProject()`
+- "Complete / No Charge" button replaces Cash/Card/Other when `total == 0L && itemCount > 0`
+- Amber tip warning in `PaymentSheet` + `CloseTabSheet` + `TipEntrySheet` when tip > 50% of order total
+
+---
+
 ### 2026-02-28 — Dual Pricing Bug Fixes
 
 **Commit:** `8bdd4bd`

@@ -768,6 +768,12 @@ Skills that can be developed simultaneously:
 | 331 | Team Management Page | Clerk API integration for invite/role/remove team members. TeamManager component with role badges, invite modal. Audit logging for all team changes. |
 | 332 | Venue Admin Portal | Full sidebar navigation with POS-matching dark UI theme. Settings, Team, Hardware, Floor Plan, Servers pages. Owner/Employee role support planned. |
 
+## Recently Completed (2026-03-03 — Android Audit Remediation, Skill 478)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 478 | Android Bartender Audit Remediation | 31 of 32 audit findings implemented (1 deferred by design). All 5 criticals fixed: unsent-item payment block, partial payment durability, shift close open order count, manager override force-close. 10 highs + 13 mediums + 4 lows addressed. See `docs/skills/478-ANDROID-AUDIT-REMEDIATION.md` for full per-finding details. Android commits: `1fc06a5`→`007bb79`. POS commits on v1.13.0-roles: `57efa0a`→`2af4b7e`. Regression guard: `docs/planning/AUDIT_REGRESSION.md` (26 invariants). |
+
 ## Recently Completed (2026-03-02 — CFD Completion Sprint, Skills 475-477)
 
 | Skill | Name | What Was Built |
@@ -1444,6 +1450,12 @@ These skills emerged during development and are now part of the system:
 | 475 | CFD Serial Number Field | DONE | Hardware / Customer Display | 461 | `cfdSerialNumber String?` added to Terminal Prisma model. nuc-pre-migrate.js idempotent case. Pair route writes serial from PAX A3700. GET/PUT terminal routes include field. POS commit: `e51a05f`. |
 | 476 | CFD Suggested Items (Phase 5) | DONE | Hardware / Customer Display / Android | 461, 462 | `isFeaturedCfd Boolean @default(false)` on MenuItem. `GET /api/cfd/featured-items` endpoint (location-scoped, returns name + imageUrl). gwi-cfd `CfdOrderScreen`: `FeaturedItemCard` composables in horizontal `LazyRow` with Coil image loading, OkHttp fetch on connected. POS commit: `8b04893`. CFD commit: `bf4981d`. |
 | 477 | CFD Back-Office Admin Page (Phase 6) | DONE | Settings / Hardware / Customer Display | 461, 476 | `/settings/hardware/cfd` admin page: paired device list (serial, register, status), display settings form (tip mode, signature threshold, idle promo), featured items picker with checkboxes. `PATCH /api/menu/items/[id]` toggles `isFeaturedCfd`. POS commit: `3a9e885`. |
+
+### Android Audit Remediation (2026-03-03)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 478 | Android Bartender Audit Remediation | DONE | Android / Payments / Tips / Orders | 474 | Systematic remediation of all 31 actionable findings from Skill 474 audit. **Critical:** C1 payment blocked on unsent items (`ensureOrderReadyForPayment()`); C3 partial payment durability (seeds `appliedPayments` from `PaymentLogDao` on open); C4 shift close open order count; C5 manager override force-close. **High:** H1 pending tips in shift close (ShiftCloseSheet review button); H2 tab list Open/Closed badge + balance due; H3 KDS status event-sourced (`ITEM_UPDATED` event); H4 voided payment sync (`PAYMENT_VOIDED` event); H5 spirit dialog `dismissOnClickOutside=false`; H6 modifier sheet swipe-dismiss guard; H8 clock-out blocked during payment; H9 POS items route blocks pending payments. **Medium:** M1 Complete/No Charge for $0 orders; M2 50% tip warning (Android) + 200% hard reject (POS); M3 closeTabNonce tip field reset; M4 qty cap 999; M5 shift-scoped `getPendingTips`; M6 24h shift-closed tip edit boundary; M7 split unassigned warning; M10 discount pre-check banner; M11 savedStateHandle currentOrderId; M12 300ms debounce; M13 criticalError banner. **Low:** L1 nickname 30-char cap; L2 modifier auto-select single required; L3 empty state polish. Android commits: `1fc06a5`→`007bb79`. POS commits: `57efa0a`→`2af4b7e` (branch: v1.13.0-roles). |
 
 ---
 

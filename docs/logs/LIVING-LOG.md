@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-03-03 — Android Audit Remediation (Skill 478)
+
+### Summary
+31 of 32 audit findings implemented (1 deferred by design — M9 spirit stacking is intentionally single-tier).
+Android commits: `625ddd1` → `007bb79` | POS commits: `a0089ba` → `2af4b7e`
+
+### Critical / High (all shipped)
+- **C1:** Payment blocked if any kitchen item is PENDING — `PayOrderUseCase` + POS pay route
+- **C3:** Partial payment durability — `appliedPayments` seeded from `PaymentLogEntity` (CONFIRMED); order moves to `in_progress` on partial
+- **C4/C5:** Shift close 409 parsed via Moshi; open order count + manager override button in `ShiftCloseSheet`
+- **H1:** Shift close sheet calls `getPendingTips(shiftId=openShift.id)` — shows count + "Review Tips" button
+- **H2:** Tab list rows: Open/Closed badge + amber "Due $X.XX" + opacity dimming for closed tabs
+- **H5/H6:** Spirit dialog `dismissOnClickOutside=false`; ModifierSheet `hasPartialSelection` swipe guard
+- **H8:** Clock-out returns early when `isProcessingPayment`
+- **H9:** POS items route blocks `pending` payments (not just `completed`)
+- **H3/H4 (Android):** KDS status changes event-sourced; voided payments sync via socket handler
+- **H10:** Verified DONE (open count + pending tips already covered by C4/H1)
+
+### Medium (all shipped)
+- M1: "Complete / No Charge" button for $0 orders
+- M2: 50% amber tip warning (Android) + 200% hard reject (POS)
+- M3/M4/M12: Tip field reset nonce, qty cap at 999, 300ms item-tap debounce
+- M5/M6: Shift-scoped pending tips + 24h tip-edit boundary (both layers)
+- M7/M10: Seat-split unassigned warning; discount-already-applied banner
+- M11/M13: `currentOrderId` via `savedStateHandle`; persistent amber send-failure banner
+
+### Low (all shipped)
+- L1: Tab nickname 30-char cap with counter
+- L2: Single-option required modifier groups auto-select
+- L3: Clear "No pending tips" empty state in My Tips screen
+- L4: Verified DONE (skeleton rows already in place)
+
+### Docs Added
+- `docs/planning/AUDIT-CLOSURE-2026-03-03.md`
+- `docs/planning/AUDIT_REGRESSION.md` (26 invariants)
+- `docs/skills/474-ANDROID-BARTENDER-AUDIT.md`
+- `docs/skills/478-ANDROID-AUDIT-REMEDIATION.md`
+
+---
+
 ## 2026-03-03
 
 ### Features Built

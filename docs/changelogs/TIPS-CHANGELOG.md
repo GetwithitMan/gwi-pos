@@ -1,5 +1,31 @@
 # Tips & Tip Bank Domain Changelog
 
+## 2026-03-03 — Audit Remediation: Tips Guardrails (Skill 478)
+
+### Shift-Scoped Pending Tips (M5)
+- `GET /api/tips/pending-tips` now accepts optional `?shiftId=` query param; filters `Payment.shiftId` when provided (backward compat when omitted)
+- Android `GwiApiService.getPendingTips()` gains `shiftId: String? = null` param
+- `OrderViewModel.showShiftClose()` passes `openShift.id` — shift-close pending tip count is now scoped to the current shift
+- `MyTipsViewModel` leaves `shiftId=null` (full history view is correct for My Tips screen)
+- `GET /api/tips/pending-tips` response includes `shiftClosedAt` (payment shift's `endedAt`)
+
+### Tip Edit Time Boundary (M6)
+- `POST /api/tips/adjustments`: fetches `Payment → Shift`; rejects with 403 if `shift.status === 'closed'` and `endedAt` > 24h ago
+- `GET /api/tips/recorded-tips` response includes `shiftClosedAt` field
+- Android `PendingTipDto` / `RecordedTipDto` gain `shiftClosedAt: String?`
+- `TipEntrySheet`: `shiftEditLocked` derived boolean disables Save + shows red warning when shift closed >24h
+
+### Tip Size Cap (M2)
+- Android (all three tip sheets): amber "Tip is over 50% of the order total" warning when `tipCents > orderTotal / 2` (soft — does not block submit)
+- `POST /api/tips/adjustments`: hard-rejects tip > 200% of payment base (`payment.amount × 2`)
+
+### Pending Tips in Shift Close (H1)
+- `showShiftClose()` calls `getPendingTips(locId, empId, shiftId = openShift.id)`; stores count in `shiftClosePendingTipCount`
+- `ShiftCloseSheet`: green "Pending tips: N" section with "Review Tips" button (navigates to `MyTipsScreen`)
+- Callback threaded through `OrderScreen` → `OrderScreenSheets` → `ShiftCloseSheet`
+
+---
+
 ## 2026-03-03 — Pending Tips + Self-Service Tip Adjustment
 
 ### Added

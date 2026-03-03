@@ -1,5 +1,19 @@
 # Tabs & Bottle Service Domain Changelog
 
+## 2026-03-03 — Audit Remediation: Tab List Status + Nickname Cap (Skill 478)
+
+### Tab List Status Indicator
+- `TabListSheet`: each row now shows an Open (green) or Closed (gray) badge
+- Amber "Due $X.XX" label displayed when `total - paidAmount > 0`
+- Closed tab rows rendered at 25% opacity for visual distinction
+
+### Tab Nickname Input Cap
+- `NewTabDialog`: tab nickname ("Known As") capped at 30 characters
+- `onValueChange` guard prevents entry beyond limit
+- Supporting text counter turns amber at ≥25 chars (e.g., "25/30")
+
+---
+
 ## 2026-03-03 — Tab Nickname Feature
 
 ### Added

@@ -1,5 +1,30 @@
 # Orders Domain - Change Log
 
+## 2026-03-03 — Audit Remediation: Order & Payment Guards (Skill 478)
+
+### Payment Flow Guards
+- `PayOrderUseCase.ensureOrderReadyForPayment()`: returns failure if any item has `KitchenStatus.PENDING` — "Send all items to kitchen before payment."
+- `POST /api/orders/[id]/pay` (POS): UNSENT_KITCHEN_ITEMS guard added before payment loop
+- `POST /api/orders/[id]/items` (POS): `hasActivePayment` now checks `status === 'completed' || 'pending'` (was `completed` only), blocking item adds during in-flight card payment
+- `OrderViewModel.clockOut()`: early return with snackbar if `isProcessingPayment` is true
+
+### $0 Order Completion
+- `SendButtonRow`: "Complete / No Charge" green button replaces Cash/Card/Other when `total == 0L && itemCount > 0`
+- `OrderViewModel.completeNoCharge()`: calls `POST /api/orders/[id]/pay` with `amount = 0`
+
+### KDS / Sync Architecture
+- `OrderSyncController.handleKdsItemStatus()`: replaced direct `orderItemDao.updateItemKitchenStatus()` with `ITEM_UPDATED` event → `replayAndProject()` — KDS bumps are now event-sourced
+- `OrderItemDao`: new `getOrderIdForItem(itemId)` query; fallback to direct write if orderId not found (safe degradation)
+- `OrderSyncController.handlePaymentProcessed()` for `status == "voided"`: inserts `PAYMENT_VOIDED` event → `replayAndProject()` (non-voided events still handled by ViewModel)
+
+### UI Reliability
+- `onItemClicked()`: 300ms debounce via `lastItemClickMs` field (prevents double-tap adds)
+- `currentOrderId` persisted to `savedStateHandle`; restored on ViewModel recreation; `distinctUntilChanged` collector in `init` (process-death survival)
+- `criticalError: String?` in `OrderUiState`; `sendToKitchen()` sets it on `SyncFailed`/`Failure`; amber animated banner in `OrderMainContent` with ✕ dismiss
+- `AddItemUseCase` qty bump: `.coerceAtMost(999)` prevents overflow
+
+---
+
 ## 2026-02-27 — Android: Order Lifecycle Hardening (Skill 457, `d283f1f`)
 
 ### Double-Tap Race Condition
