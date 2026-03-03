@@ -20,7 +20,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
       return NextResponse.json(
@@ -29,9 +28,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
-    // Auth check — require staff.manage_roles permission
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    // No auth check on read — role names/permissions are needed by employee dropdowns,
+    // tip settings, and other admin pages. Write operations (POST/PUT/DELETE) require STAFF_MANAGE_ROLES.
 
     const roles = await db.role.findMany({
       where: { locationId },
