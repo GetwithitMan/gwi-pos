@@ -199,15 +199,62 @@ export const POST = withVenue(async function POST(
       return apiError.badRequest('No items provided', ERROR_CODES.ORDER_EMPTY)
     }
 
-    // Auth check — if editing another employee's order, require pos.edit_others_orders
+    // Auth checks — fetch order metadata once for all permission guards
     if (requestingEmployeeId) {
       const orderMeta = await db.order.findUnique({
         where: { id: orderId },
         select: { employeeId: true, locationId: true },
       })
+
+      // Guard: editing another employee's order requires pos.edit_others_orders
       if (orderMeta?.employeeId && orderMeta.employeeId !== requestingEmployeeId) {
         const auth = await requirePermission(requestingEmployeeId, orderMeta.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
         if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
+
+      // Guard: custom-priced items require manager.open_items
+      // Skip for weight-based, pizza, and timed-rental items whose prices are inherently dynamic
+      if (orderMeta) {
+        const pricableItems = items.filter(i => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
+        if (pricableItems.length > 0) {
+          const menuItems = await db.menuItem.findMany({
+            where: { id: { in: pricableItems.map(i => i.menuItemId) } },
+            select: { id: true, price: true },
+          })
+          const menuItemMap = new Map(menuItems.map(m => [m.id, m]))
+
+          const pricingOptionIds = pricableItems.filter(i => i.pricingOptionId).map(i => i.pricingOptionId!)
+          const pricingOptions = pricingOptionIds.length > 0
+            ? await db.pricingOption.findMany({
+                where: { id: { in: pricingOptionIds } },
+                select: { id: true, price: true },
+              })
+            : []
+          const pricingOptionMap = new Map(pricingOptions.map(p => [p.id, p]))
+
+          let hasOpenItem = false
+          for (const item of pricableItems) {
+            const menuItem = menuItemMap.get(item.menuItemId)
+            if (!menuItem) continue
+            let expectedPrice = Number(menuItem.price)
+            if (item.pricingOptionId) {
+              const opt = pricingOptionMap.get(item.pricingOptionId)
+              if (opt?.price != null) expectedPrice = Number(opt.price)
+            }
+            if (item.pourMultiplier && item.pourMultiplier !== 1) {
+              expectedPrice = Math.round(expectedPrice * item.pourMultiplier * 100) / 100
+            }
+            if (Math.abs(Math.round(item.price * 100) - Math.round(expectedPrice * 100)) > 1) {
+              hasOpenItem = true
+              break
+            }
+          }
+
+          if (hasOpenItem) {
+            const auth = await requirePermission(requestingEmployeeId, orderMeta.locationId, PERMISSIONS.MGR_OPEN_ITEMS)
+            if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+          }
+        }
       }
     }
 
