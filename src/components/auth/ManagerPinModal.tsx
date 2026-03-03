@@ -11,6 +11,7 @@ interface ManagerPinModalProps {
   title?: string
   message?: string
   locationId: string
+  employeeId?: string
 }
 
 export function ManagerPinModal({
@@ -20,6 +21,7 @@ export function ManagerPinModal({
   title = 'Manager Authorization Required',
   message = 'Enter manager PIN to continue',
   locationId,
+  employeeId,
 }: ManagerPinModalProps) {
   const [pin, setPin] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
@@ -53,7 +55,7 @@ export function ManagerPinModal({
       const res = await fetch('/api/auth/verify-pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin, locationId }),
+        body: JSON.stringify({ pin, locationId, ...(employeeId ? { employeeId } : {}) }),
       })
 
       if (res.ok) {

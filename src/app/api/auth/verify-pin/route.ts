@@ -32,7 +32,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    const { pin, locationId } = await request.json()
+    const { pin, locationId, employeeId } = await request.json()
 
     if (!pin || pin.length < 4) {
       return NextResponse.json(
@@ -48,6 +48,49 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    // Fast path: O(1) — single employee lookup + one compare
+    if (employeeId) {
+      const employee = await db.employee.findUnique({
+        where: { id: employeeId },
+        select: {
+          id: true,
+          pin: true,
+          firstName: true,
+          lastName: true,
+          isActive: true,
+          locationId: true,
+          requiresPinChange: true,
+          role: { select: { id: true, name: true } },
+        },
+      })
+      if (!employee || !employee.isActive || employee.locationId !== locationId) {
+        recordLoginFailure(ip)
+        return NextResponse.json(
+          { error: 'Invalid PIN' },
+          { status: 401 }
+        )
+      }
+      const pinMatch = await compare(pin, employee.pin)
+      if (!pinMatch) {
+        recordLoginFailure(ip)
+        return NextResponse.json(
+          { error: 'Invalid PIN' },
+          { status: 401 }
+        )
+      }
+      return NextResponse.json({ data: {
+        employee: {
+          id: employee.id,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          role: employee.role.name,
+          requiresPinChange: employee.requiresPinChange ?? false,
+        },
+        verified: true,
+      } })
+    }
+
+    // Fall through to existing O(N) scan for backwards compatibility
     // Get active employees for this location
     const employees = await db.employee.findMany({
       where: {
