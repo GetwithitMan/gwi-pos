@@ -642,6 +642,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const requestingEmployeeId = request.headers.get('x-employee-id') || searchParams.get('requestingEmployeeId')
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    // Viewing another employee's orders requires explicit permission
+    if (employeeId && requestingEmployeeId && employeeId !== requestingEmployeeId) {
+      const othersAuth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_VIEW_OTHERS_ORDERS)
+      if (!othersAuth.authorized) return NextResponse.json({ error: othersAuth.error }, { status: othersAuth.status })
+    }
 
     // Build date range filter on createdAt
     const dateRangeFilter: Record<string, unknown> = {}

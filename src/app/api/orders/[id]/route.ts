@@ -359,6 +359,15 @@ export const PUT = withVenue(async function PUT(
     if (requestingEmployeeId) {
       const auth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_ACCESS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      // Elevated checks for sensitive field changes
+      if (tableId !== undefined) {
+        const tAuth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_CHANGE_TABLE)
+        if (!tAuth.authorized) return NextResponse.json({ error: tAuth.error }, { status: tAuth.status })
+      }
+      if (employeeId !== undefined && employeeId !== requestingEmployeeId) {
+        const sAuth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_CHANGE_SERVER)
+        if (!sAuth.authorized) return NextResponse.json({ error: sAuth.error }, { status: sAuth.status })
+      }
     }
 
     // Concurrency check: if client sent a version, verify it matches
@@ -550,6 +559,15 @@ export const PATCH = withVenue(async function PATCH(
     if (requestingEmployeeId) {
       const auth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_ACCESS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      // Elevated checks for sensitive field changes
+      if (tableId !== undefined) {
+        const tAuth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_CHANGE_TABLE)
+        if (!tAuth.authorized) return NextResponse.json({ error: tAuth.error }, { status: tAuth.status })
+      }
+      if (employeeId !== undefined && employeeId !== requestingEmployeeId) {
+        const sAuth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_CHANGE_SERVER)
+        if (!sAuth.authorized) return NextResponse.json({ error: sAuth.error }, { status: sAuth.status })
+      }
     }
 
     if (!['open', 'draft', 'sent', 'in_progress', 'split'].includes(existing.status)) {

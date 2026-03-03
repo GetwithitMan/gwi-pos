@@ -3,6 +3,8 @@ import { withVenue } from '@/lib/with-venue'
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { ESCPOS } from '@/lib/escpos/commands'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * POST /api/print/cash-drawer
@@ -18,7 +20,7 @@ import { ESCPOS } from '@/lib/escpos/commands'
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({})) as { locationId?: string }
+    const body = await request.json().catch(() => ({})) as { locationId?: string; employeeId?: string }
 
     // Resolve locationId — body takes precedence; fall back to the venue's only location
     let locationId = body.locationId
@@ -35,6 +37,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         )
       }
       locationId = location.id
+    }
+
+    // Auth check — require pos.no_sale permission
+    if (body.employeeId) {
+      const auth = await requirePermission(body.employeeId, locationId, PERMISSIONS.POS_NO_SALE)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Find the active receipt printer for this location
