@@ -203,6 +203,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const payment = await db.payment.findUnique({
         where: { id: paymentId },
         select: {
+          amount: true,
           shift: {
             select: { status: true, endedAt: true },
           },
@@ -221,6 +222,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // Convert dollars to cents
       const tipAmountCents = Math.round((tipAmountDollars as number) * 100)
+
+      // M2: Hard-reject tips that exceed 200% of the payment base (extreme fat-finger guard)
+      const baseAmountCents = Math.round(Number(payment?.amount) * 100)
+      if (baseAmountCents > 0 && tipAmountCents > baseAmountCents * 2) {
+        return NextResponse.json(
+          { error: 'Tip amount exceeds 200% of the payment total. If intentional, contact a manager.' },
+          { status: 400 }
+        )
+      }
 
       const result = await performTipAdjustment({
         locationId,
