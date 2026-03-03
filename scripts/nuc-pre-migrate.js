@@ -533,6 +533,54 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED Role.roleType/accessLevel:`, err.message)
     }
 
+    // --- Handheld: Terminal.defaultMode ---
+    try {
+      const hasDefaultMode = await columnExists(prisma, 'Terminal', 'defaultMode')
+      if (!hasDefaultMode) {
+        console.log(`${PREFIX}   Adding defaultMode to Terminal...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "Terminal" ADD COLUMN "defaultMode" TEXT`)
+        console.log(`${PREFIX}   Done — Terminal.defaultMode added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Terminal.defaultMode:`, err.message)
+    }
+
+    // --- Sync TaxRule rates → Location.settings.tax.defaultRate ---
+    try {
+      const locations = await prisma.location.findMany({ select: { id: true } })
+      let synced = 0
+      for (const loc of locations) {
+        const rules = await prisma.taxRule.findMany({
+          where: { locationId: loc.id, deletedAt: null, isActive: true },
+          select: { rate: true },
+        })
+        if (rules.length > 0) {
+          const effectiveRate = rules.reduce((sum, r) => sum + Number(r.rate), 0)
+          const ratePercent = Math.round(effectiveRate * 100 * 10000) / 10000
+          const location = await prisma.location.findUnique({
+            where: { id: loc.id },
+            select: { settings: true },
+          })
+          const currentSettings = location?.settings || {}
+          const updatedSettings = {
+            ...currentSettings,
+            tax: { ...(currentSettings.tax || {}), defaultRate: ratePercent },
+          }
+          await prisma.location.update({
+            where: { id: loc.id },
+            data: { settings: updatedSettings },
+          })
+          synced++
+          console.log(`${PREFIX}   Synced tax rate ${ratePercent}% to location ${loc.id}`)
+        }
+      }
+      if (synced === 0) {
+        console.log(`${PREFIX}   No active TaxRule records found — settings.tax.defaultRate not modified`)
+      }
+    } catch (err) {
+      console.warn(`${PREFIX} WARNING: Failed to sync TaxRule rates to Location settings:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

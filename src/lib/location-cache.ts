@@ -137,6 +137,24 @@ export async function getLocationSettings(
 
   const settings = (location?.settings || null) as LocationSettings | null
 
+  // Safety net: if settings.tax.defaultRate is missing, compute live from TaxRule records.
+  // This handles locations where TaxRules exist but settings.tax.defaultRate was never synced.
+  if (location && !settings?.tax?.defaultRate) {
+    const rules = await db.taxRule.findMany({
+      where: { locationId, deletedAt: null, isActive: true },
+      select: { rate: true },
+    })
+    if (rules.length > 0) {
+      const effectiveRate = rules.reduce((sum, rule) => sum + Number(rule.rate), 0)
+      const enriched: LocationSettings = {
+        ...(settings || {}),
+        tax: { ...(settings?.tax || {}), defaultRate: Math.round(effectiveRate * 100 * 10000) / 10000 },
+      }
+      cache.set(locationId, { settings: enriched, timestamp: now })
+      return enriched
+    }
+  }
+
   // Store in cache
   cache.set(locationId, {
     settings,

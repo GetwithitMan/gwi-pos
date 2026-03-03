@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 
 // GET - Get a single tax rule
 export const GET = withVenue(async function GET(
@@ -66,6 +67,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    await syncTaxRateToSettings(existing.locationId)
+
     return NextResponse.json({ data: {
       taxRule: {
         id: taxRule.id,
@@ -96,6 +99,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await prisma.taxRule.update({ where: { id }, data: { deletedAt: new Date() } })
+    await syncTaxRateToSettings(taxRule.locationId)
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete tax rule:', error)

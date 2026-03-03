@@ -3,6 +3,7 @@ import { db as prisma } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 
 // GET - List tax rules
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -83,6 +84,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         isCompounded: isCompounded ?? false,
       },
     })
+
+    await syncTaxRateToSettings(locationId)
 
     return NextResponse.json({ data: {
       taxRule: {
