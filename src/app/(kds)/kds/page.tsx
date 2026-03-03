@@ -428,28 +428,37 @@ function KDSContent() {
         headers['x-device-token'] = deviceToken
       }
 
-      const response = await fetch(`/api/kds?${params}`, { headers })
+      // Fetch all pages
+      let allOrders: KDSOrder[] = []
+      let cursor: string | null = null
+      do {
+        const pageParams = new URLSearchParams(params)
+        if (cursor) pageParams.set('cursor', cursor)
+        const pageRes = await fetch(`/api/kds?${pageParams}`, { headers })
 
-      if (response.status === 401) {
-        // Token expired or invalid
-        setAuthState('requires_pairing')
-        return
-      }
-
-      if (response.ok) {
-        const data = await response.json()
-
-        let filteredOrders = data.data?.orders || []
-        if (!showCompleted) {
-          filteredOrders = filteredOrders.filter((order: KDSOrder) =>
-            order.items.some(item => !item.isCompleted)
-          )
+        if (pageRes.status === 401) {
+          // Token expired or invalid
+          setAuthState('requires_pairing')
+          return
         }
 
-        setOrders(filteredOrders)
-        setStation(data.data?.station)
-        setLastUpdate(new Date())
+        if (!pageRes.ok) break
+
+        const pageData = await pageRes.json()
+        allOrders = allOrders.concat(pageData.data?.orders ?? [])
+        cursor = pageData.data?.nextCursor ?? null
+        if (!station) setStation(pageData.data?.station)
+      } while (cursor)
+
+      let filteredOrders = allOrders
+      if (!showCompleted) {
+        filteredOrders = filteredOrders.filter((order: KDSOrder) =>
+          order.items.some(item => !item.isCompleted)
+        )
       }
+
+      setOrders(filteredOrders)
+      setLastUpdate(new Date())
     } catch (error) {
       console.error('Failed to load KDS orders:', error)
     } finally {
