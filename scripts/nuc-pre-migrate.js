@@ -444,6 +444,79 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED CfdSettings table:`, err.message)
     }
 
+    // --- Role: Add roleType and accessLevel columns + backfill from permissions ---
+    try {
+      const hasRoleType = await columnExists(prisma, 'Role', 'roleType')
+      if (!hasRoleType) {
+        console.log(`${PREFIX}   Adding roleType and accessLevel to Role...`)
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "Role" ADD COLUMN "roleType" TEXT NOT NULL DEFAULT 'FOH'`
+        )
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "Role" ADD COLUMN "accessLevel" TEXT NOT NULL DEFAULT 'STAFF'`
+        )
+
+        // Backfill from permissions JSONB
+        const roles = await prisma.$queryRawUnsafe(
+          `SELECT id, permissions FROM "Role" WHERE "deletedAt" IS NULL`
+        )
+        for (const row of roles) {
+          const perms = Array.isArray(row.permissions) ? row.permissions : []
+
+          const hasAny = (list) => list.some(p => perms.includes(p))
+          const hasWildcard = (prefix) => perms.includes(prefix + '.*') || perms.includes('*')
+
+          // roleType
+          const ADMIN_SIGNALS = [
+            'settings.view', 'settings.edit', 'settings.tax', 'settings.receipts',
+            'settings.payments', 'settings.dual_pricing', 'settings.venue', 'settings.menu',
+            'settings.inventory', 'settings.floor', 'settings.customers', 'settings.team',
+            'settings.tips', 'settings.reports', 'settings.hardware', 'settings.security',
+            'settings.integrations', 'settings.automation', 'settings.monitoring',
+            'admin', 'super_admin',
+          ]
+          const BOH_ONLY_SIGNALS = ['pos.kds']
+          const FOH_SIGNALS = ['pos.access', 'pos.table_service', 'pos.quick_order']
+
+          let roleType = 'FOH'
+          if (hasAny(ADMIN_SIGNALS) || hasWildcard('settings') || perms.includes('all') || perms.includes('admin') || perms.includes('super_admin')) {
+            roleType = 'ADMIN'
+          } else if (hasAny(BOH_ONLY_SIGNALS) && !hasAny(FOH_SIGNALS)) {
+            roleType = 'BOH'
+          }
+
+          // accessLevel
+          const OWNER_ADMIN_SIGNALS = [
+            'manager.void_payments', 'manager.cash_variance_override',
+            'staff.manage_roles', 'staff.assign_roles',
+            'tips.manage_rules', 'tips.manage_bank', 'tips.manage_settings', 'tips.process_payout',
+            'payroll.manage', 'admin', 'super_admin',
+          ]
+          const MANAGER_SIGNALS = [
+            'manager.void_items', 'manager.void_orders', 'manager.refunds', 'manager.discounts',
+            'manager.edit_sent_items', 'manager.edit_time_entries', 'manager.end_breaks_early',
+            'manager.force_clock_out', 'manager.pay_in_out', 'manager.close_day',
+            'manager.cash_drawer_full', 'staff.edit_wages',
+          ]
+
+          let accessLevel = 'STAFF'
+          if (hasAny(OWNER_ADMIN_SIGNALS) || hasWildcard('settings') || perms.includes('all')) {
+            accessLevel = 'OWNER_ADMIN'
+          } else if (hasAny(MANAGER_SIGNALS) || hasWildcard('manager')) {
+            accessLevel = 'MANAGER'
+          }
+
+          await prisma.$executeRawUnsafe(
+            `UPDATE "Role" SET "roleType" = $1, "accessLevel" = $2 WHERE id = $3`,
+            roleType, accessLevel, row.id
+          )
+        }
+        console.log(`${PREFIX}   Done — Role.roleType and Role.accessLevel backfilled`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Role.roleType/accessLevel:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

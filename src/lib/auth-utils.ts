@@ -1,6 +1,10 @@
 // Client-safe auth utilities - NO database imports
 // These can be used in both client and server components
 
+// UX role classification — display/filtering only, NEVER used for authorization
+export type RoleType = 'FOH' | 'BOH' | 'ADMIN'
+export type AccessLevel = 'STAFF' | 'MANAGER' | 'OWNER_ADMIN'
+
 export function hasPermission(permissions: string[], requiredPermission: string): boolean {
   // Admin/super_admin has all permissions
   if (permissions.includes('admin') || permissions.includes('super_admin') || permissions.includes('*')) {
@@ -401,14 +405,14 @@ export const PERMISSION_GROUPS = {
 export const DEFAULT_ROLES: Record<string, string[]> = {
   'Server': [
     'pos.access', 'pos.table_service', 'pos.quick_order',
-    'pos.cash_payments', 'pos.card_payments', 'pos.split_checks',
-    'pos.change_table',
+    'pos.cash_payments', 'pos.card_payments',
+    'pos.split_checks', 'pos.change_table', 'pos.change_server',
     'tips.view_own', 'tips.share', 'tips.collect',
   ],
   'Bartender': [
     'pos.access', 'pos.table_service', 'pos.quick_order',
     'pos.cash_payments', 'pos.card_payments', 'pos.cash_drawer',
-    'pos.split_checks',
+    'pos.split_checks', 'pos.no_sale',
     'manager.cash_drawer_blind',
     'tips.view_own', 'tips.share', 'tips.collect',
     'menu.86_items',
@@ -418,33 +422,59 @@ export const DEFAULT_ROLES: Record<string, string[]> = {
     'tables.view', 'tables.reservations',
     'customers.view', 'customers.edit',
   ],
-  'Cook': [
+  'Security': [
+    'pos.access',
+    'tables.view',
+    'customers.view',
+  ],
+  'Kitchen Staff': [
     'pos.kds',
     'inventory.view', 'inventory.counts', 'inventory.adjust_prep_stock', 'inventory.waste',
+    'menu.view', 'menu.86_items',
   ],
-  'Kitchen Manager': [
+  'Floor Manager': [
+    'pos.access', 'pos.table_service', 'pos.quick_order',
+    'pos.cash_payments', 'pos.card_payments', 'pos.cash_drawer',
+    'pos.split_checks', 'pos.view_others_orders', 'pos.edit_others_orders',
+    'pos.change_table', 'pos.change_server', 'pos.no_sale',
+    'manager.discounts', 'manager.void_items', 'manager.void_orders',
+    'manager.refunds', 'manager.edit_sent_items', 'manager.transfer_checks',
+    'manager.bulk_operations', 'manager.shift_review',
+    'manager.cash_drawer_blind', 'manager.cash_drawer_full',
+    'manager.pay_in_out', 'manager.close_day', 'manager.tax_exempt',
+    'manager.open_items', 'manager.edit_time_entries',
+    'manager.end_breaks_early', 'manager.force_clock_out',
+    'manager.receive_transfers',
+    'reports.view', 'reports.sales', 'reports.labor', 'reports.timesheet',
+    'tips.view_own', 'tips.view_all', 'tips.share', 'tips.collect',
+    'tips.manage_groups',
+    'staff.view', 'staff.clock_others',
+    'tables.view', 'tables.edit',
+  ],
+  'BOH Manager': [
     'pos.kds',
     'inventory.view', 'inventory.manage', 'inventory.counts',
-    'inventory.adjust_prep_stock', 'inventory.waste', 'inventory.vendors',
-    'menu.view', 'menu.86_items',
-    'settings.inventory',
-  ],
-  'Barback': [
-    'pos.kds',
-    'inventory.view', 'inventory.counts', 'inventory.adjust_prep_stock',
-  ],
-  'Manager': [
-    'pos.*', 'manager.*', 'reports.*',
-    'menu.view', 'menu.edit_items', 'menu.edit_prices', 'menu.edit_modifiers',
+    'inventory.adjust_prep_stock', 'inventory.waste',
+    'inventory.vendors', 'inventory.transactions',
+    'menu.view', 'menu.edit_items', 'menu.edit_modifiers',
     'menu.86_items', 'menu.inventory_qty',
-    'staff.*', 'tables.*', 'customers.*',
-    'tips.*',
-    'inventory.*',
-    'settings.*',
-    'events.*', 'scheduling.*', 'payroll.*',
+    'reports.view', 'reports.product_mix', 'reports.inventory',
+    'staff.view', 'staff.clock_others',
+    'manager.edit_time_entries',
   ],
-  'Admin': ['admin'],
-  'Owner': ['super_admin'],
+  'Owner/Admin': ['admin'],
+}
+
+// Maps template names to their roleType and accessLevel for the UI
+export const ROLE_TEMPLATE_META: Record<string, { roleType: RoleType; accessLevel: AccessLevel }> = {
+  'Server':        { roleType: 'FOH',   accessLevel: 'STAFF' },
+  'Bartender':     { roleType: 'FOH',   accessLevel: 'STAFF' },
+  'Host':          { roleType: 'FOH',   accessLevel: 'STAFF' },
+  'Security':      { roleType: 'FOH',   accessLevel: 'STAFF' },
+  'Kitchen Staff': { roleType: 'BOH',   accessLevel: 'STAFF' },
+  'Floor Manager': { roleType: 'FOH',   accessLevel: 'MANAGER' },
+  'BOH Manager':   { roleType: 'BOH',   accessLevel: 'MANAGER' },
+  'Owner/Admin':   { roleType: 'ADMIN', accessLevel: 'OWNER_ADMIN' },
 }
 
 // Check if user has super admin privileges

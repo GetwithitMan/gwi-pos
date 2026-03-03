@@ -780,6 +780,10 @@ model Role {
   cashHandlingMode CashHandlingMode @default(drawer)
   trackLaborCost   Boolean          @default(true) // Include hours in labor cost reports
 
+  // UX classification — display/filtering only, never used for auth
+  roleType    String  @default("FOH")   // FOH | BOH | ADMIN
+  accessLevel String  @default("STAFF") // STAFF | MANAGER | OWNER_ADMIN
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
