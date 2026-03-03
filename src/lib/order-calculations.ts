@@ -203,14 +203,15 @@ export function calculateOrderTotals(
   existingDiscountTotal: number = 0,
   existingTipTotal: number = 0,
   priceRounding?: PriceRoundingSettings,
-  paymentMethod: 'cash' | 'card' = 'card'
+  paymentMethod: 'cash' | 'card' = 'card',
+  isTaxExempt?: boolean
 ): OrderTotals {
   // Memoization: return cached result if inputs unchanged
   const cacheKey = buildTotalsCacheKey(items, locationSettings, existingDiscountTotal, existingTipTotal, priceRounding, paymentMethod)
   const cached = _totalsCache.get(cacheKey)
-  if (cached) return cached
+  if (cached && !isTaxExempt) return cached
 
-  const taxRate = (locationSettings?.tax?.defaultRate ?? 0) / 100
+  const taxRate = isTaxExempt ? 0 : (locationSettings?.tax?.defaultRate ?? 0) / 100
   const commissionTotal = calculateOrderCommission(items)
 
   // 1. Split items into tax-inclusive vs tax-exclusive
@@ -402,14 +403,15 @@ export function calculateTax(subtotal: number, taxRate: number): number {
 export function calculateSimpleOrderTotals(
   subtotal: number,
   discountTotal: number,
-  locationSettings: { tax?: { defaultRate?: number } } | null | undefined
+  locationSettings: { tax?: { defaultRate?: number } } | null | undefined,
+  isTaxExempt?: boolean
 ): {
   subtotal: number
   discountTotal: number
   taxTotal: number
   total: number
 } {
-  const taxRate = getLocationTaxRate(locationSettings)
+  const taxRate = isTaxExempt ? 0 : getLocationTaxRate(locationSettings)
   const effectiveDiscount = Math.min(discountTotal, subtotal)
   const taxableAmount = subtotal - effectiveDiscount
   const taxTotal = roundToCents(taxableAmount * taxRate)

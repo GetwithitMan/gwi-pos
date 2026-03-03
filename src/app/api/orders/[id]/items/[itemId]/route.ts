@@ -249,6 +249,9 @@ export const PUT = withVenue(async function PUT(
         fullOrder.location.settings as LocationTaxSettings | null,
         updatedDiscountTotal,
         Number(fullOrder.tipTotal) || 0,
+        undefined,
+        'card',
+        fullOrder.isTaxExempt
       )
 
       await db.order.update({
@@ -467,6 +470,9 @@ export const DELETE = withVenue(async function DELETE(
       fullOrder.location.settings as LocationTaxSettings | null,
       updatedDiscountTotal,
       Number(fullOrder.tipTotal) || 0,
+      undefined,
+      'card',
+      fullOrder.isTaxExempt
     )
 
     await db.order.update({

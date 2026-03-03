@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
-import { recalculateTotalWithTip } from '@/lib/order-calculations'
+import { recalculateTotalWithTip, calculateSimpleOrderTotals } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -328,6 +328,7 @@ export const PUT = withVenue(async function PUT(
       status,
       employeeId,
       version,
+      isTaxExempt,
     } = body as {
       tabName?: string
       guestCount?: number
@@ -339,6 +340,7 @@ export const PUT = withVenue(async function PUT(
       status?: string
       employeeId?: string
       version?: number
+      isTaxExempt?: boolean
     }
 
     // Get existing order
@@ -368,6 +370,10 @@ export const PUT = withVenue(async function PUT(
         const sAuth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_CHANGE_SERVER)
         if (!sAuth.authorized) return NextResponse.json({ error: sAuth.error }, { status: sAuth.status })
       }
+      if (isTaxExempt !== undefined) {
+        const txAuth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.MGR_TAX_EXEMPT)
+        if (!txAuth.authorized) return NextResponse.json({ error: txAuth.error }, { status: txAuth.status })
+      }
     }
 
     // Concurrency check: if client sent a version, verify it matches
@@ -393,6 +399,18 @@ export const PUT = withVenue(async function PUT(
       newTotal = recalculateTotalWithTip(subtotal, taxTotal, discountTotal, tipTotal)
     }
 
+    // Recalculate totals when tax exemption status changes
+    let taxExemptTotals: { taxTotal: number; total: number } | undefined
+    if (isTaxExempt !== undefined && isTaxExempt !== existingOrder.isTaxExempt) {
+      const simpleTotals = calculateSimpleOrderTotals(
+        Number(existingOrder.subtotal),
+        Number(existingOrder.discountTotal),
+        existingOrder.location.settings as { tax?: { defaultRate?: number } },
+        isTaxExempt
+      )
+      taxExemptTotals = { taxTotal: simpleTotals.taxTotal, total: simpleTotals.total }
+    }
+
     // Build update data object with only defined fields
     const updateData: Record<string, any> = {}
     if (tabName !== undefined) updateData.tabName = tabName
@@ -400,6 +418,15 @@ export const PUT = withVenue(async function PUT(
     if (notes !== undefined) updateData.notes = notes
     if (tipTotal !== undefined) updateData.tipTotal = tipTotal
     if (newTotal !== undefined) updateData.total = newTotal
+    if (isTaxExempt !== undefined) {
+      updateData.isTaxExempt = isTaxExempt
+      if (taxExemptTotals) {
+        updateData.taxTotal = taxExemptTotals.taxTotal
+        updateData.taxFromInclusive = 0
+        updateData.taxFromExclusive = isTaxExempt ? 0 : taxExemptTotals.taxTotal
+        updateData.total = taxExemptTotals.total
+      }
+    }
     if (tableId !== undefined) updateData.tableId = tableId
     if (orderTypeId !== undefined) updateData.orderTypeId = orderTypeId
     if (customerId !== undefined) updateData.customerId = customerId

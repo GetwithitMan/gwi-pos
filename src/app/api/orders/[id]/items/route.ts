@@ -581,7 +581,10 @@ export const POST = withVenue(async function POST(
         itemsForCalc,
         existingOrder.location.settings as LocationTaxSettings | null,
         updatedDiscountTotal,
-        Number(existingOrder.tipTotal) || 0
+        Number(existingOrder.tipTotal) || 0,
+        undefined,
+        'card',
+        existingOrder.isTaxExempt
       )
 
       const { subtotal: newSubtotal, taxTotal: newTaxTotal, taxFromInclusive: newTaxFromInc, taxFromExclusive: newTaxFromExc, total: newTotal, commissionTotal: newCommissionTotal } = totals

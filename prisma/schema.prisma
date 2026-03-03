@@ -2208,6 +2208,9 @@ model Order {
   // Online ordering attribution (e.g., "online", "kiosk", "pos")
   source String?
 
+  // Tax exemption (manager.tax_exempt permission required to set)
+  isTaxExempt Boolean @default(false)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)

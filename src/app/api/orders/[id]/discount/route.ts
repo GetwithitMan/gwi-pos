@@ -103,7 +103,8 @@ export const POST = withVenue(async function POST(
         const totals = calculateOrderTotals(
           Number(order.subtotal),
           newDiscountTotal,
-          order.location.settings as { tax?: { defaultRate?: number } }
+          order.location.settings as { tax?: { defaultRate?: number } },
+          order.isTaxExempt
         )
 
         await db.order.update({
@@ -337,7 +338,7 @@ export const POST = withVenue(async function POST(
 
     // Update order totals
     const newDiscountTotal = currentDiscountTotal + discountAmount
-    const totals = calculateOrderTotals(Number(order.subtotal), newDiscountTotal, order.location.settings as { tax?: { defaultRate?: number } })
+    const totals = calculateOrderTotals(Number(order.subtotal), newDiscountTotal, order.location.settings as { tax?: { defaultRate?: number } }, order.isTaxExempt)
 
     await db.order.update({
       where: { id: orderId },
@@ -550,7 +551,7 @@ export const DELETE = withVenue(async function DELETE(
       .filter(d => d.id !== discountId)
       .reduce((sum, d) => sum + Number(d.amount), 0)
 
-    const totals = calculateOrderTotals(Number(order.subtotal), newDiscountTotal, order.location.settings as { tax?: { defaultRate?: number } })
+    const totals = calculateOrderTotals(Number(order.subtotal), newDiscountTotal, order.location.settings as { tax?: { defaultRate?: number } }, order.isTaxExempt)
 
     await db.order.update({
       where: { id: orderId },

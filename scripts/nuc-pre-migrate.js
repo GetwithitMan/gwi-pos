@@ -447,6 +447,22 @@ async function runPrePushMigrations() {
     // --- Role: Add roleType and accessLevel columns + backfill from permissions ---
     try {
       const hasRoleType = await columnExists(prisma, 'Role', 'roleType')
+    // --- Order.isTaxExempt ---
+    try {
+      const [hasTaxExempt] = await prisma.$queryRawUnsafe(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'Order' AND column_name = 'isTaxExempt'`
+      )
+      if (!hasTaxExempt) {
+        console.log(`${PREFIX}   Adding isTaxExempt to Order...`)
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "Order" ADD COLUMN "isTaxExempt" BOOLEAN NOT NULL DEFAULT false`
+        )
+        console.log(`${PREFIX}   Done — Order.isTaxExempt added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Order.isTaxExempt:`, err.message)
+    }
+
       if (!hasRoleType) {
         console.log(`${PREFIX}   Adding roleType and accessLevel to Role...`)
         await prisma.$executeRawUnsafe(
