@@ -6,6 +6,8 @@ import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface TipAdjustment {
   orderId: string
@@ -33,6 +35,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { error: 'Tip amounts cannot be negative' },
         { status: 400 }
       )
+    }
+
+    const firstOrder = await db.order.findUnique({
+      where: { id: adjustments[0].orderId },
+      select: { locationId: true },
+    })
+    if (!firstOrder) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+    const authResult = await requirePermission(employeeId, firstOrder.locationId, PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS)
+    if (!authResult.authorized) {
+      return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
     }
 
     const results: { orderId: string; success: boolean; error?: string }[] = []

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settings'
@@ -432,7 +433,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Quick Pay</h2>
-          <p className="text-sm text-gray-500 mb-5">Configure single-transaction Quick Pay mode. Tip percentage and dollar suggestions are managed in <a href="/settings/tips" className="text-indigo-600 hover:underline">Tips settings</a>.</p>
+          <p className="text-sm text-gray-500 mb-5">Configure single-transaction Quick Pay mode. Tip percentage and dollar suggestions are managed in <Link href="/settings/tips" className="text-indigo-600 hover:underline">Tips settings</Link>.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -463,7 +464,7 @@ export default function PaymentSettingsPage() {
               </div>
               <p className="text-sm text-gray-500">Managed in Tabs & Pre-Auth settings</p>
             </div>
-            <a
+            <Link
               href="/settings/tabs"
               className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:border-indigo-300 transition-colors flex-shrink-0"
             >
@@ -471,7 +472,7 @@ export default function PaymentSettingsPage() {
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-            </a>
+            </Link>
           </div>
 
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">These settings are managed on the Tabs & Pre-Auth page. Changes made there will appear here.</p>

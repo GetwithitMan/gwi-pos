@@ -8,6 +8,8 @@ import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -47,6 +49,11 @@ export const PATCH = withVenue(async function PATCH(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS)
+    if (!authResult.authorized) {
+      return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
     }
 
     const payment = order.payments[0]

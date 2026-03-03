@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
@@ -206,9 +207,9 @@ export default function CfdSettingsPage() {
         {terminals.length === 0 ? (
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center text-gray-500">
             No CFD terminals paired yet. Pair a PAX A3700 from the{' '}
-            <a href="/settings/hardware/terminals" className="text-blue-600 hover:underline">
+            <Link href="/settings/hardware/terminals" className="text-blue-600 hover:underline">
               Terminals
-            </a>{' '}
+            </Link>{' '}
             page.
           </div>
         ) : (

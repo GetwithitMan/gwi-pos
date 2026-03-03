@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hasPermission } from '@/lib/auth-utils'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission } from '@/lib/api-auth'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
@@ -36,19 +37,6 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Verify manager has permission
-    const manager = await db.employee.findUnique({
-      where: { id: managerId },
-      include: { role: true },
-    })
-    if (!manager) {
-      return NextResponse.json({ error: 'Manager not found' }, { status: 404 })
-    }
-    const permissions = Array.isArray(manager.role?.permissions) ? manager.role.permissions as string[] : []
-    if (!hasPermission(permissions, 'manager.void_payments')) {
-      return NextResponse.json({ error: 'Insufficient permissions to void payments' }, { status: 403 })
-    }
-
     // Get the order with payment
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -64,6 +52,12 @@ export const POST = withVenue(async function POST(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Verify manager has permission scoped to order's location
+    const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
+    if (!authResult.authorized) {
+      return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
     }
 
     // Bug 14: Block voiding payments on closed/cancelled orders

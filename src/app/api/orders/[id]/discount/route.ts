@@ -469,10 +469,18 @@ export const DELETE = withVenue(async function DELETE(
     const { id: orderId } = await params
     const searchParams = request.nextUrl.searchParams
     const discountId = searchParams.get('discountId')
+    const employeeId = searchParams.get('employeeId')
 
     if (!discountId) {
       return NextResponse.json(
         { error: 'Discount ID is required' },
+        { status: 400 }
+      )
+    }
+
+    if (!employeeId) {
+      return NextResponse.json(
+        { error: 'Employee ID is required' },
         { status: 400 }
       )
     }
@@ -482,7 +490,10 @@ export const DELETE = withVenue(async function DELETE(
       where: { id: orderId },
       include: {
         location: true,
-        discounts: { where: { deletedAt: null } },
+        discounts: {
+          where: { deletedAt: null },
+          include: { discountRule: { select: { name: true } } },
+        },
       },
     })
 
@@ -491,6 +502,12 @@ export const DELETE = withVenue(async function DELETE(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Auth check — require manager.discounts permission
+    const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+    if (!authResult.authorized) {
+      return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
     }
 
     const discountToRemove = order.discounts.find(d => d.id === discountId)
@@ -505,6 +522,27 @@ export const DELETE = withVenue(async function DELETE(
     await db.orderDiscount.update({
       where: { id: discountId },
       data: { deletedAt: new Date() },
+    })
+
+    // Audit log for discount removal
+    await db.auditLog.create({
+      data: {
+        locationId: order.locationId,
+        employeeId,
+        action: 'discount_removed',
+        entityType: 'order_discount',
+        entityId: discountId,
+        details: {
+          orderId,
+          orderNumber: order.orderNumber,
+          discountId,
+          discountName: discountToRemove.discountRule?.name ?? discountToRemove.reason ?? 'manual',
+          amount: Number(discountToRemove.amount),
+          percent: discountToRemove.percent ? Number(discountToRemove.percent) : null,
+        },
+        ipAddress: request.headers.get('x-forwarded-for'),
+        userAgent: request.headers.get('user-agent'),
+      },
     })
 
     // Recalculate order totals

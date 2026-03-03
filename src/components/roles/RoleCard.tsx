@@ -1,7 +1,6 @@
 'use client'
 import { Card } from '@/components/ui/card'
 import { getPermissionMeta } from '@/lib/permission-registry'
-import type { RoleType, AccessLevel } from '@/lib/auth-utils'
 
 interface RoleCardRole {
   id: string
