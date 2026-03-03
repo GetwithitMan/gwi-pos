@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
 import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, calculateOrderSubtotal, isItemTaxInclusive, recalculatePercentDiscounts, type LocationTaxSettings } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
@@ -191,10 +193,22 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { items, idempotencyKey } = body as { items: NewItem[], idempotencyKey?: string }
+    const { items, idempotencyKey, requestingEmployeeId } = body as { items: NewItem[], idempotencyKey?: string, requestingEmployeeId?: string }
 
     if (!items || items.length === 0) {
       return apiError.badRequest('No items provided', ERROR_CODES.ORDER_EMPTY)
+    }
+
+    // Auth check — if editing another employee's order, require pos.edit_others_orders
+    if (requestingEmployeeId) {
+      const orderMeta = await db.order.findUnique({
+        where: { id: orderId },
+        select: { employeeId: true, locationId: true },
+      })
+      if (orderMeta?.employeeId && orderMeta.employeeId !== requestingEmployeeId) {
+        const auth = await requirePermission(requestingEmployeeId, orderMeta.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
+        if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
     }
 
     // Bug 13 fix: Validate quantity on each item (must be >= 1)
