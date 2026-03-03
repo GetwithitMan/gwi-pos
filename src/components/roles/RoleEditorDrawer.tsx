@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SegmentedControl } from './SegmentedControl'
 import { PermissionSection } from './PermissionSection'
 import { TemplatePicker } from './TemplatePicker'
-import { getVisiblePermissionKeys, getKeysByTab, PermissionTab } from '@/lib/permission-registry'
+import { getVisiblePermissionKeys, getKeysByTab, PermissionTab, logRegistryCoverage } from '@/lib/permission-registry'
 import { PERMISSION_GROUPS, RoleType, AccessLevel } from '@/lib/auth-utils'
 
 export interface RoleEditorRole {
@@ -35,6 +35,11 @@ interface RoleEditorDrawerProps {
 // All permission keys from PERMISSION_GROUPS (stable across renders)
 const allPermissionKeys = Object.values(PERMISSION_GROUPS)
   .flatMap(g => g.permissions.map((p: { key: string }) => p.key))
+
+// Dev coverage check — logs unmapped keys to console (no-op in production)
+if (process.env.NODE_ENV === 'development') {
+  logRegistryCoverage(allPermissionKeys)
+}
 
 export function RoleEditorDrawer({
   isOpen,
@@ -83,7 +88,10 @@ export function RoleEditorDrawer({
   }, [isOpen, editingRole])
 
   // Filtering
-  const visibleKeys = getVisiblePermissionKeys(roleType, accessLevel, showAdvanced, allPermissionKeys)
+  const visibleKeys = useMemo(
+    () => getVisiblePermissionKeys(roleType, accessLevel, showAdvanced, allPermissionKeys),
+    [roleType, accessLevel, showAdvanced]
+  )
 
   const hiddenSelectedCount = selectedPermissions.filter(
     p => !visibleKeys.includes(p) && p !== 'admin' && p !== 'super_admin'
