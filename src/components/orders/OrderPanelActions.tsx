@@ -161,12 +161,13 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   // Pre-computed subtotals from usePricing (no local multiplier math)
   const cashSub = cashSubtotalProp ?? subtotal
   const cardSub = cardSubtotalProp ?? subtotal
-  const displaySubtotal = paymentMode === 'cash' ? cashSub : cardSub
+  // Card-first: always show card values as primary when dual pricing is active
+  const displaySubtotal = hasDualPricing ? (cardSub ?? subtotal) : subtotal
 
-  // Tax matched to payment mode (cash tax vs card tax)
-  const displayTax = paymentMode === 'cash' ? (cashTaxProp ?? tax) : (cardTaxProp ?? tax)
+  // Tax matched to card when dual pricing (card tax is primary display)
+  const displayTax = hasDualPricing ? (cardTaxProp ?? tax) : tax
 
-  const displayTotal = paymentMode === 'cash' ? cashTotal : cardTotal
+  const displayTotal = hasDualPricing ? cardTotal : (cashTotal ?? total)
   const totalToCharge = roundToCents(displayTotal + tipAmount)
 
   // Datacap hook — only active when we have terminalId + employeeId
@@ -766,19 +767,11 @@ export const OrderPanelActions = memo(function OrderPanelActions({
                 )
               })}
 
-              {/* Subtotal — always shows card subtotal, cash discount shown below when paying cash */}
+              {/* Subtotal row — always card subtotal when dual pricing */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
                 <span style={{ color: '#94a3b8' }}>Subtotal</span>
                 <span style={{ color: '#e2e8f0' }}>${displaySubtotal.toFixed(2)}</span>
               </div>
-
-              {/* Cash Discount (only when paying cash with dual pricing) */}
-              {paymentMode === 'cash' && cashDiscount > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
-                  <span style={{ color: '#4ade80' }}>Cash Discount ({cashDiscountPct}%)</span>
-                  <span style={{ color: '#4ade80' }}>-${cashDiscount.toFixed(2)}</span>
-                </div>
-              )}
 
               {/* Discounts */}
               {discounts > 0 && (
@@ -799,24 +792,34 @@ export const OrderPanelActions = memo(function OrderPanelActions({
                 </div>
               )}
 
-              {/* Cash Rounding — only visible when paying cash and rounding is active */}
-              {paymentMode === 'cash' && roundingAdjustment !== undefined && roundingAdjustment !== 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
-                  <span style={{ color: '#94a3b8' }}>Rounding</span>
-                  <span style={{ color: '#94a3b8' }}>{roundingAdjustment > 0 ? '+' : '-'}${Math.abs(roundingAdjustment).toFixed(2)}</span>
+              {/* Card Total — PRIMARY, bold, separator above */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 700, marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                <span style={{ color: '#f1f5f9' }}>{hasDualPricing ? 'Card Total' : 'Total'}</span>
+                <span style={{ color: '#4ade80' }}>${displayTotal.toFixed(2)}</span>
+              </div>
+
+              {/* Cash breakdown — secondary, only when dual pricing */}
+              {hasDualPricing && (
+                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '8px', borderLeft: '2px solid rgba(255, 255, 255, 0.08)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#94a3b8' }}>
+                    <span>Cash Total</span>
+                    <span>${cashTotal.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
+                    <span style={{ paddingLeft: '8px' }}>Cash Subtotal</span>
+                    <span>${(cashSub ?? subtotal).toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
+                    <span style={{ paddingLeft: '8px' }}>Cash Tax</span>
+                    <span>${(cashTaxProp ?? tax).toFixed(2)}</span>
+                  </div>
                 </div>
               )}
 
-              {/* Total */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 600, marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                <span style={{ color: '#f1f5f9' }}>Total</span>
-                <span style={{ color: '#22c55e' }}>${displayTotal.toFixed(2)}</span>
-              </div>
-
-              {/* Cash savings message */}
-              {paymentMode === 'cash' && cashDiscount > 0 && (
-                <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '12px', color: '#4ade80', fontWeight: 500 }}>
-                  You save ${cashDiscount.toFixed(2)} with cash!
+              {/* Savings message */}
+              {hasDualPricing && cashDiscount > 0 && (
+                <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '12px', color: '#4ade80', fontWeight: 500 }}>
+                  Save ${cashDiscount.toFixed(2)} by paying with cash!
                 </div>
               )}
             </div>
