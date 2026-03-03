@@ -8,7 +8,7 @@ import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settin
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { PaymentSettings } from '@/lib/settings'
+import type { PaymentSettings, PriceRoundingSettings } from '@/lib/settings'
 
 const PROCESSOR_OPTIONS: { value: PaymentSettings['processor']; label: string; description: string }[] = [
   { value: 'none', label: 'None', description: 'No card processing -- cash only' },
@@ -23,6 +23,7 @@ export default function PaymentSettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
   const [form, setForm] = useState<PaymentSettings | null>(null)
+  const [roundingForm, setRoundingForm] = useState<PriceRoundingSettings | null>(null)
 
   const [showTokenKey, setShowTokenKey] = useState(false)
 
@@ -51,6 +52,7 @@ export default function PaymentSettingsPage() {
         const data = await loadSettingsApi(controller.signal)
         const payments = data.settings.payments
         setForm(payments)
+        setRoundingForm(data.settings.priceRounding)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load payment settings')
@@ -153,9 +155,10 @@ export default function PaymentSettingsPage() {
         datacapEnvironment: form.datacapEnvironment || 'cert',
       }
 
-      const data = await saveSettingsApi({ payments: payload }, employee?.id)
+      const data = await saveSettingsApi({ payments: payload, ...(roundingForm && { priceRounding: roundingForm }) }, employee?.id)
       const saved = data.settings.payments
       setForm(saved)
+      setRoundingForm(data.settings.priceRounding)
       setIsDirty(false)
       toast.success('Payment settings saved')
     } catch (err) {
@@ -170,7 +173,12 @@ export default function PaymentSettingsPage() {
     setIsDirty(true)
   }
 
-  if (isLoading || !form) {
+  const updateRounding = <K extends keyof PriceRoundingSettings>(key: K, value: PriceRoundingSettings[K]) => {
+    setRoundingForm(prev => prev ? { ...prev, [key]: value } : prev)
+    setIsDirty(true)
+  }
+
+  if (isLoading || !form || !roundingForm) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
         <AdminPageHeader
@@ -526,6 +534,95 @@ export default function PaymentSettingsPage() {
               max={365}
             />
           </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 5: Cash Rounding
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Cash Rounding</h2>
+          <p className="text-sm text-gray-500 mb-5">Round cash totals to a standard increment to avoid awkward change. Card totals are unaffected by default.</p>
+
+          <div className="space-y-0">
+            <ToggleRow
+              label="Enable Cash Rounding"
+              description="Round payment totals to the nearest increment below"
+              checked={roundingForm.enabled}
+              onChange={v => updateRounding('enabled', v)}
+            />
+          </div>
+
+          {roundingForm.enabled && (
+            <div className="mt-5 pt-5 border-t border-gray-100 space-y-5">
+
+              {/* Increment */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Round to Nearest</label>
+                <p className="text-xs text-gray-400 mb-2">The smallest unit cash totals are rounded to. $0.05 = round to nickels, $1.00 = round to whole dollars.</p>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {(['none', '0.05', '0.10', '0.25', '0.50', '1.00'] as const).map(inc => (
+                    <button
+                      key={inc}
+                      type="button"
+                      onClick={() => updateRounding('increment', inc)}
+                      className={`py-2 rounded-lg border text-sm font-medium transition-all ${
+                        roundingForm.increment === inc
+                          ? 'border-indigo-500 bg-indigo-500/20 text-indigo-700 ring-1 ring-indigo-500/40'
+                          : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {inc === 'none' ? 'None' : `$${inc}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Direction */}
+              {roundingForm.increment !== 'none' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Rounding Direction</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: 'nearest', label: 'Nearest', desc: 'Round to closest increment' },
+                      { value: 'up', label: 'Always Up', desc: 'Always round up' },
+                      { value: 'down', label: 'Always Down', desc: 'Always round down' },
+                    ] as const).map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => updateRounding('direction', opt.value)}
+                        className={`text-left p-3 rounded-xl border transition-all ${
+                          roundingForm.direction === opt.value
+                            ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                            : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                        }`}
+                      >
+                        <div className={`text-sm font-medium ${roundingForm.direction === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>{opt.label}</div>
+                        <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Apply to */}
+              <div className="space-y-0 border-t border-gray-100 pt-4">
+                <ToggleRow
+                  label="Apply to Cash Payments"
+                  description="Round totals when the customer pays with cash"
+                  checked={roundingForm.applyToCash}
+                  onChange={v => updateRounding('applyToCash', v)}
+                />
+                <ToggleRow
+                  label="Apply to Card Payments"
+                  description="Round totals when the customer pays by card (uncommon — most venues only round cash)"
+                  checked={roundingForm.applyToCard}
+                  onChange={v => updateRounding('applyToCard', v)}
+                  border
+                />
+              </div>
+            </div>
+          )}
         </section>
 
         {/* ═══════════════════════════════════════════
