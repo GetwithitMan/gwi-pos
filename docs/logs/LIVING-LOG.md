@@ -5,6 +5,94 @@
 
 ---
 
+## 2026-03-03
+
+### Features Built
+
+**Tab Nickname (tabName vs tabNickname)**
+- POS: `PUT /api/tabs/[id]` now accepts `tabNickname` field
+- Android: DB migration 34→35, `CachedOrderEntity.tabNickname`, `NewTabDialog` reworked — card present = read-only card name + editable "Known As" field; name-only = "Known As" required
+- Tab list display: nickname-first, card name as gray subtitle when different
+- Files: CachedOrderEntity.kt, OrderState.kt, OrderDtos.kt, ServerOrderMapper.kt, AppDatabase.kt, DatabaseModule.kt, NewTabDialog.kt, TabListSheet.kt, OrderSheets.kt, OrderViewModel.kt, OrderMutationRepository.kt, src/app/api/tabs/[id]/route.ts
+
+**Pending Tips + My Tips (Android)**
+- New "My Tips" menu item in Android hamburger menu (PosHeader.kt)
+- MyTipsScreen: two tabs — "Pending Tips" (closed card payments with $0 tip awaiting paper receipt entry) and "My Tips" (recorded tips, editable)
+- TipEntrySheet: % chips showing "20% • $9.60", custom amount, reason dropdown, NEW/EDIT modes
+- Files: MyTipsViewModel.kt, MyTipsScreen.kt, TipEntrySheet.kt, GwiApiService.kt, Screen.kt, AppNavigation.kt, OrderScreen.kt, OrderMainContent.kt, PosHeader.kt
+
+**Self-Service Tip Adjustment (POS API)**
+- New `GET /api/tips/pending-tips` — closed card payments with tipAmount=0 for requesting employee
+- New `GET /api/tips/recorded-tips` — closed card payments with tipAmount>0 for requesting employee
+- `POST /api/tips/adjustments` — now allows self-service for own orders without TIPS_PERFORM_ADJUSTMENTS permission
+- `performTipAdjustment()` now also updates `Payment.tipAmount` and `Payment.totalAmount` in DB
+- Files: src/app/api/tips/pending-tips/route.ts (new), src/app/api/tips/recorded-tips/route.ts (new), src/app/api/tips/adjustments/route.ts, src/lib/domain/tips/tip-recalculation.ts
+
+**Payment Color Pulse Animation (Android)**
+- Replaced spinner with full-screen animated overlay: deep blue pulsing during processing, green bounce checkmark on approval (auto-dismiss 1.5s), red shake X on decline (tap to dismiss)
+- ViewModel keeps sheet open and sets paymentApprovedAmountCents / paymentDeclineReason instead of immediately dismissing
+- Files: PaymentSheet.kt, OrderViewModel.kt, OrderSheets.kt
+
+**Settings Polish**
+- `noTipQuickButton: boolean` setting added (default false) — controls whether "$0 Tip" quick button appears on tip prompt
+- Files: src/lib/settings.ts, src/app/(admin)/settings/tips/page.tsx
+
+**Split Check**
+- Removed ÷2 quick-split button from SplitCheckSheet (even split now starts at 3)
+
+### Audit
+- Full Android bartender audit completed — 32 findings (5 critical, 10 high, 13 medium, 4 low)
+- Saved to: docs/planning/ANDROID-AUDIT-TODO.md
+- Key criticals: pay with unsent items, voided item totals not updating, half-paid order abandonment, clock-out deadlock, no manager force-close
+
+### Settings Clarity (also completed this session)
+- 17 settings page files updated with plain-English descriptions, jargon definitions, disabled states for dependent toggles
+- Security page Business Day section removed (duplicate of Staff page) — replaced with redirect card
+- ToggleRow extended with `disabled` + `disabledNote` props
+- Tax Rules "Specific Items" broken option removed
+- Tips "Custom" basis placeholder removed
+
+---
+
+## 2026-03-02 — ModifierSheet Polish, Card-Insert Detection, Payment Result State + My Tips (Skills 467–468)
+
+### Completed
+
+**ModifierSheet Instant-Touch Performance Pass + Simplification (commits `2b71fc8`, `a0ece57`, `a478774`):**
+- Replaced Dialog with `ModalBottomSheet` (proper bottom-sheet gesture handling)
+- Fixed N+1 DB query: `groups.associate { getModifiersByGroup(id) }` → single `getModifiersByGroups(ids)` batch + `groupBy` in all 3 `onItemClicked` branches + `showEditItemModifiers()`
+- Parallelized `loadChildModifierGroup()` with `coroutineScope { async {} }` + `ConcurrentHashMap` cache
+- `snapshotFlow` debounce (50ms) prevents child-load query bursts on rapid taps
+- Background prefetch of child modifier groups immediately after sheet opens
+- `loadingMenuItemId: String?` in `OrderUiState`; `MenuItemCard` applies `alpha(0.6f)` during load for same-frame tap acknowledgment
+- Cache warming: new `getModifierGroupsByItems()` batch DAO query fires on `selectCategory()`
+- Fixed stale cache bug: `clearMenuCaches()` called after `BootstrapWorker` enqueue in `MenuUpdated` + `RELOAD_ANDROID_TERMINAL` handlers
+- Fixed `buildRequests()` double-prefix: `name = sel.name` (plain); `preModifier` carries token separately
+- Tab clicks in All mode: `animateScrollTo(offset)` scrolls to group section
+- Removed All mode entirely (Steps only): −163 lines
+
+**Card-Insert Detection UI (commit `f1e7991`):**
+- `SocketEvent.CardDetected` + `terminal:card-detected` socket event
+- `OrderUiEvent.CardDetected`; `OrderViewModel.collectCardDetected()` observes flow
+- Snackbar: "Card detected — start a tab?" with "Open Tab" action
+- `StationHardwareSheet`: debug-only "Simulate Card Insert" button
+- Note: VP3350 USB persistent read loop is not yet implemented — this is UI scaffolding
+
+**Payment Result State + My Tips Screen (commit `da56a18`):**
+- `OrderUiState.paymentApprovedAmountCents: Long?` + `paymentDeclineReason: String?` — explicit approved/declined result display in PaymentSheet
+- `clearPaymentResult()` helper; `payCash`/`payCard` now set `approvedAmountCents` on success (sheet stays open to show result) then dismiss
+- New `ui/tips/` package:
+  - `MyTipsScreen.kt` — tip history list, summary cards (total/cash/card), date filter
+  - `MyTipsViewModel.kt` — fetches tips via `GwiApiService`, pagination
+  - `TipEntrySheet.kt` — detail sheet per entry (order info, method, amount, notes)
+- `Screen.MyTips(employeeId)` route + `AppNavigation` composable wiring
+- `PosHeader.kt` — "My Tips" action navigates to `MyTipsScreen` with current `employeeId`
+
+### Commits
+- Android: `2b71fc8` (performance pass, 6 files), `a0ece57` (scroll fix), `a478774` (All mode removed), `f1e7991` (card insert, 8 files), `da56a18` (payment result + tips, 22 files)
+
+---
+
 ## 2026-03-02 — Gift Card Payment (Skill 466)
 
 ### Completed

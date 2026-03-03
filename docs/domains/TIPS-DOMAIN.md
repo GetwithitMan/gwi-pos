@@ -61,7 +61,9 @@ PM Mode: Tips
 | **Payouts** | Cash out, batch payroll, payable balances | `src/lib/domain/tips/tip-payouts.ts`, `/api/tips/payouts/`, `/api/tips/payouts/batch/` |
 | **Table Ownership** | Co-owned orders, split % management | `src/lib/domain/tips/table-ownership.ts`, `/api/orders/[id]/ownership/` |
 | **Chargebacks** | Policy-based void/chargeback handling | `src/lib/domain/tips/tip-chargebacks.ts` |
-| **Adjustments** | Manager adjustments, recalculation engine | `src/lib/domain/tips/tip-recalculation.ts`, `/api/tips/adjustments/` |
+| **Adjustments** | Manager adjustments, recalculation engine; self-service for own orders (tip_amount) | `src/lib/domain/tips/tip-recalculation.ts`, `/api/tips/adjustments/` |
+| **Pending Tips** | Closed card payments with tipAmount=0 for requesting employee | `/api/tips/pending-tips` |
+| **Recorded Tips** | Closed card payments with tipAmount>0 for requesting employee | `/api/tips/recorded-tips` |
 | **Compliance** | IRS 8% rule, tip-out caps, pool eligibility | `src/lib/domain/tips/tip-compliance.ts`, `/api/tips/cash-declarations/` |
 | **Payroll Export** | Aggregation, CSV generation | `src/lib/domain/tips/tip-payroll-export.ts`, `/api/reports/payroll-export/` |
 | **Reporting** | Group reports, tip reports | `/api/reports/tip-groups/` |
@@ -105,9 +107,18 @@ PM Mode: Tips
 | `tips.manage_groups` | `TIPS_MANAGE_GROUPS` | Group lifecycle |
 | `tips.override_splits` | `TIPS_OVERRIDE_SPLITS` | Change ownership splits |
 | `tips.manage_settings` | `TIPS_MANAGE_SETTINGS` | Tip configuration |
-| `tips.perform_adjustments` | `TIPS_PERFORM_ADJUSTMENTS` | Retroactive edits |
+| `tips.perform_adjustments` | `TIPS_PERFORM_ADJUSTMENTS` | Retroactive edits (NOT required for self-service tip entry on own orders) |
 | `tips.view_ledger` | `TIPS_VIEW_LEDGER` | View any ledger |
 | `tips.process_payout` | `TIPS_PROCESS_PAYOUT` | Cash/payroll payouts |
+
+## Android Employee Self-Service
+
+- Employees access "My Tips" from the hamburger menu in the Android POS app
+- **Pending Tips tab**: closed card payments with $0 tip awaiting paper receipt entry
+- **My Tips tab**: recorded tips, editable within current shift
+- **TipEntrySheet**: percentage quick-select chips, custom amount, reason dropdown
+- No permission gate for own order tip entry/editing
+- Android files: `MyTipsViewModel.kt`, `MyTipsScreen.kt`, `TipEntrySheet.kt`
 
 ## Related Skills
 
@@ -127,6 +138,25 @@ PM Mode: Tips
 | 286 | Team Pools (Admin Templates) | 36 |
 | 287 | Tip Group Manager Admin UI | 37 |
 | 288 | Group History & Segment Timeline | 38 |
+
+## Android Implementation
+
+### My Tips Screen (Skill 468 — 2026-03-02)
+
+Employees can view their own tip history directly from the Android POS register.
+
+| File | Purpose |
+|------|---------|
+| `ui/tips/MyTipsScreen.kt` | Tip history list; summary cards (Total / Cash / Card); date-filter chips |
+| `ui/tips/MyTipsViewModel.kt` | Fetches tips via `GwiApiService`, handles pagination |
+| `ui/tips/TipEntrySheet.kt` | Detail bottom sheet per entry: order info, payment method, amount, notes |
+| `ui/navigation/Screen.kt` | `Screen.MyTips(employeeId)` route |
+| `ui/navigation/AppNavigation.kt` | `MyTipsScreen` composable in nav graph |
+| `ui/pos/components/PosHeader.kt` | "My Tips" action navigates to `MyTipsScreen` |
+
+**Access:** POS Header → "My Tips" button (routes to `Screen.MyTips(currentEmployeeId)`).
+
+**Android commit:** `da56a18`
 
 ## Non-Responsibilities
 
