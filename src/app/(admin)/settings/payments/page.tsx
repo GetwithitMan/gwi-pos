@@ -23,9 +23,6 @@ export default function PaymentSettingsPage() {
   const [isDirty, setIsDirty] = useState(false)
   const [form, setForm] = useState<PaymentSettings | null>(null)
 
-  // Array fields stored as comma-separated strings for editing
-  const [tipDollarStr, setTipDollarStr] = useState('')
-  const [tipPercentStr, setTipPercentStr] = useState('')
   const [showTokenKey, setShowTokenKey] = useState(false)
 
   // Batch management state
@@ -53,8 +50,6 @@ export default function PaymentSettingsPage() {
         const data = await loadSettingsApi(controller.signal)
         const payments = data.settings.payments
         setForm(payments)
-        setTipDollarStr((payments.tipDollarSuggestions ?? []).join(', '))
-        setTipPercentStr((payments.tipPercentSuggestions ?? []).join(', '))
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load payment settings')
@@ -150,14 +145,8 @@ export default function PaymentSettingsPage() {
     try {
       setIsSaving(true)
 
-      // Parse array fields
-      const parseDollar = tipDollarStr.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0)
-      const parsePercent = tipPercentStr.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0)
-
       const payload: PaymentSettings = {
         ...form,
-        tipDollarSuggestions: parseDollar.length > 0 ? parseDollar : [1, 2, 3],
-        tipPercentSuggestions: parsePercent.length > 0 ? parsePercent : [18, 20, 25],
         datacapMerchantId: form.datacapMerchantId?.trim(),
         datacapTokenKey: form.datacapTokenKey?.trim(),
         datacapEnvironment: form.datacapEnvironment || 'cert',
@@ -166,8 +155,6 @@ export default function PaymentSettingsPage() {
       const data = await saveSettingsApi({ payments: payload }, employee?.id)
       const saved = data.settings.payments
       setForm(saved)
-      setTipDollarStr((saved.tipDollarSuggestions ?? []).join(', '))
-      setTipPercentStr((saved.tipPercentSuggestions ?? []).join(', '))
       setIsDirty(false)
       toast.success('Payment settings saved')
     } catch (err) {
@@ -201,7 +188,7 @@ export default function PaymentSettingsPage() {
     <div className="p-6 max-w-5xl mx-auto">
       <AdminPageHeader
         title="Payment Configuration"
-        subtitle="Payment processing, Quick Pay, tip suggestions, signature threshold, and walkout recovery"
+        subtitle="Payment processing, Quick Pay, signature threshold, walkout recovery, and batch settlement"
         breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         actions={
           <div className="flex items-center gap-3">
@@ -263,7 +250,7 @@ export default function PaymentSettingsPage() {
             />
             <ToggleRow
               label="Accept House Accounts"
-              description="Allow customers to charge to a house account"
+              description="Let regular customers run a tab they pay at the end of the week or month — like a credit account you extend to them. You invoice them separately."
               checked={form.acceptHouseAccounts}
               onChange={v => update('acceptHouseAccounts', v)}
               border
@@ -302,13 +289,13 @@ export default function PaymentSettingsPage() {
           <div className="space-y-0 border-t border-gray-100">
             <ToggleRow
               label="Test Mode"
-              description="Process transactions in test/sandbox mode (no real charges)"
+              description="Process test transactions with no real charges. Turn OFF when ready to go live."
               checked={form.testMode}
               onChange={v => update('testMode', v)}
             />
             <ToggleRow
               label="Auto-Swap on Failure"
-              description="Automatically offer to switch readers when one goes offline"
+              description="Prompt staff to switch to a backup payment reader if this one goes offline. Staff will see a prompt — it does not switch automatically."
               checked={form.autoSwapOnFailure}
               onChange={v => update('autoSwapOnFailure', v)}
               border
@@ -318,7 +305,7 @@ export default function PaymentSettingsPage() {
           <div className="mt-4 pt-4 border-t border-gray-100">
             <NumberRow
               label="Reader Timeout"
-              description="Seconds to wait for reader response before timing out"
+              description="How long to wait for the card reader before canceling the transaction. 30 seconds is a safe default — short enough to not frustrate customers, long enough for slow chip reads."
               value={form.readerTimeoutSeconds}
               onChange={v => update('readerTimeoutSeconds', v)}
               suffix="sec"
@@ -346,7 +333,7 @@ export default function PaymentSettingsPage() {
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                  Configured (Certification)
+                  Configured (Test Mode)
                 </span>
               )}
             </div>
@@ -356,6 +343,7 @@ export default function PaymentSettingsPage() {
               {/* Merchant ID */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Merchant ID (MID)</label>
+                <p className="text-xs text-gray-400 mb-1">Your unique account number from Datacap (your payment processor). Found in your Datacap welcome email.</p>
                 <input
                   type="text"
                   value={form.datacapMerchantId || ''}
@@ -410,7 +398,7 @@ export default function PaymentSettingsPage() {
                     }`}
                   >
                     <div className={`text-sm font-medium ${(form.datacapEnvironment || 'cert') === 'cert' ? 'text-indigo-600' : 'text-gray-700'}`}>
-                      Certification (Testing)
+                      Test Mode (no real charges)
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5">Transactions processed in test mode</div>
                   </button>
@@ -440,11 +428,11 @@ export default function PaymentSettingsPage() {
         )}
 
         {/* ═══════════════════════════════════════════
-            Card 3: Quick Pay & Tips
+            Card 3: Quick Pay
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Quick Pay & Tips</h2>
-          <p className="text-sm text-gray-500 mb-5">Configure the Quick Pay single-transaction mode and tip suggestion behavior.</p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Quick Pay</h2>
+          <p className="text-sm text-gray-500 mb-5">Configure single-transaction Quick Pay mode. Tip percentage and dollar suggestions are managed in <a href="/settings/tips" className="text-indigo-600 hover:underline">Tips settings</a>.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -455,137 +443,63 @@ export default function PaymentSettingsPage() {
             />
             <ToggleRow
               label="Require Custom for Zero Tip"
-              description="Customers must tap Custom to skip the tip (no silent zero option)"
+              description="Customers must explicitly tap 'Custom Amount' to skip the tip (can't silently bypass it). Recommended ON to prevent accidental tip skips."
               checked={form.requireCustomForZeroTip}
               onChange={v => update('requireCustomForZeroTip', v)}
               border
             />
           </div>
-
-          <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
-            <NumberRow
-              label="Dollar/Percent Threshold"
-              description="Orders under this amount show dollar tip buttons; above shows percentage buttons"
-              value={form.tipDollarAmountThreshold}
-              onChange={v => update('tipDollarAmountThreshold', v)}
-              prefix="$"
-              min={0}
-              max={999}
-            />
-
-            <div>
-              <label className="block text-sm text-gray-700 mb-1">Dollar Tip Suggestions</label>
-              <p className="text-xs text-gray-400 mb-2">Comma-separated dollar amounts shown when order is under threshold</p>
-              <input
-                type="text"
-                value={tipDollarStr}
-                onChange={e => { setTipDollarStr(e.target.value); setIsDirty(true) }}
-                onBlur={e => setTipDollarStr(e.target.value.split(',').map(s => s.trim()).filter(Boolean).join(', '))}
-                placeholder="1, 2, 3"
-                aria-label="Dollar tip suggestions"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-gray-700 mb-1">Percent Tip Suggestions</label>
-              <p className="text-xs text-gray-400 mb-2">Comma-separated percentages shown when order is over threshold</p>
-              <input
-                type="text"
-                value={tipPercentStr}
-                onChange={e => { setTipPercentStr(e.target.value); setIsDirty(true) }}
-                onBlur={e => setTipPercentStr(e.target.value.split(',').map(s => s.trim()).filter(Boolean).join(', '))}
-                placeholder="18, 20, 25"
-                aria-label="Percent tip suggestions"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-          </div>
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 4: Pre-Authorization (Bar Tabs)
+            Pre-Auth Summary — read-only (edit in Tabs)
             ═══════════════════════════════════════════ */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Pre-Authorization (Bar Tabs)</h2>
-          <p className="text-sm text-gray-500 mb-5">Control card pre-authorization behavior for bar tabs, auto-increment thresholds, and tip buffer.</p>
-
-          <div className="space-y-0">
-            <ToggleRow
-              label="Enable Pre-Auth"
-              description="Allow pre-authorization holds when opening bar tabs"
-              checked={form.enablePreAuth}
-              onChange={v => update('enablePreAuth', v)}
-            />
-            <ToggleRow
-              label="Auto-Increment Enabled"
-              description="Automatically request additional authorization when tab approaches hold limit"
-              checked={form.autoIncrementEnabled}
-              onChange={v => update('autoIncrementEnabled', v)}
-              border
-            />
+        <section className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-gray-900">Pre-Authorization (Bar Tabs)</h2>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600">View only</span>
+              </div>
+              <p className="text-sm text-gray-500">Managed in Tabs & Pre-Auth settings</p>
+            </div>
+            <a
+              href="/settings/tabs"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 bg-white border border-indigo-200 rounded-lg hover:border-indigo-300 transition-colors flex-shrink-0"
+            >
+              Edit in Tabs
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </a>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
-            <NumberRow
-              label="Default Pre-Auth Amount"
-              description="Initial hold amount when a tab is opened with a card"
-              value={form.defaultPreAuthAmount}
-              onChange={v => update('defaultPreAuthAmount', v)}
-              prefix="$"
-              min={1}
-              max={9999}
-            />
-            <NumberRow
-              label="Pre-Auth Expiration"
-              description="Days before an unused pre-auth hold automatically releases"
-              value={form.preAuthExpirationDays}
-              onChange={v => update('preAuthExpirationDays', v)}
-              suffix="days"
-              min={1}
-              max={30}
-            />
-            <NumberRow
-              label="Increment Threshold"
-              description="Fire auto-increment when tab reaches this % of the current hold"
-              value={form.incrementThresholdPercent}
-              onChange={v => update('incrementThresholdPercent', v)}
-              suffix="%"
-              min={50}
-              max={100}
-            />
-            <NumberRow
-              label="Increment Amount"
-              description="Fixed dollar amount for each incremental authorization"
-              value={form.incrementAmount}
-              onChange={v => update('incrementAmount', v)}
-              prefix="$"
-              min={5}
-              max={500}
-            />
-            <NumberRow
-              label="Tip Buffer"
-              description="Extra % added to hold to cover a potential tip (0 = disabled)"
-              value={form.incrementTipBufferPercent}
-              onChange={v => update('incrementTipBufferPercent', v)}
-              suffix="%"
-              min={0}
-              max={100}
-            />
-            <NumberRow
-              label="Max Tab Alert"
-              description="Alert the manager when any tab exceeds this dollar amount"
-              value={form.maxTabAlertAmount}
-              onChange={v => update('maxTabAlertAmount', v)}
-              prefix="$"
-              min={0}
-              max={99999}
-            />
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">These settings are managed on the Tabs & Pre-Auth page. Changes made there will appear here.</p>
+
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="bg-white rounded-xl p-3 border border-gray-100">
+              <div className="text-xs text-gray-400 mb-0.5">Pre-Auth</div>
+              <div className="font-medium text-gray-900">{form.enablePreAuth ? 'Enabled' : 'Disabled'}</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 border border-gray-100">
+              <div className="text-xs text-gray-400 mb-0.5">Hold Amount</div>
+              <div className="font-medium text-gray-900">${form.defaultPreAuthAmount}</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 border border-gray-100">
+              <div className="text-xs text-gray-400 mb-0.5">Tip Buffer</div>
+              <div className="font-medium text-gray-900">{form.incrementTipBufferPercent}%</div>
+            </div>
+            <div className="bg-white rounded-xl p-3 border border-gray-100">
+              <div className="text-xs text-gray-400 mb-0.5">Auto-Increment</div>
+              <div className="font-medium text-gray-900">
+                {form.autoIncrementEnabled ? `At ${form.incrementThresholdPercent}%` : 'Off'}
+              </div>
+            </div>
           </div>
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 5: Signature & Receipts
+            Card 4: Signature & Receipts
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Signature & Receipts</h2>
@@ -603,7 +517,7 @@ export default function PaymentSettingsPage() {
             />
             <NumberRow
               label="Digital Receipt Retention"
-              description="Days to keep digital receipts on the local server before archiving"
+              description="How many days to keep digital receipt records on the local server. After this, they're archived to long-term storage and remain searchable."
               value={form.digitalReceiptRetentionDays}
               onChange={v => update('digitalReceiptRetentionDays', v)}
               suffix="days"
@@ -618,7 +532,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Walkout Recovery</h2>
-          <p className="text-sm text-gray-500 mb-5">Automatically detect and attempt to recover unpaid walkout tabs.</p>
+          <p className="text-sm text-gray-500 mb-5">Automatically detect and attempt to recover unpaid walkout (a customer who left without paying) tabs.</p>
 
           <ToggleRow
             label="Enable Walkout Retry"
@@ -640,7 +554,7 @@ export default function PaymentSettingsPage() {
               />
               <NumberRow
                 label="Max Retry Duration"
-                description="Stop retrying after this many days"
+                description="Stop retrying after this many days. After this, the system stops trying and the tab is marked as lost revenue in your reports."
                 value={form.walkoutMaxRetryDays}
                 onChange={v => update('walkoutMaxRetryDays', v)}
                 suffix="days"
@@ -665,7 +579,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Card Recognition</h2>
-          <p className="text-sm text-gray-500 mb-5">Track repeat customers by card token to personalize the experience.</p>
+          <p className="text-sm text-gray-500 mb-5">Recognize repeat customers by their payment card. When a known card is used, the POS can greet them by name and speed up tab lookup.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -680,6 +594,8 @@ export default function PaymentSettingsPage() {
               checked={form.cardRecognitionToastEnabled}
               onChange={v => update('cardRecognitionToastEnabled', v)}
               border
+              disabled={!form.cardRecognitionEnabled}
+              disabledNote="Requires Card Recognition to be enabled above."
             />
           </div>
         </section>
@@ -705,13 +621,13 @@ export default function PaymentSettingsPage() {
               <div className="mt-4 pt-4 border-t border-gray-100 space-y-0">
                 <ToggleRow
                   label="Re-Auth Alert"
-                  description="Alert the bartender when a bottle service tab reaches the deposit amount"
+                  description="Notify the bartender when a bottle service tab's charges are approaching the deposit hold amount, so they can request more authorization before it's needed."
                   checked={form.bottleServiceReAuthAlertEnabled}
                   onChange={v => update('bottleServiceReAuthAlertEnabled', v)}
                 />
                 <ToggleRow
                   label="Enforce Minimum Spend"
-                  description="Require manager override to close a bottle service tab under the minimum spend"
+                  description="Require manager approval before closing a bottle service tab that hasn't met the venue's minimum spend requirement."
                   checked={form.bottleServiceMinSpendEnforced}
                   onChange={v => update('bottleServiceMinSpendEnforced', v)}
                   border
@@ -721,7 +637,7 @@ export default function PaymentSettingsPage() {
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <NumberRow
                   label="Auto-Gratuity"
-                  description="Default automatic gratuity percentage for bottle service tabs"
+                  description="Default automatic gratuity percentage. This automatic gratuity applies to bottle service orders only."
                   value={form.bottleServiceAutoGratuityPercent}
                   onChange={v => update('bottleServiceAutoGratuityPercent', v)}
                   suffix="%"
@@ -739,7 +655,7 @@ export default function PaymentSettingsPage() {
         {form.processor === 'datacap' && (
           <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-1">Batch Management</h2>
-            <p className="text-sm text-gray-500 mb-5">View current batch status and close the batch to settle pending transactions.</p>
+            <p className="text-sm text-gray-500 mb-5">A batch groups all your day&apos;s card transactions. Closing it sends them to your bank for settlement — this triggers your daily deposit. Most venues close their batch at end of day.</p>
 
             {/* Batch summary */}
             {batchLoading ? (
@@ -755,8 +671,11 @@ export default function PaymentSettingsPage() {
                   <span className="text-sm font-medium text-gray-900">{batchInfo.transactionCount ?? '—'}</span>
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-gray-100">
-                  <span className="text-sm text-gray-600">SAF Queue</span>
-                  <span className={`text-sm font-medium ${batchInfo.hasSAFPending ? 'text-amber-600' : 'text-gray-900'}`}>
+                  <div>
+                    <span className="text-sm text-gray-600">SAF (Store and Forward)</span>
+                    <p className="text-xs text-gray-400">Payments saved when your internet was down, waiting to be sent to the bank. These will be processed automatically when your connection restores.</p>
+                  </div>
+                  <span className={`text-sm font-medium flex-shrink-0 ml-4 ${batchInfo.hasSAFPending ? 'text-amber-600' : 'text-gray-900'}`}>
                     {batchInfo.hasSAFPending
                       ? `${batchInfo.safCount} pending ($${batchInfo.safAmount.toFixed(2)})`
                       : 'Clear'}

@@ -286,8 +286,8 @@ export default function KDSScreensPage() {
   return (
     <div className="min-h-screen bg-gray-100 p-6">
       <AdminPageHeader
-        title="KDS Screens"
-        subtitle="Configure kitchen display screens"
+        title="Kitchen Display System (KDS) Screens"
+        subtitle="Configure kitchen display screens that show incoming orders"
         breadcrumbs={[
           { label: 'Settings', href: '/settings' },
           { label: 'Hardware', href: '/settings/hardware' },
@@ -519,7 +519,7 @@ export default function KDSScreensPage() {
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
                 >
                   <option value="kds">Kitchen Display (KDS)</option>
-                  <option value="entertainment">Entertainment Display</option>
+                  <option value="entertainment">Entertainment Display — For non-kitchen displays (wait times, events, entertainment schedules)</option>
                 </select>
               </div>
 
@@ -580,7 +580,7 @@ export default function KDSScreensPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">
-                    Aging Warning (min)
+                    Yellow Warning After (minutes)
                   </label>
                   <input
                     type="number"
@@ -591,10 +591,13 @@ export default function KDSScreensPage() {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
                     min={1}
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Orders turn yellow on the KDS screen after sitting this long. Alerts kitchen staff to prioritize.
+                  </p>
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">
-                    Late Warning (min)
+                    Red Alert After (minutes)
                   </label>
                   <input
                     type="number"
@@ -605,29 +608,45 @@ export default function KDSScreensPage() {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
                     min={1}
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Orders turn red after sitting this long. A more urgent alert that the order is overdue. Should be greater than the Yellow Warning time above.
+                  </p>
                 </div>
               </div>
+              <p className="text-xs text-gray-500 -mt-2">
+                Common values: Yellow at 8 minutes, Red at 15 minutes. Adjust based on your kitchen&apos;s typical prep time.
+              </p>
 
               {/* Checkboxes */}
-              <div className="flex gap-6">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.playSound}
-                    onChange={(e) => setFormData({ ...formData, playSound: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <span className="text-sm text-gray-700">Play sound on new orders</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.flashOnNew}
-                    onChange={(e) => setFormData({ ...formData, flashOnNew: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <span className="text-sm text-gray-700">Flash on new orders</span>
-                </label>
+              <div className="space-y-3">
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.playSound}
+                      onChange={(e) => setFormData({ ...formData, playSound: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">Play sound on new orders</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 mt-0.5">
+                    Play an audio alert when a new order arrives on this screen. Turn OFF for displays in quiet areas.
+                  </p>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.flashOnNew}
+                      onChange={(e) => setFormData({ ...formData, flashOnNew: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">Flash on new orders</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 mt-0.5">
+                    Briefly highlight the screen when a new order arrives. Turn OFF if the flashing is distracting.
+                  </p>
+                </div>
               </div>
 
               {/* Stations */}
@@ -674,7 +693,7 @@ export default function KDSScreensPage() {
                   <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
-                  <span className="font-medium text-blue-900">Network Security (UniFi)</span>
+                  <span className="font-medium text-blue-900">Static IP Address</span>
                 </div>
                 <div className="space-y-3">
                   <div>
@@ -701,27 +720,37 @@ export default function KDSScreensPage() {
                       )}
                     </div>
                     <p className="mt-1 text-xs text-gray-500">
-                      The static IP assigned to this KDS device in your UniFi network
+                      Optional — only needed if your venue uses a UniFi network controller (Ubiquiti hardware). Locks this device to a specific network address.
                       {editingScreen?.lastKnownIp && (
                         <span className="ml-1">(Current: {editingScreen.lastKnownIp})</span>
                       )}
                     </p>
                   </div>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.enforceStaticIp}
-                      onChange={(e) => setFormData({ ...formData, enforceStaticIp: e.target.checked })}
-                      className="h-4 w-4 rounded border-gray-300"
-                      disabled={!formData.staticIp}
-                    />
-                    <span className={`text-sm ${formData.staticIp ? 'text-gray-700' : 'text-gray-400'}`}>
-                      Enforce IP address (reject requests from other IPs)
-                    </span>
-                  </label>
+                  <div>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={formData.enforceStaticIp}
+                        onChange={(e) => setFormData({ ...formData, enforceStaticIp: e.target.checked })}
+                        className="h-4 w-4 rounded border-gray-300"
+                        disabled={!formData.staticIp}
+                      />
+                      <span className={`text-sm ${formData.staticIp ? 'text-gray-700' : 'text-gray-400'}`}>
+                        Enforce IP address
+                      </span>
+                    </label>
+                    <p className="ml-6 text-xs text-gray-500 mt-0.5">
+                      Reject connections from this device if its IP address changes. Only enable this if you&apos;ve assigned a permanent (static) IP to this device on your router.
+                    </p>
+                    {!formData.staticIp && (
+                      <p className="ml-6 text-xs text-gray-400 mt-0.5 italic">
+                        Enter a static IP address above to enable this option.
+                      </p>
+                    )}
+                  </div>
                   {formData.enforceStaticIp && formData.staticIp && (
                     <div className="rounded bg-yellow-100 p-2 text-xs text-yellow-800">
-                      <strong>Warning:</strong> When enforced, only requests from {formData.staticIp} will be accepted.
+                      <strong>Caution:</strong> If the device&apos;s IP changes (e.g., after a router restart), it will lose connection until you update this field.
                       Make sure the device has a static IP lease in your router.
                     </div>
                   )}

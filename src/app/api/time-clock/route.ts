@@ -7,6 +7,7 @@ import { dispatchLocationAlert } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { findLastMemberGroup } from '@/lib/domain/tips/tip-groups'
 
 // GET - List time clock entries
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -276,10 +277,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { entryId, action, notes } = body as {
+    const { entryId, action, notes, force } = body as {
       entryId: string
       action: 'clockOut' | 'startBreak' | 'endBreak'
       notes?: string
+      force?: boolean    // manager override for last-member block
     }
 
     if (!entryId || !action) {
@@ -312,6 +314,37 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     switch (action) {
       case 'clockOut': {
+        // ── Last-member group closeout guard ─────────────────────────────────
+        // If this employee is the sole active member of any tip group,
+        // block the clock-out so they are forced to close the group first.
+        // A manager may pass force:true to override (audit-logged).
+        if (!force) {
+          const lastMemberGroup = await findLastMemberGroup(entry.employeeId, entry.locationId)
+          if (lastMemberGroup) {
+            return NextResponse.json(
+              {
+                error: 'You are the last member of your tip group. Close the group before clocking out.',
+                errorCode: 'last_group_member',
+                groupId: lastMemberGroup.groupId,
+              },
+              { status: 409 }
+            )
+          }
+        } else {
+          // Manager override path — log for audit trail (fire-and-forget)
+          void db.auditLog.create({
+            data: {
+              locationId: entry.locationId,
+              employeeId: entry.employeeId,
+              action: 'clock_out_last_member_override',
+              entityType: 'time_clock',
+              entityId: entryId,
+              details: { reason: 'Manager forced clock-out while last active tip group member' },
+            },
+          }).catch(console.error)
+        }
+        // ── End last-member guard ─────────────────────────────────────────────
+
         // Calculate hours worked
         const clockInTime = entry.clockIn.getTime()
         const totalMinutes = (now.getTime() - clockInTime) / (1000 * 60)

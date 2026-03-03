@@ -46,8 +46,8 @@ export const DEFAULT_PRICING_PROGRAM: PricingProgram = {
 }
 
 export function getPricingProgram(settings: LocationSettings): PricingProgram {
-  // If new pricingProgram field exists, use it
-  if (settings.pricingProgram) return settings.pricingProgram
+  // If new pricingProgram field exists and is enabled, use it
+  if (settings.pricingProgram?.enabled) return settings.pricingProgram
   // Fall back to legacy dualPricing
   if (settings.dualPricing?.enabled) {
     return {
@@ -59,8 +59,17 @@ export function getPricingProgram(settings: LocationSettings): PricingProgram {
       showSavingsMessage: settings.dualPricing.showSavingsMessage,
     }
   }
+  // If pricingProgram exists but is disabled (e.g. model='none'), return it
+  if (settings.pricingProgram) return settings.pricingProgram
   return DEFAULT_PRICING_PROGRAM
 }
+
+/**
+ * Single source of truth for the active pricing model.
+ * All pricing code, UI badges, and payment flows must call this — never read dualPricing or pricingProgram directly.
+ * Precedence: pricingProgram.enabled > dualPricing.enabled > none
+ */
+export const effectivePricingProgram = getPricingProgram
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -89,8 +98,13 @@ export interface TaxSettings {
 
 export interface TipSettings {
   enabled: boolean
+  /** Canonical tip % suggestions used everywhere (POS prompt, Quick Pay, receipts). Integer percentages, 2-6 values, sorted ascending. */
   suggestedPercentages: number[]
   calculateOn: 'subtotal' | 'total'
+  /** Canonical dollar tip suggestions shown when order subtotal is below dollarThreshold. Replaces payments.tipDollarSuggestions. */
+  dollarSuggestions?: number[]
+  /** Order subtotal below this amount shows dollar tip buttons instead of percent buttons. Replaces payments.tipDollarAmountThreshold. */
+  dollarThreshold?: number
 }
 
 export interface TipShareSettings {
@@ -129,10 +143,16 @@ export interface TipBankSettings {
   defaultPayoutMethod: 'cash' | 'payroll'   // Default selection in closeout (employee can change)
 
   // Tip Group Attribution — when to credit a check to the active group/segment
-  tipAttributionTiming: 'check_opened' | 'check_closed' | 'check_both'
+  tipAttributionTiming: 'check_opened' | 'check_closed' | 'check_both' | 'per_item' // per_item = proportional by item: tip credited to segment active when each item was added
   // check_opened = group active when order was created gets credit
   // check_closed = group active when payment processes gets credit (default, best for bars)
   // check_both = proportional credit split between open-time and close-time groups
+  // per_item = proportional by item: tip credited to segment active when each item was added
+
+  /** When the last group member clocks out with open tabs still running, where do tips from those tabs go after they eventually close? */
+  lateTabTipHandling: 'pool_period' | 'personal_bank'
+  /** How is tip credit attributed within a segment when multiple employees served the check? */
+  attributionModel: 'primary_100' | 'primary_70_assist_30'
 
   // Table Tip Ownership Mode
   // ITEM_BASED = each item's tip share goes to whoever rang it (default, helpers get credit)
@@ -144,6 +164,9 @@ export interface TipBankSettings {
 
   // Ad-hoc Groups — whether employees can create their own groups outside admin templates
   allowEmployeeCreatedGroups: boolean  // If false, only admin-defined templates are used
+
+  // No Tip Quick Button — show a "$0 Tip" button on the tip prompt screen
+  noTipQuickButton: boolean  // If true, a "$0 Tip" button appears on the tip prompt (default: false)
 }
 
 export interface AutoRebootSettings {
@@ -228,8 +251,11 @@ export interface PaymentSettings {
 
   // Quick Pay / Tip Configuration
   quickPayEnabled: boolean                   // Enable Quick Pay single-transaction mode (default: true)
+  /** @deprecated Use settings.tips.dollarThreshold as canonical source. v1.14: remove fallback. v1.15: delete. */
   tipDollarAmountThreshold: number           // Under this amount, show dollar tips (default: 15)
+  /** @deprecated Use settings.tips.dollarSuggestions as canonical source. v1.14: remove fallback. v1.15: delete. */
   tipDollarSuggestions: number[]             // Dollar suggestions for under-threshold (default: [1, 2, 3])
+  /** @deprecated Use settings.tips.suggestedPercentages as canonical source. v1.14: remove fallback. v1.15: delete. */
   tipPercentSuggestions: number[]            // Percent suggestions for over-threshold (default: [18, 20, 25])
   requireCustomForZeroTip: boolean           // Must tap Custom to skip tip (default: true)
 
@@ -576,9 +602,12 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     requireManagerApprovalForCashOut: false,  // No manager approval needed by default
     defaultPayoutMethod: 'cash',      // Default to cash payout (business doesn't want to hold tips)
     tipAttributionTiming: 'check_closed', // Credit the group active when payment processes (best for bars)
+    lateTabTipHandling: 'pool_period',
+    attributionModel: 'primary_100',
     tableTipOwnershipMode: 'ITEM_BASED',   // Default: helpers get per-item credit on server tables
     allowStandaloneServers: true,            // Allow "No Group" option at clock-in
     allowEmployeeCreatedGroups: true,        // Allow ad-hoc group creation (legacy behavior)
+    noTipQuickButton: false,                 // Off by default to encourage tipping
   },
   receipts: {
     headerText: 'Thank you for your visit!',
@@ -740,6 +769,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ...DEFAULT_SETTINGS.dualPricing,
       ...(partial.dualPricing || {}),
     },
+    pricingProgram: partial.pricingProgram,  // pass-through: optional, undefined if not set
     priceRounding: {
       ...DEFAULT_SETTINGS.priceRounding,
       ...(partial.priceRounding || {}),

@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settings'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { BusinessDaySettings, SecuritySettings } from '@/lib/settings'
+import type { SecuritySettings } from '@/lib/settings'
 
 const IDLE_LOCK_OPTIONS = [0, 1, 3, 5, 10, 15, 30] as const
 
@@ -18,7 +19,6 @@ export default function SecuritySettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
 
-  const [businessDay, setBusinessDay] = useState<BusinessDaySettings | null>(null)
   const [security, setSecurity] = useState<SecuritySettings | null>(null)
 
   useUnsavedWarning(isDirty)
@@ -29,7 +29,6 @@ export default function SecuritySettingsPage() {
       try {
         setIsLoading(true)
         const data = await loadSettingsApi(controller.signal)
-        setBusinessDay(data.settings.businessDay)
         setSecurity(data.settings.security)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
@@ -48,11 +47,10 @@ export default function SecuritySettingsPage() {
   }, [loadSettings])
 
   const handleSave = async () => {
-    if (!businessDay || !security) return
+    if (!security) return
     try {
       setIsSaving(true)
-      const data = await saveSettingsApi({ businessDay, security }, employee?.id)
-      setBusinessDay(data.settings.businessDay)
+      const data = await saveSettingsApi({ security }, employee?.id)
       setSecurity(data.settings.security)
       setIsDirty(false)
       toast.success('Security settings saved')
@@ -63,17 +61,12 @@ export default function SecuritySettingsPage() {
     }
   }
 
-  const updateBusinessDay = <K extends keyof BusinessDaySettings>(key: K, value: BusinessDaySettings[K]) => {
-    setBusinessDay(prev => prev ? { ...prev, [key]: value } : prev)
-    setIsDirty(true)
-  }
-
   const updateSecurity = <K extends keyof SecuritySettings>(key: K, value: SecuritySettings[K]) => {
     setSecurity(prev => prev ? { ...prev, [key]: value } : prev)
     setIsDirty(true)
   }
 
-  if (isLoading || !businessDay || !security) {
+  if (isLoading || !security) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
         <AdminPageHeader
@@ -133,7 +126,7 @@ export default function SecuritySettingsPage() {
               </div>
               <div>
                 <div className="text-sm text-gray-700">Manager PIN lockout after 3 failed attempts</div>
-                <div className="text-xs text-gray-400 mt-0.5">Prevents brute-force PIN guessing</div>
+                <div className="text-xs text-gray-400 mt-0.5">After 3 failed PIN attempts, the account is locked for 15 minutes. A manager can reset it from the employee&apos;s profile.</div>
               </div>
             </div>
 
@@ -144,8 +137,8 @@ export default function SecuritySettingsPage() {
                 </svg>
               </div>
               <div>
-                <div className="text-sm text-gray-700">Void approval tokens expire after 30 minutes, codes after 5 minutes</div>
-                <div className="text-xs text-gray-400 mt-0.5">Limits window for using void approval</div>
+                <div className="text-sm text-gray-700">Approval expiration</div>
+                <div className="text-xs text-gray-400 mt-0.5">When a manager approves via SMS, they receive a one-time code (valid 5 minutes). Approval links are valid for 30 minutes. Both can only be used once.</div>
               </div>
             </div>
 
@@ -167,7 +160,7 @@ export default function SecuritySettingsPage() {
           <div className="space-y-0">
             <ToggleRow
               label="Require PIN After Each Payment"
-              description="Lock screen after processing a payment, requiring PIN re-entry"
+              description="Staff must re-enter their PIN after every transaction. Adds security but slows down high-volume service."
               checked={security.requirePinAfterPayment}
               onChange={v => updateSecurity('requirePinAfterPayment', v)}
               border
@@ -192,8 +185,8 @@ export default function SecuritySettingsPage() {
             </div>
 
             <ToggleRow
-              label="Enable Buddy-Punch Detection"
-              description="Alert managers when an employee clocks in from a different device/IP than their previous clock event"
+              label="Detect Possible Time Fraud (Buddy-Punch)"
+              description="Alert if an employee clocks in from a new device or unusual location. Helps prevent one employee clocking in for another. The first use of a new device won't trigger an alert \u2014 only unexpected changes."
               checked={security.enableBuddyPunchDetection}
               onChange={v => updateSecurity('enableBuddyPunchDetection', v)}
               border
@@ -205,8 +198,8 @@ export default function SecuritySettingsPage() {
             Card 3: 2FA for High-Value Actions
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Remote Approval (2FA)</h2>
-          <p className="text-sm text-gray-500 mb-5">Require remote manager approval (via SMS) for high-value voids and refunds.</p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">SMS Manager Approval (2-Factor Security)</h2>
+          <p className="text-sm text-gray-500 mb-5">For high-value actions like large refunds or voids, a manager receives a text message with approval details. They must respond before the action proceeds.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -254,62 +247,20 @@ export default function SecuritySettingsPage() {
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 4: Business Day
+            Card 4: Business Day (moved to Staff & Shifts)
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Business Day</h2>
-          <p className="text-sm text-gray-500 mb-5">Define when the business day starts and what happens at the day boundary.</p>
-
-          <div className="space-y-0">
-            <div className="flex items-center justify-between py-3 border-b border-gray-100">
-              <div>
-                <div className="text-sm text-gray-700">Business Day Starts At</div>
-                <div className="text-xs text-gray-400">Orders before this time count toward the previous business day</div>
-              </div>
-              <input
-                type="time"
-                value={businessDay.dayStartTime}
-                onChange={e => updateBusinessDay('dayStartTime', e.target.value)}
-                aria-label="Business day start time"
-                className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-
-            <ToggleRow
-              label="Force Clock-Out at Day Boundary"
-              description="Automatically clock out employees when the business day ends"
-              checked={businessDay.enforceClockOut}
-              onChange={v => updateBusinessDay('enforceClockOut', v)}
-              border
-            />
-
-            <ToggleRow
-              label="Force Tab Close at Day Boundary"
-              description="Automatically close all open tabs when the business day ends"
-              checked={businessDay.enforceTabClose}
-              onChange={v => updateBusinessDay('enforceTabClose', v)}
-              border
-            />
-
-            <ToggleRow
-              label="Run Daily Batch at Day Boundary"
-              description="Trigger end-of-day batch processing (reports, sync, cleanup)"
-              checked={businessDay.batchAtDayEnd}
-              onChange={v => updateBusinessDay('batchAtDayEnd', v)}
-              border
-            />
-
-            <NumberRow
-              label="Grace Period"
-              description="Extra time after the day boundary before enforcement kicks in"
-              value={businessDay.graceMinutes}
-              onChange={v => updateBusinessDay('graceMinutes', v)}
-              suffix="min"
-              min={0}
-              max={120}
-              step={5}
-            />
-          </div>
+          <p className="text-sm text-gray-500 mb-3">Business Day settings have moved. Configure end-of-day rules in Staff &amp; Shifts settings.</p>
+          <Link
+            href="/settings/staff"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-all"
+          >
+            Go to Staff &amp; Shifts
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+          </Link>
         </section>
 
         {/* ═══════════════════════════════════════════

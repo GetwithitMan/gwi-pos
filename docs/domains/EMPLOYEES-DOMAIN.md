@@ -62,3 +62,4 @@ PM Mode: Employees
 - **Reports Domain**: Labor reports, shift reports, tip share reports
 - **Payments Domain**: Tip tracking per employee
 - **Financial Domain**: Payroll processing, tip-out rules
+- **Tips Domain**: Shift close should check for pending tips before finalizing. Android `MyTipsScreen` (2026-03-03) lets employees review pending and recorded tips via `/api/tips/pending-tips` and `/api/tips/recorded-tips`.

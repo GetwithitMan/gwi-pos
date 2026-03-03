@@ -237,13 +237,13 @@ export default function ReceiptSettingsPage() {
           <Toggle value={receiptDisplay.receipt.showItemPrices} onChange={v => updateReceipt('showItemPrices', v)} label="Show item prices" />
           <Toggle value={receiptDisplay.receipt.showModifiers} onChange={v => updateReceipt('showModifiers', v)} label="Show modifiers" />
           <Toggle value={receiptDisplay.receipt.showModifierPrices} onChange={v => updateReceipt('showModifierPrices', v)} label="Show modifier prices" />
-          <Toggle value={receiptDisplay.receipt.collapseDuplicates} onChange={v => updateReceipt('collapseDuplicates', v)} label="Collapse duplicates (2x Burger)" />
+          <Toggle value={receiptDisplay.receipt.collapseDuplicates} onChange={v => updateReceipt('collapseDuplicates', v)} label="Combine duplicate items" description="Show '2x Burger' on one line instead of printing Burger twice. Keeps receipts shorter." />
           <div className="border-t border-gray-100 my-2" />
           <Toggle value={receiptDisplay.receipt.showSubtotal} onChange={v => updateReceipt('showSubtotal', v)} label="Show subtotal" />
           <Toggle value={receiptDisplay.receipt.showTax} onChange={v => updateReceipt('showTax', v)} label="Show tax" />
-          <Toggle value={receiptDisplay.receipt.showTaxBreakdown} onChange={v => updateReceipt('showTaxBreakdown', v)} label="Show each tax type separately" />
+          <Toggle value={receiptDisplay.receipt.showTaxBreakdown} onChange={v => updateReceipt('showTaxBreakdown', v)} label="Show each tax type separately" description="Break out each tax type as its own line (e.g., Sales Tax $1.50, Alcohol Tax $0.25). If OFF, shows combined tax total only." />
           <Toggle value={receiptDisplay.receipt.showDiscounts} onChange={v => updateReceipt('showDiscounts', v)} label="Show discounts" />
-          <Toggle value={receiptDisplay.receipt.showServiceCharge} onChange={v => updateReceipt('showServiceCharge', v)} label="Show auto-gratuity line" />
+          <Toggle value={receiptDisplay.receipt.showServiceCharge} onChange={v => updateReceipt('showServiceCharge', v)} label="Show auto-gratuity line" description="Show the automatically-added service charge as a separate line. Note: Auto-gratuity is different from a customer-added tip." />
           <div className="border-t border-gray-100 my-2" />
           <Toggle value={receiptDisplay.receipt.showPaymentMethod} onChange={v => updateReceipt('showPaymentMethod', v)} label="Show payment method (VISA *1234)" />
           <Toggle value={receiptDisplay.receipt.showChange} onChange={v => updateReceipt('showChange', v)} label="Show cash change amount" />
@@ -251,7 +251,7 @@ export default function ReceiptSettingsPage() {
 
         {/* ─── Card 3: Tip Section ─── */}
         <SettingsCard title="Tip Section">
-          <Toggle value={receiptDisplay.tips.enabled} onChange={v => updateTips('enabled', v)} label="Show tip section on receipt" />
+          <Toggle value={receiptDisplay.tips.enabled} onChange={v => updateTips('enabled', v)} label="Show tip section on receipt" description="If OFF, customers enter tips directly on the payment terminal. Turn ON if you print paper receipts that customers sign and write in a tip." />
           {receiptDisplay.tips.enabled && (
             <>
               <div className="mt-2">
@@ -271,10 +271,11 @@ export default function ReceiptSettingsPage() {
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="18, 20, 22"
                 />
-                <p className="text-xs text-gray-400 mt-1">Comma-separated percentages</p>
+                <p className="text-xs text-gray-400 mt-1">Whole numbers only, separated by commas (e.g., 15, 18, 20, 25). Customers will see these as quick-select buttons on the printed tip line.</p>
               </div>
               <div className="mt-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Calculation basis</label>
+                <p className="text-xs text-gray-400 mb-2">Pre-Tax: suggested tip is based on the food/drink total before tax (standard in most US venues). Post-Tax: tip is based on the total including tax (slightly higher suggestions).</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => updateTips('calculation', 'pre-tax')}
@@ -300,7 +301,7 @@ export default function ReceiptSettingsPage() {
               </div>
               <Toggle value={receiptDisplay.tips.showCalculatedAmounts} onChange={v => updateTips('showCalculatedAmounts', v)} label="Show dollar amounts next to percentages" />
               <Toggle value={receiptDisplay.tips.allowCustomTip} onChange={v => updateTips('allowCustomTip', v)} label="Show blank custom tip line" />
-              <Toggle value={receiptDisplay.tips.showTipGuide} onChange={v => updateTips('showTipGuide', v)} label="Show tip guide (15% = $3.75...)" />
+              <Toggle value={receiptDisplay.tips.showTipGuide} onChange={v => updateTips('showTipGuide', v)} label="Show tip guide" description="Print a small reference table on the receipt showing exact dollar amounts for each tip percentage (e.g., '18% = $4.50, 20% = $5.00'). Makes tipping easier for customers." />
             </>
           )}
         </SettingsCard>
@@ -327,7 +328,7 @@ export default function ReceiptSettingsPage() {
                     step={1}
                   />
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Only require signature above this amount. Leave blank to always require.</p>
+                <p className="text-xs text-gray-400 mt-1">Require a signature for transactions over this amount. Leave blank to always require a signature.</p>
               </div>
             </>
           )}
@@ -368,6 +369,7 @@ export default function ReceiptSettingsPage() {
           <div className="border-t border-gray-100 my-2" />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Terms text</label>
+            <p className="text-xs text-gray-400 mb-1">Custom legal or courtesy text printed near the bottom (e.g., &apos;Gratuity is optional&apos; or &apos;All sales final&apos;).</p>
             <input
               type="text"
               value={receiptDisplay.footer.termsText}
@@ -378,6 +380,7 @@ export default function ReceiptSettingsPage() {
           </div>
           <div className="mt-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Promo text</label>
+            <p className="text-xs text-gray-400 mb-1">Marketing message or promotion printed at the very end of the receipt (e.g., &apos;Follow us on Instagram&apos;).</p>
             <input
               type="text"
               value={receiptDisplay.footer.promoText}
@@ -407,17 +410,17 @@ export default function ReceiptSettingsPage() {
           <Toggle value={receiptDisplay.kitchen.showPrices} onChange={v => updateKitchen('showPrices', v)} label="Show prices" />
           <Toggle value={receiptDisplay.kitchen.showSeatNumbers} onChange={v => updateKitchen('showSeatNumbers', v)} label="Show seat numbers" />
           <Toggle value={receiptDisplay.kitchen.showServerName} onChange={v => updateKitchen('showServerName', v)} label="Show server name" />
-          <Toggle value={receiptDisplay.kitchen.showOrderType} onChange={v => updateKitchen('showOrderType', v)} label="Show order type" />
+          <Toggle value={receiptDisplay.kitchen.showOrderType} onChange={v => updateKitchen('showOrderType', v)} label="Show order type" description="Show whether the order is for Dine-In, Takeout, Delivery, etc. — helps kitchen staff prioritize appropriately." />
           <Toggle value={receiptDisplay.kitchen.showSpecialInstructions} onChange={v => updateKitchen('showSpecialInstructions', v)} label="Show special instructions" />
-          <Toggle value={receiptDisplay.kitchen.highlightAllergies} onChange={v => updateKitchen('highlightAllergies', v)} label="Highlight allergies" />
-          <Toggle value={receiptDisplay.kitchen.highlightModifications} onChange={v => updateKitchen('highlightModifications', v)} label="Highlight NO/EXTRA items" />
+          <Toggle value={receiptDisplay.kitchen.highlightAllergies} onChange={v => updateKitchen('highlightAllergies', v)} label="Highlight allergies" description="Print allergy-related items in bold so kitchen staff can easily spot them and prioritize." />
+          <Toggle value={receiptDisplay.kitchen.highlightModifications} onChange={v => updateKitchen('highlightModifications', v)} label="Highlight Special Modifications" description="Bold or flag custom modifications like 'NO onions' or 'EXTRA cheese' so kitchen staff can't miss them." />
         </SettingsCard>
 
         {/* ─── Card 7: Bar Ticket ─── */}
         <SettingsCard title="Bar Ticket">
           <Toggle value={receiptDisplay.bar.showPrices} onChange={v => updateBar('showPrices', v)} label="Show prices" />
           <Toggle value={receiptDisplay.bar.showSeatNumbers} onChange={v => updateBar('showSeatNumbers', v)} label="Show seat numbers" />
-          <Toggle value={receiptDisplay.bar.compactMode} onChange={v => updateBar('compactMode', v)} label="Compact layout for speed" />
+          <Toggle value={receiptDisplay.bar.compactMode} onChange={v => updateBar('compactMode', v)} label="Compact layout for speed" description="Reduce spacing on bar tickets so more orders fit on one ticket — helps bartenders work faster during busy service." />
         </SettingsCard>
 
       </div>

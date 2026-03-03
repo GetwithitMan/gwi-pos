@@ -218,6 +218,7 @@ export default function VenueSettingsPage() {
                 <label htmlFor="venue-address" className="block text-sm font-medium text-gray-700 mb-1">
                   Address
                 </label>
+                <p className="text-xs text-gray-400 mb-1">Printed on customer receipts and displayed on your online ordering page.</p>
                 <input
                   id="venue-address"
                   type="text"
@@ -232,6 +233,7 @@ export default function VenueSettingsPage() {
                 <label htmlFor="venue-phone" className="block text-sm font-medium text-gray-700 mb-1">
                   Phone
                 </label>
+                <p className="text-xs text-gray-400 mb-1">Printed on customer receipts and displayed on your online ordering page.</p>
                 <input
                   id="venue-phone"
                   type="tel"
@@ -255,6 +257,7 @@ export default function VenueSettingsPage() {
               <label htmlFor="venue-timezone" className="block text-sm font-medium text-gray-700 mb-1">
                 Timezone
               </label>
+              <p className="text-xs text-gray-400 mb-1">Affects report dates, shift times, and when your business day resets. Always set to your venue&apos;s local time zone.</p>
               <select
                 id="venue-timezone"
                 value={timezone}
@@ -292,6 +295,7 @@ export default function VenueSettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
+              <p className="text-sm text-gray-500">This code is used by your IT person or our support team when setting up your back-of-house server. You do not need to do anything with it yourself.</p>
               <div className="flex items-center gap-3">
                 <div className="flex-1 bg-gray-50 border rounded px-4 py-3 font-mono text-2xl tracking-widest text-center select-all">
                   {regCode || '\u2014'}
@@ -325,12 +329,15 @@ export default function VenueSettingsPage() {
                  regStatus === 'active' ? 'Regenerate Code' : 'Generate Code'}
               </Button>
 
-              <p className="text-xs text-gray-400">
-                Use this code during NUC installation:{' '}
-                <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-500">
-                  curl -sSL https://www.thepasspos.com/installer.run | sudo bash
-                </code>
-              </p>
+              <details className="text-xs text-gray-400">
+                <summary className="cursor-pointer hover:text-gray-500">Show for IT</summary>
+                <p className="mt-2">
+                  Use this code during NUC installation:{' '}
+                  <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-500">
+                    curl -sSL https://www.thepasspos.com/installer.run | sudo bash
+                  </code>
+                </p>
+              </details>
             </div>
           </CardContent>
         </Card>
@@ -346,66 +353,29 @@ export default function VenueSettingsPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
-                  Operating Hours
-                </label>
-                <input
-                  type="text"
-                  disabled
-                  className="w-full border rounded px-3 py-2 bg-gray-50 text-gray-400 cursor-not-allowed"
-                  placeholder="Per-day operating hours"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">
-                    Week Start Day
-                  </label>
-                  <select
-                    disabled
-                    className="w-full border rounded px-3 py-2 bg-gray-50 text-gray-400 cursor-not-allowed"
-                  >
-                    <option>Sunday</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">
-                    Fiscal Year Start
-                  </label>
-                  <select
-                    disabled
-                    className="w-full border rounded px-3 py-2 bg-gray-50 text-gray-400 cursor-not-allowed"
-                  >
-                    <option>January</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
-                  Logo
-                </label>
-                <div className="w-full border border-dashed rounded px-3 py-6 bg-gray-50 text-gray-400 text-center text-sm cursor-not-allowed">
-                  Logo upload coming soon
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
-                  Venue Type
-                </label>
-                <select
-                  disabled
-                  className="w-full border rounded px-3 py-2 bg-gray-50 text-gray-400 cursor-not-allowed"
-                >
-                  <option>Bar / Restaurant</option>
-                </select>
-              </div>
-            </div>
+            <p className="text-sm text-gray-400">The following features will be available in a future update:</p>
+            <ul className="mt-3 space-y-2 text-sm text-gray-400">
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                Operating Hours
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                Week Start Day
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                Fiscal Year Start
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                Logo Upload
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                Venue Type
+              </li>
+            </ul>
           </CardContent>
         </Card>
       </div>

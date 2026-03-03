@@ -214,7 +214,7 @@ export default function RoutingPage() {
     <div className="min-h-screen bg-gray-50 p-6">
       <AdminPageHeader
         title="Print Routing"
-        subtitle="Configure which printers each category and item prints to"
+        subtitle="Routing rules control which printer or kitchen screen receives each order's tickets. Items can be routed by category or by individual menu item."
         breadcrumbs={[
           { label: 'Settings', href: '/settings' },
           { label: 'Hardware', href: '/settings/hardware' },
@@ -231,8 +231,15 @@ export default function RoutingPage() {
               for specific items. Items can print to multiple printers with backup failover.
             </p>
             <p className="text-xs text-blue-600 mt-1">
-              <strong>Priority:</strong> Item printers → Category printers → Default kitchen printer
+              <strong>Priority order:</strong> Item-level routing wins first. If no item rule exists, the category rule is used. If no category rule exists, the default kitchen printer receives the ticket.
             </p>
+            <p className="text-xs text-blue-600 mt-1">
+              <strong>Example:</strong> All &ldquo;Pizza&rdquo; category items print at the kitchen printer. But &ldquo;Gluten-Free Crust&rdquo; modifier routes an extra copy to the prep station.
+            </p>
+            <div className="flex items-center gap-3 mt-2 text-xs text-blue-700">
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-blue-500" /> Printer</span>
+              <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded bg-green-500" /> Kitchen Display (KDS)</span>
+            </div>
           </CardContent>
         </Card>
 
@@ -365,7 +372,7 @@ export default function RoutingPage() {
 
                             <div>
                               <label className="text-xs font-medium text-gray-700 mb-1 block">
-                                Backup Destinations (failover)
+                                Backup Printer (if primary is offline)
                               </label>
                               <div className="flex flex-wrap gap-1">
                                 {printDestinations.map((dest) => (
@@ -390,7 +397,7 @@ export default function RoutingPage() {
                                 ))}
                               </div>
                               <p className="text-xs text-gray-500 mt-1">
-                                Used if primary destinations fail
+                                If the primary printer doesn&apos;t respond, the ticket will be sent here instead. Useful to prevent lost orders during hardware issues.
                               </p>
                             </div>
                           </div>

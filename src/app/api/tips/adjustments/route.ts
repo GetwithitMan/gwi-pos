@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import {
@@ -134,7 +135,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, adjustmentType, reason, context, employeeDeltas, recalculate } = body
+    const { locationId, adjustmentType, reason, context, employeeDeltas, recalculate,
+            orderId, paymentId, tipAmountDollars } = body
 
     // ── Validate required fields ──────────────────────────────────────────
 
@@ -159,6 +161,65 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    const requestingEmployeeId = request.headers.get('x-employee-id')
+
+    // ── Self-service tip_amount: employee adjusting their own order's tip ──
+    if (adjustmentType === 'tip_amount') {
+      if (!orderId || !paymentId || tipAmountDollars === undefined) {
+        return NextResponse.json(
+          { error: 'orderId, paymentId, and tipAmountDollars are required for tip_amount adjustments' },
+          { status: 400 }
+        )
+      }
+
+      // Look up the order to check ownership
+      const order = await db.order.findUnique({
+        where: { id: orderId },
+        select: { employeeId: true },
+      })
+
+      if (!order) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+
+      const isSelfService = order.employeeId === requestingEmployeeId
+
+      if (!isSelfService) {
+        // Not the owner — require TIPS_PERFORM_ADJUSTMENTS
+        const auth = await requireAnyPermission(
+          requestingEmployeeId,
+          locationId,
+          [PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS]
+        )
+        if (!auth.authorized) {
+          return NextResponse.json(
+            { error: auth.error },
+            { status: auth.status }
+          )
+        }
+      }
+
+      // Convert dollars to cents
+      const tipAmountCents = Math.round((tipAmountDollars as number) * 100)
+
+      const result = await performTipAdjustment({
+        locationId,
+        managerId: requestingEmployeeId!,
+        adjustmentType: 'tip_amount',
+        reason: reason || 'Tip amount adjustment',
+        context: context || {
+          before: { orderId, paymentId },
+          after: { orderId, paymentId, tipAmountCents },
+        },
+        employeeDeltas,
+        paymentUpdate: { paymentId, tipAmountCents },
+      })
+
+      return NextResponse.json({ adjustment: result })
+    }
+
+    // ── Standard adjustments: validate remaining required fields ──────────
+
     if (!reason) {
       return NextResponse.json(
         { error: 'reason is required' },
@@ -175,7 +236,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // ── Auth check ────────────────────────────────────────────────────────
     // Requires TIPS_PERFORM_ADJUSTMENTS permission
-    const requestingEmployeeId = request.headers.get('x-employee-id')
 
     const auth = await requireAnyPermission(
       requestingEmployeeId,

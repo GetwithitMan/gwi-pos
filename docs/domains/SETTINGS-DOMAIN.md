@@ -60,6 +60,33 @@ PM Mode: Settings
 | 242 | Error Monitoring | DONE |
 | 243 | Admin Audit Viewer | API Complete |
 
+## UI Components
+
+| Component | File | Props Added (2026-03-03) |
+|-----------|------|--------------------------|
+| `ToggleRow` | `src/components/admin/settings/ToggleRow.tsx` | `disabled: boolean`, `disabledNote: string?` — greyed-out toggle with explanation when a dependent setting is off |
+| `ToggleSwitch` | `src/components/admin/settings/ToggleSwitch.tsx` | `disabled: boolean` — prevents interaction and shows disabled visual state |
+
+## Changelog
+
+### 2026-03-03 — Settings Clarity Pass (17 pages)
+
+All 17 settings pages received UX clarity improvements:
+- Plain-English descriptions added to every toggle and option
+- Jargon defined on first use (e.g., "dual pricing", "pre-auth")
+- Dependent toggles show disabled state with explanation when prerequisite is off
+- Broken/placeholder options removed (see below)
+
+**Pages updated:** Venue, Payments, Tips, Receipts, Security, Orders, Tabs, Order Types, Hardware (main + Printers + KDS Screens + Terminals + Routing), Integrations/SMS, Staff
+
+**Specific removals:**
+- **Security page**: Business Day section removed (was a duplicate of the Staff page). Replaced with a redirect card pointing to `/settings/staff`.
+- **Tax Rules** (`/tax-rules`): "Specific Items" `appliesTo` option removed — the item picker UI was never built, so the option was non-functional.
+- **Tips** (`/settings/tips`): "Custom" tip basis option removed — it was a placeholder with no backend logic.
+
+**New setting:**
+- `noTipQuickButton: boolean` added to `TipBankSettings` in `src/lib/settings.ts` (default `false`). When enabled, hides the quick-tip buttons on the tip entry screen, forcing manual entry.
+
 ## Integration Points
 
 - **All Domains**: Location settings consumed by every API route

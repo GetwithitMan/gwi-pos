@@ -727,3 +727,51 @@ export async function findSegmentForTimestamp(
     splitJson: segment.splitJson as Record<string, number>,
   }
 }
+
+/**
+ * Returns the first active tip group at this location where the given employee
+ * is the sole remaining active member, or null if no such group exists.
+ *
+ * Used by the clock-out API to enforce the last-member group-closeout rule:
+ * the final active member cannot clock out until the group is explicitly closed.
+ *
+ * This is intentionally a simple count check (not a DB constraint) so that
+ * concurrent removals remain safe: the worst case is two members both see
+ * count=1 simultaneously, both get blocked, and one must resolve first.
+ */
+export async function findLastMemberGroup(
+  employeeId: string,
+  locationId: string,
+): Promise<{ groupId: string } | null> {
+  // Find every active group at this location where the employee is active
+  const memberships = await db.tipGroupMembership.findMany({
+    where: {
+      employeeId,
+      status: 'active',
+      group: {
+        locationId,
+        status: 'active',
+      },
+    },
+    select: { groupId: true },
+  })
+
+  if (memberships.length === 0) return null
+
+  // For each candidate group, count total active members.
+  // An employee can realistically only be in one group at a time,
+  // so this loop almost always runs once.
+  for (const { groupId } of memberships) {
+    const activeMemberCount = await db.tipGroupMembership.count({
+      where: {
+        groupId,
+        status: 'active',
+      },
+    })
+    if (activeMemberCount === 1) {
+      return { groupId }
+    }
+  }
+
+  return null
+}

@@ -126,8 +126,9 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { tabName, preAuth, releasePreAuth } = body as {
+    const { tabName, tabNickname, preAuth, releasePreAuth } = body as {
       tabName?: string
+      tabNickname?: string
       preAuth?: {
         cardBrand: string
         cardLast4: string
@@ -170,6 +171,11 @@ export const PUT = withVenue(async function PUT(
       updateData.tabName = tabName || null
     }
 
+    // Update tab nickname
+    if (tabNickname !== undefined) {
+      updateData.tabNickname = tabNickname || null
+    }
+
     // Release pre-auth
     if (releasePreAuth) {
       updateData.preAuthId = null
@@ -207,6 +213,7 @@ export const PUT = withVenue(async function PUT(
     // Fire-and-forget event emission
     void emitOrderEvent(tab.locationId, id, 'ORDER_METADATA_UPDATED', {
       ...(tabName !== undefined ? { tabName: tabName || null } : {}),
+      ...(tabNickname !== undefined ? { tabNickname: tabNickname || null } : {}),
       ...(releasePreAuth ? {
         preAuthId: null,
         preAuthAmount: null,
@@ -224,6 +231,7 @@ export const PUT = withVenue(async function PUT(
     return NextResponse.json({ data: {
       id: updated.id,
       tabName: updated.tabName || `Tab #${updated.orderNumber}`,
+      tabNickname: updated.tabNickname || null,
       orderNumber: updated.orderNumber,
       status: updated.status,
       employee: {

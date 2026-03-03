@@ -1,5 +1,21 @@
 # Tips & Tip Bank Domain Changelog
 
+## 2026-03-03 — Pending Tips + Self-Service Tip Adjustment
+
+### Added
+- `GET /api/tips/pending-tips` — returns closed card payments with tipAmount=0 for requesting employee (or all with TIPS_VIEW_LEDGER)
+- `GET /api/tips/recorded-tips` — returns closed card payments with tipAmount>0 for requesting employee
+- Self-service tip adjustment: `POST /api/tips/adjustments` with adjustmentType=tip_amount now allowed without TIPS_PERFORM_ADJUSTMENTS when employee owns the order
+- `performTipAdjustment()` now updates `Payment.tipAmount` and `Payment.totalAmount` when adjustmentType=tip_amount
+- Android: My Tips screen in hamburger menu — "Pending Tips" tab (enter paper receipt tips) + "My Tips" tab (correct recorded tips)
+- Android: TipEntrySheet — percentage chips showing "20% • $9.60", custom amount, reason dropdown (NEW/EDIT modes)
+- `noTipQuickButton` setting (default false) — owner controls whether "$0 Tip" quick button appears on tip prompt
+
+### Changed
+- Tip adjustment is now self-service for employees on their own orders. Manager permission still required for adjusting other employees' tips.
+
+---
+
 ## 2026-02-24 — Payroll Formula, Atomic Transfers & Shift Close (`743e618`)
 
 ### Payroll Formula

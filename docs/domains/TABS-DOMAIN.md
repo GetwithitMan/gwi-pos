@@ -38,19 +38,22 @@ PM Mode: Tabs
 | File | Purpose |
 |------|---------|
 | `src/app/(pos)/tabs/page.tsx` | Tab management POS page |
+| `src/app/api/tabs/[id]/route.ts` | Tab details/close/update; accepts `tabNickname` |
 | `src/components/tabs/TabCard.tsx` | Individual tab card display |
 | `src/components/tabs/BottleServiceBanner.tsx` | Bottle service progress tracking |
 | `src/components/tabs/CardFirstFlow.tsx` | Card-first tab opening flow |
 | `src/components/tabs/TabTransferModal.tsx` | Tab transfer between employees |
 | `src/components/tabs/MultiCardBadges.tsx` | Multi-card display badges |
 | `src/components/tabs/PendingTabShimmer.tsx` | Shimmer animation during auth |
+| `app/src/main/java/.../NewTabDialog.kt` | Android: Tab open flow with dual name fields |
+| `app/src/main/java/.../TabListSheet.kt` | Android: Tab list with nickname-first display |
 
 ## API Routes
 
 | Route | Method | Purpose |
 |-------|--------|---------|
 | `/api/tabs` | GET/POST | List/create tabs |
-| `/api/tabs/[id]` | GET/PUT | Tab details/close |
+| `/api/tabs/[id]` | GET/PUT | Tab details/close/update; accepts `tabNickname` |
 | `/api/datacap/preauth` | POST | Pre-authorize card for tab |
 | `/api/datacap/capture` | POST | Capture final amount on close |
 | `/api/datacap/increment` | POST | Incremental auth at threshold |
@@ -65,6 +68,14 @@ PM Mode: Tabs
 | 21 | Pre-auth | DONE |
 | 22 | Tab Transfer | DONE |
 | 245 | Bottle Service Tiers | DONE |
+
+## Tab Naming
+
+- **`tabName`** = cardholder name from chip (auto-filled, read-only, retained for payment records)
+- **`tabNickname`** = bartender-assigned display name ("Big Mike", "Corner Booth")
+- **Display priority:** nickname → card name → "Tab #N"
+- When nickname is set and different from card name, card name shows as subtitle in the tab list
+- Both fields exist on the `Order` model in the Prisma schema
 
 ## Integration Points
 

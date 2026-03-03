@@ -126,7 +126,7 @@ export default function OrderTypesPage() {
 
   const handleDelete = async (orderType: OrderTypeConfig) => {
     if (orderType.isSystem) {
-      toast.info('System order types cannot be deleted, only deactivated.')
+      toast.info('Built-in order types cannot be deleted, only deactivated.')
       return
     }
 
@@ -221,8 +221,8 @@ export default function OrderTypesPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{orderType.name}</span>
                         {orderType.isSystem && (
-                          <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
-                            System
+                          <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded" title="Built-in order types were created by the system. The name and ID are locked, but all other settings can be changed.">
+                            Built-in
                           </span>
                         )}
                       </div>
@@ -253,7 +253,7 @@ export default function OrderTypesPage() {
                           </span>
                         )}
                         {(orderType.workflowRules as WorkflowRules)?.enablePreAuth && (
-                          <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
+                          <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded" title="Pre-authorization = temporary hold on customer's card when the tab opens, settled to the real amount when it closes.">
                             Pre-Auth
                           </span>
                         )}
@@ -484,7 +484,7 @@ function OrderTypeEditModal({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Slug
+                System ID (Slug)
               </label>
               <input
                 type="text"
@@ -494,6 +494,7 @@ function OrderTypeEditModal({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
                 disabled={orderType.isSystem}
               />
+              <p className="text-xs text-gray-400 mt-1">Used by integrations. Lowercase letters and underscores only, no spaces. Auto-generated from the name.</p>
             </div>
           </div>
 
@@ -513,6 +514,7 @@ function OrderTypeEditModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Badge Color
             </label>
+            <p className="text-xs text-gray-400 mb-1">This color appears on this order type&apos;s label throughout the POS and kitchen screens.</p>
             <div className="flex gap-2">
               <input
                 type="color"
@@ -533,15 +535,18 @@ function OrderTypeEditModal({
           <div className="border-t border-gray-200 pt-4">
             <h3 className="text-sm font-semibold text-gray-800 mb-3">Workflow Rules</h3>
             <div className="space-y-2">
-              <label className="flex items-center gap-2">
+              <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
                   checked={formData.requireTableSelection}
                   onChange={(e) => setFormData(prev => ({ ...prev, requireTableSelection: e.target.checked }))}
-                  className="rounded border-gray-300"
+                  className="rounded border-gray-300 mt-0.5"
                   disabled={orderType.isSystem}
                 />
-                <span className="text-sm">Require table selection</span>
+                <span className="text-sm">
+                  Require table selection
+                  <span className="block text-xs text-gray-400">If enabled and no table is selected, the order cannot be sent to the kitchen.</span>
+                </span>
               </label>
               <label className="flex items-center gap-2">
                 <input
@@ -553,33 +558,42 @@ function OrderTypeEditModal({
                 />
                 <span className="text-sm">Require customer name</span>
               </label>
-              <label className="flex items-center gap-2">
+              <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
                   checked={formData.requirePaymentBeforeSend}
                   onChange={(e) => setFormData(prev => ({ ...prev, requirePaymentBeforeSend: e.target.checked }))}
-                  className="rounded border-gray-300"
+                  className="rounded border-gray-300 mt-0.5"
                 />
-                <span className="text-sm">Require payment before sending to kitchen</span>
+                <span className="text-sm">
+                  Require payment before sending to kitchen
+                  <span className="block text-xs text-gray-400">Customer pays upfront before the order is sent to the kitchen. Useful for takeout, delivery, or self-service kiosks.</span>
+                </span>
               </label>
-              <label className="flex items-center gap-2">
+              <label className="flex items-start gap-2">
                 <input
                   type="checkbox"
                   checked={formData.requireCardOnFile}
                   onChange={(e) => setFormData(prev => ({ ...prev, requireCardOnFile: e.target.checked, ...(!e.target.checked ? { enablePreAuth: false } : {}) }))}
-                  className="rounded border-gray-300"
+                  className="rounded border-gray-300 mt-0.5"
                 />
-                <span className="text-sm">Require card on file (chip read to open tab)</span>
+                <span className="text-sm">
+                  Require card on file (chip read to open tab)
+                  <span className="block text-xs text-gray-400">Customer must insert or tap their card to open this order type. This card is saved to authorize the final charge (including tip) at close.</span>
+                </span>
               </label>
               {formData.requireCardOnFile && (
-                <label className="flex items-center gap-2 ml-6">
+                <label className="flex items-start gap-2 ml-6">
                   <input
                     type="checkbox"
                     checked={formData.enablePreAuth}
                     onChange={(e) => setFormData(prev => ({ ...prev, enablePreAuth: e.target.checked }))}
-                    className="rounded border-gray-300"
+                    className="rounded border-gray-300 mt-0.5"
                   />
-                  <span className="text-sm">Enable pre-authorization &amp; incremental auth</span>
+                  <span className="text-sm">
+                    Enable pre-authorization &amp; incremental auth
+                    <span className="block text-xs text-gray-400">Pre-authorization = temporary hold on customer&apos;s card when the tab opens, settled to the real amount when it closes.</span>
+                  </span>
                 </label>
               )}
             </div>
@@ -588,7 +602,8 @@ function OrderTypeEditModal({
           {/* Required Fields */}
           {!orderType.isSystem && (
             <div className="border-t border-gray-200 pt-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Required Fields</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-1">Required Fields</h3>
+              <p className="text-xs text-gray-400 mb-3">Required fields must be filled in before the order can be sent to the kitchen. Optional fields can be skipped.</p>
               <div className="space-y-2">
                 <label className="flex items-center gap-2">
                   <input

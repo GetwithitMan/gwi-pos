@@ -27,6 +27,7 @@ export default function CrewHubPage() {
   const [eligibleTemplates, setEligibleTemplates] = useState<{ id: string; name: string; defaultSplitMode: string }[]>([])
   const [allowStandaloneServers, setAllowStandaloneServers] = useState(true)
   const [pendingClockInRoleId, setPendingClockInRoleId] = useState<string | undefined>(undefined)
+  const [lastMemberGroupId, setLastMemberGroupId] = useState<string | null>(null)
 
   // Hydration guard: Zustand persist middleware starts with defaults (isAuthenticated=false)
   // before rehydrating from localStorage. Without this guard, the auth redirect fires
@@ -177,9 +178,21 @@ export default function CrewHubPage() {
         body: JSON.stringify({ entryId: previousStatus.entryId, action: 'clockOut' }),
       })
       if (!res.ok) {
-        // Revert on failure
+        // Revert the optimistic update
         setClockStatus(previousStatus)
         useAuthStore.getState().clockIn()
+
+        // If the API blocked clock-out because this employee is the last group member,
+        // show the last-member modal instead of a generic error.
+        try {
+          const data = await res.json()
+          if (data?.errorCode === 'last_group_member' && data?.groupId) {
+            setLastMemberGroupId(data.groupId)
+            return
+          }
+        } catch {
+          // If parsing fails, fall through — no toast needed (optimistic revert is sufficient)
+        }
       }
     } catch {
       // Revert on failure
@@ -453,6 +466,52 @@ export default function CrewHubPage() {
               className="py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-500 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
             >
               {clockLoading ? 'Processing...' : 'Yes, Clock Out'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Last Member Group Closeout Modal ────────────────────────────────── */}
+      <Modal
+        isOpen={!!lastMemberGroupId}
+        onClose={() => setLastMemberGroupId(null)}
+        title="Close Tip Group First"
+        size="sm"
+      >
+        <div className="text-center">
+          <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+            </svg>
+          </div>
+          <p className="text-gray-700 font-semibold text-base mb-2">
+            You&apos;re the last person in your tip group.
+          </p>
+          <p className="text-gray-500 text-sm mb-6">
+            Close the group before clocking out so tips are distributed correctly.
+          </p>
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setLastMemberGroupId(null)
+                router.push('/crew/tip-group')
+              }}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm transition-all"
+            >
+              Go to Tip Group
+            </button>
+            <button
+              type="button"
+              onClick={() => setLastMemberGroupId(null)}
+              className="py-2 text-gray-400 hover:text-gray-600 text-sm transition-all"
+            >
+              Cancel
             </button>
           </div>
         </div>

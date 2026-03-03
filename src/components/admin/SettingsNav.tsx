@@ -126,7 +126,7 @@ const settingsSections: SettingsSection[] = [
     items: [
       { name: 'Tip Settings', href: '/settings/tips' },
       { name: 'Tip-Out Rules', href: '/settings/tip-outs' },
-      { name: 'Tip Groups', href: '/settings/tip-groups' },
+      { name: 'Tip Groups', href: '/tip-groups' },
       { name: 'Tip Payouts', href: '/settings/tip-payouts' },
     ],
   },

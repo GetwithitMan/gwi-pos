@@ -20,6 +20,7 @@ import {
   findActiveGroupForEmployee,
   findSegmentForTimestamp,
 } from '@/lib/domain/tips/tip-groups'
+import type { TipGroupSegmentInfo } from '@/lib/domain/tips/tip-groups'
 import {
   getActiveOwnership,
   adjustAllocationsByOwnership,
@@ -28,6 +29,24 @@ import type { OwnershipInfo } from '@/lib/domain/tips/table-ownership'
 import type { TipBankSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch non-voided order items with positive totals for proportional allocation.
+ * Used by allocateToGroupProportional() to determine per-segment revenue weights.
+ */
+async function fetchOrderItemsForAllocation(
+  orderId: string,
+): Promise<Array<{ itemTotal: number; createdAt: Date }>> {
+  const items = await db.orderItem.findMany({
+    where: { orderId, deletedAt: null, status: { not: 'voided' } },
+    select: { itemTotal: true, createdAt: true },
+  })
+  return items
+    .filter((i) => i.itemTotal !== null && Number(i.itemTotal) > 0)
+    .map((i) => ({ itemTotal: Number(i.itemTotal), createdAt: i.createdAt }))
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -287,6 +306,32 @@ export async function allocateTipsForOrder(params: {
       collectedAt,
       ccFeeAmountCents,
       kind,
+    })
+  }
+
+  // ── Proportional per-item allocation (Skill 252+) ────────────────────
+  // When tipAttributionTiming is 'per_item', distribute tip proportionally
+  // across segments based on when each item was added to the order.
+  let resolvedSettings = providedSettings
+  if (!resolvedSettings) {
+    const locationSettings = await getLocationSettings(locationId)
+    const parsed = locationSettings ? parseSettings(locationSettings) : null
+    resolvedSettings = parsed?.tipBank ?? undefined
+  }
+  const timing = resolvedSettings?.tipAttributionTiming ?? 'check_closed'
+  if (timing === 'per_item') {
+    return allocateToGroupProportional({
+      groupId: activeGroup.id,
+      orderId,
+      paymentId,
+      tipAmountCents,
+      primaryEmployeeId,
+      locationId,
+      sourceType,
+      collectedAt,
+      ccFeeAmountCents,
+      kind,
+      idempotencyKey: idemKey,
     })
   }
 
@@ -840,6 +885,294 @@ async function allocateToGroup(params: {
     return {
       tipTransactionId: tipTxn.id,
       allocations,
+    }
+  })
+
+  return result
+}
+
+/**
+ * Proportional time-segmented allocation.
+ *
+ * Each item on the tab contributes to the TipGroupSegment that was active when it
+ * was added. Tip is split proportionally: segment gets (segment_items_revenue /
+ * order_total_revenue) of the total tip. Then that segment distributes to its
+ * members via splitJson.
+ *
+ * Falls back to single-timestamp allocation (collectedAt) when:
+ *  - No items found for the order
+ *  - All items map to the same segment
+ *  - All items predate the group (no segment found)
+ */
+async function allocateToGroupProportional(params: {
+  groupId: string
+  orderId: string
+  paymentId: string
+  tipAmountCents: number
+  primaryEmployeeId: string
+  locationId: string
+  sourceType: 'CARD' | 'CASH'
+  collectedAt: Date
+  ccFeeAmountCents?: number
+  kind?: string
+  idempotencyKey: string
+}): Promise<TipAllocationResult> {
+  const {
+    groupId,
+    orderId,
+    paymentId,
+    tipAmountCents,
+    primaryEmployeeId,
+    locationId,
+    sourceType,
+    collectedAt,
+    ccFeeAmountCents,
+    kind = 'tip',
+    idempotencyKey,
+  } = params
+
+  // 1. Fetch items for this order
+  const items = await fetchOrderItemsForAllocation(orderId)
+
+  // 2. No items → fall back to standard group allocation
+  if (items.length === 0) {
+    return allocateToGroup({
+      locationId,
+      orderId,
+      paymentId,
+      tipAmountCents,
+      primaryEmployeeId,
+      sourceType,
+      collectedAt,
+      groupId,
+      ccFeeAmountCents,
+      kind,
+    })
+  }
+
+  // 3. For each item, find the segment active at item.createdAt
+  // 4. Build buckets: segmentId → total item revenue in cents
+  const buckets = new Map<
+    string,
+    { segment: TipGroupSegmentInfo | null; totalItemCents: number }
+  >()
+
+  for (const item of items) {
+    const segment = await findSegmentForTimestamp(groupId, item.createdAt)
+    const key = segment ? segment.id : '__none__'
+    const itemCents = Math.round(item.itemTotal * 100)
+
+    const existing = buckets.get(key)
+    if (existing) {
+      existing.totalItemCents += itemCents
+    } else {
+      buckets.set(key, { segment, totalItemCents: itemCents })
+    }
+  }
+
+  // 5. Compute total revenue across all buckets
+  let orderTotalCents = 0
+  for (const bucket of buckets.values()) {
+    orderTotalCents += bucket.totalItemCents
+  }
+
+  // Guard: if total is zero (shouldn't happen given filter, but be safe)
+  if (orderTotalCents <= 0) {
+    return allocateToGroup({
+      locationId,
+      orderId,
+      paymentId,
+      tipAmountCents,
+      primaryEmployeeId,
+      sourceType,
+      collectedAt,
+      groupId,
+      ccFeeAmountCents,
+      kind,
+    })
+  }
+
+  // 6. If only 1 unique non-null segment key (or only '__none__') → fall back
+  const nonNoneKeys = [...buckets.keys()].filter((k) => k !== '__none__')
+  if (nonNoneKeys.length <= 1) {
+    return allocateToGroup({
+      locationId,
+      orderId,
+      paymentId,
+      tipAmountCents,
+      primaryEmployeeId,
+      sourceType,
+      collectedAt,
+      groupId,
+      ccFeeAmountCents,
+      kind,
+    })
+  }
+
+  // 7. Sort bucket keys deterministically for reproducible rounding
+  const sortedKeys = [...buckets.keys()].sort()
+
+  // 8–9. Allocate proportionally, last bucket gets remainder
+  // Pre-compute per-bucket tip cents
+  const bucketAllocations: Array<{
+    key: string
+    segment: TipGroupSegmentInfo | null
+    proportionalCents: number
+  }> = []
+  let allocatedSoFar = 0
+
+  for (let i = 0; i < sortedKeys.length; i++) {
+    const key = sortedKeys[i]
+    const bucket = buckets.get(key)!
+    let proportionalCents: number
+
+    if (i === sortedKeys.length - 1) {
+      // Last bucket absorbs rounding remainder
+      proportionalCents = tipAmountCents - allocatedSoFar
+    } else {
+      proportionalCents = Math.round(
+        (tipAmountCents * bucket.totalItemCents) / orderTotalCents
+      )
+    }
+
+    allocatedSoFar += proportionalCents
+    bucketAllocations.push({
+      key,
+      segment: bucket.segment,
+      proportionalCents,
+    })
+  }
+
+  // 10. Wrap all DB writes in a single transaction
+  const result = await db.$transaction(async (tx: TxClient) => {
+    // Create the parent TipTransaction
+    const tipTxn = await tx.tipTransaction.create({
+      data: {
+        locationId,
+        orderId,
+        paymentId,
+        amountCents: tipAmountCents,
+        sourceType,
+        kind,
+        collectedAt,
+        primaryEmployeeId,
+        tipGroupId: groupId,
+        ccFeeAmountCents: ccFeeAmountCents ?? 0,
+        idempotencyKey,
+      },
+    })
+
+    const allAllocations: TipAllocationResult['allocations'] = []
+
+    for (const { key, segment, proportionalCents } of bucketAllocations) {
+      if (proportionalCents <= 0) continue
+
+      if (key === '__none__' || !segment) {
+        // Items that predate the group → direct tip to primary employee
+        const ledgerEntry = await postToTipLedger(
+          {
+            locationId,
+            employeeId: primaryEmployeeId,
+            amountCents: proportionalCents,
+            type: 'CREDIT',
+            sourceType: 'DIRECT_TIP',
+            sourceId: tipTxn.id,
+            orderId,
+            memo: `Proportional tip (pre-group items) from order ${orderId} (${sourceType})`,
+            idempotencyKey: `${idempotencyKey}:seg:__none__:${primaryEmployeeId}`,
+          },
+          tx
+        )
+
+        allAllocations.push({
+          employeeId: primaryEmployeeId,
+          amountCents: proportionalCents,
+          sourceType: 'DIRECT_TIP',
+          ledgerEntryId: ledgerEntry.id,
+        })
+      } else {
+        // Real segment → distribute among segment members using splitJson
+        const splitJson = segment.splitJson
+        const memberIds = Object.keys(splitJson).sort()
+
+        if (memberIds.length === 0) {
+          // Empty segment (edge case) → direct to primary
+          const ledgerEntry = await postToTipLedger(
+            {
+              locationId,
+              employeeId: primaryEmployeeId,
+              amountCents: proportionalCents,
+              type: 'CREDIT',
+              sourceType: 'DIRECT_TIP',
+              sourceId: tipTxn.id,
+              orderId,
+              memo: `Proportional tip (empty segment) from order ${orderId} (${sourceType})`,
+              idempotencyKey: `${idempotencyKey}:seg:${segment.id}:${primaryEmployeeId}`,
+            },
+            tx
+          )
+
+          allAllocations.push({
+            employeeId: primaryEmployeeId,
+            amountCents: proportionalCents,
+            sourceType: 'DIRECT_TIP',
+            ledgerEntryId: ledgerEntry.id,
+          })
+          continue
+        }
+
+        // Split this segment's proportional cents among its members
+        const shares = calculateShares(proportionalCents, splitJson, memberIds)
+
+        // One TipTransaction per segment (not per member)
+        const segTxn = await tx.tipTransaction.create({
+          data: {
+            locationId,
+            orderId,
+            paymentId,
+            amountCents: proportionalCents,
+            sourceType,
+            kind,
+            collectedAt,
+            primaryEmployeeId,
+            tipGroupId: groupId,
+            segmentId: segment.id,
+            ccFeeAmountCents: 0,
+            idempotencyKey: `${idempotencyKey}:seg:${segment.id}`,
+          },
+        })
+
+        for (const { employeeId, amountCents } of shares) {
+          if (amountCents <= 0) continue
+
+          const ledgerEntry = await postToTipLedger(
+            {
+              locationId,
+              employeeId,
+              amountCents,
+              type: 'CREDIT',
+              sourceType: 'TIP_GROUP',
+              sourceId: segTxn.id,
+              orderId,
+              memo: `Proportional group tip (segment ${segment.id}) from order ${orderId} (${sourceType})`,
+              idempotencyKey: `${idempotencyKey}:seg:${segment.id}:${employeeId}`,
+            },
+            tx
+          )
+
+          allAllocations.push({
+            employeeId,
+            amountCents,
+            sourceType: 'TIP_GROUP',
+            ledgerEntryId: ledgerEntry.id,
+          })
+        }
+      }
+    }
+
+    return {
+      tipTransactionId: tipTxn.id,
+      allocations: allAllocations,
     }
   })
 

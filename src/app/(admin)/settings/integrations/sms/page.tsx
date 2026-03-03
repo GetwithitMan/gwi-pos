@@ -55,7 +55,7 @@ export default function SmsIntegrationPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">SMS Integration (Twilio)</h1>
-          <p className="text-gray-500">Send SMS alerts and manager approval requests via Twilio.</p>
+          <p className="text-gray-500">Connect a Twilio SMS account to enable text message alerts and manager approvals. Twilio is a third-party messaging service — you need a Twilio account to use this feature.</p>
         </div>
         {!loading && (
           <span className={`px-3 py-1 rounded-full text-sm font-medium ${
@@ -75,15 +75,15 @@ export default function SmsIntegrationPage() {
             <ul className="space-y-2 text-sm text-gray-600">
               <li className="flex items-start gap-2">
                 <span className="text-blue-500 mt-0.5">&#8226;</span>
-                <span><strong>Remote Void/Comp Approval</strong> -- Managers receive SMS when staff request void or comp approval. Reply YES to approve remotely.</span>
+                <span><strong>Remote Void/Comp Approval</strong> — Send a text message to the manager when a server requests to void or comp (give away for free) an item. Manager approves or denies by text.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-500 mt-0.5">&#8226;</span>
-                <span><strong>Manager Alerts</strong> -- High-value tab alerts and threshold notifications sent via SMS.</span>
+                <span><strong>High-Value Tab Alerts</strong> — Send a text message alert when a tab exceeds the configured dollar threshold. Helps managers catch unusually large or suspicious orders.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-500 mt-0.5">&#8226;</span>
-                <span><strong>Walkout Recovery</strong> -- Notifications when walkout tabs are detected and retry attempts are scheduled.</span>
+                <span><strong>Walkout Tab Detection</strong> — Send a text message when a tab is flagged as a walkout (customer left without paying).</span>
               </li>
             </ul>
           </CardContent>
@@ -113,9 +113,13 @@ export default function SmsIntegrationPage() {
                   disabled={!configured || testing}
                   variant="outline"
                   size="sm"
+                  title={!configured ? 'Configure your Twilio credentials in your server settings first, then test the connection here.' : 'Test the Twilio SMS connection'}
                 >
                   {testing ? 'Testing...' : 'Test Connection'}
                 </Button>
+                {!configured && (
+                  <p className="text-xs text-gray-400 mt-1">Configure your Twilio credentials in your server settings first.</p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -137,6 +141,9 @@ TWILIO_AUTH_TOKEN=your_token_here
 TWILIO_FROM_NUMBER=+1234567890`}
             </pre>
             <p className="text-sm text-gray-500 mt-3">4. Restart the POS server for changes to take effect.</p>
+            <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+              These credentials are set in your venue&apos;s server configuration. Ask your IT person or our support team to update them — you don&apos;t need to make changes yourself.
+            </div>
           </CardContent>
         </Card>
       </div>

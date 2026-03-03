@@ -149,6 +149,47 @@ val cardTotal = order.total + surcharge
 
 ---
 
+## Android Screens & Features (2026-03-03)
+
+### MyTipsScreen
+
+Accessible from the hamburger menu. Two tabs: **Pending Tips** and **My Tips**.
+
+| Detail | Value |
+|--------|-------|
+| Route | `my_tips/{employeeId}` |
+| ViewModel | `MyTipsViewModel.kt` |
+| Screen | `MyTipsScreen.kt` |
+| Tip entry | `TipEntrySheet.kt` |
+
+**API endpoints:**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/tips/pending-tips` | GET | Unclaimed tips for employee |
+| `/api/tips/recorded-tips` | GET | Previously recorded tips |
+| `/api/tips/adjustments` | POST | Submit tip adjustment |
+
+### DB Migration 34→35
+
+- Added `tabNickname TEXT` column to `cached_orders` table
+- Migration class: `MIGRATION_34_35` in `DatabaseModule.kt`
+- `CachedOrderEntity` now has `tabNickname: String? = null`
+
+### Payment Animation Overlay
+
+`PaymentSheet.kt` now includes a full-screen animated overlay for payment feedback.
+
+| State | Visual | Behavior |
+|-------|--------|----------|
+| Processing | Blue pulse animation | Shown while waiting for Datacap response |
+| Approved | Green bounce animation | Auto-dismisses after 1.5s |
+| Declined | Red shake animation | Tap to dismiss |
+
+**ViewModel pattern:** Set `paymentApprovedAmountCents` or `paymentDeclineReason` instead of immediately dismissing the sheet. The overlay is controlled by `AnimatedVisibility` in `PaymentSheet.kt`.
+
+---
+
 ## Checklist: Adding a New Feature with Android Impact
 
 - [ ] Touch targets ≥ 48×48dp

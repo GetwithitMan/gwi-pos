@@ -3,11 +3,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { ToggleRow, SettingsSaveBar } from '@/components/admin/settings'
+import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settings'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { BarTabSettings, ClockOutSettings } from '@/lib/settings'
+import type { BarTabSettings, PaymentSettings } from '@/lib/settings'
 
 export default function TabSettingsPage() {
   const { employee } = useRequireAuth()
@@ -17,7 +17,7 @@ export default function TabSettingsPage() {
   const [isDirty, setIsDirty] = useState(false)
 
   const [barTabs, setBarTabs] = useState<BarTabSettings | null>(null)
-  const [clockOut, setClockOut] = useState<ClockOutSettings | null>(null)
+  const [payments, setPayments] = useState<PaymentSettings | null>(null)
 
   useUnsavedWarning(isDirty)
 
@@ -28,7 +28,7 @@ export default function TabSettingsPage() {
         setIsLoading(true)
         const data = await loadSettingsApi(controller.signal)
         setBarTabs(data.settings.barTabs)
-        setClockOut(data.settings.clockOut)
+        setPayments(data.settings.payments)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load settings')
@@ -46,12 +46,12 @@ export default function TabSettingsPage() {
   }, [loadSettings])
 
   const handleSave = async () => {
-    if (!barTabs || !clockOut) return
+    if (!barTabs || !payments) return
     try {
       setIsSaving(true)
-      const data = await saveSettingsApi({ barTabs, clockOut }, employee?.id)
+      const data = await saveSettingsApi({ barTabs, payments }, employee?.id)
       setBarTabs(data.settings.barTabs)
-      setClockOut(data.settings.clockOut)
+      setPayments(data.settings.payments)
       setIsDirty(false)
       toast.success('Tab settings saved')
     } catch (err) {
@@ -66,16 +66,16 @@ export default function TabSettingsPage() {
     setIsDirty(true)
   }
 
-  const updateClockOut = <K extends keyof ClockOutSettings>(key: K, value: ClockOutSettings[K]) => {
-    setClockOut(prev => prev ? { ...prev, [key]: value } : prev)
+  const updatePayments = <K extends keyof PaymentSettings>(key: K, value: PaymentSettings[K]) => {
+    setPayments(prev => prev ? { ...prev, [key]: value } : prev)
     setIsDirty(true)
   }
 
-  if (isLoading || !barTabs || !clockOut) {
+  if (isLoading || !barTabs || !payments) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
         <AdminPageHeader
-          title="Tabs & Policies"
+          title="Tabs & Pre-Auth"
           subtitle="Loading..."
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
@@ -89,8 +89,8 @@ export default function TabSettingsPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <AdminPageHeader
-        title="Tabs & Policies"
-        subtitle="Bar tab policies, pre-authorization, and clock-out requirements"
+        title="Tabs & Pre-Auth"
+        subtitle="Control how bar tabs are opened, how cards are held, and what happens if a customer leaves without paying."
         breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         actions={
           <div className="flex items-center gap-3">
@@ -120,7 +120,7 @@ export default function TabSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Bar Tab Policies</h2>
-          <p className="text-sm text-gray-500 mb-5">Control how bar tabs are opened and managed.</p>
+          <p className="text-sm text-gray-500 mb-5">Control how tabs are opened and what&apos;s required from customers and staff.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -140,60 +140,162 @@ export default function TabSettingsPage() {
 
             <ToggleRow
               label="Allow Name-Only Tabs"
-              description="Allow opening a tab with just a name, no credit card required"
+              description="Allow opening a tab with just a name, no credit card required. If both are ON, staff can open a tab either way — with a card or with just a name. If Require Card is ON and Allow Name-Only is OFF, a card is always required."
               checked={barTabs.allowNameOnlyTab}
               onChange={v => updateBarTabs('allowNameOnlyTab', v)}
               border
             />
 
-            <div className="flex items-center justify-between py-3">
+            <ToggleRow
+              label="Require Tabs Closed Before Shift End"
+              description="Block an employee's shift close if they have any open tabs or orders"
+              checked={barTabs.requireCloseTabsBeforeShift}
+              onChange={v => updateBarTabs('requireCloseTabsBeforeShift', v)}
+              border
+            />
+
+            <ToggleRow
+              label="Manager Exempt from Tab-Close Requirement"
+              description="Managers can close their shift even if open tabs exist"
+              checked={barTabs.managerExemptFromTabClose}
+              onChange={v => updateBarTabs('managerExemptFromTabClose', v)}
+              border
+            />
+
+            <div className="flex items-center justify-between py-3 border-t border-gray-100">
               <div>
-                <div className="text-sm text-gray-700">Inactivity Warning After (minutes)</div>
-                <div className="text-xs text-gray-400">Show timeout warning when a tab has been inactive for this long</div>
+                <div className="text-sm text-gray-700">Inactivity Warning After</div>
+                <div className="text-xs text-gray-400">Show a reminder when a tab hasn&apos;t had any activity for this long. This is a visual warning only — tabs are never automatically closed.</div>
               </div>
-              <input
-                type="number"
-                min="0"
-                step="15"
-                value={barTabs.tabTimeoutMinutes}
-                onChange={e => updateBarTabs('tabTimeoutMinutes', parseInt(e.target.value) || 0)}
-                aria-label="Inactivity warning minutes"
-                className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="15"
+                  value={barTabs.tabTimeoutMinutes}
+                  onChange={e => updateBarTabs('tabTimeoutMinutes', parseInt(e.target.value) || 0)}
+                  aria-label="Inactivity warning minutes"
+                  className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <span className="text-sm text-gray-500">min</span>
+              </div>
             </div>
           </div>
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 2: Clock-Out Policies
+            Card 2: Pre-Authorization (Bar Tabs)
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Clock-Out Policies</h2>
-          <p className="text-sm text-gray-500 mb-5">Requirements employees must meet before clocking out.</p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Pre-Authorization</h2>
+          <p className="text-sm text-gray-500 mb-5">Pre-authorization temporarily holds an amount on the customer&apos;s card when they open a tab. This reserve is released or converted to a real charge when the tab is closed.</p>
 
           <div className="space-y-0">
             <ToggleRow
-              label="Require All Tabs/Orders Settled"
-              description="Employees cannot clock out with open tabs or unsettled orders"
-              checked={clockOut.requireSettledBeforeClockOut}
-              onChange={v => updateClockOut('requireSettledBeforeClockOut', v)}
+              label="Enable Pre-Auth"
+              description="Hold a reserved amount on the customer's card when a tab is opened. The actual charge happens at close."
+              checked={payments.enablePreAuth}
+              onChange={v => updatePayments('enablePreAuth', v)}
             />
-
             <ToggleRow
-              label="Require All Tips Adjusted"
-              description="Employees must adjust all pending credit card tips before clocking out"
-              checked={clockOut.requireTipsAdjusted}
-              onChange={v => updateClockOut('requireTipsAdjusted', v)}
+              label="Auto-Increment Enabled"
+              description="When a tab gets close to the hold limit, automatically request a new hold to make room for more charges — without interrupting service."
+              checked={payments.autoIncrementEnabled}
+              onChange={v => updatePayments('autoIncrementEnabled', v)}
               border
             />
+          </div>
 
-            <ToggleRow
-              label="Allow Transferring Open Tabs on Clock-Out"
-              description="Employees can transfer their open tabs/orders to another employee when clocking out"
-              checked={clockOut.allowTransferOnClockOut}
-              onChange={v => updateClockOut('allowTransferOnClockOut', v)}
-              border
+          <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+            <NumberRow
+              label="Default Pre-Auth Amount"
+              description="How much to reserve on the customer's card when they open a tab. Most bars use $50–$100. Too low = frequent re-auth requests. Too high = some cards may decline."
+              value={payments.defaultPreAuthAmount}
+              onChange={v => updatePayments('defaultPreAuthAmount', v)}
+              prefix="$"
+              min={1}
+              max={9999}
             />
+            <NumberRow
+              label="Pre-Auth Expiration"
+              description="Days until the card hold is automatically released if the tab is never closed. Most card networks require release within 7 days."
+              value={payments.preAuthExpirationDays}
+              onChange={v => updatePayments('preAuthExpirationDays', v)}
+              suffix="days"
+              min={1}
+              max={30}
+            />
+            <NumberRow
+              label="Increment Threshold"
+              description="When the tab total reaches this percentage of the current hold amount, request an additional authorization. Example: 75% means if the hold is $100 and the tab hits $75, a new hold is requested."
+              value={payments.incrementThresholdPercent}
+              onChange={v => updatePayments('incrementThresholdPercent', v)}
+              suffix="%"
+              min={50}
+              max={100}
+            />
+            <NumberRow
+              label="Increment Amount"
+              description="Fixed dollar amount for each incremental authorization"
+              value={payments.incrementAmount}
+              onChange={v => updatePayments('incrementAmount', v)}
+              prefix="$"
+              min={5}
+              max={500}
+            />
+            <NumberRow
+              label="Tip Buffer"
+              description="Add extra room to the hold to cover a future tip. Example: 20% buffer on a $100 tab holds $120 — the extra $20 covers a typical tip so the final charge won't exceed the hold."
+              value={payments.incrementTipBufferPercent}
+              onChange={v => updatePayments('incrementTipBufferPercent', v)}
+              suffix="%"
+              min={0}
+              max={100}
+            />
+            <NumberRow
+              label="Max Tab Alert"
+              description="Send a manager alert when any open tab exceeds this amount. Useful for catching unusually large orders early."
+              value={payments.maxTabAlertAmount}
+              onChange={v => updatePayments('maxTabAlertAmount', v)}
+              prefix="$"
+              min={0}
+              max={99999}
+            />
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 3: Walkout & Capture Retries
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Walkout & Capture Retries</h2>
+          <p className="text-sm text-gray-500 mb-5">What happens when a tab&apos;s card charge fails — for example, if a customer&apos;s card declines when you try to close their tab.</p>
+
+          <div className="space-y-0">
+            <ToggleRow
+              label="Auto-Flag Walkout After Max Retries"
+              description="After the card fails the set number of times, automatically mark this tab as a walkout (customer left without paying) and stop retrying. The tab will appear in your reports for manual follow-up."
+              checked={barTabs.autoFlagWalkoutAfterDeclines}
+              onChange={v => updateBarTabs('autoFlagWalkoutAfterDeclines', v)}
+            />
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm text-gray-700">Max Capture Retries</div>
+                <div className="text-xs text-gray-400">How many times to retry a failed card charge before giving up and flagging the tab as a walkout.</div>
+              </div>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                value={barTabs.maxCaptureRetries}
+                onChange={e => updateBarTabs('maxCaptureRetries', parseInt(e.target.value) || 3)}
+                aria-label="Max capture retries"
+                className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
           </div>
         </section>
 

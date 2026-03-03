@@ -149,7 +149,7 @@ export default function OrderSettingsPage() {
               </div>
               <div>
                 <div className="text-sm text-gray-700">Order numbers reset daily, starting from 1</div>
-                <div className="text-xs text-gray-400 mt-0.5">Each new business day starts with order #1</div>
+                <div className="text-xs text-gray-400 mt-0.5">Each new business day starts with order #1. The business day resets at midnight in your venue&apos;s timezone (configured in Venue settings).</div>
               </div>
             </div>
 
@@ -200,11 +200,13 @@ export default function OrderSettingsPage() {
                   </button>
                 ))}
               </div>
+              <p className="text-xs text-gray-400 mt-1">Compact fits more items on screen. Large is easier to tap on touchscreens.</p>
             </div>
 
             {/* Items Per Row */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">Menu Items Per Row</label>
+              <p className="text-xs text-gray-400 mb-2">More columns = smaller buttons and more items visible. Fewer columns = larger buttons, easier to tap. Most venues use 4 or 5.</p>
               <div className="flex gap-2">
                 {ITEMS_PER_ROW_OPTIONS.map(opt => (
                   <button
@@ -226,6 +228,7 @@ export default function OrderSettingsPage() {
             {/* Category Size */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">Category Button Size</label>
+              <p className="text-xs text-gray-400 mb-2">Match this to your Menu Item Button Size for a consistent look.</p>
               <div className="flex gap-2">
                 {CATEGORY_SIZE_OPTIONS.map(opt => (
                   <button
@@ -247,6 +250,7 @@ export default function OrderSettingsPage() {
             {/* Order Panel Width */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">Order Panel Width</label>
+              <p className="text-xs text-gray-400 mb-2">Controls the size of the right-side panel showing your current order items.</p>
               <div className="flex gap-2">
                 {ORDER_PANEL_WIDTH_OPTIONS.map(opt => (
                   <button
@@ -269,7 +273,7 @@ export default function OrderSettingsPage() {
             <div className="flex items-center justify-between py-3 border-t border-gray-100">
               <div>
                 <div className="text-sm text-gray-700">Show Prices on Menu Item Buttons</div>
-                <div className="text-xs text-gray-400">Display the price directly on each menu item button</div>
+                <div className="text-xs text-gray-400">If OFF, prices only show in the item detail view. Useful if your menu prices change frequently.</div>
               </div>
               <ToggleSwitch
                 checked={posDisplay.showPriceOnMenuItems}

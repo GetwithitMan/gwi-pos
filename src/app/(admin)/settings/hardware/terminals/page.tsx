@@ -324,28 +324,32 @@ function TerminalStatusBadge({ status }: { status: 'online' | 'stale' | 'offline
       dotClass: 'bg-green-500 animate-pulse',
       textClass: 'text-green-400',
       label: 'Online',
+      tooltip: 'Device is online and responding',
     },
     stale: {
       dotClass: 'bg-yellow-500',
       textClass: 'text-yellow-400',
       label: 'Stale',
+      tooltip: "This device hasn't responded in over 60 seconds. It may be offline or have a network issue.",
     },
     offline: {
       dotClass: 'bg-red-500',
       textClass: 'text-red-400',
       label: 'Offline',
+      tooltip: 'Device is offline',
     },
     unpaired: {
       dotClass: 'bg-slate-500',
       textClass: 'text-slate-500',
       label: 'Not Paired',
+      tooltip: 'Device has not been paired yet',
     },
   }
 
-  const { dotClass, textClass, label } = config[status]
+  const { dotClass, textClass, label, tooltip } = config[status]
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5" title={tooltip}>
       <div className={`w-2 h-2 rounded-full ${dotClass}`} />
       <span className={`text-[10px] font-bold uppercase tracking-wide ${textClass}`}>
         {label}
@@ -462,6 +466,7 @@ function TerminalCard({
         {terminal.deviceInfo?.connectedHardware && (
           <div className="pt-2 border-t border-gray-100 space-y-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Connected Hardware</span>
+            <p className="text-[10px] text-gray-400 mt-0.5">Hardware automatically detected or configured for this terminal.</p>
 
             {/* Card Reader */}
             <div className="flex items-center justify-between text-sm">
@@ -550,7 +555,7 @@ function TerminalCard({
 
         {/* Force All Prints Toggle */}
         <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-200">
-          <span className="text-gray-600">Force All Prints</span>
+          <span className="text-gray-600" title="Force ALL ticket types to print at this station, ignoring role-based skip rules. Use only for troubleshooting.">Emergency Override: Print All</span>
           <button
             onClick={onToggleForce}
             className={`relative w-10 h-5 rounded-full transition-colors ${
@@ -565,7 +570,9 @@ function TerminalCard({
           </button>
         </div>
         {terminal.forceAllPrints && (
-          <p className="text-xs text-red-400">Override active - all tickets will print</p>
+          <div className="rounded bg-amber-50 border border-amber-200 p-2 text-xs text-amber-700">
+            Override is active — all tickets are printing regardless of role rules. Turn OFF when done troubleshooting.
+          </div>
         )}
       </div>
 
@@ -765,6 +772,9 @@ function TerminalModal({
                     </option>
                   ))}
                 </select>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  The receipt printer physically connected to this terminal. Used for customer receipts printed at this station.
+                </p>
               </div>
 
               <div>
@@ -784,7 +794,7 @@ function TerminalModal({
                   ))}
                 </select>
                 <p className="text-[10px] text-gray-500 mt-1">
-                  Bind a scale for weight-based items at this station
+                  Connect a weight scale to this terminal for items priced by weight. The scale automatically measures and calculates the price.
                 </p>
               </div>
             </div>
@@ -797,8 +807,11 @@ function TerminalModal({
                 </svg>
                 Auto-Skip Rules
               </h3>
-              <p className="text-[10px] text-gray-600 mb-4">
-                When an employee with this role logs in at this station, selected ticket types won&apos;t print.
+              <p className="text-[10px] text-gray-600 mb-2">
+                When an employee with a specific role logs in at this station, skip printing certain ticket types. For example: Bartender role → skip Kitchen tickets (bartenders don&apos;t need kitchen print copies of drinks).
+              </p>
+              <p className="text-[10px] text-gray-500 italic mb-4">
+                Example: Set &ldquo;Bartender&rdquo; → Skip &ldquo;Kitchen&rdquo; so drink orders don&apos;t print in the kitchen.
               </p>
 
               <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2">

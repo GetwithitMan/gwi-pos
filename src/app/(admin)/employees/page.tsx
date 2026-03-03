@@ -15,6 +15,20 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
+// Rotating preset colors for new employee avatars
+const EMPLOYEE_COLORS = [
+  '#3B82F6', // blue
+  '#EF4444', // red
+  '#10B981', // emerald
+  '#F59E0B', // amber
+  '#8B5CF6', // violet
+  '#EC4899', // pink
+  '#06B6D4', // cyan
+  '#F97316', // orange
+  '#6366F1', // indigo
+  '#14B8A6', // teal
+]
+
 interface Role {
   id: string
   name: string
@@ -116,6 +130,7 @@ export default function EmployeesPage() {
   }, [currentEmployee?.location?.id, showInactive, loadData])
 
   const openAddModal = () => {
+    const nextColor = EMPLOYEE_COLORS[employees.length % EMPLOYEE_COLORS.length]
     setFormData({
       firstName: '',
       lastName: '',
@@ -127,7 +142,7 @@ export default function EmployeesPage() {
       roleId: roles[0]?.id || '',
       hourlyRate: '',
       hireDate: '',
-      color: '#3B82F6',
+      color: nextColor,
     })
     setAdditionalRoleIds([])
     crudOpenAddModal()
@@ -314,15 +329,20 @@ export default function EmployeesPage() {
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
             />
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded"
-            />
-            Show Inactive
-          </label>
+          <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="rounded"
+              />
+              Show Inactive
+            </label>
+            <p className="text-xs text-gray-400 mt-0.5 ml-6">
+              Inactive employees are hidden from normal lists. Their history and records are preserved.
+            </p>
+          </div>
         </div>
 
         {/* Employee List */}
@@ -394,12 +414,12 @@ export default function EmployeesPage() {
                     size="sm"
                     className="flex-1"
                     onClick={() => router.push(`/employees/${emp.id}/payment`)}
-                    title="Payment & Tax Settings"
+                    title="Set hourly rate, tip eligibility, and payroll tax information for this employee"
                   >
                     <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                     </svg>
-                    Pay
+                    Pay Rate & Tax
                   </Button>
                   <Button
                     variant={emp.isActive ? 'danger' : 'outline'}
@@ -467,7 +487,7 @@ export default function EmployeesPage() {
               className="mt-1"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Shown on orders. Leave blank to use first name + last initial.
+              Optional shortname shown on orders and receipts (e.g., &ldquo;Mike S.&rdquo;). Leave blank to auto-generate from first name + last initial.
             </p>
           </div>
 
@@ -515,6 +535,9 @@ export default function EmployeesPage() {
                 placeholder="4-6 digits"
                 className="mt-1"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                4-6 digit number the employee uses to log in at the POS. Choose something the employee will remember.
+              </p>
             </div>
             <div>
               <Label htmlFor="confirmPin">Confirm PIN</Label>

@@ -94,8 +94,10 @@ export async function performTipAdjustment(params: {
   reason: string
   context: AdjustmentContext
   employeeDeltas?: Array<{ employeeId: string; deltaCents: number }>
+  /** For tip_amount adjustments: update the Payment record's tipAmount and totalAmount */
+  paymentUpdate?: { paymentId: string; tipAmountCents: number }
 }): Promise<AdjustmentResult> {
-  const { locationId, managerId, adjustmentType, reason, context, employeeDeltas } = params
+  const { locationId, managerId, adjustmentType, reason, context, employeeDeltas, paymentUpdate } = params
 
   // 1. Create the TipAdjustment record
   const adjustment = await db.tipAdjustment.create({
@@ -134,6 +136,27 @@ export async function performTipAdjustment(params: {
         type,
         amountCents: Number(ledgerEntry.amountCents),
         ledgerEntryId: ledgerEntry.id,
+      })
+    }
+  }
+
+  // 3. For tip_amount adjustments, update the Payment record
+  if (paymentUpdate) {
+    const payment = await db.payment.findUnique({
+      where: { id: paymentUpdate.paymentId },
+      select: { amount: true },
+    })
+
+    if (payment) {
+      const tipAmountDecimal = paymentUpdate.tipAmountCents / 100
+      const totalAmount = Number(payment.amount) + tipAmountDecimal
+
+      await db.payment.update({
+        where: { id: paymentUpdate.paymentId },
+        data: {
+          tipAmount: tipAmountDecimal,
+          totalAmount,
+        },
       })
     }
   }

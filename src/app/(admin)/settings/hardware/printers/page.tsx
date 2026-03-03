@@ -501,12 +501,14 @@ export default function PrintersPage() {
                   <button
                     onClick={() => setHardwareSettingsPrinter(printer)}
                     className="rounded bg-orange-100 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-200"
+                    title="Format text styles and layout for this printer"
                   >
                     Text & Color
                   </button>
                   <button
                     onClick={() => setVisualEditorPrinter(printer)}
                     className="rounded bg-cyan-100 px-3 py-1.5 text-sm font-medium text-cyan-700 hover:bg-cyan-200"
+                    title="Use a visual layout editor to design this printer's output"
                   >
                     Visual Editor
                   </button>
@@ -551,8 +553,8 @@ export default function PrintersPage() {
                     }
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
                   >
-                    <option value="thermal">Thermal (TM-T88)</option>
-                    <option value="impact">Impact (TM-U220)</option>
+                    <option value="thermal">Thermal (Epson TM-T88 style) — Fast, quiet, modern receipt printer</option>
+                    <option value="impact">Impact (Epson TM-U220 style) — Slower, louder, supports duplicate paper copies</option>
                   </select>
                 </div>
                 <div>
@@ -609,6 +611,9 @@ export default function PrintersPage() {
                   />
                 </div>
               </div>
+              <p className="text-xs text-gray-500 -mt-2">
+                Default port is 9100 (standard for network receipt printers). Check your printer&apos;s manual or network settings if unsure.
+              </p>
 
               {/* Paper Width */}
               <div>
@@ -618,9 +623,9 @@ export default function PrintersPage() {
                   onChange={(e) => setFormData({ ...formData, paperWidth: parseInt(e.target.value) })}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
                 >
-                  <option value={80}>80mm (Standard)</option>
-                  <option value={58}>58mm (Narrow)</option>
-                  <option value={40}>40mm (Kitchen)</option>
+                  <option value={80}>80mm — Standard (Receipts)</option>
+                  <option value={58}>58mm — Narrow</option>
+                  <option value={40}>40mm — Narrow (Kitchen tickets)</option>
                 </select>
               </div>
 
@@ -635,15 +640,20 @@ export default function PrintersPage() {
                   />
                   <span className="text-sm text-gray-700">Default for role</span>
                 </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formData.supportsCut}
-                    onChange={(e) => setFormData({ ...formData, supportsCut: e.target.checked })}
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  <span className="text-sm text-gray-700">Supports paper cut</span>
-                </label>
+                <div>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.supportsCut}
+                      onChange={(e) => setFormData({ ...formData, supportsCut: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">Supports paper cut</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 mt-0.5">
+                    Enable if this printer has an auto-cutter that separates receipts automatically. Most thermal printers support this.
+                  </p>
+                </div>
               </div>
             </div>
 

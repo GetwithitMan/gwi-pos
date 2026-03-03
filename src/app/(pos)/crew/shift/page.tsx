@@ -5,6 +5,23 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 
+interface ShiftTipGroupSummary {
+  hasGroup: boolean
+  groups: Array<{
+    groupId: string
+    splitMode: string
+    segments: Array<{
+      segmentId: string
+      startedAt: string
+      endedAt: string | null
+      memberCount: number
+      sharePercent: number | null
+    }>
+    totalEarnedCents: number
+  }>
+  totalGroupEarnedCents: number
+}
+
 interface ShiftReport {
   employee: { id: string; name: string; role: string }
   shift: { id: string | null; clockIn: string; clockOut: string; hours: number; hourlyRate: number; laborCost: number }
@@ -20,6 +37,7 @@ export default function CrewShiftReportPage() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
   const [report, setReport] = useState<ShiftReport | null>(null)
+  const [tipGroupSummary, setTipGroupSummary] = useState<ShiftTipGroupSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,12 +55,26 @@ export default function CrewShiftReportPage() {
     if (!employee) return
     setLoading(true)
     setError(null)
-    fetch(`/api/reports/employee-shift?employeeId=${employee.id}&locationId=${employee.location.id}&date=${selectedDate}&requestingEmployeeId=${employee.id}`)
-      .then(res => {
-        if (!res.ok) throw new Error('Failed to load shift report')
-        return res.json()
+
+    const shiftFetch = fetch(
+      `/api/reports/employee-shift?employeeId=${employee.id}&locationId=${employee.location.id}&date=${selectedDate}&requestingEmployeeId=${employee.id}`
+    )
+    const tipGroupFetch = fetch(
+      `/api/tips/my-shift-summary?employeeId=${employee.id}&locationId=${employee.location.id}&date=${selectedDate}`
+    )
+
+    Promise.all([shiftFetch, tipGroupFetch])
+      .then(async ([shiftRes, tipGroupRes]) => {
+        if (!shiftRes.ok) throw new Error('Failed to load shift report')
+        const shiftData = await shiftRes.json()
+        setReport(shiftData.data || shiftData)
+
+        // Tip group summary is optional — don't fail the whole page if it errors
+        if (tipGroupRes.ok) {
+          const tipGroupData = await tipGroupRes.json()
+          setTipGroupSummary(tipGroupData.data ?? null)
+        }
       })
-      .then(data => setReport(data.data || data))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [employee, selectedDate])
@@ -217,6 +249,65 @@ export default function CrewShiftReportPage() {
                 <div className="flex justify-between border-t border-white/10 pt-3 mt-3">
                   <span className="text-white font-semibold">Net Tips</span>
                   <span className="text-emerald-400 font-semibold">{formatCurrency(report.tipShares.netTips)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Tip Group Earnings Section */}
+            {tipGroupSummary?.hasGroup && tipGroupSummary.groups.length > 0 && (
+              <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-6 mt-4">
+                <h3 className="text-white font-semibold mb-1">Tip Group Earnings</h3>
+                <p className="text-white/40 text-xs mb-4">
+                  Tips earned through tip pools you participated in this shift.
+                </p>
+
+                {tipGroupSummary.groups.map((group) => (
+                  <div key={group.groupId} className="space-y-3">
+                    {/* Segments */}
+                    {group.segments.length > 0 && (
+                      <div className="space-y-2">
+                        {group.segments.map((seg) => {
+                          const start = new Date(seg.startedAt).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true,
+                          })
+                          const end = seg.endedAt
+                            ? new Date(seg.endedAt).toLocaleTimeString('en-US', {
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true,
+                              })
+                            : 'Now'
+
+                          return (
+                            <div
+                              key={seg.segmentId}
+                              className="flex items-center justify-between text-sm py-2 px-3 rounded-xl bg-white/5"
+                            >
+                              <div>
+                                <div className="text-white/70 text-xs">
+                                  {start} – {end}
+                                </div>
+                                <div className="text-white/40 text-xs mt-0.5">
+                                  {seg.memberCount} member{seg.memberCount !== 1 ? 's' : ''} in pool
+                                  {seg.sharePercent !== null ? ` · ${seg.sharePercent}% share` : ''}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Total */}
+                <div className="flex justify-between border-t border-white/10 pt-3 mt-3">
+                  <span className="text-white font-semibold">Group Tips Earned</span>
+                  <span className="text-emerald-400 font-semibold">
+                    {formatCurrency(tipGroupSummary.totalGroupEarnedCents / 100)}
+                  </span>
                 </div>
               </div>
             )}

@@ -278,7 +278,10 @@ export default function HardwareDashboard() {
             {/* KDS Screens Section */}
             <div className="rounded-xl bg-white p-6 shadow">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-900">KDS Screens</h2>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Kitchen Display Screens (KDS)</h2>
+                  <p className="text-sm text-gray-500">Digital screens mounted in the kitchen that show incoming orders. Replace printed kitchen tickets.</p>
+                </div>
                 <Link
                   href="/settings/hardware/kds-screens"
                   className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
@@ -393,9 +396,9 @@ export default function HardwareDashboard() {
                   {terminals.map((terminal) => {
                     const liveStatus = getTerminalLiveStatus(terminal)
                     const statusConfig = {
-                      online: { dot: 'bg-green-500 animate-pulse', text: 'Online', textClass: 'text-green-700' },
-                      stale: { dot: 'bg-yellow-500', text: 'Stale', textClass: 'text-yellow-700' },
-                      offline: { dot: 'bg-red-500', text: 'Offline', textClass: 'text-red-700' },
+                      online: { dot: 'bg-green-500 animate-pulse', text: 'Online', textClass: 'text-green-700', tooltip: 'Device is online and responding' },
+                      stale: { dot: 'bg-yellow-500', text: 'Stale', textClass: 'text-yellow-700', tooltip: "Device hasn't checked in for over 60 seconds. It may be offline or slow to respond." },
+                      offline: { dot: 'bg-red-500', text: 'Offline', textClass: 'text-red-700', tooltip: 'Device is offline or not paired' },
                     }
                     const status = statusConfig[liveStatus]
 
@@ -408,7 +411,7 @@ export default function HardwareDashboard() {
                         <div className="flex items-center gap-2">
                           <div
                             className={`h-3 w-3 rounded-full ${status.dot}`}
-                            title={status.text}
+                            title={status.tooltip}
                           />
                           <h3 className="font-medium text-gray-900">{terminal.name}</h3>
                         </div>
@@ -531,7 +534,7 @@ export default function HardwareDashboard() {
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Scales</h2>
                   <p className="text-sm text-gray-500">
-                    Weight scales for sold-by-weight items
+                    Scales connect to a terminal and automatically calculate price for items sold by weight — such as deli items, bulk goods, or specialty cuts.
                   </p>
                 </div>
                 <Link

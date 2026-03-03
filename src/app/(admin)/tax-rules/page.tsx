@@ -307,7 +307,7 @@ export default function TaxRulesPage() {
             >
               <option value="all">All Items</option>
               <option value="category">Specific Categories</option>
-              <option value="item">Specific Items</option>
+              {/* TODO: Specific Items picker not yet implemented */}
             </select>
           </div>
 
@@ -350,24 +350,32 @@ export default function TaxRulesPage() {
                 onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
                 className="w-full border rounded px-3 py-2"
               />
-              <p className="text-xs text-gray-400 mt-1">Lower = applied first</p>
+              <p className="text-xs text-gray-400 mt-1">Lower numbers are applied first. Only matters if you have Compounded taxes — the first tax becomes part of the base for the next.</p>
             </div>
             <div className="space-y-2 pt-6">
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={formData.isCompounded}
                   onChange={(e) => setFormData({ ...formData, isCompounded: e.target.checked })}
+                  className="mt-0.5"
                 />
-                Compounded (tax on tax)
+                <span>
+                  Compounded (tax on tax)
+                  <span className="block text-xs text-gray-400 mt-0.5">This tax is calculated on top of other taxes, not just the subtotal. Example: 7% state tax on $100 = $7.00, then 1% county tax on $107.00 = $1.07. Most US venues leave this OFF.</span>
+                </span>
               </label>
-              <label className="flex items-center gap-2 text-sm">
+              <label className="flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={formData.isInclusive}
                   onChange={(e) => setFormData({ ...formData, isInclusive: e.target.checked })}
+                  className="mt-0.5"
                 />
-                Tax-inclusive pricing
+                <span>
+                  Tax-inclusive pricing
+                  <span className="block text-xs text-gray-400 mt-0.5">The prices you show customers already include tax (common in UK/EU/Australia). Leave OFF if you add tax at checkout like most US venues.</span>
+                </span>
               </label>
             </div>
           </div>

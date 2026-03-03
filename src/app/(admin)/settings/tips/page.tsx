@@ -34,10 +34,10 @@ interface RoleOption {
 // ────────────────────────────────────────────
 
 const BASIS_OPTIONS: { value: TipBankSettings['tipGuide']['basis']; label: string; description: string }[] = [
-  { value: 'pre_discount', label: 'Pre-Discount', description: 'Tips calculated on subtotal before discounts/promos' },
-  { value: 'gross_subtotal', label: 'Gross Subtotal', description: 'Tips calculated on subtotal after discounts' },
-  { value: 'net_total', label: 'Net Total', description: 'Tips calculated on total including tax' },
-  { value: 'custom', label: 'Custom', description: 'Tips calculated on custom rules (future)' },
+  { value: 'pre_discount', label: 'Before Discounts (Most Common)', description: 'Suggested tip is based on the original subtotal before any discounts are applied.' },
+  { value: 'gross_subtotal', label: 'After Discounts', description: 'Suggested tip is based on the subtotal after discounts.' },
+  { value: 'net_total', label: 'Including Tax', description: 'Suggested tip is based on the total including tax. Results in slightly higher suggested amounts.' },
+  /* TODO: custom basis not yet implemented */
 ]
 
 const ROUND_TO_OPTIONS: { value: TipBankSettings['tipGuide']['roundTo']; label: string }[] = [
@@ -48,19 +48,30 @@ const ROUND_TO_OPTIONS: { value: TipBankSettings['tipGuide']['roundTo']; label: 
 ]
 
 const ALLOCATION_OPTIONS: { value: TipBankSettings['allocationMode']; label: string; description: string }[] = [
-  { value: 'ITEM_BASED', label: 'Item-Based', description: 'Tips allocated based on which employee rang in each item' },
-  { value: 'CHECK_BASED', label: 'Check-Based', description: 'Tips allocated to the employee who owns the check' },
+  { value: 'ITEM_BASED', label: 'By Who Served Each Item', description: 'Tips are distributed based on which employee added each item to the order.' },
+  { value: 'CHECK_BASED', label: 'By Who Owns the Bill', description: 'The employee who owns the overall check receives tip credit for the whole bill.' },
 ]
 
 const ATTRIBUTION_TIMING_OPTIONS: { value: TipBankSettings['tipAttributionTiming']; label: string; description: string }[] = [
-  { value: 'check_opened', label: 'When Check Opened', description: 'Credit goes to the group/employee active when the order was created' },
-  { value: 'check_closed', label: 'When Check Closed', description: 'Credit goes to the group/employee active when payment is processed (recommended for bars)' },
-  { value: 'check_both', label: 'Both (Proportional)', description: 'Split credit between the group at open-time and close-time (for late-night handoff scenarios)' },
+  { value: 'check_opened', label: 'When Check Opened', description: 'The shift active when the check was created gets 100% of the tip credit.' },
+  { value: 'check_closed', label: 'When Check Closed', description: '(Default) The shift active when payment is processed gets 100% of the tip credit. Best for bar tabs.' },
+  { value: 'check_both', label: 'Split (Opened + Closed)', description: 'Tip is split equally between the shift at opening and the shift at closing.' },
+  { value: 'per_item', label: 'Per Item (Proportional)', description: 'Most fair for long-running tabs. Example: If $50 of drinks were ordered during Shift A and $30 during Shift B, a $10 tip is split $6.25 to Shift A and $3.75 to Shift B \u2014 based on actual revenue earned each shift.' },
+]
+
+const LATE_TAB_TIP_OPTIONS: { value: TipBankSettings['lateTabTipHandling']; label: string; description: string }[] = [
+  { value: 'pool_period', label: 'Pool Period (Recommended)', description: "Tips are credited back to the same shift's pool \u2014 as if the team was still active. Recommended for most venues." },
+  { value: 'personal_bank', label: 'Personal Tip Bank', description: "Tips go directly to the primary server's personal tip bank for later payout." },
+]
+
+const ATTRIBUTION_MODEL_OPTIONS: { value: TipBankSettings['attributionModel']; label: string; description: string }[] = [
+  { value: 'primary_100', label: 'Primary Server Gets Full Tip', description: 'The main server who owns the check receives 100% of the tip credit.' },
+  { value: 'primary_70_assist_30', label: 'Primary 70% + Support Staff 30%', description: 'The main server gets 70% and the remaining 30% is split among any assisting staff.' },
 ]
 
 const CHARGEBACK_OPTIONS: { value: TipBankSettings['chargebackPolicy']; label: string; description: string }[] = [
-  { value: 'BUSINESS_ABSORBS', label: 'Business Absorbs', description: 'The business absorbs all chargeback costs -- tips already paid are not clawed back' },
-  { value: 'EMPLOYEE_CHARGEBACK', label: 'Employee Chargeback', description: 'Chargeback amount is deducted from the employee\'s future tip bank balance' },
+  { value: 'BUSINESS_ABSORBS', label: 'Business Absorbs', description: 'The business covers the cost of chargebacks. Tips already paid to employees are not clawed back. This is the most common and legally safe choice.' },
+  { value: 'EMPLOYEE_CHARGEBACK', label: 'Employee Chargeback', description: 'Chargeback amount is deducted from the employee\'s future tip bank balance.' },
 ]
 
 // ────────────────────────────────────────────
@@ -301,10 +312,10 @@ export default function TipSettingsPage() {
 
   const getRoleName = (roleId: string) => roles.find(r => r.id === roleId)?.name ?? roleId
 
-  const SPLIT_MODE_OPTIONS: { value: TipGroupTemplate['defaultSplitMode']; label: string }[] = [
-    { value: 'equal', label: 'Equal' },
-    { value: 'hours_weighted', label: 'Hours Weighted' },
-    { value: 'role_weighted', label: 'Role Weighted' },
+  const SPLIT_MODE_OPTIONS: { value: TipGroupTemplate['defaultSplitMode']; label: string; description: string }[] = [
+    { value: 'equal', label: 'Equal', description: 'Every team member gets the same share, regardless of how long they worked.' },
+    { value: 'hours_weighted', label: 'Hours Weighted', description: 'Team members who worked more hours get a larger share. Fairest for teams with different shift lengths.' },
+    { value: 'role_weighted', label: 'Role Weighted', description: 'Each role (bartender, server, host) gets a different share percentage. Set role tip weights in Roles & Permissions.' },
   ]
 
   // ──── Loading state ────
@@ -435,7 +446,7 @@ export default function TipSettingsPage() {
           <div className="flex items-center justify-between py-3 border-t border-gray-100">
             <div>
               <div className="text-sm text-gray-700">Show Basis Explanation on Receipt</div>
-              <div className="text-xs text-gray-400">Display text like &quot;(on $X pre-discount)&quot; next to tip suggestions</div>
+              <div className="text-xs text-gray-400">Print a small note on the receipt showing what the tip suggestions are based on (e.g., &quot;tip suggested on $45.50 before discounts&quot;).</div>
             </div>
             <ToggleSwitch
               checked={tipBank.tipGuide.showBasisExplanation}
@@ -445,7 +456,8 @@ export default function TipSettingsPage() {
 
           {/* Round To selector */}
           <div className="pt-3 border-t border-gray-100">
-            <label className="block text-sm font-medium text-gray-600 mb-2">Round Suggested Tips To</label>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Round Suggested Tips To</label>
+            <p className="text-xs text-gray-400 mb-2">Round suggested tip amounts to the nearest penny, nickel, dime, or quarter. &quot;Quarter&quot; keeps amounts like $4.00 or $4.25, which is easier for cash payments.</p>
             <div className="flex gap-2 flex-wrap">
               {ROUND_TO_OPTIONS.map(opt => (
                 <button
@@ -512,20 +524,20 @@ export default function TipSettingsPage() {
           <div className="space-y-0 mt-4 border-t border-gray-100">
             <ToggleRow
               label="Pool Cash Tips"
-              description="Include cash tips in the tip pool for redistribution"
+              description="If ON, cash tips go into the shared pool along with credit card tips. If OFF, employees keep their own cash tips and only card tips are pooled. Discuss with your team before changing this."
               checked={tipBank.poolCashTips}
               onChange={v => updateTipBank('poolCashTips', v)}
             />
             <ToggleRow
               label="Allow Manager in Pools"
-              description="Allow managers and supervisors to participate in tip pools"
+              description="Allow managers and supervisors to receive a share of the tip pool. Note: Check your local labor laws \u2014 some jurisdictions restrict managers from participating in tip pools."
               checked={tipBank.allowManagerInPools}
               onChange={v => updateTipBank('allowManagerInPools', v)}
               border
             />
             <ToggleRow
               label="Allow Negative Balances"
-              description="Allow tip bank balances to go below zero (chargebacks may cause this)"
+              description="Allow an employee's tip balance to go negative (e.g., if a chargeback is larger than their current tips). See Chargeback Policy below for how chargebacks are handled."
               checked={tipBank.allowNegativeBalances}
               onChange={v => updateTipBank('allowNegativeBalances', v)}
               border
@@ -562,7 +574,7 @@ export default function TipSettingsPage() {
                 <div className={`text-sm font-medium ${tipBank.tableTipOwnershipMode === 'PRIMARY_SERVER_OWNS_ALL' ? 'text-indigo-600' : 'text-gray-700'}`}>
                   Primary Server Owns All
                 </div>
-                <div className="text-xs text-gray-400 mt-0.5">100% of tip goes to primary server; helpers paid via tip-outs only</div>
+                <div className="text-xs text-gray-400 mt-0.5">100% of the tip goes to the primary server. Other staff (bartenders, hosts) are only paid through tip-outs. Make sure Tip Distribution (tip-outs) is configured below.</div>
               </button>
             </div>
           </div>
@@ -570,16 +582,23 @@ export default function TipSettingsPage() {
           {/* Standalone + Employee Groups toggles */}
           <div className="space-y-0 mt-4 border-t border-gray-100">
             <ToggleRow
-              label="Allow Stand-Alone Servers"
-              description="Employees can opt out of team pools at clock-in and keep their own tips"
+              label="Allow Standalone Servers"
+              description="Let individual employees opt out of the tip pool at clock-in and keep 100% of their own tips. Other pool members are not affected by this choice."
               checked={tipBank.allowStandaloneServers}
               onChange={v => updateTipBank('allowStandaloneServers', v)}
             />
             <ToggleRow
               label="Allow Employee-Created Groups"
-              description="Employees can create ad-hoc tip groups outside of admin-defined teams"
+              description="Let employees create their own tip-sharing teams at clock-in. If OFF, only admin-configured teams (set in Tip Group Teams below) are available. Turning this ON gives employees more flexibility but requires trust in your team."
               checked={tipBank.allowEmployeeCreatedGroups}
               onChange={v => updateTipBank('allowEmployeeCreatedGroups', v)}
+              border
+            />
+            <ToggleRow
+              label="Show 'No Tip' Quick Button"
+              description="When ON, a '$0 Tip' button appears on the tip prompt. When OFF, customers must tap Custom and manually type 0 to skip the tip. Default is OFF to encourage tipping."
+              checked={tipBank.noTipQuickButton}
+              onChange={v => updateTipBank('noTipQuickButton', v)}
               border
             />
           </div>
@@ -590,7 +609,8 @@ export default function TipSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Chargeback Policy</h2>
-          <p className="text-sm text-gray-500 mb-5">Determine who bears the cost when a chargeback occurs on a tipped transaction.</p>
+          <p className="text-sm text-gray-500 mb-3">Determine who bears the cost when a chargeback occurs on a tipped transaction.</p>
+          <p className="text-xs text-gray-400 mb-5 p-3 rounded-lg bg-gray-50 border border-gray-200">A chargeback happens when a customer disputes a credit card charge with their bank, and the bank takes the money back.</p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {CHARGEBACK_OPTIONS.map(opt => (
@@ -606,8 +626,16 @@ export default function TipSettingsPage() {
               >
                 <div className={`text-sm font-medium ${tipBank.chargebackPolicy === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
                   {opt.label}
+                  {opt.value === 'EMPLOYEE_CHARGEBACK' && (
+                    <span className="ml-2 text-xs font-bold text-amber-600">&#9888;&#65039; May be illegal in some states</span>
+                  )}
                 </div>
-                <div className="text-xs text-gray-400 mt-1">{opt.description}</div>
+                <div className="text-xs text-gray-400 mt-1">
+                  {opt.description}
+                  {opt.value === 'EMPLOYEE_CHARGEBACK' && (
+                    <span className="block mt-1 text-amber-500 font-medium">Consult an employment attorney before enabling. If selected, tips already paid to employees may be deducted to cover the chargeback amount.</span>
+                  )}
+                </div>
               </button>
             ))}
           </div>
@@ -617,8 +645,8 @@ export default function TipSettingsPage() {
             Section 4: Tip Share Settings
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Tip Shares</h2>
-          <p className="text-sm text-gray-500 mb-5">Control how tip-outs are distributed and reported.</p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Tip Distribution (Tip-Outs)</h2>
+          <p className="text-sm text-gray-500 mb-5">Automatically share a portion of each server&apos;s tips with supporting staff &mdash; bartenders, hosts, bussers, etc.</p>
 
           {/* Payout Method */}
           <label className="block text-sm font-medium text-gray-600 mb-2">Payout Method</label>
@@ -635,7 +663,7 @@ export default function TipSettingsPage() {
               <div className={`text-sm font-medium ${tipShares.payoutMethod === 'payroll' ? 'text-indigo-600' : 'text-gray-700'}`}>
                 Payroll
               </div>
-              <div className="text-xs text-gray-400 mt-0.5">Tip shares automatically added to payroll</div>
+              <div className="text-xs text-gray-400 mt-0.5">Tip shares are held by the business and added to employees&apos; next paycheck (subject to payroll taxes). The business temporarily holds the money.</div>
             </button>
             <button
               type="button"
@@ -649,7 +677,7 @@ export default function TipSettingsPage() {
               <div className={`text-sm font-medium ${tipShares.payoutMethod === 'manual' ? 'text-indigo-600' : 'text-gray-700'}`}>
                 Manual
               </div>
-              <div className="text-xs text-gray-400 mt-0.5">Use the tip share report to mark paid manually</div>
+              <div className="text-xs text-gray-400 mt-0.5">You hand cash directly to employees at shift end. Use the Tip Share Report to track amounts owed and mark them as paid.</div>
             </button>
           </div>
 
@@ -682,15 +710,15 @@ export default function TipSettingsPage() {
             Section 5: CC Fee Deduction
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">CC Fee Deduction</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Credit Card Processing Fee Deduction</h2>
           <p className="text-sm text-gray-500 mb-5">Optionally deduct credit card processing fees from tips paid by card before crediting the employee.</p>
 
           <div className="space-y-4">
             {/* Toggle */}
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-gray-700">Deduct CC Fees from Tips</div>
-                <div className="text-xs text-gray-400">When enabled, CC tips are reduced by the processing fee before going into the employee&apos;s tip bank</div>
+                <div className="text-sm text-gray-700">Deduct CC Fee from Tips</div>
+                <div className="text-xs text-gray-400">Reduce credit card tips by the processing fee before crediting to employees. Example: 3% fee on a $100 CC tip = employee receives $97. This applies to credit card tips ONLY &mdash; cash tips are not affected.</div>
               </div>
               <ToggleSwitch
                 checked={tipBank.deductCCFeeFromTips}
@@ -734,7 +762,7 @@ export default function TipSettingsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm text-gray-700">Allow Cash Out at Shift Close</div>
-                <div className="text-xs text-gray-400">Employees can cash out their available tip bank balance when closing their shift</div>
+                <div className="text-xs text-gray-400">Let employees receive their tip payout in cash at the end of their shift. If OFF, tips are held for payroll.</div>
               </div>
               <ToggleSwitch
                 checked={tipBank.allowEODCashOut}
@@ -757,11 +785,15 @@ export default function TipSettingsPage() {
             )}
 
             {/* Default payout method */}
-            <div>
+            <div className={!tipBank.allowEODCashOut ? 'opacity-50 pointer-events-none' : ''}>
               <label className="block text-sm font-medium text-gray-600 mb-2">Default Payout Method</label>
+              {!tipBank.allowEODCashOut && (
+                <p className="text-xs text-amber-600 mb-2">This setting only applies when &quot;Allow Cash Out at Shift Close&quot; is enabled above. If cash out is OFF, all tips go to payroll regardless of this setting.</p>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
+                  disabled={!tipBank.allowEODCashOut}
                   onClick={() => updateTipBank('defaultPayoutMethod', 'cash')}
                   className={`text-left p-4 rounded-xl border transition-all ${
                     tipBank.defaultPayoutMethod === 'cash'
@@ -772,10 +804,11 @@ export default function TipSettingsPage() {
                   <div className={`text-sm font-medium ${tipBank.defaultPayoutMethod === 'cash' ? 'text-green-600' : 'text-gray-700'}`}>
                     Cash (Recommended)
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">Employee takes tips in cash at end of shift. Business doesn&apos;t hold onto tip money.</div>
+                  <div className="text-xs text-gray-400 mt-1">Employee receives tip cash at shift end (recommended &mdash; employees own their tips immediately).</div>
                 </button>
                 <button
                   type="button"
+                  disabled={!tipBank.allowEODCashOut}
                   onClick={() => updateTipBank('defaultPayoutMethod', 'payroll')}
                   className={`text-left p-4 rounded-xl border transition-all ${
                     tipBank.defaultPayoutMethod === 'payroll'
@@ -786,7 +819,7 @@ export default function TipSettingsPage() {
                   <div className={`text-sm font-medium ${tipBank.defaultPayoutMethod === 'payroll' ? 'text-indigo-600' : 'text-gray-700'}`}>
                     Payroll
                   </div>
-                  <div className="text-xs text-gray-400 mt-1">Tips accumulate in the tip bank and are paid out during the next payroll cycle.</div>
+                  <div className="text-xs text-gray-400 mt-1">Tips are added to the employee&apos;s next paycheck. The business holds the money until payday.</div>
                 </button>
               </div>
             </div>
@@ -797,8 +830,8 @@ export default function TipSettingsPage() {
             Section 7: Tip Group Attribution Timing
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Tip Group Attribution</h2>
-          <p className="text-sm text-gray-500 mb-5">When a check is opened by one group and closed by another (e.g., shift handoff), which group gets credit for the tip?</p>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Tip Credit &mdash; When a Check Spans Two Shifts</h2>
+          <p className="text-sm text-gray-500 mb-5">If a check is opened by one shift and closed by another, this setting decides which shift gets the tip credit.</p>
 
           <div className="grid grid-cols-1 gap-3">
             {ATTRIBUTION_TIMING_OPTIONS.map(opt => (
@@ -825,6 +858,56 @@ export default function TipSettingsPage() {
               <span className="font-semibold">Note:</span> When using hours-weighted group splits, attribution timing has minimal impact because all group tips are pooled and divided by hours worked at the end of the night.
             </p>
           </div>
+
+          {/* Late Tab Tip Handling */}
+          <div className="pt-4 mt-4 border-t border-gray-100">
+            <label className="block text-sm font-medium text-gray-600 mb-1">Tips from Tabs Closed After Shift Ends</label>
+            <p className="text-xs text-gray-400 mb-3">When the last team member clocks out, some tabs may still be open. When those tabs eventually close, where do the tips go?</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {LATE_TAB_TIP_OPTIONS.map(opt => (
+                <button
+                  type="button"
+                  key={opt.value}
+                  onClick={() => updateTipBank('lateTabTipHandling', opt.value)}
+                  className={`text-left p-4 rounded-xl border transition-all ${
+                    tipBank.lateTabTipHandling === opt.value
+                      ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                      : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                  }`}
+                >
+                  <div className={`text-sm font-medium ${tipBank.lateTabTipHandling === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
+                    {opt.label}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">{opt.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Attribution Model */}
+          <div className="pt-4 mt-4 border-t border-gray-100">
+            <label className="block text-sm font-medium text-gray-600 mb-1">When Multiple Staff Are on a Check</label>
+            <p className="text-xs text-gray-400 mb-3">If more than one employee is credited on a check, how is the tip split between them?</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {ATTRIBUTION_MODEL_OPTIONS.map(opt => (
+                <button
+                  type="button"
+                  key={opt.value}
+                  onClick={() => updateTipBank('attributionModel', opt.value)}
+                  className={`text-left p-4 rounded-xl border transition-all ${
+                    tipBank.attributionModel === opt.value
+                      ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                      : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                  }`}
+                >
+                  <div className={`text-sm font-medium ${tipBank.attributionModel === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
+                    {opt.label}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">{opt.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
         </section>
 
         {/* ═══════════════════════════════════════════
@@ -841,7 +924,8 @@ export default function TipSettingsPage() {
               Add Team
             </button>
           </div>
-          <p className="text-sm text-gray-500 mb-5">Define team pools for tip sharing (e.g., Upstairs, Downstairs, Bar). Employees choose their team at clock-in.</p>
+          <p className="text-sm text-gray-500 mb-3">Define team pools for tip sharing (e.g., Upstairs, Downstairs, Bar). Employees choose their team at clock-in.</p>
+          <p className="text-xs text-gray-400 mb-5 p-3 rounded-lg bg-gray-50 border border-gray-200">Employees choose their team at clock-in. They can switch teams between shifts but not mid-shift.</p>
 
           {templatesLoading ? (
             <div className="text-gray-400 text-sm py-4 text-center">Loading teams...</div>
@@ -870,7 +954,7 @@ export default function TipSettingsPage() {
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {t.allowedRoleIds.length === 0 ? (
-                        <span className="text-xs text-gray-400">All roles</span>
+                        <span className="text-xs text-gray-400">Any employee can choose this team at clock-in</span>
                       ) : (
                         t.allowedRoleIds.map(rid => (
                           <span key={rid} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100">
@@ -968,7 +1052,7 @@ export default function TipSettingsPage() {
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-600 mb-2">
                   Allowed Roles
-                  <span className="text-xs text-gray-400 font-normal ml-1">(leave empty for all roles)</span>
+                  <span className="text-xs text-gray-400 font-normal ml-1">(if no roles are selected, any employee can choose this team at clock-in)</span>
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {roles.map(role => {

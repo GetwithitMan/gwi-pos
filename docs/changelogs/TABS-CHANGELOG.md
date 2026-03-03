@@ -1,5 +1,21 @@
 # Tabs & Bottle Service Domain Changelog
 
+## 2026-03-03 — Tab Nickname Feature
+
+### Added
+- `Order.tabNickname` field — bartender-assigned display name for a tab, separate from the cardholder name
+- `PUT /api/tabs/[id]` now accepts `tabNickname` in request body
+- Android: `CachedOrderEntity.tabNickname`, DB migration 34→35 (ALTER TABLE cached_orders ADD COLUMN tabNickname TEXT)
+- Android: `NewTabDialog` reworked — card-present flow shows read-only card name + editable "Known As" field; name-only flow shows "Known As" as primary required input
+- Android: `TabListSheet` displays nickname-first, card name as gray subtitle when set and different
+
+### Design
+- `tabName` = cardholder name from payment processor (never modified after card swipe)
+- `tabNickname` = bartender's display name ("Big Mike", "Corner Booth Guy")
+- Both retained: tabName for payment records, tabNickname for day-to-day display
+
+---
+
 ## 2026-02-26 — Mobile Tabs Page Refactor (`af58ee4`)
 
 ### View Modes

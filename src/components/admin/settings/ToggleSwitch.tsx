@@ -1,12 +1,13 @@
-export function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+export function ToggleSwitch({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
-      onClick={() => onChange(!checked)}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
       className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
-        checked ? 'bg-indigo-600' : 'bg-gray-300'
+        disabled ? 'bg-gray-200 cursor-not-allowed opacity-50' : checked ? 'bg-indigo-600' : 'bg-gray-300'
       }`}
     >
       <span
