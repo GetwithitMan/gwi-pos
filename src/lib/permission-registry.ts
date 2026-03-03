@@ -512,6 +512,17 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     applicableTo: ['FOH', 'ADMIN'],
     risk: 'MED',
   },
+  'staff.scheduling': {
+    label: 'Scheduling',
+    description: 'Lets this employee view and manage the employee schedule.',
+    details: [
+      'Can view published schedules and shift assignments',
+      'Includes availability requests and shift trades',
+    ],
+    tab: 'TEAM_TIME',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+  },
   'scheduling.manage': {
     label: 'Manage Schedule',
     description: 'Lets this employee create and edit the employee schedule.',
@@ -603,6 +614,94 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     applicableTo: ['ADMIN'],
     risk: 'CRITICAL',
   },
+  'reports.commission': {
+    label: 'Commission Reports',
+    description: 'Lets this employee view commission earnings by employee.',
+    details: [
+      'Shows per-employee commission totals and rates',
+      'Contains sensitive compensation data',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+  },
+  'reports.product_mix': {
+    label: 'Product Mix',
+    description: 'Lets this employee see how many of each item was sold.',
+    details: [
+      'Shows quantity sold and revenue per menu item',
+      'Useful for menu engineering and purchasing decisions',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['BOH', 'ADMIN'],
+    risk: 'MED',
+  },
+  'reports.inventory': {
+    label: 'Inventory Reports',
+    description: 'Lets this employee view stock level and usage reports.',
+    details: [
+      'Shows current stock, usage rates, and variance from par',
+      'Read-only — cannot modify inventory from this view',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['BOH', 'ADMIN'],
+    risk: 'MED',
+  },
+  'reports.tabs': {
+    label: 'Tab Reports',
+    description: 'Lets this employee view open and closed tab history.',
+    details: [
+      'Shows tab details including customer names and amounts',
+      'Includes pre-auth holds and final settled amounts',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+  },
+  'reports.paid_in_out': {
+    label: 'Paid In/Out Reports',
+    description: 'Lets this employee view the history of cash paid in and out of drawers.',
+    details: [
+      'Shows all cash movements not tied to a sale (safe drops, petty cash)',
+      'HIGH: reveals cash handling patterns and individual entries',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+  },
+  'reports.customers': {
+    label: 'Customer Reports',
+    description: 'Lets this employee view customer visit frequency and spending analytics.',
+    details: [
+      'Shows visit counts, lifetime spend, and favorite items',
+      'Contains personally identifiable customer information',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+  },
+  'reports.voids': {
+    label: 'Void Reports',
+    description: 'Lets this employee view the history of voided items, orders, and payments.',
+    details: [
+      'HIGH: void reports are a primary fraud indicator',
+      'Shows who voided what and when — useful for theft investigation',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+  },
+  'reports.gift_cards': {
+    label: 'Gift Card Reports',
+    description: 'Lets this employee view gift card issuance, redemption, and balance activity.',
+    details: [
+      'HIGH: gift cards carry real monetary value',
+      'Shows all card activity including suspicious transactions',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+  },
   'tips.view_own': {
     label: 'View Own Tips',
     description: 'Lets this employee see their own tip totals.',
@@ -637,6 +736,67 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     applicableTo: ['ADMIN'],
     risk: 'HIGH',
   },
+  'tips.share': {
+    label: 'Share Tips',
+    description: 'Lets this employee share tips they earned with another employee.',
+    details: [
+      'HIGH: moves real money between employee tip pools',
+      'All tip shares are logged with employee and timestamp',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Server', 'Bartender'],
+  },
+  'tips.collect': {
+    label: 'Collect Tips',
+    description: 'Lets this employee collect tips that have been shared to them.',
+    details: [
+      'HIGH: collecting tips changes the financial record',
+      'Typically enabled for all tipped staff',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Server', 'Bartender', 'Barback'],
+  },
+  'tips.manage_groups': {
+    label: 'Manage Tip Groups',
+    description: 'Lets this employee start, stop, and modify tip-sharing groups.',
+    details: [
+      'HIGH: affects tip distribution for all members of the group',
+      'Includes adding and removing members',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Manager', 'Floor Manager'],
+  },
+  'tips.override_splits': {
+    label: 'Override Tip Splits',
+    description: 'Lets this employee change table ownership and tip split assignments.',
+    details: [
+      'HIGH: directly controls which employee earns tips from a table',
+      'Use for resolving server switch disputes',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Manager'],
+  },
+  'tips.perform_adjustments': {
+    label: 'Perform Tip Adjustments',
+    description: 'Lets this employee make retroactive tip edits with automatic recalculation.',
+    details: [
+      'CRITICAL: retroactively changes tip amounts already recorded',
+      'Recalculates tip-outs and potentially triggers payroll changes',
+      'All adjustments are logged with reason and employee',
+      'Give only to payroll administrators',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'CRITICAL',
+  },
   'inventory.transactions': {
     label: 'View Inventory History',
     description: 'Lets this employee see a log of all inventory changes — what was added, removed, or adjusted and when.',
@@ -650,6 +810,55 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     applicableTo: ['BOH', 'ADMIN'],
     risk: 'MED',
     recommendedFor: ['BOH Manager', 'Floor Manager'],
+  },
+
+  // =========================================================================
+  // BUSINESS_SETUP — Tables & Reservations
+  // =========================================================================
+  'tables.view': {
+    label: 'View Tables',
+    description: 'Lets this employee see the table layout and floor plan.',
+    details: [
+      'Read-only access to table status and section assignments',
+      'Does not allow any changes',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['FOH', 'BOH', 'ADMIN'],
+    risk: 'LOW',
+  },
+  'tables.edit': {
+    label: 'Edit Tables',
+    description: 'Lets this employee modify table names, capacities, and section assignments.',
+    details: [
+      'Changes take effect immediately for all users',
+      'Does not include editing the floor plan layout',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+  },
+  'tables.floor_plan': {
+    label: 'Floor Plan',
+    description: 'Lets this employee edit the visual floor plan layout — table positions, sections, and room config.',
+    details: [
+      'Full access to drag-and-drop floor plan editor',
+      'Changes affect how staff navigate the POS',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+  },
+  'tables.reservations': {
+    label: 'Reservations',
+    description: 'Lets this employee create, modify, and cancel reservations.',
+    details: [
+      'Access to the reservation calendar and guest details',
+      'Can hold tables for future guests',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Host', 'Manager'],
   },
 
   // =========================================================================
@@ -748,6 +957,54 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     tab: 'BUSINESS_SETUP',
     applicableTo: ['BOH', 'ADMIN'],
     risk: 'HIGH',
+  },
+  'inventory.view': {
+    label: 'View Inventory',
+    description: 'Lets this employee see current inventory levels and item details.',
+    details: [
+      'Read-only access to stock levels and item configuration',
+      'Does not allow making any changes',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['BOH', 'ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['BOH Manager', 'Kitchen Manager'],
+  },
+  'inventory.counts': {
+    label: 'Daily Counts',
+    description: 'Lets this employee perform daily prep count entries.',
+    details: [
+      'Submit daily stock counts for tracked prep items',
+      'Affects stock levels and prep cost calculations',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['BOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Line Cook', 'BOH Manager'],
+  },
+  'inventory.adjust_prep_stock': {
+    label: 'Adjust Prep Stock',
+    description: 'Lets this employee make mid-day stock adjustments to prep items.',
+    details: [
+      'Can increase or decrease stock outside of a normal count',
+      'All adjustments are logged with reason and employee',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['BOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['BOH Manager', 'Kitchen Manager'],
+  },
+  'inventory.waste': {
+    label: 'Record Waste',
+    description: 'Lets this employee log waste and spoilage for inventory items.',
+    details: [
+      'Records write-offs that reduce stock and affect cost of goods',
+      'Waste logs are visible in inventory reports',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['BOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Line Cook', 'BOH Manager'],
   },
 
   // =========================================================================
