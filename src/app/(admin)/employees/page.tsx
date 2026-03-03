@@ -14,6 +14,31 @@ import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import { EffectiveAccessPreview } from '@/components/roles/EffectiveAccessPreview'
+
+function RoleTypeBadge({ type }: { type?: string }) {
+  if (!type) return null
+  const config = {
+    FOH:   { label: 'FOH',   className: 'bg-blue-100 text-blue-700' },
+    BOH:   { label: 'BOH',   className: 'bg-green-100 text-green-700' },
+    ADMIN: { label: 'Admin', className: 'bg-purple-100 text-purple-700' },
+  }
+  const c = config[type as keyof typeof config]
+  if (!c) return null
+  return <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${c.className}`}>{c.label}</span>
+}
+
+function AccessLevelBadge({ level }: { level?: string }) {
+  if (!level) return null
+  const config = {
+    STAFF:        { label: 'Staff',       className: 'bg-gray-100 text-gray-600' },
+    MANAGER:      { label: 'Manager',     className: 'bg-amber-100 text-amber-700' },
+    OWNER_ADMIN:  { label: 'Owner/Admin', className: 'bg-red-100 text-red-700' },
+  }
+  const c = config[level as keyof typeof config]
+  if (!c) return null
+  return <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${c.className}`}>{c.label}</span>
+}
 
 // Rotating preset colors for new employee avatars
 const EMPLOYEE_COLORS = [
@@ -33,6 +58,8 @@ interface Role {
   id: string
   name: string
   permissions: string[]
+  roleType?: string
+  accessLevel?: string
 }
 
 interface Employee {
@@ -382,7 +409,11 @@ export default function EmployeesPage() {
                     <p className="text-sm text-gray-500">
                       {emp.firstName} {emp.lastName}
                     </p>
-                    <p className="text-sm text-blue-600 mt-1">{emp.role.name}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                      <p className="text-sm text-blue-600">{emp.role.name}</p>
+                      <RoleTypeBadge type={(emp.role as Role).roleType} />
+                      <AccessLevelBadge level={(emp.role as Role).accessLevel} />
+                    </div>
                     {emp.hourlyRate && (
                       <p className="text-xs text-gray-400 mt-1">
                         {formatCurrency(emp.hourlyRate)}/hr
@@ -574,6 +605,25 @@ export default function EmployeesPage() {
                 </option>
               ))}
             </select>
+
+            {/* Role type/access chips when role is selected */}
+            {formData.roleId && (() => {
+              const selectedRole = roles.find(r => r.id === formData.roleId)
+              if (!selectedRole) return null
+              return (
+                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                  <RoleTypeBadge type={selectedRole.roleType} />
+                  <AccessLevelBadge level={selectedRole.accessLevel} />
+                </div>
+              )
+            })()}
+
+            {/* Effective access preview */}
+            {formData.roleId && (() => {
+              const selectedRole = roles.find(r => r.id === formData.roleId)
+              if (!selectedRole) return null
+              return <EffectiveAccessPreview permissions={selectedRole.permissions} />
+            })()}
           </div>
 
           {/* Additional Roles (multi-role support, edit only) */}
