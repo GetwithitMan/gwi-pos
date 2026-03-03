@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List tax rules
@@ -7,10 +9,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
       return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
     }
+
+    // Auth check — require settings.tax permission
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_TAX)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const taxRules = await prisma.taxRule.findMany({
       where: { locationId },
@@ -52,7 +59,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isInclusive,
       priority,
       isCompounded,
+      requestingEmployeeId,
     } = body
+
+    // Auth check — require settings.tax permission
+    const authCheck = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_TAX)
+    if (!authCheck.authorized) return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
 
     if (!locationId || !name || rate === undefined) {
       return NextResponse.json({ error: 'Location ID, name, and rate required' }, { status: 400 })

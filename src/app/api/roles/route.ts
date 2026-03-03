@@ -20,6 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
       return NextResponse.json(
@@ -27,6 +28,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require staff.manage_roles permission
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const roles = await db.role.findMany({
       where: { locationId },
