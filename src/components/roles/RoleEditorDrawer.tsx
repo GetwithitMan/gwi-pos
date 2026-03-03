@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SegmentedControl } from './SegmentedControl'
 import { PermissionSection } from './PermissionSection'
 import { TemplatePicker } from './TemplatePicker'
+import { EffectiveAccessPreview } from './EffectiveAccessPreview'
 import { getVisiblePermissionKeys, getKeysByTab, PermissionTab, logRegistryCoverage } from '@/lib/permission-registry'
 import { PERMISSION_GROUPS, RoleType, AccessLevel } from '@/lib/auth-utils'
 
@@ -23,10 +23,10 @@ export interface RoleEditorRole {
 }
 
 interface RoleEditorDrawerProps {
-  isOpen: boolean
-  onClose: () => void
-  editingRole: RoleEditorRole | null
+  onBack: () => void
   onSave: (payload: Record<string, unknown>) => Promise<boolean>
+  roleToEdit: RoleEditorRole | null
+  isCreating: boolean
   isSaving: boolean
   modalError: string | null
   locationId?: string
@@ -36,16 +36,11 @@ interface RoleEditorDrawerProps {
 const allPermissionKeys = Object.values(PERMISSION_GROUPS)
   .flatMap(g => g.permissions.map((p: { key: string }) => p.key))
 
-// Dev coverage check — logs unmapped keys to console (no-op in production)
-if (process.env.NODE_ENV === 'development') {
-  logRegistryCoverage(allPermissionKeys)
-}
-
 export function RoleEditorDrawer({
-  isOpen,
-  onClose,
-  editingRole,
+  onBack,
   onSave,
+  roleToEdit,
+  isCreating,
   isSaving,
   modalError,
   locationId,
@@ -61,18 +56,24 @@ export function RoleEditorDrawer({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
 
-  // Reset form state when drawer opens/closes or editing role changes
+  // Fast Refresh fix: run coverage check on mount only
   useEffect(() => {
-    if (!isOpen) return
-    if (editingRole) {
-      setRoleName(editingRole.name)
-      setRoleType((editingRole.roleType as RoleType) ?? 'FOH')
-      setAccessLevel((editingRole.accessLevel as AccessLevel) ?? 'STAFF')
-      setSelectedPermissions(editingRole.permissions)
-      setCashHandlingMode(editingRole.cashHandlingMode ?? 'drawer')
-      setIsTipped(editingRole.isTipped ?? false)
-      setTrackLaborCost(editingRole.trackLaborCost !== false)
-      setShowAdvanced(editingRole.roleType === 'ADMIN' || editingRole.accessLevel === 'OWNER_ADMIN')
+    if (process.env.NODE_ENV === 'development') {
+      logRegistryCoverage(allPermissionKeys)
+    }
+  }, [])
+
+  // Reset form state when the role being edited changes
+  useEffect(() => {
+    if (roleToEdit) {
+      setRoleName(roleToEdit.name)
+      setRoleType((roleToEdit.roleType as RoleType) ?? 'FOH')
+      setAccessLevel((roleToEdit.accessLevel as AccessLevel) ?? 'STAFF')
+      setSelectedPermissions(roleToEdit.permissions)
+      setCashHandlingMode(roleToEdit.cashHandlingMode ?? 'drawer')
+      setIsTipped(roleToEdit.isTipped ?? false)
+      setTrackLaborCost(roleToEdit.trackLaborCost !== false)
+      setShowAdvanced(roleToEdit.roleType === 'ADMIN' || roleToEdit.accessLevel === 'OWNER_ADMIN')
     } else {
       setRoleName('')
       setRoleType('FOH')
@@ -85,7 +86,7 @@ export function RoleEditorDrawer({
     }
     setActiveTab('SHIFT_SERVICE')
     setLocalError(null)
-  }, [isOpen, editingRole])
+  }, [roleToEdit])
 
   // Filtering
   const visibleKeys = useMemo(
@@ -146,7 +147,7 @@ export function RoleEditorDrawer({
       accessLevel,
     }
 
-    if (!editingRole) {
+    if (isCreating) {
       payload.locationId = locationId
     }
 
@@ -161,105 +162,187 @@ export function RoleEditorDrawer({
   ]
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            key="backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
-            onClick={onClose}
-          />
+    <div className="min-h-screen bg-white flex flex-col">
+      {/* Sticky top bar */}
+      <div className="sticky top-0 z-10 h-14 border-b border-gray-200 bg-white flex items-center justify-between px-6 flex-shrink-0">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 font-medium"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          All Roles
+        </button>
+        <span className="text-sm font-medium text-gray-700">
+          {isCreating ? 'New Role' : `Editing: ${roleName || 'Edit Role'}`}
+        </span>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={onBack} disabled={isSaving}>Cancel</Button>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? 'Saving...' : isCreating ? 'Create Role' : 'Save Changes'}
+          </Button>
+        </div>
+      </div>
 
-          {/* Drawer panel */}
-          <motion.div
-            key="drawer"
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-            className="fixed right-0 top-0 h-full w-full max-w-3xl bg-white shadow-2xl z-50 flex flex-col"
-          >
-            {/* Fixed Header */}
-            <div className="flex-shrink-0 border-b border-gray-200 bg-white px-6 pt-5 pb-4">
-              {/* Close + title row */}
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  {editingRole ? 'Edit Role' : 'Create New Role'}
-                </h2>
-                <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+      {/* Error banner */}
+      {(localError || modalError) && (
+        <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
+          {localError || modalError}
+        </div>
+      )}
 
-              {/* Error banner */}
-              {(localError || modalError) && (
-                <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                  {localError || modalError}
-                </div>
-              )}
-
-              {/* Role Name */}
-              <div className="mb-4">
-                <label className="text-sm font-medium text-gray-700 block mb-1">Role Name *</label>
-                <Input
-                  value={roleName}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setRoleName(e.target.value); setLocalError(null) }}
-                  placeholder="e.g., Server, Bartender, Host"
-                />
-              </div>
-
-              {/* Role Type + Access Level — 2-column */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="text-xs font-medium text-gray-600 uppercase tracking-wide block mb-1">Role Type</label>
-                  <SegmentedControl<RoleType>
-                    options={[
-                      { value: 'FOH', label: 'Front of House', color: 'blue' },
-                      { value: 'BOH', label: 'Back of House', color: 'green' },
-                      { value: 'ADMIN', label: 'Admin', color: 'purple' },
-                    ]}
-                    value={roleType}
-                    onChange={(v) => {
-                      setRoleType(v)
-                      if (v === 'ADMIN') setShowAdvanced(true)
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600 uppercase tracking-wide block mb-1">Access Level</label>
-                  <SegmentedControl<AccessLevel>
-                    options={[
-                      { value: 'STAFF', label: 'Staff' },
-                      { value: 'MANAGER', label: 'Manager' },
-                      { value: 'OWNER_ADMIN', label: 'Owner/Admin' },
-                    ]}
-                    value={accessLevel}
-                    onChange={(v) => {
-                      setAccessLevel(v)
-                      if (v === 'OWNER_ADMIN') setShowAdvanced(true)
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Template picker */}
-              <TemplatePicker
-                currentPermissions={selectedPermissions}
-                currentRoleType={roleType}
-                currentAccessLevel={accessLevel}
-                onApply={handleApplyTemplate}
+      {/* 2-column body */}
+      <div className="flex flex-1">
+        {/* LEFT SIDEBAR */}
+        <div
+          className="w-80 flex-shrink-0 border-r border-gray-200 overflow-y-auto"
+          style={{ position: 'sticky', top: '3.5rem', maxHeight: 'calc(100vh - 3.5rem)', alignSelf: 'flex-start' }}
+        >
+          <div className="p-5 space-y-4">
+            {/* Role Name */}
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">Role Name *</label>
+              <Input
+                value={roleName}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setRoleName(e.target.value); setLocalError(null) }}
+                placeholder="e.g., Server, Bartender, Host"
               />
             </div>
 
-            {/* Tab navigation */}
-            <div className="flex-shrink-0 border-b border-gray-200 bg-white">
+            {/* Role Type */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 uppercase tracking-wide block mb-1">Role Type</label>
+              <SegmentedControl<RoleType>
+                options={[
+                  { value: 'FOH', label: 'Front of House', color: 'blue' },
+                  { value: 'BOH', label: 'Back of House', color: 'green' },
+                  { value: 'ADMIN', label: 'Admin', color: 'purple' },
+                ]}
+                value={roleType}
+                onChange={(v) => {
+                  setRoleType(v)
+                  if (v === 'ADMIN') setShowAdvanced(true)
+                }}
+              />
+            </div>
+
+            {/* Access Level */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 uppercase tracking-wide block mb-1">Access Level</label>
+              <SegmentedControl<AccessLevel>
+                options={[
+                  { value: 'STAFF', label: 'Staff' },
+                  { value: 'MANAGER', label: 'Manager' },
+                  { value: 'OWNER_ADMIN', label: 'Owner/Admin' },
+                ]}
+                value={accessLevel}
+                onChange={(v) => {
+                  setAccessLevel(v)
+                  if (v === 'OWNER_ADMIN') setShowAdvanced(true)
+                }}
+              />
+            </div>
+
+            {/* Template picker */}
+            <TemplatePicker
+              currentPermissions={selectedPermissions}
+              currentRoleType={roleType}
+              currentAccessLevel={accessLevel}
+              onApply={handleApplyTemplate}
+            />
+
+            <hr className="border-gray-200" />
+
+            {/* Cash Handling */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 uppercase tracking-wide block mb-1.5">Cash Handling</label>
+              <div className="flex gap-2">
+                {[
+                  { value: 'drawer', label: 'Drawer', desc: 'Uses cash drawer' },
+                  { value: 'purse', label: 'Purse', desc: 'Carries cash on person' },
+                  { value: 'none', label: 'None', desc: 'No cash handling' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setCashHandlingMode(opt.value)}
+                    className={`flex-1 p-2 rounded-lg border-2 text-center text-sm transition-all ${
+                      cashHandlingMode === opt.value
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="font-medium text-sm">{opt.label}</div>
+                    <div className="text-xs text-gray-500">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tipped + Track Labor */}
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={isTipped} onChange={e => setIsTipped(e.target.checked)} className="rounded border-gray-300" />
+                <div>
+                  <span className="text-sm font-medium">Tipped Role</span>
+                  <p className="text-xs text-gray-500">Eligible for tip-out rules</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={trackLaborCost} onChange={e => setTrackLaborCost(e.target.checked)} className="rounded border-gray-300" />
+                <div>
+                  <span className="text-sm font-medium">Track Labor Cost</span>
+                  <p className="text-xs text-gray-500">Include hours in labor reports</p>
+                </div>
+              </label>
+            </div>
+
+            <hr className="border-gray-200" />
+
+            {/* Effective Access Preview */}
+            <EffectiveAccessPreview permissions={selectedPermissions} />
+
+            {roleToEdit && roleToEdit.employeeCount > 0 && (
+              <p className="text-xs text-gray-500 text-center">
+                {roleToEdit.employeeCount} employee{roleToEdit.employeeCount !== 1 ? 's' : ''} use this role
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT MAIN */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6">
+            {/* Advanced toggle */}
+            <div className="flex items-center mb-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showAdvanced}
+                  onChange={(e) => setShowAdvanced(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-600">
+                  {accessLevel === 'OWNER_ADMIN'
+                    ? 'Show all permissions'
+                    : accessLevel === 'MANAGER'
+                    ? 'Show advanced permissions'
+                    : 'Show advanced permissions (not recommended for this access level)'}
+                </span>
+              </label>
+            </div>
+
+            {/* Hidden permissions banner */}
+            {hiddenSelectedCount > 0 && (
+              <div className="mb-4 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 flex items-center gap-2">
+                <span>{'\u2139\uFE0F'}</span>
+                {hiddenSelectedCount} selected permission{hiddenSelectedCount !== 1 ? 's are' : ' is'} outside the current filter and will still be saved. Toggle &quot;Show all&quot; to view them.
+              </div>
+            )}
+
+            {/* Tab bar */}
+            <div className="border-b border-gray-200 mb-6">
               <div className="flex">
                 {tabs.map(tab => {
                   const tabKeys = getKeysByTab(tab.key, visibleKeys)
@@ -269,7 +352,7 @@ export function RoleEditorDrawer({
                       key={tab.key}
                       type="button"
                       onClick={() => setActiveTab(tab.key)}
-                      className={`flex-1 py-3 px-2 text-sm font-medium border-b-2 transition-colors ${
+                      className={`py-3 px-4 text-sm font-medium border-b-2 transition-colors ${
                         activeTab === tab.key
                           ? tab.color === 'red'
                             ? 'border-red-500 text-red-600'
@@ -291,101 +374,17 @@ export function RoleEditorDrawer({
               </div>
             </div>
 
-            {/* Scrollable permission body */}
-            <div className="flex-1 overflow-y-auto">
-              {/* Hidden permissions banner */}
-              {hiddenSelectedCount > 0 && (
-                <div className="mx-4 mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 flex items-center gap-2">
-                  <span>{'\u2139\uFE0F'}</span>
-                  {hiddenSelectedCount} selected permission{hiddenSelectedCount !== 1 ? 's are' : ' is'} outside the current filter and will still be saved. Toggle &quot;Show all&quot; to view them.
-                </div>
-              )}
-
-              <PermissionSection
-                tab={activeTab}
-                visiblePermissionKeys={visibleKeys}
-                selectedPermissions={selectedPermissions}
-                onToggle={handleToggle}
-                onToggleGroup={handleToggleGroup}
-              />
-            </div>
-
-            {/* Fixed Footer */}
-            <div className="flex-shrink-0 border-t border-gray-200 bg-white px-6 py-4">
-              {/* Advanced toggle */}
-              <div className="flex items-center justify-between mb-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showAdvanced}
-                    onChange={(e) => setShowAdvanced(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-sm text-gray-600">
-                    {accessLevel === 'OWNER_ADMIN'
-                      ? 'Show all permissions'
-                      : accessLevel === 'MANAGER'
-                      ? 'Show advanced permissions'
-                      : 'Show advanced permissions (not recommended for this access level)'}
-                  </span>
-                </label>
-              </div>
-
-              {/* Cash handling */}
-              <div className="mb-4">
-                <label className="text-xs font-medium text-gray-600 uppercase tracking-wide block mb-1.5">Cash Handling</label>
-                <div className="flex gap-2">
-                  {[
-                    { value: 'drawer', label: 'Drawer', desc: 'Uses cash drawer' },
-                    { value: 'purse', label: 'Purse', desc: 'Carries cash on person' },
-                    { value: 'none', label: 'None', desc: 'No cash handling' },
-                  ].map(opt => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setCashHandlingMode(opt.value)}
-                      className={`flex-1 p-2 rounded-lg border-2 text-center text-sm transition-all ${
-                        cashHandlingMode === opt.value
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="font-medium text-sm">{opt.label}</div>
-                      <div className="text-xs text-gray-500">{opt.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tipped + Track Labor checkboxes */}
-              <div className="flex items-center gap-6 mb-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={isTipped} onChange={e => setIsTipped(e.target.checked)} className="rounded border-gray-300" />
-                  <div>
-                    <span className="text-sm font-medium">Tipped Role</span>
-                    <p className="text-xs text-gray-500">Eligible for tip-out rules</p>
-                  </div>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={trackLaborCost} onChange={e => setTrackLaborCost(e.target.checked)} className="rounded border-gray-300" />
-                  <div>
-                    <span className="text-sm font-medium">Track Labor Cost</span>
-                    <p className="text-xs text-gray-500">Include hours in labor reports</p>
-                  </div>
-                </label>
-              </div>
-
-              {/* Save / Cancel */}
-              <div className="flex gap-3">
-                <Button variant="ghost" className="flex-1" onClick={onClose} disabled={isSaving}>Cancel</Button>
-                <Button variant="primary" className="flex-1" onClick={handleSave} disabled={isSaving}>
-                  {isSaving ? 'Saving...' : editingRole ? 'Save Changes' : 'Create Role'}
-                </Button>
-              </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+            {/* Permission section — full width, no cramping */}
+            <PermissionSection
+              tab={activeTab}
+              visiblePermissionKeys={visibleKeys}
+              selectedPermissions={selectedPermissions}
+              onToggle={handleToggle}
+              onToggleGroup={handleToggleGroup}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }

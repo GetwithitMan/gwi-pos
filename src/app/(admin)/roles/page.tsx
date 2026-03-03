@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
@@ -64,53 +65,74 @@ export default function RolesPage() {
   if (!hydrated || !currentEmployee) return null
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <AdminPageHeader
-        title="Roles & Permissions"
-        subtitle="Define what each role can do — set up once, apply to your whole team"
-        actions={
-          <Button variant="primary" onClick={openAddModal}>
-            + Add Role
-          </Button>
-        }
-      />
+    <div className="min-h-screen bg-gray-50">
+      <AnimatePresence mode="wait">
+        {!showModal ? (
+          <motion.div
+            key="list"
+            initial={{ x: 0, opacity: 1 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -60, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="p-6"
+          >
+            <AdminPageHeader
+              title="Roles & Permissions"
+              subtitle="Define what each role can do — set up once, apply to your whole team"
+              actions={
+                <Button variant="primary" onClick={openAddModal}>
+                  + Add Role
+                </Button>
+              }
+            />
 
-      <div className="mt-6">
-        {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading roles...</div>
-        ) : roles.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-gray-400 mb-4">
-              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
+            <div className="mt-6">
+              {isLoading ? (
+                <div className="text-center py-12 text-gray-500">Loading roles...</div>
+              ) : roles.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="text-gray-400 mb-4">
+                    <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-500 mb-4">No roles yet. Start with a template to get set up in seconds.</p>
+                  <Button variant="primary" onClick={openAddModal}>Create First Role</Button>
+                </div>
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {roles.map(role => (
+                    <RoleCard
+                      key={role.id}
+                      role={role}
+                      onEdit={() => crud.openEditModal(role)}
+                      onDelete={() => handleDelete(role)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-            <p className="text-gray-500 mb-4">No roles yet. Start with a template to get set up in seconds.</p>
-            <Button variant="primary" onClick={openAddModal}>Create First Role</Button>
-          </div>
+          </motion.div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {roles.map(role => (
-              <RoleCard
-                key={role.id}
-                role={role}
-                onEdit={() => crud.openEditModal(role)}
-                onDelete={() => handleDelete(role)}
-              />
-            ))}
-          </div>
+          <motion.div
+            key="editor"
+            initial={{ x: 80, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 80, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <RoleEditorDrawer
+              onBack={closeModal}
+              onSave={handleSave}
+              roleToEdit={editingRole}
+              isCreating={!editingRole}
+              isSaving={isSaving}
+              modalError={modalError}
+              locationId={currentEmployee?.location?.id}
+            />
+          </motion.div>
         )}
-      </div>
-
-      <RoleEditorDrawer
-        isOpen={showModal}
-        onClose={closeModal}
-        editingRole={editingRole}
-        onSave={handleSave}
-        isSaving={isSaving}
-        modalError={modalError}
-        locationId={currentEmployee?.location?.id}
-      />
+      </AnimatePresence>
     </div>
   )
 }
