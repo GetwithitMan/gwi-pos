@@ -57,6 +57,14 @@ If a future PR touches the areas below, check the corresponding invariant before
 | U8 | Pending tips empty state is clear in My Tips screen | `MyTipsScreen` (Pending Tips tab) | Clear all pending tips → "No pending tips / You're all set" message |
 | U9 | Persistent amber banner shown when send-to-kitchen fails | `OrderMainContent` (criticalError state) | Simulate send failure → banner persists until ✕ tapped |
 
+## Dual Pricing Invariants
+
+| # | Invariant | Where Enforced | Test Trigger |
+|---|-----------|----------------|--------------|
+| DP1 | Android and web order panel MUST display identical cash and card totals for the same Order ID. Canonical rule: `cardTotal = cashTotal × (1 + cashDiscountPercent/100)` — surcharge is applied POST-TAX to the full cash total, not pre-tax to the subtotal. Any change to order panel price display on either platform must verify this invariant. Established: 2026-03-03. | `OrderViewModel.recalcSurcharge()` (Android); `usePricing.ts` (web) | Compare same Order ID side-by-side on Android panel and web order panel — cash totals must match, card totals must match |
+| DP2 | `recalcSurcharge()` base must be `order.total` (post-tax cash total), never `subtotal - discountTotal` (pre-tax). The missing `subtotal × pct × taxRate` cross-term causes customer-visible divergence. | `OrderViewModel.recalcSurcharge()` | Order with tax: verify `surchargeTotal = cashTotal × pct/100`, not `(subtotal-discount) × pct/100` |
+| DP3 | No "Card Fee", "Non-Cash Adjustment", or separate surcharge line may appear in any UI surface (Android totals, Android PaymentSheet, web order panel, web receipt) when dual pricing is active. Card price is the primary/advertised price; cash total is a secondary breakdown. Any change to totals display on either platform must verify this invariant. Established: 2026-03-03. | `OrderTotalsSection.kt` (Android); `Receipt.tsx` + `OrderPanel.tsx` (web) | Enable dual pricing, place a card order → confirm: (1) no fee/surcharge line anywhere, (2) card total shown first/prominently, (3) cash breakdown secondary. Cross-check same Order ID on Android and web. |
+
 ## Process Safety Invariants
 
 | # | Invariant | Where Enforced | Test Trigger |
