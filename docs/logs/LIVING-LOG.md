@@ -5,6 +5,82 @@
 
 ---
 
+## 2026-03-03 — Floor Plan Fix + Android Order Panel Compliance (Skill 479)
+
+### Summary
+Two separate workstreams: (1) Android floor plan section bug fixes; (2) Android order panel dual-pricing layout compliance audit + cleanup.
+
+### Floor Plan Fixes (commit pending)
+- **Bug 1 — Table doubling**: `FloorPlanCanvas.kt` `visibleTables` returned all tables when `selectedSectionId == null` (initial frame before `LaunchedEffect` fired). Fixed: show empty list when sections exist but no section is selected yet.
+- **Bug 2 — Stale section**: `LaunchedEffect` only reset when `selectedSectionId == null`, not when it pointed to a deleted section after `refreshFloorPlan()`. Fixed: also reset when `selectedSectionId` is not in the current `sections` list.
+- **Bug 3 — Missing rooms in delta**: `SyncWorker` Chunk 2 never synced sections. New rooms added via the floor plan editor never appeared on Android until full bootstrap. Fixed: added `sectionDao.upsertAll()` to the reference-data chunk.
+
+### Android Order Panel Compliance Audit (Skill 479)
+Full forensic pass: Web POS `OrderPanelActions.tsx` (cebed10) vs Android `OrderTotalsSection.kt`.
+
+**Findings:**
+- Row structure and labels: PASS (card-first, savings message required by SPEC-31)
+- DP1/DP2 math: PASS (fixed in prior sprint 8596d4e)
+- DP3 labels: PASS (no forbidden surcharge terminology)
+- DP4: PASS — all three Android composables (OrderTotalsSection, SendButtonRow, PaymentSheet) read from the same `OrderUiState` snapshot
+
+**Changes made (OrderTotalsSection.kt):**
+- Removed `HorizontalDivider` between Card Total and Cash breakdown — matches Web POS which uses left-indent spacing, not a divider
+- Moved "Save $X by paying with cash!" savings message inside `AnimatedVisibility` — matches Web POS which only shows it when totals are expanded
+- Cash Total indent increased to 8dp; Cash Subtotal/Cash Tax indent to 20dp — matches Web POS indentation structure
+
+**Docs updated:**
+- `AUDIT_REGRESSION.md` — added DP4 invariant (was missing, confirmed by audit)
+
+### Commits
+| Commit | Description |
+|--------|-------------|
+| `15bfe29` | Fix Android floor plan — table doubling, stale section, delta missing sections |
+| *(pending)* | Android order panel compliance — OrderTotalsSection cleanup |
+
+---
+
+## 2026-03-03 — Roles & Permissions Enforcement Sprint
+
+### Summary
+Full API enforcement pass across the POS backend — every permission key that existed in the UI now has a corresponding server-side guard. Also fixed H6 (22 permission registry keys falling through to inferMeta with incorrect LOW risk).
+
+### Commits
+
+| Commit | Description |
+|--------|-------------|
+| `2f8cbae` | RoleEditorDrawer → full-page layout + Fast Refresh fix |
+| `d57b25f` | Security: 9 previously unprotected routes guarded |
+| `b78fbe7` | Security: H5 wage/role guards, split auth, refund fix, EffectiveAccessPreview M2 |
+| `d93fce1` | Security: pos.change_table, pos.change_server, pos.view_others_orders, pos.no_sale |
+| `0f19a4b` | Security: pos.edit_others_orders on order item additions |
+| `6aa78fe` | Fix H6: 22 missing registry entries with correct risk levels |
+| `3d4c227` | Security: edit_sent_items, cash_variance_override, receive_transfers |
+
+### Permission Guards Added (full list)
+- `pos.change_table` — orders/[id] PUT/PATCH when tableId changes
+- `pos.change_server` — orders/[id] PUT/PATCH when employeeId changes to another
+- `pos.view_others_orders` — orders GET when filtering by different employee
+- `pos.no_sale` — print/cash-drawer POST (was completely unguarded)
+- `pos.edit_others_orders` — orders/[id]/items POST (pre-transaction check)
+- `pos.split_checks` — orders/[id]/split POST
+- `manager.refunds` — orders/[id]/refund-payment (replaced wrong key)
+- `manager.edit_sent_items` — orders/[id]/items/[itemId] PUT (non-action edits on sent items)
+- `manager.cash_variance_override` — shifts/[id] PUT when |variance| > $5
+- `manager.receive_transfers` — tabs/[id]/transfer POST (recipient check)
+- `staff.edit_wages` / `staff.assign_roles` — employees/[id] PUT (layered H5 checks)
+
+### H6 Registry Fix
+22 permission keys were falling through to inferMeta() which assigns risk: LOW to everything. Added explicit entries with correct risk levels for: staff.scheduling, 8 reports.* keys, 4 tables.* keys, 5 tips.* keys (including tips.perform_adjustments = CRITICAL), 4 inventory.* keys.
+
+### Deferred Items
+- `manager.tax_exempt` — requires Order schema migration (isTaxExempt field)
+- `manager.open_items` — requires price comparison against menu item standard price
+- `manager.cash_drawer_blind/full` — UI-only gates (no API distinction needed)
+- `manager.pay_in_out` — feature not yet built (model exists, no POST endpoint)
+
+---
+
 ## 2026-03-03 — Android Audit Remediation (Skill 478)
 
 ### Summary
