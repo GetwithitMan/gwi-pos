@@ -624,12 +624,13 @@ export const POST = withVenue(async function POST(
       const updatedDiscountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotalForDiscounts)
 
       // Use centralized calculation function (single source of truth)
+      const locationParsed = parseSettings(existingOrder.location.settings)
       const totals = calculateOrderTotals(
         itemsForCalc,
         existingOrder.location.settings as LocationTaxSettings | null,
         updatedDiscountTotal,
         Number(existingOrder.tipTotal) || 0,
-        undefined,
+        locationParsed?.priceRounding ?? undefined,
         'card',
         existingOrder.isTaxExempt
       )

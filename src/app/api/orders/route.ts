@@ -385,7 +385,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     }
 
     // Use centralized calculation function (single source of truth)
-    const totals = calculateOrderTotals(items, locationSettings, 0, 0)
+    const totals = calculateOrderTotals(items, locationSettings, 0, 0, parsedSettings?.priceRounding ?? undefined)
     const { taxTotal, taxFromInclusive, taxFromExclusive, total } = totals
 
     // Create the order atomically: table lock (Bug 13) + order number lock (Bug 5) + create
