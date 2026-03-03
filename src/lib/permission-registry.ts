@@ -637,6 +637,20 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     applicableTo: ['ADMIN'],
     risk: 'HIGH',
   },
+  'inventory.transactions': {
+    label: 'View Inventory History',
+    description: 'Lets this employee see a log of all inventory changes — what was added, removed, or adjusted and when.',
+    details: [
+      'Shows who made each inventory change and when',
+      'Useful for spotting unexplained stock losses',
+      'Read-only — cannot modify records from this view',
+      'Pairs with inventory.waste to give a full picture of stock movement',
+    ],
+    tab: 'REPORTING',
+    applicableTo: ['BOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['BOH Manager', 'Floor Manager'],
+  },
 
   // =========================================================================
   // BUSINESS_SETUP — Menu
