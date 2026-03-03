@@ -3,6 +3,8 @@ import { CashHandlingMode } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
+// roleType/accessLevel: UX display metadata only — never used for authorization
+
 // Helper to safely get permissions as an array
 function getPermissionsArray(permissions: unknown): string[] {
   if (Array.isArray(permissions)) {
@@ -40,6 +42,8 @@ export const GET = withVenue(async function GET(
         id: role.id,
         name: role.name,
         permissions: getPermissionsArray(role.permissions),
+        roleType: role.roleType ?? 'FOH',
+        accessLevel: role.accessLevel ?? 'STAFF',
         isTipped: role.isTipped,
         tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,
@@ -66,13 +70,15 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight } = body as {
+    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, roleType, accessLevel } = body as {
       name?: string
       permissions?: string[]
       cashHandlingMode?: string
       trackLaborCost?: boolean
       isTipped?: boolean
       tipWeight?: number
+      roleType?: string
+      accessLevel?: string
     }
 
     // Check role exists
@@ -110,6 +116,8 @@ export const PUT = withVenue(async function PUT(
       data: {
         ...(name !== undefined && { name }),
         ...(permissions !== undefined && { permissions }),
+        ...(roleType !== undefined && { roleType }),
+        ...(accessLevel !== undefined && { accessLevel }),
         ...(cashHandlingMode !== undefined && { cashHandlingMode: cashHandlingMode as CashHandlingMode }),
         ...(trackLaborCost !== undefined && { trackLaborCost }),
         ...(isTipped !== undefined && { isTipped }),
@@ -122,6 +130,8 @@ export const PUT = withVenue(async function PUT(
         id: role.id,
         name: role.name,
         permissions: getPermissionsArray(role.permissions),
+        roleType: role.roleType ?? 'FOH',
+        accessLevel: role.accessLevel ?? 'STAFF',
         isTipped: role.isTipped,
         tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,

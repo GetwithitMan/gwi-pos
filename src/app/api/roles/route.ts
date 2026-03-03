@@ -5,6 +5,8 @@ import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
+// roleType/accessLevel: UX display metadata only — never used for authorization
+
 // Helper to safely get permissions as an array
 function getPermissionsArray(permissions: unknown): string[] {
   if (Array.isArray(permissions)) {
@@ -41,6 +43,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         id: role.id,
         name: role.name,
         permissions: getPermissionsArray(role.permissions),
+        roleType: role.roleType ?? 'FOH',
+        accessLevel: role.accessLevel ?? 'STAFF',
         isTipped: role.isTipped,
         tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,
@@ -68,7 +72,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, requestingEmployeeId } = body as {
+    const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, requestingEmployeeId, roleType, accessLevel } = body as {
       locationId: string
       name: string
       permissions: string[]
@@ -77,6 +81,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isTipped?: boolean
       tipWeight?: number
       requestingEmployeeId?: string
+      roleType?: string
+      accessLevel?: string
     }
 
     // Auth check — require staff.manage_roles permission
@@ -110,6 +116,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId,
         name,
         permissions: permissions || [],
+        ...(roleType ? { roleType } : {}),
+        ...(accessLevel ? { accessLevel } : {}),
         ...(cashHandlingMode !== undefined ? { cashHandlingMode: cashHandlingMode as CashHandlingMode } : {}),
         ...(trackLaborCost !== undefined ? { trackLaborCost } : {}),
         ...(isTipped !== undefined ? { isTipped } : {}),
@@ -121,6 +129,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       id: role.id,
       name: role.name,
       permissions: getPermissionsArray(role.permissions),
+      roleType: role.roleType ?? 'FOH',
+      accessLevel: role.accessLevel ?? 'STAFF',
       isTipped: role.isTipped,
       tipWeight: Number(role.tipWeight),
       cashHandlingMode: role.cashHandlingMode,
