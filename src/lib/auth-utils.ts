@@ -7,7 +7,7 @@ export type AccessLevel = 'STAFF' | 'MANAGER' | 'OWNER_ADMIN'
 
 export function hasPermission(permissions: string[], requiredPermission: string): boolean {
   // Admin/super_admin has all permissions
-  if (permissions.includes('admin') || permissions.includes('super_admin') || permissions.includes('*')) {
+  if (permissions.includes('admin') || permissions.includes('super_admin') || permissions.includes('*') || permissions.includes('all')) {
     return true
   }
 
