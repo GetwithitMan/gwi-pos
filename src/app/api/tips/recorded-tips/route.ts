@@ -85,6 +85,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             },
           },
         },
+        // M6: include shift info so Android can enforce the 24h edit boundary
+        shift: {
+          select: {
+            status: true,
+            endedAt: true,
+          },
+        },
       },
       orderBy: { processedAt: 'desc' },
       take: 100,
@@ -105,6 +112,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       employeeName: p.order.employee
         ? (p.order.employee.displayName || `${p.order.employee.firstName} ${p.order.employee.lastName}`)
         : null,
+      // M6: shift close timestamp so Android can enforce the 24h edit window
+      shiftClosedAt: p.shift?.endedAt?.toISOString() ?? null,
     }))
 
     return NextResponse.json({ recordedTips })

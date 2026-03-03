@@ -199,6 +199,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
       }
 
+      // M6: Block edits if the payment's shift closed more than 24 hours ago
+      const payment = await db.payment.findUnique({
+        where: { id: paymentId },
+        select: {
+          shift: {
+            select: { status: true, endedAt: true },
+          },
+        },
+      })
+
+      if (payment?.shift?.status === 'closed' && payment.shift.endedAt) {
+        const hoursSinceClose = (Date.now() - payment.shift.endedAt.getTime()) / (1000 * 60 * 60)
+        if (hoursSinceClose > 24) {
+          return NextResponse.json(
+            { error: 'Tips can only be edited within 24 hours of shift close.' },
+            { status: 403 }
+          )
+        }
+      }
+
       // Convert dollars to cents
       const tipAmountCents = Math.round((tipAmountDollars as number) * 100)
 

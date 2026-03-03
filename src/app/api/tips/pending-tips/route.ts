@@ -7,6 +7,7 @@
  * Query params:
  *   locationId  - required
  *   employeeId  - optional (defaults to requesting employee; requires TIPS_VIEW_LEDGER for others)
+ *   shiftId     - optional (M5: scope results to a specific shift for accuracy at shift close)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -20,6 +21,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl
     const locationId = searchParams.get('locationId')
     const queryEmployeeId = searchParams.get('employeeId')
+    const shiftId = searchParams.get('shiftId') || null
     const requestingEmployeeId = request.headers.get('x-employee-id')
 
     if (!locationId) {
@@ -63,6 +65,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         paymentMethod: { notIn: ['cash', 'gift_card', 'house_account'] },
         voidedAt: null,
         deletedAt: null,
+        // M5: scope to specific shift when provided
+        ...(shiftId ? { shiftId } : {}),
         order: {
           employeeId: targetEmployeeId,
         },
@@ -85,6 +89,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             },
           },
         },
+        // M6: include shift info so Android can enforce the 24h edit boundary
+        shift: {
+          select: {
+            status: true,
+            endedAt: true,
+          },
+        },
       },
       orderBy: { processedAt: 'desc' },
       take: 100,
@@ -104,6 +115,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       employeeName: p.order.employee
         ? (p.order.employee.displayName || `${p.order.employee.firstName} ${p.order.employee.lastName}`)
         : null,
+      // M6: shift close timestamp so Android can enforce the 24h edit window
+      shiftClosedAt: p.shift?.endedAt?.toISOString() ?? null,
     }))
 
     return NextResponse.json({ pendingTips })
