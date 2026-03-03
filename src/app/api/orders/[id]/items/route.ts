@@ -284,9 +284,11 @@ export const POST = withVenue(async function POST(
         throw new Error('Order not found')
       }
 
-      // Block modifications if any completed payment exists
-      const hasCompletedPayment = existingOrder.payments?.some(p => p.status === 'completed') || false
-      if (hasCompletedPayment) {
+      // Block modifications if any active (pending or completed) payment exists
+      const hasActivePayment = existingOrder.payments?.some(
+        p => p.status === 'completed' || p.status === 'pending'
+      ) || false
+      if (hasActivePayment) {
         throw new Error('ORDER_HAS_PAYMENTS')
       }
 
