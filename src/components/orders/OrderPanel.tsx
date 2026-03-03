@@ -6,6 +6,7 @@ import { OrderPanelActions } from './OrderPanelActions'
 import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
 import { calculateItemTotal } from '@/lib/order-calculations'
 import { formatCurrency } from '@/lib/utils'
+import { roundToCents } from '@/lib/pricing'
 import { OrderDelayBanner } from './OrderDelayBanner'
 import { ConflictBanner } from './ConflictBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
@@ -549,9 +550,13 @@ export const OrderPanel = memo(function OrderPanel({
           tot += Number(order.total ?? 0)
           for (const item of order.items) {
             if (item.status === 'voided' || item.status === 'comped') continue
-            const price = Number(item.price ?? 0)
+            const rawPrice = Number(item.price ?? 0)
+            const price = cardPriceMultiplier ? roundToCents(rawPrice * cardPriceMultiplier) : rawPrice
             const qty = item.quantity ?? 1
-            const itemTotal = price * qty + (item.modifiers || []).reduce((s: number, m: any) => s + Number(m.price ?? 0) * qty, 0)
+            const itemTotal = price * qty + (item.modifiers || []).reduce((s: number, m: any) => {
+              const modPrice = Number(m.price ?? 0)
+              return s + (cardPriceMultiplier ? roundToCents(modPrice * cardPriceMultiplier) : modPrice) * qty
+            }, 0)
             const existing = groups.get(item.name)
             if (existing) { existing.qty += qty; existing.total += itemTotal }
             else groups.set(item.name, { name: item.name, qty, total: itemTotal })

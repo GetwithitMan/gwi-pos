@@ -378,16 +378,16 @@ Commit `8bdd4bd` — Fixed 5 dual pricing bugs:
 
 **Skill 458** (2026-02-27): Fixed inverted dual pricing display on Android.
 
-**Key rule:** The default/base price stored on the server IS the credit card price. Cash gets a discount (not card gets a surcharge).
+**Key rule:** Stored prices ARE cash prices. `cashTotal = order.total`, `cardTotal = order.total + surcharge`. Android and web both compute card prices at display time by applying `cashDiscountPercent` markup.
 
-| What | Card | Cash |
+| What | Cash | Card |
 |------|------|------|
-| Total displayed | `total` (no modification) | `total - surchargeTotal` |
-| Label | (none) | "Cash Discount (X%)" in green |
-| PaymentSheet | Full total | Discounted total + "Cash discount applied: -$X.XX" |
-| Amount sent to server | `total` | `total - cashDiscount` |
+| Total displayed | `total` (stored as-is) | `total * cardPriceMultiplier` |
+| Label | (none) | "Service Fee (X%)" |
+| PaymentSheet | Cash total (stored) | Cash total + surcharge |
+| Amount sent to server | `total` | `total + surcharge` |
 
-The Android bug was: `cardTotal = total + surchargeTotal` (adding surcharge ON TOP of what was already the card price). Fix: `cardTotal = total`, `cashTotal = total - surchargeTotal`.
+The original Android bug was: `cardTotal = total + surchargeTotal` (adding surcharge ON TOP of what was already assumed to be the card price). Fix: stored prices are cash prices, so `cashTotal = total`, `cardTotal = total * (1 + cashDiscountPercent / 100)`.
 
 ---
 
