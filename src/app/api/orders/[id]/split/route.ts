@@ -5,9 +5,12 @@ import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface SplitRequest {
   type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'get_splits'
+  employeeId?: string
   // For even split
   numWays?: number
   // For by_item split
@@ -55,6 +58,12 @@ export const POST = withVenue(async function POST(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Auth check — require pos.split_checks permission (skip for read-only get_splits)
+    if (body.type !== 'get_splits') {
+      const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.POS_SPLIT_CHECKS)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // If this is a split order, get the parent

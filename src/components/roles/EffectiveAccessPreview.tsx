@@ -37,12 +37,34 @@ function deriveBusinessSetup(perms: string[]): { label: string; positive: boolea
     : { label: 'No access', positive: false }
 }
 
+function derivePayments(perms: string[]): { label: string; positive: boolean } {
+  if (perms.includes('admin') || perms.includes('super_admin')) return { label: 'Full payment access', positive: true }
+  const canCash = perms.includes('pos.accept_cash')
+  const canCard = perms.includes('pos.accept_card')
+  if (canCash && canCard) return { label: 'Cash & card', positive: true }
+  if (canCard) return { label: 'Card only', positive: true }
+  if (canCash) return { label: 'Cash only', positive: true }
+  return { label: 'No payment access', positive: false }
+}
+
+function deriveOverrides(perms: string[]): { label: string; positive: boolean } {
+  if (perms.includes('admin') || perms.includes('super_admin')) return { label: 'All overrides', positive: true }
+  const canDiscount = perms.includes('manager.discounts')
+  const canVoid = perms.includes('manager.void_items') || perms.includes('manager.void_payments')
+  if (canDiscount && canVoid) return { label: 'Discounts & voids', positive: true }
+  if (canDiscount) return { label: 'Discounts only', positive: true }
+  if (canVoid) return { label: 'Voids only', positive: true }
+  return { label: 'No override access', positive: false }
+}
+
 export function EffectiveAccessPreview({ permissions }: EffectiveAccessPreviewProps) {
   const rows = [
     { icon: '🍽️', label: 'Shift & Service', result: deriveShiftService(permissions) },
     { icon: '👥', label: 'Team & Time',      result: deriveTeamTime(permissions) },
     { icon: '📊', label: 'Reporting',        result: deriveReporting(permissions) },
     { icon: '⚙️', label: 'Business Setup',   result: deriveBusinessSetup(permissions) },
+    { icon: '💳', label: 'Payments',       result: derivePayments(permissions) },
+    { icon: '🔓', label: 'Overrides',      result: deriveOverrides(permissions) },
   ]
 
   return (

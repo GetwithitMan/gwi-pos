@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hasPermission } from '@/lib/auth-utils'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission } from '@/lib/api-auth'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -73,26 +74,9 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Verify manager exists and has permission (must be from same venue)
-    const manager = await db.employee.findFirst({
-      where: { id: managerId, locationId: order.locationId, deletedAt: null },
-      include: { role: true },
-    })
-
-    if (!manager) {
-      return NextResponse.json({ error: 'Manager not found' }, { status: 404 })
-    }
-
-    const permissions = Array.isArray(manager.role?.permissions)
-      ? (manager.role.permissions as string[])
-      : []
-
-    if (!hasPermission(permissions, 'manager.void_payments')) {
-      return NextResponse.json(
-        { error: 'Insufficient permissions to refund payments' },
-        { status: 403 }
-      )
-    }
+    // Verify manager has permission to issue refunds
+    const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.MGR_REFUNDS)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
 
     // Check cumulative refunds don't exceed original payment amount
     const existingRefunds = await db.refundLog.aggregate({

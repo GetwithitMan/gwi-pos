@@ -141,6 +141,16 @@ export const PUT = withVenue(async function PUT(
     const auth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+    // Sensitive field checks — require elevated permissions for wage and role assignment
+    if (body.hourlyRate !== undefined || body.hireDate !== undefined) {
+      const wageAuth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_WAGES)
+      if (!wageAuth.authorized) return NextResponse.json({ error: wageAuth.error }, { status: wageAuth.status })
+    }
+    if (body.roleId !== undefined || body.additionalRoleIds !== undefined) {
+      const roleAuth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.STAFF_ASSIGN_ROLES)
+      if (!roleAuth.authorized) return NextResponse.json({ error: roleAuth.error }, { status: roleAuth.status })
+    }
+
     const {
       firstName,
       lastName,
