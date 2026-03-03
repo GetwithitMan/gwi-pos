@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth'
 
 interface TransferRequest {
   toEmployeeId: string
@@ -51,6 +53,11 @@ export const POST = withVenue(async function POST(
         { error: 'This order is not a bar tab' },
         { status: 400 }
       )
+    }
+
+    const auth = await requirePermission(fromEmployeeId, tab.locationId, PERMISSIONS.MGR_TRANSFER_CHECKS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     if (tab.status !== 'open' && tab.status !== 'in_progress') {

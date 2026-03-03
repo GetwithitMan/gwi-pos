@@ -427,6 +427,31 @@ export const DEFAULT_ROLES: Record<string, string[]> = {
     'tables.view',
     'customers.view',
   ],
+  'Cashier': [
+    'pos.access', 'pos.quick_order',
+    'pos.cash_payments', 'pos.card_payments', 'pos.cash_drawer',
+    'pos.no_sale',
+    'tips.view_own', 'tips.share', 'tips.collect',
+  ],
+  'Cook / Chef': [
+    'pos.kds',
+    'inventory.view', 'inventory.counts', 'inventory.adjust_prep_stock', 'inventory.waste',
+    'menu.view', 'menu.86_items',
+  ],
+  'Expo': [
+    'pos.access', 'pos.kds',
+    'pos.view_others_orders',
+    'menu.view', 'menu.86_items',
+  ],
+  'Bar Back': [
+    'inventory.view', 'inventory.counts', 'inventory.adjust_prep_stock',
+    'menu.view',
+  ],
+  'Busser': [
+    'pos.access',
+    'tables.view',
+    'menu.view',
+  ],
   'Kitchen Staff': [
     'pos.kds',
     'inventory.view', 'inventory.counts', 'inventory.adjust_prep_stock', 'inventory.waste',
@@ -471,6 +496,11 @@ export const ROLE_TEMPLATE_META: Record<string, { roleType: RoleType; accessLeve
   'Bartender':     { roleType: 'FOH',   accessLevel: 'STAFF' },
   'Host':          { roleType: 'FOH',   accessLevel: 'STAFF' },
   'Security':      { roleType: 'FOH',   accessLevel: 'STAFF' },
+  'Cashier':       { roleType: 'FOH',   accessLevel: 'STAFF' },
+  'Cook / Chef':   { roleType: 'BOH',   accessLevel: 'STAFF' },
+  'Expo':          { roleType: 'FOH',   accessLevel: 'STAFF' },
+  'Bar Back':      { roleType: 'BOH',   accessLevel: 'STAFF' },
+  'Busser':        { roleType: 'FOH',   accessLevel: 'STAFF' },
   'Kitchen Staff': { roleType: 'BOH',   accessLevel: 'STAFF' },
   'Floor Manager': { roleType: 'FOH',   accessLevel: 'MANAGER' },
   'BOH Manager':   { roleType: 'BOH',   accessLevel: 'MANAGER' },

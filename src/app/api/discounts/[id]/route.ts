@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth'
 
 // GET - Get a single discount by ID
 export const GET = withVenue(async function GET(
@@ -74,6 +76,7 @@ export const PUT = withVenue(async function PUT(
       isActive,
       isAutomatic,
       isEmployeeDiscount,
+      requestingEmployeeId,
     } = body
 
     // Check discount exists
@@ -86,6 +89,11 @@ export const PUT = withVenue(async function PUT(
         { error: 'Discount not found' },
         { status: 404 }
       )
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.SETTINGS_MENU)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     const discount = await db.discountRule.update({
@@ -135,6 +143,7 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+    const requestingEmployeeId = request.nextUrl.searchParams.get('requestingEmployeeId')
 
     // Check discount exists
     const discount = await db.discountRule.findUnique({
@@ -146,6 +155,11 @@ export const DELETE = withVenue(async function DELETE(
         { error: 'Discount not found' },
         { status: 404 }
       )
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, discount.locationId, PERMISSIONS.SETTINGS_MENU)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     await db.discountRule.update({

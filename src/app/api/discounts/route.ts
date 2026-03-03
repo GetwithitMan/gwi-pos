@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth'
 
 // GET - List all discount rules for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -114,6 +116,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isActive?: boolean
       isAutomatic?: boolean
       isEmployeeDiscount?: boolean
+      requestingEmployeeId?: string
     }
 
     if (!locationId || !name || !displayText || !discountType || !discountConfig) {
@@ -121,6 +124,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { error: 'Missing required fields' },
         { status: 400 }
       )
+    }
+
+    const auth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_MENU)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     const discount = await db.discountRule.create({

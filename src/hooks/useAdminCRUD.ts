@@ -6,12 +6,14 @@ import { toast } from '@/stores/toast-store'
 interface UseAdminCRUDConfig<T> {
   apiBase: string
   locationId: string | undefined
+  requestingEmployeeId?: string
   resourceName?: string
   getId?: (item: T) => string
-   
+
   parseResponse?: (data: any) => T[]
   onSaveSuccess?: () => void
   onDeleteSuccess?: () => void
+  skipReloadOnSave?: boolean
 }
 
 interface UseAdminCRUDReturn<T> {
@@ -35,11 +37,13 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
   const {
     apiBase,
     locationId,
+    requestingEmployeeId,
     resourceName = 'item',
     getId = (item: T) => (item as Record<string, unknown>).id as string,
     parseResponse,
     onSaveSuccess,
     onDeleteSuccess,
+    skipReloadOnSave = false,
   } = config
 
   const [items, setItems] = useState<T[]>([])
@@ -63,7 +67,9 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
     if (!hasLoadedRef.current) setIsLoading(true)
 
     try {
-      const res = await fetch(`${apiBase}?locationId=${locationId}`)
+      const params = new URLSearchParams({ locationId: locationId! })
+      if (requestingEmployeeId) params.set('requestingEmployeeId', requestingEmployeeId)
+      const res = await fetch(`${apiBase}?${params}`)
       if (!res.ok) throw new Error(`Failed to load ${resourceName}s`)
       const raw = await res.json()
       const data = raw.data ?? raw
@@ -77,7 +83,7 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
       setIsLoading(false)
       hasLoadedRef.current = true
     }
-  }, [apiBase, locationId, resourceName, extractItems])
+  }, [apiBase, locationId, requestingEmployeeId, resourceName, extractItems])
 
   const openAddModal = useCallback(() => {
     setEditingItem(null)
@@ -119,7 +125,7 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
 
       setShowModal(false)
       setModalError(null)
-      await loadItems()
+      if (!skipReloadOnSave) await loadItems()
       onSaveSuccess?.()
       return true
     } catch (err) {
@@ -128,7 +134,7 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
     } finally {
       setIsSaving(false)
     }
-  }, [editingItem, apiBase, getId, resourceName, loadItems, onSaveSuccess])
+  }, [editingItem, apiBase, getId, resourceName, loadItems, onSaveSuccess, skipReloadOnSave])
 
   const handleDelete = useCallback(async (id: string, _confirmMessage?: string): Promise<boolean> => {
     try {

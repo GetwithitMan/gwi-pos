@@ -128,11 +128,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // New format: already an array of permission strings
       permissions = rawPermissions as string[]
     } else if (rawPermissions && typeof rawPermissions === 'object') {
-      // Old format: object like {orders: ['create', 'read'], menu: ['read']}
-      // Convert to flat array for backwards compatibility, but also grant admin access for managers
-      if (matchedEmployee.role.name === 'Manager' || matchedEmployee.role.name === 'Owner') {
-        permissions = ['admin'] // Give full access to old manager roles
-      }
+      // Old format: object-format permissions (legacy data migration path)
+      // Grant empty permissions — employee will need role reassignment to a current role
+      permissions = []
     }
 
     // Check for dev access (Super Admin or has dev.access permission)

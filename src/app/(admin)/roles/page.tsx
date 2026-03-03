@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
@@ -48,6 +48,12 @@ export default function RolesPage() {
     handleDelete: crudDelete,
   } = crud
 
+  const handleSaveWithAuth = useCallback(
+    (payload: Record<string, unknown>) =>
+      handleSave({ ...payload, requestingEmployeeId: currentEmployee?.id }),
+    [handleSave, currentEmployee?.id]
+  )
+
   useEffect(() => {
     if (currentEmployee?.location?.id) {
       loadItems()
@@ -59,7 +65,17 @@ export default function RolesPage() {
       toast.warning(`Cannot delete "${role.name}" — ${role.employeeCount} employee(s) assigned. Reassign them first.`)
       return
     }
-    await crudDelete(role.id)
+    const res = await fetch(
+      `/api/roles/${role.id}?requestingEmployeeId=${encodeURIComponent(currentEmployee?.id ?? '')}`,
+      { method: 'DELETE' }
+    )
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      toast.error(err.error || 'Failed to delete role')
+      return
+    }
+    toast.success('Role deleted')
+    await loadItems()
   }
 
   if (!hydrated || !currentEmployee) return null
@@ -123,7 +139,7 @@ export default function RolesPage() {
           >
             <RoleEditorDrawer
               onBack={closeModal}
-              onSave={handleSave}
+              onSave={handleSaveWithAuth}
               roleToEdit={editingRole}
               isCreating={!editingRole}
               isSaving={isSaving}

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { CashHandlingMode } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -20,6 +22,7 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const requestingEmployeeId = request.nextUrl.searchParams.get('requestingEmployeeId')
 
     const role = await db.role.findUnique({
       where: { id },
@@ -35,6 +38,11 @@ export const GET = withVenue(async function GET(
         { error: 'Role not found' },
         { status: 404 }
       )
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, role.locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     return NextResponse.json({ data: {
@@ -70,7 +78,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, roleType, accessLevel } = body as {
+    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, roleType, accessLevel, requestingEmployeeId } = body as {
       name?: string
       permissions?: string[]
       cashHandlingMode?: string
@@ -79,6 +87,7 @@ export const PUT = withVenue(async function PUT(
       tipWeight?: number
       roleType?: string
       accessLevel?: string
+      requestingEmployeeId?: string
     }
 
     // Check role exists
@@ -91,6 +100,11 @@ export const PUT = withVenue(async function PUT(
         { error: 'Role not found' },
         { status: 404 }
       )
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Check for duplicate name if changing
@@ -155,6 +169,7 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+    const requestingEmployeeId = request.nextUrl.searchParams.get('requestingEmployeeId')
 
     // Check role exists and get employee count
     const role = await db.role.findUnique({
@@ -171,6 +186,11 @@ export const DELETE = withVenue(async function DELETE(
         { error: 'Role not found' },
         { status: 404 }
       )
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, role.locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Prevent deletion if employees are assigned
