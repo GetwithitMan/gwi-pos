@@ -45,6 +45,10 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Auth check — require manager.discounts permission
+    const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     if (order.status !== 'open' && order.status !== 'in_progress') {
       return NextResponse.json(
         { error: 'Cannot add discount to a closed order' },

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List customers with optional search
@@ -7,6 +9,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
     const search = searchParams.get('search')
     const tag = searchParams.get('tag')
     const limit = parseInt(searchParams.get('limit') || '50')
@@ -18,6 +21,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require customers.view permission
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Build search filter
     const searchFilter = search ? {
@@ -108,7 +115,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       tags,
       marketingOptIn,
       birthday,
+      requestingEmployeeId,
     } = body
+
+    // Auth check — require customers.edit permission
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_EDIT)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!locationId || !firstName || !lastName) {
       return NextResponse.json(

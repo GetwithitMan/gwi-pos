@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchIngredientLibraryUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
@@ -8,6 +10,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
     const categoryId = searchParams.get('categoryId')
     const includeInactive = searchParams.get('includeInactive') === 'true'
     const visibility = searchParams.get('visibility') || 'visible' // 'visible', 'admin_only', 'all'
@@ -19,6 +22,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require menu.view permission
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MENU_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Build visibility filter
     const visibilityFilter = visibility === 'all'
@@ -323,6 +330,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       name,
       description,
       categoryId,
+      requestingEmployeeId,
       inventoryItemId,
       prepItemId,
       standardQuantity,
@@ -360,6 +368,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Verification
       needsVerification = false,
     } = body
+
+    // Auth check — require menu.edit_items permission
+    const authCheck = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authCheck.authorized) return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
 
     if (!locationId || !name) {
       return NextResponse.json(

@@ -38,6 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
       return NextResponse.json(
@@ -45,6 +46,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require settings.venue permission
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_VENUE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Use cached location settings instead of direct DB query (FIX-021)
     const cachedSettings = await getLocationSettings(locationId)
