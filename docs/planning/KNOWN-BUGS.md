@@ -193,7 +193,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-A1 — ModifierSheet.kt:236 — Unresolved Reference: toggleModifier
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `f7cbcfb`
 **Feature:** Android — ModifierSheet
 **Source:** Surfaced during Dual Pricing Display Compliance audit 2026-03-03 (Agent A)
 **Affected files:** `app/src/main/java/com/gwi/register/ui/pos/components/ModifierSheet.kt` (line 236)
@@ -205,7 +205,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-A2 — TipEntrySheet.kt:220 — Unresolved Reference: PosTypography
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `f7cbcfb`
 **Feature:** Android — TipEntrySheet
 **Source:** Surfaced during Dual Pricing Display Compliance audit 2026-03-03 (Agent A)
 **Affected files:** `app/src/main/java/com/gwi/register/ui/pos/components/TipEntrySheet.kt` (line 220)
