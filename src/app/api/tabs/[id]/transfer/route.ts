@@ -60,6 +60,15 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
+    // Guard: destination employee must be permitted to receive transfers
+    const receiveAuth = await requirePermission(toEmployeeId, tab.locationId, PERMISSIONS.MGR_RECEIVE_TRANSFERS)
+    if (!receiveAuth.authorized) {
+      return NextResponse.json(
+        { error: `Destination employee cannot receive transfers: ${receiveAuth.error}` },
+        { status: receiveAuth.status }
+      )
+    }
+
     if (tab.status !== 'open' && tab.status !== 'in_progress') {
       return NextResponse.json(
         { error: 'Cannot transfer a closed tab' },

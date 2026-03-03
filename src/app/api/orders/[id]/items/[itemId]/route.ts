@@ -5,6 +5,8 @@ import { withVenue } from '@/lib/with-venue'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { calculateOrderTotals, calculateOrderSubtotal, recalculatePercentDiscounts, type LocationTaxSettings } from '@/lib/order-calculations'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
 export const PUT = withVenue(async function PUT(
@@ -15,6 +17,7 @@ export const PUT = withVenue(async function PUT(
     const { id: orderId, itemId } = await params
     const body = await request.json()
     const { action, ...updateData } = body
+    const requestingEmployeeId = (body as { requestingEmployeeId?: string }).requestingEmployeeId
 
     // Verify order exists
     const order = await db.order.findUnique({
@@ -58,6 +61,12 @@ export const PUT = withVenue(async function PUT(
         { error: 'Item not found' },
         { status: 404 }
       )
+    }
+
+    // Guard: editing a sent item (quantity/notes/price) requires elevated permission
+    if (!action && item.kitchenStatus !== 'pending' && requestingEmployeeId) {
+      const auth = await requirePermission(requestingEmployeeId as string, order.locationId, PERMISSIONS.MGR_EDIT_SENT_ITEMS)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Handle actions

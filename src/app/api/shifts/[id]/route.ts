@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requireAnyPermission } from '@/lib/api-auth'
+import { requirePermission, requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
@@ -172,6 +172,17 @@ export const PUT = withVenue(async function PUT(
       // Expected cash = starting cash + cash received - change given
       const expectedCash = Number(shift.startingCash) + summary.netCashReceived
       const variance = effectiveActualCash - expectedCash
+
+      // Guard: large cash variance requires override permission
+      if (Math.abs(variance) > 5 && requestingEmployeeId) {
+        const varAuth = await requirePermission(requestingEmployeeId, shift.locationId, PERMISSIONS.MGR_CASH_VARIANCE_OVERRIDE)
+        if (!varAuth.authorized) {
+          return NextResponse.json(
+            { error: varAuth.error, code: 'VARIANCE_OVERRIDE_REQUIRED', variance },
+            { status: varAuth.status }
+          )
+        }
+      }
 
       // Update shift + process tip distribution atomically
       // Open order check is inside the transaction to prevent TOCTOU race condition
