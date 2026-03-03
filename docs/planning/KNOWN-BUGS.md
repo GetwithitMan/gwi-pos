@@ -279,7 +279,10 @@ These were requested but are not bugs — they're missing features. Track them i
 
 | Bug | Fixed In | Commit |
 |-----|----------|--------|
-| **Dual Pricing Display — Android card total lower than web for same order** | 2026-03-03 | *(pending commit)* |
+| **Dual Pricing Display — Android card total lower than web for same order** | 2026-03-03 | `c55dd9c` (Android) / `d903153` + `29c6c0a` (web) |
+| **Android tax = $0.00 (taxRate never bootstrapped or computed)** | 2026-03-03 | `358cc99` (7 files: BootstrapWorker, OrderState, OrderReducer, OrderMutationRepository, OrderSyncRepository, OrderViewModel, OrderMainContent) |
+| **Web order panel totals: Cash Discount / Rounding rows (non-compliant model)** | 2026-03-03 | `cebed10` (OrderPanelActions.tsx — card-first display) |
+| **cashDiscountPercent race condition on first Android launch** | 2026-03-03 | `358cc99` (bootstrap completion observer + reloadBootstrappedSettings) |
 | Partial payment approval flow | v1.x | `35224cd` |
 | VOID/COMP stamps not rendering | Audit 2026-02-20 | — |
 | Inventory deduction end-to-end | 2026-02-20 | `35224cd` + `dc95f38` |
