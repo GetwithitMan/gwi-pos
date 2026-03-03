@@ -467,6 +467,7 @@ function KDSContent() {
   }, [screenConfig, stationParam, showCompleted, deviceToken])
 
   const handleBumpItem = useCallback(async (itemId: string) => {
+    if (!socketConnected) return
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
@@ -483,9 +484,10 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to bump item:', error)
     }
-  }, [deviceToken, loadOrders])
+  }, [deviceToken, loadOrders, socketConnected])
 
   const handleBumpOrder = useCallback(async (order: KDSOrder) => {
+    if (!socketConnected) return
     const incompleteItemIds = order.items
       .filter(item => !item.isCompleted)
       .map(item => item.id)
@@ -508,9 +510,10 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to bump order:', error)
     }
-  }, [deviceToken, loadOrders])
+  }, [deviceToken, loadOrders, socketConnected])
 
   const handleUncompleteItem = useCallback(async (itemId: string) => {
+    if (!socketConnected) return
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
@@ -527,7 +530,7 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to uncomplete item:', error)
     }
-  }, [deviceToken, loadOrders])
+  }, [deviceToken, loadOrders, socketConnected])
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -604,7 +607,22 @@ function KDSContent() {
   const locationName = employee?.location?.name || screenConfig?.locationId || ''
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-gray-900 text-white relative">
+      {/* Disconnect overlay */}
+      {!socketConnected && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-20 h-20 bg-red-900/50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728M15.536 8.464a5 5 0 010 7.072M6.343 17.657a9 9 0 010-12.728M9.172 14.828a5 5 0 010-7.072M12 12h.01" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-2">KDS Disconnected</h2>
+            <p className="text-gray-400 mb-1">Connection to the server was lost.</p>
+            <p className="text-gray-500 text-sm">Order bumping is disabled. Reconnecting…</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-4">
@@ -913,7 +931,12 @@ function KDSContent() {
                     <div className="p-3 border-t border-gray-700">
                       <button
                         onClick={() => handleBumpOrder(order)}
-                        className="w-full py-3 bg-green-600 hover:bg-green-700 rounded-lg font-bold text-lg transition-colors"
+                        disabled={!socketConnected}
+                        className={`w-full py-3 rounded-lg font-bold text-lg transition-colors ${
+                          socketConnected
+                            ? 'bg-green-600 hover:bg-green-700'
+                            : 'bg-gray-600 cursor-not-allowed opacity-60'
+                        }`}
                       >
                         BUMP ORDER
                       </button>
