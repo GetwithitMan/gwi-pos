@@ -54,6 +54,35 @@
 
 ---
 
+## 2026-03-02 — CFD Completion Sprint: Serial Number, Suggested Items, Admin Page (Skills 475–477)
+
+### Completed
+
+**CFD Serial Number Field — P1 Gap (Skill 475):**
+- `cfdSerialNumber String?` added to Terminal Prisma model
+- nuc-pre-migrate.js idempotent SQL case
+- `POST /api/hardware/terminals/[id]/pair-cfd` writes serial from PAX A3700 device info
+- `GET`/`PUT /api/hardware/terminals/[id]` include cfdSerialNumber
+
+**CFD Suggested Items — Phase 5 (Skill 476):**
+- `isFeaturedCfd Boolean @default(false)` on MenuItem Prisma model
+- `GET /api/cfd/featured-items` endpoint: location-scoped, returns name + imageUrl for featured items
+- gwi-cfd `CfdOrderScreen`: `FeaturedItemCard` composables in horizontal `LazyRow` ("Suggested Items" section)
+- Coil `AsyncImage` for menu item photos, OkHttp background fetch on socket connected
+
+**CFD Back-Office Admin Page — Phase 6 (Skill 477):**
+- New `/settings/hardware/cfd` admin page in gwi-pos
+- Section 1: Paired CFD device list (serial number, paired register, connection status)
+- Section 2: Display settings form (tip mode, signature threshold, idle promo text, receipt options)
+- Section 3: Featured items picker — checkbox grid of menu items, toggles `isFeaturedCfd`
+- `PATCH /api/menu/items/[id]` route for `isFeaturedCfd` toggle
+
+### Commits
+- POS: `e51a05f` (cfdSerialNumber), `8b04893` (isFeaturedCfd + API), `3a9e885` (admin page)
+- CFD: `bf4981d` — suggested items section on CfdOrderScreen
+
+---
+
 ## 2026-03-02 — ModifierSheet Polish, Card-Insert Detection, Payment Result State + My Tips (Skills 467–468)
 
 ### Completed

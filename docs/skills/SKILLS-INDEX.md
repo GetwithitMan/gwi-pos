@@ -768,6 +768,14 @@ Skills that can be developed simultaneously:
 | 331 | Team Management Page | Clerk API integration for invite/role/remove team members. TeamManager component with role badges, invite modal. Audit logging for all team changes. |
 | 332 | Venue Admin Portal | Full sidebar navigation with POS-matching dark UI theme. Settings, Team, Hardware, Floor Plan, Servers pages. Owner/Employee role support planned. |
 
+## Recently Completed (2026-03-02 — CFD Completion Sprint, Skills 475-477)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 475 | CFD Serial Number Field | `cfdSerialNumber String?` on Terminal model. nuc-pre-migrate.js migration. Pair/GET/PUT routes updated. POS commit: `e51a05f`. |
+| 476 | CFD Suggested Items (Phase 5) | `isFeaturedCfd` on MenuItem. `GET /api/cfd/featured-items` endpoint. gwi-cfd `FeaturedItemCard` LazyRow with Coil images on `CfdOrderScreen`. POS commit: `8b04893`. CFD commit: `bf4981d`. |
+| 477 | CFD Back-Office Admin Page (Phase 6) | `/settings/hardware/cfd` page: device list, display settings form, featured items checkbox picker, `PATCH /api/menu/items/[id]` for isFeaturedCfd. POS commit: `3a9e885`. |
+
 ## Recently Completed (2026-02-12 — Mission Control Production Deploy & Foundation, Skills 300-323)
 
 | Skill | Name | What Was Built |
@@ -1428,6 +1436,14 @@ These skills emerged during development and are now part of the system:
 | 472 | Payment Color Pulse Animation | DONE | Android / Payments / UI | 468 | Full-screen animated overlay replacing spinner. Deep blue pulse during processing → green bounce checkmark + amount on approval (auto-dismiss 1.5s) → red shake X + reason on decline (tap to dismiss). ViewModel keeps sheet open and sets `paymentApprovedAmountCents` / `paymentDeclineReason` instead of immediately dismissing. Files: PaymentSheet.kt, OrderViewModel.kt, OrderSheets.kt. |
 | 473 | noTipQuickButton Setting | DONE | Settings / Tips | - | Owner-controlled setting `noTipQuickButton: boolean` (default false) to show/hide "$0 Tip" quick button on tip prompt. Files: src/lib/settings.ts, src/app/(admin)/settings/tips/page.tsx. |
 | 474 | Android Bartender Audit v2 | DONE | Android / QA | 457-468 | Comprehensive front-end simulation audit. 32 findings documented (5 critical, 10 high, 13 medium, 4 low). Key criticals: pay with unsent items, voided item totals not updating, half-paid order abandonment, clock-out deadlock, no manager force-close. Saved to docs/planning/ANDROID-AUDIT-TODO.md. |
+
+### CFD Completion Sprint (2026-03-02)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 475 | CFD Serial Number Field | DONE | Hardware / Customer Display | 461 | `cfdSerialNumber String?` added to Terminal Prisma model. nuc-pre-migrate.js idempotent case. Pair route writes serial from PAX A3700. GET/PUT terminal routes include field. POS commit: `e51a05f`. |
+| 476 | CFD Suggested Items (Phase 5) | DONE | Hardware / Customer Display / Android | 461, 462 | `isFeaturedCfd Boolean @default(false)` on MenuItem. `GET /api/cfd/featured-items` endpoint (location-scoped, returns name + imageUrl). gwi-cfd `CfdOrderScreen`: `FeaturedItemCard` composables in horizontal `LazyRow` with Coil image loading, OkHttp fetch on connected. POS commit: `8b04893`. CFD commit: `bf4981d`. |
+| 477 | CFD Back-Office Admin Page (Phase 6) | DONE | Settings / Hardware / Customer Display | 461, 476 | `/settings/hardware/cfd` admin page: paired device list (serial, register, status), display settings form (tip mode, signature threshold, idle promo), featured items picker with checkboxes. `PATCH /api/menu/items/[id]` toggles `isFeaturedCfd`. POS commit: `3a9e885`. |
 
 ---
 
