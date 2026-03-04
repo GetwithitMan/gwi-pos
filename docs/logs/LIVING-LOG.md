@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-03-03 — Tax Rules Page Bug Fixes (Skill 479)
+
+### Session Summary
+Fixed the Tax Rules admin page which was completely broken due to 5 compounding bugs: missing `requestingEmployeeId` in API calls (401s), broken service worker intercepting `/api/*` (TypeErrors), infinite render loop in `useAdminCRUD` (toast flood), and a Zustand hydration race in `useAuthenticationGuard`. All fixes are in `gwi-pos` only — no schema changes, no Android impact.
+
+### Commits (gwi-pos)
+
+| Commit | Description |
+|--------|-------------|
+| *(this session)* | fix(tax-rules): requestingEmployeeId in GET params + POST body; useAdminCRUD ref-stable extractItems; sw.js v2 no API interception; ServiceWorkerRegistration stale-cache detection; useAuthenticationGuard Zustand hydration fix |
+
+### Files Changed
+- `src/hooks/useAdminCRUD.ts` — requestingEmployeeId config field + URL param; ref-stabilized extractItems
+- `src/app/(admin)/tax-rules/page.tsx` — requestingEmployeeId in useAdminCRUD config + POST payload
+- `src/app/(admin)/customers/page.tsx` — requestingEmployeeId in custom loadCustomers fetch
+- `public/sw.js` — v2: removed broken /api/* interception, bumped CACHE_NAME
+- `src/components/ServiceWorkerRegistration.tsx` — stale-cache detection + forced reload
+- `src/hooks/useAuthenticationGuard.ts` — persist.hasHydrated() + onFinishHydration()
+
+### Bug Fixes
+- Tax rules page 401 on load (requestingEmployeeId missing from GET)
+- "Employee ID is required" on add rule (requestingEmployeeId missing from POST body)
+- TypeError: Failed to fetch on /api/menu during HMR (service worker v1)
+- Toast flood / infinite API calls (unstable parseResponse ref in useAdminCRUD)
+- Occasional false logout on page refresh (Zustand hydration race)
+
+---
+
 ## 2026-03-03 — Tax Pipeline Fix + Cash Rounding Restore
 
 ### Session Summary

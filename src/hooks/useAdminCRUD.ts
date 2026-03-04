@@ -54,13 +54,18 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
   const [modalError, setModalError] = useState<string | null>(null)
   const hasLoadedRef = useRef(false)
 
-   
-  const defaultParseResponse = useCallback((data: any): T[] => {
+  // Store parseResponse in a ref so it never destabilizes extractItems.
+  // Without this, an inline arrow function passed as parseResponse creates
+  // a new reference every render → extractItems changes → loadItems changes
+  // → useEffect re-runs → setItems → re-render → infinite loop.
+  const parseResponseRef = useRef(parseResponse)
+  parseResponseRef.current = parseResponse
+
+  const extractItems = useCallback((data: any): T[] => {
+    if (parseResponseRef.current) return parseResponseRef.current(data)
     const pluralKey = resourceName + 's'
     return data[pluralKey] || data.data || data
   }, [resourceName])
-
-  const extractItems = parseResponse || defaultParseResponse
 
   const loadItems = useCallback(async () => {
     if (!locationId) return

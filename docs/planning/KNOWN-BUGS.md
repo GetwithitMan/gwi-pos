@@ -298,3 +298,7 @@ These were requested but are not bugs — they're missing features. Track them i
 | **Android taxTotal=0 via socket path (3 compounding bugs: device guard, JSON path, no replay)** | 2026-03-03 | Android fix commit (OrderSyncRepository, OrderSyncController) |
 | **Cash rounding settings UI removed from /settings/payments** | 2026-03-03 | `8b6803c` |
 | **priceRounding not passed to calculateOrderTotals in create/add-items** | 2026-03-03 | `9344ee6` |
+| **Tax rules page 401 — `requestingEmployeeId` missing from GET/POST** | 2026-03-03 | Skill 479 (useAdminCRUD.ts, tax-rules/page.tsx) |
+| **Tax rules page TypeError: Failed to fetch — service worker v1 intercepting /api/* and returning undefined** | 2026-03-03 | Skill 479 (public/sw.js v2, ServiceWorkerRegistration.tsx stale-cache detection) |
+| **useAdminCRUD infinite render loop — inline parseResponse ref unstable → toast flood** | 2026-03-03 | Skill 479 (useAdminCRUD.ts ref-stabilized extractItems) |
+| **useAuthenticationGuard Zustand hydration race — one-tick wait too fast** | 2026-03-03 | Skill 479 (useAuthenticationGuard.ts persist.onFinishHydration) |

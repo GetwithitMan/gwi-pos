@@ -34,6 +34,7 @@ export default function TaxRulesPage() {
   const crud = useAdminCRUD<TaxRule>({
     apiBase: '/api/tax-rules',
     locationId: employee?.location?.id,
+    requestingEmployeeId: employee?.id,
     resourceName: 'tax rule',
     parseResponse: (data) => data.taxRules || [],
   })
@@ -102,6 +103,7 @@ export default function TaxRulesPage() {
 
     const payload = {
       locationId: employee.location.id,
+      requestingEmployeeId: employee.id,
       name: formData.name,
       rate: formData.ratePercent,
       appliesTo: formData.appliesTo,

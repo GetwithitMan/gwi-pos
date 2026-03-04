@@ -136,6 +136,7 @@ export default function CustomersPage() {
     try {
       setIsLoading(true)
       const params = new URLSearchParams({ locationId: employee.location.id })
+      if (employee.id) params.set('requestingEmployeeId', employee.id)
       if (searchTerm) params.append('search', searchTerm)
       if (tagFilter) params.append('tag', tagFilter)
 

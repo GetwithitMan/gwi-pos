@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gwi-pos-v1'
+const CACHE_NAME = 'gwi-pos-v2'
 const STATIC_ASSETS = ['/', '/login', '/orders']
 
 self.addEventListener('install', (event) => {
@@ -20,11 +20,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
 
-  // Network-first for API calls
+  // Never intercept API calls — they must always hit the network.
+  // Intercepting API calls with a cache fallback causes TypeError: Failed to fetch
+  // when the fallback returns undefined (API responses are never cached).
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
-    )
     return
   }
 

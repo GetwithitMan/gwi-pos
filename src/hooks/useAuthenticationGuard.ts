@@ -26,9 +26,21 @@ export function useAuthenticationGuard(options?: AuthGuardOptions) {
   const employee = useAuthStore(s => s.employee)
   const redirectUrl = options?.redirectUrl ?? '/login'
 
-  // Wait one tick for Zustand to rehydrate from localStorage
-  const [hydrated, setHydrated] = useState(false)
-  useEffect(() => { setHydrated(true) }, [])
+  // Wait for Zustand persist to finish rehydrating from localStorage.
+  // A one-tick wait (setHydrated in an empty useEffect) is not safe — Zustand 5
+  // persist rehydrates asynchronously and may not be done after one render cycle.
+  // Using onFinishHydration guarantees the real auth state is present before
+  // the redirect guard runs, preventing false logouts on page refresh.
+  const [hydrated, setHydrated] = useState(
+    () => useAuthStore.persist.hasHydrated()
+  )
+  useEffect(() => {
+    if (useAuthStore.persist.hasHydrated()) {
+      setHydrated(true)
+      return
+    }
+    return useAuthStore.persist.onFinishHydration(() => setHydrated(true))
+  }, [])
 
   // Only redirect after hydration confirms auth is truly missing
   useEffect(() => {

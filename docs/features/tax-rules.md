@@ -35,8 +35,10 @@ Configurable tax rules per location with support for tax-inclusive pricing, mult
 | File / Directory | Purpose |
 |-----------------|---------|
 | `src/lib/api/tax-utils.ts` | `computeTaxRuleRate()` — sums active TaxRule rates; `syncTaxRateToSettings()` — persists effective rate to `Location.settings.tax.defaultRate` |
-| `src/app/api/tax-rules/route.ts` | GET list, POST create |
-| `src/app/api/tax-rules/[id]/route.ts` | GET/PUT/DELETE tax rule |
+| `src/app/api/tax-rules/route.ts` | GET list (requires `requestingEmployeeId` query param), POST create (requires `requestingEmployeeId` in body) |
+| `src/app/api/tax-rules/[id]/route.ts` | GET/PUT/DELETE tax rule (no permission gate on [id] routes) |
+| `src/app/(admin)/tax-rules/page.tsx` | Admin UI — list, add, edit, toggle active. Uses `useAdminCRUD` with `requestingEmployeeId` passed for auth |
+| `src/hooks/useAdminCRUD.ts` | Shared CRUD hook. Accepts `requestingEmployeeId` in config; appends to GET query params. Use ref-stabilized `extractItems` to prevent render loops |
 | `src/lib/order-calculations.ts` | `calculateOrderTotals()`, `calculateSplitTax()`, `isItemTaxInclusive()`, `getEffectiveTaxRate()` |
 | `src/lib/pricing.ts` | `roundToCents()`, `calculateCardPrice()` |
 | `src/hooks/usePricing.ts` | Client-side tax calculation hook |
@@ -50,11 +52,11 @@ Configurable tax rules per location with support for tax-inclusive pricing, mult
 
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| `GET` | `/api/tax-rules` | `SETTINGS_TAX` | List all tax rules (ordered by priority) |
-| `POST` | `/api/tax-rules` | `SETTINGS_TAX` | Create new tax rule |
-| `GET` | `/api/tax-rules/[id]` | `SETTINGS_TAX` | Get single tax rule |
-| `PUT` | `/api/tax-rules/[id]` | `SETTINGS_TAX` | Update tax rule |
-| `DELETE` | `/api/tax-rules/[id]` | `SETTINGS_TAX` | Soft delete tax rule |
+| `GET` | `/api/tax-rules` | `SETTINGS_TAX` | List all rules. Requires `locationId` + `requestingEmployeeId` as query params |
+| `POST` | `/api/tax-rules` | `SETTINGS_TAX` | Create rule. Requires `locationId` + `requestingEmployeeId` in request body |
+| `GET` | `/api/tax-rules/[id]` | none | Get single tax rule (no permission gate) |
+| `PUT` | `/api/tax-rules/[id]` | none | Update tax rule (no permission gate) |
+| `DELETE` | `/api/tax-rules/[id]` | none | Soft delete (no permission gate) |
 
 ---
 
@@ -202,6 +204,16 @@ getEffectiveTaxRate(itemTaxRate, itemTaxExempt, locationTaxRate):
 - **Tax-inclusive spec:** `docs/skills/240-TAX-INCLUSIVE-PRICING.md`
 - **Dual pricing:** `docs/guides/PAYMENTS-RULES.md` + `docs/skills/SPEC-31-DUAL-PRICING.md`
 - **Cross-ref:** `docs/features/_CROSS-REF-MATRIX.md` → Tax Rules row
+
+---
+
+## Related Bugs Fixed
+
+See `docs/skills/479-TAX-RULES-PAGE-BUG-FIXES.md` for full details on:
+- `requestingEmployeeId` missing from GET/POST → 401 errors (fixed)
+- Service worker v1 intercepting `/api/*` calls → `TypeError: Failed to fetch` (fixed)
+- `useAdminCRUD` infinite render loop via unstable `parseResponse` ref (fixed)
+- `useAuthenticationGuard` Zustand hydration race condition (fixed)
 
 ---
 

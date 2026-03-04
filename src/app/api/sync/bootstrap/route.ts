@@ -4,7 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { buildSpiritTiersFromItem, normalizeModifier } from '@/lib/spirit-tiers'
 import { parseSettings } from '@/lib/settings'
 
-async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string; cfdTerminalId: string | null; defaultMode: string | null }; error?: never } | { terminal?: never; error: NextResponse }> {
+async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string; cfdTerminalId: string | null; defaultMode: string | null; receiptPrinterId: string | null; kitchenPrinterId: string | null; barPrinterId: string | null }; error?: never } | { terminal?: never; error: NextResponse }> {
   const authHeader = request.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) {

@@ -768,6 +768,13 @@ Skills that can be developed simultaneously:
 | 331 | Team Management Page | Clerk API integration for invite/role/remove team members. TeamManager component with role badges, invite modal. Audit logging for all team changes. |
 | 332 | Venue Admin Portal | Full sidebar navigation with POS-matching dark UI theme. Settings, Team, Hardware, Floor Plan, Servers pages. Owner/Employee role support planned. |
 
+## Recently Completed (2026-03-04 — PAX A6650 Feature Sprint + Table Fix, Skills 480-481)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 480 | PAX A6650 Feature Sprint | 8-phase sprint for the gwi-pax-a6650 handheld: per-terminal IP printer assignment (kitchenPrinterId/barPrinterId on Terminal, SyncMeta, PrinterManager fallback chain); QuickBar Editor (server-synced per-employee, ModalBottomSheet with draggable chips, max 12, Reset to default); Dead Letter Actionable Modal (auto-opens on 0→N transition, Retry re-enqueues OutboxWorker, Clear with confirmation); Item Long-Press Actions (Note/Comp/Void via ItemActionsSheet, PermissionEvaluator, POST /api/orders/[id]/items/[itemId]/note); Diagnostics Screen (long-press hidden, SyncMeta/DB/Outbox sections, Copy All); delete-item guard + add-item snackbar; login delay 3s→1.2s; Table↔Tab mode switch chip; payment retry button; kiosk cancel socket event. Repos: gwi-pax-a6650 commits `ada799b`+`ff91590`, gwi-pos commit `605f127`, gwi-android-register commits `c6095de`+`a20f565`. See `docs/skills/480-PAX-A6650-FEATURE-SPRINT.md`. |
+| 481 | PAX A6650: TABLE_OCCUPIED Stale Table State Fix | Fixed table grid showing "Available" for server-occupied tables, and raw JSON error bubble on tap. Root causes: stale Room cache (order created on another terminal between delta syncs) + no TABLE_OCCUPIED recovery path. Fix: `CreateOrderUseCase` parses BusinessError JSON — on TABLE_OCCUPIED fetches+caches the existing order and navigates to it directly. `TableHomeViewModel.init` fires `refreshOpenOrders()` on entry to correct stale badges within ~1s. `TableUiState.errorMessage` replaces silent TODO with user-facing snackbar for genuine failures. Repo: gwi-pax-a6650 commit `27e232b`. See `docs/skills/481-PAX-A6650-TABLE-OCCUPIED-FIX.md`. |
+
 ## Recently Completed (2026-03-04 — Settings Permission Fix, Skill 479)
 
 | Skill | Name | What Was Built |
@@ -1456,6 +1463,12 @@ These skills emerged during development and are now part of the system:
 | 475 | CFD Serial Number Field | DONE | Hardware / Customer Display | 461 | `cfdSerialNumber String?` added to Terminal Prisma model. nuc-pre-migrate.js idempotent case. Pair route writes serial from PAX A3700. GET/PUT terminal routes include field. POS commit: `e51a05f`. |
 | 476 | CFD Suggested Items (Phase 5) | DONE | Hardware / Customer Display / Android | 461, 462 | `isFeaturedCfd Boolean @default(false)` on MenuItem. `GET /api/cfd/featured-items` endpoint (location-scoped, returns name + imageUrl). gwi-cfd `CfdOrderScreen`: `FeaturedItemCard` composables in horizontal `LazyRow` with Coil image loading, OkHttp fetch on connected. POS commit: `8b04893`. CFD commit: `bf4981d`. |
 | 477 | CFD Back-Office Admin Page (Phase 6) | DONE | Settings / Hardware / Customer Display | 461, 476 | `/settings/hardware/cfd` admin page: paired device list (serial, register, status), display settings form (tip mode, signature threshold, idle promo), featured items picker with checkboxes. `PATCH /api/menu/items/[id]` toggles `isFeaturedCfd`. POS commit: `3a9e885`. |
+
+### Tax Rules Page Bug Fixes (2026-03-03)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 479 | Tax Rules Page Bug Fixes | DONE | Settings / Admin UI / Infrastructure | 36, 400 | 5 bugs fixed. (1) `requestingEmployeeId` missing from GET query params → 401 on page load; fixed in `useAdminCRUD.ts` + `tax-rules/page.tsx` + `customers/page.tsx`. (2) `requestingEmployeeId` missing from POST body → "Employee ID is required" on add; fixed in `tax-rules/page.tsx`. (3) Service worker v1 intercepting `/api/*` — internal fetch failed during HMR → `respondWith(undefined)` → `TypeError: Failed to fetch`; fixed by bumping SW to v2 (no API interception) + stale-cache detection in `ServiceWorkerRegistration.tsx`. (4) `useAdminCRUD` infinite render loop — inline `parseResponse` arrow fn created new ref every render → unstable `extractItems` → unstable `loadItems` → `useEffect` re-fired → toast flood; fixed via ref-stabilized `extractItems`. (5) `useAuthenticationGuard` Zustand hydration race — one-tick wait insufficient for persist middleware; fixed using `persist.hasHydrated()` + `persist.onFinishHydration()`. Files: `useAdminCRUD.ts`, `tax-rules/page.tsx`, `customers/page.tsx`, `public/sw.js`, `ServiceWorkerRegistration.tsx`, `useAuthenticationGuard.ts`. |
 
 ### Android Audit Remediation (2026-03-03)
 
