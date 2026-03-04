@@ -127,6 +127,44 @@ These 8 items will break the system at a real venue.
 
 ---
 
+## 🔴 P1 — Reverse-Flow Audit Findings (Critical Gaps Found 2026-03-03)
+
+These items were discovered by auditing system outputs backwards (socket events, financial records, API responses) rather than forwards. All represent either data integrity risks or silently broken features.
+
+---
+
+### RF-01 — WalkoutRetry: Build Write-Off API
+**Priority:** Critical — Money records accumulate with no formal close path
+**Gap:** `WalkoutRetry.writtenOffAt` / `writtenOffBy` fields exist in schema. Nothing ever sets them. Exhausted retries (after max attempts) sit in the DB indefinitely with no closure.
+**Build:**
+- `PUT /api/datacap/walkout-retry/[id]` with `{ action: 'write-off' }` — requires `MANAGER_VOID_PAYMENTS` permission
+- Set `writtenOffAt = NOW()`, `writtenOffBy = employeeId`, `status = 'written_off'`
+- Add "Write Off" button to walkout retry admin UI
+**Also:** `walkoutAutoDetectMinutes` setting is wired to nothing — either wire it to a close-tab trigger or remove the setting.
+
+---
+
+### RF-02 — ChargebackCase: Build Status-Update API
+**Priority:** Critical — Cases cannot be closed, disputed, or resolved via any API
+**Gap:** `ChargebackCase` model has `status` field (`pending / disputed / resolved / written_off`) but no `PUT /api/chargebacks/[id]` endpoint exists. Cases are import-only.
+**Build:**
+- `PUT /api/chargebacks/[id]` — status update (disputed → resolved / written_off), requires `PAYMENT_MANAGE` or `MANAGER_VOID_PAYMENTS`
+- `notes` field update support
+- Status change should emit `chargeback:updated` or update `needsReconciliation` on linked Payment
+
+---
+
+### RF-03 — Mobile Tab Management: Wire Socket Relay Server Handlers
+**Priority:** Critical — Feature is silently non-functional. `MobileTabActions.tsx` emits 3 events that are silently dropped.
+**Gap:** `socket-server.ts` has ZERO handlers for `tab:close-request`, `tab:transfer-request`, `tab:alert-manager`. Mobile users can tap Close Tab and nothing happens.
+**Build:**
+- `tab:close-request` → validate employee owns tab or has permission → call `close-tab` logic → emit `tab:closed` to POS terminal in same room
+- `tab:transfer-request` → validate target employee exists → reassign tab ownership → emit `tab:updated`
+- `tab:alert-manager` → emit `manager:alert` to all manager-role terminals in location room
+- Remove `tab:items-updated` dead stub or build the emit path
+
+---
+
 ## 🟠 P2 — Important (Weeks 2–4)
 
 ### DISCOUNTS
@@ -215,6 +253,57 @@ These 8 items will break the system at a real venue.
 
 ---
 
+### REVERSE-FLOW AUDIT — P2 Items
+
+#### RF-04 — Pay-at-Table: Fix `locationId = ''` in Datacap Sale Call
+**Priority:** High — Silent payment failure risk
+**Gap:** `src/components/pay-at-table/` sends `locationId = ''` to the Datacap sale endpoint. Relies on Datacap resolving the location from the reader ID. May silently fail for misconfigured readers.
+**Fix:** Pass real `locationId` from query params (it's already in the URL). Validate non-empty before calling Datacap. Add terminal-side "PAT payment in progress" notice when `pat:pay-request` arrives.
+**Also:** `/pay-at-table` route is PUBLIC in `cloud-auth.ts` — determine if this is intentional for iPad kiosk flow or a security gap.
+
+---
+
+#### RF-05 — EOD Cleanup Route: Add `requirePermission()`
+**Priority:** Medium — Auth gap on destructive operation
+**Gap:** `POST /api/orders/eod-cleanup` (the lighter cleanup route) has no `requirePermission()` call — only guarded by `withVenue`. Any authenticated employee can trigger it.
+**Fix:** Add `requirePermission(employee, 'MGR_CLOSE_DAY')` (same as the full reset route) to `eod-cleanup/route.ts`.
+
+---
+
+#### RF-06 — WalkoutRetry: Build Scheduler or Document Manual-Only
+**Priority:** Medium — Route comment says "used by cron" but no cron exists
+**Gap:** `POST /api/datacap/walkout-retry` comment says it's triggered by a cron/scheduler. No scheduler exists anywhere in `server.ts` or workers. All retries require manual API call.
+**Decision needed:** Either (A) wire a NUC-side cron in `server.ts` (e.g., 6 AM daily retry sweep) or (B) add an explicit "Retry All Pending" button to the walkout admin page and remove the misleading comment.
+
+---
+
+#### RF-07 — EOD Reset: Add Admin UI Trigger
+**Priority:** Medium — Managers must call the API directly (no button)
+**Gap:** `POST /api/eod/reset` requires `MGR_CLOSE_DAY` permission but there is no admin page button. Managers have no in-app way to trigger EOD reset.
+**Fix:** Add EOD Reset card to `/settings` or `/settings/orders` — confirmation dialog (lists what will be reset), calls `POST /api/eod/reset`, shows `eod:reset-complete` summary.
+
+---
+
+#### RF-08 — Wire or Remove 6 Orphan Socket Emitters
+**Priority:** Medium — Real-time UI updates silently don't work for admin pages
+**Gap:** These events are emitted but have zero client-side listeners anywhere in the codebase:
+- `inventory:changed` — admin inventory pages don't live-update
+- `employees:changed` — employee list doesn't live-update
+- `employees:updated` (duplicate of above — naming conflict with `employees:changed`)
+- `shifts:changed` — shift list doesn't live-update
+- `order-types:updated` — order type admin doesn't live-update
+- `settings:updated` — settings consumers don't react in real-time
+**Fix:** For each: either add a `useSocket` listener in the relevant admin page to trigger a refetch, or remove the emit if real-time update is intentionally not needed.
+
+---
+
+#### RF-09 — Configure Slack Alert Webhook (or Remove Slack Code Path)
+**Priority:** Medium — HIGH-severity alerts silently go email-only; operators may miss critical alerts
+**Gap:** `src/lib/alert-service.ts` is fully implemented for Slack but `SLACK_WEBHOOK_URL` is never set in any `.env` template or deployment config. HIGH alerts (e.g., payment failures, sync failures) should reach Slack but don't.
+**Fix:** Either (A) add `SLACK_WEBHOOK_URL` to `.env.example` and NUC deployment config + document in NUC-OPERATIONS.md, or (B) if Slack integration is not being used, remove the Slack code path from `alert-service.ts` to avoid confusion.
+
+---
+
 ### EMPLOYEES
 
 #### ~~P2-E01 — Bar Tab Settings Admin UI~~ ✅ ALREADY IMPLEMENTED
@@ -280,6 +369,36 @@ These 8 items will break the system at a real venue.
 - Tiered pricing model
 - Dual pricing compliance UI
 
+### REVERSE-FLOW AUDIT — Documentation & Investigation Items
+
+#### RF-10 — Create `print-routing.md` Feature Doc
+**Priority:** Low — Tag-based print routing is fully built but completely undocumented
+**Gap:** `src/lib/print-template-factory.ts` implements tag-based routing, route priority engine (`PrintRoute` model), modifier-only tickets, backup printer failover. No feature doc exists.
+**Action:** Create `docs/features/print-routing.md` covering: PrintRoute model, tag matching algorithm, backup failover, `routeSpecificSettings`, modifier-only context lines.
+
+---
+
+#### RF-11 — Create `customer-receipts.md` Feature Doc
+**Priority:** Low — `buildReceiptWithSettings()` is fully built with dual pricing/tip/surcharge support but undocumented; no `/api/print/receipt` endpoint
+**Gap:** `buildReceiptWithSettings()` in `print-factory.ts` handles dual pricing, tip suggestions, signature lines, surcharge display — but customer receipt printing is browser `window.print()` only; there is no `/api/print/receipt` endpoint to trigger thermal printing.
+**Action:** Create `docs/features/customer-receipts.md`. Decision point: is thermal customer receipt intentionally omitted or a gap? If gap, add it to the print system.
+
+---
+
+#### RF-12 — Investigate `shift.variance` Write Path
+**Priority:** Low — Field queried in reports but no write path confirmed
+**Gap:** `shift.variance` is queried in cash-liabilities and shift reports. No `db.shift.update({ variance: ... })` call found anywhere in the codebase. Either (A) it's a dead/never-populated field that will always be null, or (B) it's populated by a code path that wasn't found.
+**Action:** `grep -r "shift.*variance\|variance.*shift" src/` to confirm if any write path exists. If confirmed dead, remove from report queries and schema. If found, document it.
+
+---
+
+#### RF-13 — Document `liquor.md` API Routes
+**Priority:** Low — 16+ routes in `/api/liquor/` are undocumented in `docs/features/liquor.md`
+**Gap:** `docs/features/liquor.md` covers the admin builder UI but is missing the full API surface. Routes discovered: GET/POST/PUT/DELETE for bottles, categories, pour sizes, spirit upgrades, counts, and several reporting endpoints.
+**Action:** Update `docs/features/liquor.md` with full route table from `src/app/api/liquor/`.
+
+---
+
 ### MISC SMALL THINGS
 - ~~Quick Pick Numbers toggle in gear menu (T-039)~~ ✅ VERIFIED COMPLETE — toggle lives in gear menu (`UnifiedPOSHeader.tsx` line 290-293), calls `onToggleQuickBar` → `updateLayoutSetting('quickPickEnabled', ...)`. Fully functional. Task board note was outdated.
 - ~~Integration settings pages (SMS, Slack, Email)~~ ✅ VERIFIED COMPLETE — All three settings pages exist and are fully functional (`/settings/integrations/sms`, `/slack`, `/email`). `GET /api/integrations/status` + `POST /api/integrations/test` routes wired. `src/lib/twilio.ts` (SMS service, void approval flow), `src/lib/email-service.ts` (Resend API), `src/lib/alert-service.ts` (rules-based routing + throttling) all fully implemented. No per-venue DB config layer — env vars per NUC is sufficient. No action needed.
@@ -336,13 +455,15 @@ These are DONE and working — reference before adding anything similar:
 | Priority | Count | Est. Effort |
 |----------|-------|-------------|
 | 🚨 Go-Live Blockers | 1 remaining (GL-06 only — run pre-launch tests) | 1 week |
-| 🔴 P1 Critical | 2 remaining (P1-05, P1-07) | 1–2 weeks |
-| 🟠 P2 Important | ~6 remaining | 2–3 weeks |
-| 🟡 P3 Polish | ~20 | 2–3 months |
+| 🔴 P1 Critical | 5 remaining (P1-05, P1-07 + RF-01, RF-02, RF-03) | 2–3 weeks |
+| 🟠 P2 Important | ~12 remaining (~6 original + RF-04 through RF-09) | 3–4 weeks |
+| 🟡 P3 Polish | ~24 (~20 original + RF-10 through RF-13) | 2–3 months |
 | 🟢 Future Roadmap | 7+ | Ongoing |
+
+**Reverse-flow audit additions (2026-03-03):** RF-01 through RF-13 — 3 critical, 6 important, 4 polish/docs.
 
 **Minimum to open first real venue:** Complete GL-06 (run remaining pre-launch tests). Estimated: **1 week of focused testing work.**
 
 ---
 
-*Last updated: 2026-02-21 — P3 sprint: Scheduling shift edit/delete + mobile schedule view, Customer history pagination, all P2 items resolved, Server Performance/Cash Drawer/Reader Health/Online Ordering Phase 3+4 resolved*
+*Last updated: 2026-03-03 — Added RF-01 through RF-13 from reverse-flow documentation audit (WalkoutRetry write-off, ChargebackCase status API, Mobile socket relay handlers, PAT locationId fix, EOD cleanup auth, WalkoutRetry scheduler, EOD admin UI, orphan socket emitters, Slack webhook config, print-routing doc, customer-receipts doc, shift.variance investigation, liquor.md routes)*
