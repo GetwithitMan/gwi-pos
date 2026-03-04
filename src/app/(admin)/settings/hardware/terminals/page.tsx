@@ -22,13 +22,20 @@ interface ScaleInfo {
   isConnected: boolean
 }
 
+type HandheldMode = 'TABLE_SERVICE' | 'BAR_SERVICE' | 'PAYMENT_ONLY'
+
 interface Terminal {
   id: string
   name: string
   category: 'FIXED_STATION' | 'HANDHELD'
+  defaultMode: HandheldMode | null
   staticIp: string | null
   receiptPrinterId: string | null
   receiptPrinter: Printer | null
+  kitchenPrinterId: string | null
+  kitchenPrinter: Printer | null
+  barPrinterId: string | null
+  barPrinter: Printer | null
   scaleId: string | null
   scale: ScaleInfo | null
   roleSkipRules: Record<string, string[]> | null
@@ -87,7 +94,7 @@ export default function TerminalsPage() {
     try {
       const [terminalsRes, printersRes, rolesRes, scalesRes] = await Promise.all([
         fetch(`/api/hardware/terminals?locationId=${locationId}`),
-        fetch(`/api/hardware/printers?locationId=${locationId}&role=receipt`),
+        fetch(`/api/hardware/printers?locationId=${locationId}`),
         fetch(`/api/employees/roles?locationId=${locationId}`),
         fetch(`/api/scales?locationId=${locationId}`),
       ])
@@ -216,6 +223,23 @@ export default function TerminalsPage() {
     }
   }
 
+  const handleUpdateDefaultMode = async (terminalId: string, mode: HandheldMode | null) => {
+    try {
+      const res = await fetch(`/api/hardware/terminals/${terminalId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultMode: mode }),
+      })
+      if (res.ok) {
+        setTerminals(prev => prev.map(t =>
+          t.id === terminalId ? { ...t, defaultMode: mode } : t
+        ))
+      }
+    } catch (error) {
+      console.error('Failed to update default mode:', error)
+    }
+  }
+
   const fixedStations = terminals.filter((t) => t.category === 'FIXED_STATION')
   const handhelds = terminals.filter((t) => t.category === 'HANDHELD')
 
@@ -284,7 +308,7 @@ export default function TerminalsPage() {
             <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
-            Handhelds ({handhelds.length})
+            Handheld Devices ({handhelds.length})
           </h2>
           {handhelds.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow">
@@ -293,7 +317,7 @@ export default function TerminalsPage() {
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
               {handhelds.map((terminal) => (
-                <TerminalCard
+                <HandheldTerminalCard
                   key={terminal.id}
                   terminal={terminal}
                   onEdit={() => setEditingTerminal(terminal)}
@@ -301,6 +325,7 @@ export default function TerminalsPage() {
                   onPair={() => handleGeneratePairingCode(terminal.id)}
                   onUnpair={() => handleUnpair(terminal.id)}
                   onToggleForce={() => handleToggleForceAllPrints(terminal)}
+                  onModeChange={(mode) => handleUpdateDefaultMode(terminal.id, mode)}
                 />
               ))}
             </div>
@@ -643,6 +668,227 @@ function TerminalCard({
   )
 }
 
+const HANDHELD_MODE_OPTIONS: { value: HandheldMode; label: string }[] = [
+  { value: 'TABLE_SERVICE', label: 'Table Service' },
+  { value: 'BAR_SERVICE', label: 'Bar & Tab Service' },
+  { value: 'PAYMENT_ONLY', label: 'Payment Only' },
+]
+
+// Test Print Button — sends ESC/POS test receipt to printer
+function TestPrintButton({ printerId }: { printerId: string }) {
+  const [testing, setTesting] = useState(false)
+
+  const handleTest = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setTesting(true)
+    try {
+      const res = await fetch(`/api/hardware/printers/${printerId}/test`, { method: 'POST' })
+      const json = await res.json()
+      if (json.data?.success) {
+        toast.success('Test print sent')
+      } else {
+        toast.error(json.data?.error || json.error || 'Test print failed')
+      }
+    } catch {
+      toast.error('Test print failed')
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleTest}
+      disabled={testing}
+      className="px-1.5 py-0.5 text-[9px] font-bold uppercase bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors disabled:opacity-50"
+      title="Send test print"
+    >
+      {testing ? '...' : 'Test'}
+    </button>
+  )
+}
+
+// Handheld Terminal Card — extends TerminalCard with Default Mode dropdown
+function HandheldTerminalCard({
+  terminal,
+  onEdit,
+  onDelete,
+  onPair,
+  onUnpair,
+  onToggleForce,
+  onModeChange,
+}: {
+  terminal: Terminal
+  onEdit: () => void
+  onDelete: () => void
+  onPair: () => void
+  onUnpair: () => void
+  onToggleForce: () => void
+  onModeChange: (mode: HandheldMode | null) => void
+}) {
+  const status = getTerminalStatus(terminal)
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-gray-300 transition-colors shadow">
+      {/* Header */}
+      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
+            <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-900">{terminal.name}</h3>
+            <div className="flex items-center gap-2 mt-0.5">
+              <TerminalStatusBadge status={status} />
+              {terminal.appVersion && (
+                <span className="text-[10px] text-gray-400 font-mono">v{terminal.appVersion}</span>
+              )}
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={onEdit}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          title="Edit"
+        >
+          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="p-4 space-y-3">
+        {/* Default Mode */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-600">Default Mode</span>
+          <select
+            value={terminal.defaultMode ?? ''}
+            onChange={(e) => onModeChange(e.target.value ? (e.target.value as HandheldMode) : null)}
+            className="bg-white border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-900 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/20 outline-none"
+          >
+            <option value="">Not Set</option>
+            {HANDHELD_MODE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Receipt Printer */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-600">Receipt Printer</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-900">
+              {terminal.receiptPrinter?.name || <span className="text-gray-500">None</span>}
+            </span>
+            {terminal.receiptPrinterId && (
+              <TestPrintButton printerId={terminal.receiptPrinterId} />
+            )}
+          </div>
+        </div>
+
+        {/* Kitchen Printer */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-600">Kitchen Printer</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-900">
+              {terminal.kitchenPrinter?.name || <span className="text-gray-500">None</span>}
+            </span>
+            {terminal.kitchenPrinterId && (
+              <TestPrintButton printerId={terminal.kitchenPrinterId} />
+            )}
+          </div>
+        </div>
+
+        {/* Bar Printer */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-gray-600">Bar Printer</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-900">
+              {terminal.barPrinter?.name || <span className="text-gray-500">None</span>}
+            </span>
+            {terminal.barPrinterId && (
+              <TestPrintButton printerId={terminal.barPrinterId} />
+            )}
+          </div>
+        </div>
+
+        {/* Connected Hardware (Android terminals) */}
+        {terminal.deviceInfo?.connectedHardware?.cardReader && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-600 flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+              </svg>
+              Card Reader
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
+              <span className="text-gray-900 text-xs">{terminal.deviceInfo.connectedHardware.cardReader.deviceName}</span>
+            </span>
+          </div>
+        )}
+
+        {/* Force All Prints Toggle */}
+        <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-200">
+          <span className="text-gray-600">Emergency Override: Print All</span>
+          <button
+            onClick={onToggleForce}
+            className={`relative w-10 h-5 rounded-full transition-colors ${
+              terminal.forceAllPrints ? 'bg-red-600' : 'bg-gray-300'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                terminal.forceAllPrints ? 'translate-x-5' : 'translate-x-0.5'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="p-4 border-t border-gray-200 flex gap-2">
+        {terminal.isPaired ? (
+          <>
+            <button
+              onClick={onUnpair}
+              className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-sm rounded-lg font-medium transition-colors"
+            >
+              Unpair
+            </button>
+            <button
+              onClick={onPair}
+              className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-gray-900 text-sm rounded-lg font-medium transition-colors"
+            >
+              Re-pair
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={onPair}
+            className="flex-1 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg font-medium transition-colors"
+          >
+            Pair Device
+          </button>
+        )}
+        <button
+          onClick={onDelete}
+          className="px-3 py-2 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg transition-colors"
+          title="Delete"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // Terminal Add/Edit Modal
 function TerminalModal({
   terminal,
@@ -665,6 +911,8 @@ function TerminalModal({
   const [category, setCategory] = useState<'FIXED_STATION' | 'HANDHELD'>(terminal?.category || 'FIXED_STATION')
   const [staticIp, setStaticIp] = useState(terminal?.staticIp || '')
   const [receiptPrinterId, setReceiptPrinterId] = useState(terminal?.receiptPrinterId || '')
+  const [kitchenPrinterId, setKitchenPrinterId] = useState(terminal?.kitchenPrinterId || '')
+  const [barPrinterId, setBarPrinterId] = useState(terminal?.barPrinterId || '')
   const [scaleId, setScaleId] = useState(terminal?.scaleId || '')
   const [roleSkipRules, setRoleSkipRules] = useState<Record<string, string[]>>(
     terminal?.roleSkipRules || {}
@@ -705,6 +953,8 @@ function TerminalModal({
           category,
           staticIp: staticIp.trim() || null,
           receiptPrinterId: receiptPrinterId || null,
+          kitchenPrinterId: kitchenPrinterId || null,
+          barPrinterId: barPrinterId || null,
           scaleId: scaleId || null,
           roleSkipRules,
         }),
@@ -802,6 +1052,48 @@ function TerminalModal({
                 </select>
                 <p className="text-[10px] text-gray-500 mt-1">
                   The receipt printer physically connected to this terminal. Used for customer receipts printed at this station.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                  Kitchen Printer
+                </label>
+                <select
+                  value={kitchenPrinterId}
+                  onChange={(e) => setKitchenPrinterId(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none"
+                >
+                  <option value="">None (Use default routing)</option>
+                  {printers.filter(p => p.printerRole === 'kitchen').map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.ipAddress})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Override kitchen printer for this terminal. Food orders placed here will print to this printer instead of the default.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                  Bar Printer
+                </label>
+                <select
+                  value={barPrinterId}
+                  onChange={(e) => setBarPrinterId(e.target.value)}
+                  className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm text-gray-900 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none"
+                >
+                  <option value="">None (Use default routing)</option>
+                  {printers.filter(p => p.printerRole === 'bar').map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.ipAddress})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  Override bar printer for this terminal. Drink orders placed here will print to this printer instead of the default.
                 </p>
               </div>
 

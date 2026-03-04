@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { buildSpiritTiersFromItem, normalizeModifier } from '@/lib/spirit-tiers'
+import { parseSettings } from '@/lib/settings'
 
-async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string; cfdTerminalId: string | null }; error?: never } | { terminal?: never; error: NextResponse }> {
+async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string; cfdTerminalId: string | null; defaultMode: string | null }; error?: never } | { terminal?: never; error: NextResponse }> {
   const authHeader = request.headers.get('authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (!token) {
@@ -10,7 +12,7 @@ async function authenticateTerminal(request: NextRequest): Promise<{ terminal: {
   }
   const terminal = await db.terminal.findFirst({
     where: { deviceToken: token, deletedAt: null },
-    select: { id: true, locationId: true, name: true, cfdTerminalId: true },
+    select: { id: true, locationId: true, name: true, cfdTerminalId: true, defaultMode: true, receiptPrinterId: true, kitchenPrinterId: true, barPrinterId: true },
   })
   if (!terminal) {
     return { error: NextResponse.json({ error: 'Invalid token' }, { status: 401 }) }
@@ -23,7 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, taxRules] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -32,8 +34,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           include: {
             ownedModifierGroups: {
               where: { deletedAt: null },
-              include: { modifiers: { where: { deletedAt: null } } },
               orderBy: { sortOrder: 'asc' },
+              include: {
+                modifiers: {
+                  where: { deletedAt: null, isActive: true },
+                  orderBy: { sortOrder: 'asc' },
+                  include: {
+                    linkedBottleProduct: {
+                      select: { id: true, name: true, tier: true, pourCost: true },
+                    },
+                  },
+                },
+              },
             },
             pricingOptionGroups: {
               where: { deletedAt: null },
@@ -78,6 +90,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     }),
     db.cfdSettings.findFirst({ where: { locationId, deletedAt: null } }),
+    db.taxRule.findMany({
+      where: { locationId, isActive: true, deletedAt: null, isInclusive: false },
+      select: { rate: true },
+    }),
   ])
 
   // Collect child modifier groups via BFS (supports unlimited nesting depth).
@@ -114,11 +130,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const nextWave: string[] = []
     for (const g of groups) {
       // Normalize Decimal price fields on each modifier
-      const mappedMods = g.modifiers.map((m: any) => ({
-        ...m,
-        price: m.price != null ? Number(m.price) : 0,
-        extraPrice: m.extraPrice != null ? Number(m.extraPrice) : null,
-      }))
+      const mappedMods = g.modifiers.map((m: any) => normalizeModifier(m))
       childModifierGroups.push({ ...g, modifiers: mappedMods })
       g.modifiers.forEach((m: any) => {
         if (m.childModifierGroupId && !fetchedGroupIds.has(m.childModifierGroupId)) {
@@ -130,8 +142,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     wave = nextWave
   }
 
-  const settings = (location?.settings || {}) as Record<string, unknown>
-  const taxRate = ((settings?.tax as Record<string, unknown>)?.defaultRate as number ?? 0) / 100
+  // parseSettings applies mergeWithDefaults — this corrects dualPricing.enabled from the stored
+  // raw JSON (which may have legacy enabled:false) and derives it from cashDiscountPercent.
+  const settings = parseSettings(location?.settings) as unknown as Record<string, unknown>
+  // Compute effective tax rate from non-inclusive TaxRule records (same logic as GET /api/settings).
+  // Rates are stored as decimals (e.g. 0.07 for 7%). Sum and send as decimal fraction to Android.
+  const effectiveTaxRate = taxRules.reduce((sum, r) => sum + Number(r.rate), 0)
+  const taxRate = effectiveTaxRate > 0 ? effectiveTaxRate : ((settings?.tax as Record<string, unknown>)?.defaultRate as number ?? 0) / 100
 
   // Convert Decimal fields to numbers for Android clients
   const mappedCategories = categories.map(cat => ({
@@ -162,6 +179,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         extraPrice: link.extraPrice != null ? Number(link.extraPrice) : (link.ingredient.extraPrice != null ? Number(link.ingredient.extraPrice) : null),
         sortOrder: link.sortOrder,
       })) ?? [],
+      spiritTiers: buildSpiritTiersFromItem(item),
+      hasOtherModifiers: (item as any).ownedModifierGroups?.filter((mg: any) => !mg.isSpiritGroup).length > 0,
     })),
   }))
 
@@ -184,6 +203,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         terminalId: auth.terminal.id,
         locationId: auth.terminal.locationId,
         cfdTerminalId: auth.terminal.cfdTerminalId ?? null,
+        defaultMode: auth.terminal.defaultMode ?? null,
+        receiptPrinterId: auth.terminal.receiptPrinterId ?? null,
+        kitchenPrinterId: auth.terminal.kitchenPrinterId ?? null,
+        barPrinterId: auth.terminal.barPrinterId ?? null,
       },
       cfdSettings: cfdSettings ? {
         tipMode: cfdSettings.tipMode,

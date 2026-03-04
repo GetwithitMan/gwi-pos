@@ -581,6 +581,67 @@ async function runPrePushMigrations() {
       console.warn(`${PREFIX} WARNING: Failed to sync TaxRule rates to Location settings:`, err.message)
     }
 
+    // --- Per-terminal printer assignment (kitchenPrinterId, barPrinterId) ---
+    try {
+      const hasKitchenPrinter = await columnExists(prisma, 'Terminal', 'kitchenPrinterId')
+      if (!hasKitchenPrinter) {
+        console.log(`${PREFIX}   Adding kitchenPrinterId to Terminal...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "Terminal" ADD COLUMN IF NOT EXISTS "kitchenPrinterId" TEXT`)
+        console.log(`${PREFIX}   Done — Terminal.kitchenPrinterId added`)
+      }
+      const hasBarPrinter = await columnExists(prisma, 'Terminal', 'barPrinterId')
+      if (!hasBarPrinter) {
+        console.log(`${PREFIX}   Adding barPrinterId to Terminal...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "Terminal" ADD COLUMN IF NOT EXISTS "barPrinterId" TEXT`)
+        console.log(`${PREFIX}   Done — Terminal.barPrinterId added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Terminal printer columns:`, err.message)
+    }
+
+    // --- QuickBar tables ---
+    try {
+      const [qbpTable] = await prisma.$queryRawUnsafe(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'QuickBarPreference' LIMIT 1`
+      )
+      if (!qbpTable) {
+        console.log(`${PREFIX}   Creating QuickBarPreference table...`)
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "QuickBarPreference" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "locationId" TEXT NOT NULL,
+            "employeeId" TEXT NOT NULL UNIQUE,
+            "itemIds" TEXT NOT NULL,
+            "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `)
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "QuickBarPreference_locationId_idx" ON "QuickBarPreference"("locationId")`)
+        console.log(`${PREFIX}   Done — QuickBarPreference table created`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED QuickBarPreference table:`, err.message)
+    }
+
+    try {
+      const [qbdTable] = await prisma.$queryRawUnsafe(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'QuickBarDefault' LIMIT 1`
+      )
+      if (!qbdTable) {
+        console.log(`${PREFIX}   Creating QuickBarDefault table...`)
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "QuickBarDefault" (
+            "id" TEXT NOT NULL PRIMARY KEY,
+            "locationId" TEXT NOT NULL UNIQUE,
+            "itemIds" TEXT NOT NULL,
+            "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+          )
+        `)
+        console.log(`${PREFIX}   Done — QuickBarDefault table created`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED QuickBarDefault table:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

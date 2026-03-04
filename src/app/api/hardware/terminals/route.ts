@@ -30,6 +30,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               printerRole: true,
             },
           },
+          kitchenPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          barPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
           backupTerminal: {
             select: {
               id: true,

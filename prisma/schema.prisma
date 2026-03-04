@@ -140,6 +140,12 @@ enum TerminalCategory {
   CFD_DISPLAY
 }
 
+enum HandheldMode {
+  TABLE_SERVICE
+  BAR_SERVICE
+  PAYMENT_ONLY
+}
+
 enum PaymentProvider {
   DATACAP_DIRECT
   SIMULATED
@@ -984,6 +990,7 @@ model Employee {
   scheduledShiftsOriginal ScheduledShift[]           @relation("ScheduledShiftOriginal")
   performanceLogs         PerformanceLog[]           @relation("PerformanceLogEmployee")
   syncAuditEntries        SyncAuditEntry[]           @relation("SyncAuditEmployee")
+  quickBarPreference      QuickBarPreference?
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -5676,7 +5683,9 @@ model Printer {
   printJobs  PrintJob[]
   printRules PrintRule[]
   // printRoutes replaced by named relations: printRoutesPrimary + printRoutesBackup (C-SCHEMA-1)
-  terminals  Terminal[]  @relation("TerminalReceiptPrinter") // Terminals using this as receipt printer
+  terminals        Terminal[]  @relation("TerminalReceiptPrinter") // Terminals using this as receipt printer
+  terminalsKitchen Terminal[]  @relation("TerminalKitchenPrinter")
+  terminalsBar     Terminal[]  @relation("TerminalBarPrinter")
 
   // C-SCHEMA-1: Added reverse relations
   printRoutesPrimary PrintRoute[] @relation("PrintRoutePrimaryPrinter")
@@ -5860,7 +5869,8 @@ model Terminal {
 
   // Identity
   name     String // "Bar Terminal 1", "Server Station", "Handheld 3"
-  category TerminalCategory @default(FIXED_STATION)
+  category    TerminalCategory @default(FIXED_STATION)
+  defaultMode HandheldMode? // Only used for HANDHELD terminals
 
   // Network Configuration
   staticIp String? // For fixed stations, helps identify device
@@ -5886,6 +5896,12 @@ model Terminal {
   // The physical receipt printer attached to or near this terminal
   receiptPrinterId String?
   receiptPrinter   Printer? @relation("TerminalReceiptPrinter", fields: [receiptPrinterId], references: [id])
+
+  // Kitchen & Bar Printers (handheld per-terminal assignment)
+  kitchenPrinterId String?
+  kitchenPrinter   Printer? @relation("TerminalKitchenPrinter", fields: [kitchenPrinterId], references: [id])
+  barPrinterId     String?
+  barPrinter       Printer? @relation("TerminalBarPrinter", fields: [barPrinterId], references: [id])
 
   // Role-Based Skip Rules
   // Format: { "bartender": ["bar"], "manager": ["bar", "kitchen"], "chef": ["kitchen"] }
@@ -7964,4 +7980,26 @@ model OrderItemSnapshot {
   @@index([locationId, kitchenStatus])
   @@index([menuItemId, createdAt])
   @@map("order_item_snapshots")
+}
+
+// ============================================
+// QUICK BAR — Per-employee and per-location quick-add presets
+// ============================================
+
+model QuickBarPreference {
+  id         String   @id @default(cuid())
+  locationId String
+  employeeId String   @unique
+  itemIds    String   // JSON array of menuItem IDs
+  updatedAt  DateTime @updatedAt
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([locationId])
+}
+
+model QuickBarDefault {
+  id         String   @id @default(cuid())
+  locationId String   @unique
+  itemIds    String   // JSON array of menuItem IDs
+  updatedAt  DateTime @updatedAt
 }
