@@ -768,6 +768,12 @@ Skills that can be developed simultaneously:
 | 331 | Team Management Page | Clerk API integration for invite/role/remove team members. TeamManager component with role badges, invite modal. Audit logging for all team changes. |
 | 332 | Venue Admin Portal | Full sidebar navigation with POS-matching dark UI theme. Settings, Team, Hardware, Floor Plan, Servers pages. Owner/Employee role support planned. |
 
+## Recently Completed (2026-03-04 — Settings Permission Fix, Skill 479)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 479 | Settings Permission Fix | Settings PUT route used `PERMISSIONS.ADMIN` — a token no standard employee has. Manager has `settings.edit` but couldn't save settings. Fixed: route now uses `PERMISSIONS.SETTINGS_EDIT`. Also added `'all'` to `hasPermission()` bypass and documented super admin PIN 0000 in CLAUDE.md. Playwright-verified: Manager (PIN 1234) can save payment settings. |
+
 ## Recently Completed (2026-03-03 — Android Audit Remediation, Skill 478)
 
 | Skill | Name | What Was Built |

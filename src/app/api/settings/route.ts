@@ -28,10 +28,11 @@ export const GET = withVenue(async function GET() {
     const settings = parseSettings(await getLocationSettings(location.id))
 
     // Derive taxInclusiveLiquor/taxInclusiveFood from TaxRule records
-    const [taxRules, categories] = await Promise.all([
+    // Also compute the effective non-inclusive tax rate by summing all active non-inclusive rules
+    const [allTaxRules, categories] = await Promise.all([
       db.taxRule.findMany({
-        where: { locationId: location.id, isActive: true, isInclusive: true, deletedAt: null },
-        select: { appliesTo: true, categoryIds: true },
+        where: { locationId: location.id, isActive: true, deletedAt: null },
+        select: { appliesTo: true, categoryIds: true, isInclusive: true, rate: true },
       }),
       db.category.findMany({
         where: { locationId: location.id, deletedAt: null },
@@ -39,11 +40,17 @@ export const GET = withVenue(async function GET() {
       }),
     ])
 
+    const inclusiveTaxRules = allTaxRules.filter(r => r.isInclusive)
+    const nonInclusiveTaxRules = allTaxRules.filter(r => !r.isInclusive)
+
+    // Sum all non-inclusive rates (stored as decimals, e.g. 0.07 for 7%)
+    const effectiveTaxRate = nonInclusiveTaxRules.reduce((sum, r) => sum + Number(r.rate), 0)
+
     // Check if any inclusive rule covers liquor or food categories
     let taxInclusiveLiquor = false
     let taxInclusiveFood = false
 
-    for (const rule of taxRules) {
+    for (const rule of inclusiveTaxRules) {
       if (rule.appliesTo === 'all') {
         // An "all items" inclusive rule makes everything inclusive
         taxInclusiveLiquor = true
@@ -65,11 +72,13 @@ export const GET = withVenue(async function GET() {
       }
     }
 
-    // Inject derived tax-inclusive flags into settings
+    // Inject derived tax flags + effective rate from TaxRule records
+    // effectiveTaxRate is a decimal fraction (0.10 = 10%); defaultRate is stored as percent (10.0)
     settings.tax = {
       ...settings.tax,
       taxInclusiveLiquor,
       taxInclusiveFood,
+      ...(effectiveTaxRate > 0 ? { defaultRate: effectiveTaxRate * 100 } : {}),
     }
 
     return NextResponse.json({ data: {
@@ -104,8 +113,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       )
     }
 
-    // Auth: editing settings requires admin permission (unconditional)
-    const auth = await requirePermission(employeeId, location.id, PERMISSIONS.ADMIN)
+    // Auth: editing settings requires settings.edit permission (or admin/all)
+    const auth = await requirePermission(employeeId, location.id, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
@@ -157,6 +166,25 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Invalidate settings caches after update
     invalidateLocationCache(location.id)
     invalidatePaymentSettings(location.id)
+
+    // When cashDiscountPercent changes (or dual pricing is toggled on), recompute priceCC for all
+    // menu items so card prices stay in sync without requiring manual item-by-item saves.
+    const newPct = updatedSettings.dualPricing?.cashDiscountPercent ?? 0
+    const oldPct = currentSettings.dualPricing?.cashDiscountPercent ?? 0
+    const dualNowEnabled = updatedSettings.dualPricing?.enabled === true
+    if (dualNowEnabled && newPct > 0 && newPct !== oldPct) {
+      const multiplier = 1 + newPct / 100
+      const items = await db.menuItem.findMany({
+        where: { locationId: location.id, deletedAt: null, price: { gt: 0 } },
+        select: { id: true, price: true },
+      })
+      await Promise.all(items.map(item =>
+        db.menuItem.update({
+          where: { id: item.id },
+          data: { priceCC: Math.round(Number(item.price) * multiplier * 100) / 100 },
+        })
+      ))
+    }
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: location.id, domain: 'settings', action: 'updated' })

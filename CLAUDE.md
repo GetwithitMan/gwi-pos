@@ -69,7 +69,7 @@ For each feature in Step 3:
 | Question | Where to Check |
 |----------|---------------|
 | Are there open bugs in this area? | `docs/planning/KNOWN-BUGS.md` — **read before changing anything around a known bug** |
-| Does this violate a regression invariant? | `docs/planning/AUDIT_REGRESSION.md` — 26 invariants that must hold after every change |
+| Does this violate a regression invariant? | `docs/planning/AUDIT_REGRESSION.md` — 31 invariants that must hold after every change |
 | Does this add/remove a permission? | `docs/features/roles-permissions.md` + `src/lib/permission-registry.ts` |
 | Does this affect report calculations? | `docs/features/reports.md` + `docs/domains/REPORTS-DOMAIN.md` |
 | Does this mutation work offline? | `docs/features/offline-sync.md` — every mutation needs outbox support |
@@ -141,6 +141,7 @@ Only after Steps 1–5:
 ### Demo Credentials
 | Role | PIN |
 |------|-----|
+| Super Admin (Dev Admin) | 0000 |
 | Manager | 1234 |
 | Server | 2345 |
 | Bartender | 3456 |
@@ -229,6 +230,13 @@ npm run db:studio    # Prisma Studio
 | Happy hour pricing | `docs/features/happy-hour.md` | — | `src/lib/settings.ts` (`isHappyHourActive`, `getHappyHourPrice`) |
 | Daily prep counts | `docs/features/daily-prep-count.md` | — | `src/app/api/daily-prep-counts/` |
 | Coupons / promo codes | `docs/features/coupons.md` | — | `src/app/api/coupons/` |
+| Walkout retry | `docs/features/walkout-retry.md` | — | `src/app/api/orders/[id]/mark-walkout/`, `src/app/api/datacap/walkout-retry/` — ⚠️ no scheduler, no write-off API |
+| Mobile tab management | `docs/features/mobile-tab-management.md` | — | `src/app/(mobile)/`, `src/components/mobile/MobileTabActions.tsx` — ⚠️ socket relay has no server handlers |
+| Pay-at-Table (PAT) | `docs/features/pay-at-table.md` | — | `src/types/multi-surface.ts` (pat:* events) |
+| Notifications / alerts | `docs/features/notifications.md` | — | `src/lib/alert-service.ts`, `src/lib/email-service.ts`, `src/app/api/receipts/email/` |
+| EOD Reset | `docs/features/eod-reset.md` | — | `src/app/api/eod/reset/` |
+| Print routing | `docs/features/print-routing.md` | — | `src/lib/print-template-factory.ts`, `src/lib/print-factory.ts` |
+| Customer receipts | `docs/features/customer-receipts.md` | — | `src/lib/print-factory.ts` (`buildReceiptWithSettings`), `src/app/api/receipts/` |
 | Discounts (auto) | `docs/features/auto-discounts.md` | — | *(Planned — not built)* |
 | Upsell prompts | `docs/features/upsell-prompts.md` | — | *(Schema built — models exist, no API/UI)* |
 | Repeat orders | `docs/features/repeat-orders.md` | — | *(Planned — not built)* |
