@@ -545,14 +545,14 @@ This matrix answers: "If I change feature X, what else might break?"
 
 ---
 
-### Hotel PMS Integration (Planned)
+### Hotel PMS Integration (Oracle OPERA Cloud) — Active
 | | |
 |---|---|
-| **Depends On** | Payments, Orders, Settings |
-| **Depended On By** | Payments |
-| **Shared Models** | TBD |
-| **Shared Socket Events** | TBD |
-| **Critical Rules** | Planned only. |
+| **Depends On** | Payments (room_charge is a tender type in PaymentModal + pay route), Settings (HotelPmsSettings in LocationSettings), Orders (charge posted at order close) |
+| **Depended On By** | Payments (adds room_charge to PaymentMethod enum and modal) |
+| **Shared Models** | `Payment` (roomNumber, guestName, pmsReservationId, pmsTransactionId), `HotelPmsSettings` (in Location.settings), `PmsChargeAttempt` (crash-safe idempotency — PENDING→COMPLETED state machine) |
+| **Shared Socket Events** | None — no socket events emitted for room charges |
+| **Critical Rules** | Credentials stored in Location.settings (NOT env vars). `hotelPms` must remain in the settings PUT deep-merge list or credentials will be wiped on any settings save. No SAF support — room charges fail if OPERA is offline. No auto-reverse on void/refund. "Datacap only" processor rule does NOT apply to room_charge (it bypasses Datacap). Client sends `selectionId` to /pay — never raw OPERA IDs. Selection tokens expire after 10 minutes. `validatePmsBaseUrl()` must run on settings PUT to block SSRF. |
 
 ---
 
@@ -730,6 +730,19 @@ When one of these changes, the entire cluster often needs review:
 | **Security & Compliance** | Security Settings + Roles + Audit Trail + Remote Void Approval | Permission model, access log, and void approval chain |
 | **System Operations** | Notifications + EOD Reset + Error Reporting + Audit Trail | Alert routing, day-close, error capture, and compliance log all share service layer |
 | **Debt & Recovery** | Walkout Retry + Chargebacks + House Accounts | All represent money owed with incomplete close paths — no scheduler, no write-off UI built |
+
+---
+
+---
+
+### 7shifts Integration
+| | |
+|---|---|
+| **Depends On** | Employees (sevenShiftsUserId mapping), Scheduling (ScheduledShift upserts), Time Clock (TimeClockEntry push), Settings (SevenShiftsSettings credentials/token), Shifts (business date for sales push), Reports (net sales aggregation) |
+| **Depended On By** | Scheduling (schedule pull populates ScheduledShift), Time Clock (punch push writes sevenShiftsTimePunchId), Reports (sales push aggregates closed orders) |
+| **Shared Models** | `Employee` (sevenShiftsUserId/RoleId/DeptId/LocationId), `TimeClockEntry` (sevenShiftsTimePunchId/PushedAt/PushError), `ScheduledShift` (sevenShiftsShiftId), `SevenShiftsDailySalesPush`, `Location.settings.sevenShifts` |
+| **Shared Socket Events** | None — 7shifts sync is fire-and-forget; no real-time socket events emitted |
+| **Critical Rules** | Token endpoint is app.7shifts.com (NOT api.7shifts.com). Every API call requires both Authorization + x-company-guid headers. Webhook HMAC key = `{timestamp}#{companyGuid}`. Single-venue fallback only when exactly one location has 7shifts enabled. Fire-and-forget is safe on NUC (persistent process) — not safe on serverless. |
 
 ---
 

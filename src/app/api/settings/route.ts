@@ -12,6 +12,27 @@ import { withVenue } from '@/lib/with-venue'
 const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
 const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
 
+// ─── P1.2: SSRF guardrail for hotelPms.baseUrl ────────────────────────────────
+
+function validatePmsBaseUrl(url: string): string | null {
+  let parsed: URL
+  try { parsed = new URL(url) } catch { return 'baseUrl must be a valid URL' }
+  if (parsed.protocol !== 'https:') return 'baseUrl must use HTTPS'
+  const host = parsed.hostname.toLowerCase()
+  if (
+    host === 'localhost' ||
+    host === '0.0.0.0' ||
+    /^\[?::1\]?$/.test(host) ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+    /^192\.168\./.test(host)
+  ) {
+    return 'baseUrl must not point to a private or internal address'
+  }
+  return null
+}
+
 // GET location settings
 export const GET = withVenue(async function GET() {
   try {
@@ -81,10 +102,36 @@ export const GET = withVenue(async function GET() {
       ...(effectiveTaxRate > 0 ? { defaultRate: effectiveTaxRate * 100 } : {}),
     }
 
+    // P0.1: Never expose PMS or integration secrets to browser.
+    // Strip secrets and replace with boolean "has*" flags so UI can show "✓ Configured"
+    const responseSettings = settings as unknown as Record<string, unknown>
+    if (responseSettings.hotelPms && typeof responseSettings.hotelPms === 'object') {
+      const pms = responseSettings.hotelPms as Record<string, unknown>
+      responseSettings.hotelPms = {
+        ...pms,
+        hasClientSecret: Boolean(pms.clientSecret),
+        hasAppKey: Boolean(pms.appKey),
+        clientSecret: '',
+        appKey: '',
+      }
+    }
+    if (responseSettings.sevenShifts && typeof responseSettings.sevenShifts === 'object') {
+      const ss = responseSettings.sevenShifts as Record<string, unknown>
+      responseSettings.sevenShifts = {
+        ...ss,
+        hasClientSecret: Boolean(ss.clientSecret),
+        hasWebhookSecret: Boolean(ss.webhookSecret),
+        clientSecret: '',
+        webhookSecret: '',
+        accessToken: undefined,
+        accessTokenExpiresAt: undefined,
+      }
+    }
+
     return NextResponse.json({ data: {
       locationId: location.id,
       locationName: location.name,
-      settings,
+      settings: responseSettings,
     } })
   } catch (error) {
     console.error('Failed to fetch settings:', error)
@@ -117,6 +164,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const auth = await requirePermission(employeeId, location.id, PERMISSIONS.SETTINGS_EDIT)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    // P1.2: SSRF guardrail — validate baseUrl before saving
+    if (settings.hotelPms?.baseUrl) {
+      const ssrfError = validatePmsBaseUrl(settings.hotelPms.baseUrl)
+      if (ssrfError) {
+        return NextResponse.json({ error: `Invalid Oracle PMS base URL: ${ssrfError}` }, { status: 400 })
+      }
     }
 
     // Validate dual pricing: cashDiscountPercent must be 0-10%
@@ -153,13 +208,36 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       businessDay: { ...currentSettings.businessDay, ...(settings.businessDay || {}) },
       posDisplay: { ...currentSettings.posDisplay, ...(settings.posDisplay || {}) },
       receiptDisplay: { ...currentSettings.receiptDisplay, ...(settings.receiptDisplay || {}) },
+      hotelPms: settings.hotelPms !== undefined
+        ? { ...(currentSettings.hotelPms ?? {}), ...settings.hotelPms }
+        : currentSettings.hotelPms,
     })
+
+    // P0.1: Preserve existing secrets — never overwrite with empty values.
+    // The browser never receives these fields (GET strips them), so an empty
+    // incoming value means "don't change the secret", not "clear it".
+    let finalSettings = updatedSettings
+    if (settings.hotelPms !== undefined && finalSettings.hotelPms) {
+      const existingPms = currentSettings.hotelPms
+      finalSettings = {
+        ...finalSettings,
+        hotelPms: {
+          ...finalSettings.hotelPms,
+          clientSecret: settings.hotelPms.clientSecret?.trim()
+            ? settings.hotelPms.clientSecret
+            : (existingPms?.clientSecret ?? ''),
+          appKey: settings.hotelPms.appKey?.trim()
+            ? settings.hotelPms.appKey
+            : (existingPms?.appKey ?? ''),
+        },
+      }
+    }
 
     // Update location
     await db.location.update({
       where: { id: location.id },
       data: {
-        settings: updatedSettings as object,
+        settings: finalSettings as object,
       },
     })
 
@@ -169,9 +247,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // When cashDiscountPercent changes (or dual pricing is toggled on), recompute priceCC for all
     // menu items so card prices stay in sync without requiring manual item-by-item saves.
-    const newPct = updatedSettings.dualPricing?.cashDiscountPercent ?? 0
+    const newPct = finalSettings.dualPricing?.cashDiscountPercent ?? 0
     const oldPct = currentSettings.dualPricing?.cashDiscountPercent ?? 0
-    const dualNowEnabled = updatedSettings.dualPricing?.enabled === true
+    const dualNowEnabled = finalSettings.dualPricing?.enabled === true
     if (dualNowEnabled && newPct > 0 && newPct !== oldPct) {
       const multiplier = 1 + newPct / 100
       const items = await db.menuItem.findMany({
@@ -191,7 +269,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     return NextResponse.json({ data: {
       locationId: location.id,
-      settings: updatedSettings,
+      settings: finalSettings,
     } })
   } catch (error) {
     console.error('Failed to update settings:', error)

@@ -199,6 +199,8 @@ const settingsSections: SettingsSection[] = [
     icon: '🔗',
     permission: PERMISSIONS.SETTINGS_INTEGRATIONS,
     items: [
+      { name: 'Oracle Hotel PMS', href: '/settings/integrations/oracle-pms' },
+      { name: '7shifts', href: '/settings/integrations/7shifts' },
       { name: 'SMS (Twilio)', href: '/settings/integrations/sms' },
       { name: 'Email (Resend)', href: '/settings/integrations/email' },
       { name: 'Slack', href: '/settings/integrations/slack' },

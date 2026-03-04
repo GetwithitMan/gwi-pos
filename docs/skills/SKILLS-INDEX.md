@@ -258,6 +258,7 @@
 | 393 | Batch Close Admin UI (T-021) | DONE | Payments, Hardware | 120 | T-021 — /settings/payments: Batch Settlement card, reader selector, Close Batch button, confirmation modal (batch#, txn count, SAF warning). GET /api/datacap/batch preview, POST to confirm. Gated by isSuperAdmin. |
 | 414 | Datacap PayAPI Client Library | DONE | Payments, Hardware | 120 | Standalone Datacap PayAPI wrapper: DatacapPayAPIClient class, XML builder, response parser, communication mode enum, per-reader config, connection pooling. Full TypeScript. |
 | 415 | Cash Drawer Open Signal | DONE | Hardware, Payments | 120, 49 | Fire cash-drawer-open socket event from pay route on cash payment. DrawerOpenSignal component on POS listens and triggers peripheral drawer signal via ESC/POS. |
+| 484 | Oracle OPERA Cloud PMS Integration + Security Hardening | DONE | Payments / Integrations | 30, 09 | Bill to Room payment method. oracle-pms-client.ts: OAuth token cache (55min TTL, 401 auto-retry), AbortController timeouts (8s/12s/15s), lookupByRoom/lookupByName (INHOUSE only), postCharge with Idempotency-Key header, extractTransactionId (placeholder guard), detectOperaError (200-with-error), log-then-throw-generic pattern. 6 new files + 12 modified. room_charge PaymentMethod + 4 Payment fields + PmsChargeAttempt model (PENDING→COMPLETED crash-safe idempotency). selectionId pattern: server issues 48-hex one-time tokens (10min TTL) after lookup; client sends selectionId to /pay, never raw OPERA IDs. Rate limiting: 10 lookups/min per DB-verified employee (IP fallback). Input validation: room [A-Za-z0-9\-]+, name [\p{L}\s\-'\u2019]+ (Unicode + iOS). Write-only secrets: GET strips clientSecret/appKey, returns hasClientSecret booleans; PUT preserves on empty. SSRF guard: validatePmsBaseUrl() requires HTTPS, blocks RFC-1918. Test endpoint requires SETTINGS_EDIT. Admin: /settings/integrations/oracle-pms. Go-Live Checklist in docs/planning/ORACLE-PMS-HARDENING.md. |
 
 ### Inventory & Menu
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -396,6 +397,14 @@
 | 81 | Timed Rentals | DONE | Entertainment | 03 | Pool tables, karaoke, bowling - POS integration, stop & bill, entertainment category type builder, status tracking (94-97) |
 | 82 | Login Redirect | DONE | Settings | 09 | Preserve destination URL after login |
 
+### Integrations
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 484 | Oracle OPERA Cloud PMS | DONE | Payments / Integrations | 30, 09, 33 | Bill-to-Room payment method; OAuth token cache; crash-safe PmsChargeAttempt idempotency; SSRF guardrail |
+| 485 | 7shifts Labor Integration | DONE | Employees / Integrations | 01, 09, 241, 47 | Bidirectional: sales push (SevenShiftsDailySalesPush), time punch push (idempotent via sevenShiftsTimePunchId), schedule pull (upsert by sevenShiftsShiftId), webhook receiver (HMAC + multi-location routing), cron at 7am UTC |
+| 486 | Admin Time Clock Manager | DONE | Employees | 47 | /admin/time-clock — date/employee/status filters, expand-row punch details, Edit Punch modal with required reason |
+| 487 | Employee Detail Page | DONE | Employees | 01, 47, 241 | /admin/employees/[id] — 4 tabs: Profile, Pay & Tax, Time & Attendance (punch history + upcoming shifts + edit modal), 7shifts Mapping |
+
 ---
 
 ## Implementation Summary
@@ -430,7 +439,8 @@
 | Mission Control (Phase 2) | 32 | 0 | 2 | 34 | 94% |
 | DevOps | 1 | 0 | 0 | 1 | 100% |
 | Performance Overhaul | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **262** | **7** | **18** | **287** | **92%** |
+| Integrations | 4 | 0 | 0 | 4 | 100% |
+| **TOTAL** | **266** | **7** | **18** | **291** | **91%** |
 
 ### Parallel Development Groups (Remaining)
 

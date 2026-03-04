@@ -253,7 +253,8 @@ npm run db:studio    # Prisma Studio
 | Host management | `docs/features/host-management.md` | — | *(Planned — not built)* |
 | Multi-location | `docs/features/multi-location.md` | — | *(Planned — not built)* |
 | Invoicing / B2B | `docs/features/invoicing.md` | — | *(Planned — not built)* |
-| Hotel PMS integration | `docs/features/hotel-pms.md` | — | *(Planned — not built)* |
+| Hotel PMS integration | `docs/features/hotel-pms.md` | — | `src/lib/oracle-pms-client.ts`, `src/app/api/integrations/oracle-pms/`, `src/app/(admin)/settings/integrations/oracle-pms/page.tsx` |
+| 7shifts labor integration | `docs/features/7shifts-integration.md` | `docs/skills/SPEC-485-7SHIFTS-INTEGRATION.md` | `src/lib/7shifts-client.ts`, `src/app/api/integrations/7shifts/`, `src/app/api/webhooks/7shifts/`, `src/app/(admin)/settings/integrations/7shifts/` |
 | Printer settings | `docs/features/printer-settings.md` | — | *(Planned — not built)* |
 
 ### Flow Docs (read when your change crosses feature boundaries)

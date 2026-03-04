@@ -642,6 +642,484 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED QuickBarDefault table:`, err.message)
     }
 
+    // --- 7shifts integration fields ---
+    try {
+      const sevenShiftsEmployeeCols = [
+        { col: 'sevenShiftsUserId',       type: 'TEXT' },
+        { col: 'sevenShiftsRoleId',       type: 'TEXT' },
+        { col: 'sevenShiftsDepartmentId', type: 'TEXT' },
+        { col: 'sevenShiftsLocationId',   type: 'TEXT' },
+      ]
+      for (const { col, type } of sevenShiftsEmployeeCols) {
+        const hasCol = await columnExists(prisma, 'Employee', col)
+        if (!hasCol) {
+          console.log(`${PREFIX}   Adding Employee.${col}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "${col}" ${type}`)
+          console.log(`${PREFIX}   Done — Employee.${col} added`)
+        }
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED 7shifts Employee columns:`, err.message)
+    }
+
+    try {
+      const sevenShiftsTimePunchCols = [
+        { col: 'sevenShiftsTimePunchId', type: 'TEXT' },
+        { col: 'sevenShiftsPushedAt',    type: 'TIMESTAMP(3)' },
+        { col: 'sevenShiftsPushError',   type: 'TEXT' },
+      ]
+      for (const { col, type } of sevenShiftsTimePunchCols) {
+        const hasCol = await columnExists(prisma, 'TimeClockEntry', col)
+        if (!hasCol) {
+          console.log(`${PREFIX}   Adding TimeClockEntry.${col}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "TimeClockEntry" ADD COLUMN IF NOT EXISTS "${col}" ${type}`)
+          console.log(`${PREFIX}   Done — TimeClockEntry.${col} added`)
+        }
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED 7shifts TimeClockEntry columns:`, err.message)
+    }
+
+    try {
+      const hasSevenShiftsShiftId = await columnExists(prisma, 'ScheduledShift', 'sevenShiftsShiftId')
+      if (!hasSevenShiftsShiftId) {
+        console.log(`${PREFIX}   Adding ScheduledShift.sevenShiftsShiftId...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "ScheduledShift" ADD COLUMN IF NOT EXISTS "sevenShiftsShiftId" TEXT`)
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ScheduledShift_sevenShiftsShiftId_idx" ON "ScheduledShift"("sevenShiftsShiftId")`)
+        console.log(`${PREFIX}   Done — ScheduledShift.sevenShiftsShiftId added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED 7shifts ScheduledShift column:`, err.message)
+    }
+
+    try {
+      const [ssTable] = await prisma.$queryRawUnsafe(
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'SevenShiftsDailySalesPush' LIMIT 1`
+      )
+      if (!ssTable) {
+        console.log(`${PREFIX}   Creating SevenShiftsDailySalesPush table...`)
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS "SevenShiftsDailySalesPush" (
+            "id"                   TEXT NOT NULL PRIMARY KEY,
+            "locationId"           TEXT NOT NULL,
+            "businessDate"         TEXT NOT NULL,
+            "revenueType"          TEXT NOT NULL,
+            "sevenShiftsReceiptId" TEXT,
+            "netTotalCents"        INTEGER NOT NULL,
+            "tipsAmountCents"      INTEGER NOT NULL DEFAULT 0,
+            "status"               TEXT NOT NULL DEFAULT 'pending',
+            "errorMessage"         TEXT,
+            "pushedAt"             TIMESTAMP(3),
+            "createdAt"            TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            "updatedAt"            TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "SevenShiftsDailySalesPush_locationId_fkey"
+              FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+            CONSTRAINT "SevenShiftsDailySalesPush_locationId_businessDate_revenueType_key"
+              UNIQUE ("locationId", "businessDate", "revenueType")
+          )
+        `)
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SevenShiftsDailySalesPush_locationId_idx" ON "SevenShiftsDailySalesPush"("locationId")`)
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SevenShiftsDailySalesPush_businessDate_idx" ON "SevenShiftsDailySalesPush"("businessDate")`)
+        await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "SevenShiftsDailySalesPush_status_idx" ON "SevenShiftsDailySalesPush"("status")`)
+        console.log(`${PREFIX}   Done — SevenShiftsDailySalesPush table created`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED SevenShiftsDailySalesPush table:`, err.message)
+    }
+
+    // --- Hotel PMS / room_charge Payment fields ---
+    try {
+      const pmsCols = [
+        { col: 'roomNumber', type: 'TEXT' },
+        { col: 'guestName', type: 'TEXT' },
+        { col: 'pmsReservationId', type: 'TEXT' },
+        { col: 'pmsTransactionId', type: 'TEXT' },
+      ]
+      for (const { col, type } of pmsCols) {
+        const hasCol = await columnExists(prisma, 'Payment', col)
+        if (!hasCol) {
+          console.log(`${PREFIX}   Adding Payment.${col}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "${col}" ${type}`)
+          console.log(`${PREFIX}   Done — Payment.${col} added`)
+        }
+      }
+      // Add room_charge to PaymentMethod enum (Postgres ALTER TYPE)
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN ALTER TYPE "PaymentMethod" ADD VALUE IF NOT EXISTS 'room_charge'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+      )
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Hotel PMS Payment columns:`, err.message)
+    }
+
+    // --- PmsChargeAttempt table (crash-safe idempotency for Oracle PMS room charges) ---
+    try {
+      // Create Postgres enum type if it doesn't exist
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN CREATE TYPE "PmsAttemptStatus" AS ENUM ('PENDING', 'COMPLETED', 'FAILED'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+      )
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "PmsChargeAttempt" (
+          "id" TEXT NOT NULL,
+          "idempotencyKey" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "orderId" TEXT NOT NULL,
+          "reservationId" TEXT NOT NULL,
+          "amountCents" INTEGER NOT NULL,
+          "chargeCode" TEXT NOT NULL,
+          "status" "PmsAttemptStatus" NOT NULL DEFAULT 'PENDING',
+          "operaTransactionId" TEXT,
+          "providerRequestId" TEXT,
+          "employeeId" TEXT,
+          "lastErrorMessage" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "PmsChargeAttempt_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "PmsChargeAttempt_idempotencyKey_key" ON "PmsChargeAttempt"("idempotencyKey")`
+      )
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "PmsChargeAttempt_orderId_idx" ON "PmsChargeAttempt"("orderId")`
+      )
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "PmsChargeAttempt_reservationId_idx" ON "PmsChargeAttempt"("reservationId")`
+      )
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "PmsChargeAttempt_locationId_createdAt_idx" ON "PmsChargeAttempt"("locationId", "createdAt")`
+      )
+      console.log(`${PREFIX}   PmsChargeAttempt table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED PmsChargeAttempt:`, err.message)
+    }
+
+    // ====================================================================
+    // COGS / MarginEdge / Invoice Extensions
+    // ====================================================================
+
+    // --- New enum types ---
+    try {
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN CREATE TYPE "InvoiceSource" AS ENUM ('manual', 'marginedge', 'api'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+      )
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN CREATE TYPE "VendorOrderStatus" AS ENUM ('draft', 'sent', 'confirmed', 'received', 'cancelled'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+      )
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN CREATE TYPE "WasteReason" AS ENUM ('spoilage', 'over_pour', 'spill', 'breakage', 'expired', 'void_comped', 'other'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+      )
+      // Add new values to InvoiceStatus enum
+      await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TYPE "InvoiceStatus" ADD VALUE IF NOT EXISTS 'draft'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
+      await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TYPE "InvoiceStatus" ADD VALUE IF NOT EXISTS 'approved'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
+      await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TYPE "InvoiceStatus" ADD VALUE IF NOT EXISTS 'posted'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
+      await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TYPE "InvoiceStatus" ADD VALUE IF NOT EXISTS 'voided'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
+      // Add voided to InventoryCountStatus enum
+      await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TYPE "InventoryCountStatus" ADD VALUE IF NOT EXISTS 'voided'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
+      console.log(`${PREFIX}   COGS enum types ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED COGS enum types:`, err.message)
+    }
+
+    // --- Invoice: new columns ---
+    try {
+      const invoiceCols = [
+        { col: 'deliveryDate', type: 'TIMESTAMP(3)' },
+        { col: 'source', type: `TEXT NOT NULL DEFAULT 'manual'` },
+        { col: 'marginEdgeInvoiceId', type: 'TEXT' },
+        { col: 'createdById', type: 'TEXT' },
+        { col: 'approvedById', type: 'TEXT' },
+        { col: 'approvedAt', type: 'TIMESTAMP(3)' },
+      ]
+      for (const { col, type } of invoiceCols) {
+        const hasCol = await columnExists(prisma, 'Invoice', col)
+        if (!hasCol) {
+          console.log(`${PREFIX}   Adding Invoice.${col}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "Invoice" ADD COLUMN IF NOT EXISTS "${col}" ${type}`)
+          console.log(`${PREFIX}   Done — Invoice.${col} added`)
+        }
+      }
+      // Compound unique: (locationId, marginEdgeInvoiceId) — scoped per tenant, not globally unique
+      // Drop old global unique if it exists, replace with compound
+      await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "Invoice_marginEdgeInvoiceId_key"`)
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Invoice_locationId_marginEdgeInvoiceId_key" ON "Invoice"("locationId","marginEdgeInvoiceId") WHERE "marginEdgeInvoiceId" IS NOT NULL`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Invoice COGS columns:`, err.message)
+    }
+
+    // --- InvoiceLineItem: new column ---
+    try {
+      const hasCol = await columnExists(prisma, 'InvoiceLineItem', 'marginEdgeProductId')
+      if (!hasCol) {
+        console.log(`${PREFIX}   Adding InvoiceLineItem.marginEdgeProductId...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "InvoiceLineItem" ADD COLUMN IF NOT EXISTS "marginEdgeProductId" TEXT`)
+        console.log(`${PREFIX}   Done — InvoiceLineItem.marginEdgeProductId added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED InvoiceLineItem.marginEdgeProductId:`, err.message)
+    }
+
+    // --- InventoryTransaction: new columns ---
+    try {
+      const invTxnCols = [
+        { col: 'businessDate', type: 'TIMESTAMP(3)' },
+        { col: 'source', type: 'TEXT' },
+        { col: 'wasteLogId', type: 'TEXT' },
+        { col: 'invoiceId', type: 'TEXT' },
+      ]
+      for (const { col, type } of invTxnCols) {
+        const hasCol = await columnExists(prisma, 'InventoryTransaction', col)
+        if (!hasCol) {
+          console.log(`${PREFIX}   Adding InventoryTransaction.${col}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "InventoryTransaction" ADD COLUMN IF NOT EXISTS "${col}" ${type}`)
+          console.log(`${PREFIX}   Done — InventoryTransaction.${col} added`)
+        }
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED InventoryTransaction COGS columns:`, err.message)
+    }
+
+    // --- InventoryItem: new columns ---
+    try {
+      const invItemCols = [
+        { col: 'lastInvoiceCost', type: 'DECIMAL(10,4)' },
+        { col: 'lastInvoiceDate', type: 'TIMESTAMP(3)' },
+        { col: 'marginEdgeProductId', type: 'TEXT' },
+        { col: 'averageCost', type: 'DECIMAL(10,4)' },
+      ]
+      for (const { col, type } of invItemCols) {
+        const hasCol = await columnExists(prisma, 'InventoryItem', col)
+        if (!hasCol) {
+          console.log(`${PREFIX}   Adding InventoryItem.${col}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "InventoryItem" ADD COLUMN IF NOT EXISTS "${col}" ${type}`)
+          console.log(`${PREFIX}   Done — InventoryItem.${col} added`)
+        }
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED InventoryItem COGS columns:`, err.message)
+    }
+
+    // --- InventoryCount: new columns ---
+    try {
+      const invCountCols = [
+        { col: 'categoryFilter', type: 'TEXT' },
+        { col: 'totalVarianceCost', type: 'DECIMAL(10,2)' },
+      ]
+      for (const { col, type } of invCountCols) {
+        const hasCol = await columnExists(prisma, 'InventoryCount', col)
+        if (!hasCol) {
+          console.log(`${PREFIX}   Adding InventoryCount.${col}...`)
+          await prisma.$executeRawUnsafe(`ALTER TABLE "InventoryCount" ADD COLUMN IF NOT EXISTS "${col}" ${type}`)
+          console.log(`${PREFIX}   Done — InventoryCount.${col} added`)
+        }
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED InventoryCount COGS columns:`, err.message)
+    }
+
+    // --- IngredientCostHistory table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "IngredientCostHistory" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "inventoryItemId" TEXT NOT NULL,
+          "oldCostPerUnit" DECIMAL(10,4) NOT NULL,
+          "newCostPerUnit" DECIMAL(10,4) NOT NULL,
+          "changePercent" DECIMAL(6,2) NOT NULL,
+          "source" TEXT NOT NULL,
+          "invoiceId" TEXT,
+          "invoiceNumber" TEXT,
+          "vendorName" TEXT,
+          "recordedById" TEXT,
+          "effectiveDate" TIMESTAMP(3) NOT NULL,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "IngredientCostHistory_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "IngredientCostHistory_locationId_inventoryItemId_effectiveDate_idx" ON "IngredientCostHistory"("locationId", "inventoryItemId", "effectiveDate")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "IngredientCostHistory_locationId_effectiveDate_idx" ON "IngredientCostHistory"("locationId", "effectiveDate")`)
+      console.log(`${PREFIX}   IngredientCostHistory table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED IngredientCostHistory:`, err.message)
+    }
+
+    // --- VendorOrder table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "VendorOrder" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "vendorId" TEXT NOT NULL,
+          "orderNumber" TEXT,
+          "status" "VendorOrderStatus" NOT NULL DEFAULT 'draft',
+          "orderDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "expectedDelivery" TIMESTAMP(3),
+          "receivedAt" TIMESTAMP(3),
+          "totalEstimated" DECIMAL(10,2),
+          "totalActual" DECIMAL(10,2),
+          "notes" TEXT,
+          "createdById" TEXT,
+          "receivedById" TEXT,
+          "linkedInvoiceId" TEXT,
+          "deletedAt" TIMESTAMP(3),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "VendorOrder_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorOrder_locationId_status_idx" ON "VendorOrder"("locationId", "status")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorOrder_locationId_orderDate_idx" ON "VendorOrder"("locationId", "orderDate")`)
+      console.log(`${PREFIX}   VendorOrder table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED VendorOrder:`, err.message)
+    }
+
+    // --- VendorOrderLineItem table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "VendorOrderLineItem" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "vendorOrderId" TEXT NOT NULL,
+          "inventoryItemId" TEXT NOT NULL,
+          "quantity" DECIMAL(10,4) NOT NULL,
+          "unit" TEXT NOT NULL,
+          "estimatedCost" DECIMAL(10,4),
+          "actualCost" DECIMAL(10,4),
+          "receivedQty" DECIMAL(10,4),
+          "notes" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "deletedAt" TIMESTAMP(3),
+          CONSTRAINT "VendorOrderLineItem_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      // Backfill locationId from parent VendorOrder if table already existed without it
+      if (!(await columnExists(prisma, 'VendorOrderLineItem', 'locationId'))) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE "VendorOrderLineItem" ADD COLUMN IF NOT EXISTS "locationId" TEXT NOT NULL DEFAULT ''`)
+        await prisma.$executeRawUnsafe(`UPDATE "VendorOrderLineItem" vol SET "locationId" = vo."locationId" FROM "VendorOrder" vo WHERE vol."vendorOrderId" = vo.id AND vol."locationId" = ''`)
+      }
+      if (!(await columnExists(prisma, 'VendorOrderLineItem', 'deletedAt'))) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE "VendorOrderLineItem" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)`)
+      }
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorOrderLineItem_locationId_idx" ON "VendorOrderLineItem"("locationId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorOrderLineItem_locationId_vendorOrderId_idx" ON "VendorOrderLineItem"("locationId","vendorOrderId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorOrderLineItem_locationId_deletedAt_idx" ON "VendorOrderLineItem"("locationId","deletedAt")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorOrderLineItem_vendorOrderId_idx" ON "VendorOrderLineItem"("vendorOrderId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "VendorOrderLineItem_inventoryItemId_idx" ON "VendorOrderLineItem"("inventoryItemId")`)
+      console.log(`${PREFIX}   VendorOrderLineItem table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED VendorOrderLineItem:`, err.message)
+    }
+
+    // --- InventoryCountEntry table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "InventoryCountEntry" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "inventoryCountId" TEXT NOT NULL,
+          "inventoryItemId" TEXT NOT NULL,
+          "expectedQty" DECIMAL(10,4),
+          "countedQty" DECIMAL(10,4) NOT NULL,
+          "unit" TEXT NOT NULL,
+          "variance" DECIMAL(10,4),
+          "unitCost" DECIMAL(10,4) NOT NULL,
+          "varianceCost" DECIMAL(10,2),
+          "notes" TEXT,
+          "countedById" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "InventoryCountEntry_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "InventoryCountEntry_inventoryCountId_inventoryItemId_key" UNIQUE ("inventoryCountId", "inventoryItemId")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryCountEntry_inventoryCountId_idx" ON "InventoryCountEntry"("inventoryCountId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryCountEntry_inventoryItemId_idx" ON "InventoryCountEntry"("inventoryItemId")`)
+      console.log(`${PREFIX}   InventoryCountEntry table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED InventoryCountEntry:`, err.message)
+    }
+
+    // --- WasteLog table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "WasteLog" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "inventoryItemId" TEXT,
+          "bottleProductId" TEXT,
+          "quantity" DECIMAL(10,4) NOT NULL,
+          "unit" TEXT NOT NULL,
+          "cost" DECIMAL(10,2) NOT NULL,
+          "reason" "WasteReason" NOT NULL,
+          "notes" TEXT,
+          "recordedById" TEXT NOT NULL,
+          "businessDate" TIMESTAMP(3) NOT NULL,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "WasteLog_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "WasteLog_locationId_businessDate_idx" ON "WasteLog"("locationId", "businessDate")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "WasteLog_locationId_reason_idx" ON "WasteLog"("locationId", "reason")`)
+      console.log(`${PREFIX}   WasteLog table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED WasteLog:`, err.message)
+    }
+
+    // --- MarginEdgeProductMapping table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "MarginEdgeProductMapping" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "marginEdgeProductId" TEXT NOT NULL,
+          "marginEdgeProductName" TEXT NOT NULL,
+          "inventoryItemId" TEXT NOT NULL,
+          "marginEdgeVendorId" TEXT,
+          "marginEdgeVendorName" TEXT,
+          "marginEdgeUnit" TEXT,
+          "lastSyncAt" TIMESTAMP(3),
+          "isActive" BOOLEAN NOT NULL DEFAULT true,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "MarginEdgeProductMapping_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "MarginEdgeProductMapping_locationId_marginEdgeProductId_key" UNIQUE ("locationId", "marginEdgeProductId")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MarginEdgeProductMapping_locationId_inventoryItemId_idx" ON "MarginEdgeProductMapping"("locationId", "inventoryItemId")`)
+      console.log(`${PREFIX}   MarginEdgeProductMapping table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED MarginEdgeProductMapping:`, err.message)
+    }
+
+    // --- MenuItemDailyMetrics table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "MenuItemDailyMetrics" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "menuItemId" TEXT NOT NULL,
+          "businessDate" TIMESTAMP(3) NOT NULL,
+          "quantitySold" INTEGER NOT NULL DEFAULT 0,
+          "totalRevenue" DECIMAL(10,2) NOT NULL DEFAULT 0,
+          "totalCost" DECIMAL(10,2) NOT NULL DEFAULT 0,
+          "foodCostPct" DECIMAL(6,2),
+          "contributionMargin" DECIMAL(10,2),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "MenuItemDailyMetrics_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "MenuItemDailyMetrics_locationId_menuItemId_businessDate_key" UNIQUE ("locationId", "menuItemId", "businessDate")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MenuItemDailyMetrics_locationId_businessDate_idx" ON "MenuItemDailyMetrics"("locationId", "businessDate")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MenuItemDailyMetrics_locationId_menuItemId_idx" ON "MenuItemDailyMetrics"("locationId", "menuItemId")`)
+      console.log(`${PREFIX}   MenuItemDailyMetrics table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED MenuItemDailyMetrics:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

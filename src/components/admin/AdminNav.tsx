@@ -249,6 +249,7 @@ const navSections: NavSection[] = [
     adminItems: [
       { name: 'Counts', href: '/inventory/counts', icon: Icons.chart },
       { name: 'Waste Log', href: '/inventory/waste', icon: Icons.void },
+      { name: 'Reorder', href: '/inventory/reorder', icon: Icons.outOfStock },
       { name: 'Vendors', href: '/inventory/vendors', icon: Icons.houseAccount },
     ],
   },
@@ -297,6 +298,7 @@ const navSections: NavSection[] = [
     permission: PERMISSIONS.STAFF_VIEW,
     items: [
       { name: 'Employees', href: '/employees', icon: Icons.employee },
+      { name: 'Time Clock', href: '/time-clock', icon: Icons.clock },
     ],
     adminItems: [
       { name: 'Roles & Permissions', href: '/roles', icon: Icons.role },

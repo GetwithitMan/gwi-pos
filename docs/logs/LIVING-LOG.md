@@ -5,6 +5,180 @@
 
 ---
 
+## 2026-03-04 — 7shifts Labor Integration v1 + Security Hardening
+
+### Session Summary
+Built the complete 7shifts bidirectional labor integration: OAuth client (token persisted to DB for serverless safety), 9 API routes (status, test, push-sales, push-time-punches, pull-schedule, sync, users, link-employee, register-webhooks), webhook receiver with correct HMAC verification, Vercel cron, admin settings UI, employee mapping UI, and two supporting admin pages (Time Clock Manager + Employee Detail). Applied a full security hardening pass on the webhook receiver (correct x-hmac-timestamp/x-hmac-signature headers, multi-location routing via x-company-id, replay protection, timing-safe compare, single-venue fallback safety, normalized hex encoding).
+
+### Commits (gwi-pos)
+No single commit — built iteratively with live code review. All files written and type-check clean (0 errors).
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib/7shifts-client.ts` | OAuth client, token cache, DB persistence, retry wrapper, 9 API methods |
+| `src/app/api/integrations/7shifts/_helpers.ts` | getBusinessDate(), getDateRange(), updateSyncStatus() |
+| `src/app/api/integrations/7shifts/status/route.ts` | isConfigured/isEnabled split, employeesLinked count, webhooksRegistered flag |
+| `src/app/api/integrations/7shifts/test/route.ts` | POST — verify OAuth + company GUID via getLocations() |
+| `src/app/api/integrations/7shifts/users/route.ts` | GET 7shifts users for mapping UI |
+| `src/app/api/integrations/7shifts/link-employee/route.ts` | POST — save sevenShiftsUserId + role/dept/locationId to Employee |
+| `src/app/api/integrations/7shifts/push-sales/route.ts` | POST — aggregate orders → SevenShiftsDailySalesPush → createReceipt() |
+| `src/app/api/integrations/7shifts/push-time-punches/route.ts` | POST — push completed TimeClockEntries (idempotent via sevenShiftsTimePunchId) |
+| `src/app/api/integrations/7shifts/pull-schedule/route.ts` | POST — listShifts() → upsert ScheduledShift by sevenShiftsShiftId |
+| `src/app/api/integrations/7shifts/register-webhooks/route.ts` | POST — idempotent: list existing → skip registered → create missing → set webhooksRegisteredAt |
+| `src/app/api/integrations/7shifts/sync/route.ts` | POST — orchestrate all 3 operations, update per-op status |
+| `src/app/api/integrations/7shifts/pre-sync-check/route.ts` | GET — validate readiness: unmapped employees, open punches, missing rates |
+| `src/app/api/webhooks/7shifts/route.ts` | POST — x-hmac-timestamp/x-hmac-signature HMAC, multi-location routing, schedule.published pull |
+| `src/app/api/cron/7shifts-sync/route.ts` | Vercel cron handler — 7am UTC daily, timezone-correct business date |
+| `src/app/(admin)/settings/integrations/7shifts/page.tsx` | Main settings UI — credentials, sync options, last sync status, register webhooks, sync now |
+| `src/app/(admin)/settings/integrations/7shifts/employees/page.tsx` | Employee mapping table — link/unlink to 7shifts accounts |
+| `src/app/(admin)/time-clock/page.tsx` | Admin time clock manager — punch history with filters, edit punch modal |
+| `src/app/(admin)/employees/[id]/page.tsx` | Employee detail — 4 tabs: Profile, Pay & Tax, Time & Attendance, 7shifts |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `prisma/schema.prisma` | Employee (4 sevenShifts* fields), TimeClockEntry (3 sevenShifts* fields), ScheduledShift (sevenShiftsShiftId), new SevenShiftsDailySalesPush model |
+| `scripts/nuc-pre-migrate.js` | ALTER TABLE DDL for all new columns + CREATE TABLE SevenShiftsDailySalesPush |
+| `src/lib/settings.ts` | SevenShiftsSettings interface + DEFAULT + merge; webhooksRegisteredAt field |
+| `src/components/admin/SettingsNav.tsx` | 7shifts nav link under Integrations |
+| `src/components/admin/AdminNav.tsx` | Time Clock link under Team section |
+| `vercel.json` | Cron job: /api/cron/7shifts-sync at 0 7 * * * |
+| `src/app/(admin)/scheduling/page.tsx` | 7shifts import card, Pull from 7shifts button, "7s" badge on imported shifts |
+| `src/components/time-clock/TimeClockModal.tsx` | Break type picker, break history, clock-out notes, compliance warning |
+
+### Schema Changes
+- `Employee`: `sevenShiftsUserId`, `sevenShiftsRoleId`, `sevenShiftsDepartmentId`, `sevenShiftsLocationId`
+- `TimeClockEntry`: `sevenShiftsTimePunchId`, `sevenShiftsPushedAt`, `sevenShiftsPushError`
+- `ScheduledShift`: `sevenShiftsShiftId`
+- New model: `SevenShiftsDailySalesPush` with `@@unique([locationId, businessDate, revenueType])`
+
+### Webhook Security Hardening (P0/P1)
+| Fix | Detail |
+|-----|--------|
+| P0: Token URL | `https://app.7shifts.com/oauth2/token` (was api.7shifts.com — wrong domain) |
+| P0: HMAC key | `{timestamp}#{companyGuid}` using x-hmac-timestamp + x-hmac-signature headers |
+| P0: Replay protection | Rejects timestamps > 5 minutes old |
+| P0: Timing-safe compare | `timingSafeEqual` with hex normalization + zero-length guard |
+| P0: Multi-location routing | Matches x-company-id to settings.sevenShifts.companyId; single-venue fallback only if exactly 1 enabled venue |
+| P0: schedule.published | Triggers inline schedule pull (fire-and-forget, NUC-safe) using payload date range |
+| P1: Idempotent webhooks | listWebhooks() before createWebhook(); URL + method normalized; webhooksRegisteredAt persisted |
+| P1: isConfigured split | Separate from isEnabled — allows Test Connection without toggling enabled |
+| P1: Status enrichment | employeesLinked count + webhooksRegistered flag in GET /api/integrations/7shifts/status |
+| P2: breaks[] | `{ minutes, paid?, type? }` on SevenShiftsTimePunchCreate (safer than start/end until sandbox-confirmed) |
+
+### Documentation
+- `docs/skills/SPEC-485-7SHIFTS-INTEGRATION.md` — Created (full skill doc)
+- `docs/features/7shifts-integration.md` — Created (feature doc)
+- `docs/features/scheduling.md` — Updated (7shifts pull section)
+- `docs/features/_INDEX.md` — Updated (7shifts entry under Enterprise & Integrations)
+- `docs/features/_CROSS-REF-MATRIX.md` — Updated (7shifts dependency row)
+- `docs/skills/SKILLS-INDEX.md` — Updated (skills 485-487 added)
+- `docs/logs/LIVING-LOG.md` — This entry
+
+---
+
+## 2026-03-04 — Oracle PMS Security Hardening Sprint
+
+### Session Summary
+Applied full security hardening to the Oracle OPERA PMS integration before go-live. Implemented all 6 P0 (blocking) and 3 P1 (important) items from the hardening spec. Integration is now security-ready — credentials are write-only, errors never leak to the browser, guest selection uses server-trusted tokens, and SSRF/rate-limiting protections are in place.
+
+### Files Changed (hardening)
+
+**New file:**
+- `src/lib/room-charge-selections.ts` — In-memory server-trusted selection store (10-min TTL, one-time use, 48-hex tokens)
+- `docs/planning/ORACLE-PMS-HARDENING.md` — Full hardening spec with architecture diagram
+
+**Modified files:**
+- `src/app/api/settings/route.ts` — P0.1 (strip secrets in GET, preserve in PUT), P1.2 (SSRF guardrail for baseUrl)
+- `src/app/api/orders/[id]/pay/route.ts` — P0.3 (sanitize error), P0.4 (idempotency), P1.1 (consume selectionId)
+- `src/components/payment/PaymentModal.tsx` — P1.1 (store + send selectionId; pass employeeId to lookup)
+- `src/app/(admin)/settings/integrations/oracle-pms/page.tsx` — P0.1 UI (write-only secrets), P1.3 (pass employeeId to test endpoint)
+- `src/lib/oracle-pms-client.ts` — P0.2 (extractTransactionId), P0.5 (timeouts + sanitized errors) — done in previous session
+
+### Hardening Items Implemented
+
+| ID | Item | Status |
+|----|------|--------|
+| P0.1 | Write-only secrets (GET strips, PUT preserves, UI write-only inputs) | ✅ Done |
+| P0.2 | `extractTransactionId()` — rejects length<4 and placeholder values | ✅ Done |
+| P0.3 | `/pay` error sanitization — log real error, generic message to client | ✅ Done |
+| P0.4 | Idempotency check — 409 if same reservation+order already charged | ✅ Done |
+| P0.5 | AbortController timeouts (8s/12s/15s) + `sanitizeForLog()` | ✅ Done |
+| P0.6 | Input validation + in-memory rate limit (10/employee/min) | ✅ Done |
+| P1.1 | Server-trusted selectionId pattern (one-time token, 10-min TTL) | ✅ Done |
+| P1.2 | SSRF guardrail — blocks localhost/private IPs, requires HTTPS | ✅ Done |
+| P1.3 | Test endpoint permission gate (SETTINGS_EDIT required) | ✅ Done |
+
+### Documentation Updated
+- `docs/planning/ORACLE-PMS-HARDENING.md` — Created (full spec + architecture diagram)
+- `docs/logs/LIVING-LOG.md` — This entry
+
+---
+
+## 2026-03-04 — Oracle OPERA Cloud PMS Integration (Skill 484)
+
+### Session Summary
+Built the full Oracle Hotel PMS integration enabling **Bill to Room** as a payment method. Guests charge F&B orders to their hotel room; the cashier looks up the guest by room number or last name and confirms — charge posts to OPERA Cloud folio and is recorded locally. Credentials are stored per-venue in `Location.settings` (not env vars). Integration is credential-ready and awaiting OHIP app registration + hotel OPERA admin setup before going live.
+
+### Commits (gwi-pos)
+
+No git commit made this session — work was built iteratively with live review. All files are written and ready.
+
+### Files Changed
+
+**New files (5):**
+- `src/lib/oracle-pms-client.ts` — Core OPERA Cloud client (token cache, room/name lookup, charge post, test)
+- `src/app/api/integrations/oracle-pms/status/route.ts` — GET integration status
+- `src/app/api/integrations/oracle-pms/test/route.ts` — POST connection test
+- `src/app/api/integrations/oracle-pms/room-lookup/route.ts` — GET guest lookup
+- `src/app/(admin)/settings/integrations/oracle-pms/page.tsx` — Admin settings page
+
+**Modified files (10):**
+- `prisma/schema.prisma` — `room_charge` enum + 4 Payment fields
+- `scripts/nuc-pre-migrate.js` — ALTER TABLE + ALTER TYPE for NUC migration
+- `src/lib/settings.ts` — `HotelPmsSettings`, `acceptHotelRoomCharge`, `hotelPms` on LocationSettings
+- `src/app/api/settings/route.ts` — `hotelPms` deep-merge (critical: prevents credential wipe)
+- `src/app/api/integrations/status/route.ts` — `oraclePms` in general integrations status
+- `src/components/admin/SettingsNav.tsx` — Oracle Hotel PMS nav link
+- `src/app/(admin)/settings/payments/page.tsx` — Bill to Room toggle
+- `src/components/payment/PaymentModal.tsx` — Full `room_charge` step UI
+- `src/app/api/orders/[id]/pay/route.ts` — `room_charge` payment handler
+- `src/hooks/useOrderSettings.ts` — `acceptHotelRoomCharge` default
+
+### Features Delivered
+- Bill to Room payment method in PaymentModal (teal button, room_charge step)
+- Guest lookup by room number or last name (live OPERA API)
+- Charge posts to OPERA folio with transactionCode, amount, reference
+- Admin settings page at `/settings/integrations/oracle-pms` (credentials, test, environment)
+- Bill to Room toggle at `/settings/payments` (disabled until PMS enabled)
+- Oracle PMS status in `/api/integrations/status` response
+- In-memory token cache (55min TTL, 401 auto-retry, per-locationId)
+
+### Bug Fixes / Hardening
+- Added `hotelPms` to settings deep-merge list — prevents credential wipe when saving other settings groups
+- `SettingsSaveBar` prop corrected: `saving` → `isSaving`
+- `ToggleRow` + `SettingsSaveBar` changed from default to named imports
+- `acceptHotelRoomCharge: false` added to `useOrderSettings` mock to satisfy TypeScript
+
+### Waiting On (Pre Go-Live)
+- OHIP app registration → Client ID, Client Secret, App Key
+- Hotel OPERA administrator: enable Cashiering API module + grant folio posting permission
+- F&B charge code from OPERA setup (e.g. `REST01`)
+- Test in Cert/Sandbox → verify "Test Connection" succeeds + real guest lookup works
+- Switch to Production environment when confirmed
+
+### Documentation Updated
+- `docs/features/hotel-pms.md` — Updated from Planned → Active, full implementation detail
+- `docs/skills/SPEC-484-ORACLE-OPERA-PMS.md` — Created (full architecture, flow, constraints)
+- `docs/skills/SKILLS-INDEX.md` — Skill 484 added to Payments section
+- `docs/features/_INDEX.md` — Hotel PMS status: Planned → Active
+- `docs/logs/LIVING-LOG.md` — This entry
+
+---
+
 ## 2026-03-03 — Tax Rules Page Bug Fixes (Skill 479)
 
 ### Session Summary

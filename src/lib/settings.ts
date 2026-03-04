@@ -221,6 +221,7 @@ export interface PaymentSettings {
   acceptDebit: boolean
   acceptGiftCards: boolean
   acceptHouseAccounts: boolean
+  acceptHotelRoomCharge: boolean   // Bill to Room via Oracle OPERA PMS
 
   // Rounding (for cash)
   cashRounding: 'none' | 'nickel' | 'dime' | 'quarter' | 'dollar'
@@ -526,6 +527,129 @@ export interface ApprovalSettings {
   defaultMaxDiscountPercent: number      // Cap for non-managers (e.g., 10 = servers can only give up to 10% off) (default: 100)
 }
 
+// ─── Hotel PMS Integration (Oracle OPERA Cloud / OHIP) ────────────────────────
+
+export interface HotelPmsSettings {
+  enabled: boolean              // Is this integration active?
+  baseUrl: string               // OPERA Cloud API base URL (e.g. https://xxx.oraclehospitality.com)
+  clientId: string              // OAuth client ID
+  clientSecret: string          // OAuth client secret (stored as-is; treat as sensitive)
+  appKey: string                // x-app-key header (OHIP application registration key)
+  hotelId: string               // x-hotelid header (property code in OPERA)
+  environment: 'cert' | 'production'  // cert = OPERA sandbox, production = live
+  chargeCode: string            // F&B charge/transaction code configured in OPERA (e.g. "REST01")
+  allowGuestLookup: boolean     // Allow cashier to search by guest last name in addition to room number
+}
+
+// ─── MarginEdge Integration Settings ─────────────────────────────────────────
+
+export interface MarginEdgeSettings {
+  enabled: boolean
+  apiKey: string          // stored in DB, never returned to frontend
+  environment: 'production' | 'sandbox'
+  restaurantId?: string   // their internal restaurant identifier
+  lastSyncAt?: string
+  lastSyncStatus?: 'success' | 'error'
+  lastSyncError?: string
+  lastProductSyncAt?: string
+  lastInvoiceSyncAt?: string
+  syncOptions: {
+    syncInvoices: boolean
+    syncProducts: boolean
+    autoUpdateCosts: boolean
+    costChangeAlertThreshold: number  // percent, default 5
+  }
+}
+
+export const DEFAULT_MARGIN_EDGE_SETTINGS: MarginEdgeSettings = {
+  enabled: false,
+  apiKey: '',
+  environment: 'production',
+  syncOptions: {
+    syncInvoices: true,
+    syncProducts: true,
+    autoUpdateCosts: true,
+    costChangeAlertThreshold: 5,
+  }
+}
+
+export const DEFAULT_HOTEL_PMS_SETTINGS: HotelPmsSettings = {
+  enabled: false,
+  baseUrl: '',
+  clientId: '',
+  clientSecret: '',
+  appKey: '',
+  hotelId: '',
+  environment: 'cert',
+  chargeCode: '',
+  allowGuestLookup: true,
+}
+
+// ─── 7shifts Integration Settings ────────────────────────────────────────────
+
+export interface SevenShiftsSettings {
+  enabled: boolean
+  clientId: string
+  clientSecret: string
+  companyId: number           // 7shifts numeric company ID
+  companyGuid: string         // UUID — required as x-company-guid header on every call
+  locationId7s: number        // 7shifts location ID
+  webhookSecret: string       // shared secret for webhook verification
+  environment: 'sandbox' | 'production'
+
+  // Serverless-safe token cache (persisted to DB)
+  accessToken?: string
+  accessTokenExpiresAt?: number  // epoch ms
+
+  syncOptions: {
+    pushSales: boolean
+    pushTimePunches: boolean
+    pullSchedule: boolean
+  }
+
+  // Per-operation sync status
+  lastSalesPushAt: string | null
+  lastSalesPushStatus: 'success' | 'error' | null
+  lastSalesPushError: string | null
+
+  lastPunchPushAt: string | null
+  lastPunchPushStatus: 'success' | 'error' | null
+  lastPunchPushError: string | null
+
+  lastSchedulePullAt: string | null
+  lastSchedulePullStatus: 'success' | 'error' | null
+  lastSchedulePullError: string | null
+
+  // Set to ISO timestamp when webhooks are successfully registered
+  webhooksRegisteredAt?: string | null
+}
+
+export const DEFAULT_SEVEN_SHIFTS_SETTINGS: SevenShiftsSettings = {
+  enabled: false,
+  clientId: '',
+  clientSecret: '',
+  companyId: 0,
+  companyGuid: '',
+  locationId7s: 0,
+  webhookSecret: '',
+  environment: 'sandbox',
+  syncOptions: {
+    pushSales: true,
+    pushTimePunches: true,
+    pullSchedule: true,
+  },
+  lastSalesPushAt: null,
+  lastSalesPushStatus: null,
+  lastSalesPushError: null,
+  lastPunchPushAt: null,
+  lastPunchPushStatus: null,
+  lastPunchPushError: null,
+  lastSchedulePullAt: null,
+  lastSchedulePullStatus: null,
+  lastSchedulePullError: null,
+  webhooksRegisteredAt: null,
+}
+
 export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
@@ -547,6 +671,9 @@ export interface LocationSettings {
   approvals: ApprovalSettings
   alerts: AlertSettings
   security: SecuritySettings
+  hotelPms?: HotelPmsSettings           // Oracle OPERA PMS integration (optional for backward compat)
+  sevenShifts?: SevenShiftsSettings     // 7shifts labor management integration (optional for backward compat)
+  marginEdge?: MarginEdgeSettings       // MarginEdge COGS integration (optional for backward compat)
   localDataRetention?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | '60days' | '90days'
 }
 
@@ -621,6 +748,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     acceptDebit: true,
     acceptGiftCards: false,
     acceptHouseAccounts: false,
+    acceptHotelRoomCharge: false,
     cashRounding: 'none',
     roundingDirection: 'nearest',
     enablePreAuth: true,
@@ -768,6 +896,11 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     dualPricing: {
       ...DEFAULT_SETTINGS.dualPricing,
       ...(partial.dualPricing || {}),
+      // cashDiscountPercent > 0 is authoritative: dual pricing is active whenever a discount is
+      // configured, regardless of how the enabled flag is stored. This prevents the legacy state
+      // where enabled:false gets stuck in the DB when a cash discount percent is present.
+      enabled: ((partial.dualPricing?.cashDiscountPercent ?? DEFAULT_SETTINGS.dualPricing.cashDiscountPercent) > 0)
+        || (partial.dualPricing?.enabled ?? DEFAULT_SETTINGS.dualPricing.enabled),
     },
     pricingProgram: partial.pricingProgram,  // pass-through: optional, undefined if not set
     priceRounding: {
@@ -846,6 +979,15 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ...(partial.security || {}),
     },
     localDataRetention: partial.localDataRetention ?? DEFAULT_SETTINGS.localDataRetention,
+    hotelPms: partial.hotelPms
+      ? { ...DEFAULT_HOTEL_PMS_SETTINGS, ...partial.hotelPms }
+      : undefined,
+    sevenShifts: partial.sevenShifts
+      ? { ...DEFAULT_SEVEN_SHIFTS_SETTINGS, ...partial.sevenShifts, syncOptions: { ...DEFAULT_SEVEN_SHIFTS_SETTINGS.syncOptions, ...partial.sevenShifts.syncOptions } }
+      : undefined,
+    marginEdge: partial.marginEdge
+      ? { ...DEFAULT_MARGIN_EDGE_SETTINGS, ...partial.marginEdge, syncOptions: { ...DEFAULT_MARGIN_EDGE_SETTINGS.syncOptions, ...partial.marginEdge.syncOptions } }
+      : undefined,
   }
 }
 

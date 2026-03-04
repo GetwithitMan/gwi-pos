@@ -56,6 +56,27 @@ interface PendingTipsData {
   grandTotal: number
 }
 
+interface BreakRecord {
+  id: string
+  breakType: string
+  startedAt: string
+  endedAt: string | null
+  duration: number | null
+  status: string
+}
+
+const BREAK_TYPES = [
+  { type: 'meal', label: 'Meal Break', icon: '🥗' },
+  { type: 'unpaid', label: 'Rest Break', icon: '☕' },
+  { type: 'paid', label: 'Paid Break', icon: '💰' },
+] as const
+
+const BREAK_TYPE_LABELS: Record<string, string> = {
+  meal: 'Meal Break',
+  unpaid: 'Rest Break',
+  paid: 'Paid Break',
+}
+
 interface TimeClockModalProps {
   isOpen: boolean
   onClose: () => void
@@ -95,6 +116,15 @@ export function TimeClockModal({
 
   // Clock-out confirmation state
   const [showClockOutConfirm, setShowClockOutConfirm] = useState(false)
+  const [clockOutNotes, setClockOutNotes] = useState('')
+
+  // Break type picker state
+  const [showBreakTypePicker, setShowBreakTypePicker] = useState(false)
+  const [currentBreakType, setCurrentBreakType] = useState<string | null>(null)
+
+  // Break history state
+  const [breakHistory, setBreakHistory] = useState<BreakRecord[]>([])
+  const [showBreakHistory, setShowBreakHistory] = useState(false)
 
   // Pending tips state
   const [pendingTips, setPendingTips] = useState<PendingTipsData | null>(null)
@@ -102,6 +132,19 @@ export function TimeClockModal({
 
   // Check if user can force clock out
   const canForceClockOut = hasPermission(permissions, PERMISSIONS.MGR_FORCE_CLOCK_OUT)
+
+  const complianceWarning = (() => {
+    if (!currentEntry || currentEntry.clockOut || !showClockOutConfirm) return null
+    const shiftHours = (Date.now() - new Date(currentEntry.clockIn).getTime()) / (1000 * 60 * 60)
+    const breaks = currentEntry.breakMinutes ?? 0
+    if (shiftHours > 8 && breaks < 60) {
+      return { level: 'red' as const, message: 'Shifts over 8 hours require a 60-minute break.', required: '60 min', taken: `${breaks} min` }
+    }
+    if (shiftHours > 6 && breaks < 30) {
+      return { level: 'amber' as const, message: 'Shifts over 6 hours require a 30-minute break.', required: '30 min', taken: `${breaks} min` }
+    }
+    return null
+  })()
 
   useEffect(() => {
     if (isOpen) {
@@ -143,7 +186,13 @@ export function TimeClockModal({
       if (response.ok) {
         const raw = await response.json()
         const data = raw.data ?? raw
-        setCurrentEntry(data.entries?.[0] || null)
+        const entry = data.entries?.[0] || null
+        setCurrentEntry(entry)
+
+        // Load breaks for current entry
+        if (entry?.id) {
+          void loadBreakHistory(entry.id)
+        }
 
         // Load pending tips
         await loadPendingTips()
@@ -169,6 +218,22 @@ export function TimeClockModal({
       }
     } catch (err) {
       console.error('Failed to load pending tips:', err)
+    }
+  }
+
+  const loadBreakHistory = async (entryId: string) => {
+    try {
+      const res = await fetch(`/api/breaks?timeClockEntryId=${entryId}`)
+      if (res.ok) {
+        const raw = await res.json()
+        const breaks = raw.data?.breaks || []
+        setBreakHistory(breaks)
+        // Determine current break type from active break
+        const activeBreak = breaks.find((b: BreakRecord) => b.status === 'active')
+        setCurrentBreakType(activeBreak?.breakType || null)
+      }
+    } catch {
+      // silent
     }
   }
 
@@ -277,7 +342,7 @@ export function TimeClockModal({
       const response = await fetch('/api/time-clock', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entryId: currentEntry.id, action: 'clockOut' }),
+        body: JSON.stringify({ entryId: currentEntry.id, action: 'clockOut', notes: clockOutNotes || undefined }),
       })
 
       if (response.ok) {
@@ -343,25 +408,76 @@ export function TimeClockModal({
     await performClockOut()
   }
 
-  const handleBreak = async (action: 'startBreak' | 'endBreak') => {
+  const handleStartBreak = async (breakType: string) => {
+    if (!currentEntry) return
+    setIsProcessing(true)
+    setError(null)
+    setShowBreakTypePicker(false)
+    try {
+      // Start break via /api/breaks with breakType
+      const breakRes = await fetch('/api/breaks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId,
+          timeClockEntryId: currentEntry.id,
+          breakType,
+        }),
+      })
+
+      if (!breakRes.ok) {
+        const err = await breakRes.json()
+        setError(err.error || 'Failed to start break')
+        return
+      }
+
+      // Also update the time clock entry's breakStart
+      const timeRes = await fetch('/api/time-clock', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryId: currentEntry.id, action: 'startBreak' }),
+      })
+
+      if (timeRes.ok) {
+        await loadCurrentEntry()
+      } else {
+        const err = await timeRes.json()
+        setError(err.error || 'Failed to start break')
+      }
+    } catch {
+      setError('Failed to start break')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleEndBreak = async () => {
     if (!currentEntry) return
     setIsProcessing(true)
     setError(null)
     try {
+      // End break via /api/breaks
+      await fetch('/api/breaks', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeClockEntryId: currentEntry.id }),
+      })
+
+      // Also update time clock entry
       const response = await fetch('/api/time-clock', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entryId: currentEntry.id, action }),
+        body: JSON.stringify({ entryId: currentEntry.id, action: 'endBreak' }),
       })
 
       if (response.ok) {
         await loadCurrentEntry()
       } else {
-        const error = await response.json()
-        setError(error.error || `Failed to ${action === 'startBreak' ? 'start' : 'end'} break`)
+        const err = await response.json()
+        setError(err.error || 'Failed to end break')
       }
-    } catch (err) {
-      setError('Failed to update break status')
+    } catch {
+      setError('Failed to end break')
     } finally {
       setIsProcessing(false)
     }
@@ -403,6 +519,26 @@ export function TimeClockModal({
               </div>
               <h3 className="text-lg font-semibold text-gray-900">Clock Out?</h3>
               <p className="text-sm text-gray-500">Are you sure you want to clock out?</p>
+              {complianceWarning && (
+                <div className={`rounded-lg p-3 text-sm text-left ${complianceWarning.level === 'red' ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-amber-50 border border-amber-200 text-amber-800'}`}>
+                  ⚠️ {complianceWarning.message}
+                  <div className="mt-1 text-xs opacity-75">Required: {complianceWarning.required}. Taken: {complianceWarning.taken}.</div>
+                </div>
+              )}
+              <div className="text-left">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  End of shift notes (optional)
+                </label>
+                <textarea
+                  value={clockOutNotes}
+                  onChange={(e) => setClockOutNotes(e.target.value.slice(0, 200))}
+                  placeholder="e.g. Tables 8-12 covered by manager"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none"
+                  rows={2}
+                  maxLength={200}
+                />
+                <div className="text-xs text-gray-400 text-right">{clockOutNotes.length}/200</div>
+              </div>
               <div className="grid grid-cols-2 gap-3 mt-4">
                 <Button variant="outline" onClick={() => setShowClockOutConfirm(false)}>
                   Cancel
@@ -583,7 +719,9 @@ export function TimeClockModal({
 
               {currentEntry.isOnBreak && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
-                  <div className="text-yellow-800 font-medium">On Break</div>
+                  <div className="text-yellow-800 font-medium">
+                    On {currentBreakType ? BREAK_TYPE_LABELS[currentBreakType] || 'Break' : 'Break'}
+                  </div>
                 </div>
               )}
 
@@ -593,42 +731,100 @@ export function TimeClockModal({
                 </div>
               )}
 
+              {/* Breaks Today (collapsible) */}
+              {breakHistory.length > 0 && (
+                <div className="border rounded-lg">
+                  <button
+                    onClick={() => setShowBreakHistory(!showBreakHistory)}
+                    className="w-full px-3 py-2 text-sm font-medium text-gray-700 flex items-center justify-between hover:bg-gray-50"
+                  >
+                    <span>Breaks Today ({breakHistory.filter(b => b.status === 'completed').length})</span>
+                    <svg className={`w-4 h-4 transition-transform ${showBreakHistory ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showBreakHistory && (
+                    <div className="border-t divide-y">
+                      {breakHistory.filter(b => b.status === 'completed').map(b => (
+                        <div key={b.id} className="px-3 py-2 text-sm flex items-center justify-between">
+                          <div>
+                            <span className="font-medium">{BREAK_TYPE_LABELS[b.breakType] || b.breakType}</span>
+                            <span className="text-gray-500 ml-2">
+                              {new Date(b.startedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                            </span>
+                          </div>
+                          <span className="text-gray-600">{b.duration ? `${b.duration}m` : '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {error && (
                 <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
                   {error}
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                {currentEntry.isOnBreak ? (
+              {/* Break type picker or action buttons */}
+              {showBreakTypePicker ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-500 text-center">Select break type:</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {BREAK_TYPES.map(bt => (
+                      <Button
+                        key={bt.type}
+                        variant="outline"
+                        onClick={() => handleStartBreak(bt.type)}
+                        disabled={isProcessing}
+                        className="flex flex-col items-center py-3"
+                      >
+                        <span className="text-lg">{bt.icon}</span>
+                        <span className="text-xs mt-1">{bt.label}</span>
+                      </Button>
+                    ))}
+                  </div>
                   <Button
-                    variant="outline"
-                    className="col-span-2 bg-yellow-50 border-yellow-300 text-yellow-700 hover:bg-yellow-100"
-                    onClick={() => handleBreak('endBreak')}
-                    disabled={isProcessing}
+                    variant="ghost"
+                    className="w-full text-sm"
+                    onClick={() => setShowBreakTypePicker(false)}
                   >
-                    {isProcessing ? 'Ending Break...' : 'End Break'}
+                    Cancel
                   </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onClick={() => handleBreak('startBreak')}
-                    disabled={isProcessing}
-                  >
-                    Start Break
-                  </Button>
-                )}
-                {!currentEntry.isOnBreak && (
-                  <Button
-                    variant="primary"
-                    className="bg-red-600 hover:bg-red-700"
-                    onClick={handleClockOutClick}
-                    disabled={isProcessing}
-                  >
-                    {isProcessing ? 'Clocking Out...' : 'Clock Out'}
-                  </Button>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {currentEntry.isOnBreak ? (
+                    <Button
+                      variant="outline"
+                      className="col-span-2 bg-yellow-50 border-yellow-300 text-yellow-700 hover:bg-yellow-100"
+                      onClick={handleEndBreak}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? 'Ending Break...' : 'End Break'}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowBreakTypePicker(true)}
+                      disabled={isProcessing}
+                    >
+                      Start Break
+                    </Button>
+                  )}
+                  {!currentEntry.isOnBreak && (
+                    <Button
+                      variant="primary"
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={handleClockOutClick}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? 'Clocking Out...' : 'Clock Out'}
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           ) : currentEntry?.clockOut ? (
             // Just clocked out - show summary

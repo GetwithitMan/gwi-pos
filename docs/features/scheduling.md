@@ -309,6 +309,36 @@ The `GET /schedules/[id]` response includes a `summary` object:
 
 ---
 
+## 7shifts Integration
+
+Scheduled shifts can be imported from 7shifts using the pull-schedule sync operation.
+
+### Schedule Pull
+- Triggered by: `POST /api/integrations/7shifts/pull-schedule`, Vercel cron, or `schedule.published` webhook
+- Upserts `ScheduledShift` records by `sevenShiftsShiftId` (external ID — never creates duplicates)
+- Soft-deletes shifts where 7shifts reports `status: 'deleted'`
+- Skips shifts for employees not yet mapped (no `sevenShiftsUserId`)
+- Updates `lastSchedulePullAt/Status/Error` in location settings on complete
+
+### Employee Mapping Requirement
+Shifts can only be imported for employees with a `sevenShiftsUserId` set. Map employees at:
+**Settings → Integrations → 7shifts → Employee Mapping**
+
+### Scheduling UI Import Panel
+The scheduling admin page (`/scheduling`) shows a 7shifts import card with:
+- Pull from 7shifts button (fires pull-schedule for current week + next 14 days)
+- Last sync status + timestamp
+- "7s" badge on ScheduledShift records that originated from 7shifts
+
+### Key Files Added
+| File | Purpose |
+|------|---------|
+| `src/app/api/integrations/7shifts/pull-schedule/route.ts` | Schedule pull API — calls listShifts(), upserts ScheduledShift |
+| `src/app/api/webhooks/7shifts/route.ts` | Webhook receiver — schedule.published triggers pull inline |
+| `src/app/(admin)/settings/integrations/7shifts/employees/page.tsx` | Employee mapping UI |
+
+---
+
 ## Related Docs
 - **Shifts feature:** `docs/features/shifts.md`
 - **Time Clock feature:** `docs/features/time-clock.md`
@@ -319,4 +349,4 @@ The `GET /schedules/[id]` response includes a `summary` object:
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-04*

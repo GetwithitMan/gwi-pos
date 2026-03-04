@@ -78,6 +78,7 @@ enum PaymentMethod {
   house_account
   loyalty
   loyalty_points
+  room_charge
 }
 
 enum PaymentStatus {
@@ -390,12 +391,41 @@ enum InventoryCountStatus {
   in_progress
   completed
   reviewed
+  voided
 }
 
 enum InvoiceStatus {
+  draft
   pending
   received
+  approved
+  posted
   paid
+  voided
+}
+
+enum InvoiceSource {
+  manual
+  marginedge
+  api
+}
+
+enum VendorOrderStatus {
+  draft
+  sent
+  confirmed
+  received
+  cancelled
+}
+
+enum WasteReason {
+  spoilage
+  over_pour
+  spill
+  breakage
+  expired
+  void_comped
+  other
 }
 
 enum StockAlertStatus {
@@ -705,6 +735,18 @@ model Location {
   orderSnapshots     OrderSnapshot[]
   orderItemSnapshots OrderItemSnapshot[]
 
+  // 7shifts integration
+  sevenShiftsDailySalesPushes SevenShiftsDailySalesPush[]
+
+  // COGS / MarginEdge Integration
+  ingredientCostHistory IngredientCostHistory[]
+  vendorOrders          VendorOrder[]
+  vendorOrderLineItems  VendorOrderLineItem[]
+  wasteLogs             WasteLog[]
+  marginEdgeMappings    MarginEdgeProductMapping[]
+  menuItemDailyMetrics  MenuItemDailyMetrics[]
+  inventoryCountEntries InventoryCountEntry[]
+
   @@index([organizationId])
 }
 
@@ -787,8 +829,8 @@ model Role {
   trackLaborCost   Boolean          @default(true) // Include hours in labor cost reports
 
   // UX classification — display/filtering only, never used for auth
-  roleType    String  @default("FOH")   // FOH | BOH | ADMIN
-  accessLevel String  @default("STAFF") // STAFF | MANAGER | OWNER_ADMIN
+  roleType    String @default("FOH") // FOH | BOH | ADMIN
+  accessLevel String @default("STAFF") // STAFF | MANAGER | OWNER_ADMIN
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -992,6 +1034,12 @@ model Employee {
   syncAuditEntries        SyncAuditEntry[]           @relation("SyncAuditEmployee")
   quickBarPreference      QuickBarPreference?
 
+  // 7shifts integration
+  sevenShiftsUserId       String? // 7shifts user ID for time punch push
+  sevenShiftsRoleId       String? // for accurate punch reporting
+  sevenShiftsDepartmentId String? // for accurate punch reporting
+  sevenShiftsLocationId   String? // for accurate punch reporting
+
   @@unique([locationId, pin])
   @@index([locationId])
   @@index([roleId])
@@ -1065,6 +1113,11 @@ model TimeClockEntry {
   // Reverse relations
   shifts Shift[]
   breaks Break[]
+
+  // 7shifts integration (idempotency)
+  sevenShiftsTimePunchId String? // returned 7shifts punch ID — prevents duplicate push
+  sevenShiftsPushedAt    DateTime? // timestamp of successful push
+  sevenShiftsPushError   String? // last error message if push failed
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1515,6 +1568,9 @@ model MenuItem {
 
   // Pricing Options (per-item size/variant pricing groups)
   pricingOptionGroups PricingOptionGroup[]
+
+  // COGS daily metrics
+  dailyMetrics MenuItemDailyMetrics[]
 
   @@unique([locationId, sku])
   // @@index([locationId]) — removed: redundant with compound indexes below
@@ -2548,9 +2604,9 @@ model Payment {
 
   // SAF (Store-and-Forward) status tracking
   // Values: APPROVED_ONLINE, APPROVED_SAF_PENDING_UPLOAD, UPLOAD_SUCCESS, UPLOAD_FAILED, NEEDS_ATTENTION
-  safStatus         String?   // null for cash/non-card; set for all card payments
-  safUploadedAt     DateTime? // When SAF batch was uploaded to processor
-  safError          String?   // Last SAF upload error message (UPLOAD_FAILED/NEEDS_ATTENTION)
+  safStatus     String? // null for cash/non-card; set for all card payments
+  safUploadedAt DateTime? // When SAF batch was uploaded to processor
+  safError      String? // Last SAF upload error message (UPLOAD_FAILED/NEEDS_ATTENTION)
 
   // Dual Pricing / Cash Discount (Visa Compliance)
   cashDiscountAmount  Decimal? // Amount of cash discount applied (null if no dual pricing)
@@ -2573,6 +2629,12 @@ model Payment {
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
+
+  // Hotel PMS / Bill to Room fields
+  roomNumber       String? // Hotel room number charged (e.g. "101")
+  guestName        String? // Guest name from PMS (e.g. "John Smith")
+  pmsReservationId String? // Oracle OPERA reservation ID
+  pmsTransactionId String? // Oracle OPERA folio transaction number
 
   // Refund logs (P2-P02)
   refundLogs RefundLog[]
@@ -4141,6 +4203,12 @@ model InventoryTransaction {
   unitCost  Decimal?
   totalCost Decimal?
 
+  // COGS extensions
+  businessDate DateTime? // business date for bucketing
+  source       String? // 'sale' | 'waste' | 'count_adjustment' | 'purchase_receipt' | 'transfer' | 'void'
+  wasteLogId   String? // if from waste log
+  invoiceId    String? // if from purchase receipt
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -4295,6 +4363,12 @@ model InventoryItem {
   isActive       Boolean @default(true)
   trackInventory Boolean @default(true)
 
+  // COGS extensions
+  lastInvoiceCost     Decimal?  @db.Decimal(10, 4) // most recent invoice unit cost
+  lastInvoiceDate     DateTime? // when last invoice was processed
+  marginEdgeProductId String? // ME product reference
+  averageCost         Decimal?  @db.Decimal(10, 4) // weighted average (for WA costing)
+
   // Relations
   storageLocations InventoryItemStorage[]
   prepItemInputs   PrepItemIngredient[]
@@ -4322,6 +4396,13 @@ model InventoryItem {
 
   // Pricing Option inventory links
   pricingOptionInventoryLinks PricingOptionInventoryLink[]
+
+  // COGS / MarginEdge relations
+  costHistory        IngredientCostHistory[]
+  vendorOrderLines   VendorOrderLineItem[]
+  countEntries       InventoryCountEntry[]
+  wasteLogs          WasteLog[]
+  marginEdgeMappings MarginEdgeProductMapping[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -4640,15 +4721,20 @@ model InventoryCount {
   reviewedBy    Employee? @relation("InvCountReviewedBy", fields: [reviewedById], references: [id])
 
   // Totals
-  expectedValue Decimal?
-  countedValue  Decimal?
-  varianceValue Decimal?
-  variancePct   Decimal?
+  expectedValue     Decimal?
+  countedValue      Decimal?
+  varianceValue     Decimal?
+  variancePct       Decimal?
+  totalVarianceCost Decimal? @db.Decimal(10, 2)
+
+  // COGS extensions
+  categoryFilter String? // if spot count, which category
 
   notes String?
 
   // Relations
-  items InventoryCountItem[]
+  items   InventoryCountItem[]
+  entries InventoryCountEntry[]
 
   completedAt DateTime?
   reviewedAt  DateTime?
@@ -4754,6 +4840,7 @@ model Vendor {
 
   // Relations
   invoices        Invoice[]
+  vendorOrders    VendorOrder[]
   defaultForItems InventoryItem[] @relation("DefaultVendor")
 
   createdAt DateTime  @default(now())
@@ -4775,6 +4862,7 @@ model Invoice {
 
   invoiceNumber String
   invoiceDate   DateTime
+  deliveryDate  DateTime?
   dueDate       DateTime?
   receivedDate  DateTime?
 
@@ -4786,7 +4874,11 @@ model Invoice {
 
   // Status
   status   InvoiceStatus @default(pending)
+  source   InvoiceSource @default(manual)
   paidDate DateTime?
+
+  // MarginEdge integration
+  marginEdgeInvoiceId String?
 
   // Options
   updateCosts    Boolean @default(true) // Update item costs from invoice
@@ -4797,15 +4889,19 @@ model Invoice {
   // Relations
   lineItems InvoiceLineItem[]
 
-  // Who entered it
-  enteredById String?
-  enteredBy   Employee? @relation("InvoiceEnteredBy", fields: [enteredById], references: [id])
+  // Who entered / approved it
+  enteredById  String?
+  enteredBy    Employee? @relation("InvoiceEnteredBy", fields: [enteredById], references: [id])
+  createdById  String?
+  approvedById String?
+  approvedAt   DateTime?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  @@unique([locationId, marginEdgeInvoiceId])
   @@index([locationId])
   @@index([vendorId])
   @@index([invoiceDate])
@@ -4814,13 +4910,14 @@ model Invoice {
 
 // Invoice line items
 model InvoiceLineItem {
-  id              String         @id @default(cuid())
-  locationId      String
-  location        Location       @relation(fields: [locationId], references: [id])
-  invoiceId       String
-  invoice         Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  inventoryItemId String?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  id                  String         @id @default(cuid())
+  locationId          String
+  location            Location       @relation(fields: [locationId], references: [id])
+  invoiceId           String
+  invoice             Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  inventoryItemId     String?
+  inventoryItem       InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  marginEdgeProductId String?
 
   // If not linked to inventory item
   description String?
@@ -5680,8 +5777,8 @@ model Printer {
   syncedAt  DateTime?
 
   // Relations
-  printJobs  PrintJob[]
-  printRules PrintRule[]
+  printJobs        PrintJob[]
+  printRules       PrintRule[]
   // printRoutes replaced by named relations: printRoutesPrimary + printRoutesBackup (C-SCHEMA-1)
   terminals        Terminal[]  @relation("TerminalReceiptPrinter") // Terminals using this as receipt printer
   terminalsKitchen Terminal[]  @relation("TerminalKitchenPrinter")
@@ -5868,7 +5965,7 @@ model Terminal {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Identity
-  name     String // "Bar Terminal 1", "Server Station", "Handheld 3"
+  name        String // "Bar Terminal 1", "Server Station", "Handheld 3"
   category    TerminalCategory @default(FIXED_STATION)
   defaultMode HandheldMode? // Only used for HANDHELD terminals
 
@@ -5939,12 +6036,12 @@ model Terminal {
   scale   Scale?  @relation(fields: [scaleId], references: [id])
 
   // CFD Pairing (PAX A3700 Customer-Facing Display)
-  cfdTerminalId     String?   // ID of paired CFD terminal record (the A3700)
-  cfdTerminal       Terminal? @relation("TerminalCFD", fields: [cfdTerminalId], references: [id])
+  cfdTerminalId     String? // ID of paired CFD terminal record (the A3700)
+  cfdTerminal       Terminal?  @relation("TerminalCFD", fields: [cfdTerminalId], references: [id])
   cfdRegisterFor    Terminal[] @relation("TerminalCFD")
-  cfdIpAddress      String?   // A3700 LAN IP address for DC Direct TCP connection
-  cfdConnectionMode String?   @default("usb") // "usb" | "bluetooth"
-  cfdSerialNumber   String?   // PAX A3700 serial number (reported by device)
+  cfdIpAddress      String? // A3700 LAN IP address for DC Direct TCP connection
+  cfdConnectionMode String?    @default("usb") // "usb" | "bluetooth"
+  cfdSerialNumber   String? // PAX A3700 serial number (reported by device)
 
   sortOrder Int @default(0)
 
@@ -5984,14 +6081,14 @@ model CfdSettings {
   location   Location @relation(fields: [locationId], references: [id])
 
   // Tip configuration
-  tipMode             String  @default("pre_tap")     // "pre_tap" | "post_auth"
-  tipStyle            String  @default("percent")     // "percent" | "dollar"
-  tipOptions          String  @default("18,20,22,25") // comma-separated values
-  tipShowNoTip        Boolean @default(true)
+  tipMode      String  @default("pre_tap") // "pre_tap" | "post_auth"
+  tipStyle     String  @default("percent") // "percent" | "dollar"
+  tipOptions   String  @default("18,20,22,25") // comma-separated values
+  tipShowNoTip Boolean @default(true)
 
   // Signature
-  signatureEnabled         Boolean @default(true)
-  signatureThresholdCents  Int     @default(2500) // $25.00
+  signatureEnabled        Boolean @default(true)
+  signatureThresholdCents Int     @default(2500) // $25.00
 
   // Receipt delivery
   receiptEmailEnabled   Boolean @default(true)
@@ -6000,12 +6097,12 @@ model CfdSettings {
   receiptTimeoutSeconds Int     @default(30)
 
   // Tab / card-on-file mode
-  tabMode               String  @default("token_only") // "token_only" | "pre_auth" | "both"
-  tabPreAuthAmountCents Int     @default(100) // $1.00 default hold amount
+  tabMode               String @default("token_only") // "token_only" | "pre_auth" | "both"
+  tabPreAuthAmountCents Int    @default(100) // $1.00 default hold amount
 
   // Idle screen
-  idlePromoEnabled  Boolean @default(false)
-  idleWelcomeText   String? @default("Welcome!")
+  idlePromoEnabled Boolean @default(false)
+  idleWelcomeText  String? @default("Welcome!")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -6837,6 +6934,9 @@ model ScheduledShift {
   // Notes
   notes String?
 
+  // 7shifts integration
+  sevenShiftsShiftId String? // stable external ID; used for upsert correctness
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -6851,6 +6951,7 @@ model ScheduledShift {
   @@index([employeeId])
   @@index([date])
   @@index([status])
+  @@index([sevenShiftsShiftId])
 }
 
 // ShiftSwapRequest - Employee shift swap workflow
@@ -7791,87 +7892,87 @@ model OrderSnapshot {
   items              OrderItemSnapshot[]
 
   // --- Customer & Attribution ---
-  customerId              String?
-  source                  String?   /// "online", "kiosk", "pos"
+  customerId String?
+  source     String? /// "online", "kiosk", "pos"
 
   // --- Split Orders ---
-  parentOrderId           String?
-  splitIndex              Int?
+  parentOrderId String?
+  splitIndex    Int?
 
   // --- Order Type ---
-  orderTypeId             String?
-  customFields            Json?
+  orderTypeId  String?
+  customFields Json?
 
   // --- Seating ---
-  baseSeatCount           Int       @default(0)
-  extraSeatCount          Int       @default(0)
-  seatVersion             Int       @default(0)
-  seatTimestamps          Json?
+  baseSeatCount  Int   @default(0)
+  extraSeatCount Int   @default(0)
+  seatVersion    Int   @default(0)
+  seatTimestamps Json?
 
   // --- Tabs ---
-  tabNickname             String?
+  tabNickname String?
 
   // --- Dual Pricing ---
-  primaryPaymentMethod    String?   /// 'cash' or 'card'
+  primaryPaymentMethod String? /// 'cash' or 'card'
 
   // --- Commission ---
-  commissionTotal         Int       @default(0) /// cents
+  commissionTotal Int @default(0) /// cents
 
   // --- Reopen ---
-  reopenedAt              DateTime?
-  reopenedBy              String?   /// Employee ID
-  reopenReason            String?
+  reopenedAt   DateTime?
+  reopenedBy   String? /// Employee ID
+  reopenReason String?
 
   // --- Timing ---
-  openedAt                DateTime? /// When order was opened
-  sentAt                  DateTime? /// Sent to kitchen
+  openedAt DateTime? /// When order was opened
+  sentAt   DateTime? /// Sent to kitchen
 
   // --- Pre-Auth (Bar Tabs) ---
-  preAuthId               String?
-  preAuthAmount           Int?      /// cents
-  preAuthLast4            String?
-  preAuthCardBrand        String?
-  preAuthExpiresAt        DateTime?
-  preAuthRecordNo         String?
+  preAuthId        String?
+  preAuthAmount    Int? /// cents
+  preAuthLast4     String?
+  preAuthCardBrand String?
+  preAuthExpiresAt DateTime?
+  preAuthRecordNo  String?
 
   // --- Bottle Service ---
-  isBottleService         Boolean   @default(false)
-  bottleServiceCurrentSpend Int?    /// cents
+  isBottleService           Boolean @default(false)
+  bottleServiceCurrentSpend Int? /// cents
 
   // --- Walkout ---
-  isWalkout               Boolean   @default(false)
-  walkoutAt               DateTime?
-  walkoutMarkedBy         String?
+  isWalkout       Boolean   @default(false)
+  walkoutAt       DateTime?
+  walkoutMarkedBy String?
 
   // --- Tab Rollover ---
-  rolledOverAt            DateTime?
-  rolledOverFrom          String?
+  rolledOverAt   DateTime?
+  rolledOverFrom String?
 
   // --- Decline Retry ---
-  captureDeclinedAt       DateTime?
-  captureRetryCount       Int       @default(0)
-  lastCaptureError        String?
+  captureDeclinedAt DateTime?
+  captureRetryCount Int       @default(0)
+  lastCaptureError  String?
 
   // --- Coursing ---
-  currentCourse           Int       @default(0)
-  courseMode               String    @default("off")
+  currentCourse Int    @default(0)
+  courseMode    String @default("off")
 
   // --- Offline ---
-  offlineId               String?
-  offlineLocalId          String?
-  offlineTimestamp         DateTime?
-  offlineTerminalId       String?
+  offlineId         String?
+  offlineLocalId    String?
+  offlineTimestamp  DateTime?
+  offlineTerminalId String?
 
   // --- Business Day ---
-  businessDayDate         DateTime?
+  businessDayDate DateTime?
 
   // --- Concurrency ---
-  version                 Int       @default(0)
+  version Int @default(0)
 
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  deletedAt          DateTime?
-  syncedAt           DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([locationId, status])
@@ -7923,16 +8024,16 @@ model OrderItemSnapshot {
   itemDiscountsJson  Json?
 
   // --- Hold & Fire ---
-  holdUntil          DateTime?
-  firedAt            DateTime?
-  delayStartedAt     DateTime?
+  holdUntil      DateTime?
+  firedAt        DateTime?
+  delayStartedAt DateTime?
 
   // --- KDS ---
-  completedAt        DateTime?
+  completedAt DateTime?
 
   // --- Resend ---
-  lastResentAt       DateTime?
-  resendNote         String?
+  lastResentAt DateTime?
+  resendNote   String?
 
   // --- Entertainment ---
   blockTimeMinutes   Int?
@@ -7940,38 +8041,38 @@ model OrderItemSnapshot {
   blockTimeExpiresAt DateTime?
 
   // --- Course ---
-  courseStatus        String?       /// 'pending', 'ready', 'served'
+  courseStatus String? /// 'pending', 'ready', 'served'
 
   // --- Waste ---
-  wasMade            Boolean?      /// Made before void?
+  wasMade Boolean? /// Made before void?
 
   // --- Pricing ---
-  modifierTotal      Int           @default(0) /// cents
-  itemTotal          Int           @default(0) /// cents
-  cardPrice          Int?          /// cents (dual pricing)
+  modifierTotal Int  @default(0) /// cents
+  itemTotal     Int  @default(0) /// cents
+  cardPrice     Int? /// cents (dual pricing)
 
   // --- Commission ---
-  commissionAmount   Int?          /// cents
+  commissionAmount Int? /// cents
 
   // --- Tax ---
-  isTaxInclusive     Boolean       @default(false)
+  isTaxInclusive Boolean @default(false)
 
   // --- Ownership ---
-  addedByEmployeeId  String?
+  addedByEmployeeId String?
 
   // --- Category ---
-  categoryType       String?
+  categoryType String?
 
   // --- Void ---
-  voidReason         String?
+  voidReason String?
 
   // --- Idempotency ---
-  idempotencyKey     String?
+  idempotencyKey String?
 
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-  deletedAt          DateTime?
-  syncedAt           DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([snapshotId])
   @@index([locationId])
@@ -7990,7 +8091,7 @@ model QuickBarPreference {
   id         String   @id @default(cuid())
   locationId String
   employeeId String   @unique
-  itemIds    String   // JSON array of menuItem IDs
+  itemIds    String // JSON array of menuItem IDs
   updatedAt  DateTime @updatedAt
   employee   Employee @relation(fields: [employeeId], references: [id])
 
@@ -8000,6 +8101,237 @@ model QuickBarPreference {
 model QuickBarDefault {
   id         String   @id @default(cuid())
   locationId String   @unique
-  itemIds    String   // JSON array of menuItem IDs
+  itemIds    String // JSON array of menuItem IDs
   updatedAt  DateTime @updatedAt
+}
+
+// ============================================
+// 7SHIFTS INTEGRATION (Skill 7shifts-v1)
+// ============================================
+
+// Idempotency table for daily sales receipt pushes to 7shifts
+model SevenShiftsDailySalesPush {
+  id                   String    @id @default(cuid())
+  locationId           String
+  location             Location  @relation(fields: [locationId], references: [id])
+  businessDate         String // "YYYY-MM-DD" in location timezone
+  revenueType          String // "food" | "liquor" | "other" | "combined"
+  sevenShiftsReceiptId String? // returned receipt_id from 7shifts
+  netTotalCents        Int
+  tipsAmountCents      Int       @default(0)
+  status               String    @default("pending") // pending|pushed|error
+  errorMessage         String?
+  pushedAt             DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([locationId, businessDate, revenueType])
+  @@index([locationId])
+  @@index([businessDate])
+  @@index([status])
+}
+
+// ============================================
+// ORACLE PMS INTEGRATION (Room Charge Idempotency)
+// ============================================
+
+enum PmsAttemptStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model PmsChargeAttempt {
+  id                 String           @id @default(cuid())
+  idempotencyKey     String           @unique // "{orderId}:{reservationId}:{amountCents}:{chargeCode}"
+  locationId         String
+  orderId            String
+  reservationId      String
+  amountCents        Int
+  chargeCode         String
+  status             PmsAttemptStatus @default(PENDING)
+  operaTransactionId String?
+  providerRequestId  String? // idempotency key sent to OPERA (if supported)
+  employeeId         String? // optional audit trail
+  lastErrorMessage   String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([orderId])
+  @@index([reservationId])
+  @@index([locationId, createdAt])
+}
+
+// ============================================
+// COGS / MARGIN EDGE / INVOICE EXTENSIONS
+// ============================================
+
+// Ingredient cost change audit trail
+model IngredientCostHistory {
+  id              String   @id @default(cuid())
+  locationId      String
+  inventoryItemId String
+  oldCostPerUnit  Decimal  @db.Decimal(10, 4)
+  newCostPerUnit  Decimal  @db.Decimal(10, 4)
+  changePercent   Decimal  @db.Decimal(6, 2)
+  source          String // 'manual' | 'invoice' | 'marginedge' | 'api'
+  invoiceId       String?
+  invoiceNumber   String?
+  vendorName      String?
+  recordedById    String?
+  effectiveDate   DateTime
+  createdAt       DateTime @default(now())
+
+  location      Location      @relation(fields: [locationId], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([locationId, inventoryItemId, effectiveDate])
+  @@index([locationId, effectiveDate])
+}
+
+// Purchase orders
+model VendorOrder {
+  id               String            @id @default(cuid())
+  locationId       String
+  vendorId         String
+  orderNumber      String?
+  status           VendorOrderStatus @default(draft)
+  orderDate        DateTime          @default(now())
+  expectedDelivery DateTime?
+  receivedAt       DateTime?
+  totalEstimated   Decimal?          @db.Decimal(10, 2)
+  totalActual      Decimal?          @db.Decimal(10, 2)
+  notes            String?
+  createdById      String?
+  receivedById     String?
+  linkedInvoiceId  String?
+  deletedAt        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  location  Location              @relation(fields: [locationId], references: [id])
+  vendor    Vendor                @relation(fields: [vendorId], references: [id])
+  lineItems VendorOrderLineItem[]
+
+  @@index([locationId, status])
+  @@index([locationId, orderDate])
+}
+
+model VendorOrderLineItem {
+  id              String    @id @default(cuid())
+  locationId      String
+  vendorOrderId   String
+  inventoryItemId String
+  quantity        Decimal   @db.Decimal(10, 4)
+  unit            String
+  estimatedCost   Decimal?  @db.Decimal(10, 4)
+  actualCost      Decimal?  @db.Decimal(10, 4)
+  receivedQty     Decimal?  @db.Decimal(10, 4)
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  location      Location      @relation(fields: [locationId], references: [id])
+  vendorOrder   VendorOrder   @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([locationId])
+  @@index([locationId, vendorOrderId])
+  @@index([locationId, deletedAt])
+  @@index([vendorOrderId])
+  @@index([inventoryItemId])
+}
+
+// Individual item counts (COGS-style — simpler than InventoryCountItem)
+model InventoryCountEntry {
+  id               String   @id @default(cuid())
+  locationId       String
+  inventoryCountId String
+  inventoryItemId  String
+  expectedQty      Decimal? @db.Decimal(10, 4)
+  countedQty       Decimal  @db.Decimal(10, 4)
+  unit             String
+  variance         Decimal? @db.Decimal(10, 4)
+  unitCost         Decimal  @db.Decimal(10, 4)
+  varianceCost     Decimal? @db.Decimal(10, 2)
+  notes            String?
+  countedById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  location       Location       @relation(fields: [locationId], references: [id])
+  inventoryCount InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
+  inventoryItem  InventoryItem  @relation(fields: [inventoryItemId], references: [id])
+
+  @@unique([inventoryCountId, inventoryItemId])
+  @@index([inventoryCountId])
+  @@index([inventoryItemId])
+}
+
+// Track waste/spillage/spoilage
+model WasteLog {
+  id              String      @id @default(cuid())
+  locationId      String
+  inventoryItemId String?
+  bottleProductId String?
+  quantity        Decimal     @db.Decimal(10, 4)
+  unit            String
+  cost            Decimal     @db.Decimal(10, 2)
+  reason          WasteReason
+  notes           String?
+  recordedById    String
+  businessDate    DateTime
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  location      Location       @relation(fields: [locationId], references: [id])
+  inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  @@index([locationId, businessDate])
+  @@index([locationId, reason])
+}
+
+// Link MarginEdge products to our InventoryItems
+model MarginEdgeProductMapping {
+  id                    String    @id @default(cuid())
+  locationId            String
+  marginEdgeProductId   String
+  marginEdgeProductName String
+  inventoryItemId       String
+  marginEdgeVendorId    String?
+  marginEdgeVendorName  String?
+  marginEdgeUnit        String?
+  lastSyncAt            DateTime?
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  location      Location      @relation(fields: [locationId], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  @@unique([locationId, marginEdgeProductId])
+  @@index([locationId, inventoryItemId])
+}
+
+// Daily sales snapshot for menu engineering
+model MenuItemDailyMetrics {
+  id                 String   @id @default(cuid())
+  locationId         String
+  menuItemId         String
+  businessDate       DateTime
+  quantitySold       Int      @default(0)
+  totalRevenue       Decimal  @default(0) @db.Decimal(10, 2)
+  totalCost          Decimal  @default(0) @db.Decimal(10, 2)
+  foodCostPct        Decimal? @db.Decimal(6, 2)
+  contributionMargin Decimal? @db.Decimal(10, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id])
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@unique([locationId, menuItemId, businessDate])
+  @@index([locationId, businessDate])
+  @@index([locationId, menuItemId])
 }

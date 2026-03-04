@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
@@ -29,6 +29,7 @@ interface ScheduledShift {
   breakMinutes: number
   status: string
   notes?: string
+  sevenShiftsShiftId?: string | null
 }
 
 interface Schedule {
@@ -264,6 +265,12 @@ export default function SchedulingPage() {
   const [showSwapModal, setShowSwapModal] = useState(false)
   const [swapTargetShift, setSwapTargetShift] = useState<ScheduledShift | null>(null)
 
+  // 7shifts import state
+  const [pulling, setPulling] = useState(false)
+  const [lastPullAt, setLastPullAt] = useState<string | null>(null)
+  const [pullError, setPullError] = useState<string | null>(null)
+  const [unmappedCount, setUnmappedCount] = useState(0)
+
   // Current week
   const [currentWeekStart, setCurrentWeekStart] = useState(() => {
     const now = new Date()
@@ -289,6 +296,49 @@ export default function SchedulingPage() {
       setSwapRequests([])
     }
   }, [selectedSchedule?.id, employee?.location?.id])
+
+  // Load 7shifts status for lastPullAt
+  useEffect(() => {
+    fetch('/api/integrations/7shifts/status')
+      .then(r => r.json())
+      .then(d => {
+        if (d.data) setLastPullAt(d.data.lastSchedulePullAt)
+      })
+      .catch(() => {}) // non-fatal
+  }, [])
+
+  const handlePullFromSevenShifts = async () => {
+    if (!employee) return
+    setPulling(true)
+    setPullError(null)
+    setUnmappedCount(0)
+    try {
+      const res = await fetch('/api/integrations/7shifts/pull-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: employee.id,
+          startDate: selectedSchedule?.weekStart,
+          endDate: selectedSchedule?.weekEnd,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        toast.success(`Pulled ${data.data?.upserted ?? 0} shifts from 7shifts`)
+        setLastPullAt(new Date().toISOString())
+        if (data.data?.skipped > 0) {
+          setUnmappedCount(data.data.skipped)
+        }
+        void loadSchedules()
+      } else {
+        setPullError(data.error || 'Pull failed')
+      }
+    } catch {
+      setPullError('Connection error')
+    } finally {
+      setPulling(false)
+    }
+  }
 
   const loadSchedules = async () => {
     if (!employee?.location?.id) return
@@ -718,7 +768,12 @@ export default function SchedulingPage() {
                                   key={shift.id}
                                   className="bg-blue-100 border border-blue-200 rounded p-2 text-xs relative group"
                                 >
-                                  <div className="font-medium pr-10">{shift.employee.name}</div>
+                                  <div className="font-medium pr-10">
+                                    {shift.employee.name}
+                                    {shift.sevenShiftsShiftId && (
+                                      <span className="ml-1 inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold bg-blue-500 text-white leading-none" title="Imported from 7shifts">7s</span>
+                                    )}
+                                  </div>
                                   <div className="text-gray-600">
                                     {shift.startTime} - {shift.endTime}
                                   </div>
@@ -907,6 +962,29 @@ export default function SchedulingPage() {
                       </div>
                     </>
                   )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* 7shifts Import Panel */}
+        {selectedSchedule && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>7shifts Import</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-gray-600 mb-3">
+                Last pulled: {lastPullAt ? new Date(lastPullAt).toLocaleString() : 'Never'}
+              </div>
+              <Button onClick={handlePullFromSevenShifts} disabled={pulling}>
+                {pulling ? 'Pulling...' : 'Pull from 7shifts'}
+              </Button>
+              {pullError && <p className="text-red-600 text-sm mt-2">{pullError}</p>}
+              {unmappedCount > 0 && (
+                <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-amber-800 text-xs">
+                  {unmappedCount} shift{unmappedCount !== 1 ? 's' : ''} could not be matched to employees (missing 7shifts link)
                 </div>
               )}
             </CardContent>
