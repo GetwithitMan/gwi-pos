@@ -5,6 +5,64 @@
 
 ---
 
+## 2026-03-03 — Tax Pipeline Fix + Cash Rounding Restore
+
+### Session Summary
+Fixed NUC server computing taxTotal=0 for all orders (root cause: Location.settings.tax.defaultRate was null for venues using TaxRule records). Restored the cash rounding settings UI that was accidentally removed. Fixed priceRounding not being passed to order calculation paths.
+
+### Commits (gwi-pos)
+
+| Commit | Description |
+|--------|-------------|
+| `64ad81e` | fix(tax): derive order tax from TaxRule records instead of null settings |
+| `8b6803c` | feat(settings): restore cash rounding controls to /settings/payments |
+| `9344ee6` | fix(rounding): pass priceRounding to calculateOrderTotals in create/add-items paths |
+
+### Commits (gwi-android-register)
+
+| Commit | Description |
+|--------|-------------|
+| *(earlier in session)* | fix(sync): Android tax $0 — 3-part fix: ingestRemoteEvent dedup, totals JSON path, replayAndProject after summary |
+
+### Features Delivered
+- NUC server now correctly computes order tax from TaxRule records (7%+3%=10% exclusive rules)
+- `syncTaxRateToSettings()` keeps Location.settings.tax.defaultRate in sync after every TaxRule mutation
+- `getLocationSettings()` has live TaxRules fallback for venues not yet synced
+- `nuc-pre-migrate.js` one-time backfill syncs existing TaxRule records on next deploy
+- Cash Rounding section restored to `/settings/payments` (increment, direction, apply to cash/card)
+- `priceRounding` now correctly passed in `orders/route.ts` (create) and `orders/[id]/items/route.ts` (add items)
+
+### Bug Fixes
+
+| Bug | Fix |
+|-----|-----|
+| NUC taxTotal=0 on all orders | `tax-utils.ts` + settings sync + `getLocationSettings` fallback |
+| Android taxTotal=0 via socket path | 3-part fix: device guard removed, JSON path nested totals, replayAndProject after summary upsert |
+| Cash rounding settings UI missing | Restored Card 5 in `/settings/payments` |
+| priceRounding ignored in create/add-items | Pass `parsedSettings?.priceRounding` in both routes |
+
+---
+
+## 2026-03-03 — Web POS Tax + Dual Pricing Bug Fixes
+
+### Summary
+Two Web POS bugs fixed in `/src/app/api/settings/route.ts` (single file, one edit).
+
+### Bug 1 — Tax shows $0.00 in order panel
+**Root cause:** GET `/api/settings` queried TaxRule records ONLY for inclusive/exclusive flags — never read non-inclusive `rate` values. The `tax.defaultRate` returned was the stale stored JSON value (8.0 default), completely ignoring live TaxRule records (7% + 3% = 10%).
+
+**Fix:** Changed TaxRule query to fetch ALL active rules (removed `isInclusive: true` filter). Filter into inclusive/non-inclusive. Sum non-inclusive rates (stored as decimal fractions, e.g. 0.07). Convert to percent and inject as `settings.tax.defaultRate` when `> 0`. Existing code path for inclusive flags unchanged.
+
+### Bug 2 — Menu grid shows cash price, not card price
+**Root cause:** Stored `location.settings.dualPricing.enabled = false` (from legacy initialization) overrode the default `true`. No admin UI exists to set `dualPricing.enabled`, so once false it was stuck. `BartenderView` and `OrderPanelActions` both gate on `dualPricing.enabled`.
+
+**Fix:** In the GET handler, after parsing settings: if `cashDiscountPercent > 0` and `enabled = false`, inject `enabled: true`. A non-zero `cashDiscountPercent` is authoritative — dual pricing IS active if a percentage is configured.
+
+### File changed
+- `src/app/api/settings/route.ts` — GET handler only; PUT unchanged
+
+---
+
 ## 2026-03-03 — Floor Plan Fix + Android Order Panel Compliance (Skill 479)
 
 ### Summary
@@ -115,7 +173,7 @@ Android commits: `625ddd1` → `007bb79` | POS commits: `a0089ba` → `2af4b7e`
 
 ### Docs Added
 - `docs/planning/AUDIT-CLOSURE-2026-03-03.md`
-- `docs/planning/AUDIT_REGRESSION.md` (26 invariants)
+- `docs/planning/AUDIT_REGRESSION.md` (31 invariants)
 - `docs/skills/474-ANDROID-BARTENDER-AUDIT.md`
 - `docs/skills/478-ANDROID-AUDIT-REMEDIATION.md`
 

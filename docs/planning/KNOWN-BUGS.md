@@ -294,3 +294,7 @@ These were requested but are not bugs — they're missing features. Track them i
 | Floor plan: deterministic table placement | 2026-02-20 | Confirmed |
 | Floor plan: API failure rollback | 2026-02-20 | `35224cd` |
 | Double-event bug (commandClient-first) | 2026-02-26 | `aff5d56` |
+| **NUC taxTotal=0 (Location.settings.tax.defaultRate null, TaxRules not used)** | 2026-03-03 | `64ad81e` (tax-utils.ts, location-cache.ts, tax-rules routes, nuc-pre-migrate) |
+| **Android taxTotal=0 via socket path (3 compounding bugs: device guard, JSON path, no replay)** | 2026-03-03 | Android fix commit (OrderSyncRepository, OrderSyncController) |
+| **Cash rounding settings UI removed from /settings/payments** | 2026-03-03 | `8b6803c` |
+| **priceRounding not passed to calculateOrderTotals in create/add-items** | 2026-03-03 | `9344ee6` |
