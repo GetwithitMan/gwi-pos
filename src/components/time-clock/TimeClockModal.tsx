@@ -239,7 +239,7 @@ export function TimeClockModal({
 
   const loadManagers = async () => {
     try {
-      const response = await fetch(`/api/employees?locationId=${locationId}`)
+      const response = await fetch(`/api/employees?locationId=${locationId}&requestingEmployeeId=${employeeId}`)
       if (response.ok) {
         const raw = await response.json()
         const data = raw.data ?? raw

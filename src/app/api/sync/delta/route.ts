@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { buildSpiritTiersFromItem } from '@/lib/spirit-tiers'
 
 async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string }; error?: never } | { terminal?: never; error: NextResponse }> {
   const authHeader = request.headers.get('authorization')
@@ -34,7 +35,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 
   const [menuItems, categories, employees, tables, orderTypes, orders, pricingOptionGroups] = await Promise.all([
-    db.menuItem.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { ownedModifierGroups: { include: { modifiers: true } } } }),
+    db.menuItem.findMany({
+      where: { locationId, updatedAt: { gt: since } },
+      include: {
+        ownedModifierGroups: {
+          where: { deletedAt: null },
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            modifiers: {
+              where: { deletedAt: null, isActive: true },
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                linkedBottleProduct: {
+                  select: { id: true, name: true, tier: true, pourCost: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
     db.category.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     db.employee.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { role: { select: { id: true, name: true, permissions: true } } } }),
     db.table.findMany({ where: { locationId, updatedAt: { gt: since } } }),
@@ -49,6 +69,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     price: item.price != null ? Number(item.price) : null,
     cost: item.cost != null ? Number(item.cost) : null,
     pricePerWeightUnit: item.pricePerWeightUnit != null ? Number(item.pricePerWeightUnit) : null,
+    spiritTiers: buildSpiritTiersFromItem(item),
   }))
 
   const mappedOrders = orders.map(order => ({

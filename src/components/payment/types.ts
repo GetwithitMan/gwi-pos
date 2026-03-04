@@ -14,8 +14,8 @@
 
 import type { DualPricingSettings, TipSettings, PaymentSettings } from '@/lib/settings'
 
-export type PaymentMethod = 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account'
-export type PaymentStep = 'method' | 'cash' | 'card' | 'tip' | 'confirm' | 'gift_card' | 'house_account'
+export type PaymentMethod = 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge'
+export type PaymentStep = 'method' | 'cash' | 'card' | 'tip' | 'confirm' | 'gift_card' | 'house_account' | 'room_charge'
 
 export interface PendingPayment {
   method: PaymentMethod
@@ -27,6 +27,10 @@ export interface PendingPayment {
   giftCardId?: string
   giftCardNumber?: string
   houseAccountId?: string
+  // Hotel PMS / Bill to Room fields
+  roomNumber?: string
+  guestName?: string
+  pmsReservationId?: string
 }
 
 export interface GiftCardInfo {

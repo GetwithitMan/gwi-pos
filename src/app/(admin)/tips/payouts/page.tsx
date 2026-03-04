@@ -7,6 +7,8 @@ import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Modal } from '@/components/ui/modal'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 // ────────────────────────────────────────────
 // Types
@@ -76,10 +78,12 @@ export default function TipPayoutsPage() {
 
   // ──── Load payable balances ────
   const loadBalances = useCallback(async () => {
-    if (!locationId) return
+    if (!locationId || !employee?.id) return
     try {
       setIsLoading(true)
-      const res = await fetch(`/api/tips/payouts/batch?locationId=${locationId}`)
+      const res = await fetch(`/api/tips/payouts/batch?locationId=${locationId}`, {
+        headers: { 'x-employee-id': employee.id },
+      })
       if (!res.ok) {
         const data = await res.json()
         toast.error(data.error || 'Failed to load tip balances')
@@ -94,7 +98,7 @@ export default function TipPayoutsPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [locationId])
+  }, [locationId, employee?.id])
 
   useEffect(() => {
     loadBalances()
@@ -102,7 +106,7 @@ export default function TipPayoutsPage() {
 
   // ──── Load payout history ────
   const loadHistory = useCallback(async (offset = 0) => {
-    if (!locationId) return
+    if (!locationId || !employee?.id) return
     try {
       setIsHistoryLoading(true)
       const params = new URLSearchParams({
@@ -113,7 +117,9 @@ export default function TipPayoutsPage() {
       if (historyDateFrom) params.set('dateFrom', historyDateFrom)
       if (historyDateTo) params.set('dateTo', historyDateTo)
 
-      const res = await fetch(`/api/tips/payouts?${params.toString()}`)
+      const res = await fetch(`/api/tips/payouts?${params.toString()}`, {
+        headers: { 'x-employee-id': employee.id },
+      })
       if (!res.ok) {
         const data = await res.json()
         toast.error(data.error || 'Failed to load payout history')
@@ -128,7 +134,7 @@ export default function TipPayoutsPage() {
     } finally {
       setIsHistoryLoading(false)
     }
-  }, [locationId, historyDateFrom, historyDateTo])
+  }, [locationId, employee?.id, historyDateFrom, historyDateTo])
 
   // Load history when section is expanded or filters change
   useEffect(() => {
@@ -141,7 +147,7 @@ export default function TipPayoutsPage() {
   const cashOutEmployee = employees.find(e => e.employeeId === cashOutEmployeeId)
 
   const handleCashOut = async () => {
-    if (!locationId || !cashOutEmployeeId) return
+    if (!locationId || !cashOutEmployeeId || !employee?.id) return
 
     const amount = cashOutAmount ? parseFloat(cashOutAmount) : undefined
     if (cashOutAmount && (isNaN(amount!) || amount! <= 0)) {
@@ -153,7 +159,10 @@ export default function TipPayoutsPage() {
       setIsCashingOut(true)
       const res = await fetch('/api/tips/payouts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-employee-id': employee.id,
+        },
         body: JSON.stringify({
           locationId,
           employeeId: cashOutEmployeeId,
@@ -193,7 +202,10 @@ export default function TipPayoutsPage() {
       setIsBatchProcessing(true)
       const res = await fetch('/api/tips/payouts/batch', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-employee-id': employee.id,
+        },
         body: JSON.stringify({
           locationId,
           processedById: employee.id,
@@ -266,7 +278,7 @@ export default function TipPayoutsPage() {
   // ──── Loading state ────
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 p-6">
+      <div className="p-6 max-w-4xl mx-auto">
         <AdminPageHeader
           title="Tip Payouts"
           subtitle="Loading..."
@@ -275,8 +287,9 @@ export default function TipPayoutsPage() {
             { label: 'Tips', href: '/settings/tips' },
           ]}
         />
-        <div className="flex items-center justify-center py-24">
-          <div className="text-gray-400 text-lg">Loading tip balances...</div>
+        <div className="animate-pulse space-y-4 mt-6">
+          <div className="h-24 bg-gray-200 rounded" />
+          <div className="h-64 bg-gray-200 rounded" />
         </div>
       </div>
     )
@@ -284,7 +297,7 @@ export default function TipPayoutsPage() {
 
   // ──── Render ────
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="p-6 max-w-4xl mx-auto">
       <AdminPageHeader
         title="Tip Payouts"
         subtitle="Manage employee tip balances and payouts"
@@ -293,189 +306,186 @@ export default function TipPayoutsPage() {
           { label: 'Tips', href: '/settings/tips' },
         ]}
         actions={
-          <button
-            onClick={loadBalances}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-white/10 border border-white/20 text-white/70 hover:bg-white/20 transition-all"
-            aria-label="Refresh balances"
-          >
+          <Button variant="outline" onClick={loadBalances} size="sm">
             Refresh
-          </button>
+          </Button>
         }
       />
 
-      <div className="max-w-4xl mx-auto space-y-6 pb-16">
+      <div className="space-y-6">
 
         {/* ═══════════════════════════════════════════
             Summary Cards
             ═══════════════════════════════════════════ */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Total Owed */}
-          <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5">
-            <div className="text-sm text-white/50 mb-1">Total Owed</div>
-            <div className="text-2xl font-bold text-white">
-              {formatCurrency(totalOwedDollars)}
-            </div>
-            <div className="text-xs text-white/30 mt-1">
-              Sum of all positive balances
-            </div>
-          </div>
+          <Card>
+            <CardContent className="pt-5">
+              <div className="text-sm text-gray-500 mb-1">Total Owed</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {formatCurrency(totalOwedDollars)}
+              </div>
+              <div className="text-xs text-gray-400 mt-1">Sum of all positive balances</div>
+            </CardContent>
+          </Card>
 
-          {/* Employees Owed */}
-          <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5">
-            <div className="text-sm text-white/50 mb-1">Employees Owed</div>
-            <div className="text-2xl font-bold text-white">
-              {employeesOwed.length}
-            </div>
-            <div className="text-xs text-white/30 mt-1">
-              With positive balance
-            </div>
-          </div>
+          <Card>
+            <CardContent className="pt-5">
+              <div className="text-sm text-gray-500 mb-1">Employees Owed</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {employeesOwed.length}
+              </div>
+              <div className="text-xs text-gray-400 mt-1">With positive balance</div>
+            </CardContent>
+          </Card>
 
-          {/* Last Batch Date */}
-          <div className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-5">
-            <div className="text-sm text-white/50 mb-1">Last Batch Payout</div>
-            <div className="text-2xl font-bold text-white">
-              {lastBatchDate ? formatDate(lastBatchDate) : 'Never'}
-            </div>
-            <div className="text-xs text-white/30 mt-1">
-              Most recent payroll batch
-            </div>
-          </div>
+          <Card>
+            <CardContent className="pt-5">
+              <div className="text-sm text-gray-500 mb-1">Last Batch Payout</div>
+              <div className="text-lg font-bold text-gray-900">
+                {lastBatchDate ? formatDate(lastBatchDate) : 'Never'}
+              </div>
+              <div className="text-xs text-gray-400 mt-1">Most recent payroll batch</div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* ═══════════════════════════════════════════
             Employee Balances Table
             ═══════════════════════════════════════════ */}
-        <section className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-lg font-semibold text-white">Employee Balances</h2>
-              <p className="text-sm text-white/50">Tip bank balances owed to employees</p>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Employee Balances</CardTitle>
+                <p className="text-sm text-gray-500 mt-0.5">Tip bank balances owed to employees</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-500 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showZeroBalances}
+                  onChange={e => setShowZeroBalances(e.target.checked)}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                Show $0 balances
+              </label>
             </div>
-            <label className="flex items-center gap-2 text-sm text-white/50 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={showZeroBalances}
-                onChange={e => setShowZeroBalances(e.target.checked)}
-                className="rounded border-white/20 bg-white/5 text-indigo-600 focus:ring-indigo-500"
-              />
-              Show $0 balances
-            </label>
-          </div>
-
-          {employeesOwed.length === 0 && !showZeroBalances ? (
-            <div className="text-center py-12 text-white/40">
-              <svg className="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p className="text-lg font-medium">All caught up</p>
-              <p className="text-sm mt-1">No employees have outstanding tip balances</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="text-left text-xs font-medium text-white/50 uppercase tracking-wider pb-3 pr-4">Employee</th>
-                    <th className="text-left text-xs font-medium text-white/50 uppercase tracking-wider pb-3 pr-4">Role</th>
-                    <th className="text-right text-xs font-medium text-white/50 uppercase tracking-wider pb-3 pr-4">Balance</th>
-                    <th className="text-right text-xs font-medium text-white/50 uppercase tracking-wider pb-3">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {(showZeroBalances ? employees : employeesOwed).map(emp => {
-                    const name = emp.displayName || `${emp.firstName} ${emp.lastName}`
-                    const isZero = emp.currentBalanceCents <= 0
-                    return (
-                      <tr key={emp.employeeId} className={`${isZero ? 'opacity-40' : ''}`}>
-                        <td className="py-3 pr-4">
-                          <div className="flex items-center gap-2">
-                            {isZero && (
-                              <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
+          </CardHeader>
+          <CardContent>
+            {employeesOwed.length === 0 && !showZeroBalances ? (
+              <div className="text-center py-12 text-gray-400">
+                <svg className="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-lg font-medium">All caught up</p>
+                <p className="text-sm mt-1">No employees have outstanding tip balances</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Employee</th>
+                      <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Role</th>
+                      <th className="text-right text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Balance</th>
+                      <th className="text-right text-xs font-medium text-gray-500 uppercase tracking-wider pb-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(showZeroBalances ? employees : employeesOwed).map(emp => {
+                      const name = emp.displayName || `${emp.firstName} ${emp.lastName}`
+                      const isZero = emp.currentBalanceCents <= 0
+                      return (
+                        <tr key={emp.employeeId} className={isZero ? 'opacity-50' : ''}>
+                          <td className="py-3 pr-4">
+                            <div className="flex items-center gap-2">
+                              {isZero && (
+                                <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                              <span className="text-sm font-medium text-gray-900">{name}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4">
+                            <span className="text-sm text-gray-500">{emp.roleName}</span>
+                          </td>
+                          <td className="py-3 pr-4 text-right">
+                            <span className={`text-sm font-semibold ${isZero ? 'text-gray-400' : 'text-emerald-600'}`}>
+                              {formatCurrency(emp.currentBalanceDollars)}
+                            </span>
+                          </td>
+                          <td className="py-3 text-right">
+                            {!isZero && (
+                              <button
+                                onClick={() => {
+                                  setCashOutEmployeeId(emp.employeeId)
+                                  setCashOutAmount(String(emp.currentBalanceDollars))
+                                  setCashOutMemo('')
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                              >
+                                Cash Out
+                              </button>
                             )}
-                            <span className="text-sm font-medium text-white">{name}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-sm text-white/60">{emp.roleName}</span>
-                        </td>
-                        <td className="py-3 pr-4 text-right">
-                          <span className={`text-sm font-semibold ${isZero ? 'text-white/40' : 'text-emerald-400'}`}>
-                            {formatCurrency(emp.currentBalanceDollars)}
-                          </span>
-                        </td>
-                        <td className="py-3 text-right">
-                          {!isZero && (
-                            <button
-                              onClick={() => {
-                                setCashOutEmployeeId(emp.employeeId)
-                                setCashOutAmount(String(emp.currentBalanceDollars))
-                                setCashOutMemo('')
-                              }}
-                              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                            >
-                              Cash Out
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* ═══════════════════════════════════════════
             Batch Actions
             ═══════════════════════════════════════════ */}
-        <section className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-1">Batch Actions</h2>
-          <p className="text-sm text-white/50 mb-5">Process payouts for multiple employees at once</p>
-
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={() => {
-                if (employeesOwed.length === 0) {
-                  toast.info('No employees have outstanding balances')
-                  return
-                }
-                setShowBatchConfirm(true)
-              }}
-              disabled={isBatchProcessing}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-all shadow-sm disabled:opacity-50"
-            >
-              {isBatchProcessing ? 'Processing...' : 'Payroll Batch -- Pay All'}
-            </button>
-
-            <div className="relative group">
-              <button
-                disabled
-                className="px-5 py-2.5 rounded-xl text-sm font-semibold border border-white/20 text-white/40 cursor-not-allowed"
+        <Card>
+          <CardHeader>
+            <CardTitle>Batch Actions</CardTitle>
+            <p className="text-sm text-gray-500 mt-0.5">Process payouts for multiple employees at once</p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  if (employeesOwed.length === 0) {
+                    toast.info('No employees have outstanding balances')
+                    return
+                  }
+                  setShowBatchConfirm(true)
+                }}
+                disabled={isBatchProcessing}
+                isLoading={isBatchProcessing}
               >
-                Export CSV
-              </button>
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                Coming Soon
+                {isBatchProcessing ? 'Processing...' : 'Payroll Batch — Pay All'}
+              </Button>
+
+              <div className="relative group">
+                <Button variant="outline" disabled>
+                  Export CSV
+                </Button>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 rounded-lg bg-gray-900 text-white text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  Coming Soon
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </CardContent>
+        </Card>
 
         {/* ═══════════════════════════════════════════
             Payout History
             ═══════════════════════════════════════════ */}
-        <section className="bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl">
+        <Card>
           <button
             onClick={() => setHistoryExpanded(!historyExpanded)}
             className="w-full p-6 flex items-center justify-between text-left"
           >
             <div>
-              <h2 className="text-lg font-semibold text-white">Payout History</h2>
-              <p className="text-sm text-white/50">
+              <h2 className="text-base font-semibold text-gray-900">Payout History</h2>
+              <p className="text-sm text-gray-500">
                 {historyTotal > 0
                   ? `${historyTotal} payout${historyTotal !== 1 ? 's' : ''} on record`
                   : 'View past payouts'
@@ -483,7 +493,7 @@ export default function TipPayoutsPage() {
               </p>
             </div>
             <svg
-              className={`w-5 h-5 text-white/50 transition-transform ${historyExpanded ? 'rotate-180' : ''}`}
+              className={`w-5 h-5 text-gray-400 transition-transform ${historyExpanded ? 'rotate-180' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -493,25 +503,25 @@ export default function TipPayoutsPage() {
           </button>
 
           {historyExpanded && (
-            <div className="px-6 pb-6 border-t border-white/5">
+            <div className="px-6 pb-6 border-t border-gray-100">
               {/* Date range filter */}
               <div className="flex flex-wrap items-end gap-3 mt-4 mb-4">
                 <div>
-                  <label className="block text-xs font-medium text-white/50 mb-1">From</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
                   <input
                     type="date"
                     value={historyDateFrom}
                     onChange={e => setHistoryDateFrom(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-white/50 mb-1">To</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
                   <input
                     type="date"
                     value={historyDateTo}
                     onChange={e => setHistoryDateTo(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
                 {(historyDateFrom || historyDateTo) && (
@@ -520,7 +530,7 @@ export default function TipPayoutsPage() {
                       setHistoryDateFrom('')
                       setHistoryDateTo('')
                     }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/50 hover:text-white/80 transition-colors"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
                   >
                     Clear
                   </button>
@@ -528,44 +538,44 @@ export default function TipPayoutsPage() {
               </div>
 
               {isHistoryLoading ? (
-                <div className="text-center py-8 text-white/40">Loading history...</div>
+                <div className="text-center py-8 text-gray-400">Loading history...</div>
               ) : history.length === 0 ? (
-                <div className="text-center py-8 text-white/40">No payouts found</div>
+                <div className="text-center py-8 text-gray-400">No payouts found</div>
               ) : (
                 <>
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="border-b border-white/10">
-                          <th className="text-left text-xs font-medium text-white/50 uppercase tracking-wider pb-3 pr-4">Date</th>
-                          <th className="text-left text-xs font-medium text-white/50 uppercase tracking-wider pb-3 pr-4">Employee</th>
-                          <th className="text-left text-xs font-medium text-white/50 uppercase tracking-wider pb-3 pr-4">Type</th>
-                          <th className="text-right text-xs font-medium text-white/50 uppercase tracking-wider pb-3 pr-4">Amount</th>
-                          <th className="text-left text-xs font-medium text-white/50 uppercase tracking-wider pb-3">Memo</th>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Date</th>
+                          <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Employee</th>
+                          <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Type</th>
+                          <th className="text-right text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Amount</th>
+                          <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3">Memo</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/5">
+                      <tbody className="divide-y divide-gray-100">
                         {history.map(entry => (
                           <tr key={entry.id}>
-                            <td className="py-3 pr-4 text-sm text-white/70 whitespace-nowrap">
+                            <td className="py-3 pr-4 text-sm text-gray-600 whitespace-nowrap">
                               {formatDate(entry.createdAt)}
                             </td>
-                            <td className="py-3 pr-4 text-sm text-white font-medium">
+                            <td className="py-3 pr-4 text-sm text-gray-900 font-medium">
                               {employeeNameMap.get(entry.employeeId) || entry.employeeId}
                             </td>
                             <td className="py-3 pr-4">
                               <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${
                                 entry.sourceType === 'PAYOUT_CASH'
-                                  ? 'bg-emerald-500/20 text-emerald-300'
-                                  : 'bg-indigo-500/20 text-indigo-300'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-indigo-100 text-indigo-700'
                               }`}>
                                 {sourceTypeLabel(entry.sourceType)}
                               </span>
                             </td>
-                            <td className="py-3 pr-4 text-right text-sm font-semibold text-white">
+                            <td className="py-3 pr-4 text-right text-sm font-semibold text-gray-900">
                               {formatCurrency(entry.amountDollars)}
                             </td>
-                            <td className="py-3 text-sm text-white/50 max-w-[200px] truncate">
+                            <td className="py-3 text-sm text-gray-500 max-w-[200px] truncate">
                               {entry.memo || '--'}
                             </td>
                           </tr>
@@ -576,25 +586,27 @@ export default function TipPayoutsPage() {
 
                   {/* Pagination */}
                   {historyTotal > HISTORY_LIMIT && (
-                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/5">
-                      <span className="text-sm text-white/40">
-                        Showing {historyOffset + 1}-{Math.min(historyOffset + HISTORY_LIMIT, historyTotal)} of {historyTotal}
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                      <span className="text-sm text-gray-400">
+                        Showing {historyOffset + 1}–{Math.min(historyOffset + HISTORY_LIMIT, historyTotal)} of {historyTotal}
                       </span>
                       <div className="flex gap-2">
-                        <button
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => loadHistory(Math.max(0, historyOffset - HISTORY_LIMIT))}
                           disabled={historyOffset === 0}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           Previous
-                        </button>
-                        <button
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => loadHistory(historyOffset + HISTORY_LIMIT)}
                           disabled={historyOffset + HISTORY_LIMIT >= historyTotal}
-                          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           Next
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -602,7 +614,7 @@ export default function TipPayoutsPage() {
               )}
             </div>
           )}
-        </section>
+        </Card>
       </div>
 
       {/* ═══════════════════════════════════════════

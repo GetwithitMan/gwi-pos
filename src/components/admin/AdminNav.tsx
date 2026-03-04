@@ -236,6 +236,10 @@ const navSections: NavSection[] = [
       { name: 'Tip Adjustments', href: '#', icon: Icons.dollar, action: 'tip_adjustments', permission: PERMISSIONS.TIPS_VIEW_OWN },
       { name: 'Kitchen Display', href: '/kds', icon: Icons.monitor, permission: PERMISSIONS.POS_KDS_ACCESS },
     ],
+    adminItems: [
+      { name: 'Live Dashboard', href: '/dashboard', icon: Icons.chart },
+      { name: 'Paid In / Out', href: '/cash-drawer/paid-in-out', icon: Icons.money },
+    ],
   },
   {
     title: 'Inventory',
@@ -250,7 +254,9 @@ const navSections: NavSection[] = [
       { name: 'Counts', href: '/inventory/counts', icon: Icons.chart },
       { name: 'Waste Log', href: '/inventory/waste', icon: Icons.void },
       { name: 'Reorder', href: '/inventory/reorder', icon: Icons.outOfStock },
+      { name: 'Purchase Orders', href: '/inventory/orders', icon: Icons.ingredients },
       { name: 'Vendors', href: '/inventory/vendors', icon: Icons.houseAccount },
+      { name: 'Deductions Queue', href: '/inventory/deductions-queue', icon: Icons.void },
     ],
   },
   {

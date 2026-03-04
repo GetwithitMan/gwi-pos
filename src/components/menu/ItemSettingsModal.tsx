@@ -738,34 +738,69 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                     <span className="text-sm text-gray-700">Tax Exempt</span>
                   </label>
 
-                  <div className="border-t pt-4 mt-4">
-                    <span className={labelClass}>Commission</span>
-                    <div className="grid grid-cols-2 gap-3 mt-1">
-                      <div>
-                        <select
-                          value={commissionType}
-                          onChange={(e) => setCommissionType(e.target.value)}
-                          className={inputClass}
-                        >
-                          <option value="">None</option>
-                          <option value="percent">Percentage</option>
-                          <option value="fixed">Fixed Amount</option>
-                        </select>
-                      </div>
-                      {commissionType && (
+                  {/* Commission Section */}
+                  <div className="border border-gray-200 rounded-xl overflow-hidden mt-4">
+                    <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!!commissionType}
+                          onChange={(e) => {
+                            if (!e.target.checked) {
+                              setCommissionType('')
+                              setCommissionValue('')
+                            } else {
+                              setCommissionType('percent')
+                            }
+                          }}
+                          className="w-4 h-4 rounded"
+                        />
+                        <span className="text-xs font-semibold text-gray-600">Enable Commission</span>
+                        <span className="text-[11px] text-gray-400 ml-1">Employee earns a commission on each sale of this item</span>
+                      </label>
+                    </div>
+                    {commissionType && (
+                      <div className="p-3 space-y-3">
                         <div>
+                          <label className={labelClass}>Commission Type</label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setCommissionType('percent')}
+                              className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors ${commissionType === 'percent' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'}`}
+                            >
+                              % Percentage of Sale
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCommissionType('fixed')}
+                              className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors ${commissionType === 'fixed' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'}`}
+                            >
+                              $ Fixed Amount per Sale
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className={labelClass}>
+                            {commissionType === 'percent' ? 'Commission Rate (%)' : 'Commission Amount ($)'}
+                          </label>
                           <input
                             type="number"
                             value={commissionValue}
                             onChange={(e) => setCommissionValue(e.target.value)}
-                            placeholder={commissionType === 'percent' ? 'e.g. 10' : 'e.g. 2.00'}
+                            placeholder={commissionType === 'percent' ? 'e.g. 10 for 10%' : 'e.g. 2.00'}
                             step="0.01"
                             min="0"
                             className={inputClass}
                           />
+                          {commissionType === 'percent' && commissionValue && parseFloat(price) > 0 && (
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              = ${((parseFloat(price) * parseFloat(commissionValue)) / 100).toFixed(2)} per item at current price
+                            </p>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}

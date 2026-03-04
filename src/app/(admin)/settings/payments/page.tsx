@@ -24,6 +24,7 @@ export default function PaymentSettingsPage() {
   const [isDirty, setIsDirty] = useState(false)
   const [form, setForm] = useState<PaymentSettings | null>(null)
   const [roundingForm, setRoundingForm] = useState<PriceRoundingSettings | null>(null)
+  const [hotelPmsEnabled, setHotelPmsEnabled] = useState(false)
 
   const [showTokenKey, setShowTokenKey] = useState(false)
 
@@ -53,6 +54,7 @@ export default function PaymentSettingsPage() {
         const payments = data.settings.payments
         setForm(payments)
         setRoundingForm(data.settings.priceRounding)
+        setHotelPmsEnabled(data.settings.hotelPms?.enabled ?? false)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load payment settings')
@@ -263,6 +265,15 @@ export default function PaymentSettingsPage() {
               checked={form.acceptHouseAccounts}
               onChange={v => update('acceptHouseAccounts', v)}
               border
+            />
+            <ToggleRow
+              label="Bill to Room (Oracle Hotel PMS)"
+              description="Allow guests to charge their restaurant bill directly to their hotel room. Requires the Oracle Hotel PMS integration to be connected and configured."
+              checked={form.acceptHotelRoomCharge ?? false}
+              onChange={v => update('acceptHotelRoomCharge', v)}
+              border
+              disabled={!hotelPmsEnabled}
+              disabledNote={!hotelPmsEnabled ? 'Enable and configure the Oracle Hotel PMS integration first.' : undefined}
             />
           </div>
         </section>

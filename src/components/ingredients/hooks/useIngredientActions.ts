@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { toast } from '@/stores/toast-store'
+import { useAuthStore } from '@/stores/auth-store'
 import type { Ingredient, IngredientCategory, RestoreDestination, DeleteCategoryInfo } from '../types'
 
 interface UseIngredientActionsParams {
@@ -17,6 +18,7 @@ export function useIngredientActions({
   loadIngredients,
   loadDeletedIngredients,
 }: UseIngredientActionsParams) {
+  const employeeId = useAuthStore(s => s.employee?.id)
   // Modal states
   const [showIngredientModal, setShowIngredientModal] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
@@ -168,7 +170,7 @@ export function useIngredientActions({
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, locationId }),
+        body: JSON.stringify({ ...data, locationId, requestingEmployeeId: employeeId }),
       })
 
       if (response.ok) {
@@ -301,6 +303,7 @@ export function useIngredientActions({
           standardQuantity: data.standardQuantity,
           standardUnit: data.standardUnit,
           isBaseIngredient: false,
+          requestingEmployeeId: employeeId,
         }),
       })
 

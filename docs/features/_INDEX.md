@@ -46,6 +46,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Menu Management** | [menu.md](menu.md) | Active | pos, android | Orders, Inventory, Modifiers, KDS |
 | **Modifiers** | [modifiers.md](modifiers.md) | Active | pos, android | Menu, Orders, Inventory, KDS |
 | **Inventory** | [inventory.md](inventory.md) | Active | pos | Menu, Orders, Payments, Reports |
+| **Purchase Orders & Receiving** | [purchase-orders.md](purchase-orders.md) | Active | pos | Inventory, Vendors, Invoices, Menu, Reports |
 | **Daily Prep Count** | [daily-prep-count.md](daily-prep-count.md) | Active | pos | Inventory, Menu, KDS |
 | **Liquor Management** | [liquor.md](liquor.md) | Active | pos, android | Menu, Inventory, Orders, Reports |
 | **Combo Meals** | [combos.md](combos.md) | Active | pos, android | Menu, Orders, Payments |
@@ -62,7 +63,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 |---------|-----|--------|-------|-----------------|
 | **Tips & Tip Banking** | [tips.md](tips.md) | Active | pos, android | Payments, Shifts, Employees, Orders, Roles |
 | **Shifts & Payroll** | [shifts.md](shifts.md) | Active | pos, android | Employees, Tips, Reports, Time Clock |
-| **Commissioned Items** | [commissioned-items.md](commissioned-items.md) | Planned | pos | Menu, Employees, Reports, Payments |
+| **Commissioned Items** | [commissioned-items.md](commissioned-items.md) | Active | pos | Menu, Employees, Reports, Payments |
 
 ### Staff & Access Features
 
@@ -73,7 +74,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Time Clock** | [time-clock.md](time-clock.md) | Active | pos, android | Employees, Shifts, Tips |
 | **Scheduling** | [scheduling.md](scheduling.md) | Active | pos | Employees, Shifts, Time Clock |
 | **Mobile Tab Management** | [mobile-tab-management.md](mobile-tab-management.md) | Active | pos | Tabs, Payments, Employees |
-| **Paid In / Out** | [paid-in-out.md](paid-in-out.md) | Planned | pos | Cash Drawers, Shifts, Roles, Reports |
+| **Paid In / Out** | [paid-in-out.md](paid-in-out.md) | Active | pos | Cash Drawers, Shifts, Roles, Reports |
 | **Staff Training Mode** | [staff-training.md](staff-training.md) | Planned | pos, android | Orders, Payments, Settings |
 
 ### Venue & Service Features
@@ -111,7 +112,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Offline Sync** | [offline-sync.md](offline-sync.md) | Active | pos, android | All features (cross-cutting) |
 | **Error Reporting** | [error-reporting.md](error-reporting.md) | Active | pos | All features (observability) |
 | **Mission Control** | [mission-control.md](mission-control.md) | Active | mission-control, pos | Settings, Employees, Payments |
-| **Live Dashboard** | [live-dashboard.md](live-dashboard.md) | Planned | pos | Reports, Orders, Payments, Employees |
+| **Live Dashboard** | [live-dashboard.md](live-dashboard.md) | Active | pos | Reports, Orders, Payments, Employees |
 
 ### Guest & Ordering Channels
 
@@ -130,6 +131,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Invoicing & B2B** | [invoicing.md](invoicing.md) | Planned | pos | Customers, Payments, Reports |
 | **Hotel PMS Integration (Oracle OPERA)** | [hotel-pms.md](hotel-pms.md) | Active | pos | Payments, Orders, Settings |
 | **7shifts Labor Integration** | [7shifts-integration.md](7shifts-integration.md) | Active | pos | Employees, Scheduling, Time Clock, Settings |
+| **MarginEdge Integration** | [marginedge-integration.md](marginedge-integration.md) | Active | pos | Inventory, Vendors, Settings |
 
 ---
 

@@ -60,6 +60,27 @@ interface EmployeePerformance {
   discountAmount: number
 }
 
+// Live dashboard metrics from /api/dashboard/live
+interface LiveMetrics {
+  netSalesToday: number
+  netSalesLastWeekSameDay: number
+  salesPacingPct: number
+  checksToday: number
+  avgCheckSize: number
+  openTicketCount: number
+  openTicketValue: number
+  voidsTotalToday: number
+  compsTotalToday: number
+  discountsTotalToday: number
+  paidInTotal: number
+  paidOutTotal: number
+  paidNetTotal: number
+  pendingDeductionsFailed: number
+  dayFraction: number
+  businessDate: string
+  generatedAt: string
+}
+
 // W4-6: Dashboard alert
 interface DashboardAlert {
   id: string
@@ -145,6 +166,10 @@ export default function ManagerDashboardPage() {
   // W4-6: Alert state
   const [alerts, setAlerts] = useState<DashboardAlert[]>([])
 
+  // Live metrics state
+  const [liveMetrics, setLiveMetrics] = useState<LiveMetrics | null>(null)
+  const [deductionBannerDismissed, setDeductionBannerDismissed] = useState(false)
+
   // Tick for "last updated" display
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -194,6 +219,23 @@ export default function ManagerDashboardPage() {
     } finally {
       setIsLoading(false)
       setLastRefresh(Date.now())
+    }
+  }, [locationId, currentEmployee?.id])
+
+  // ------------------------------------------
+  // Live metrics fetch (pacing, ops alerts, deductions)
+  // ------------------------------------------
+  const refreshLiveMetrics = useCallback(async () => {
+    if (!locationId || !currentEmployee?.id) return
+
+    try {
+      const res = await fetch(`/api/dashboard/live?locationId=${locationId}&requestingEmployeeId=${currentEmployee.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data) setLiveMetrics(data.data)
+      }
+    } catch (err) {
+      console.error('Live metrics refresh failed:', err)
     }
   }, [locationId, currentEmployee?.id])
 
@@ -281,14 +323,17 @@ export default function ManagerDashboardPage() {
     if (locationId) {
       refreshData()
       refreshEmployeeStats()
+      refreshLiveMetrics()
     }
-  }, [locationId, refreshData, refreshEmployeeStats])
+  }, [locationId, refreshData, refreshEmployeeStats, refreshLiveMetrics])
 
   // ------------------------------------------
   // Socket: real-time updates
   // ------------------------------------------
   const refreshRef = useRef(refreshData)
   refreshRef.current = refreshData
+  const liveMetricsRef = useRef(refreshLiveMetrics)
+  liveMetricsRef.current = refreshLiveMetrics
 
   useEffect(() => {
     if (!locationId) return
@@ -301,6 +346,7 @@ export default function ManagerDashboardPage() {
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
       debounceTimer.current = setTimeout(() => {
         refreshRef.current()
+        liveMetricsRef.current()
       }, 500)
     }
 
@@ -402,20 +448,42 @@ export default function ManagerDashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <AdminPageHeader
-        title="Manager Dashboard"
+        title="Live Dashboard"
         subtitle={
           <span className="text-xs text-gray-400">
-            Last updated: {secondsAgo < 5 ? 'just now' : `${secondsAgo}s ago`}
+            {liveMetrics?.businessDate && (
+              <span className="mr-3 text-gray-500 font-medium">{new Date(liveMetrics.businessDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+            )}
+            Updated {secondsAgo < 5 ? 'just now' : `${secondsAgo}s ago`}
           </span>
         }
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { refreshData(); refreshEmployeeStats() }}>
+            <Button variant="outline" size="sm" onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics() }}>
               Refresh
             </Button>
           </div>
         }
       />
+
+      {/* ================================================================ */}
+      {/* DEDUCTION QUEUE ALERT BANNER                                    */}
+      {/* ================================================================ */}
+      {liveMetrics && liveMetrics.pendingDeductionsFailed > 0 && !deductionBannerDismissed && (
+        <div className="flex items-center gap-3 px-4 py-3 mb-4 rounded-lg bg-red-50 border border-red-300 text-red-800 text-sm">
+          <span className="text-red-500 text-lg">&#9888;</span>
+          <span className="font-medium flex-1">
+            {liveMetrics.pendingDeductionsFailed} inventory deduction{liveMetrics.pendingDeductionsFailed !== 1 ? 's' : ''} failed &mdash; <a href="/inventory/deductions-queue" className="underline font-semibold hover:text-red-900">View Queue &rarr;</a>
+          </span>
+          <button
+            onClick={() => setDeductionBannerDismissed(true)}
+            className="text-red-400 hover:text-red-600 transition-colors text-lg leading-none"
+            aria-label="Dismiss"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* ================================================================ */}
       {/* W4-6: REAL-TIME ALERT PANEL                                     */}
@@ -467,31 +535,112 @@ export default function ManagerDashboardPage() {
         </section>
       )}
 
-      {/* ================================================================ */}
-      {/* QUICK STATS */}
-      {/* ================================================================ */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard
-          label="Open Orders"
-          value={String(orders.length)}
-          color="blue"
-        />
-        <StatCard
-          label="Revenue Today"
-          value={formatCurrency(revenue.totalCollected)}
-          color="green"
-        />
-        <StatCard
-          label="Staff on Floor"
-          value={String(staff.length)}
-          color="purple"
-        />
-        <StatCard
-          label="Aging Alerts"
-          value={String(agingAlertCount)}
-          color={agingAlertCount > 0 ? 'red' : 'gray'}
-        />
+      {/* Quick context bar (staff + aging) */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+          {staff.length} staff on floor
+        </span>
+        {agingAlertCount > 0 && (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+            {agingAlertCount} aging alert{agingAlertCount !== 1 ? 's' : ''} (&gt;20m)
+          </span>
+        )}
       </div>
+
+      {/* ================================================================ */}
+      {/* SALES PACING (prominent, top)                                   */}
+      {/* ================================================================ */}
+      {liveMetrics && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Net Sales Today</p>
+              <p className="text-3xl font-bold text-gray-900">{formatCurrency(liveMetrics.netSalesToday)}</p>
+            </div>
+            <div className="text-right">
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold ${
+                liveMetrics.salesPacingPct > 0
+                  ? 'bg-green-100 text-green-700'
+                  : liveMetrics.salesPacingPct < 0
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-gray-100 text-gray-600'
+              }`}>
+                <span>{liveMetrics.salesPacingPct > 0 ? '\u25B2' : liveMetrics.salesPacingPct < 0 ? '\u25BC' : '\u2014'}</span>
+                <span>{liveMetrics.salesPacingPct > 0 ? '+' : ''}{liveMetrics.salesPacingPct.toFixed(1)}% vs last week</span>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Last week same time: {formatCurrency(liveMetrics.netSalesLastWeekSameDay)}</p>
+            </div>
+          </div>
+
+          {/* Day progress bar */}
+          <div className="mb-3">
+            <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1">
+              <span>Business day progress</span>
+              <span>{Math.round(liveMetrics.dayFraction * 100)}%</span>
+            </div>
+            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full transition-all duration-500"
+                style={{ width: `${Math.round(liveMetrics.dayFraction * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* METRICS GRID (4 cards)                                          */}
+      {/* ================================================================ */}
+      {liveMetrics && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Checks Today</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{liveMetrics.checksToday}</p>
+            <p className="text-xs text-gray-400 mt-1">Avg {formatCurrency(liveMetrics.avgCheckSize)}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Open Tickets</p>
+            <p className="text-2xl font-bold text-blue-600 mt-1">{liveMetrics.openTicketCount}</p>
+            <p className="text-xs text-gray-400 mt-1">{formatCurrency(liveMetrics.openTicketValue)} value</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Voids / Comps</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(liveMetrics.voidsTotalToday)}</p>
+            <p className="text-xs text-gray-400 mt-1">Comps: {formatCurrency(liveMetrics.compsTotalToday)}</p>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Discounts</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(liveMetrics.discountsTotalToday)}</p>
+            <p className="text-xs text-gray-400 mt-1">Net In/Out: {formatCurrency(liveMetrics.paidNetTotal)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* OPS CHIPS: Paid In / Paid Out                                   */}
+      {/* ================================================================ */}
+      {liveMetrics && (liveMetrics.paidInTotal > 0 || liveMetrics.paidOutTotal > 0) && (
+        <div className="flex flex-wrap gap-3 mb-6">
+          {liveMetrics.paidInTotal > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
+              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+              Paid In: {formatCurrency(liveMetrics.paidInTotal)}
+            </span>
+          )}
+          {liveMetrics.paidOutTotal > 0 && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+              <span className="w-2 h-2 rounded-full bg-red-500"></span>
+              Paid Out: {formatCurrency(liveMetrics.paidOutTotal)}
+            </span>
+          )}
+          {(liveMetrics.voidsTotalToday > 0 && liveMetrics.netSalesToday > 0 && (liveMetrics.voidsTotalToday / liveMetrics.netSalesToday) > 0.05) && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+              Voids &gt;5% of sales
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ================================================================ */}
       {/* OPEN ORDERS TABLE */}
@@ -738,27 +887,22 @@ export default function ManagerDashboardPage() {
           </div>
         )}
       </section>
+
+      {/* ================================================================ */}
+      {/* FOOTER                                                          */}
+      {/* ================================================================ */}
+      <div className="flex items-center justify-between py-4 mt-2 text-xs text-gray-400">
+        <span>Refreshes every 60s &middot; Socket-driven real-time updates</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-xs text-gray-400 hover:text-gray-600"
+          onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics() }}
+        >
+          Refresh now
+        </Button>
+      </div>
     </div>
   )
 }
 
-// ============================================================================
-// STAT CARD
-// ============================================================================
-
-function StatCard({ label, value, color }: { label: string; value: string; color: string }) {
-  const colorMap: Record<string, string> = {
-    blue: 'bg-blue-50 border-blue-200 text-blue-700',
-    green: 'bg-green-50 border-green-200 text-green-700',
-    purple: 'bg-purple-50 border-purple-200 text-purple-700',
-    red: 'bg-red-50 border-red-200 text-red-700',
-    gray: 'bg-gray-50 border-gray-200 text-gray-500',
-  }
-
-  return (
-    <div className={`rounded-xl border p-4 ${colorMap[color] || colorMap.gray}`}>
-      <p className="text-xs font-medium opacity-70 uppercase tracking-wider">{label}</p>
-      <p className="text-2xl font-bold mt-1">{value}</p>
-    </div>
-  )
-}

@@ -107,9 +107,9 @@ export default function SettingsLayout({
         />
       )}
 
-      {/* Sidebar - fixed on desktop, sliding on mobile */}
+      {/* Sidebar - fixed on mobile, sticky on desktop */}
       <div
-        className={`fixed top-0 left-0 bottom-0 z-40 transform transition-transform duration-200 lg:relative lg:translate-x-0 ${
+        className={`fixed top-0 left-0 bottom-0 z-40 transform transition-transform duration-200 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:self-start ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface BottleProduct {
   id: string
@@ -89,6 +90,7 @@ interface RecipeBuilderProps {
 }
 
 export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpanded, onToggle }: RecipeBuilderProps) {
+  const employeeId = useAuthStore(s => s.employee?.id)
   const [bottles, setBottles] = useState<BottleProduct[]>([])
   const [foodCategories, setFoodCategories] = useState<FoodCategoryGroup[]>([])
   const [ingredients, setIngredients] = useState<RecipeIngredient[]>([])
@@ -111,7 +113,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
       const [bottlesRes, recipeRes, foodRes] = await Promise.all([
         fetch('/api/liquor/bottles'),
         fetch(`/api/menu/items/${menuItemId}/recipe`),
-        fetch(`/api/ingredients?locationId=${locationId}&groupByCategory=true&hierarchy=true`),
+        fetch(`/api/ingredients?locationId=${locationId}&groupByCategory=true&hierarchy=true${employeeId ? `&requestingEmployeeId=${employeeId}` : ''}`),
       ])
 
       if (bottlesRes.ok) {

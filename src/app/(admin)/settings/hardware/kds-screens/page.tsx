@@ -284,7 +284,7 @@ export default function KDSScreensPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-gray-50 p-6">
       <AdminPageHeader
         title="Kitchen Display System (KDS) Screens"
         subtitle="Configure kitchen display screens that show incoming orders"

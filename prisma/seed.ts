@@ -624,7 +624,7 @@ async function main() {
         locationId: location.id,
         name: 'Beer',
         color: '#ca8a04',
-        categoryType: 'drinks',
+        categoryType: 'liquor',
         categoryShow: 'bar',
         sortOrder: 16,
       },
@@ -637,7 +637,7 @@ async function main() {
         locationId: location.id,
         name: 'Wine',
         color: '#7c2d12',
-        categoryType: 'drinks',
+        categoryType: 'liquor',
         categoryShow: 'bar',
         sortOrder: 17,
       },
@@ -1483,7 +1483,22 @@ async function main() {
   }
   console.log('Created', timedItems.length, 'timed rental items')
 
-  // Create Tables
+  // Create default Section (room) — tables must belong to a section to appear in the floor plan editor
+  const mainSection = await prisma.section.upsert({
+    where: { id: 'section-main' },
+    update: {},
+    create: {
+      id: 'section-main',
+      locationId: location.id,
+      name: 'Main Floor',
+      widthFeet: 40,
+      heightFeet: 30,
+      gridSizeFeet: 1,
+    },
+  })
+  console.log('Created section:', mainSection.name)
+
+  // Create Tables — assigned to Main Floor section
   const tables = [
     { id: 'table-1', name: 'Table 1', capacity: 4, posX: 50, posY: 50 },
     { id: 'table-2', name: 'Table 2', capacity: 4, posX: 200, posY: 50 },
@@ -1498,7 +1513,7 @@ async function main() {
   for (const table of tables) {
     await prisma.table.upsert({
       where: { id: table.id },
-      update: {},
+      update: { sectionId: mainSection.id },
       create: {
         id: table.id,
         locationId: location.id,
@@ -1507,6 +1522,8 @@ async function main() {
         posX: table.posX,
         posY: table.posY,
         shape: table.shape || 'rectangle',
+        isActive: true,
+        sectionId: mainSection.id,
       },
     })
   }

@@ -66,6 +66,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           endTime: shift.endTime,
           breakMinutes: shift.breakMinutes,
           status: shift.status,
+          sevenShiftsShiftId: (shift as Record<string, unknown>).sevenShiftsShiftId as string | null ?? null,
         })),
       })),
     } })

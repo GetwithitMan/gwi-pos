@@ -31,7 +31,7 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     if (!employee?.location?.id) return
-    fetch(`/api/settings/online-ordering?locationId=${employee.location.id}`)
+    fetch(`/api/settings/online-ordering?locationId=${employee.location.id}&requestingEmployeeId=${employee.id}`)
       .then(res => res.json())
       .then(data => {
         const d = data.data || {}

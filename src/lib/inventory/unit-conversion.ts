@@ -72,8 +72,6 @@ const UNIT_DEFINITIONS: Record<string, UnitDefinition> = {
   'portions': { category: 'count', baseUnit: 'ea', toBase: 1 },
   'serving': { category: 'count', baseUnit: 'ea', toBase: 1 },
   'servings': { category: 'count', baseUnit: 'ea', toBase: 1 },
-  'case': { category: 'count', baseUnit: 'ea', toBase: 1 }, // Case requires item-specific conversion
-  'cases': { category: 'count', baseUnit: 'ea', toBase: 1 },
   'dozen': { category: 'count', baseUnit: 'ea', toBase: 12 },
   'doz': { category: 'count', baseUnit: 'ea', toBase: 12 },
 }

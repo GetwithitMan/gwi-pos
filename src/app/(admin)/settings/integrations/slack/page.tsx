@@ -4,12 +4,14 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/stores/toast-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface SlackStatus {
   configured: boolean
 }
 
 export default function SlackIntegrationPage() {
+  const employeeId = useAuthStore(s => s.employee?.id)
   const [status, setStatus] = useState<SlackStatus | null>(null)
   const [testing, setTesting] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -32,7 +34,7 @@ export default function SlackIntegrationPage() {
       const res = await fetch('/api/integrations/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service: 'slack' }),
+        body: JSON.stringify({ service: 'slack', employeeId }),
       })
       const data = await res.json()
       if (data.data.success) {

@@ -67,7 +67,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Handle status changes
-    if (body.status === 'received' && existing.status === 'pending') {
+    if (body.status === 'received' && existing.status === 'pending' && existing.addToInventory !== false) {
       // Pre-fetch all inventory items for the line items (batch instead of N+1)
       const lineItemInvIds = existing.lineItems
         .filter(li => li.inventoryItemId)

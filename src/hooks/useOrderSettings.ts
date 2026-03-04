@@ -20,6 +20,7 @@ const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
   acceptDebit: true,
   acceptGiftCards: false,
   acceptHouseAccounts: false,
+  acceptHotelRoomCharge: false,
   cashRounding: 'none',
   roundingDirection: 'nearest',
   enablePreAuth: true,

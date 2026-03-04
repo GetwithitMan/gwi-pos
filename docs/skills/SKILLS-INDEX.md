@@ -402,6 +402,7 @@
 |-------|------|--------|--------|--------------|-------|
 | 484 | Oracle OPERA Cloud PMS | DONE | Payments / Integrations | 30, 09, 33 | Bill-to-Room payment method; OAuth token cache; crash-safe PmsChargeAttempt idempotency; SSRF guardrail |
 | 485 | 7shifts Labor Integration | DONE | Employees / Integrations | 01, 09, 241, 47 | Bidirectional: sales push (SevenShiftsDailySalesPush), time punch push (idempotent via sevenShiftsTimePunchId), schedule pull (upsert by sevenShiftsShiftId), webhook receiver (HMAC + multi-location routing), cron at 7am UTC |
+| 490 | MarginEdge Integration | DONE | Inventory / Integrations | 09, 128 | One-way COGS sync: MarginEdge→GWI. Invoice import (idempotent by marginEdgeInvoiceId), auto-vendor creation, product mapping (ME product ↔ InventoryItem), auto cost update (≥5% threshold → IngredientCostHistory). Cron 8am UTC daily. SPEC-490. |
 | 486 | Admin Time Clock Manager | DONE | Employees | 47 | /admin/time-clock — date/employee/status filters, expand-row punch details, Edit Punch modal with required reason |
 | 487 | Employee Detail Page | DONE | Employees | 01, 47, 241 | /admin/employees/[id] — 4 tabs: Profile, Pay & Tax, Time & Attendance (punch history + upcoming shifts + edit modal), 7shifts Mapping |
 

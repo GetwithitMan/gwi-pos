@@ -66,8 +66,8 @@ export function useMenuData() {
         fetch('/api/menu', {
           cache: 'no-store',
         }),
-        locationId ? fetch(`/api/ingredients?locationId=${locationId}`) : Promise.resolve(null),
-        locationId ? fetch(`/api/ingredient-categories?locationId=${locationId}`) : Promise.resolve(null),
+        locationId ? fetch(`/api/ingredients?locationId=${locationId}${employee?.id ? `&requestingEmployeeId=${employee.id}` : ''}`) : Promise.resolve(null),
+        locationId ? fetch(`/api/ingredient-categories?locationId=${locationId}${employee?.id ? `&requestingEmployeeId=${employee.id}` : ''}`) : Promise.resolve(null),
         locationId ? fetch(`/api/hardware/printers?locationId=${locationId}`) : Promise.resolve(null),
         locationId ? fetch(`/api/hardware/kds-screens?locationId=${locationId}`) : Promise.resolve(null)
       ])

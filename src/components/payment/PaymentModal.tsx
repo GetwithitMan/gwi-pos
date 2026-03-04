@@ -46,7 +46,7 @@ interface PaymentModalProps {
 }
 
 interface PendingPayment {
-  method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account'
+  method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge'
   amount: number
   tipAmount: number
   amountTendered?: number
@@ -55,6 +55,11 @@ interface PendingPayment {
   giftCardId?: string
   giftCardNumber?: string
   houseAccountId?: string
+  // Hotel PMS / Bill to Room fields (P1.1: selectionId is the server-trusted token)
+  selectionId?: string
+  roomNumber?: string
+  guestName?: string
+  pmsReservationId?: string
   // Datacap Direct fields
   datacapRecordNo?: string
   datacapRefNumber?: string
@@ -82,7 +87,7 @@ interface HouseAccountInfo {
   status: string
 }
 
-type PaymentStep = 'method' | 'cash' | 'tip' | 'gift_card' | 'house_account' | 'datacap_card'
+type PaymentStep = 'method' | 'cash' | 'tip' | 'gift_card' | 'house_account' | 'datacap_card' | 'room_charge'
 
 // Default tip settings
 const DEFAULT_TIP_SETTINGS: TipSettings = {
@@ -151,7 +156,7 @@ export function PaymentModal({
   const [step, setStep] = useState<PaymentStep>(
     initialMethod === 'cash' ? 'cash' : initialMethod === 'credit' ? 'datacap_card' : 'method'
   )
-  const [selectedMethod, setSelectedMethod] = useState<'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | null>(initialMethod || null)
+  const [selectedMethod, setSelectedMethod] = useState<'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge' | null>(initialMethod || null)
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([])
   const [tipAmount, setTipAmount] = useState(0)
   const [customTip, setCustomTip] = useState('')
@@ -177,6 +182,14 @@ export function PaymentModal({
   const [selectedHouseAccount, setSelectedHouseAccount] = useState<HouseAccountInfo | null>(null)
   const [houseAccountSearch, setHouseAccountSearch] = useState('')
   const [houseAccountsLoading, setHouseAccountsLoading] = useState(false)
+
+  // Hotel PMS / Bill to Room state
+  const [roomChargeInput, setRoomChargeInput] = useState('')
+  const [roomChargeSearchType, setRoomChargeSearchType] = useState<'room' | 'name'>('room')
+  const [roomChargeResults, setRoomChargeResults] = useState<Array<{ reservationId: string; roomNumber: string; guestName: string; checkInDate: string; checkOutDate: string; selectionId: string }>>([])
+  const [selectedRoomGuest, setSelectedRoomGuest] = useState<{ reservationId: string; roomNumber: string; guestName: string; selectionId: string } | null>(null)
+  const [roomChargeLookupLoading, setRoomChargeLookupLoading] = useState(false)
+  const [roomChargeLookupError, setRoomChargeLookupError] = useState<string | null>(null)
 
   // Add card to tab state
   const [addingCard, setAddingCard] = useState(false)
@@ -378,7 +391,7 @@ export function PaymentModal({
     )
   }
 
-  const handleSelectMethod = (method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account') => {
+  const handleSelectMethod = (method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge') => {
     setSelectedMethod(method)
     setTipAmount(0)
     setCustomTip('')
@@ -394,6 +407,12 @@ export function PaymentModal({
       setHouseAccountSearch('')
       loadHouseAccounts()
       setStep('house_account')
+    } else if (method === 'room_charge') {
+      setRoomChargeInput('')
+      setRoomChargeResults([])
+      setSelectedRoomGuest(null)
+      setRoomChargeLookupError(null)
+      setStep('room_charge')
     } else if (tipSettings.enabled) {
       setStep('tip')
     } else if (method === 'cash') {
@@ -580,6 +599,54 @@ export function PaymentModal({
     processPayments([...pendingPayments, payment], pendingPayments)
   }
 
+  const handleRoomChargeLookup = async () => {
+    if (!roomChargeInput.trim()) return
+    setRoomChargeLookupLoading(true)
+    setRoomChargeLookupError(null)
+    setRoomChargeResults([])
+    setSelectedRoomGuest(null)
+    try {
+      const params = new URLSearchParams({
+        q: roomChargeInput.trim(),
+        type: roomChargeSearchType,
+        ...(employeeId ? { employeeId } : {}),
+      })
+      const res = await fetch(`/api/integrations/oracle-pms/room-lookup?${params}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Lookup failed')
+      const guests = data.data?.guests ?? []
+      if (guests.length === 0) {
+        setRoomChargeLookupError(
+          roomChargeSearchType === 'room'
+            ? `No in-house guest found in room ${roomChargeInput}. Verify the room number.`
+            : `No in-house guest found with last name "${roomChargeInput}".`
+        )
+      } else if (guests.length === 1) {
+        setSelectedRoomGuest(guests[0])
+      }
+      setRoomChargeResults(guests)
+    } catch (err) {
+      setRoomChargeLookupError(err instanceof Error ? err.message : 'Lookup failed')
+    } finally {
+      setRoomChargeLookupLoading(false)
+    }
+  }
+
+  const handleRoomChargePayment = () => {
+    if (!selectedRoomGuest) return
+
+    const payment: PendingPayment = {
+      method: 'room_charge',
+      amount: currentTotal,
+      tipAmount,
+      selectionId: selectedRoomGuest.selectionId,
+      roomNumber: selectedRoomGuest.roomNumber,
+      guestName: selectedRoomGuest.guestName,
+      pmsReservationId: selectedRoomGuest.reservationId,
+    }
+    processPayments([...pendingPayments, payment], pendingPayments)
+  }
+
   const handleSelectTip = (percent: number | null) => {
     if (percent === null) {
       setTipAmount(0)
@@ -685,6 +752,11 @@ export function PaymentModal({
       giftCardId: p.giftCardId,
       giftCardNumber: p.giftCardNumber,
       houseAccountId: p.houseAccountId,
+      // Hotel PMS / Bill to Room fields (P1.1: send selectionId only; server resolves guest data)
+      selectionId: p.selectionId,
+      roomNumber: p.roomNumber,
+      guestName: p.guestName,
+      pmsReservationId: p.pmsReservationId,
       // Datacap Direct fields — only include if we have the required fields
       ...(p.datacapRecordNo && p.datacapRefNumber ? {
         datacapRecordNo: p.datacapRecordNo,
@@ -1322,6 +1394,33 @@ export function PaymentModal({
                   </div>
                 </button>
               )}
+
+              {paymentSettings.acceptHotelRoomCharge && (
+                <button
+                  onClick={() => handleSelectMethod('room_charge')}
+                  disabled={!isConnected}
+                  style={{
+                    width: '100%',
+                    height: 72,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '0 20px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(20, 184, 166, 0.3)',
+                    background: 'rgba(20, 184, 166, 0.08)',
+                    cursor: !isConnected ? 'not-allowed' : 'pointer',
+                    textAlign: 'left' as const,
+                    opacity: !isConnected ? 0.5 : 1,
+                  }}
+                >
+                  <span style={{ fontSize: 28 }}>🏨</span>
+                  <div>
+                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Bill to Room</div>
+                    <div style={{ color: '#5eead4', fontSize: 13 }}>Charge to hotel room</div>
+                  </div>
+                </button>
+              )}
             </div>
           )}
 
@@ -1917,6 +2016,145 @@ export function PaymentModal({
                   }}
                 >
                   {isProcessing ? 'Processing...' : 'Charge to Account'}
+                </button>
+              </div>
+            </div>
+          )}
+          {/* Step: Bill to Room */}
+          {step === 'room_charge' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <h3 style={sectionLabelStyle}>Bill to Room</h3>
+
+              <div style={infoPanelStyle('rgba(20, 184, 166, 0.12)')}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
+                  <span style={{ color: '#94a3b8' }}>Amount to Charge</span>
+                  <span style={{ color: '#2dd4bf' }}>{formatCurrency(totalWithTip)}</span>
+                </div>
+              </div>
+
+              {/* Search type toggle */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['room', 'name'] as const).map(type => (
+                  <button
+                    key={type}
+                    onClick={() => { setRoomChargeSearchType(type); setRoomChargeInput(''); setRoomChargeResults([]); setSelectedRoomGuest(null); setRoomChargeLookupError(null) }}
+                    style={{
+                      flex: 1,
+                      padding: '8px 0',
+                      borderRadius: 8,
+                      border: roomChargeSearchType === type ? '2px solid #2dd4bf' : '1px solid rgba(100,116,139,0.3)',
+                      background: roomChargeSearchType === type ? 'rgba(20,184,166,0.12)' : 'transparent',
+                      color: roomChargeSearchType === type ? '#2dd4bf' : '#94a3b8',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {type === 'room' ? 'Room Number' : 'Last Name'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Search input */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type={roomChargeSearchType === 'room' ? 'tel' : 'text'}
+                  value={roomChargeInput}
+                  onChange={e => { setRoomChargeInput(e.target.value); setRoomChargeResults([]); setSelectedRoomGuest(null); setRoomChargeLookupError(null) }}
+                  onKeyDown={e => e.key === 'Enter' && void handleRoomChargeLookup()}
+                  placeholder={roomChargeSearchType === 'room' ? 'Enter room number...' : 'Enter guest last name...'}
+                  style={{ ...inputStyle, flex: 1 }}
+                  autoFocus
+                />
+                <button
+                  onClick={() => void handleRoomChargeLookup()}
+                  disabled={!roomChargeInput.trim() || roomChargeLookupLoading}
+                  style={{
+                    padding: '0 16px',
+                    borderRadius: 8,
+                    background: 'rgba(20,184,166,0.15)',
+                    border: '1px solid rgba(20,184,166,0.4)',
+                    color: '#2dd4bf',
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: !roomChargeInput.trim() || roomChargeLookupLoading ? 'not-allowed' : 'pointer',
+                    opacity: !roomChargeInput.trim() || roomChargeLookupLoading ? 0.5 : 1,
+                  }}
+                >
+                  {roomChargeLookupLoading ? '...' : 'Look Up'}
+                </button>
+              </div>
+
+              {/* Error */}
+              {roomChargeLookupError && (
+                <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, color: '#fca5a5', fontSize: 13 }}>
+                  {roomChargeLookupError}
+                </div>
+              )}
+
+              {/* Multiple results */}
+              {roomChargeResults.length > 1 && !selectedRoomGuest && (
+                <div style={{ maxHeight: 192, overflowY: 'auto', borderRadius: 10, border: '1px solid rgba(20,184,166,0.2)' }}>
+                  {roomChargeResults.map(guest => (
+                    <button
+                      key={guest.reservationId}
+                      onClick={() => setSelectedRoomGuest(guest)}
+                      style={{
+                        width: '100%',
+                        padding: 12,
+                        textAlign: 'left' as const,
+                        background: 'transparent',
+                        borderBottom: '1px solid rgba(100,116,139,0.1)',
+                        border: 'none',
+                        borderBlockEnd: '1px solid rgba(100,116,139,0.1)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ color: '#f1f5f9', fontWeight: 500 }}>{guest.guestName}</div>
+                      <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 2 }}>
+                        Room {guest.roomNumber} · Checking out {guest.checkOutDate}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Confirmed guest */}
+              {selectedRoomGuest && (
+                <div style={{ padding: 14, background: 'rgba(20,184,166,0.1)', border: '1px solid rgba(20,184,166,0.25)', borderRadius: 10 }}>
+                  <div style={{ color: '#2dd4bf', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+                    Guest Confirmed
+                  </div>
+                  <div style={{ color: '#f1f5f9', fontWeight: 600, fontSize: 16 }}>{selectedRoomGuest.guestName}</div>
+                  <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 2 }}>Room {selectedRoomGuest.roomNumber}</div>
+                  <button
+                    onClick={() => setSelectedRoomGuest(null)}
+                    style={{ marginTop: 8, fontSize: 12, color: '#64748b', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  >
+                    Wrong guest? Search again
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button
+                  onClick={() => setStep('method')}
+                  disabled={isProcessing}
+                  style={{ ...backButtonStyle, opacity: isProcessing ? 0.5 : 1 }}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleRoomChargePayment}
+                  disabled={isProcessing || !selectedRoomGuest}
+                  style={{
+                    ...primaryButtonStyle,
+                    background: selectedRoomGuest ? 'linear-gradient(135deg, #0d9488, #14b8a6)' : undefined,
+                    opacity: (isProcessing || !selectedRoomGuest) ? 0.5 : 1,
+                    cursor: (isProcessing || !selectedRoomGuest) ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {isProcessing ? 'Processing...' : `Charge Room ${selectedRoomGuest?.roomNumber ?? ''}`}
                 </button>
               </div>
             </div>

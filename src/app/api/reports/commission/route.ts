@@ -80,7 +80,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         items: {
           where: { status: 'active', deletedAt: null },
-          include: {
+          select: {
+            quantity: true,
+            itemTotal: true,
+            commissionAmount: true,
             menuItem: { select: { id: true, name: true, commissionType: true, commissionValue: true } },
           },
         },
@@ -108,7 +111,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         orderNumber: string
         date: string
         commission: number
-        items: { name: string; commission: number }[]
+        items: { name: string; quantity: number; price: number; commissionRate: number | null; commissionType: string | null; commission: number }[]
       }[]
     }> = {}
 
@@ -139,7 +142,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         })
         .map(item => {
           let commission = Number(item.commissionAmount) || 0
-          // If no commission on item but menu item has commission, calculate it
           if (commission === 0 && item.menuItem.commissionType && item.menuItem.commissionValue) {
             const value = Number(item.menuItem.commissionValue)
             if (item.menuItem.commissionType === 'percent') {
@@ -150,6 +152,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           }
           return {
             name: item.menuItem.name,
+            quantity: item.quantity,
+            price: Number(item.itemTotal ?? 0),
+            commissionRate: item.menuItem.commissionType === 'percent'
+              ? Number(item.menuItem.commissionValue)
+              : null,
+            commissionType: item.menuItem.commissionType,
             commission,
           }
         })

@@ -128,7 +128,7 @@ export default function ClosedOrdersPage() {
   // ─── Fetch employees for filter dropdown ─────────────────────────────────
   useEffect(() => {
     if (!locationId) return
-    fetch(`/api/employees?locationId=${locationId}&includeInactive=false`)
+    fetch(`/api/employees?locationId=${locationId}&includeInactive=false${employee?.id ? `&requestingEmployeeId=${employee.id}` : ''}`)
       .then(res => res.json())
       .then(data => {
         const list = data.data?.employees || data.employees || []

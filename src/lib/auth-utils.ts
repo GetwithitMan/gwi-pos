@@ -509,10 +509,10 @@ export const ROLE_TEMPLATE_META: Record<string, { roleType: RoleType; accessLeve
 
 // Check if user has super admin privileges
 export function isSuperAdmin(permissions: string[]): boolean {
-  return permissions.includes('super_admin') || permissions.includes('*')
+  return permissions.includes('super_admin') || permissions.includes('*') || permissions.includes('all')
 }
 
 // Check if user has admin privileges (includes super admin)
 export function isAdmin(permissions: string[]): boolean {
-  return permissions.includes('admin') || permissions.includes('super_admin') || permissions.includes('*')
+  return permissions.includes('admin') || permissions.includes('super_admin') || permissions.includes('*') || permissions.includes('all')
 }

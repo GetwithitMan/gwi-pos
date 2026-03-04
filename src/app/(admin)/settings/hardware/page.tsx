@@ -185,7 +185,7 @@ export default function HardwareDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-gray-50 p-6">
       <AdminPageHeader
         title="Hardware Management"
         subtitle="Monitor and configure printers, KDS screens, terminals, and payment readers"

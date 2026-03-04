@@ -9,14 +9,15 @@ import React from 'react'
 
 interface PaymentMethodStepProps {
   remainingAmount: number
-  selectedMethod: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | null
-  onSelectMethod: (method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account') => void
+  selectedMethod: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge' | null
+  onSelectMethod: (method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'room_charge') => void
   enabledMethods?: {
     cash?: boolean
     credit?: boolean
     debit?: boolean
     giftCard?: boolean
     houseAccount?: boolean
+    hotelRoomCharge?: boolean
   }
 }
 
@@ -72,6 +73,14 @@ export function PaymentMethodStep({
       icon: '🏠',
       enabled: enabledMethods.houseAccount,
       color: 'bg-orange-500 hover:bg-orange-600',
+    },
+    {
+      id: 'room_charge' as const,
+      label: 'Bill to Room',
+      description: 'Charge to hotel room via OPERA',
+      icon: '🏨',
+      enabled: enabledMethods.hotelRoomCharge,
+      color: 'bg-teal-500 hover:bg-teal-600',
     },
   ]
 

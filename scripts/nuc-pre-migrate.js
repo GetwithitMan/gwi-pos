@@ -808,6 +808,8 @@ async function runPrePushMigrations() {
       await prisma.$executeRawUnsafe(
         `DO $$ BEGIN CREATE TYPE "WasteReason" AS ENUM ('spoilage', 'over_pour', 'spill', 'breakage', 'expired', 'void_comped', 'other'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`
       )
+      // Add partially_received to VendorOrderStatus enum
+      await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TYPE "VendorOrderStatus" ADD VALUE IF NOT EXISTS 'partially_received'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
       // Add new values to InvoiceStatus enum
       await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TYPE "InvoiceStatus" ADD VALUE IF NOT EXISTS 'draft'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
       await prisma.$executeRawUnsafe(`DO $$ BEGIN ALTER TYPE "InvoiceStatus" ADD VALUE IF NOT EXISTS 'approved'; EXCEPTION WHEN duplicate_object THEN NULL; END $$`)
@@ -838,10 +840,12 @@ async function runPrePushMigrations() {
           console.log(`${PREFIX}   Done — Invoice.${col} added`)
         }
       }
-      // Compound unique: (locationId, marginEdgeInvoiceId) — scoped per tenant, not globally unique
-      // Drop old global unique if it exists, replace with compound
+      // Drop old global unique if it exists
       await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "Invoice_marginEdgeInvoiceId_key"`)
-      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Invoice_locationId_marginEdgeInvoiceId_key" ON "Invoice"("locationId","marginEdgeInvoiceId") WHERE "marginEdgeInvoiceId" IS NOT NULL`)
+      // Drop the compound partial index if it exists from a prior deploy — Prisma now owns
+      // this as a full unique constraint (@@unique([locationId, marginEdgeInvoiceId])).
+      // Dropping it here lets prisma db push recreate it cleanly without a name conflict.
+      await prisma.$executeRawUnsafe(`DROP INDEX IF EXISTS "Invoice_locationId_marginEdgeInvoiceId_key"`)
     } catch (err) {
       console.error(`${PREFIX}   FAILED Invoice COGS columns:`, err.message)
     }
@@ -1118,6 +1122,101 @@ async function runPrePushMigrations() {
       console.log(`${PREFIX}   MenuItemDailyMetrics table ready`)
     } catch (err) {
       console.error(`${PREFIX}   FAILED MenuItemDailyMetrics:`, err.message)
+    }
+
+    // --- DeductionStatus + DeductionType enums ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        DO $$ BEGIN
+          CREATE TYPE "DeductionStatus" AS ENUM ('pending', 'processing', 'succeeded', 'failed', 'dead');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      await prisma.$executeRawUnsafe(`
+        DO $$ BEGIN
+          CREATE TYPE "DeductionType" AS ENUM ('order_deduction', 'liquor_only', 'food_only');
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
+      `)
+      console.log(`${PREFIX}   DeductionStatus + DeductionType enums ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Deduction enums:`, err.message)
+    }
+
+    // --- PendingDeduction table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "PendingDeduction" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "orderId" TEXT NOT NULL,
+          "paymentId" TEXT,
+          "deductionType" "DeductionType" NOT NULL DEFAULT 'order_deduction',
+          "status" "DeductionStatus" NOT NULL DEFAULT 'pending',
+          "attempts" INTEGER NOT NULL DEFAULT 0,
+          "maxAttempts" INTEGER NOT NULL DEFAULT 5,
+          "availableAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "lastError" TEXT,
+          "lastAttemptAt" TIMESTAMP(3),
+          "succeededAt" TIMESTAMP(3),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "PendingDeduction_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "PendingDeduction_orderId_key" UNIQUE ("orderId")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "PendingDeduction_locationId_status_availableAt_idx" ON "PendingDeduction"("locationId", "status", "availableAt")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "PendingDeduction_status_availableAt_idx" ON "PendingDeduction"("status", "availableAt")`)
+      console.log(`${PREFIX}   PendingDeduction table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED PendingDeduction:`, err.message)
+    }
+
+    // --- DeductionRun table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "DeductionRun" (
+          "id" TEXT NOT NULL,
+          "pendingDeductionId" TEXT NOT NULL,
+          "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "finishedAt" TIMESTAMP(3),
+          "success" BOOLEAN,
+          "resultSummary" JSONB,
+          "error" TEXT,
+          "durationMs" INTEGER,
+          CONSTRAINT "DeductionRun_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "DeductionRun_pendingDeductionId_fkey" FOREIGN KEY ("pendingDeductionId") REFERENCES "PendingDeduction"("id") ON DELETE CASCADE
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "DeductionRun_pendingDeductionId_idx" ON "DeductionRun"("pendingDeductionId")`)
+      console.log(`${PREFIX}   DeductionRun table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED DeductionRun:`, err.message)
+    }
+
+    // --- InventoryItemTransaction: add deductionJobId column ---
+    try {
+      if (!(await columnExists(prisma, 'InventoryItemTransaction', 'deductionJobId'))) {
+        await prisma.$executeRawUnsafe(`ALTER TABLE "InventoryItemTransaction" ADD COLUMN "deductionJobId" TEXT`)
+        console.log(`${PREFIX}   InventoryItemTransaction.deductionJobId added`)
+      }
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "InventoryItemTransaction_locationId_deductionJobId_idx" ON "InventoryItemTransaction"("locationId", "deductionJobId")`)
+      console.log(`${PREFIX}   InventoryItemTransaction.deductionJobId index ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED InventoryItemTransaction.deductionJobId:`, err.message)
+    }
+
+    // --- Fix Beer/Wine categories: categoryType 'drinks' → 'liquor' so they appear in liquor builder ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        UPDATE "Category"
+        SET "categoryType" = 'liquor'
+        WHERE "id" IN ('cat-beer', 'cat-wine')
+          AND "categoryType" = 'drinks'
+      `)
+      console.log(`${PREFIX}   Beer/Wine category type fix applied`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Beer/Wine category fix:`, err.message)
     }
 
     console.log(`${PREFIX} Pre-push migrations complete`)

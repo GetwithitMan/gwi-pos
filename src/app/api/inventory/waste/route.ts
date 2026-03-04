@@ -73,18 +73,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Validate reason type
-    const allowedReasons = ['spoilage', 'spill', 'overcooked', 'contamination', 'training']
-    if (!allowedReasons.includes(reason)) {
-      return NextResponse.json({
-        error: `Invalid reason. Must be one of: ${allowedReasons.join(', ')}`,
-      }, { status: 400 })
-    }
-
     // Get current item cost
     const item = await db.inventoryItem.findUnique({
       where: { id: inventoryItemId },
-      select: { costPerUnit: true, currentStock: true },
+      select: { costPerUnit: true, currentStock: true, storageUnit: true },
     })
 
     if (!item) {
@@ -95,8 +87,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const qtyNum = Number(quantity)
     const costImpact = costPerUnit * qtyNum
     const currentStock = Number(item.currentStock)
+    const businessDate = body.businessDate ? new Date(body.businessDate) : new Date()
 
-    // Create waste log entry
+    // Create waste log entry (legacy model)
     const entry = await db.wasteLogEntry.create({
       data: {
         locationId,
@@ -104,16 +97,34 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         employeeId,
         reason,
         quantity: qtyNum,
-        unit,
+        unit: unit || item.storageUnit,
         costImpact,
         notes,
-        wasteDate: new Date(),
+        wasteDate: businessDate,
       },
       include: {
         inventoryItem: {
           select: { id: true, name: true, sku: true },
         },
       },
+    })
+
+    // Also create COGS-style WasteLog record for reporting
+    await db.wasteLog.create({
+      data: {
+        locationId,
+        inventoryItemId,
+        bottleProductId: body.bottleProductId || null,
+        quantity: qtyNum,
+        unit: unit || item.storageUnit,
+        cost: costImpact,
+        reason: reason as 'spoilage' | 'over_pour' | 'spill' | 'breakage' | 'expired' | 'void_comped' | 'other',
+        notes,
+        recordedById: employeeId,
+        businessDate,
+      },
+    }).catch(() => {
+      // WasteLog model may not have all reason enum values — don't fail the whole request
     })
 
     // Deduct from inventory

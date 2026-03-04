@@ -233,7 +233,7 @@ export default function MenuImportPage() {
   if (!hydrated || !employee) return null
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-gray-50 p-6">
       <AdminPageHeader
         title="Import Menu from CSV"
         subtitle="Upload a CSV file to bulk-import menu items"

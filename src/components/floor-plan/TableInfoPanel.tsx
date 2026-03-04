@@ -91,7 +91,7 @@ export function TableInfoPanel({
     if (employees.length === 0 && locationId) {
       setIsLoadingEmployees(true)
       try {
-        const response = await fetch(`/api/employees?locationId=${locationId}&active=true`)
+        const response = await fetch(`/api/employees?locationId=${locationId}&active=true${employeeId ? `&requestingEmployeeId=${employeeId}` : ''}`)
         if (response.ok) {
           const data = await response.json()
           const list: Employee[] = (data.data || data || []).filter(

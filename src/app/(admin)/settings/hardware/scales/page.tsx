@@ -262,7 +262,7 @@ export default function ScalesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
+    <div className="min-h-screen bg-gray-50 p-6">
       <AdminPageHeader
         title="Scales"
         subtitle="Configure weight scales for sold-by-weight items"

@@ -241,6 +241,28 @@ export default function ReportsHubPage() {
           ),
         },
         {
+          name: 'Labor Cost vs Sales',
+          href: '/reports/labor-cost',
+          description: 'Labor % by date, role, or employee compared to sales revenue',
+          permission: PERMISSIONS.REPORTS_LABOR,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Schedule Compliance',
+          href: '/reports/schedule-compliance',
+          description: 'Scheduled vs actual hours, no-shows, and late arrivals',
+          permission: PERMISSIONS.REPORTS_LABOR,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          ),
+        },
+        {
           name: 'Employee Performance',
           href: '/reports/employees',
           description: 'Sales by server, tips, hours worked',
@@ -384,6 +406,29 @@ export default function ReportsHubPage() {
     {
       title: 'Inventory & Liquor',
       reports: [
+        {
+          name: 'Food Cost Analysis',
+          href: '/reports/food-cost',
+          description: 'Food cost %, COGS by category and item, cost coverage',
+          permission: PERMISSIONS.REPORTS_INVENTORY,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Menu Engineering',
+          href: '/reports/menu-engineering',
+          description: 'Star/Plow Horse/Puzzle/Dog classification for menu optimization',
+          permission: PERMISSIONS.REPORTS_INVENTORY,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+            </svg>
+          ),
+        },
         {
           name: 'Food Cost / Variance',
           href: '/reports/variance',

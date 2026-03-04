@@ -51,7 +51,7 @@ export function TabTransferModal({
   const loadEmployees = async () => {
     setIsLoading(true)
     try {
-      const response = await fetch(`/api/employees?locationId=${locationId}&active=true`)
+      const response = await fetch(`/api/employees?locationId=${locationId}&active=true&requestingEmployeeId=${currentEmployeeId}`)
       if (response.ok) {
         const data = await response.json()
         const list: Employee[] = (data.data || data || []).filter(

@@ -78,6 +78,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
                   name: true,
                   price: true,
                   spiritTier: true,
+                  linkedBottleProductId: true,
                 },
                 orderBy: { sortOrder: 'asc' }
               }
@@ -163,16 +164,16 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       // Group spirit modifiers by tier
       const spiritTiers = spiritModifiers.length > 0 ? {
         well: spiritModifiers.filter(m => m.spiritTier === 'well').map(m => ({
-          id: m.id, name: m.name, price: Number(m.price)
+          id: m.id, name: m.name, price: Number(m.price), spiritTier: 'well' as const, linkedBottleProductId: m.linkedBottleProductId ?? null,
         })),
         call: spiritModifiers.filter(m => m.spiritTier === 'call').map(m => ({
-          id: m.id, name: m.name, price: Number(m.price)
+          id: m.id, name: m.name, price: Number(m.price), spiritTier: 'call' as const, linkedBottleProductId: m.linkedBottleProductId ?? null,
         })),
         premium: spiritModifiers.filter(m => m.spiritTier === 'premium').map(m => ({
-          id: m.id, name: m.name, price: Number(m.price)
+          id: m.id, name: m.name, price: Number(m.price), spiritTier: 'premium' as const, linkedBottleProductId: m.linkedBottleProductId ?? null,
         })),
         top_shelf: spiritModifiers.filter(m => m.spiritTier === 'top_shelf').map(m => ({
-          id: m.id, name: m.name, price: Number(m.price)
+          id: m.id, name: m.name, price: Number(m.price), spiritTier: 'top_shelf' as const, linkedBottleProductId: m.linkedBottleProductId ?? null,
         })),
       } : null
 

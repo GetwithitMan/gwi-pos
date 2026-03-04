@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { assignEmployeeToTemplateGroup } from '@/lib/domain/tips/tip-group-templates'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitCloudEvent } from '@/lib/cloud-events'
@@ -497,6 +499,115 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     console.error('Failed to update time clock:', error)
     return NextResponse.json(
       { error: 'Failed to update time clock' },
+      { status: 500 }
+    )
+  }
+})
+
+// I-6: PATCH - Manager edit of time punch (with audit log)
+export const PATCH = withVenue(async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { entryId, clockIn, clockOut, breakMinutes, notes, performedBy, locationId } = body as {
+      entryId: string
+      clockIn?: string
+      clockOut?: string
+      breakMinutes?: number
+      notes?: string
+      performedBy: string // manager's employeeId
+      locationId: string
+    }
+
+    if (!entryId || !performedBy || !locationId) {
+      return NextResponse.json(
+        { error: 'Entry ID, performedBy, and locationId are required' },
+        { status: 400 }
+      )
+    }
+
+    // Require manager permission to edit time punches
+    const auth = await requirePermission(performedBy, locationId, PERMISSIONS.STAFF_EDIT_WAGES)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    // Fetch original entry
+    const original = await db.timeClockEntry.findUnique({
+      where: { id: entryId },
+    })
+
+    if (!original) {
+      return NextResponse.json({ error: 'Time clock entry not found' }, { status: 404 })
+    }
+
+    // Capture before values
+    const beforeValues = {
+      clockIn: original.clockIn.toISOString(),
+      clockOut: original.clockOut?.toISOString() || null,
+      breakMinutes: original.breakMinutes,
+    }
+
+    // Build update
+    const updateData: Record<string, unknown> = {}
+    if (clockIn) updateData.clockIn = new Date(clockIn)
+    if (clockOut) updateData.clockOut = new Date(clockOut)
+    if (breakMinutes !== undefined) updateData.breakMinutes = breakMinutes
+    if (notes !== undefined) updateData.notes = notes
+
+    // Recalculate hours if clock times changed
+    const effectiveClockIn = clockIn ? new Date(clockIn) : original.clockIn
+    const effectiveClockOut = clockOut ? new Date(clockOut) : original.clockOut
+    if (effectiveClockOut) {
+      const totalMinutes = (effectiveClockOut.getTime() - effectiveClockIn.getTime()) / (1000 * 60)
+      const effectiveBreak = breakMinutes !== undefined ? breakMinutes : (original.breakMinutes || 0)
+      const workedHours = (totalMinutes - effectiveBreak) / 60
+      updateData.regularHours = Math.round(Math.min(workedHours, 8) * 100) / 100
+      updateData.overtimeHours = Math.round(Math.max(0, workedHours - 8) * 100) / 100
+    }
+
+    const updated = await db.timeClockEntry.update({
+      where: { id: entryId },
+      data: updateData,
+    })
+
+    // Capture after values
+    const afterValues = {
+      clockIn: updated.clockIn.toISOString(),
+      clockOut: updated.clockOut?.toISOString() || null,
+      breakMinutes: updated.breakMinutes,
+    }
+
+    // Write audit log entry
+    await db.auditLog.create({
+      data: {
+        locationId: original.locationId,
+        employeeId: performedBy,
+        action: 'TIME_PUNCH_EDIT',
+        entityType: 'time_clock',
+        entityId: entryId,
+        details: {
+          before: beforeValues,
+          after: afterValues,
+          editedEmployeeId: original.employeeId,
+        },
+      },
+    })
+
+    // Notify real-time
+    void emitToLocation(original.locationId, 'employee:clock-changed', {
+      employeeId: original.employeeId,
+    }).catch(() => {})
+
+    return NextResponse.json({ data: {
+      id: updated.id,
+      message: 'Time punch updated successfully',
+      before: beforeValues,
+      after: afterValues,
+    } })
+  } catch (error) {
+    console.error('Failed to edit time punch:', error)
+    return NextResponse.json(
+      { error: 'Failed to edit time punch' },
       { status: 500 }
     )
   }

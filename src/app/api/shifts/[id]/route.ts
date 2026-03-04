@@ -653,6 +653,66 @@ async function calculateShiftSummary(
     safPendingTotal: Math.round(safPendingTotal * 100) / 100,
     safFailedCount,
     safFailedTotal: Math.round(safFailedTotal * 100) / 100,
+    // Labor cost data (I-1)
+    laborCost: await calculateShiftLaborCost(locationId, startTime, endTime),
+  }
+}
+
+// I-1: Calculate labor cost for the shift period (all employees clocked in during window)
+async function calculateShiftLaborCost(
+  locationId: string,
+  startTime: Date,
+  endTime: Date
+) {
+  try {
+    // Find all time clock entries overlapping with this shift window
+    const entries = await db.timeClockEntry.findMany({
+      where: {
+        locationId,
+        clockIn: { lte: endTime },
+        OR: [
+          { clockOut: { gte: startTime } },
+          { clockOut: null }, // Still clocked in
+        ],
+      },
+      include: {
+        employee: {
+          select: { hourlyRate: true },
+        },
+      },
+    })
+
+    let totalWages = 0
+    let totalHours = 0
+
+    entries.forEach(entry => {
+      const rate = Number(entry.employee.hourlyRate) || 0
+      if (rate === 0) return
+
+      const regularHours = Number(entry.regularHours) || 0
+      const overtimeHours = Number(entry.overtimeHours) || 0
+
+      if (entry.clockOut) {
+        // Completed entry — use stored hours
+        totalHours += regularHours + overtimeHours
+        totalWages += (regularHours * rate) + (overtimeHours * rate * 1.5)
+      } else {
+        // Still clocked in — calculate hours so far
+        const hoursWorked = (endTime.getTime() - entry.clockIn.getTime()) / (1000 * 60 * 60)
+        const breakHours = (entry.breakMinutes || 0) / 60
+        const netHours = Math.max(0, hoursWorked - breakHours)
+        totalHours += netHours
+        totalWages += netHours * rate
+      }
+    })
+
+    return {
+      totalWages: Math.round(totalWages * 100) / 100,
+      totalHours: Math.round(totalHours * 100) / 100,
+      employeeCount: entries.length,
+    }
+  } catch {
+    return null
   }
 }
 

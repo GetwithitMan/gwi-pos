@@ -4,6 +4,7 @@
   "installCommand": "npm install",
   "crons": [
     { "path": "/api/cron/7shifts-sync", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/marginedge-sync", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/marginedge-sync", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/process-deductions", "schedule": "*/5 * * * *" }
   ]
 }

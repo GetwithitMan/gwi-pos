@@ -81,6 +81,7 @@ export const GET = withVenue(async function GET(
         breakMinutes: shift.breakMinutes,
         status: shift.status,
         notes: shift.notes,
+        sevenShiftsShiftId: (shift as Record<string, unknown>).sevenShiftsShiftId as string | null ?? null,
       })),
       shiftsByDate: Object.entries(shiftsByDate).map(([date, shifts]) => ({
         date,

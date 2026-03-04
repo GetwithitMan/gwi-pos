@@ -1,9 +1,12 @@
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
+import { getCurrentBusinessDay } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
 
 interface InventoryDeduction {
   bottleProductId: string
   bottleProductName: string
+  inventoryItemId: string | null
   pourCount: number
   pourCost: number
   wasSubstituted: boolean
@@ -75,9 +78,11 @@ export async function processLiquorInventory(
     const allBottleIds = [...new Set([...allLinkedBottleIds, ...allRecipeBottleIds])]
 
     // Single batch fetch for ALL bottles we might need (substitutions + recipes)
+    // Include inventoryItemId for stock deduction
     const allBottles = allBottleIds.length > 0
       ? await db.bottleProduct.findMany({
           where: { id: { in: allBottleIds } },
+          include: { inventoryItem: { select: { id: true, currentStock: true, costPerUnit: true } } },
         })
       : []
     const allBottleMap = new Map(allBottles.map(b => [b.id, b]))
@@ -139,6 +144,7 @@ export async function processLiquorInventory(
         itemDeductions.push({
           bottleProductId: actualBottle.id,
           bottleProductName: actualBottle.name,
+          inventoryItemId: actualBottle.inventoryItemId ?? null,
           pourCount,
           pourCost,
           wasSubstituted,
@@ -157,6 +163,99 @@ export async function processLiquorInventory(
           totalCost: itemCost,
         })
         totalCost += itemCost
+      }
+    }
+
+    // ── Persist deductions to DB ──
+    // InventoryItem.currentStock (oz) is canonical; BottleProduct.currentStock is deprecated
+    if (results.length > 0) {
+      const locationId = await getLocationId()
+
+      // Resolve business date from location settings
+      const settings = locationId ? await parseSettings(locationId) : null
+      const dayStartTime = settings?.businessDay?.dayStartTime || '04:00'
+      const { date: businessDate } = getCurrentBusinessDay(dayStartTime)
+
+      // Collect all deductions with linked InventoryItems
+      const allDeductions = results.flatMap(r =>
+        r.deductions
+          .filter(d => d.inventoryItemId !== null)
+          .map(d => ({
+            ...d,
+            inventoryItemId: d.inventoryItemId as string,
+          }))
+      )
+
+      if (allDeductions.length > 0 && locationId) {
+        // Batch-fetch current stock for all affected InventoryItems
+        const inventoryItemIds = [...new Set(allDeductions.map(d => d.inventoryItemId))]
+        const inventoryItems = await db.inventoryItem.findMany({
+          where: { id: { in: inventoryItemIds } },
+          select: { id: true, currentStock: true, costPerUnit: true },
+        })
+        const stockMap = new Map(inventoryItems.map(i => [i.id, i]))
+
+        // Aggregate deductions per InventoryItem (multiple deductions can hit the same item)
+        const aggMap = new Map<string, { totalPourCount: number; totalCost: number; reasons: string[] }>()
+        for (const d of allDeductions) {
+          const existing = aggMap.get(d.inventoryItemId)
+          const reason = `${d.bottleProductName} ${d.spiritTier || ''} ×${d.pourCount.toFixed(2)}`
+          if (existing) {
+            existing.totalPourCount += d.pourCount
+            existing.totalCost += d.pourCost
+            existing.reasons.push(reason)
+          } else {
+            aggMap.set(d.inventoryItemId, {
+              totalPourCount: d.pourCount,
+              totalCost: d.pourCost,
+              reasons: [reason],
+            })
+          }
+        }
+
+        // Create InventoryItemTransactions + atomically decrement InventoryItem.currentStock
+        // Use Prisma's atomic decrement to avoid race conditions on concurrent payments
+        const txnPromises: Promise<unknown>[] = []
+        for (const [invItemId, agg] of aggMap) {
+          const item = stockMap.get(invItemId)
+          // quantityBefore/After are a snapshot from read time (for audit trail).
+          // The actual update uses atomic decrement so concurrent payments can't corrupt stock.
+          const stockSnapshot = item ? Number(item.currentStock) : 0
+          if (stockSnapshot - agg.totalPourCount < 0) {
+            // Soft warning — negative stock is normal at bar close (bottles emptied mid-shift).
+            // Do NOT block the deduction. Reconcile via count sheet.
+            console.warn(`[liquor-inventory] inventoryItem ${invItemId} going negative: ${stockSnapshot} - ${agg.totalPourCount} oz (order ${orderId})`)
+          }
+
+          txnPromises.push(
+            db.inventoryItemTransaction.create({
+              data: {
+                locationId,
+                inventoryItemId: invItemId,
+                type: 'sale',
+                quantityBefore: stockSnapshot,
+                quantityChange: -agg.totalPourCount,
+                quantityAfter: stockSnapshot - agg.totalPourCount,
+                unitCost: item?.costPerUnit ?? null,
+                totalCost: agg.totalCost,
+                reason: agg.reasons.join('; '),
+                referenceType: 'order',
+                referenceId: orderId,
+                employeeId: employeeId ?? null,
+              },
+            })
+          )
+
+          txnPromises.push(
+            db.inventoryItem.update({
+              where: { id: invItemId },
+              data: { currentStock: { decrement: agg.totalPourCount } },
+            })
+          )
+        }
+
+        await Promise.all(txnPromises)
+        console.log(`[liquor-inventory] ${allDeductions.length} deductions for order ${orderId}, business date ${businessDate}`)
       }
     }
 

@@ -369,7 +369,7 @@ export default function SchedulingPage() {
     if (!employee?.location?.id) return
 
     try {
-      const response = await fetch(`/api/employees?locationId=${employee.location.id}`)
+      const response = await fetch(`/api/employees?locationId=${employee.location.id}&requestingEmployeeId=${employee.id}`)
       if (response.ok) {
         const data = await response.json()
         setEmployees(data.data.employees.map((e: { id: string; displayName?: string; firstName: string; lastName: string; role?: { name: string }; hourlyRate?: number }) => ({

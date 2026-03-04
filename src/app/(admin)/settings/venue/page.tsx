@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
+import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -26,6 +27,7 @@ interface LocationData {
 
 export default function VenueSettingsPage() {
   const hydrated = useAuthenticationGuard()
+  const employeeId = useAuthStore(s => s.employee?.id)
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -129,7 +131,11 @@ export default function VenueSettingsPage() {
   const handleGenerateCode = async () => {
     setIsGenerating(true)
     try {
-      const res = await fetch('/api/location/registration-code', { method: 'POST' })
+      const res = await fetch('/api/location/registration-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId }),
+      })
       if (res.ok) {
         const { data } = await res.json()
         setRegCode(data.code)

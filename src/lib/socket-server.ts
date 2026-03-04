@@ -449,6 +449,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       'kds:recall',
       'terminal:ping',
       'terminal:config-update',
+      'terminal:payment_request',
+      'terminal:payment_complete',
     ])
 
     socket.on('terminal_message', ({ terminalId, event, data }: {
@@ -557,6 +559,51 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         }
       })
     }
+
+    // ==================== Handheld Payment Relay ====================
+
+    // Handheld → Kiosk: route a payment request to a specific target terminal
+    socket.on('terminal:payment_request', (data: {
+      orderId: string
+      targetTerminalId: string
+      fromTerminalId: string
+      totalCents: number
+      tipSuggestions: number[]
+      items: unknown[]
+    }) => {
+      try {
+        const senderLocationId = socket.data.locationId
+        if (!senderLocationId) {
+          console.warn(`[Socket] terminal:payment_request rejected — no authenticated locationId on socket ${socket.id}`)
+          return
+        }
+        void emitToTerminal(data.targetTerminalId, 'terminal:payment_request', data)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'terminal:payment_request', socketId: socket.id, error: String(err) }))
+      }
+    })
+
+    // Kiosk → Handheld: route payment completion back to the originating terminal
+    socket.on('terminal:payment_complete', (data: {
+      orderId: string
+      fromTerminalId: string
+      toTerminalId: string
+      approvedAmountCents: number
+      tipCents: number
+      success: boolean
+      declineReason?: string
+    }) => {
+      try {
+        const senderLocationId = socket.data.locationId
+        if (!senderLocationId) {
+          console.warn(`[Socket] terminal:payment_complete rejected — no authenticated locationId on socket ${socket.id}`)
+          return
+        }
+        void emitToTerminal(data.toTerminalId, 'terminal:payment_complete', data)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'terminal:payment_complete', socketId: socket.id, error: String(err) }))
+      }
+    })
 
     // ==================== Connection Lifecycle ====================
 

@@ -6,10 +6,12 @@ import { Card } from '@/components/ui/card'
 import { LocationSettings, DEFAULT_SETTINGS } from '@/lib/settings'
 import { formatCurrency } from '@/lib/pricing'
 import { toast } from '@/stores/toast-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function HappyHourSettingsPage() {
+  const employeeId = useAuthStore(s => s.employee?.id)
   const [settings, setSettings] = useState<LocationSettings>(DEFAULT_SETTINGS)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -38,7 +40,7 @@ export default function HappyHourSettingsPage() {
       const response = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({ settings, employeeId }),
       })
       if (response.ok) {
         toast.success('Happy Hour settings saved')

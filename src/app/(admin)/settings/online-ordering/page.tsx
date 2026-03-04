@@ -98,7 +98,7 @@ export default function OnlineOrderingOverviewPage() {
     if (!locationId) return
     const load = async () => {
       try {
-        const res = await fetch(`/api/settings/online-ordering?locationId=${locationId}`)
+        const res = await fetch(`/api/settings/online-ordering?locationId=${locationId}&requestingEmployeeId=${employee?.id ?? ''}`)
         if (res.ok) {
           const json = await res.json()
           setSettings(json.data)

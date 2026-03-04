@@ -1,6 +1,6 @@
 # Audit Regression Guard List
 **Source:** Android Bartender Audit 2026-03-03
-**Purpose:** Invariants to re-verify after any change to payment, order, shift, or tips code.
+**Purpose:** 31 invariants to re-verify after any change to payment, order, shift, tips, or permission code.
 
 If a future PR touches the areas below, check the corresponding invariant before merging.
 
@@ -74,6 +74,16 @@ If a future PR touches the areas below, check the corresponding invariant before
 | PR2 | Rapid item taps debounced (300ms) | `OrderViewModel.onItemClicked()` | Tap same item 5× quickly → only first tap registers within 300ms window |
 | PR3 | Item quantity capped at 999 | `AddItemUseCase` (.coerceAtMost) | Tap same item 1000× → qty stops at 999 |
 | PR4 | Close Tab tip field resets on every re-open | `CloseTabSheet` (remember(closeTabNonce)) | Open close-tab, enter tip, dismiss, reopen → tip field is blank |
+
+## Permission Security Invariants
+
+| ID | Invariant | How to verify |
+|----|-----------|---------------|
+| PS1 | Adding items to another employee's order requires POS_EDIT_OTHERS_ORDERS | POST /api/orders/[id]/items without permission → 403 |
+| PS2 | Any item submitted with a price differing from its menu price by >$0.01 requires MGR_OPEN_ITEMS (except weight-based, pizza, and timed-rental items) | POST items with custom price without permission → 403 |
+| PS3 | Editing an order item that has left 'pending' kitchen status (sent/cooking/ready/delivered) requires MGR_EDIT_SENT_ITEMS | PUT /api/orders/[id]/items/[itemId] on sent item without permission → 403 |
+| PS4 | Shift close with absolute cash variance >$5 requires MGR_CASH_VARIANCE_OVERRIDE; response includes code: 'VARIANCE_OVERRIDE_REQUIRED' and variance amount | PUT /api/shifts/[id] close with large variance without permission → 403 with code |
+| PS5 | Tax exemption (isTaxExempt=true) on an Order requires MGR_TAX_EXEMPT; once set, calculateOrderTotals and calculateSimpleOrderTotals both apply taxRate=0 for all subsequent recalculations | Set isTaxExempt without permission → 403; verify taxTotal=0 after setting |
 
 ---
 

@@ -1,5 +1,6 @@
 import { useState, type MutableRefObject } from 'react'
 import { toast } from '@/stores/toast-store'
+import { useAuthStore } from '@/stores/auth-store'
 import type { Ingredient, IngredientLibraryItem, IngredientCategory } from './item-editor-types'
 
 interface UseIngredientCreationParams {
@@ -30,6 +31,7 @@ export function useIngredientCreation({
   setShowIngredientPicker,
   setIngredientSearch,
 }: UseIngredientCreationParams) {
+  const employeeId = useAuthStore(s => s.employee?.id)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
   const [creatingInventoryInCategory, setCreatingInventoryInCategory] = useState<string | null>(null)
@@ -53,6 +55,7 @@ export function useIngredientCreation({
           locationId,
           name: newCategoryName.trim(),
           needsVerification: true,
+          requestingEmployeeId: employeeId,
         }),
       })
 
@@ -99,6 +102,7 @@ export function useIngredientCreation({
           parentIngredientId: null,
           needsVerification: true,
           isBaseIngredient: true,
+          requestingEmployeeId: employeeId,
         }),
       })
 
@@ -177,6 +181,7 @@ export function useIngredientCreation({
           parentIngredientId: parentId,
           needsVerification: true,
           isBaseIngredient: false,
+          requestingEmployeeId: employeeId,
         }),
       })
 

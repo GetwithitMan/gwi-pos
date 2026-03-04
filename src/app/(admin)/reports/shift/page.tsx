@@ -209,7 +209,7 @@ function EmployeeShiftReportContent() {
 
     try {
       const response = await fetch(
-        `/api/employees?locationId=${currentEmployee.location.id}`
+        `/api/employees?locationId=${currentEmployee.location.id}&requestingEmployeeId=${currentEmployee.id}`
       )
       if (response.ok) {
         const data = await response.json()

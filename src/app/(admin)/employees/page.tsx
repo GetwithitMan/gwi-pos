@@ -91,6 +91,7 @@ export default function EmployeesPage() {
     locationId: currentEmployee?.location?.id,
     resourceName: 'employee',
     parseResponse: (data) => data.employees || [],
+    skipReloadOnSave: true,
   })
 
   const {
@@ -130,7 +131,7 @@ export default function EmployeesPage() {
 
     try {
       const [employeesRes, rolesRes] = await Promise.all([
-        fetch(`/api/employees?locationId=${currentEmployee.location.id}&includeInactive=${showInactive}`),
+        fetch(`/api/employees?locationId=${currentEmployee.location.id}&includeInactive=${showInactive}&requestingEmployeeId=${currentEmployee.id}`),
         fetch(`/api/roles?locationId=${currentEmployee.location.id}`),
       ])
 
@@ -252,6 +253,7 @@ export default function EmployeesPage() {
     }
 
     // Include additional roles when editing
+    payload.requestingEmployeeId = currentEmployee?.id
     if (editingEmployee) {
       payload.additionalRoleIds = additionalRoleIds
     } else {
@@ -275,7 +277,7 @@ export default function EmployeesPage() {
         message: `Are you sure you want to deactivate ${emp.displayName}?`,
         action: async () => {
           try {
-            const response = await fetch(`/api/employees/${emp.id}`, {
+            const response = await fetch(`/api/employees/${emp.id}?requestingEmployeeId=${currentEmployee?.id}`, {
               method: 'DELETE',
             })
 
@@ -298,7 +300,7 @@ export default function EmployeesPage() {
         const response = await fetch(`/api/employees/${emp.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ isActive: true }),
+          body: JSON.stringify({ isActive: true, requestingEmployeeId: currentEmployee?.id }),
         })
 
         if (!response.ok) {
@@ -397,7 +399,10 @@ export default function EmployeesPage() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-semibold truncate">
+                      <h3
+                        className="font-semibold truncate cursor-pointer hover:text-blue-600 transition-colors"
+                        onClick={() => router.push(`/employees/${emp.id}`)}
+                      >
                         {emp.displayName}
                       </h3>
                       {!emp.isActive && (

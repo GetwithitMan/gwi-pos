@@ -195,6 +195,7 @@ npm run db:studio    # Prisma Studio
 | Menu / modifiers | `docs/features/menu.md` | `docs/domains/MENU-DOMAIN.md` | `src/app/(admin)/menu/` |
 | Modifiers only | `docs/features/modifiers.md` | `docs/domains/MENU-DOMAIN.md` | `src/app/api/modifiers/` |
 | Inventory / recipes | `docs/features/inventory.md` | `docs/domains/INVENTORY-DOMAIN.md` | `src/lib/inventory-calculations.ts` |
+| Purchase orders / receiving | `docs/features/purchase-orders.md` | `docs/skills/SPEC-491-PURCHASE-ORDERS.md` | `src/app/api/inventory/orders/`, `src/app/(admin)/inventory/orders/` |
 | Tabs / pre-auth | `docs/features/tabs.md` | `docs/domains/TABS-DOMAIN.md` | `src/app/api/tabs/` |
 | KDS / kitchen | `docs/features/kds.md` | `docs/domains/KDS-DOMAIN.md` | `src/app/(kds)/` |
 | Shifts / payroll | `docs/features/shifts.md` | `docs/domains/EMPLOYEES-DOMAIN.md` | `src/app/api/shifts/` |
@@ -241,10 +242,10 @@ npm run db:studio    # Prisma Studio
 | Upsell prompts | `docs/features/upsell-prompts.md` | — | *(Schema built — models exist, no API/UI)* |
 | Repeat orders | `docs/features/repeat-orders.md` | — | *(Planned — not built)* |
 | Custom menus | `docs/features/custom-menus.md` | — | *(Planned — not built)* |
-| Commissioned items | `docs/features/commissioned-items.md` | — | *(Planned — not built)* |
-| Paid in / out | `docs/features/paid-in-out.md` | — | *(Planned — not built)* |
+| Commissioned items | `docs/features/commissioned-items.md` | — | `src/components/menu/ItemSettingsModal.tsx`, `src/app/api/reports/commission/`, `src/app/(pos)/crew/commission/` |
+| Paid in / out | `docs/features/paid-in-out.md` | — | `src/app/api/paid-in-out/`, `src/app/(admin)/cash-drawer/paid-in-out/` |
 | Staff training mode | `docs/features/staff-training.md` | — | *(Planned — not built)* |
-| Live dashboard | `docs/features/live-dashboard.md` | — | *(Planned — not built)* |
+| Live dashboard | `docs/features/live-dashboard.md` | — | `src/app/api/dashboard/live/`, `src/app/(admin)/dashboard/` |
 | Online ordering | `docs/features/online-ordering.md` | — | `src/app/(admin)/settings/online-ordering/` — uses Datacap PayAPI |
 | QR self-ordering | `docs/features/qr-ordering.md` | — | *(Partially built — `/api/public/resolve-order-code` exists)* |
 | Delivery management | `docs/features/delivery.md` | — | *(Planned — not built)* |
@@ -255,6 +256,7 @@ npm run db:studio    # Prisma Studio
 | Invoicing / B2B | `docs/features/invoicing.md` | — | *(Planned — not built)* |
 | Hotel PMS integration | `docs/features/hotel-pms.md` | — | `src/lib/oracle-pms-client.ts`, `src/app/api/integrations/oracle-pms/`, `src/app/(admin)/settings/integrations/oracle-pms/page.tsx` |
 | 7shifts labor integration | `docs/features/7shifts-integration.md` | `docs/skills/SPEC-485-7SHIFTS-INTEGRATION.md` | `src/lib/7shifts-client.ts`, `src/app/api/integrations/7shifts/`, `src/app/api/webhooks/7shifts/`, `src/app/(admin)/settings/integrations/7shifts/` |
+| MarginEdge COGS integration | `docs/features/marginedge-integration.md` | `docs/skills/SPEC-490-MARGINEDGE-INTEGRATION.md` | `src/lib/marginedge-client.ts`, `src/app/api/integrations/marginedge/`, `src/app/api/cron/marginedge-sync/` |
 | Printer settings | `docs/features/printer-settings.md` | — | *(Planned — not built)* |
 
 ### Flow Docs (read when your change crosses feature boundaries)

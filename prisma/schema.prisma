@@ -414,6 +414,7 @@ enum VendorOrderStatus {
   draft
   sent
   confirmed
+  partially_received
   received
   cancelled
 }
@@ -468,6 +469,20 @@ enum TipGroupMembershipStatus {
   active
   left
   pending_approval
+}
+
+enum DeductionStatus {
+  pending
+  processing
+  succeeded
+  failed
+  dead
+}
+
+enum DeductionType {
+  order_deduction
+  liquor_only
+  food_only
 }
 
 // ============================================
@@ -746,6 +761,7 @@ model Location {
   marginEdgeMappings    MarginEdgeProductMapping[]
   menuItemDailyMetrics  MenuItemDailyMetrics[]
   inventoryCountEntries InventoryCountEntry[]
+  pendingDeductions     PendingDeduction[]
 
   @@index([organizationId])
 }
@@ -4798,10 +4814,11 @@ model InventoryItemTransaction {
   totalCost Decimal?
 
   // Reference info
-  reason        String?
-  referenceType String? // "invoice", "order", "waste_log", "count"
-  referenceId   String? // ID of related record
-  notes         String?
+  reason         String?
+  referenceType  String? // "invoice", "order", "waste_log", "count"
+  referenceId    String? // ID of related record
+  deductionJobId String? // links to PendingDeduction.orderId for idempotency
+  notes          String?
 
   // Who did it
   employeeId String?
@@ -4818,6 +4835,7 @@ model InventoryItemTransaction {
   @@index([createdAt])
   @@index([inventoryItemId, createdAt])
   @@index([locationId, type, createdAt]) // Liquor report: transactions by type + date range
+  @@index([locationId, deductionJobId]) // idempotency: "already ran for this order?"
 }
 
 // Vendor management
@@ -8334,4 +8352,46 @@ model MenuItemDailyMetrics {
   @@unique([locationId, menuItemId, businessDate])
   @@index([locationId, businessDate])
   @@index([locationId, menuItemId])
+}
+
+// ============================================
+// INVENTORY DEDUCTION OUTBOX
+// ============================================
+
+model PendingDeduction {
+  id            String          @id @default(cuid())
+  locationId    String
+  orderId       String          @unique // one deduction job per order
+  paymentId     String? // most recent payment that triggered this
+  deductionType DeductionType   @default(order_deduction)
+  status        DeductionStatus @default(pending)
+  attempts      Int             @default(0)
+  maxAttempts   Int             @default(5)
+  availableAt   DateTime        @default(now()) // for backoff scheduling
+  lastError     String?
+  lastAttemptAt DateTime?
+  succeededAt   DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  location Location       @relation(fields: [locationId], references: [id])
+  runs     DeductionRun[]
+
+  @@index([locationId, status, availableAt])
+  @@index([status, availableAt]) // for cron processor query
+}
+
+model DeductionRun {
+  id                 String    @id @default(cuid())
+  pendingDeductionId String
+  startedAt          DateTime  @default(now())
+  finishedAt         DateTime?
+  success            Boolean?
+  resultSummary      Json? // { liquorDeductions: N, foodDeductions: N, totalCost: X }
+  error              String?
+  durationMs         Int?
+
+  pendingDeduction PendingDeduction @relation(fields: [pendingDeductionId], references: [id], onDelete: Cascade)
+
+  @@index([pendingDeductionId])
 }

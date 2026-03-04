@@ -33,6 +33,12 @@ interface ShiftSummary {
   safPendingTotal?: number
   safFailedCount?: number
   safFailedTotal?: number
+  // Labor cost (I-1)
+  laborCost?: {
+    totalWages: number
+    totalHours: number
+    employeeCount: number
+  } | null
 }
 
 interface ShiftData {
@@ -253,7 +259,7 @@ export function ShiftCloseoutModal({
       // Fetch tip-out rules and employees in parallel
       const [rulesRes, employeesRes] = await Promise.all([
         fetch(`/api/tip-out-rules?locationId=${shift.locationId}`),
-        fetch(`/api/employees?locationId=${shift.locationId}`)
+        fetch(`/api/employees?locationId=${shift.locationId}&requestingEmployeeId=${shift.employee.id}`)
       ])
 
       if (rulesRes.ok) {
@@ -893,6 +899,35 @@ export function ShiftCloseoutModal({
                       )}
                     </div>
                   </Card>
+
+                  {/* I-1: Labor Cost % */}
+                  {summary.laborCost && summary.totalSales > 0 && (
+                    <Card className="p-4 bg-indigo-50">
+                      <div className="text-sm font-medium mb-2">Labor Cost</div>
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-gray-600 text-sm">
+                          {formatCurrency(summary.laborCost.totalWages)} / {formatCurrency(summary.totalSales)}
+                        </span>
+                        <span className={`text-lg font-bold ${
+                          (summary.laborCost.totalWages / summary.totalSales * 100) > 35
+                            ? 'text-red-600'
+                            : (summary.laborCost.totalWages / summary.totalSales * 100) > 25
+                              ? 'text-yellow-600'
+                              : 'text-green-600'
+                        }`}>
+                          {(summary.laborCost.totalWages / summary.totalSales * 100).toFixed(1)}%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {summary.laborCost.totalHours.toFixed(1)}h across {summary.laborCost.employeeCount} employee{summary.laborCost.employeeCount !== 1 ? 's' : ''}
+                      </p>
+                    </Card>
+                  )}
+                  {summary.laborCost && summary.totalSales === 0 && (
+                    <Card className="p-4 bg-gray-50">
+                      <div className="text-sm text-gray-500">Labor Cost: No sales data</div>
+                    </Card>
+                  )}
 
                   <div className="flex gap-2">
                     <Button

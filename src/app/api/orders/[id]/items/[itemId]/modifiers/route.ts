@@ -16,6 +16,8 @@ export const PUT = withVenue(async function PUT(
         id: string
         name: string
         price: number
+        spiritTier?: 'well' | 'call' | 'premium' | 'top_shelf' | null
+        linkedBottleProductId?: string | null
       }>
     }
 
@@ -61,6 +63,8 @@ export const PUT = withVenue(async function PUT(
             modifierId: mod.id,
             name: mod.name,
             price: mod.price,
+            spiritTier: mod.spiritTier ?? null,
+            linkedBottleProductId: mod.linkedBottleProductId ?? null,
           })),
         })
       }

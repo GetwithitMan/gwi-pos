@@ -6,6 +6,7 @@ import {
   OUTPUT_UNITS,
   UNIT_CATEGORIES,
 } from '@/lib/units'
+import { useAuthStore } from '@/stores/auth-store'
 import type { Ingredient, IngredientCategory, InventoryItemRef, PrepItemRef } from './IngredientLibrary'
 
 // Recipe component type
@@ -41,6 +42,7 @@ export function InventoryItemEditor({
   onClose,
   onChangeType,
 }: InventoryItemEditorProps) {
+  const employeeId = useAuthStore(s => s.employee?.id)
   const isEditing = !!ingredient
 
   // Form data
@@ -104,7 +106,7 @@ export function InventoryItemEditor({
         .catch(err => console.error('Failed to load recipe:', err))
 
       // Load available ingredients grouped by category for the dropdown
-      fetch(`/api/ingredients?locationId=${ingredient.locationId}&baseOnly=true&groupByCategory=true`)
+      fetch(`/api/ingredients?locationId=${ingredient.locationId}&baseOnly=true&groupByCategory=true${employeeId ? `&requestingEmployeeId=${employeeId}` : ''}`)
         .then(res => res.json())
         .then(data => {
           if (data.data) {

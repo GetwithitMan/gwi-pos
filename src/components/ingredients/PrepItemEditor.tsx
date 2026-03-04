@@ -14,6 +14,7 @@ import {
   formatTransformation,
 } from '@/lib/unit-conversions'
 import { useIngredientCost } from '@/hooks/useIngredientCost'
+import { useAuthStore } from '@/stores/auth-store'
 import type { Ingredient, IngredientCategory, InventoryItemRef } from './IngredientLibrary'
 
 interface BaseIngredient {
@@ -47,6 +48,7 @@ export function PrepItemEditor({
   onChangeType,
   onChangeParent,
 }: PrepItemEditorProps) {
+  const employeeId = useAuthStore(s => s.employee?.id)
   const isEditing = !!ingredient
 
   // Use parent ID from props or ingredient
@@ -118,7 +120,7 @@ export function PrepItemEditor({
       setLoadingBases(true)
       // Get locationId from ingredient or from global context/props
       const locId = ingredient?.locationId || locationId
-      fetch(`/api/ingredients?locationId=${locId}&baseOnly=true&includeInactive=false`)
+      fetch(`/api/ingredients?locationId=${locId}&baseOnly=true&includeInactive=false${employeeId ? `&requestingEmployeeId=${employeeId}` : ''}`)
         .then(res => res.json())
         .then(data => {
           setBaseIngredients(data.data || [])

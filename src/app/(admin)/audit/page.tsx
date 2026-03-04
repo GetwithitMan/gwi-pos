@@ -167,7 +167,7 @@ export default function AuditLogBrowserPage() {
   // ------------------------------------------
   useEffect(() => {
     if (!locationId) return
-    fetch(`/api/employees?locationId=${locationId}`)
+    fetch(`/api/employees?locationId=${locationId}${currentEmployee?.id ? `&requestingEmployeeId=${currentEmployee.id}` : ''}`)
       .then(res => res.ok ? res.json() : null)
       .then(json => {
         if (json?.data) {

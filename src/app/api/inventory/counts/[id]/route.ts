@@ -130,7 +130,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     if (body.status === 'completed' && existing.status !== 'completed') {
-      // Calculate total variance
+      // Calculate total variance from both InventoryCountItems and InventoryCountEntries
       const items = await db.inventoryCountItem.findMany({
         where: { inventoryCountId: id },
       })
@@ -148,12 +148,26 @@ export const PUT = withVenue(async function PUT(
         }
       }
 
+      // Also sum from InventoryCountEntry (COGS-style entries)
+      const entries = await db.inventoryCountEntry.findMany({
+        where: { inventoryCountId: id },
+      })
+
+      let totalVarianceCost = 0
+      for (const entry of entries) {
+        if (entry.varianceCost) {
+          totalVarianceCost += Number(entry.varianceCost)
+        }
+      }
+
       const variancePct = totalExpected > 0 ? (totalVariance / totalExpected) * 100 : 0
 
       updateData.status = 'completed'
       updateData.completedAt = new Date()
+      updateData.completedById = body.completedById || null
       updateData.varianceValue = totalVariance
       updateData.variancePct = variancePct
+      updateData.totalVarianceCost = totalVarianceCost || totalVariance
     }
 
     if (body.status === 'reviewed' && existing.status === 'completed') {

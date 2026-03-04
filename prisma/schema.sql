@@ -1,3 +1,5 @@
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  enable debug logging with { debug: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -20,7 +22,7 @@ CREATE TYPE "KitchenStatus" AS ENUM ('pending', 'sent', 'cooking', 'ready', 'del
 CREATE TYPE "CourseStatus" AS ENUM ('pending', 'fired', 'ready', 'served');
 
 -- CreateEnum
-CREATE TYPE "PaymentMethod" AS ENUM ('cash', 'card', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty', 'loyalty_points');
+CREATE TYPE "PaymentMethod" AS ENUM ('cash', 'card', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty', 'loyalty_points', 'room_charge');
 
 -- CreateEnum
 CREATE TYPE "PaymentStatus" AS ENUM ('pending', 'completed', 'refunded', 'voided');
@@ -47,7 +49,10 @@ CREATE TYPE "ModifierPrinterRouting" AS ENUM ('follow', 'also', 'only');
 CREATE TYPE "TerminalPlatform" AS ENUM ('BROWSER', 'ANDROID', 'IOS');
 
 -- CreateEnum
-CREATE TYPE "TerminalCategory" AS ENUM ('FIXED_STATION', 'HANDHELD');
+CREATE TYPE "TerminalCategory" AS ENUM ('FIXED_STATION', 'HANDHELD', 'CFD_DISPLAY');
+
+-- CreateEnum
+CREATE TYPE "HandheldMode" AS ENUM ('TABLE_SERVICE', 'BAR_SERVICE', 'PAYMENT_ONLY');
 
 -- CreateEnum
 CREATE TYPE "PaymentProvider" AS ENUM ('DATACAP_DIRECT', 'SIMULATED');
@@ -161,10 +166,19 @@ CREATE TYPE "EntertainmentWaitlistStatus" AS ENUM ('waiting', 'notified', 'seate
 CREATE TYPE "TimedSessionStatus" AS ENUM ('active', 'paused', 'completed', 'cancelled');
 
 -- CreateEnum
-CREATE TYPE "InventoryCountStatus" AS ENUM ('in_progress', 'completed', 'reviewed');
+CREATE TYPE "InventoryCountStatus" AS ENUM ('in_progress', 'completed', 'reviewed', 'voided');
 
 -- CreateEnum
-CREATE TYPE "InvoiceStatus" AS ENUM ('pending', 'received', 'paid');
+CREATE TYPE "InvoiceStatus" AS ENUM ('draft', 'pending', 'received', 'approved', 'posted', 'paid', 'voided');
+
+-- CreateEnum
+CREATE TYPE "InvoiceSource" AS ENUM ('manual', 'marginedge', 'api');
+
+-- CreateEnum
+CREATE TYPE "VendorOrderStatus" AS ENUM ('draft', 'sent', 'confirmed', 'partially_received', 'received', 'cancelled');
+
+-- CreateEnum
+CREATE TYPE "WasteReason" AS ENUM ('spoilage', 'over_pour', 'spill', 'breakage', 'expired', 'void_comped', 'other');
 
 -- CreateEnum
 CREATE TYPE "StockAlertStatus" AS ENUM ('active', 'acknowledged', 'resolved');
@@ -185,7 +199,16 @@ CREATE TYPE "ShiftSwapRequestStatus" AS ENUM ('pending', 'accepted', 'approved',
 CREATE TYPE "TipGroupMembershipStatus" AS ENUM ('active', 'left', 'pending_approval');
 
 -- CreateEnum
+CREATE TYPE "DeductionStatus" AS ENUM ('pending', 'processing', 'succeeded', 'failed', 'dead');
+
+-- CreateEnum
+CREATE TYPE "DeductionType" AS ENUM ('order_deduction', 'liquor_only', 'food_only');
+
+-- CreateEnum
 CREATE TYPE "RegistrationTokenStatus" AS ENUM ('PENDING', 'USED', 'EXPIRED', 'REVOKED');
+
+-- CreateEnum
+CREATE TYPE "PmsAttemptStatus" AS ENUM ('PENDING', 'COMPLETED', 'FAILED');
 
 -- CreateTable
 CREATE TABLE "Organization" (
@@ -255,6 +278,8 @@ CREATE TABLE "Role" (
     "tipWeight" DECIMAL(65,30) NOT NULL DEFAULT 1.0,
     "cashHandlingMode" "CashHandlingMode" NOT NULL DEFAULT 'drawer',
     "trackLaborCost" BOOLEAN NOT NULL DEFAULT true,
+    "roleType" TEXT NOT NULL DEFAULT 'FOH',
+    "accessLevel" TEXT NOT NULL DEFAULT 'STAFF',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -319,6 +344,10 @@ CREATE TABLE "Employee" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "sevenShiftsUserId" TEXT,
+    "sevenShiftsRoleId" TEXT,
+    "sevenShiftsDepartmentId" TEXT,
+    "sevenShiftsLocationId" TEXT,
 
     CONSTRAINT "Employee_pkey" PRIMARY KEY ("id")
 );
@@ -355,6 +384,9 @@ CREATE TABLE "TimeClockEntry" (
     "notes" TEXT,
     "workingRoleId" TEXT,
     "selectedTipGroupId" TEXT,
+    "sevenShiftsTimePunchId" TEXT,
+    "sevenShiftsPushedAt" TIMESTAMP(3),
+    "sevenShiftsPushError" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -555,6 +587,7 @@ CREATE TABLE "MenuItem" (
     "soldByWeight" BOOLEAN NOT NULL DEFAULT false,
     "weightUnit" TEXT,
     "pricePerWeightUnit" DECIMAL(65,30),
+    "isFeaturedCfd" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -921,6 +954,7 @@ CREATE TABLE "Order" (
     "offlineTerminalId" TEXT,
     "businessDayDate" TIMESTAMP(3),
     "source" TEXT,
+    "isTaxExempt" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -975,6 +1009,9 @@ CREATE TABLE "OrderItem" (
     "itemTotal" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "commissionAmount" DECIMAL(65,30),
     "idempotencyKey" TEXT,
+    "pricingOptionId" TEXT,
+    "pricingOptionLabel" TEXT,
+    "costAtSale" DECIMAL(65,30),
     "addedByEmployeeId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -1050,6 +1087,9 @@ CREATE TABLE "Payment" (
     "isOfflineCapture" BOOLEAN NOT NULL DEFAULT false,
     "offlineCapturedAt" TIMESTAMP(3),
     "offlineTerminalId" TEXT,
+    "safStatus" TEXT,
+    "safUploadedAt" TIMESTAMP(3),
+    "safError" TEXT,
     "cashDiscountAmount" DECIMAL(65,30),
     "priceBeforeDiscount" DECIMAL(65,30),
     "pricingMode" TEXT,
@@ -1063,6 +1103,10 @@ CREATE TABLE "Payment" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "roomNumber" TEXT,
+    "guestName" TEXT,
+    "pmsReservationId" TEXT,
+    "pmsTransactionId" TEXT,
 
     CONSTRAINT "Payment_pkey" PRIMARY KEY ("id")
 );
@@ -1945,6 +1989,10 @@ CREATE TABLE "InventoryTransaction" (
     "reason" TEXT,
     "unitCost" DECIMAL(65,30),
     "totalCost" DECIMAL(65,30),
+    "businessDate" TIMESTAMP(3),
+    "source" TEXT,
+    "wasteLogId" TEXT,
+    "invoiceId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2042,6 +2090,10 @@ CREATE TABLE "InventoryItem" (
     "reorderQty" DECIMAL(65,30),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "trackInventory" BOOLEAN NOT NULL DEFAULT true,
+    "lastInvoiceCost" DECIMAL(10,4),
+    "lastInvoiceDate" TIMESTAMP(3),
+    "marginEdgeProductId" TEXT,
+    "averageCost" DECIMAL(10,4),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2164,6 +2216,62 @@ CREATE TABLE "ModifierInventoryLink" (
 );
 
 -- CreateTable
+CREATE TABLE "PricingOptionGroup" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "menuItemId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "isRequired" BOOLEAN NOT NULL DEFAULT false,
+    "showAsQuickPick" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "PricingOptionGroup_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PricingOption" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "groupId" TEXT NOT NULL,
+    "label" TEXT NOT NULL,
+    "price" DECIMAL(65,30),
+    "priceCC" DECIMAL(65,30),
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "showOnPos" BOOLEAN NOT NULL DEFAULT false,
+    "color" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "PricingOption_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PricingOptionInventoryLink" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "pricingOptionId" TEXT NOT NULL,
+    "inventoryItemId" TEXT,
+    "prepItemId" TEXT,
+    "ingredientId" TEXT,
+    "usageQuantity" DECIMAL(65,30) NOT NULL,
+    "usageUnit" TEXT NOT NULL,
+    "calculatedCost" DECIMAL(65,30),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "PricingOptionInventoryLink_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "InventoryCount" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
@@ -2178,6 +2286,8 @@ CREATE TABLE "InventoryCount" (
     "countedValue" DECIMAL(65,30),
     "varianceValue" DECIMAL(65,30),
     "variancePct" DECIMAL(65,30),
+    "totalVarianceCost" DECIMAL(10,2),
+    "categoryFilter" TEXT,
     "notes" TEXT,
     "completedAt" TIMESTAMP(3),
     "reviewedAt" TIMESTAMP(3),
@@ -2224,6 +2334,7 @@ CREATE TABLE "InventoryItemTransaction" (
     "reason" TEXT,
     "referenceType" TEXT,
     "referenceId" TEXT,
+    "deductionJobId" TEXT,
     "notes" TEXT,
     "employeeId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -2261,6 +2372,7 @@ CREATE TABLE "Invoice" (
     "vendorId" TEXT NOT NULL,
     "invoiceNumber" TEXT NOT NULL,
     "invoiceDate" TIMESTAMP(3) NOT NULL,
+    "deliveryDate" TIMESTAMP(3),
     "dueDate" TIMESTAMP(3),
     "receivedDate" TIMESTAMP(3),
     "subtotal" DECIMAL(65,30) NOT NULL,
@@ -2268,11 +2380,16 @@ CREATE TABLE "Invoice" (
     "shippingCost" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "totalAmount" DECIMAL(65,30) NOT NULL,
     "status" "InvoiceStatus" NOT NULL DEFAULT 'pending',
+    "source" "InvoiceSource" NOT NULL DEFAULT 'manual',
     "paidDate" TIMESTAMP(3),
+    "marginEdgeInvoiceId" TEXT,
     "updateCosts" BOOLEAN NOT NULL DEFAULT true,
     "addToInventory" BOOLEAN NOT NULL DEFAULT true,
     "notes" TEXT,
     "enteredById" TEXT,
+    "createdById" TEXT,
+    "approvedById" TEXT,
+    "approvedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2287,6 +2404,7 @@ CREATE TABLE "InvoiceLineItem" (
     "locationId" TEXT NOT NULL,
     "invoiceId" TEXT NOT NULL,
     "inventoryItemId" TEXT,
+    "marginEdgeProductId" TEXT,
     "description" TEXT,
     "quantity" DECIMAL(65,30) NOT NULL,
     "unit" TEXT NOT NULL,
@@ -2644,6 +2762,7 @@ CREATE TABLE "MenuItemIngredient" (
     "locationId" TEXT NOT NULL,
     "menuItemId" TEXT NOT NULL,
     "ingredientId" TEXT NOT NULL,
+    "pricingOptionId" TEXT,
     "isIncluded" BOOLEAN NOT NULL DEFAULT true,
     "quantity" DECIMAL(65,30),
     "unit" TEXT,
@@ -2844,6 +2963,7 @@ CREATE TABLE "Terminal" (
     "locationId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "category" "TerminalCategory" NOT NULL DEFAULT 'FIXED_STATION',
+    "defaultMode" "HandheldMode",
     "staticIp" TEXT,
     "deviceToken" TEXT,
     "pairingCode" TEXT,
@@ -2857,6 +2977,8 @@ CREATE TABLE "Terminal" (
     "osVersion" TEXT,
     "pushToken" TEXT,
     "receiptPrinterId" TEXT,
+    "kitchenPrinterId" TEXT,
+    "barPrinterId" TEXT,
     "roleSkipRules" JSONB,
     "forceAllPrints" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -2870,6 +2992,10 @@ CREATE TABLE "Terminal" (
     "backupPaymentReaderId" TEXT,
     "readerFailoverTimeout" INTEGER NOT NULL DEFAULT 10000,
     "scaleId" TEXT,
+    "cfdTerminalId" TEXT,
+    "cfdIpAddress" TEXT,
+    "cfdConnectionMode" TEXT DEFAULT 'usb',
+    "cfdSerialNumber" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -2877,6 +3003,32 @@ CREATE TABLE "Terminal" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "Terminal_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CfdSettings" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "tipMode" TEXT NOT NULL DEFAULT 'pre_tap',
+    "tipStyle" TEXT NOT NULL DEFAULT 'percent',
+    "tipOptions" TEXT NOT NULL DEFAULT '18,20,22,25',
+    "tipShowNoTip" BOOLEAN NOT NULL DEFAULT true,
+    "signatureEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "signatureThresholdCents" INTEGER NOT NULL DEFAULT 2500,
+    "receiptEmailEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "receiptSmsEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "receiptPrintEnabled" BOOLEAN NOT NULL DEFAULT true,
+    "receiptTimeoutSeconds" INTEGER NOT NULL DEFAULT 30,
+    "tabMode" TEXT NOT NULL DEFAULT 'token_only',
+    "tabPreAuthAmountCents" INTEGER NOT NULL DEFAULT 100,
+    "idlePromoEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "idleWelcomeText" TEXT DEFAULT 'Welcome!',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "CfdSettings_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -3338,6 +3490,7 @@ CREATE TABLE "ScheduledShift" (
     "swappedAt" TIMESTAMP(3),
     "swapApprovedBy" TEXT,
     "notes" TEXT,
+    "sevenShiftsShiftId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -3856,6 +4009,393 @@ CREATE TABLE "HardwareCommand" (
     CONSTRAINT "HardwareCommand_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "order_events" (
+    "id" TEXT NOT NULL,
+    "eventId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "deviceId" TEXT NOT NULL,
+    "deviceCounter" INTEGER NOT NULL,
+    "serverSequence" INTEGER NOT NULL,
+    "type" TEXT NOT NULL,
+    "payloadJson" JSONB NOT NULL,
+    "schemaVersion" INTEGER NOT NULL DEFAULT 1,
+    "correlationId" TEXT,
+    "deviceCreatedAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "order_events_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "order_snapshots" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "employeeId" TEXT NOT NULL,
+    "orderType" TEXT NOT NULL DEFAULT 'dine_in',
+    "tableId" TEXT,
+    "tableName" TEXT,
+    "tabName" TEXT,
+    "tabStatus" TEXT,
+    "guestCount" INTEGER NOT NULL DEFAULT 1,
+    "orderNumber" INTEGER NOT NULL DEFAULT 0,
+    "displayNumber" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'open',
+    "notes" TEXT,
+    "hasPreAuth" BOOLEAN NOT NULL DEFAULT false,
+    "cardLast4" TEXT,
+    "subtotalCents" INTEGER NOT NULL DEFAULT 0,
+    "discountTotalCents" INTEGER NOT NULL DEFAULT 0,
+    "taxTotalCents" INTEGER NOT NULL DEFAULT 0,
+    "tipTotalCents" INTEGER NOT NULL DEFAULT 0,
+    "totalCents" INTEGER NOT NULL DEFAULT 0,
+    "paidAmountCents" INTEGER NOT NULL DEFAULT 0,
+    "itemCount" INTEGER NOT NULL DEFAULT 0,
+    "hasHeldItems" BOOLEAN NOT NULL DEFAULT false,
+    "isClosed" BOOLEAN NOT NULL DEFAULT false,
+    "lastEventSequence" INTEGER NOT NULL,
+    "customerId" TEXT,
+    "source" TEXT,
+    "parentOrderId" TEXT,
+    "splitIndex" INTEGER,
+    "orderTypeId" TEXT,
+    "customFields" JSONB,
+    "baseSeatCount" INTEGER NOT NULL DEFAULT 0,
+    "extraSeatCount" INTEGER NOT NULL DEFAULT 0,
+    "seatVersion" INTEGER NOT NULL DEFAULT 0,
+    "seatTimestamps" JSONB,
+    "tabNickname" TEXT,
+    "primaryPaymentMethod" TEXT,
+    "commissionTotal" INTEGER NOT NULL DEFAULT 0,
+    "reopenedAt" TIMESTAMP(3),
+    "reopenedBy" TEXT,
+    "reopenReason" TEXT,
+    "openedAt" TIMESTAMP(3),
+    "sentAt" TIMESTAMP(3),
+    "preAuthId" TEXT,
+    "preAuthAmount" INTEGER,
+    "preAuthLast4" TEXT,
+    "preAuthCardBrand" TEXT,
+    "preAuthExpiresAt" TIMESTAMP(3),
+    "preAuthRecordNo" TEXT,
+    "isBottleService" BOOLEAN NOT NULL DEFAULT false,
+    "bottleServiceCurrentSpend" INTEGER,
+    "isWalkout" BOOLEAN NOT NULL DEFAULT false,
+    "walkoutAt" TIMESTAMP(3),
+    "walkoutMarkedBy" TEXT,
+    "rolledOverAt" TIMESTAMP(3),
+    "rolledOverFrom" TEXT,
+    "captureDeclinedAt" TIMESTAMP(3),
+    "captureRetryCount" INTEGER NOT NULL DEFAULT 0,
+    "lastCaptureError" TEXT,
+    "currentCourse" INTEGER NOT NULL DEFAULT 0,
+    "courseMode" TEXT NOT NULL DEFAULT 'off',
+    "offlineId" TEXT,
+    "offlineLocalId" TEXT,
+    "offlineTimestamp" TIMESTAMP(3),
+    "offlineTerminalId" TEXT,
+    "businessDayDate" TIMESTAMP(3),
+    "version" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "order_snapshots_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "order_item_snapshots" (
+    "id" TEXT NOT NULL,
+    "snapshotId" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "menuItemId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "priceCents" INTEGER NOT NULL,
+    "quantity" INTEGER NOT NULL DEFAULT 1,
+    "modifiersJson" JSONB,
+    "specialNotes" TEXT,
+    "seatNumber" INTEGER,
+    "courseNumber" INTEGER,
+    "isHeld" BOOLEAN NOT NULL DEFAULT false,
+    "kitchenStatus" TEXT,
+    "soldByWeight" BOOLEAN NOT NULL DEFAULT false,
+    "weight" DOUBLE PRECISION,
+    "weightUnit" TEXT,
+    "unitPriceCents" INTEGER,
+    "grossWeight" DOUBLE PRECISION,
+    "tareWeight" DOUBLE PRECISION,
+    "status" TEXT DEFAULT 'active',
+    "isCompleted" BOOLEAN NOT NULL DEFAULT false,
+    "resendCount" INTEGER NOT NULL DEFAULT 0,
+    "delayMinutes" INTEGER,
+    "totalCents" INTEGER NOT NULL DEFAULT 0,
+    "pricingOptionId" TEXT,
+    "pricingOptionLabel" TEXT,
+    "costAtSaleCents" INTEGER,
+    "pourSize" TEXT,
+    "pourMultiplier" DOUBLE PRECISION,
+    "itemDiscountsJson" JSONB,
+    "holdUntil" TIMESTAMP(3),
+    "firedAt" TIMESTAMP(3),
+    "delayStartedAt" TIMESTAMP(3),
+    "completedAt" TIMESTAMP(3),
+    "lastResentAt" TIMESTAMP(3),
+    "resendNote" TEXT,
+    "blockTimeMinutes" INTEGER,
+    "blockTimeStartedAt" TIMESTAMP(3),
+    "blockTimeExpiresAt" TIMESTAMP(3),
+    "courseStatus" TEXT,
+    "wasMade" BOOLEAN,
+    "modifierTotal" INTEGER NOT NULL DEFAULT 0,
+    "itemTotal" INTEGER NOT NULL DEFAULT 0,
+    "cardPrice" INTEGER,
+    "commissionAmount" INTEGER,
+    "isTaxInclusive" BOOLEAN NOT NULL DEFAULT false,
+    "addedByEmployeeId" TEXT,
+    "categoryType" TEXT,
+    "voidReason" TEXT,
+    "idempotencyKey" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "order_item_snapshots_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "QuickBarPreference" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "employeeId" TEXT NOT NULL,
+    "itemIds" TEXT NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "QuickBarPreference_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "QuickBarDefault" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "itemIds" TEXT NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "QuickBarDefault_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "SevenShiftsDailySalesPush" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "businessDate" TEXT NOT NULL,
+    "revenueType" TEXT NOT NULL,
+    "sevenShiftsReceiptId" TEXT,
+    "netTotalCents" INTEGER NOT NULL,
+    "tipsAmountCents" INTEGER NOT NULL DEFAULT 0,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "errorMessage" TEXT,
+    "pushedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "SevenShiftsDailySalesPush_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PmsChargeAttempt" (
+    "id" TEXT NOT NULL,
+    "idempotencyKey" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "reservationId" TEXT NOT NULL,
+    "amountCents" INTEGER NOT NULL,
+    "chargeCode" TEXT NOT NULL,
+    "status" "PmsAttemptStatus" NOT NULL DEFAULT 'PENDING',
+    "operaTransactionId" TEXT,
+    "providerRequestId" TEXT,
+    "employeeId" TEXT,
+    "lastErrorMessage" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "PmsChargeAttempt_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "IngredientCostHistory" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "inventoryItemId" TEXT NOT NULL,
+    "oldCostPerUnit" DECIMAL(10,4) NOT NULL,
+    "newCostPerUnit" DECIMAL(10,4) NOT NULL,
+    "changePercent" DECIMAL(6,2) NOT NULL,
+    "source" TEXT NOT NULL,
+    "invoiceId" TEXT,
+    "invoiceNumber" TEXT,
+    "vendorName" TEXT,
+    "recordedById" TEXT,
+    "effectiveDate" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "IngredientCostHistory_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VendorOrder" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "vendorId" TEXT NOT NULL,
+    "orderNumber" TEXT,
+    "status" "VendorOrderStatus" NOT NULL DEFAULT 'draft',
+    "orderDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expectedDelivery" TIMESTAMP(3),
+    "receivedAt" TIMESTAMP(3),
+    "totalEstimated" DECIMAL(10,2),
+    "totalActual" DECIMAL(10,2),
+    "notes" TEXT,
+    "createdById" TEXT,
+    "receivedById" TEXT,
+    "linkedInvoiceId" TEXT,
+    "deletedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VendorOrder_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VendorOrderLineItem" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "vendorOrderId" TEXT NOT NULL,
+    "inventoryItemId" TEXT NOT NULL,
+    "quantity" DECIMAL(10,4) NOT NULL,
+    "unit" TEXT NOT NULL,
+    "estimatedCost" DECIMAL(10,4),
+    "actualCost" DECIMAL(10,4),
+    "receivedQty" DECIMAL(10,4),
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "VendorOrderLineItem_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "InventoryCountEntry" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "inventoryCountId" TEXT NOT NULL,
+    "inventoryItemId" TEXT NOT NULL,
+    "expectedQty" DECIMAL(10,4),
+    "countedQty" DECIMAL(10,4) NOT NULL,
+    "unit" TEXT NOT NULL,
+    "variance" DECIMAL(10,4),
+    "unitCost" DECIMAL(10,4) NOT NULL,
+    "varianceCost" DECIMAL(10,2),
+    "notes" TEXT,
+    "countedById" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "InventoryCountEntry_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "WasteLog" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "inventoryItemId" TEXT,
+    "bottleProductId" TEXT,
+    "quantity" DECIMAL(10,4) NOT NULL,
+    "unit" TEXT NOT NULL,
+    "cost" DECIMAL(10,2) NOT NULL,
+    "reason" "WasteReason" NOT NULL,
+    "notes" TEXT,
+    "recordedById" TEXT NOT NULL,
+    "businessDate" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "WasteLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MarginEdgeProductMapping" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "marginEdgeProductId" TEXT NOT NULL,
+    "marginEdgeProductName" TEXT NOT NULL,
+    "inventoryItemId" TEXT NOT NULL,
+    "marginEdgeVendorId" TEXT,
+    "marginEdgeVendorName" TEXT,
+    "marginEdgeUnit" TEXT,
+    "lastSyncAt" TIMESTAMP(3),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MarginEdgeProductMapping_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "MenuItemDailyMetrics" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "menuItemId" TEXT NOT NULL,
+    "businessDate" TIMESTAMP(3) NOT NULL,
+    "quantitySold" INTEGER NOT NULL DEFAULT 0,
+    "totalRevenue" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "totalCost" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "foodCostPct" DECIMAL(6,2),
+    "contributionMargin" DECIMAL(10,2),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "MenuItemDailyMetrics_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PendingDeduction" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "paymentId" TEXT,
+    "deductionType" "DeductionType" NOT NULL DEFAULT 'order_deduction',
+    "status" "DeductionStatus" NOT NULL DEFAULT 'pending',
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "maxAttempts" INTEGER NOT NULL DEFAULT 5,
+    "availableAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastError" TEXT,
+    "lastAttemptAt" TIMESTAMP(3),
+    "succeededAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "PendingDeduction_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DeductionRun" (
+    "id" TEXT NOT NULL,
+    "pendingDeductionId" TEXT NOT NULL,
+    "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "finishedAt" TIMESTAMP(3),
+    "success" BOOLEAN,
+    "resultSummary" JSONB,
+    "error" TEXT,
+    "durationMs" INTEGER,
+
+    CONSTRAINT "DeductionRun_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 
@@ -4205,6 +4745,12 @@ CREATE INDEX "OrderItem_locationId_status_kitchenStatus_idx" ON "OrderItem"("loc
 CREATE INDEX "OrderItem_menuItemId_createdAt_idx" ON "OrderItem"("menuItemId", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "OrderItem_pricingOptionId_idx" ON "OrderItem"("pricingOptionId");
+
+-- CreateIndex
+CREATE INDEX "OrderItem_menuItemId_pricingOptionId_idx" ON "OrderItem"("menuItemId", "pricingOptionId");
+
+-- CreateIndex
 CREATE INDEX "OrderItemModifier_locationId_idx" ON "OrderItemModifier"("locationId");
 
 -- CreateIndex
@@ -4233,6 +4779,9 @@ CREATE INDEX "Payment_employeeId_idx" ON "Payment"("employeeId");
 
 -- CreateIndex
 CREATE INDEX "Payment_isOfflineCapture_idx" ON "Payment"("isOfflineCapture");
+
+-- CreateIndex
+CREATE INDEX "Payment_safStatus_idx" ON "Payment"("safStatus");
 
 -- CreateIndex
 CREATE INDEX "Payment_needsReconciliation_idx" ON "Payment"("needsReconciliation");
@@ -4835,6 +5384,39 @@ CREATE INDEX "ModifierInventoryLink_inventoryItemId_idx" ON "ModifierInventoryLi
 CREATE INDEX "ModifierInventoryLink_prepItemId_idx" ON "ModifierInventoryLink"("prepItemId");
 
 -- CreateIndex
+CREATE INDEX "PricingOptionGroup_locationId_idx" ON "PricingOptionGroup"("locationId");
+
+-- CreateIndex
+CREATE INDEX "PricingOptionGroup_menuItemId_idx" ON "PricingOptionGroup"("menuItemId");
+
+-- CreateIndex
+CREATE INDEX "PricingOptionGroup_locationId_menuItemId_deletedAt_idx" ON "PricingOptionGroup"("locationId", "menuItemId", "deletedAt");
+
+-- CreateIndex
+CREATE INDEX "PricingOption_locationId_idx" ON "PricingOption"("locationId");
+
+-- CreateIndex
+CREATE INDEX "PricingOption_groupId_idx" ON "PricingOption"("groupId");
+
+-- CreateIndex
+CREATE INDEX "PricingOption_groupId_deletedAt_idx" ON "PricingOption"("groupId", "deletedAt");
+
+-- CreateIndex
+CREATE INDEX "PricingOptionInventoryLink_locationId_idx" ON "PricingOptionInventoryLink"("locationId");
+
+-- CreateIndex
+CREATE INDEX "PricingOptionInventoryLink_pricingOptionId_idx" ON "PricingOptionInventoryLink"("pricingOptionId");
+
+-- CreateIndex
+CREATE INDEX "PricingOptionInventoryLink_inventoryItemId_idx" ON "PricingOptionInventoryLink"("inventoryItemId");
+
+-- CreateIndex
+CREATE INDEX "PricingOptionInventoryLink_prepItemId_idx" ON "PricingOptionInventoryLink"("prepItemId");
+
+-- CreateIndex
+CREATE INDEX "PricingOptionInventoryLink_ingredientId_idx" ON "PricingOptionInventoryLink"("ingredientId");
+
+-- CreateIndex
 CREATE INDEX "InventoryCount_locationId_idx" ON "InventoryCount"("locationId");
 
 -- CreateIndex
@@ -4868,6 +5450,9 @@ CREATE INDEX "InventoryItemTransaction_inventoryItemId_createdAt_idx" ON "Invent
 CREATE INDEX "InventoryItemTransaction_locationId_type_createdAt_idx" ON "InventoryItemTransaction"("locationId", "type", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "InventoryItemTransaction_locationId_deductionJobId_idx" ON "InventoryItemTransaction"("locationId", "deductionJobId");
+
+-- CreateIndex
 CREATE INDEX "Vendor_locationId_idx" ON "Vendor"("locationId");
 
 -- CreateIndex
@@ -4884,6 +5469,9 @@ CREATE INDEX "Invoice_invoiceDate_idx" ON "Invoice"("invoiceDate");
 
 -- CreateIndex
 CREATE INDEX "Invoice_status_idx" ON "Invoice"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Invoice_locationId_marginEdgeInvoiceId_key" ON "Invoice"("locationId", "marginEdgeInvoiceId");
 
 -- CreateIndex
 CREATE INDEX "InvoiceLineItem_locationId_idx" ON "InvoiceLineItem"("locationId");
@@ -5051,7 +5639,10 @@ CREATE INDEX "MenuItemIngredient_locationId_ingredientId_idx" ON "MenuItemIngred
 CREATE INDEX "MenuItemIngredient_menuItemId_deletedAt_idx" ON "MenuItemIngredient"("menuItemId", "deletedAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "MenuItemIngredient_menuItemId_ingredientId_key" ON "MenuItemIngredient"("menuItemId", "ingredientId");
+CREATE INDEX "MenuItemIngredient_pricingOptionId_idx" ON "MenuItemIngredient"("pricingOptionId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MenuItemIngredient_menuItemId_ingredientId_pricingOptionId_key" ON "MenuItemIngredient"("menuItemId", "ingredientId", "pricingOptionId");
 
 -- CreateIndex
 CREATE INDEX "ModifierGroupTemplate_locationId_idx" ON "ModifierGroupTemplate"("locationId");
@@ -5156,7 +5747,16 @@ CREATE INDEX "Terminal_scaleId_idx" ON "Terminal"("scaleId");
 CREATE INDEX "Terminal_platform_idx" ON "Terminal"("platform");
 
 -- CreateIndex
+CREATE INDEX "Terminal_cfdTerminalId_idx" ON "Terminal"("cfdTerminalId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Terminal_locationId_name_key" ON "Terminal"("locationId", "name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CfdSettings_locationId_key" ON "CfdSettings"("locationId");
+
+-- CreateIndex
+CREATE INDEX "CfdSettings_locationId_idx" ON "CfdSettings"("locationId");
 
 -- CreateIndex
 CREATE INDEX "Scale_locationId_idx" ON "Scale"("locationId");
@@ -5367,6 +5967,9 @@ CREATE INDEX "ScheduledShift_date_idx" ON "ScheduledShift"("date");
 
 -- CreateIndex
 CREATE INDEX "ScheduledShift_status_idx" ON "ScheduledShift"("status");
+
+-- CreateIndex
+CREATE INDEX "ScheduledShift_sevenShiftsShiftId_idx" ON "ScheduledShift"("sevenShiftsShiftId");
 
 -- CreateIndex
 CREATE INDEX "ShiftSwapRequest_locationId_idx" ON "ShiftSwapRequest"("locationId");
@@ -5647,6 +6250,177 @@ CREATE INDEX "HardwareCommand_locationId_status_idx" ON "HardwareCommand"("locat
 -- CreateIndex
 CREATE INDEX "HardwareCommand_locationId_idx" ON "HardwareCommand"("locationId");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "order_events_eventId_key" ON "order_events"("eventId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "order_events_serverSequence_key" ON "order_events"("serverSequence");
+
+-- CreateIndex
+CREATE INDEX "order_events_locationId_idx" ON "order_events"("locationId");
+
+-- CreateIndex
+CREATE INDEX "order_events_orderId_idx" ON "order_events"("orderId");
+
+-- CreateIndex
+CREATE INDEX "order_events_orderId_serverSequence_idx" ON "order_events"("orderId", "serverSequence");
+
+-- CreateIndex
+CREATE INDEX "order_events_locationId_serverSequence_idx" ON "order_events"("locationId", "serverSequence");
+
+-- CreateIndex
+CREATE INDEX "order_events_type_idx" ON "order_events"("type");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_idx" ON "order_snapshots"("locationId");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_status_idx" ON "order_snapshots"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_isClosed_idx" ON "order_snapshots"("locationId", "isClosed");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_status_createdAt_idx" ON "order_snapshots"("locationId", "status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_openedAt_idx" ON "order_snapshots"("locationId", "openedAt");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_tabStatus_idx" ON "order_snapshots"("locationId", "tabStatus");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_parentOrderId_idx" ON "order_snapshots"("locationId", "parentOrderId");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_employeeId_idx" ON "order_snapshots"("employeeId");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_offlineId_idx" ON "order_snapshots"("locationId", "offlineId");
+
+-- CreateIndex
+CREATE INDEX "order_snapshots_locationId_businessDayDate_idx" ON "order_snapshots"("locationId", "businessDayDate");
+
+-- CreateIndex
+CREATE INDEX "order_item_snapshots_snapshotId_idx" ON "order_item_snapshots"("snapshotId");
+
+-- CreateIndex
+CREATE INDEX "order_item_snapshots_locationId_idx" ON "order_item_snapshots"("locationId");
+
+-- CreateIndex
+CREATE INDEX "order_item_snapshots_snapshotId_kitchenStatus_idx" ON "order_item_snapshots"("snapshotId", "kitchenStatus");
+
+-- CreateIndex
+CREATE INDEX "order_item_snapshots_snapshotId_status_idx" ON "order_item_snapshots"("snapshotId", "status");
+
+-- CreateIndex
+CREATE INDEX "order_item_snapshots_locationId_kitchenStatus_idx" ON "order_item_snapshots"("locationId", "kitchenStatus");
+
+-- CreateIndex
+CREATE INDEX "order_item_snapshots_menuItemId_createdAt_idx" ON "order_item_snapshots"("menuItemId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "QuickBarPreference_employeeId_key" ON "QuickBarPreference"("employeeId");
+
+-- CreateIndex
+CREATE INDEX "QuickBarPreference_locationId_idx" ON "QuickBarPreference"("locationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "QuickBarDefault_locationId_key" ON "QuickBarDefault"("locationId");
+
+-- CreateIndex
+CREATE INDEX "SevenShiftsDailySalesPush_locationId_idx" ON "SevenShiftsDailySalesPush"("locationId");
+
+-- CreateIndex
+CREATE INDEX "SevenShiftsDailySalesPush_businessDate_idx" ON "SevenShiftsDailySalesPush"("businessDate");
+
+-- CreateIndex
+CREATE INDEX "SevenShiftsDailySalesPush_status_idx" ON "SevenShiftsDailySalesPush"("status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "SevenShiftsDailySalesPush_locationId_businessDate_revenueTy_key" ON "SevenShiftsDailySalesPush"("locationId", "businessDate", "revenueType");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PmsChargeAttempt_idempotencyKey_key" ON "PmsChargeAttempt"("idempotencyKey");
+
+-- CreateIndex
+CREATE INDEX "PmsChargeAttempt_orderId_idx" ON "PmsChargeAttempt"("orderId");
+
+-- CreateIndex
+CREATE INDEX "PmsChargeAttempt_reservationId_idx" ON "PmsChargeAttempt"("reservationId");
+
+-- CreateIndex
+CREATE INDEX "PmsChargeAttempt_locationId_createdAt_idx" ON "PmsChargeAttempt"("locationId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "IngredientCostHistory_locationId_inventoryItemId_effectiveD_idx" ON "IngredientCostHistory"("locationId", "inventoryItemId", "effectiveDate");
+
+-- CreateIndex
+CREATE INDEX "IngredientCostHistory_locationId_effectiveDate_idx" ON "IngredientCostHistory"("locationId", "effectiveDate");
+
+-- CreateIndex
+CREATE INDEX "VendorOrder_locationId_status_idx" ON "VendorOrder"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "VendorOrder_locationId_orderDate_idx" ON "VendorOrder"("locationId", "orderDate");
+
+-- CreateIndex
+CREATE INDEX "VendorOrderLineItem_locationId_idx" ON "VendorOrderLineItem"("locationId");
+
+-- CreateIndex
+CREATE INDEX "VendorOrderLineItem_locationId_vendorOrderId_idx" ON "VendorOrderLineItem"("locationId", "vendorOrderId");
+
+-- CreateIndex
+CREATE INDEX "VendorOrderLineItem_locationId_deletedAt_idx" ON "VendorOrderLineItem"("locationId", "deletedAt");
+
+-- CreateIndex
+CREATE INDEX "VendorOrderLineItem_vendorOrderId_idx" ON "VendorOrderLineItem"("vendorOrderId");
+
+-- CreateIndex
+CREATE INDEX "VendorOrderLineItem_inventoryItemId_idx" ON "VendorOrderLineItem"("inventoryItemId");
+
+-- CreateIndex
+CREATE INDEX "InventoryCountEntry_inventoryCountId_idx" ON "InventoryCountEntry"("inventoryCountId");
+
+-- CreateIndex
+CREATE INDEX "InventoryCountEntry_inventoryItemId_idx" ON "InventoryCountEntry"("inventoryItemId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "InventoryCountEntry_inventoryCountId_inventoryItemId_key" ON "InventoryCountEntry"("inventoryCountId", "inventoryItemId");
+
+-- CreateIndex
+CREATE INDEX "WasteLog_locationId_businessDate_idx" ON "WasteLog"("locationId", "businessDate");
+
+-- CreateIndex
+CREATE INDEX "WasteLog_locationId_reason_idx" ON "WasteLog"("locationId", "reason");
+
+-- CreateIndex
+CREATE INDEX "MarginEdgeProductMapping_locationId_inventoryItemId_idx" ON "MarginEdgeProductMapping"("locationId", "inventoryItemId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MarginEdgeProductMapping_locationId_marginEdgeProductId_key" ON "MarginEdgeProductMapping"("locationId", "marginEdgeProductId");
+
+-- CreateIndex
+CREATE INDEX "MenuItemDailyMetrics_locationId_businessDate_idx" ON "MenuItemDailyMetrics"("locationId", "businessDate");
+
+-- CreateIndex
+CREATE INDEX "MenuItemDailyMetrics_locationId_menuItemId_idx" ON "MenuItemDailyMetrics"("locationId", "menuItemId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MenuItemDailyMetrics_locationId_menuItemId_businessDate_key" ON "MenuItemDailyMetrics"("locationId", "menuItemId", "businessDate");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PendingDeduction_orderId_key" ON "PendingDeduction"("orderId");
+
+-- CreateIndex
+CREATE INDEX "PendingDeduction_locationId_status_availableAt_idx" ON "PendingDeduction"("locationId", "status", "availableAt");
+
+-- CreateIndex
+CREATE INDEX "PendingDeduction_status_availableAt_idx" ON "PendingDeduction"("status", "availableAt");
+
+-- CreateIndex
+CREATE INDEX "DeductionRun_pendingDeductionId_idx" ON "DeductionRun"("pendingDeductionId");
+
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -5880,6 +6654,9 @@ ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_menuItemId_fkey" FOREIGN KEY (
 
 -- AddForeignKey
 ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_sourceTableId_fkey" FOREIGN KEY ("sourceTableId") REFERENCES "Table"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_pricingOptionId_fkey" FOREIGN KEY ("pricingOptionId") REFERENCES "PricingOption"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_addedByEmployeeId_fkey" FOREIGN KEY ("addedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -6392,6 +7169,33 @@ ALTER TABLE "ModifierInventoryLink" ADD CONSTRAINT "ModifierInventoryLink_invent
 ALTER TABLE "ModifierInventoryLink" ADD CONSTRAINT "ModifierInventoryLink_prepItemId_fkey" FOREIGN KEY ("prepItemId") REFERENCES "PrepItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "PricingOptionGroup" ADD CONSTRAINT "PricingOptionGroup_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PricingOptionGroup" ADD CONSTRAINT "PricingOptionGroup_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PricingOption" ADD CONSTRAINT "PricingOption_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PricingOption" ADD CONSTRAINT "PricingOption_groupId_fkey" FOREIGN KEY ("groupId") REFERENCES "PricingOptionGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PricingOptionInventoryLink" ADD CONSTRAINT "PricingOptionInventoryLink_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PricingOptionInventoryLink" ADD CONSTRAINT "PricingOptionInventoryLink_pricingOptionId_fkey" FOREIGN KEY ("pricingOptionId") REFERENCES "PricingOption"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PricingOptionInventoryLink" ADD CONSTRAINT "PricingOptionInventoryLink_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PricingOptionInventoryLink" ADD CONSTRAINT "PricingOptionInventoryLink_prepItemId_fkey" FOREIGN KEY ("prepItemId") REFERENCES "PrepItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PricingOptionInventoryLink" ADD CONSTRAINT "PricingOptionInventoryLink_ingredientId_fkey" FOREIGN KEY ("ingredientId") REFERENCES "Ingredient"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "InventoryCount" ADD CONSTRAINT "InventoryCount_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -6560,6 +7364,9 @@ ALTER TABLE "MenuItemIngredient" ADD CONSTRAINT "MenuItemIngredient_menuItemId_f
 ALTER TABLE "MenuItemIngredient" ADD CONSTRAINT "MenuItemIngredient_ingredientId_fkey" FOREIGN KEY ("ingredientId") REFERENCES "Ingredient"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "MenuItemIngredient" ADD CONSTRAINT "MenuItemIngredient_pricingOptionId_fkey" FOREIGN KEY ("pricingOptionId") REFERENCES "PricingOption"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ModifierGroupTemplate" ADD CONSTRAINT "ModifierGroupTemplate_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -6608,6 +7415,12 @@ ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_locationId_fkey" FOREIGN KEY ("l
 ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_receiptPrinterId_fkey" FOREIGN KEY ("receiptPrinterId") REFERENCES "Printer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_kitchenPrinterId_fkey" FOREIGN KEY ("kitchenPrinterId") REFERENCES "Printer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_barPrinterId_fkey" FOREIGN KEY ("barPrinterId") REFERENCES "Printer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_backupTerminalId_fkey" FOREIGN KEY ("backupTerminalId") REFERENCES "Terminal"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -6618,6 +7431,12 @@ ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_backupPaymentReaderId_fkey" FORE
 
 -- AddForeignKey
 ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_scaleId_fkey" FOREIGN KEY ("scaleId") REFERENCES "Scale"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_cfdTerminalId_fkey" FOREIGN KEY ("cfdTerminalId") REFERENCES "Terminal"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CfdSettings" ADD CONSTRAINT "CfdSettings_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Scale" ADD CONSTRAINT "Scale_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -6954,4 +7773,76 @@ ALTER TABLE "MobileSession" ADD CONSTRAINT "MobileSession_employeeId_fkey" FOREI
 
 -- AddForeignKey
 ALTER TABLE "HardwareCommand" ADD CONSTRAINT "HardwareCommand_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "order_events" ADD CONSTRAINT "order_events_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "order_snapshots" ADD CONSTRAINT "order_snapshots_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "order_item_snapshots" ADD CONSTRAINT "order_item_snapshots_snapshotId_fkey" FOREIGN KEY ("snapshotId") REFERENCES "order_snapshots"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "order_item_snapshots" ADD CONSTRAINT "order_item_snapshots_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "QuickBarPreference" ADD CONSTRAINT "QuickBarPreference_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SevenShiftsDailySalesPush" ADD CONSTRAINT "SevenShiftsDailySalesPush_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "IngredientCostHistory" ADD CONSTRAINT "IngredientCostHistory_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "IngredientCostHistory" ADD CONSTRAINT "IngredientCostHistory_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorOrder" ADD CONSTRAINT "VendorOrder_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorOrder" ADD CONSTRAINT "VendorOrder_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorOrderLineItem" ADD CONSTRAINT "VendorOrderLineItem_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorOrderLineItem" ADD CONSTRAINT "VendorOrderLineItem_vendorOrderId_fkey" FOREIGN KEY ("vendorOrderId") REFERENCES "VendorOrder"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "VendorOrderLineItem" ADD CONSTRAINT "VendorOrderLineItem_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "InventoryCountEntry" ADD CONSTRAINT "InventoryCountEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "InventoryCountEntry" ADD CONSTRAINT "InventoryCountEntry_inventoryCountId_fkey" FOREIGN KEY ("inventoryCountId") REFERENCES "InventoryCount"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "InventoryCountEntry" ADD CONSTRAINT "InventoryCountEntry_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "WasteLog" ADD CONSTRAINT "WasteLog_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "WasteLog" ADD CONSTRAINT "WasteLog_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MarginEdgeProductMapping" ADD CONSTRAINT "MarginEdgeProductMapping_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MarginEdgeProductMapping" ADD CONSTRAINT "MarginEdgeProductMapping_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MenuItemDailyMetrics" ADD CONSTRAINT "MenuItemDailyMetrics_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MenuItemDailyMetrics" ADD CONSTRAINT "MenuItemDailyMetrics_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PendingDeduction" ADD CONSTRAINT "PendingDeduction_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DeductionRun" ADD CONSTRAINT "DeductionRun_pendingDeductionId_fkey" FOREIGN KEY ("pendingDeductionId") REFERENCES "PendingDeduction"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 

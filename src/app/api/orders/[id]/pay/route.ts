@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
-import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client'
+import { OrderStatus, PaymentMethod, PaymentStatus, PmsAttemptStatus } from '@prisma/client'
 import {
   generateFakeAuthCode,
   generateFakeTransactionId,
@@ -12,11 +12,10 @@ import {
 import { parseSettings } from '@/lib/settings'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
@@ -28,6 +27,11 @@ import { getDatacapClient } from '@/lib/datacap/helpers'
 import { calculateCharge, type EntertainmentPricing } from '@/lib/entertainment-pricing'
 import { getLocationTaxRate } from '@/lib/order-calculations'
 import { ingestAndProject, type IngestEvent, type IngestResult } from '@/lib/order-events/ingester'
+import { OrderRouter } from '@/lib/order-router'
+import { batchUpdateOrderItemStatus } from '@/lib/batch-updates'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
+import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -81,7 +85,7 @@ async function resolveDrawerForPayment(
 }
 
 interface PaymentInput {
-  method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'loyalty_points'
+  method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'loyalty_points' | 'room_charge'
   amount: number
   tipAmount?: number
   // Cash specific
@@ -94,6 +98,12 @@ interface PaymentInput {
   giftCardNumber?: string
   // House account specific
   houseAccountId?: string
+  // Hotel PMS / Bill to Room fields
+  // P1.1: client sends only selectionId; server resolves guest data from in-memory selection
+  selectionId?: string
+  roomNumber?: string
+  guestName?: string
+  pmsReservationId?: string
   // Loyalty points specific
   pointsUsed?: number
   // Datacap Direct fields
@@ -112,7 +122,7 @@ interface PaymentInput {
 
 // Zod schema for request validation
 const PaymentInputSchema = z.object({
-  method: z.enum(['cash', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty_points']),
+  method: z.enum(['cash', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty_points', 'room_charge']),
   amount: z.number().positive('Amount must be positive'),
   tipAmount: z.number().min(0, 'Tip amount cannot be negative').optional(),
   // Cash specific
@@ -125,6 +135,11 @@ const PaymentInputSchema = z.object({
   giftCardNumber: z.string().optional(),
   // House account specific
   houseAccountId: z.string().optional(),
+  // Hotel PMS / Bill to Room fields (P1.1: client sends selectionId, not raw OPERA IDs)
+  selectionId: z.string().optional(),
+  roomNumber: z.string().optional(),
+  guestName: z.string().optional(),
+  pmsReservationId: z.string().optional(),
   // Loyalty points specific
   pointsUsed: z.number().int().positive().optional(),
   // Datacap Direct fields
@@ -337,20 +352,10 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // C1: Block payment if any active items have not been sent to kitchen
+    // Collect unsent items — will be auto-sent to kitchen after payment completes
     const unsentItems = order.items.filter(
-      i => i.kitchenStatus === 'pending' && i.status === 'active'
+      (i: any) => i.kitchenStatus === 'pending' && i.status === 'active'
     )
-    if (unsentItems.length > 0) {
-      return NextResponse.json(
-        {
-          code: 'UNSENT_KITCHEN_ITEMS',
-          error: `Cannot pay order with ${unsentItems.length} unsent item(s). Send all items to kitchen first.`,
-          unsentItemIds: unsentItems.map(i => i.id),
-        },
-        { status: 400 }
-      )
-    }
 
     // Get settings for rounding
     const settings = parseSettings(order.location.settings)
@@ -571,6 +576,10 @@ export const POST = withVenue(withTiming(async function POST(
     let totalTips = 0
     let alreadyPaidInLoop = 0
 
+    // PMS attempt tracking — set in room_charge handler, consumed after payment creation
+    let pmsAttemptId: string | null = null
+    let pmsTransactionNo: string | null = null
+
     // Resolve drawer ONCE before the loop (instead of per-payment)
     const drawerAttribution = await resolveDrawerForPayment(
       'cash', // Resolve for cash (non-cash returns null anyway)
@@ -578,7 +587,8 @@ export const POST = withVenue(withTiming(async function POST(
       terminalId,
     )
 
-    for (const payment of payments) {
+    for (let paymentIdx = 0; paymentIdx < payments.length; paymentIdx++) {
+      const payment = payments[paymentIdx]
       // Use cached attribution for cash, null for non-cash
       const attribution = payment.method === 'cash'
         ? drawerAttribution
@@ -615,6 +625,11 @@ export const POST = withVenue(withTiming(async function POST(
         priceBeforeDiscount?: number
         pricingMode?: string
         idempotencyKey?: string
+        // Hotel PMS / Bill to Room
+        roomNumber?: string
+        guestName?: string
+        pmsReservationId?: string
+        pmsTransactionId?: string
         status: PaymentStatus
       } = {
         locationId: order.locationId,
@@ -628,7 +643,11 @@ export const POST = withVenue(withTiming(async function POST(
         totalAmount: payment.amount + (payment.tipAmount || 0),
         paymentMethod: payment.method as PaymentMethod,
         status: 'completed' as PaymentStatus,
-        idempotencyKey: finalIdempotencyKey,
+        // Per-payment idempotency key: split tenders have multiple payments per request,
+        // each must have a unique key. Append index for any multi-payment request.
+        idempotencyKey: payments.length > 1
+          ? `${finalIdempotencyKey}-${paymentIdx}`
+          : finalIdempotencyKey,
       }
 
       // Dual pricing: record pricing mode and discount info
@@ -1050,6 +1069,118 @@ export const POST = withVenue(withTiming(async function POST(
         allPendingPayments.push(paymentRecord)
         totalTips += payment.tipAmount || 0
         continue
+      } else if (payment.method === 'room_charge') {
+        // Hotel PMS / Bill to Room payment
+        if (!settings.payments.acceptHotelRoomCharge) {
+          return NextResponse.json({ error: 'Bill to Room is not enabled' }, { status: 400 })
+        }
+
+        const pms = settings.hotelPms
+        if (!pms?.enabled || !pms.clientId) {
+          return NextResponse.json({ error: 'Oracle PMS integration is not configured' }, { status: 400 })
+        }
+
+        // P1.1: Server-trusted guest selection — client sends selectionId from lookup;
+        // server resolves reservation data from in-memory store (never trusts client-supplied OPERA IDs)
+        if (!payment.selectionId) {
+          return NextResponse.json({ error: 'Room charge requires a valid guest selection.' }, { status: 400 })
+        }
+
+        const { consumeRoomChargeSelection } = await import('@/lib/room-charge-selections')
+        const sel = consumeRoomChargeSelection(payment.selectionId, order.locationId)
+        if (!sel) {
+          return NextResponse.json(
+            { error: 'Guest selection has expired or is invalid. Please look up the guest again.' },
+            { status: 400 }
+          )
+        }
+
+        // P0.5: Crash-safe idempotency via PmsChargeAttempt table
+        // Key includes amountCents + chargeCode so a legitimate second charge (different amount) is not blocked
+        const amountCents = Math.round((payment.amount + (payment.tipAmount || 0)) * 100)
+        const idempotencyKey_pms = `${orderId}:${sel.reservationId}:${amountCents}:${pms.chargeCode}`
+
+        // Find existing attempt or create a new PENDING one
+        let pmsAttempt = await db.pmsChargeAttempt.findUnique({ where: { idempotencyKey: idempotencyKey_pms } })
+
+        if (pmsAttempt?.status === 'COMPLETED') {
+          // Already charged + DB-recorded on a previous request — return idempotent 200
+          return NextResponse.json({
+            success: true,
+            message: 'Room charge already processed.',
+            transactionNo: pmsAttempt.operaTransactionId,
+          })
+        }
+
+        if (pmsAttempt?.status === 'FAILED') {
+          return NextResponse.json(
+            { error: 'A previous charge attempt failed. Please try a new payment.' },
+            { status: 502 }
+          )
+        }
+
+        if (pmsAttempt?.status === 'PENDING') {
+          const ageMs = Date.now() - pmsAttempt.updatedAt.getTime()
+          if (ageMs < 60_000) {
+            // Fresh — likely in-flight from a concurrent request
+            return NextResponse.json(
+              { error: 'Charge in progress. Please wait a moment and try again.' },
+              { status: 409 }
+            )
+          }
+          // Stale PENDING (≥60s) — server crashed between OPERA post and DB write.
+          // Retry OPERA using the same idempotencyKey; OHIP deduplicates on their side.
+        }
+
+        if (!pmsAttempt) {
+          pmsAttempt = await db.pmsChargeAttempt.create({
+            data: {
+              idempotencyKey: idempotencyKey_pms,
+              locationId: order.locationId,
+              orderId,
+              reservationId: sel.reservationId,
+              amountCents,
+              chargeCode: pms.chargeCode,
+              employeeId: sel.employeeId ?? null,
+              status: 'PENDING',
+            },
+          })
+        }
+
+        try {
+          const { postCharge } = await import('@/lib/oracle-pms-client')
+          const chargeResult = await postCharge(pms, order.locationId, {
+            reservationId: sel.reservationId,
+            amountCents,
+            description: `Restaurant Charge`,
+            reference: `GWI-POS-Order-${order.orderNumber ?? orderId}`,
+            idempotencyKey: pmsAttempt.idempotencyKey,
+          })
+
+          paymentRecord.roomNumber = sel.roomNumber
+          paymentRecord.guestName = sel.guestName
+          paymentRecord.pmsReservationId = sel.reservationId
+          paymentRecord.pmsTransactionId = chargeResult.transactionNo
+          paymentRecord.transactionId = `PMS:${chargeResult.transactionNo}`
+          paymentRecord.authCode = `Room ${sel.roomNumber}`
+          pmsAttemptId = pmsAttempt.id
+          pmsTransactionNo = chargeResult.transactionNo
+        } catch (err) {
+          // Mark attempt FAILED so cashier can retry a fresh charge
+          void db.pmsChargeAttempt.update({
+            where: { id: pmsAttempt.id },
+            data: {
+              status: 'FAILED',
+              lastErrorMessage: err instanceof Error ? err.message.substring(0, 200) : 'unknown',
+            },
+          }).catch(e => console.error('[pay/room_charge] Failed to mark attempt FAILED:', e))
+          // P0.3: Log real error server-side; return safe generic message to client
+          console.error('[pay/room_charge] OPERA charge failed:', err instanceof Error ? err.message : 'unknown')
+          return NextResponse.json(
+            { error: 'Failed to post charge to hotel room. Please verify the room and try again.' },
+            { status: 502 }
+          )
+        }
       }
 
       allPendingPayments.push(paymentRecord)
@@ -1248,6 +1379,37 @@ export const POST = withVenue(withTiming(async function POST(
     }
     timing.end('db-pay', 'Payment ingestion')
 
+    // Auto-send any items that weren't sent to kitchen before payment (fire-and-forget)
+    // Timed rentals are excluded — they need explicit session start via send route
+    if (unsentItems.length > 0) {
+      const autoSendIds = unsentItems
+        .filter((i: any) => i.menuItem?.itemType !== 'timed_rental')
+        .map((i: any) => i.id)
+      if (autoSendIds.length > 0) {
+        void (async () => {
+          try {
+            const now = new Date()
+            await batchUpdateOrderItemStatus(autoSendIds, 'sent', now)
+            const routingResult = await OrderRouter.resolveRouting(orderId, autoSendIds)
+            void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch(console.error)
+            void printKitchenTicketsForManifests(routingResult).catch(console.error)
+            void deductPrepStockForOrder(orderId, autoSendIds).catch(console.error)
+            void emitOrderEvent(order.locationId, orderId, 'ORDER_SENT', { sentItemIds: autoSendIds })
+          } catch (err) {
+            console.error('[pay] Auto-send to kitchen failed:', err)
+          }
+        })()
+      }
+    }
+
+    // Mark PMS charge attempt COMPLETED now that payment is durably recorded
+    if (pmsAttemptId && pmsTransactionNo) {
+      void db.pmsChargeAttempt.update({
+        where: { id: pmsAttemptId },
+        data: { status: 'COMPLETED', operaTransactionId: pmsTransactionNo },
+      }).catch(err => console.error('[pay/room_charge] Failed to mark attempt COMPLETED:', err))
+    }
+
     // Handle already-paid race
     if (ingestResult.alreadyPaid) {
       const existingPayment = await db.payment.findFirst({
@@ -1409,12 +1571,89 @@ export const POST = withVenue(withTiming(async function POST(
         console.error('[Pay] Entertainment reset failed:', err)
       })
 
-      // Deduct inventory (food + liquor) — fire-and-forget to not block payment.
-      // Handles MenuItemRecipes, RecipeIngredients (cocktails), ModifierInventoryLinks,
-      // and spirit tier substitutions (linkedBottleProduct on OrderItemModifier).
-      void deductInventoryForOrder(orderId, employeeId).catch(err => {
-        console.error('Background inventory deduction failed:', err)
-      })
+      // ── Inventory Deduction Outbox ──────────────────────────────────────────
+      // Create PendingDeduction synchronously after payment commit.
+      // If this fails, log but don't block payment response.
+      try {
+        const firstPaymentId = ingestResult.bridgedPayments[0]?.id ?? null
+        await db.pendingDeduction.upsert({
+          where: { orderId },
+          create: {
+            locationId: order.locationId,
+            orderId,
+            paymentId: firstPaymentId,
+            deductionType: 'order_deduction',
+            status: 'pending',
+          },
+          update: {
+            paymentId: firstPaymentId,
+            status: 'pending',
+            availableAt: new Date(),
+            lastError: null,
+          },
+        })
+      } catch (err) {
+        console.error('[Pay] Failed to create PendingDeduction outbox row:', err)
+      }
+
+      // Best-effort async processing (non-blocking)
+      void (async () => {
+        try {
+          const { processNextDeduction } = await import('@/lib/deduction-processor')
+          await processNextDeduction()
+        } catch (err) {
+          console.error('[Pay] Best-effort deduction trigger failed (outbox will retry):', err)
+        }
+      })()
+
+      // Recalculate commission from active items only (voided items zeroed)
+      void (async () => {
+        try {
+          const activeItems = await db.orderItem.findMany({
+            where: { orderId, status: 'active', deletedAt: null },
+            include: {
+              menuItem: { select: { commissionType: true, commissionValue: true } },
+            },
+          })
+
+          let recalculatedCommission = 0
+          const itemUpdates: Promise<unknown>[] = []
+
+          for (const item of activeItems) {
+            const mi = item.menuItem
+            if (!mi?.commissionType || !mi?.commissionValue) continue
+
+            const itemTotal = Number(item.itemTotal ?? 0)
+            const qty = item.quantity
+            const val = Number(mi.commissionValue)
+            const commission = mi.commissionType === 'percent'
+              ? Math.round(itemTotal * val / 100 * 100) / 100
+              : Math.round(val * qty * 100) / 100
+
+            if (commission !== Number(item.commissionAmount ?? 0)) {
+              itemUpdates.push(
+                db.orderItem.update({
+                  where: { id: item.id },
+                  data: { commissionAmount: commission },
+                })
+              )
+            }
+            recalculatedCommission += commission
+          }
+
+          await Promise.all(itemUpdates)
+
+          const currentTotal = Number(order.commissionTotal ?? 0)
+          if (Math.abs(recalculatedCommission - currentTotal) > 0.001) {
+            await db.order.update({
+              where: { id: orderId },
+              data: { commissionTotal: recalculatedCommission },
+            })
+          }
+        } catch (err) {
+          console.error('[Pay] Commission recalculation failed:', err)
+        }
+      })()
 
       // Kick cash drawer on cash payments (Skill 56) — fire-and-forget
       // Failure must never fail the payment response

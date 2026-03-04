@@ -26,8 +26,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         storageLocation: {
           select: { id: true, name: true },
         },
+        completedBy: {
+          select: { id: true, firstName: true, lastName: true },
+        },
         _count: {
-          select: { items: true },
+          select: { items: true, entries: true },
         },
       },
       orderBy: { countDate: 'desc' },
@@ -36,6 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ data: {
       counts: counts.map(count => ({
         ...count,
+        totalVarianceCost: count.totalVarianceCost ? Number(count.totalVarianceCost) : null,
         varianceValue: count.varianceValue ? Number(count.varianceValue) : null,
         expectedValue: count.expectedValue ? Number(count.expectedValue) : null,
         countedValue: count.countedValue ? Number(count.countedValue) : null,
@@ -56,6 +60,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       startedById,
       countType,
       storageLocationId,
+      categoryFilter,
       notes,
     } = body
 
@@ -65,12 +70,32 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Only allow one in_progress count at a time
+    const activeCount = await db.inventoryCount.findFirst({
+      where: {
+        locationId,
+        status: 'in_progress',
+        deletedAt: null,
+      },
+    })
+
+    if (activeCount) {
+      return NextResponse.json({
+        error: 'An inventory count is already in progress. Complete or void it before starting a new one.',
+      }, { status: 409 })
+    }
+
     // Build the where clause for items to count
     const itemWhere: Record<string, unknown> = {
       locationId,
       trackInventory: true,
       isActive: true,
       deletedAt: null,
+    }
+
+    // Category filter for category-type counts
+    if (categoryFilter && countType === 'category') {
+      itemWhere.category = categoryFilter
     }
 
     // If storage location specified, only get items in that location
@@ -106,13 +131,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Create count with all items
+    // Create count with all items + COGS-style entries
     const count = await db.inventoryCount.create({
       data: {
         locationId,
         startedById,
         countType,
         storageLocationId,
+        categoryFilter: categoryFilter || null,
         notes,
         countDate: new Date(),
         status: 'in_progress',
@@ -123,6 +149,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             expectedQty: item.currentStock,
           })),
         },
+        entries: countType !== 'spot' ? {
+          create: items.map(item => ({
+            locationId,
+            inventoryItemId: item.id,
+            expectedQty: item.currentStock,
+            countedQty: 0,
+            unit: item.storageUnit,
+            unitCost: item.costPerUnit,
+          })),
+        } : undefined,
       },
       include: {
         storageLocation: {

@@ -82,6 +82,8 @@ const settingsSections: SettingsSection[] = [
       { name: 'Counts', href: '/settings/inventory/counts' },
       { name: 'Waste Log', href: '/settings/inventory/waste' },
       { name: 'Transactions', href: '/settings/inventory/transactions' },
+      { name: 'Reorder', href: '/inventory/reorder' },
+      { name: 'Purchase Orders', href: '/inventory/orders' },
       { name: 'Vendors', href: '/settings/inventory/vendors' },
       { name: 'Config', href: '/settings/inventory/config' },
     ],
@@ -201,6 +203,7 @@ const settingsSections: SettingsSection[] = [
     items: [
       { name: 'Oracle Hotel PMS', href: '/settings/integrations/oracle-pms' },
       { name: '7shifts', href: '/settings/integrations/7shifts' },
+      { name: 'MarginEdge', href: '/settings/integrations/marginedge' },
       { name: 'SMS (Twilio)', href: '/settings/integrations/sms' },
       { name: 'Email (Resend)', href: '/settings/integrations/email' },
       { name: 'Slack', href: '/settings/integrations/slack' },
@@ -241,7 +244,6 @@ export function SettingsNav() {
     window.location.href = MISSION_CONTROL_URL
   }, [logout, clearOrder])
 
-  // Auto-expand section that contains the active page
   const getActiveSection = () => {
     for (const section of settingsSections) {
       const allItems = [...section.items, ...(section.adminItems || [])]
@@ -251,10 +253,27 @@ export function SettingsNav() {
         }
       }
     }
-    return 'Venue' // default
+    return 'Venue'
   }
 
-  const [expandedSections, setExpandedSections] = useState<string[]>([getActiveSection()])
+  // Accordion: one section open at a time
+  const [expandedSection, setExpandedSection] = useState<string | null>(getActiveSection())
+
+  // Collapsible sidebar — persisted across page loads
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('settingsNavCollapsed') === 'true'
+  })
+
+  const toggleCollapse = () => {
+    setCollapsed(prev => {
+      const next = !prev
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('settingsNavCollapsed', String(next))
+      }
+      return next
+    })
+  }
 
   const canView = (permission?: string | null) => {
     if (!permission) return true
@@ -273,51 +292,110 @@ export function SettingsNav() {
     })
 
   const toggleSection = (title: string) => {
-    setExpandedSections((prev) =>
-      prev.includes(title) ? prev.filter((s) => s !== title) : [...prev, title]
-    )
+    setExpandedSection(prev => prev === title ? null : title)
   }
 
   const isActive = (href: string) => {
-    // Exact match for /settings (General page)
     if (href === '/settings') return pathname === '/settings'
     return pathname === href || pathname.startsWith(href + '/')
   }
 
+  // ── Collapsed: icon-only strip ──────────────────────────────────────────────
+  if (collapsed) {
+    return (
+      <nav className="w-12 bg-white border-r h-full overflow-y-auto flex-shrink-0 flex flex-col">
+        {/* Expand button */}
+        <button
+          onClick={toggleCollapse}
+          className="flex items-center justify-center h-10 border-b text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors flex-shrink-0"
+          title="Expand navigation"
+          aria-label="Expand navigation"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+
+        {/* Section icons */}
+        <div className="py-1 flex flex-col items-center">
+          {filteredSections.map((section) => {
+            const hasSectionActive = section.items.some((item) => isActive(item.href))
+            return (
+              <button
+                key={section.title}
+                onClick={() => {
+                  setCollapsed(false)
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('settingsNavCollapsed', 'false')
+                  }
+                  setExpandedSection(section.title)
+                }}
+                title={section.title}
+                aria-label={section.title}
+                className={`w-10 h-9 flex items-center justify-center rounded-lg text-base my-0.5 transition-colors ${
+                  hasSectionActive
+                    ? 'bg-blue-50 text-blue-700'
+                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                }`}
+              >
+                <span aria-hidden="true">{section.icon}</span>
+              </button>
+            )
+          })}
+        </div>
+      </nav>
+    )
+  }
+
+  // ── Expanded ────────────────────────────────────────────────────────────────
   return (
-    <nav className="w-56 bg-white border-r min-h-screen overflow-y-auto flex-shrink-0">
+    <nav className="w-56 bg-white border-r h-full overflow-y-auto flex-shrink-0">
       {/* Header */}
-      <div className="px-4 py-3 border-b bg-gray-50">
-        {isCloud ? (
-          <a
-            href={MISSION_CONTROL_URL}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Mission Control
-          </a>
-        ) : (
-          <Link href="/orders" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to POS
-          </Link>
-        )}
-        <h2 className="text-sm font-bold text-gray-900">Settings</h2>
+      <div className="px-4 py-3 border-b bg-gray-50 flex items-start justify-between flex-shrink-0">
+        <div className="min-w-0">
+          {isCloud ? (
+            <a
+              href={MISSION_CONTROL_URL}
+              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1"
+            >
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Mission Control
+            </a>
+          ) : (
+            <Link href="/orders" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1">
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to POS
+            </Link>
+          )}
+          <h2 className="text-sm font-bold text-gray-900">Settings</h2>
+        </div>
+
+        {/* Collapse button */}
+        <button
+          onClick={toggleCollapse}
+          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0 mt-0.5"
+          title="Collapse navigation"
+          aria-label="Collapse navigation"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
       </div>
 
       {/* Sections */}
       <div className="py-1">
         {filteredSections.map((section) => {
-          const isExpanded = expandedSections.includes(section.title)
+          const isExpanded = expandedSection === section.title
           const hasSectionActive = section.items.some((item) => isActive(item.href))
 
           return (
             <div key={section.title}>
-              {/* Section Header */}
+              {/* Section header */}
               <button
                 onClick={() => toggleSection(section.title)}
                 className={`w-full px-3 py-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wider transition-colors ${
@@ -327,7 +405,7 @@ export function SettingsNav() {
                 }`}
               >
                 <span className="flex items-center gap-1.5">
-                  <span>{section.icon}</span>
+                  <span aria-hidden="true">{section.icon}</span>
                   <span>{section.title}</span>
                 </span>
                 <svg
@@ -341,7 +419,7 @@ export function SettingsNav() {
                 </svg>
               </button>
 
-              {/* Section Items */}
+              {/* Section items */}
               {isExpanded && (
                 <div className="pb-1">
                   {section.items.map((item) => (
@@ -366,7 +444,7 @@ export function SettingsNav() {
 
       {/* Cloud mode: Sign Out */}
       {isCloud && (
-        <div className="mt-auto px-4 py-3 border-t">
+        <div className="px-4 py-3 border-t">
           <button
             onClick={handleCloudSignOut}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"

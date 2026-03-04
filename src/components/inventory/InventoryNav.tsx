@@ -10,8 +10,12 @@ const inventoryTabs = [
   { name: 'Daily Counts', href: '/inventory/daily-prep-counts' },
   { name: 'Counts', href: '/inventory/counts' },
   { name: 'Vendors', href: '/inventory/vendors' },
+  { name: 'Orders', href: '/inventory/orders', icon: '📋' },
+  { name: 'Invoices', href: '/invoices' },
   { name: 'Transactions', href: '/inventory/transactions' },
   { name: 'Waste', href: '/inventory/waste' },
+  { name: 'Reorder', href: '/inventory/reorder' },
+  { name: 'Deduction Queue', href: '/inventory/deductions-queue', icon: '⚙️' },
   { name: 'Settings', href: '/inventory/settings' },
 ]
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useAuthStore } from '@/stores/auth-store'
 import type { Ingredient, IngredientCategory, SwapGroup, InventoryItemRef, PrepItemRef } from '../types'
 
 interface UseIngredientDataParams {
@@ -10,6 +11,7 @@ interface UseIngredientDataParams {
 }
 
 export function useIngredientData({ locationId, showInactive, viewMode }: UseIngredientDataParams) {
+  const employeeId = useAuthStore(s => s.employee?.id)
   const [categories, setCategories] = useState<IngredientCategory[]>([])
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [swapGroups, setSwapGroups] = useState<SwapGroup[]>([])
@@ -23,6 +25,7 @@ export function useIngredientData({ locationId, showInactive, viewMode }: UseIng
       const params = new URLSearchParams({
         locationId,
         includeInactive: 'true',
+        ...(employeeId ? { requestingEmployeeId: employeeId } : {}),
       })
       const response = await fetch(`/api/ingredient-categories?${params}`, { signal })
       if (response.ok) {
@@ -33,7 +36,7 @@ export function useIngredientData({ locationId, showInactive, viewMode }: UseIng
       if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load categories:', error)
     }
-  }, [locationId])
+  }, [locationId, employeeId])
 
   const loadIngredients = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -43,6 +46,7 @@ export function useIngredientData({ locationId, showInactive, viewMode }: UseIng
         visibility: 'all',
         // When in hierarchy mode, only fetch root ingredients with their children
         hierarchy: viewMode === 'hierarchy' ? 'true' : 'false',
+        ...(employeeId ? { requestingEmployeeId: employeeId } : {}),
       })
       const response = await fetch(`/api/ingredients?${params}`, { signal })
       if (response.ok) {
@@ -53,7 +57,7 @@ export function useIngredientData({ locationId, showInactive, viewMode }: UseIng
       if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load ingredients:', error)
     }
-  }, [locationId, showInactive, viewMode])
+  }, [locationId, showInactive, viewMode, employeeId])
 
   const loadSwapGroups = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -102,6 +106,7 @@ export function useIngredientData({ locationId, showInactive, viewMode }: UseIng
       const params = new URLSearchParams({
         locationId,
         deletedOnly: 'true',
+        ...(employeeId ? { requestingEmployeeId: employeeId } : {}),
       })
       const response = await fetch(`/api/ingredients?${params}`, { signal })
       if (response.ok) {
@@ -112,7 +117,7 @@ export function useIngredientData({ locationId, showInactive, viewMode }: UseIng
       if (error instanceof DOMException && error.name === 'AbortError') return
       console.error('Failed to load deleted ingredients:', error)
     }
-  }, [locationId])
+  }, [locationId, employeeId])
 
   useEffect(() => {
     const controller = new AbortController()

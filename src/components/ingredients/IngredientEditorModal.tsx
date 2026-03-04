@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { PrepItemEditor } from './PrepItemEditor'
 import { InventoryItemEditor } from './InventoryItemEditor'
 import { Modal } from '@/components/ui/modal'
+import { useAuthStore } from '@/stores/auth-store'
 import type { Ingredient, IngredientCategory, SwapGroup, InventoryItemRef, PrepItemRef } from './IngredientLibrary'
 
 interface IngredientEditorModalProps {
@@ -37,6 +38,7 @@ export function IngredientEditorModal({
   onSave,
   onClose,
 }: IngredientEditorModalProps) {
+  const employeeId = useAuthStore(s => s.employee?.id)
   const isEditing = !!ingredient
   const isChildIngredient = ingredient?.parentIngredientId != null
   const isUncategorized = isEditing && !ingredient?.categoryId && !isChildIngredient
@@ -68,7 +70,7 @@ export function IngredientEditorModal({
     if (itemType === 'prep' && baseIngredients.length === 0 && !loadingBases) {
       setLoadingBases(true)
       // Fetch base ingredients (inventory items that can be parents)
-      fetch(`/api/ingredients?locationId=${locationId}&baseOnly=true&includeInactive=false`)
+      fetch(`/api/ingredients?locationId=${locationId}&baseOnly=true&includeInactive=false${employeeId ? `&requestingEmployeeId=${employeeId}` : ''}`)
         .then(res => res.json())
         .then(raw => {
           const data = raw.data ?? raw

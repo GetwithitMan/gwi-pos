@@ -3,6 +3,8 @@
 
 import { db } from './db'
 import { hasPermission } from './auth-utils'
+import { getSessionFromCookie } from './auth-session'
+import type { NextRequest } from 'next/server'
 
 interface AuthSuccess {
   authorized: true
@@ -164,4 +166,20 @@ export async function requireAnyPermission(
       permissions: employeePermissions,
     },
   }
+}
+
+/**
+ * Derive actor (employeeId, locationId) from the pos-session cookie if present.
+ * Falls through to null if no valid cookie (Android/API clients use param-provided identity).
+ */
+export async function getActorFromRequest(
+  request: NextRequest
+): Promise<{ employeeId: string | null; locationId: string | null; fromSession: boolean }> {
+  try {
+    const session = await getSessionFromCookie()
+    if (session) {
+      return { employeeId: session.employeeId, locationId: session.locationId, fromSession: true }
+    }
+  } catch { /* no cookie or invalid */ }
+  return { employeeId: null, locationId: null, fromSession: false }
 }

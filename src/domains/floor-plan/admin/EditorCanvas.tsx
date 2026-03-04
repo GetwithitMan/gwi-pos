@@ -151,9 +151,7 @@ export function EditorCanvas({
     resetZoom,
   } = useZoomPan({ zoomControlRef, onZoomChange });
 
-  // Mirror canvasRef.current to state so screenToFloor doesn't close over a ref
-  const [canvasEl, setCanvasEl] = useState<HTMLDivElement | null>(null)
-  useEffect(() => { setCanvasEl(canvasRef.current) }, [canvasRef])
+  // canvasRef.current is read at call-time inside screenToFloor — no state mirror needed.
 
   // In database mode, use the dbFloorPlan prop; otherwise use in-memory API
   const [floorPlan, setFloorPlan] = useState(
@@ -376,9 +374,9 @@ export function EditorCanvas({
 
   const screenToFloor = useCallback(
     (screenX: number, screenY: number): Point => {
-      return screenToFloorFn(screenX, screenY, canvasEl, zoom, floorPlan?.gridSizeFeet);
+      return screenToFloorFn(screenX, screenY, canvasRef.current, zoom, floorPlan?.gridSizeFeet);
     },
-    [canvasEl, floorPlan, zoom]
+    [canvasRef, floorPlan, zoom]
   );
 
   // Handle resize start for tables
