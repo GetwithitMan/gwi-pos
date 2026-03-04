@@ -1,0 +1,108 @@
+name: Weekly Database Backup
+
+on:
+  schedule:
+    - cron: '0 3 * * 0' # 3am every Sunday UTC
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  backup:
+    name: Backup NUC → Neon Branch
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+
+      - name: Set backup date
+        id: date
+        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Dump NUC database
+        env:
+          # TODO: Add NUC_DB_URL secret in GitHub → Settings → Secrets and variables → Actions
+          # Format: postgresql://replicator:<password>@<cloudflare-tunnel-hostname>/gwi_pos_dev
+          # Requires Cloudflare Tunnel exposing NUC Postgres — see docs/infrastructure/CLOUDFLARE-TUNNEL.md
+          PGPASSWORD: ${{ secrets.NUC_DB_PASSWORD }}
+        run: |
+          pg_dump \
+            --host="${{ secrets.NUC_DB_HOST }}" \
+            --port=5432 \
+            --username=replicator \
+            --dbname=gwi_pos_dev \
+            --no-owner \
+            --no-acl \
+            --format=plain \
+            --file=backup-${{ steps.date.outputs.DATE }}.sql
+
+      - name: Create Neon branch
+        env:
+          # TODO: Add NEON_API_KEY secret — get from console.neon.tech → Account → API Keys
+          # TODO: Add NEON_PROJECT_ID secret — get from Neon project settings
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          BRANCH_NAME="backup-${{ steps.date.outputs.DATE }}"
+
+          # Create new branch from main
+          BRANCH_RESPONSE=$(curl -s -X POST \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
+            -H "Authorization: Bearer ${NEON_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"branch\": {\"name\": \"${BRANCH_NAME}\"}}")
+
+          BRANCH_ID=$(echo "$BRANCH_RESPONSE" | jq -r '.branch.id')
+          echo "Created Neon branch: $BRANCH_NAME ($BRANCH_ID)"
+          echo "BRANCH_ID=$BRANCH_ID" >> $GITHUB_ENV
+
+      - name: Get Neon branch connection string
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          # Get the connection URI for the new branch
+          CONN_RESPONSE=$(curl -s \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/connection_uri?branch_id=${BRANCH_ID}&database_name=neondb&role_name=neondb_owner" \
+            -H "Authorization: Bearer ${NEON_API_KEY}")
+
+          CONN_URI=$(echo "$CONN_RESPONSE" | jq -r '.uri')
+          echo "NEON_BRANCH_URI=$CONN_URI" >> $GITHUB_ENV
+
+      - name: Restore to Neon branch
+        run: |
+          psql "${{ env.NEON_BRANCH_URI }}" \
+            --file=backup-${{ steps.date.outputs.DATE }}.sql \
+            --quiet
+
+      - name: Delete Neon branches older than 28 days
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+        run: |
+          CUTOFF=$(date -d '28 days ago' +'%Y-%m-%d' 2>/dev/null || date -v-28d +'%Y-%m-%d')
+
+          # List all branches and delete old backup branches
+          BRANCHES=$(curl -s \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches" \
+            -H "Authorization: Bearer ${NEON_API_KEY}" | jq -r '.branches[] | select(.name | startswith("backup-")) | "\(.name) \(.id)"')
+
+          while IFS=' ' read -r NAME ID; do
+            BRANCH_DATE="${NAME#backup-}"
+            if [[ "$BRANCH_DATE" < "$CUTOFF" ]]; then
+              echo "Deleting old branch: $NAME"
+              curl -s -X DELETE \
+                "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}/branches/${ID}" \
+                -H "Authorization: Bearer ${NEON_API_KEY}"
+            fi
+          done <<< "$BRANCHES"
+
+      - name: Summary
+        run: |
+          echo "### Backup Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: backup-${{ steps.date.outputs.DATE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Time: $(date -u)" >> $GITHUB_STEP_SUMMARY
