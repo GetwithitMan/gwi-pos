@@ -115,6 +115,14 @@ export const GET = withVenue(async function GET() {
         appKey: '',
       }
     }
+    if (responseSettings.marginEdge && typeof responseSettings.marginEdge === 'object') {
+      const me = responseSettings.marginEdge as Record<string, unknown>
+      responseSettings.marginEdge = {
+        ...me,
+        hasApiKey: Boolean(me.apiKey),
+        apiKey: '',
+      }
+    }
     if (responseSettings.sevenShifts && typeof responseSettings.sevenShifts === 'object') {
       const ss = responseSettings.sevenShifts as Record<string, unknown>
       responseSettings.sevenShifts = {

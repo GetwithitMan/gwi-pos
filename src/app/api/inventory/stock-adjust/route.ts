@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { dispatchInventoryAdjustment, dispatchStockLevelChange } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
@@ -127,7 +127,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Auth check — require inventory.adjust_prep_stock permission (unconditional)
-    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? employeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!ingredientId || operation === undefined || quantity === undefined) {
@@ -315,7 +317,9 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     }
 
     // Auth check — require inventory.adjust_prep_stock permission
-    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? employeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get employee info for audit trail

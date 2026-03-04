@@ -3,7 +3,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { createReceipt, createTimePunch, listShifts } from '@/lib/7shifts-client'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { getBusinessDate, getDateRange, updateSyncStatus } from '../_helpers'
@@ -16,7 +16,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
 
   const body = await request.json().catch(() => ({})) as { businessDate?: string; employeeId?: string }
-  const auth = await requirePermission(body.employeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
+  const actor = await getActorFromRequest(request)
+  const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+  const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
   if (!auth.authorized) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }

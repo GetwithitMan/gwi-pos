@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
@@ -356,7 +356,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
     }
 
-    const auth = await requirePermission(requestingEmployeeId || employeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? requestingEmployeeId ?? employeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
