@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+export {}
 /**
  * GWI POS - Busy Night Load Test
  *

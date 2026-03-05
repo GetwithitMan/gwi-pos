@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
+import Link from 'next/link'
 
 interface TierData {
   tier: string
@@ -262,6 +263,22 @@ export default function LiquorReportPage() {
           retentionDays={retentionDays}
           venueSlug={venueSlug}
         />
+
+        {/* Berg Liquor Controls banner */}
+        <Card className="mb-6 border-blue-200 bg-blue-50">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="font-medium text-blue-900">Berg Liquor Controls</p>
+              <p className="text-sm text-blue-700">Compare POS pours vs Berg-measured actual pours to detect variance and shrinkage.</p>
+            </div>
+            <Link
+              href={`/reports/berg-variance?startDate=${startDate}&endDate=${endDate}`}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium whitespace-nowrap"
+            >
+              View Berg Variance Report
+            </Link>
+          </CardContent>
+        </Card>
 
         {/* Tabs */}
         <div className="mb-6 border-b bg-white rounded-t-lg">

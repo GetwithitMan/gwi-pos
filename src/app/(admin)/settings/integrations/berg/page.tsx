@@ -43,6 +43,7 @@ interface DeviceFormData {
   ackTimeoutMs: number
   pourReleaseMode: string
   autoRingMode: string
+  timeoutPolicy: string
 }
 
 const MODEL_OPTIONS = [
@@ -62,7 +63,23 @@ const MODEL_PLU_HINTS: Record<string, string> = {
 }
 
 const emptyPluForm: PluFormData = { pluNumber: '', description: '', menuItemId: '', pourSizeOz: '', active: true }
-const emptyDeviceForm: DeviceFormData = { name: '', model: 'MODEL_1504_704', portName: '', ackTimeoutMs: 3000, pourReleaseMode: 'BEST_EFFORT', autoRingMode: 'AUTO_RING' }
+const emptyDeviceForm: DeviceFormData = { name: '', model: 'MODEL_1504_704', portName: '', ackTimeoutMs: 3000, pourReleaseMode: 'BEST_EFFORT', autoRingMode: 'AUTO_RING', timeoutPolicy: 'ACK_ON_TIMEOUT' }
+
+function getPluRangeWarning(pluNumber: number, model: string): string | null {
+  const ranges: Record<string, { min: number; max: number; hint: string }> = {
+    MODEL_1504_704: { min: 1, max: 600, hint: 'Typical: 1–600+ for 1504/704' },
+    LASER: { min: 1, max: 64, hint: 'Typical: 1–64 for LASER' },
+    ALL_BOTTLE_ABID: { min: 1, max: 800, hint: 'Typical: 1–800+ for All-Bottle' },
+    TAP2: { min: 1, max: 32, hint: 'Typical: 1–32 for TAP2' },
+    FLOW_MONITOR: { min: 0, max: 0, hint: 'Flow Monitor uses volume tracking, not PLUs' },
+  }
+  const range = ranges[model]
+  if (!range || range.max === 0) return null
+  if (pluNumber < range.min || pluNumber > range.max) {
+    return `⚠ PLU ${pluNumber} is outside the typical range for this model (${range.hint}). This may be correct for your ECU firmware — check your Berg programming sheet.`
+  }
+  return null
+}
 
 export default function BergSettingsPage() {
   const employee = useAuthStore(s => s.employee)
@@ -84,6 +101,7 @@ export default function BergSettingsPage() {
   const [newSecretAlert, setNewSecretAlert] = useState<string | null>(null)
   const [savingDevice, setSavingDevice] = useState(false)
   const [detectingPorts, setDetectingPorts] = useState(false)
+  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null)
 
   const loadMappings = useCallback(async () => {
     if (!locationId || !employee?.id) return
@@ -240,6 +258,20 @@ export default function BergSettingsPage() {
     }
   }
 
+  function openEditDevice(d: BergDevice) {
+    setDeviceForm({
+      name: d.name,
+      model: d.model,
+      portName: d.portName,
+      ackTimeoutMs: d.ackTimeoutMs,
+      pourReleaseMode: d.pourReleaseMode,
+      autoRingMode: d.autoRingMode,
+      timeoutPolicy: 'ACK_ON_TIMEOUT',
+    })
+    setEditingDeviceId(d.id)
+    setShowAddDevice(true)
+  }
+
   async function handleAddDevice() {
     if (!deviceForm.name || !deviceForm.portName) {
       toast.error('Name and port name are required')
@@ -247,8 +279,11 @@ export default function BergSettingsPage() {
     }
     setSavingDevice(true)
     try {
-      const res = await fetch('/api/berg/devices', {
-        method: 'POST',
+      const url = editingDeviceId
+        ? `/api/berg/devices/${editingDeviceId}`
+        : '/api/berg/devices'
+      const res = await fetch(url, {
+        method: editingDeviceId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...deviceForm,
@@ -257,19 +292,36 @@ export default function BergSettingsPage() {
         }),
       })
       if (!res.ok) throw new Error()
-      const data = await res.json()
-      const secret = data.bridgeSecret ?? data.data?.bridgeSecret
-      if (secret) {
-        setNewSecretAlert(secret)
+      if (!editingDeviceId) {
+        const data = await res.json()
+        const secret = data.bridgeSecret ?? data.data?.bridgeSecret
+        if (secret) {
+          setNewSecretAlert(secret)
+        }
       }
-      toast.success('Device added')
+      toast.success(editingDeviceId ? 'Device updated' : 'Device added')
       setShowAddDevice(false)
+      setEditingDeviceId(null)
       setDeviceForm(emptyDeviceForm)
       await loadDevices()
     } catch {
-      toast.error('Failed to add device')
+      toast.error(editingDeviceId ? 'Failed to update device' : 'Failed to add device')
     } finally {
       setSavingDevice(false)
+    }
+  }
+
+  async function handleDeactivateDevice(id: string) {
+    if (!window.confirm('Deactivate this device? It will no longer accept pours.')) return
+    try {
+      const res = await fetch(`/api/berg/devices/${id}?locationId=${locationId}&employeeId=${employee?.id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error()
+      toast.success('Device deactivated')
+      await loadDevices()
+    } catch {
+      toast.error('Failed to deactivate device')
     }
   }
 
@@ -359,7 +411,7 @@ export default function BergSettingsPage() {
                     <CardTitle>Berg Devices</CardTitle>
                     <p className="text-xs text-gray-400 mt-1">Connect physical Berg ECU hardware. Requires the berg-bridge service running on your NUC.</p>
                   </div>
-                  <Button onClick={() => { setShowAddDevice(!showAddDevice); setDeviceForm(emptyDeviceForm); setNewSecretAlert(null) }} size="sm">
+                  <Button onClick={() => { setShowAddDevice(!showAddDevice); setDeviceForm(emptyDeviceForm); setEditingDeviceId(null); setNewSecretAlert(null) }} size="sm">
                     {showAddDevice ? 'Cancel' : 'Add Device'}
                   </Button>
                 </div>
@@ -368,7 +420,58 @@ export default function BergSettingsPage() {
                 {/* Add Device Form */}
                 {showAddDevice && (
                   <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
-                    <div className="text-sm font-medium text-gray-700 mb-2">Add Device</div>
+                    <div className="text-sm font-medium text-gray-700 mb-2">{editingDeviceId ? 'Edit Device' : 'Add Device'}</div>
+                    {/* Mode Presets */}
+                    <div className="mb-4">
+                      <label className="block text-xs font-medium text-gray-600 mb-2">Quick Preset</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          {
+                            label: 'Bar Friendly',
+                            description: 'ACK immediately, ring if possible',
+                            pourReleaseMode: 'BEST_EFFORT',
+                            autoRingMode: 'AUTO_RING',
+                            ackTimeoutMs: 3000,
+                            color: 'green',
+                          },
+                          {
+                            label: 'Maximum Control',
+                            description: 'Require open ticket — strictest',
+                            pourReleaseMode: 'REQUIRES_OPEN_ORDER',
+                            autoRingMode: 'AUTO_RING',
+                            ackTimeoutMs: 3000,
+                            color: 'red',
+                          },
+                          {
+                            label: 'Log Only',
+                            description: 'ACK always, never auto-ring',
+                            pourReleaseMode: 'BEST_EFFORT',
+                            autoRingMode: 'OFF',
+                            ackTimeoutMs: 3000,
+                            color: 'gray',
+                          },
+                        ].map(preset => (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => setDeviceForm(f => ({
+                              ...f,
+                              pourReleaseMode: preset.pourReleaseMode,
+                              autoRingMode: preset.autoRingMode,
+                              ackTimeoutMs: preset.ackTimeoutMs,
+                            }))}
+                            className={`text-left rounded-lg border p-2 text-xs transition-colors ${
+                              deviceForm.pourReleaseMode === preset.pourReleaseMode && deviceForm.autoRingMode === preset.autoRingMode
+                                ? preset.color === 'green' ? 'border-green-500 bg-green-50' : preset.color === 'red' ? 'border-red-500 bg-red-50' : 'border-gray-400 bg-gray-100'
+                                : 'border-gray-200 hover:border-gray-400 bg-white'
+                            }`}
+                          >
+                            <div className="font-medium">{preset.label}</div>
+                            <div className="text-gray-500 mt-0.5">{preset.description}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
@@ -450,6 +553,20 @@ export default function BergSettingsPage() {
                           <option value="REQUIRES_OPEN_ORDER">Requires Open Order</option>
                         </select>
                       </div>
+                      {deviceForm.pourReleaseMode === 'REQUIRES_OPEN_ORDER' && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">On Timeout</label>
+                          <select
+                            value={deviceForm.timeoutPolicy || 'ACK_ON_TIMEOUT'}
+                            onChange={e => setDeviceForm(f => ({ ...f, timeoutPolicy: e.target.value }))}
+                            className={inputClass}
+                          >
+                            <option value="ACK_ON_TIMEOUT">ACK on timeout (log uncertainty)</option>
+                            <option value="NAK_ON_TIMEOUT">NAK on timeout (strictest)</option>
+                          </select>
+                          <p className="text-xs text-gray-400 mt-1">Only applies when Requires Open Order mode is active</p>
+                        </div>
+                      )}
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Auto Ring</label>
                         <select
@@ -464,9 +581,9 @@ export default function BergSettingsPage() {
                     </div>
                     <div className="flex gap-2 pt-1">
                       <Button size="sm" onClick={handleAddDevice} disabled={savingDevice}>
-                        {savingDevice ? 'Saving...' : 'Save Device'}
+                        {savingDevice ? 'Saving...' : editingDeviceId ? 'Update Device' : 'Save Device'}
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => setShowAddDevice(false)}>Cancel</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setShowAddDevice(false); setEditingDeviceId(null) }}>Cancel</Button>
                     </div>
                   </div>
                 )}
@@ -490,9 +607,15 @@ export default function BergSettingsPage() {
                               {modelLabel}
                             </span>
                           </div>
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${connected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
-                            {connected ? 'Connected' : 'Idle'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${connected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
+                              {connected ? 'Connected' : 'Idle'}
+                            </span>
+                            <button onClick={() => openEditDevice(d)} className="text-blue-600 hover:underline text-xs">Edit</button>
+                            <button onClick={() => handleDeactivateDevice(d.id)} className="text-red-500 hover:text-red-700 text-xs" title="Deactivate device">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                          </div>
                         </div>
                       )
                     })}
@@ -524,6 +647,10 @@ export default function BergSettingsPage() {
                           placeholder="e.g. 101"
                           className={inputClass}
                         />
+                        {form.pluNumber !== '' && devices.length > 0 && (() => {
+                          const warning = getPluRangeWarning(Number(form.pluNumber), devices[0].model)
+                          return warning ? <p className="text-xs text-yellow-600 mt-1">{warning}</p> : null
+                        })()}
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
