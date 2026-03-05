@@ -33,44 +33,17 @@ async function main() {
   })
   console.log('Created location:', location.name)
 
-  // Create Simulated Payment Reader
-  const simulatedReader = await prisma.paymentReader.upsert({
-    where: { serialNumber: 'SIM-001-DEV' },
-    update: {
-      communicationMode: 'simulated',
-      isActive: true,
-      isOnline: true,
-    },
-    create: {
-      locationId: location.id,
-      name: 'Simulated Card Reader',
-      serialNumber: 'SIM-001-DEV',
-      ipAddress: 'localhost',
-      port: 3005,
-      verificationType: 'IP_ONLY',
-      communicationMode: 'simulated',
-      isActive: true,
-      isOnline: true,
-    },
-  })
-  console.log('Created simulated payment reader:', simulatedReader.name)
-
-  // Create Default Terminal bound to simulated reader
+  // Create Default Terminal (no reader pre-assigned — pair a real reader via Settings → Hardware → Payment Readers)
   const terminal = await prisma.terminal.upsert({
     where: { id: 'terminal-1' },
-    update: {
-      paymentReaderId: simulatedReader.id,
-      paymentProvider: 'SIMULATED',
-    },
+    update: {},
     create: {
       id: 'terminal-1',
       locationId: location.id,
       name: 'Main Terminal',
-      paymentReaderId: simulatedReader.id,
-      paymentProvider: 'SIMULATED',
     },
   })
-  console.log('Created terminal:', terminal.name, '→ bound to', simulatedReader.name)
+  console.log('Created terminal:', terminal.name)
 
   // Create System Order Types
   const orderTypes = [
