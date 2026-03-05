@@ -7,8 +7,6 @@ import { useOrderStore } from '@/stores/order-store'
 import { toast } from '@/stores/toast-store'
 import { saveDraftOrder } from '@/lib/draft-order-persistence'
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
-const WARNING_MS = 25 * 60 * 1000 // Warn at 25 minutes
 const ACTIVITY_EVENTS: (keyof DocumentEventMap)[] = [
   'mousedown', 'keydown', 'touchstart', 'scroll',
 ]
@@ -17,16 +15,17 @@ const ACTIVITY_EVENTS: (keyof DocumentEventMap)[] = [
  * Client-side idle timer for automatic logout (W1-S2).
  *
  * Tracks user activity (mouse, keyboard, touch, scroll).
- * Shows a toast warning at 25 minutes of inactivity.
- * Auto-logs out at 30 minutes and calls the server logout endpoint
- * to clear the httpOnly session cookie.
+ * Shows a toast warning 5 minutes before logout.
+ * Auto-logs out after the configured idle period and calls the server
+ * logout endpoint to clear the httpOnly session cookie.
  *
  * On session expiry, saves any in-progress draft order to localStorage
  * so it can be restored on next login.
  *
- * Use this hook in the main POS layout or auth-guarded pages.
+ * @param timeoutMinutes - Minutes of inactivity before auto-logout. 0 = disabled.
+ *                         Sourced from SecuritySettings.idleLockMinutes.
  */
-export function useIdleTimer() {
+export function useIdleTimer(timeoutMinutes: number = 0) {
   const router = useRouter()
   const logout = useAuthStore(s => s.logout)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
@@ -64,7 +63,14 @@ export function useIdleTimer() {
   }, [])
 
   useEffect(() => {
-    if (!isAuthenticated) return
+    // Disabled: 0 means no idle timer, or not authenticated
+    if (!isAuthenticated || timeoutMinutes <= 0) return
+
+    const timeoutMs = timeoutMinutes * 60 * 1000
+    // Warn 5 minutes before logout, but if total is <=5 min warn at 80%
+    const warningMs = timeoutMinutes > 5
+      ? timeoutMs - 5 * 60 * 1000
+      : timeoutMs * 0.8
 
     // Reset on mount
     lastActivityRef.current = Date.now()
@@ -83,15 +89,16 @@ export function useIdleTimer() {
     timerRef.current = setInterval(() => {
       const idle = Date.now() - lastActivityRef.current
 
-      if (idle >= IDLE_TIMEOUT_MS) {
+      if (idle >= timeoutMs) {
         toast.error('Session expired due to inactivity')
         void handleLogout()
         return
       }
 
-      if (idle >= WARNING_MS && !warningShownRef.current) {
+      if (idle >= warningMs && !warningShownRef.current) {
         warningShownRef.current = true
-        toast.warning('Session expiring in 5 minutes due to inactivity', 10000)
+        const remaining = Math.ceil((timeoutMs - idle) / 60000)
+        toast.warning(`Session expiring in ${remaining} minute${remaining !== 1 ? 's' : ''} due to inactivity`, 10000)
       }
     }, 30_000)
 
@@ -104,5 +111,5 @@ export function useIdleTimer() {
         timerRef.current = null
       }
     }
-  }, [isAuthenticated, resetActivity, handleLogout])
+  }, [isAuthenticated, timeoutMinutes, resetActivity, handleLogout])
 }
