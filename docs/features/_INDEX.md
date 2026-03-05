@@ -132,6 +132,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Hotel PMS Integration (Oracle OPERA)** | [hotel-pms.md](hotel-pms.md) | Active | pos | Payments, Orders, Settings |
 | **7shifts Labor Integration** | [7shifts-integration.md](7shifts-integration.md) | Active | pos | Employees, Scheduling, Time Clock, Settings |
 | **MarginEdge Integration** | [marginedge-integration.md](marginedge-integration.md) | Active | pos | Inventory, Vendors, Settings |
+| **Berg Liquor Controls** | [berg-integration.md](berg-integration.md) | Active | pos | Liquor, Inventory, Reports, Settings |
 
 ---
 

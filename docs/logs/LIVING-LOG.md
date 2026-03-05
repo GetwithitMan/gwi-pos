@@ -5,6 +5,38 @@
 
 ---
 
+## 2026-03-05 — Berg Liquor Controls Integration (Sprints 0 + A)
+
+### Session Summary
+Implemented full Berg ECU hardware integration with a two-tier opt-in model: Tier 1 (reports-only, no hardware required) ships immediately; Tier 2 (hardware bridge) adds live dispense event pipeline with RS-232 serial.
+
+### Commits
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | `8c9fb12` | feat: Berg Sprint 0 — Tier 1 Reports-Only |
+| gwi-pos | `0f51cec` | feat: Berg Sprint A — Tier 2 Hardware Foundation |
+
+### Features Delivered
+- **Tier 1:** PLU mapping CRUD, Berg comparison report with manual variance mode (enter Berg totals → live delta), CSV export in Berg-compatible column format
+- **Tier 2:** BergDevice + BergDispenseEvent audit trail, berg-bridge RS-232 serial service (PM2), STX/ETX packet parser, LRC validation, HMAC bridge auth, idempotency window, BEST_EFFORT + REQUIRES_OPEN_ORDER pour modes, auto-ring to open orders, per-device NTP check
+- Settings UI: device management, port auto-detect, model-specific PLU range hints, one-time bridgeSecret display
+
+### Schema Changes
+- New models: `BergPluMapping`, `BergDevice`, `BergDispenseEvent`
+- New enums: 7 (BergInterfaceMethod, BergPourReleaseMode, BergTimeoutPolicy, BergAutoRingMode, BergDeviceModel, BergDispenseStatus, BergParseStatus)
+- DDL added to nuc-pre-migrate.js
+
+### Known Issues / Blockers
+- **Sprint B pending:** device CRUD polish, test tools panel (listen mode), mode preset cards UI
+- **Sprint C pending:** full reporting suite (dispense log, variance report, unmatched pours, health report)
+- **Pre-deploy checklist required:** serial cable pinout confirmation, PLU range from Berg programming sheet, NTP verify, node-gyp prereqs on NUC
+
+### Resolved Task Board Items
+- Berg Tier 1 reports-only (all must-haves)
+- Berg Tier 2 foundation (all must-haves)
+
+---
+
 ## 2026-03-04 — 7shifts Labor Integration v1 + Security Hardening
 
 ### Session Summary

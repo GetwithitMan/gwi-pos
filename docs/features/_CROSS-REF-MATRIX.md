@@ -746,4 +746,17 @@ When one of these changes, the entire cluster often needs review:
 
 ---
 
-*Last updated: 2026-03-03 (post-reverse-flow audit — added Walkout Retry, Mobile Tab Management, Notifications, EOD Reset, Pay-at-Table; corrected Online Ordering + Bottle Service status)*
+---
+
+### Berg Liquor Controls
+| | |
+|---|---|
+| **Depends On** | Liquor (`BergPluMapping` resolves to `BottleProduct` via `bottleProductId` or `MenuItem`), Inventory (Deduction Outbox — double-deduction risk with `RING_AND_SLING`), Orders (auto-ring `OrderItem` creation in `RING_AND_SLING` mode via `terminalId → offlineTerminalId` scope), Settings (`bergReportsEnabled` flag gates Tier 1 features) |
+| **Depended On By** | Reports (Berg Comparison variance report; Sprint C Dispense Log / Variance / Unmatched / Health reports) |
+| **Shared Models** | `BergPluMapping` (links `pluCode` to `MenuItem`/`BottleProduct`), `BergDevice` (per-ECU config), `BergDispenseEvent` (immutable audit record), `LocationSettings.bergReportsEnabled` |
+| **Shared Socket Events** | None — berg-bridge to server is HTTP POST; no socket events emitted for dispense events |
+| **Critical Rules** | `berg-bridge.ts` is NUC-only — NEVER deploy on Vercel. `BERG_ENABLED` env var MUST gate all `serialport`-dependent routes or Vercel build fails. `bridgeSecretHash` is one-time-display — treat as a password. `unmatchedType` is `String?` not an enum — do NOT add enum constraints. `RING_AND_SLING` OrderItem creation is deferred (Sprint B) — do NOT wire order mutation before Sprint B. Double-deduction guard: verify Deduction Outbox config before enabling `RING_AND_SLING`. `terminalId` matches `Terminal.offlineTerminalId` (NOT `Terminal.id`). |
+
+---
+
+*Last updated: 2026-03-05 (added Berg Liquor Controls; post-reverse-flow audit — added Walkout Retry, Mobile Tab Management, Notifications, EOD Reset, Pay-at-Table; corrected Online Ordering + Bottle Service status)*
