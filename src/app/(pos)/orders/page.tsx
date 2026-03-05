@@ -1132,35 +1132,49 @@ export default function OrdersPage() {
               }
             })()
           } else {
+            // Card was not approved (declined / error path via onComplete)
+            const store = useOrderStore.getState()
+            const hasItems = (store.currentOrder?.items?.length ?? 0) > 0
             if (cardTabOrderId) {
-              fetch(`/api/orders/${cardTabOrderId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'cancelled' }),
-              }).catch(() => {})
-              const store = useOrderStore.getState()
+              if (!hasItems) {
+                // Empty shell — safe to cancel
+                fetch(`/api/orders/${cardTabOrderId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'cancelled' }),
+                }).catch(() => {})
+              }
               if (store.currentOrder?.id === cardTabOrderId) {
                 store.updateOrderId(`temp_${Date.now()}`, undefined)
               }
             }
-            setSavedOrderId(null)
+            if (!hasItems) {
+              setSavedOrderId(null)
+            }
             setCardTabOrderId(null)
           }
         }}
         onCardTabCancel={() => {
           setShowCardTabFlow(false)
+          const store = useOrderStore.getState()
+          const hasItems = (store.currentOrder?.items?.length ?? 0) > 0
           if (cardTabOrderId) {
-            fetch(`/api/orders/${cardTabOrderId}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ status: 'cancelled' }),
-            }).catch(() => {})
-            const store = useOrderStore.getState()
+            if (!hasItems) {
+              // Empty shell order — safe to cancel
+              fetch(`/api/orders/${cardTabOrderId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'cancelled' }),
+              }).catch(() => {})
+            }
+            // Reset the order's DB link but keep items in local state
             if (store.currentOrder?.id === cardTabOrderId) {
               store.updateOrderId(`temp_${Date.now()}`, undefined)
             }
           }
-          setSavedOrderId(null)
+          if (!hasItems) {
+            setSavedOrderId(null)
+          }
           setCardTabOrderId(null)
         }}
         showDiscountModal={showDiscountModal}

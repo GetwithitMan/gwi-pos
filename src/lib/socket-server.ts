@@ -399,34 +399,77 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
     // ==================== Mobile Tab Relay ====================
 
-    // Phone → relay tab close request to all terminals in location
+    // Phone → server processes tab close, emits result back to sender
     socket.on(MOBILE_EVENTS.TAB_CLOSE_REQUEST, (data: { orderId: string; employeeId: string; tipMode: string }) => {
-      try {
-        const locationId = socket.data.locationId
-        if (!locationId) return
-        socketServer.to(`location:${locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_CLOSE_REQUEST, { ...data, locationId })
-      } catch (err) {
-        console.error(JSON.stringify({ event: 'TAB_CLOSE_REQUEST', socketId: socket.id, error: String(err) }))
+      const locationId = socket.data.locationId
+      if (!locationId) return
+      const { orderId, employeeId, tipMode } = data
+      if (!orderId || !employeeId) {
+        socket.emit(MOBILE_EVENTS.TAB_CLOSED, { orderId, success: false, amount: 0, error: 'Missing orderId or employeeId' })
+        return
       }
+      // Call the close-tab API route internally (payment logic is complex — Datacap hardware)
+      const port = parseInt(process.env.PORT || '3005', 10)
+      void fetch(`http://127.0.0.1:${port}/api/orders/${orderId}/close-tab`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-venue-slug': process.env.POS_VENUE_SLUG || 'default',
+        },
+        body: JSON.stringify({ employeeId, tipMode }),
+        signal: AbortSignal.timeout(30_000), // Datacap can take time
+      }).then(async (res) => {
+        const json = await res.json().catch(() => ({}))
+        if (res.ok && json.data?.success) {
+          socket.emit(MOBILE_EVENTS.TAB_CLOSED, {
+            orderId,
+            success: true,
+            amount: json.data.captured?.totalAmount ?? 0,
+            tipAmount: json.data.captured?.tipAmount ?? 0,
+          })
+        } else {
+          socket.emit(MOBILE_EVENTS.TAB_CLOSED, {
+            orderId,
+            success: false,
+            amount: 0,
+            error: json.data?.error?.message || json.error || 'Close tab failed',
+          })
+        }
+      }).catch((err: unknown) => {
+        console.error('[Socket] tab:close-request internal call failed:', err)
+        socket.emit(MOBILE_EVENTS.TAB_CLOSED, { orderId, success: false, amount: 0, error: 'Failed to close tab' })
+      })
     })
 
-    // Phone → relay transfer request to all terminals in location
+    // Phone → server processes tab transfer via direct DB update
     socket.on(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, (data: { orderId: string; employeeId: string }) => {
-      try {
-        const locationId = socket.data.locationId
-        if (!locationId) return
-        socketServer.to(`location:${locationId}`).except(socket.id).emit(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, { ...data, locationId })
-      } catch (err) {
-        console.error(JSON.stringify({ event: 'TAB_TRANSFER_REQUEST', socketId: socket.id, error: String(err) }))
-      }
+      const locationId = socket.data.locationId
+      if (!locationId) return
+      const { orderId, employeeId } = data
+      if (!orderId || !employeeId) return
+      void db.order.update({
+        where: { id: orderId },
+        data: { employeeId },
+      }).then(() => {
+        socket.emit('tab:transfer-complete', { orderId })
+        // Notify all terminals to refresh order list
+        void emitToLocation(locationId, 'orders:list-changed', {
+          trigger: 'transferred',
+          orderId,
+        })
+      }).catch((err: unknown) => {
+        console.error('[Socket] tab:transfer-request DB update failed:', err)
+        socket.emit('tab:error', { orderId, message: 'Failed to transfer tab' })
+      })
     })
 
-    // Phone → relay manager alert to all terminals in location (fire-and-forget, no response needed)
+    // Phone → relay manager alert to all terminals in location (fire-and-forget)
+    // NOTE: POS order page should add a toast listener for 'tab:manager-alert' to display these
     socket.on(MOBILE_EVENTS.TAB_ALERT_MANAGER, (data: { orderId: string; employeeId: string }) => {
       try {
         const locationId = socket.data.locationId
         if (!locationId) return
-        socketServer.to(`location:${locationId}`).emit(MOBILE_EVENTS.TAB_ALERT_MANAGER, { ...data, locationId })
+        socketServer.to(`location:${locationId}`).emit('tab:manager-alert', { ...data, locationId })
       } catch (err) {
         console.error(JSON.stringify({ event: 'TAB_ALERT_MANAGER', socketId: socket.id, error: String(err) }))
       }

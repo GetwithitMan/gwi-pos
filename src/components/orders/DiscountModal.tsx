@@ -501,27 +501,53 @@ export function DiscountModal({
                 </Button>
               </div>
 
-              {/* Value Input */}
-              <div>
-                <label className="text-sm text-gray-600 block mb-1">
+              {/* Value Display */}
+              <div className="bg-gray-900 rounded-lg p-4 text-center">
+                <div className="text-sm text-gray-400 mb-1">
                   {customType === 'percent' ? 'Percentage' : 'Amount'}
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-3 text-gray-500">
-                    {customType === 'percent' ? '%' : '$'}
-                  </span>
-                  <input
-                    type="number"
-                    value={customValue}
-                    onChange={(e) => setCustomValue(e.target.value)}
-                    className="w-full pl-8 pr-4 py-3 text-xl border rounded-lg"
-                    placeholder="0"
-                    step={customType === 'percent' ? '1' : '0.01'}
-                    min="0"
-                    max={customType === 'percent' ? '100' : undefined}
-                  />
+                </div>
+                <div className="text-4xl font-light text-white tabular-nums">
+                  {customType === 'percent' ? '' : '$'}{customValue || '0'}{customType === 'percent' ? '%' : ''}
                 </div>
               </div>
+
+              {/* Numeric Keypad */}
+              <div className="grid grid-cols-3 gap-2">
+                {(customType === 'fixed'
+                  ? ['1','2','3','4','5','6','7','8','9','.','0','⌫']
+                  : ['1','2','3','4','5','6','7','8','9','C','0','⌫']
+                ).map(key => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      if (key === '⌫') {
+                        setCustomValue(prev => prev.slice(0, -1))
+                      } else if (key === 'C') {
+                        setCustomValue('')
+                      } else if (key === '.') {
+                        if (!customValue.includes('.')) {
+                          setCustomValue(prev => prev + '.')
+                        }
+                      } else {
+                        setCustomValue(prev => {
+                          const next = prev + key
+                          // Limit decimal places to 2 for fixed amounts
+                          if (customType === 'fixed') {
+                            const parts = next.split('.')
+                            if (parts[1] && parts[1].length > 2) return prev
+                          }
+                          // Cap percent at 100
+                          if (customType === 'percent' && parseFloat(next) > 100) return prev
+                          return next
+                        })
+                      }
+                    }}
+                    className="h-14 rounded-lg bg-gray-100 text-gray-900 text-xl font-medium hover:bg-gray-200 active:bg-gray-300 transition-colors min-w-0"
+                  >
+                    {key}
+                  </button>
+                ))}</div>
 
               {/* Preview */}
               {customValue && parseFloat(customValue) > 0 && (

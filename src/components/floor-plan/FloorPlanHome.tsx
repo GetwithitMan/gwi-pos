@@ -1078,6 +1078,30 @@ export function FloorPlanHome({
         setSections(payload.sections || [])
         setElements(payload.elements || [])
         setOpenOrdersCount(payload.openOrdersCount ?? 0)
+
+        // BUG-C2 fix: Restore extraSeats from snapshot for tables with active orders
+        // whose guestCount exceeds physical seat count. Without this, extra seats
+        // disappear on page refresh because extraSeats state resets to empty.
+        const newExtraSeats = new Map<string, number>()
+        for (const table of (payload.tables || [])) {
+          if (table.currentOrder) {
+            const physicalSeats = Math.max(table.seats?.length || 0, table.capacity || 0)
+            const orderGuests = table.currentOrder.guestCount || 0
+            if (orderGuests > physicalSeats) {
+              newExtraSeats.set(table.id, orderGuests - physicalSeats)
+            }
+          }
+        }
+        if (newExtraSeats.size > 0) {
+          setExtraSeats(prev => {
+            // Merge: keep any in-session extras for tables without orders
+            const merged = new Map(prev)
+            for (const [id, count] of newExtraSeats) {
+              merged.set(id, count)
+            }
+            return merged
+          })
+        }
       }
     } catch (error) {
       console.error('[FloorPlanHome] Snapshot load error:', error)

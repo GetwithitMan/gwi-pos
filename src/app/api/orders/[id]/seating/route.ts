@@ -373,8 +373,7 @@ export const POST = withVenue(async function POST(
             warning = 'high_seat_count'
           }
 
-          // Fire-and-forget: notify all terminals of floor plan change
-          void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
+          // Floor plan update dispatched after transaction commits (see below)
         }
 
         return {
@@ -469,8 +468,7 @@ export const POST = withVenue(async function POST(
             await tx.seat.update({ where: { id: lastTempSeat.id }, data: { deletedAt: new Date() } })
           }
 
-          // Fire-and-forget: notify all terminals of floor plan change
-          void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
+          // Floor plan update dispatched after transaction commits (see below)
         }
 
         return {
@@ -486,6 +484,13 @@ export const POST = withVenue(async function POST(
         throw new Error(`Unknown action: ${action}`)
       }
     })
+
+    // BUG-C2 fix: Dispatch floor plan update AFTER transaction commits.
+    // Previously dispatched inside the transaction, which invalidated the snapshot
+    // cache before the seat record was committed — causing stale data to be cached.
+    if (locationIdForDispatch) {
+      void dispatchFloorPlanUpdate(locationIdForDispatch, { async: true }).catch(console.error)
+    }
 
     // Event emission: seat count changed
     if (locationIdForDispatch) {
