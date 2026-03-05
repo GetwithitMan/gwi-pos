@@ -2329,6 +2329,7 @@ model Order {
   bottleServiceDeposit      Decimal? // Deposit amount pre-authorized
   bottleServiceMinSpend     Decimal? // Minimum spend requirement (from tier at time of creation)
   bottleServiceCurrentSpend Decimal?           @default(0) @db.Decimal(10, 2) // Denormalized: mirrors subtotal for bottle service orders (avoids re-computation in snapshot)
+  incrementAuthFailed       Boolean            @default(false) // True when IncrementalAuth was declined — surfaces amber warning to staff
 
   // Walkout Recovery (Phase 6)
   isWalkout       Boolean   @default(false)

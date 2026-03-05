@@ -170,7 +170,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-M5 — "No Search in Bartender View"
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — already implemented (verified 2026-03-05)
 **Feature:** Orders, Menu
 **Source:** Front-End Audit Report (Section 2.1)
 **Affected files:** `BartenderView.tsx` or equivalent

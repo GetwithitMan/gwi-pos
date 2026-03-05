@@ -232,6 +232,9 @@ export const GET = withVenue(async function GET(
     const reAuthNeeded = settings.payments.bottleServiceReAuthAlertEnabled &&
       depositAmount > 0 && currentSpend >= depositAmount * 0.8
 
+    // Check if a previous increment auth was declined (persisted flag)
+    const incrementAuthFailed = order.incrementAuthFailed ?? false
+
     // Auto-gratuity
     let autoGratuityPercent = settings.payments.bottleServiceAutoGratuityPercent
     if (order.bottleServiceTierId) {
@@ -256,6 +259,7 @@ export const GET = withVenue(async function GET(
         remainingToMinimum,
         totalAuthorized: totalAuth,
         reAuthNeeded,
+        incrementAuthFailed,
         autoGratuityPercent,
         cards: order.cards.map(c => ({
           id: c.id,

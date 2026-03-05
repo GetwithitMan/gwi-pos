@@ -135,7 +135,7 @@ export const POST = withVenue(async function POST(
           }),
           db.order.update({
             where: { id: orderId },
-            data: { preAuthAmount: newAuthAmount, version: { increment: 1 } },
+            data: { preAuthAmount: newAuthAmount, incrementAuthFailed: false, version: { increment: 1 } },
           }),
         ])
 
@@ -161,8 +161,12 @@ export const POST = withVenue(async function POST(
           },
         })
       } else {
-        // Increment failed — log warning but don't block
+        // Increment failed — persist flag so banner shows even after refresh
         console.warn(`[Tab Auto-Increment] DECLINED Order=${orderId} Card=...${defaultCard.cardLast4} +$${dynamicIncrement} Error=${error?.text || 'Unknown'}`)
+        await db.order.update({
+          where: { id: orderId },
+          data: { incrementAuthFailed: true, version: { increment: 1 } },
+        })
 
         // Fire-and-forget: notify terminals of increment failure (triggers red badge)
         void dispatchTabUpdated(locationId, {

@@ -1444,6 +1444,22 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED BergDispenseEvent:`, err.message)
     }
 
+    // --- Order.incrementAuthFailed ---
+    try {
+      const [hasIncrementAuthFailed] = await prisma.$queryRawUnsafe(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'Order' AND column_name = 'incrementAuthFailed'`
+      )
+      if (!hasIncrementAuthFailed) {
+        console.log(`${PREFIX}   Adding incrementAuthFailed to Order...`)
+        await prisma.$executeRawUnsafe(
+          `ALTER TABLE "Order" ADD COLUMN "incrementAuthFailed" BOOLEAN NOT NULL DEFAULT false`
+        )
+        console.log(`${PREFIX}   Done — Order.incrementAuthFailed added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Order.incrementAuthFailed:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

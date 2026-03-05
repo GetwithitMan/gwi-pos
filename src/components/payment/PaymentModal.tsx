@@ -276,9 +276,20 @@ export function PaymentModal({
 
   // Listen for tab:updated socket events (increment status indicator)
   // W3-3: Listener active even when modal is closed so toast fires immediately
+  // BUG-H3: Also check DB-persisted flag on mount (survives page refresh / missed socket)
   useEffect(() => {
     if (!orderId) return
     setTabIncrementFailed(false)
+    // Check DB-persisted increment failure flag
+    fetch(`/api/orders/${orderId}`)
+      .then(res => res.json())
+      .then(raw => {
+        const data = raw.data ?? raw
+        if (data.incrementAuthFailed) {
+          setTabIncrementFailed(true)
+        }
+      })
+      .catch(() => {})
     const socket = getSharedSocket()
     const onTabUpdated = (data: { orderId: string; status: string }) => {
       if (data.orderId !== orderId) return

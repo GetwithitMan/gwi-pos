@@ -11,7 +11,6 @@ import { logger } from '@/lib/logger'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST - Retry capture for a walkout tab (manual trigger)
-// Also used by cron/scheduler for auto-retry
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     let body: { walkoutRetryId?: string; employeeId?: string }
