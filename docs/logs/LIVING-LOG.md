@@ -5,6 +5,43 @@
 
 ---
 
+## 2026-03-05 — Berg Liquor Controls Integration (Sprints B + C)
+
+### Session Summary
+Completed Berg integration with full settings UI polish and a 4-report audit suite. TypeScript clean (0 errors). All 4 sprints committed and pushed.
+
+### Commits
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | `d8f7e14` | feat: Berg Sprints B+C — Settings UI + Full Reporting Suite |
+
+### Features Delivered (Sprint B — Settings UI)
+- **Mode preset cards:** "Bar Friendly" (BEST_EFFORT+AUTO_RING), "Maximum Control" (REQUIRES_OPEN_ORDER+NAK_ON_TIMEOUT), "Log Only" — one-click config apply
+- **Edit-device UI:** full modal for editing existing BergDevice settings
+- **PLU soft-validation:** per-model range hints (LASER 1–48, ALL-BOTTLE 1–128, 1504/704 1–99, TAP2 1–32, Flow Monitor 0–0)
+- **Conditional timeout control:** timeoutPolicy select hidden/disabled when pourReleaseMode = BEST_EFFORT
+
+### Features Delivered (Sprint C — Reporting Suite)
+- **Berg Dispense Log** (`/reports/berg-dispense`): full audit trail, status/device/PLU filters, pagination, CSV with optional raw packet column
+- **Berg Variance Report** (`/reports/berg-variance`): POS rings vs Berg pours per PLU, alert threshold coloring, data quality flag for unmapped PLU exclusions
+- **Berg Unmatched Pours** (`/reports/berg-unmatched`): dollar exposure header, unmatchedType breakdown with labels, CSV with Resolve Actions column
+- **Bridge Health Report** (`/reports/berg-health`): per-device uptime, p95 latency, dedup rate alerts, NTP sync status, 60s auto-refresh
+- **AdminNav:** 4 new Berg report links
+- **Liquor report:** Berg banner linking to variance report
+- **berg-simulate.ts:** burst throughput simulator (CLI args: --pours, --interval, --inject-bad-lrc, --cpu-mem)
+- **Fix:** export {} module isolation on berg-simulate.ts + load-test.ts (TS2451/TS2393 duplicate declaration errors)
+
+### Pre-Deploy Checklist (required before first hardware client)
+- [ ] `ls /dev/tty*` on NUC after connecting Berg cable — record exact port name
+- [ ] Get Berg programming sheet — confirm PLU range and assignments
+- [ ] Confirm serial cable pinout: pins 2/3/5 only
+- [ ] Confirm Berg ECU pour-with-release state
+- [ ] Verify NUC NTP: `timedatectl status`
+- [ ] `node-gyp` prereqs: `apt install build-essential`
+- [ ] Run `npx ts-node scripts/berg-simulate.ts --pours 50 --interval 100` — verify pass criteria
+
+---
+
 ## 2026-03-05 — Berg Liquor Controls Integration (Sprints 0 + A)
 
 ### Session Summary
