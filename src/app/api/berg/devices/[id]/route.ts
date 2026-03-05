@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
-import { generateBridgeSecret } from '@/lib/berg/hmac'
+import { generateBridgeSecret, encryptBridgeSecret } from '@/lib/berg/hmac'
 import { createHash } from 'crypto'
 
 export const PUT = withVenue(async function PUT(
@@ -13,7 +13,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { locationId, name, portName, baudRate, terminalId, model, interfaceMethod, pourReleaseMode, timeoutPolicy, autoRingMode, ackTimeoutMs, deductInventoryWhenNoOrder, isPluBased, isActive } = body
+    const { locationId, name, portName, baudRate, terminalId, model, interfaceMethod, pourReleaseMode, timeoutPolicy, autoRingMode, ackTimeoutMs, deductInventoryWhenNoOrder, isPluBased, isActive, autoRingOnlyWhenSingleOpenOrder } = body
     const requestingEmployeeId = body.employeeId || ''
 
     const auth = await requirePermission(requestingEmployeeId, locationId || '', PERMISSIONS.SETTINGS_EDIT)
@@ -36,6 +36,7 @@ export const PUT = withVenue(async function PUT(
     if (deductInventoryWhenNoOrder !== undefined) data.deductInventoryWhenNoOrder = Boolean(deductInventoryWhenNoOrder)
     if (isPluBased !== undefined) data.isPluBased = Boolean(isPluBased)
     if (isActive !== undefined) data.isActive = Boolean(isActive)
+    if (autoRingOnlyWhenSingleOpenOrder !== undefined) data.autoRingOnlyWhenSingleOpenOrder = Boolean(autoRingOnlyWhenSingleOpenOrder)
 
     const device = await db.bergDevice.update({ where: { id }, data })
     const { bridgeSecretHash: _, ...deviceData } = device

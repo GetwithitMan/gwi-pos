@@ -1,12 +1,31 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/stores/toast-store'
 import { loadSettings, saveSettings } from '@/lib/api/settings-client'
 import { useAuthStore } from '@/stores/auth-store'
 import Link from 'next/link'
+
+interface ListenEvent {
+  id: string
+  receivedAt: string
+  deviceId: string
+  pluNumber: number
+  rawPacket: string
+  modifierBytes: string | null
+  parseStatus: string
+  lrcReceived: string
+  lrcCalculated: string
+  lrcValid: boolean
+  status: string
+  unmatchedType: string | null
+  ackLatencyMs: number | null
+  orderId: string | null
+  pluMapping: { description: string } | null
+  device: { name: string } | null
+}
 
 interface PluMapping {
   id: string
@@ -15,6 +34,7 @@ interface PluMapping {
   menuItemId: string | null
   pourSizeOz: number | null
   active: boolean
+  modifierRule?: unknown
 }
 
 interface PluFormData {
@@ -23,6 +43,7 @@ interface PluFormData {
   menuItemId: string
   pourSizeOz: number | ''
   active: boolean
+  modifierRuleStr: string
 }
 
 interface BergDevice {
@@ -44,6 +65,7 @@ interface DeviceFormData {
   pourReleaseMode: string
   autoRingMode: string
   timeoutPolicy: string
+  autoRingOnlyWhenSingleOpenOrder: boolean
 }
 
 const MODEL_OPTIONS = [
@@ -62,8 +84,8 @@ const MODEL_PLU_HINTS: Record<string, string> = {
   FLOW_MONITOR: 'Volume-based \u2014 no PLUs used for individual pours',
 }
 
-const emptyPluForm: PluFormData = { pluNumber: '', description: '', menuItemId: '', pourSizeOz: '', active: true }
-const emptyDeviceForm: DeviceFormData = { name: '', model: 'MODEL_1504_704', portName: '', ackTimeoutMs: 3000, pourReleaseMode: 'BEST_EFFORT', autoRingMode: 'AUTO_RING', timeoutPolicy: 'ACK_ON_TIMEOUT' }
+const emptyPluForm: PluFormData = { pluNumber: '', description: '', menuItemId: '', pourSizeOz: '', active: true, modifierRuleStr: '' }
+const emptyDeviceForm: DeviceFormData = { name: '', model: 'MODEL_1504_704', portName: '', ackTimeoutMs: 3000, pourReleaseMode: 'BEST_EFFORT', autoRingMode: 'AUTO_RING', timeoutPolicy: 'ACK_ON_TIMEOUT', autoRingOnlyWhenSingleOpenOrder: false }
 
 function getPluRangeWarning(pluNumber: number, model: string): string | null {
   const ranges: Record<string, { min: number; max: number; hint: string }> = {
@@ -102,6 +124,15 @@ export default function BergSettingsPage() {
   const [savingDevice, setSavingDevice] = useState(false)
   const [detectingPorts, setDetectingPorts] = useState(false)
   const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null)
+
+  // Listen Mode state
+  const [listenDeviceId, setListenDeviceId] = useState<string | null>(null)
+  const [listenEvents, setListenEvents] = useState<ListenEvent[]>([])
+  const [listenSince, setListenSince] = useState<string | null>(null)
+  const listenScrollRef = useRef<HTMLDivElement>(null)
+  const listenIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const listenTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const LISTEN_AUTO_STOP_MS = 5 * 60 * 1000 // 5 minutes
 
   const loadMappings = useCallback(async () => {
     if (!locationId || !employee?.id) return
@@ -178,6 +209,7 @@ export default function BergSettingsPage() {
       menuItemId: m.menuItemId ?? '',
       pourSizeOz: m.pourSizeOz ?? '',
       active: m.active,
+      modifierRuleStr: m.modifierRule ? JSON.stringify(m.modifierRule, null, 2) : '',
     })
     setEditingId(m.id)
     setShowForm(true)
@@ -188,6 +220,10 @@ export default function BergSettingsPage() {
       toast.error('PLU number and description are required')
       return
     }
+    let modifierRule: unknown = undefined
+    if (form.modifierRuleStr) {
+      try { modifierRule = JSON.parse(form.modifierRuleStr) } catch { /* skip invalid JSON */ }
+    }
     const body = {
       pluNumber: Number(form.pluNumber),
       description: form.description,
@@ -196,6 +232,7 @@ export default function BergSettingsPage() {
       active: form.active,
       employeeId: employee?.id,
       locationId,
+      ...(modifierRule !== undefined ? { modifierRule } : {}),
     }
     try {
       if (editingId) {
@@ -237,6 +274,83 @@ export default function BergSettingsPage() {
     }
   }
 
+  const stopListening = useCallback(() => {
+    if (listenIntervalRef.current) clearInterval(listenIntervalRef.current)
+    if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current)
+    listenIntervalRef.current = null
+    listenTimeoutRef.current = null
+    setListenDeviceId(null)
+    setListenSince(null)
+  }, [])
+
+  const pollListen = useCallback(async (devId: string, since: string | null) => {
+    if (!locationId || !employee?.id) return null
+    try {
+      const params = new URLSearchParams({ locationId, employeeId: employee.id, deviceId: devId, limit: '30' })
+      if (since) params.set('since', since)
+      const res = await fetch(`/api/berg/listen?${params}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      return data.events as ListenEvent[]
+    } catch { return null }
+  }, [locationId, employee?.id])
+
+  const startListening = useCallback(async (devId: string) => {
+    if (listenIntervalRef.current) clearInterval(listenIntervalRef.current)
+    if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current)
+
+    setListenDeviceId(devId)
+    setListenEvents([])
+    setListenSince(null)
+
+    // Initial load
+    const initial = await pollListen(devId, null)
+    if (initial) {
+      setListenEvents(initial)
+      const last = initial[initial.length - 1]
+      setListenSince(last ? last.receivedAt : new Date().toISOString())
+    } else {
+      setListenSince(new Date().toISOString())
+    }
+
+    // Poll every 2 seconds for new events
+    listenIntervalRef.current = setInterval(async () => {
+      setListenSince(prev => {
+        void (async (sinceVal: string | null) => {
+          const newEvents = await pollListen(devId, sinceVal)
+          if (newEvents && newEvents.length > 0) {
+            setListenEvents(prev2 => {
+              const combined = [...prev2, ...newEvents].slice(-100) // keep last 100
+              return combined
+            })
+            setListenSince(newEvents[newEvents.length - 1].receivedAt)
+            // Scroll to bottom
+            requestAnimationFrame(() => {
+              if (listenScrollRef.current) {
+                listenScrollRef.current.scrollTop = listenScrollRef.current.scrollHeight
+              }
+            })
+          }
+        })(prev)
+        return prev
+      })
+    }, 2000)
+
+    // Auto-stop after 5 minutes
+    listenTimeoutRef.current = setTimeout(() => {
+      stopListening()
+      toast.info('Listen Mode stopped after 5 minutes')
+    }, LISTEN_AUTO_STOP_MS)
+  }, [pollListen, stopListening, LISTEN_AUTO_STOP_MS])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (listenIntervalRef.current) clearInterval(listenIntervalRef.current)
+      if (listenTimeoutRef.current) clearTimeout(listenTimeoutRef.current)
+    }
+  }, [])
+
   async function handleDetectPorts() {
     if (!locationId || !employee?.id) return
     setDetectingPorts(true)
@@ -267,6 +381,7 @@ export default function BergSettingsPage() {
       pourReleaseMode: d.pourReleaseMode,
       autoRingMode: d.autoRingMode,
       timeoutPolicy: 'ACK_ON_TIMEOUT',
+      autoRingOnlyWhenSingleOpenOrder: (d as BergDevice & { autoRingOnlyWhenSingleOpenOrder?: boolean }).autoRingOnlyWhenSingleOpenOrder ?? false,
     })
     setEditingDeviceId(d.id)
     setShowAddDevice(true)
@@ -579,6 +694,21 @@ export default function BergSettingsPage() {
                         </select>
                       </div>
                     </div>
+                    {deviceForm.autoRingMode === 'AUTO_RING' && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="autoRingOnlySingle"
+                          checked={deviceForm.autoRingOnlyWhenSingleOpenOrder ?? false}
+                          onChange={e => setDeviceForm(f => ({ ...f, autoRingOnlyWhenSingleOpenOrder: e.target.checked }))}
+                          className="rounded"
+                        />
+                        <label htmlFor="autoRingOnlySingle" className="text-sm">
+                          Only auto-ring when single open ticket on terminal
+                          <span className="block text-xs text-gray-400">Prevents ambiguous multi-tab pours</span>
+                        </label>
+                      </div>
+                    )}
                     <div className="flex gap-2 pt-1">
                       <Button size="sm" onClick={handleAddDevice} disabled={savingDevice}>
                         {savingDevice ? 'Saving...' : editingDeviceId ? 'Update Device' : 'Save Device'}
@@ -611,6 +741,13 @@ export default function BergSettingsPage() {
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${connected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
                               {connected ? 'Connected' : 'Idle'}
                             </span>
+                            <button
+                              onClick={() => listenDeviceId === d.id ? stopListening() : startListening(d.id)}
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${listenDeviceId === d.id ? 'bg-orange-100 text-orange-800 hover:bg-orange-200' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                              title="Stream raw packets from this device"
+                            >
+                              {listenDeviceId === d.id ? 'Stop' : 'Listen'}
+                            </button>
                             <button onClick={() => openEditDevice(d)} className="text-blue-600 hover:underline text-xs">Edit</button>
                             <button onClick={() => handleDeactivateDevice(d.id)} className="text-red-500 hover:text-red-700 text-xs" title="Deactivate device">
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -623,6 +760,59 @@ export default function BergSettingsPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Listen Mode Panel */}
+            {listenDeviceId && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Live Packet Stream</CardTitle>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Showing raw packets from {devices.find(d => d.id === listenDeviceId)?.name ?? listenDeviceId} &mdash; polling every 2s &mdash; auto-stops after 5 min
+                      </p>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={stopListening}>Stop Listening</Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div
+                    ref={listenScrollRef}
+                    className="bg-gray-950 rounded-b-lg overflow-y-auto max-h-80 font-mono text-xs text-green-400 p-3 space-y-0.5"
+                  >
+                    {listenEvents.length === 0 ? (
+                      <div className="text-gray-500 py-4 text-center">Waiting for packets&hellip;</div>
+                    ) : (
+                      listenEvents.map((ev) => {
+                        const ts = new Date(ev.receivedAt).toLocaleTimeString()
+                        const lrcTag = ev.lrcValid ? '' : ' [BAD_LRC]'
+                        const statusTag = ev.status === 'ACK' || ev.status === 'ACK_BEST_EFFORT' ? ' ACK' : ` ${ev.status}`
+                        const pluDesc = ev.pluMapping?.description ? ` (${ev.pluMapping.description})` : ''
+                        const latTag = ev.ackLatencyMs != null ? ` ${ev.ackLatencyMs}ms` : ''
+                        return (
+                          <div
+                            key={ev.id}
+                            className={`leading-5 ${!ev.lrcValid ? 'text-red-400' : ev.status === 'NAK' || ev.status === 'NAK_TIMEOUT' ? 'text-yellow-400' : 'text-green-400'}`}
+                          >
+                            <span className="text-gray-500">{ts}</span>
+                            {' '}PLU <span className="font-bold">{ev.pluNumber}</span>
+                            {pluDesc}
+                            <span className="text-gray-300">{lrcTag}</span>
+                            <span className={ev.status === 'ACK' || ev.status === 'ACK_BEST_EFFORT' ? 'text-green-300' : 'text-red-300'}>{statusTag}</span>
+                            {latTag && <span className="text-gray-500">{latTag}</span>}
+                            {ev.unmatchedType && <span className="text-orange-400"> [{ev.unmatchedType}]</span>}
+                            <span className="text-gray-700 ml-2 text-xs">{ev.rawPacket}</span>
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                  <div className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                    {listenEvents.length} packet{listenEvents.length !== 1 ? 's' : ''} captured &mdash; last 100 shown
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* PLU Mapping Table */}
             <Card>

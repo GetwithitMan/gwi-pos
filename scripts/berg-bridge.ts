@@ -12,6 +12,9 @@
  * Environment:
  *   GWI_POS_URL       - POS base URL (default: http://localhost:3005)
  *   GWI_BRIDGE_SECRETS - JSON: { deviceId: plainSecret, ... }
+ *                        Legacy secret source. Preferred: bridgeSecretEncrypted in DB
+ *                        (decrypted with BRIDGE_MASTER_KEY). Bridge uses env var approach
+ *                        since it doesn't have DB access; server accepts as legacy fallback.
  *   BERG_ENABLED      - Must be "true" to run
  */
 
@@ -49,14 +52,19 @@ function bufferToHex(buf: Buffer): string {
 }
 
 // ============================================================
-// HMAC token generation for bridge → POS auth
+// HMAC auth headers for bridge → POS auth (3-header format)
 // ============================================================
 
-function computeBridgeToken(deviceId: string, secret: string): string {
-  const timestamp = Date.now()
-  const message = `${deviceId}:${timestamp}`
-  const hmac = createHmac('sha256', secret).update(message).digest('hex')
-  return `${timestamp}.${hmac}`
+function computeBridgeHeaders(deviceId: string, secret: string, bodyStr: string): Record<string, string> {
+  const ts = String(Date.now())
+  const bodySha256 = createHash('sha256').update(bodyStr).digest('hex')
+  const message = `${deviceId}.${ts}.${bodySha256}`
+  const sig = createHmac('sha256', secret).update(message).digest('hex')
+  return {
+    'x-berg-ts': ts,
+    'x-berg-body-sha256': bodySha256,
+    'Authorization': `Bearer ${sig}`,
+  }
 }
 
 // ============================================================
@@ -185,29 +193,31 @@ async function postDispenseEvent(
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), deviceConfig.ackTimeoutMs + 2000)
 
-  const token = deviceConfig.bridgeSecret
-    ? computeBridgeToken(deviceConfig.id, deviceConfig.bridgeSecret)
-    : null
+  const bodyStr = JSON.stringify({
+    deviceId: deviceConfig.id,
+    pluNumber: packet.pluNumber,
+    rawPacket: packet.rawPacket,
+    modifierBytes: packet.modifierBytes,
+    trailerBytes: packet.trailerBytes,
+    lrcReceived: packet.lrcReceived,
+    lrcCalculated: packet.lrcCalculated,
+    lrcValid: packet.lrcValid,
+    parseStatus: packet.parseStatus,
+    receivedAt: receivedAt.toISOString(),
+  })
+
+  const authHeaders = deviceConfig.bridgeSecret
+    ? computeBridgeHeaders(deviceConfig.id, deviceConfig.bridgeSecret, bodyStr)
+    : {}
 
   try {
     const res = await fetch(`${POS_URL}/api/berg/dispense`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeaders,
       },
-      body: JSON.stringify({
-        deviceId: deviceConfig.id,
-        pluNumber: packet.pluNumber,
-        rawPacket: packet.rawPacket,
-        modifierBytes: packet.modifierBytes,
-        trailerBytes: packet.trailerBytes,
-        lrcReceived: packet.lrcReceived,
-        lrcCalculated: packet.lrcCalculated,
-        lrcValid: packet.lrcValid,
-        parseStatus: packet.parseStatus,
-        receivedAt: receivedAt.toISOString(),
-      }),
+      body: bodyStr,
       signal: controller.signal,
     })
     const data = await res.json() as { action?: string }

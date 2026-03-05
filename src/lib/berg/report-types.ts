@@ -144,3 +144,34 @@ export interface BergDispenseLogResponse {
   limit: number
   pages: number
 }
+
+// ============================================================
+// Berg Mapping Coverage — /api/reports/berg-mapping-coverage
+// ============================================================
+
+export interface BergMappingCoveragePlu {
+  pluNumber: number
+  description: string | null
+  isMapped: boolean
+  menuItemId: string | null
+  pourCount: number
+  totalOz: number
+  estimatedExposure: number | null
+}
+
+export interface BergMappingCoverageSummary {
+  totalPours: number
+  unmappedPours: number
+  unmappedExposure: number
+}
+
+export interface BergMappingCoverageResponse {
+  period: { startDate: string | null; endDate: string | null }
+  generatedAt: string
+  coveragePct: number
+  mappedCount: number
+  unmappedCount: number
+  totalActiveMappings: number
+  plus: BergMappingCoveragePlu[]
+  summary: BergMappingCoverageSummary
+}

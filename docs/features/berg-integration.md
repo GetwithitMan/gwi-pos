@@ -13,7 +13,7 @@ Two-tier opt-in integration with Berg ECU liquor dispensing hardware. Tier 1 (re
 
 ## Status
 
-`Active` (Tier 1 + Tier 2 foundation built — Sprints B + C pending)
+`Active` (Tier 1 + Tier 2 fully built — Sprints A, B, C complete)
 
 ## Repos Involved
 
@@ -52,8 +52,22 @@ Two-tier opt-in integration with Berg ECU liquor dispensing hardware. Tier 1 (re
 | `src/app/api/berg/status/route.ts` | GET — per-device 24h stats, dedup rate alert, NTP check |
 | `src/app/api/berg/dispense/route.ts` | POST — dispense ingest: HMAC auth, idempotency, PLU resolution, pour mode |
 | `src/app/api/reports/berg-comparison/route.ts` | GET — POS pour data per PLU, JSON + CSV export |
-| `src/app/(admin)/settings/integrations/berg/page.tsx` | Toggle, device management, port auto-detect, PLU mapping CRUD |
+| `src/app/api/reports/berg-variance/route.ts` | GET — time-windowed POS vs Berg pour variance per PLU |
+| `src/app/api/reports/berg-dispense/route.ts` | GET — paginated dispense event log with filters |
+| `src/app/api/reports/berg-unmatched/route.ts` | GET — unmatched pour events with exposure calc |
+| `src/app/api/reports/berg-health/route.ts` | GET — per-device health stats (24h window) |
+| `src/app/api/reports/berg-employee/route.ts` | GET — per-employee pour accountability |
+| `src/app/api/reports/berg-mapping-coverage/route.ts` | GET — PLU coverage % and unmapped PLU list |
+| `src/app/api/berg/listen/route.ts` | GET — recent dispense events for Listen Mode polling |
+| `src/app/api/cron/berg-reprocess/route.ts` | GET — retry PENDING/FAILED post-process events (cron) |
+| `src/app/(admin)/settings/integrations/berg/page.tsx` | Toggle, device management, port auto-detect, PLU mapping CRUD, Listen Mode panel |
 | `src/app/(admin)/reports/berg-comparison/page.tsx` | Manual Comparison Mode with variance coloring |
+| `src/app/(admin)/reports/berg-dispense/page.tsx` | Paginated dispense log with summary cards |
+| `src/app/(admin)/reports/berg-variance/page.tsx` | Variance report with configurable alert threshold |
+| `src/app/(admin)/reports/berg-unmatched/page.tsx` | Unmatched pours with dollar exposure display |
+| `src/app/(admin)/reports/berg-health/page.tsx` | Device health dashboard with 60s auto-refresh |
+| `src/app/(admin)/reports/berg-employee/page.tsx` | Employee accountability report |
+| `src/app/(admin)/reports/berg-mapping-coverage/page.tsx` | PLU mapping coverage with gap analysis |
 
 ---
 
@@ -128,6 +142,12 @@ bergReportsEnabled  Boolean  — Tier 1 toggle; gates PLU CRUD + comparison repo
 | PUT | `/api/berg/plu-mappings/[id]` | SETTINGS_EDIT | Update mapping |
 | DELETE | `/api/berg/plu-mappings/[id]` | SETTINGS_EDIT | Delete mapping |
 | GET | `/api/reports/berg-comparison` | REPORTS_VIEW | POS pour data per PLU (JSON or CSV) |
+| GET | `/api/reports/berg-variance` | REPORTS_VIEW | Time-windowed POS vs Berg variance (JSON or CSV) |
+| GET | `/api/reports/berg-dispense` | REPORTS_VIEW | Paginated dispense log with filters (JSON or CSV) |
+| GET | `/api/reports/berg-unmatched` | REPORTS_VIEW | Unmatched pour events with exposure (JSON or CSV) |
+| GET | `/api/reports/berg-health` | REPORTS_VIEW | Per-device health stats and alerts |
+| GET | `/api/reports/berg-employee` | REPORTS_VIEW | Per-employee pour accountability (JSON or CSV) |
+| GET | `/api/reports/berg-mapping-coverage` | REPORTS_VIEW | PLU coverage % and unmapped gaps |
 
 ### Tier 2 — Hardware Management
 | Method | Route | Auth | Purpose |
@@ -139,6 +159,8 @@ bergReportsEnabled  Boolean  — Tier 1 toggle; gates PLU CRUD + comparison repo
 | GET | `/api/berg/detect-ports` | SETTINGS_EDIT | List available serial ports (BERG_ENABLED only) |
 | GET | `/api/berg/status` | withVenue | Per-device 24h health stats |
 | POST | `/api/berg/dispense` | HMAC (bridge auth) | Ingest dispense event from berg-bridge |
+| GET | `/api/berg/listen` | SETTINGS_VIEW | Recent events for Listen Mode polling (2s interval) |
+| GET | `/api/cron/berg-reprocess` | CRON_SECRET | Retry PENDING/FAILED post-process events |
 
 ---
 
@@ -219,19 +241,21 @@ bergReportsEnabled  Boolean  — Tier 1 toggle; gates PLU CRUD + comparison repo
 
 ---
 
-## Remaining Work
+## Completed Sprints
 
-### Sprint B — Settings UI Completion
-- Device CRUD polish, inline port test button
-- "Listen Mode" test tools panel (stream raw packets in settings UI)
-- Mode preset cards UI (Bar Friendly / Maximum Control / Log Only)
-- `RING_AND_SLING` order assignment logic via `terminalId → offlineTerminalId`
+### Sprint B — Settings UI (complete)
+- Device CRUD with inline port-detect button ✅
+- Mode preset cards UI (Bar Friendly / Maximum Control / Log Only) ✅
+- "Listen Mode" panel — live raw-packet stream, polls every 2s, auto-stops at 5 min ✅
+- Auto-ring order assignment via `terminalId → offlineTerminalId` ✅ (in dispense route + reprocess cron)
 
-### Sprint C — Full Reporting Suite
-- Dispense Log (paginated `BergDispenseEvent` table with filters)
-- Variance Report (time-windowed POS vs Berg pour counts per PLU)
-- Unmatched Pours Report (filter `dispenseStatus = UNMATCHED`)
-- Health Report (per-device uptime, LRC error rate, dedup rate, ACK latency, NTP status)
+### Sprint C — Full Reporting Suite (complete)
+- Dispense Log — paginated `BergDispenseEvent` table with device/status/LRC filters + CSV ✅
+- Variance Report — time-windowed POS vs Berg pour counts per PLU, configurable alert % ✅
+- Unmatched Pours Report — exposure, type breakdown, Map PLU shortcut links ✅
+- Health Report — per-device uptime, LRC error rate, dedup rate, ACK latency, NTP warning, 60s auto-refresh ✅
+- Employee Accountability Report — per-employee pour count, unmatched, NAK rate, exposure ✅
+- PLU Mapping Coverage Report — coverage %, unmapped PLU list, estimated exposure ✅
 
 ---
 

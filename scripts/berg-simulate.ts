@@ -11,6 +11,8 @@ export {}
  *   npx ts-node scripts/berg-simulate.ts --pours 50 --interval 100
  *   npx ts-node scripts/berg-simulate.ts --pours 100 --interval 50 --inject-bad-lrc 5
  *   npx ts-node scripts/berg-simulate.ts --pours 50 --interval 100 --cpu-mem
+ *   npx ts-node scripts/berg-simulate.ts --bridge-secret mysecret
+ *   npx ts-node scripts/berg-simulate.ts --multi-device --device-ids dev1,dev2
  *
  * Options:
  *   --pours N           Number of pours to simulate (default: 20)
@@ -18,6 +20,9 @@ export {}
  *   --inject-bad-lrc N  Inject N bad LRC packets to test NAK handling (default: 0)
  *   --device-id ID      BergDevice ID to use (default: reads from BERG_TEST_DEVICE_ID env)
  *   --pos-url URL       POS URL (default: http://localhost:3005)
+ *   --bridge-secret SECRET  Bridge secret for HMAC auth (or set BERG_SIM_SECRET)
+ *   --multi-device      Run burst on all device IDs in BERG_TEST_DEVICE_IDS (comma-separated)
+ *   --device-ids IDS    Comma-separated device IDs for multi-device mode
  *   --cpu-mem           Enable CPU/memory profiling output
  *   --help              Show this help
  *
@@ -27,6 +32,8 @@ export {}
  *   - No dropped packets (response count = send count)
  *   - Bad LRC packets → NAK
  */
+
+import { createHash, createHmac } from 'crypto'
 
 const args = process.argv.slice(2)
 function getArg(name: string, defaultVal: string): string {
@@ -46,6 +53,9 @@ Usage: npx ts-node scripts/berg-simulate.ts [options]
   --inject-bad-lrc N  N bad LRC packets to inject (default: 0)
   --device-id ID      BergDevice ID (or set BERG_TEST_DEVICE_ID)
   --pos-url URL       POS URL (default: http://localhost:3005)
+  --bridge-secret SECRET  Bridge secret for HMAC auth (or set BERG_SIM_SECRET)
+  --multi-device      Run burst on all device IDs in BERG_TEST_DEVICE_IDS (comma-separated)
+  --device-ids IDS    Comma-separated device IDs for multi-device mode
   --cpu-mem           CPU/memory profiling
   --help              Show help
 `)
@@ -57,7 +67,12 @@ const INTERVAL_MS = parseInt(getArg('interval', '200'), 10)
 const BAD_LRC_COUNT = parseInt(getArg('inject-bad-lrc', '0'), 10)
 const DEVICE_ID = getArg('device-id', process.env.BERG_TEST_DEVICE_ID || 'test-device-1')
 const POS_URL = getArg('pos-url', process.env.GWI_POS_URL || 'http://localhost:3005')
+const BRIDGE_SECRET = getArg('bridge-secret', process.env.BERG_SIM_SECRET || '')
 const CPU_MEM = hasFlag('cpu-mem')
+const MULTI_DEVICE = hasFlag('multi-device')
+const DEVICE_IDS: string[] = MULTI_DEVICE
+  ? (getArg('device-ids', process.env.BERG_TEST_DEVICE_IDS || DEVICE_ID)).split(',').map(s => s.trim()).filter(Boolean)
+  : [DEVICE_ID]
 
 // Sample PLU numbers to cycle through
 const SAMPLE_PLUS = [1, 2, 3, 5, 8, 12, 15, 20]
@@ -99,22 +114,33 @@ interface SimResult {
   error?: string
 }
 
-async function sendPour(index: number, pluNumber: number, isBadLrc: boolean): Promise<SimResult> {
+function computeAuthHeaders(deviceId: string, bodyStr: string): Record<string, string> {
+  if (!BRIDGE_SECRET) return {}
+  const ts = String(Date.now())
+  const bodySha256 = createHash('sha256').update(bodyStr).digest('hex')
+  const message = `${deviceId}.${ts}.${bodySha256}`
+  const sig = createHmac('sha256', BRIDGE_SECRET).update(message).digest('hex')
+  return { 'x-berg-ts': ts, 'x-berg-body-sha256': bodySha256, 'Authorization': `Bearer ${sig}` }
+}
+
+async function sendPour(index: number, pluNumber: number, isBadLrc: boolean, deviceId: string = DEVICE_ID): Promise<SimResult> {
   const packet = buildPacket(pluNumber, isBadLrc)
   const receivedAt = new Date().toISOString()
   const start = Date.now()
 
   try {
+    const bodyStr = JSON.stringify({
+      deviceId,
+      pluNumber,
+      parseStatus: isBadLrc ? 'BAD_LRC' : 'OK',
+      receivedAt,
+      ...packet,
+    })
+    const authHeaders = computeAuthHeaders(deviceId, bodyStr)
     const res = await fetch(`${POS_URL}/api/berg/dispense`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        deviceId: DEVICE_ID,
-        pluNumber,
-        parseStatus: isBadLrc ? 'BAD_LRC' : 'OK',
-        receivedAt,
-        ...packet,
-      }),
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: bodyStr,
       signal: AbortSignal.timeout(5000),
     })
     const latencyMs = Date.now() - start
@@ -131,9 +157,10 @@ async function main() {
   console.log(`║   Berg Burst Simulator                   ║`)
   console.log(`╚══════════════════════════════════════════╝`)
   console.log(`  POS:       ${POS_URL}`)
-  console.log(`  Device ID: ${DEVICE_ID}`)
-  console.log(`  Pours:     ${POUR_COUNT} (+ ${BAD_LRC_COUNT} bad LRC)`)
+  console.log(`  Device ID: ${MULTI_DEVICE ? DEVICE_IDS.join(', ') : DEVICE_ID}`)
+  console.log(`  Pours:     ${POUR_COUNT} (+ ${BAD_LRC_COUNT} bad LRC)${MULTI_DEVICE ? ` × ${DEVICE_IDS.length} devices` : ''}`)
   console.log(`  Interval:  ${INTERVAL_MS}ms`)
+  console.log(`  HMAC Auth: ${BRIDGE_SECRET ? 'enabled' : 'disabled'}`)
   console.log(`  CPU/Mem:   ${CPU_MEM ? 'enabled' : 'disabled'}`)
   console.log()
 
@@ -142,24 +169,37 @@ async function main() {
     console.log(`  Baseline memory: RSS=${Math.round(startMem.rss / 1024 / 1024)}MB Heap=${Math.round(startMem.heapUsed / 1024 / 1024)}MB`)
   }
 
-  const results: SimResult[] = []
-  let badLrcInjected = 0
+  async function runBurstForDevice(deviceId: string): Promise<SimResult[]> {
+    const deviceResults: SimResult[] = []
+    let badLrcInjected = 0
+    const prefix = MULTI_DEVICE ? `[${deviceId}] ` : ''
+
+    for (let i = 0; i < POUR_COUNT; i++) {
+      const pluNumber = SAMPLE_PLUS[i % SAMPLE_PLUS.length]
+      const injectBad = badLrcInjected < BAD_LRC_COUNT && Math.random() < 0.3
+      if (injectBad) badLrcInjected++
+
+      const result = await sendPour(i + 1, pluNumber, injectBad, deviceId)
+      deviceResults.push(result)
+
+      const badTag = result.isBadLrc ? ' [BAD_LRC]' : ''
+      console.log(`  ${prefix}[${String(i + 1).padStart(3, ' ')}] PLU ${pluNumber}${badTag} → ${result.action} (${result.latencyMs}ms)`)
+
+      if (i < POUR_COUNT - 1 && INTERVAL_MS > 0) {
+        await new Promise(r => setTimeout(r, INTERVAL_MS))
+      }
+    }
+    return deviceResults
+  }
+
   const testStart = Date.now()
 
-  for (let i = 0; i < POUR_COUNT; i++) {
-    const pluNumber = SAMPLE_PLUS[i % SAMPLE_PLUS.length]
-    const injectBad = badLrcInjected < BAD_LRC_COUNT && Math.random() < 0.3
-    if (injectBad) badLrcInjected++
-
-    const result = await sendPour(i + 1, pluNumber, injectBad)
-    results.push(result)
-
-    const badTag = result.isBadLrc ? ' [BAD_LRC]' : ''
-    console.log(`  [${String(i + 1).padStart(3, ' ')}] PLU ${pluNumber}${badTag} → ${result.action} (${result.latencyMs}ms)`)
-
-    if (i < POUR_COUNT - 1 && INTERVAL_MS > 0) {
-      await new Promise(r => setTimeout(r, INTERVAL_MS))
-    }
+  let results: SimResult[]
+  if (MULTI_DEVICE && DEVICE_IDS.length > 1) {
+    const allResults = await Promise.all(DEVICE_IDS.map(id => runBurstForDevice(id)))
+    results = allResults.flat()
+  } else {
+    results = await runBurstForDevice(DEVICE_IDS[0])
   }
 
   const elapsed = Date.now() - testStart
