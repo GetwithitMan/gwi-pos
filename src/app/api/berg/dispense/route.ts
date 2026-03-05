@@ -6,7 +6,10 @@ import { resolvePlu } from '@/lib/berg/plu-resolver'
 import { getBusinessDateForTimestamp } from '@/lib/business-day'
 import { createHash } from 'crypto'
 
-const BERG_IDEMPOTENCY_WINDOW_MS = parseInt(process.env.BERG_IDEMPOTENCY_WINDOW_MS || '1000', 10)
+// Default 500ms — tight enough that real double-pours (>500ms apart) aren't deduplicated,
+// but wide enough to absorb ECU retries on no-response. Tunable via env var.
+// Monitor "deduplicated" events in the health report — a high rate suggests the window is too wide.
+const BERG_IDEMPOTENCY_WINDOW_MS = parseInt(process.env.BERG_IDEMPOTENCY_WINDOW_MS || '500', 10)
 
 type BergUnmatchedType =
   | 'NO_ORDER_ACKED'
@@ -136,9 +139,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     .update(`${deviceId}:${rawPacket}:${windowBucket}`)
     .digest('hex')
 
-  // Check for duplicate
+  // Check for duplicate within idempotency window
   const existing = await db.bergDispenseEvent.findUnique({ where: { idempotencyKey } })
   if (existing) {
+    // Log deduplications so the health report can surface high rates as a warning.
+    // A high rate may indicate the window is too wide, or the ECU is retrying aggressively.
+    console.warn(`[berg/dispense] Deduplicated event for device ${deviceId} PLU ${pluNumber} (window ${BERG_IDEMPOTENCY_WINDOW_MS}ms)`)
     return NextResponse.json({ action: existing.status === 'NAK' || existing.status === 'NAK_TIMEOUT' ? 'NAK' : 'ACK', deduplicated: true })
   }
 
@@ -213,51 +219,60 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    // Fire-and-forget: resolve order linkage and auto-ring
+    // Fire-and-forget: resolve order linkage and auto-ring (3 attempts, 1s apart)
     void (async () => {
-      try {
-        let orderId: string | null = null
-        let orderItemId: string | null = null
-        let unmatchedType: BergUnmatchedType | null = null
+      const MAX_ATTEMPTS = 3
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          let orderId: string | null = null
+          let orderItemId: string | null = null
+          let unmatchedType: BergUnmatchedType | null = null
 
-        if (resolvedPlu === null) {
-          unmatchedType = 'UNKNOWN_PLU_ACKED'
-        } else if (autoRingMode === 'AUTO_RING' || autoRingMode === 'OFF') {
-          const order = device.terminalId
-            ? await findOpenOrderForTerminal(device.locationId, device.terminalId)
-            : null
+          if (resolvedPlu === null) {
+            unmatchedType = 'UNKNOWN_PLU_ACKED'
+          } else if (autoRingMode === 'AUTO_RING' || autoRingMode === 'OFF') {
+            const order = device.terminalId
+              ? await findOpenOrderForTerminal(device.locationId, device.terminalId)
+              : null
 
-          if (order && autoRingMode === 'AUTO_RING' && resolvedPlu?.menuItemId) {
-            const menuItem = await db.menuItem.findUnique({ where: { id: resolvedPlu.menuItemId } })
-            if (menuItem) {
-              const oi = await db.orderItem.create({
-                data: {
-                  locationId: device.locationId,
-                  orderId: order.id,
-                  menuItemId: menuItem.id,
-                  name: menuItem.name,
-                  price: menuItem.price,
-                  quantity: 1,
-                  status: 'active',
-                },
-              })
-              orderId = order.id
-              orderItemId = oi.id
+            if (order && autoRingMode === 'AUTO_RING' && resolvedPlu?.menuItemId) {
+              const menuItem = await db.menuItem.findUnique({ where: { id: resolvedPlu.menuItemId } })
+              if (menuItem) {
+                const oi = await db.orderItem.create({
+                  data: {
+                    locationId: device.locationId,
+                    orderId: order.id,
+                    menuItemId: menuItem.id,
+                    name: menuItem.name,
+                    price: menuItem.price,
+                    quantity: 1,
+                    status: 'active',
+                  },
+                })
+                orderId = order.id
+                orderItemId = oi.id
+              }
+            } else if (!order) {
+              unmatchedType = 'NO_ORDER_ACKED'
             }
-          } else if (!order) {
-            unmatchedType = 'NO_ORDER_ACKED'
+          }
+
+          // Update event with resolved order linkage
+          await db.bergDispenseEvent.update({
+            where: { id: event.id },
+            data: { orderId, orderItemId, unmatchedType },
+          })
+
+          await db.bergDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } })
+          break // success — exit retry loop
+        } catch (err) {
+          if (attempt < MAX_ATTEMPTS) {
+            console.warn(`[berg/dispense] Order resolution attempt ${attempt}/${MAX_ATTEMPTS} failed for event ${event.id}, retrying in 1s:`, err)
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          } else {
+            console.error(`[berg/dispense] Order resolution failed after ${MAX_ATTEMPTS} attempts for event ${event.id} (device ${deviceId} PLU ${pluNumber}). Event exists in DB but orderId/orderItemId may be null.`, err)
           }
         }
-
-        // Update event with resolved order linkage
-        await db.bergDispenseEvent.update({
-          where: { id: event.id },
-          data: { orderId, orderItemId, unmatchedType },
-        })
-
-        await db.bergDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } })
-      } catch (err) {
-        console.error('[berg/dispense] Async post-ACK order resolution failed:', err)
       }
     })()
 
