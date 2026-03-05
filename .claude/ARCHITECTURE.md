@@ -31,11 +31,12 @@
 │           ▲                                                           │
 │           │ Local Network (< 10ms)                                    │
 │   ┌───────┼────────────────────────────────┐                         │
-│   ▼       ▼                ▼               ▼                         │
-│ ┌──────┐ ┌──────────┐ ┌────────┐  ┌──────────────┐                  │
-│ │ KDS  │ │ Android  │ │ PAX    │  │ PAX A3700    │                  │
-│ │(Web) │ │ Register │ │ A6650  │  │ CFD Display  │                  │
-│ └──────┘ └──────────┘ └────────┘  └──────────────┘                  │
+│   ▼       ▼         ▼          ▼          ▼           ▼             │
+│ ┌──────┐ ┌───────┐ ┌────────┐ ┌────────┐ ┌─────────┐ ┌──────────┐  │
+│ │ KDS  │ │Pit    │ │Android │ │ PAX    │ │ PAX     │ │  CFD     │  │
+│ │(Web) │ │Boss   │ │Register│ │ A6650  │ │ A3700   │ │ Display  │  │
+│ │/kds  │ │(Web)  │ │        │ │Handhld │ │ SoftPOS │ │ gwi-cfd  │  │
+│ └──────┘ └───────┘ └────────┘ └────────┘ └─────────┘ └──────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -162,6 +163,64 @@ pm2 status          # View all running processes
 pm2 logs gwi-pos    # Tail live logs
 pm2 monit           # Real-time CPU/memory dashboard
 ```
+
+---
+
+## Web Screens (Browser-Based, NUC-Served)
+
+All web screens are part of the same Next.js app running on the NUC. They connect to Socket.IO for real-time updates and use token-based auth (256-bit token + httpOnly cookie). Any browser-capable device on the venue LAN can run them — Android tablet, iPad, wall-mounted TV via Fire Stick, etc.
+
+### Kitchen Display System (KDS)
+
+| Item | Detail |
+|------|--------|
+| **Route** | `/(kds)/kds` |
+| **Pair route** | `/(kds)/kds/pair` |
+| **Purpose** | Shows open orders for kitchen staff; bump to mark items done |
+| **Auth** | Pair with activation code → 256-bit token stored in cookie |
+| **Real-time** | Socket.IO — `order:created`, `order:updated`, `kds:bump` events |
+| **Hardware** | Any browser device; typically wall-mounted Android tablet or monitor |
+
+KDS screens are managed from the back-office at `/settings/hardware/kds-screens`. Each screen pairs independently with a unique token. The KDS page disables the bump button and shows an overlay when the socket disconnects.
+
+### PitBoss — Entertainment Device Manager
+
+| Item | Detail |
+|------|--------|
+| **Route** | `/(kds)/entertainment` |
+| **Purpose** | Manages timed entertainment devices — pool tables, dart boards, arcade machines, etc. |
+| **Auth** | Same KDS token auth (shares the `(kds)` route group) |
+| **Real-time** | Socket.IO — live session timers, waitlist updates |
+| **Hardware** | Typically a dedicated tablet at the host stand or bar |
+
+**What it does:**
+- Displays all entertainment items with live countdown timers (per-minute or block-time billing)
+- Shows availability status: Available / In Use / Reserved
+- Waitlist management — add party to waitlist, seat from waitlist when a table opens
+- Timer auto-starts when the order is sent to kitchen (or manually started)
+- Billing type per item: block-time (fixed price) or per-minute (price accrues live)
+
+**API routes:**
+```
+/api/entertainment/status       GET  — All items + active sessions
+/api/entertainment/block-time   POST — Start/stop a block-time session
+/api/entertainment/waitlist     GET/POST — Waitlist entries
+/api/entertainment/waitlist/[id] PATCH/DELETE — Update/remove waitlist entry
+/api/timed-sessions/[id]        PATCH — Extend, end, or transfer a session
+```
+
+**Admin config:** `/settings/entertainment` — define entertainment items, set billing type, price, and max session length.
+
+### POS Terminal
+
+| Item | Detail |
+|------|--------|
+| **Route** | `/(pos)` |
+| **Purpose** | Full web POS — order management, payments, floor plan, tabs |
+| **Auth** | Employee PIN login → session cookie |
+| **Primary client** | Android Register / PAX A6650 (native apps preferred) |
+
+The web POS is the fallback client. Android native apps are the primary client for all venues.
 
 ---
 
