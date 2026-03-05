@@ -71,9 +71,10 @@ async function findOpenOrderForTerminal(
 export const POST = withVenue(async function POST(request: NextRequest) {
   const startMs = Date.now()
   let body: DispenseBody
-
+  let rawBodyText: string
   try {
-    body = await request.json()
+    rawBodyText = await request.text()
+    body = JSON.parse(rawBodyText) as DispenseBody
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
@@ -143,6 +144,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       authorization: request.headers.get('Authorization'),
       ts: request.headers.get('x-berg-ts'),
       bodySha256: request.headers.get('x-berg-body-sha256'),
+    }
+
+    // Verify body SHA256 matches actual body (prevents body substitution attacks)
+    const actualBodyHash = createHash('sha256').update(rawBodyText).digest('hex')
+    const claimedBodyHash = hmacHeaders.bodySha256
+    if (claimedBodyHash && claimedBodyHash !== actualBodyHash) {
+      console.error(`[berg/dispense] Body hash mismatch for device ${deviceId}: claimed=${claimedBodyHash} actual=${actualBodyHash}`)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const result = validateBridgeHMAC(hmacHeaders, deviceId, plainSecret)

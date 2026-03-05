@@ -70,11 +70,23 @@ export const PATCH = withVenue(async function PATCH(
     const newSecret = generateBridgeSecret()
     const newHash = createHash('sha256').update(newSecret).digest('hex')
 
-    await db.bergDevice.update({ where: { id }, data: { bridgeSecretHash: newHash } })
+    const updateData: Record<string, unknown> = { bridgeSecretHash: newHash }
+    if (process.env.BRIDGE_MASTER_KEY) {
+      try {
+        const { encrypted, keyVersion } = encryptBridgeSecret(newSecret)
+        updateData.bridgeSecretEncrypted = encrypted
+        updateData.bridgeSecretKeyVersion = keyVersion
+      } catch (encErr) {
+        console.error('[berg/devices PATCH] Failed to re-encrypt rotated secret:', encErr)
+        return NextResponse.json({ error: 'Secret rotation failed — encryption error' }, { status: 500 })
+      }
+    }
+    await db.bergDevice.update({ where: { id }, data: updateData })
 
     return NextResponse.json({
       bridgeSecret: newSecret,
       warning: 'Save this secret now — it cannot be retrieved again.',
+      encryptedUpdated: Boolean(process.env.BRIDGE_MASTER_KEY),
     })
   } catch (err) {
     console.error('[berg/devices/[id] PATCH]', err)

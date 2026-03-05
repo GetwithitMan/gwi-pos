@@ -347,19 +347,43 @@ async function checkNtpSync(): Promise<void> {
 }
 
 async function loadDevices(): Promise<DeviceConfig[]> {
+  const bootstrapSecret = process.env.BRIDGE_BOOTSTRAP_SECRET
+  const secretsEnv = process.env.GWI_BRIDGE_SECRETS
+  const secrets: Record<string, string> = secretsEnv ? (() => { try { return JSON.parse(secretsEnv) } catch { return {} } })() : {}
+
   try {
-    const res = await fetch(`${POS_URL}/api/berg/devices?locationId=all&active=true`)
-    if (!res.ok) {
-      console.error(`[berg-bridge] Failed to load devices: HTTP ${res.status}`)
-      return []
+    // Use bootstrap endpoint if BRIDGE_BOOTSTRAP_SECRET is set (preferred)
+    // Fall back to legacy devices endpoint with GWI_BRIDGE_SECRETS for backward compat
+    let devices: Array<{ id: string; portName: string; baudRate: number; ackTimeoutMs: number }>
+
+    if (bootstrapSecret) {
+      const res = await fetch(`${POS_URL}/api/berg/bootstrap`, {
+        headers: { 'Authorization': `Bearer ${bootstrapSecret}` },
+      })
+      if (!res.ok) {
+        console.error(`[berg-bridge] Bootstrap failed: HTTP ${res.status}`)
+        return []
+      }
+      const data = await res.json() as { devices?: typeof devices }
+      devices = data.devices || []
+    } else {
+      // Legacy: requires GWI_BRIDGE_SECRETS and a locationId
+      console.warn('[berg-bridge] BRIDGE_BOOTSTRAP_SECRET not set — falling back to legacy device loader')
+      const locationId = process.env.BERG_LOCATION_ID
+      if (!locationId) {
+        console.error('[berg-bridge] Set BRIDGE_BOOTSTRAP_SECRET (preferred) or BERG_LOCATION_ID (legacy) to load devices')
+        return []
+      }
+      const res = await fetch(`${POS_URL}/api/berg/devices?locationId=${locationId}&employeeId=bridge`)
+      if (!res.ok) {
+        console.error(`[berg-bridge] Legacy device load failed: HTTP ${res.status}`)
+        return []
+      }
+      const data = await res.json() as { devices?: typeof devices }
+      devices = data.devices || []
     }
-    const data = await res.json() as { devices?: Array<{ id: string; portName: string; baudRate: number; ackTimeoutMs: number }> }
 
-    // Load bridge secrets from env
-    const secretsEnv = process.env.GWI_BRIDGE_SECRETS
-    const secrets: Record<string, string> = secretsEnv ? JSON.parse(secretsEnv) : {}
-
-    return (data.devices || []).map(d => ({
+    return devices.map(d => ({
       id: d.id,
       portName: d.portName,
       baudRate: d.baudRate || 9600,
