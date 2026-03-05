@@ -1219,6 +1219,37 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED Beer/Wine category fix:`, err.message)
     }
 
+    // --- BergPluMapping table (Berg Liquor Controls Tier 1) ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "BergPluMapping" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "deviceId" TEXT,
+          "mappingScopeKey" TEXT NOT NULL,
+          "pluNumber" INTEGER NOT NULL,
+          "bottleProductId" TEXT,
+          "inventoryItemId" TEXT,
+          "menuItemId" TEXT,
+          "description" TEXT,
+          "pourSizeOzOverride" DECIMAL(6,3),
+          "modifierRule" JSONB,
+          "trailerRule" JSONB,
+          "isActive" BOOLEAN NOT NULL DEFAULT true,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "BergPluMapping_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "BergPluMapping_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "BergPluMapping_mappingScopeKey_pluNumber_key" ON "BergPluMapping"("mappingScopeKey", "pluNumber")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergPluMapping_locationId_idx" ON "BergPluMapping"("locationId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergPluMapping_locationId_isActive_idx" ON "BergPluMapping"("locationId", "isActive")`)
+      console.log(`${PREFIX}   BergPluMapping table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED BergPluMapping:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

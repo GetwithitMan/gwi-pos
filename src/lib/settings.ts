@@ -674,6 +674,7 @@ export interface LocationSettings {
   hotelPms?: HotelPmsSettings           // Oracle OPERA PMS integration (optional for backward compat)
   sevenShifts?: SevenShiftsSettings     // 7shifts labor management integration (optional for backward compat)
   marginEdge?: MarginEdgeSettings       // MarginEdge COGS integration (optional for backward compat)
+  bergReportsEnabled?: boolean           // Berg liquor controls comparison reports (Tier 1)
   localDataRetention?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | '60days' | '90days'
 }
 

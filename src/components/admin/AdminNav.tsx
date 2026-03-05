@@ -334,6 +334,7 @@ const navSections: NavSection[] = [
       { name: 'Reservations', href: '/reports/reservations', icon: Icons.calendar },
       { name: 'Coupons', href: '/reports/coupons', icon: Icons.coupon },
       { name: 'Liquor', href: '/reports/liquor', icon: Icons.liquor },
+      { name: 'Berg Comparison', href: '/reports/berg-comparison', icon: Icons.liquor },
       { name: 'Payroll', href: '/reports/payroll', icon: Icons.payroll },
     ],
   },
@@ -360,6 +361,7 @@ const navSections: NavSection[] = [
           { name: 'Payment Readers', href: '/settings/hardware/payment-readers' },
         ],
       },
+      { name: 'Berg Controls', href: '/settings/integrations/berg', icon: Icons.hardware },
     ],
   },
 ]

@@ -763,6 +763,9 @@ model Location {
   inventoryCountEntries InventoryCountEntry[]
   pendingDeductions     PendingDeduction[]
 
+  // Berg Liquor Controls (Tier 1)
+  bergPluMappings BergPluMapping[]
+
   @@index([organizationId])
 }
 
@@ -8394,4 +8397,32 @@ model DeductionRun {
   pendingDeduction PendingDeduction @relation(fields: [pendingDeductionId], references: [id], onDelete: Cascade)
 
   @@index([pendingDeductionId])
+}
+
+// ============================================
+// BERG LIQUOR CONTROLS — TIER 1 (Sprint 0)
+// ============================================
+
+model BergPluMapping {
+  id                  String    @id @default(cuid())
+  locationId          String
+  deviceId            String?
+  mappingScopeKey     String    // "device:{deviceId}" OR "location:{locationId}" — computed on create
+  pluNumber           Int
+  bottleProductId     String?
+  inventoryItemId     String?
+  menuItemId          String?
+  description         String?
+  pourSizeOzOverride  Decimal?  @db.Decimal(6, 3)
+  modifierRule        Json?
+  trailerRule         Json?
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([mappingScopeKey, pluNumber])
+  @@index([locationId])
+  @@index([locationId, isActive])
 }
