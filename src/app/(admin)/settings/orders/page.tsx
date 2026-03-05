@@ -5,8 +5,10 @@ import Link from 'next/link'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ToggleSwitch, SettingsSaveBar } from '@/components/admin/settings'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
+import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
 import type { POSDisplaySettings } from '@/lib/settings'
 
@@ -43,6 +45,10 @@ export default function OrderSettingsPage() {
   const [isDirty, setIsDirty] = useState(false)
 
   const [posDisplay, setPosDisplay] = useState<POSDisplaySettings | null>(null)
+  const [eodConfirmOpen, setEodConfirmOpen] = useState(false)
+
+  const permissions = employee?.permissions ?? []
+  const canCloseDay = hasPermission(permissions as string[], PERMISSIONS.MGR_CLOSE_DAY)
 
   useUnsavedWarning(isDirty)
 
@@ -302,7 +308,57 @@ export default function OrderSettingsPage() {
         </Link>
 
         {/* ═══════════════════════════════════════════
-            Card 4: Coming Soon
+            Card 4: End of Day Reset
+            ═══════════════════════════════════════════ */}
+        {canCloseDay && (
+          <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">End of Day Reset</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              Resets orphaned table statuses to available, detects stale open orders from a previous business day, and creates audit log entries. Orders with balances are rolled forward for manual review — no revenue data is lost.
+            </p>
+            <button
+              type="button"
+              onClick={() => setEodConfirmOpen(true)}
+              className="px-5 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 shadow-sm transition-all"
+            >
+              Run EOD Reset
+            </button>
+            <ConfirmDialog
+              open={eodConfirmOpen}
+              title="Run End of Day Reset?"
+              description="This will reset all orphaned table statuses to available and flag stale open orders from previous business days. Orders with balances are rolled forward — no revenue data is deleted. This action is logged in the audit trail."
+              confirmLabel="Run EOD Reset"
+              cancelLabel="Cancel"
+              destructive
+              onCancel={() => setEodConfirmOpen(false)}
+              onConfirm={async () => {
+                try {
+                  const res = await fetch('/api/eod/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      locationId: employee?.location?.id,
+                      employeeId: employee?.id,
+                    }),
+                  })
+                  const json = await res.json()
+                  if (!res.ok) throw new Error(json.error || 'EOD reset failed')
+                  const stats = json.data?.stats
+                  toast.success(
+                    `EOD reset complete — ${stats?.tablesReset ?? 0} table(s) reset, ${stats?.staleOrdersDetected ?? 0} stale order(s) flagged`
+                  )
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : 'EOD reset failed')
+                } finally {
+                  setEodConfirmOpen(false)
+                }
+              }}
+            />
+          </section>
+        )}
+
+        {/* ═══════════════════════════════════════════
+            Card 5: Coming Soon
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 opacity-60">
           <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">

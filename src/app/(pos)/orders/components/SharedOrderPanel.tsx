@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import { calculateCardPrice } from '@/lib/pricing'
 import { fetchAndLoadSplitOrder } from '@/lib/split-order-loader'
 import { OfflineManager } from '@/lib/offline-manager'
 import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
+import { Modal } from '@/components/ui/modal'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
 import { toast } from '@/stores/toast-store'
@@ -33,6 +34,7 @@ interface SharedOrderPanelProps {
   // Pricing
   pricing: any
   requireCardForTab: boolean
+  allowNameOnlyTab: boolean
   taxInclusiveLiquor: boolean
   taxInclusiveFood: boolean
 
@@ -122,6 +124,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
     selectedSeat,
     pricing,
     requireCardForTab,
+    allowNameOnlyTab,
     taxInclusiveLiquor,
     taxInclusiveFood,
     panelCallbacks,
@@ -179,6 +182,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
 
   const currentOrder = useOrderStore(s => s.currentOrder)
   const clearSelectedSeat = useFloorPlanStore(s => s.clearSelectedSeat)
+  const [showTabMethodChoice, setShowTabMethodChoice] = useState(false)
 
   const handleSeatSelect = useCallback((seatNumber: number | null) => {
     const tableId = currentOrder?.tableId
@@ -414,6 +418,12 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
 
             const barTabOT = orderTypes.find(t => t.slug === 'bar_tab')
             const cardRequired = (barTabOT?.workflowRules as WorkflowRules)?.requireCardOnFile ?? requireCardForTab
+
+            if (cardRequired && allowNameOnlyTab) {
+              // Both enabled — let staff choose: swipe card OR name only
+              setShowTabMethodChoice(true)
+              return
+            }
 
             if (cardRequired) {
               if (existingOrderId) {
@@ -667,6 +677,36 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
           return firstItem?.delayMinutes ?? null
         })()}
       />
+
+      {/* Tab method choice: swipe card vs name only */}
+      <Modal isOpen={showTabMethodChoice} onClose={() => setShowTabMethodChoice(false)} title="Open Tab" size="sm">
+        <div className="flex flex-col gap-4 p-2">
+          <button
+            className="w-full py-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-lg font-semibold"
+            onClick={() => {
+              setShowTabMethodChoice(false)
+              setShowCardTabFlow(true)
+            }}
+          >
+            Swipe Card
+          </button>
+          <button
+            className="w-full py-4 rounded-lg bg-gray-600 hover:bg-gray-700 text-white text-lg font-semibold"
+            onClick={() => {
+              setShowTabMethodChoice(false)
+              setShowTabNamePrompt(true)
+            }}
+          >
+            Name Only
+          </button>
+          <button
+            className="w-full py-2 rounded-lg text-gray-400 hover:text-white text-sm"
+            onClick={() => setShowTabMethodChoice(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }

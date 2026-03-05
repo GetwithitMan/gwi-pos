@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { getSharedSocket } from '@/lib/shared-socket'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
@@ -17,7 +18,7 @@ export default function OrderTypesPage() {
   const [showModal, setShowModal] = useState(false)
 
   // Load order types
-  const loadOrderTypes = async (locationId: string) => {
+  const loadOrderTypes = useCallback(async (locationId: string) => {
     try {
       const response = await fetch(`/api/order-types?locationId=${locationId}&includeInactive=true`)
       if (response.ok) {
@@ -31,13 +32,23 @@ export default function OrderTypesPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (employee?.location?.id) {
       loadOrderTypes(employee.location.id)
     }
-  }, [employee?.location?.id])
+  }, [employee?.location?.id, loadOrderTypes])
+
+  // Socket: live-refresh on order type changes from other terminals
+  useEffect(() => {
+    const socket = getSharedSocket()
+    const handler = () => {
+      if (employee?.location?.id) loadOrderTypes(employee.location.id)
+    }
+    socket.on('order-types:updated', handler)
+    return () => { socket.off('order-types:updated', handler) }
+  }, [employee?.location?.id, loadOrderTypes])
 
   const handleToggleActive = async (orderType: OrderTypeConfig) => {
     try {

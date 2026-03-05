@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
+import { getSharedSocket } from '@/lib/shared-socket'
 import type { Ingredient, IngredientCategory, SwapGroup, InventoryItemRef, PrepItemRef } from '../types'
 
 interface UseIngredientDataParams {
@@ -136,6 +137,18 @@ export function useIngredientData({ locationId, showInactive, viewMode }: UseIng
     loadAll()
     return () => controller.abort()
   }, [loadCategories, loadIngredients, loadSwapGroups, loadInventoryItems, loadPrepItems, loadDeletedIngredients])
+
+  // Socket: live-refresh on inventory changes from other terminals
+  useEffect(() => {
+    const socket = getSharedSocket()
+    const handler = () => {
+      loadIngredients()
+      loadCategories()
+      loadInventoryItems()
+    }
+    socket.on('inventory:changed', handler)
+    return () => { socket.off('inventory:changed', handler) }
+  }, [loadIngredients, loadCategories, loadInventoryItems])
 
   return {
     categories,

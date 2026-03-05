@@ -39,6 +39,7 @@ function PayAtTableContent() {
   const orderId = searchParams.get('orderId')
   const readerId = searchParams.get('readerId')
   const employeeId = searchParams.get('employeeId')
+  const locationIdParam = searchParams.get('locationId')
 
   const [state, setState] = useState<PayState>('loading')
   const [order, setOrder] = useState<OrderSummary | null>(null)
@@ -46,6 +47,7 @@ function PayAtTableContent() {
   const [currentSplit, setCurrentSplit] = useState(0)
   const [tipAmount, setTipAmount] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [locationId, setLocationId] = useState(locationIdParam || '')
   const socketRef = useRef<ReturnType<typeof getSharedSocket> | null>(null)
   const accumulatedTipRef = useRef(0)
 
@@ -60,6 +62,17 @@ function PayAtTableContent() {
     tipAmountRef.current = tipAmount
     orderRef.current = order
   })
+
+  // Resolve locationId from reader if not provided in URL params
+  useEffect(() => {
+    if (locationId || !readerId) return
+    fetch(`/api/hardware/payment-readers/${readerId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.locationId) setLocationId(data.locationId)
+      })
+      .catch(() => {})
+  }, [locationId, readerId])
 
   // Wire socket for real-time payment sync with POS terminal
   useEffect(() => {
@@ -163,6 +176,12 @@ function PayAtTableContent() {
   const processPayment = async (tip: number) => {
     if (!orderId || !readerId || !employeeId || !order) return
 
+    if (!locationId) {
+      setError('Unable to determine location. Please try again.')
+      setState('error')
+      return
+    }
+
     setState('processing')
 
     // Notify POS terminal that pay-at-table payment is in progress
@@ -182,7 +201,7 @@ function PayAtTableContent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          locationId: '', // Will be resolved from reader
+          locationId,
           readerId,
           invoiceNo: `${orderId}-${currentSplit + 1}`,
           amount: splitAmount + tip,

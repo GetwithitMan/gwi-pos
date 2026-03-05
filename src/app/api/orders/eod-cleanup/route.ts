@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -9,10 +11,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl
     const locationId = searchParams.get('locationId')
+    const employeeId = searchParams.get('employeeId')
 
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require manager.close_day permission
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_CLOSE_DAY)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Resolve the current business day boundary using location settings (same as /api/eod/reset)
     const location = await db.location.findFirst({

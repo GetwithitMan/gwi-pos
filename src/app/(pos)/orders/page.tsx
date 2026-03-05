@@ -588,6 +588,7 @@ export default function OrdersPage() {
       selectedSeat={selectedSeat}
       pricing={pricing}
       requireCardForTab={requireCardForTab}
+      allowNameOnlyTab={allowNameOnlyTab}
       taxInclusiveLiquor={taxInclusiveLiquor}
       taxInclusiveFood={taxInclusiveFood}
       panelCallbacks={panelCallbacks}

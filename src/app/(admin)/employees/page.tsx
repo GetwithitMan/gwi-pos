@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { getSharedSocket } from '@/lib/shared-socket'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -156,6 +157,18 @@ export default function EmployeesPage() {
       loadData()
     }
   }, [currentEmployee?.location?.id, showInactive, loadData])
+
+  // Socket: live-refresh on employee changes from other terminals
+  useEffect(() => {
+    const socket = getSharedSocket()
+    const handler = () => { loadData() }
+    socket.on('employees:changed', handler)
+    socket.on('employees:updated', handler)
+    return () => {
+      socket.off('employees:changed', handler)
+      socket.off('employees:updated', handler)
+    }
+  }, [loadData])
 
   const openAddModal = () => {
     const nextColor = EMPLOYEE_COLORS[employees.length % EMPLOYEE_COLORS.length]

@@ -6,6 +6,7 @@ import { HardwareHealthWidget } from '@/components/hardware/HardwareHealthWidget
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useSocket } from '@/hooks/useSocket'
 import { useAuthStore } from '@/stores/auth-store'
+import { getSharedSocket } from '@/lib/shared-socket'
 
 // ─── Section Card ─────────────────────────────────────────────────────────────
 
@@ -72,23 +73,32 @@ export default function SettingsPage() {
     }
   }, [locationId])
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await fetch('/api/settings')
-        if (response.ok) {
-          const data = await response.json()
-          setLocationName(data.data.locationName)
-        }
-      } catch (error) {
-        console.error('Failed to load location name:', error)
-      } finally {
-        setIsLoading(false)
+  const loadSettings = useCallback(async () => {
+    try {
+      const response = await fetch('/api/settings')
+      if (response.ok) {
+        const data = await response.json()
+        setLocationName(data.data.locationName)
       }
+    } catch (error) {
+      console.error('Failed to load location name:', error)
+    } finally {
+      setIsLoading(false)
     }
-    load()
+  }, [])
+
+  useEffect(() => {
+    loadSettings()
     loadHardwareStatus()
-  }, [loadHardwareStatus])
+  }, [loadSettings, loadHardwareStatus])
+
+  // Socket: live-refresh when settings change from another terminal
+  useEffect(() => {
+    const socket = getSharedSocket()
+    const handler = () => { loadSettings(); loadHardwareStatus() }
+    socket.on('settings:updated', handler)
+    return () => { socket.off('settings:updated', handler) }
+  }, [loadSettings, loadHardwareStatus])
 
   // 20s fallback polling when socket is disconnected
   useEffect(() => {

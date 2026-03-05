@@ -201,7 +201,7 @@ const CLOUD_BLOCKED_PATHS = [
   '/mobile',
   '/tabs',
   '/crew',
-  '/pay-at-table',
+  '/pay-at-table', // Intentionally public: iPad kiosk flow — access controlled by possession of valid orderId/readerId/employeeId query params
   '/tips',
   '/approve-void',
 ]
