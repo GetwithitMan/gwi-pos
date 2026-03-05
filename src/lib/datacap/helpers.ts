@@ -27,6 +27,23 @@ export async function getDatacapClient(locationId: string): Promise<DatacapClien
     ? payments.datacapEnvironment === 'cert'
     : payments.testMode
 
+  // ── Environment lock ──────────────────────────────────────────────────────
+  // Hard-block: production credentials must never be used in a dev server.
+  if (process.env.NODE_ENV === 'development' && !isTestMode) {
+    throw new Error(
+      '[Datacap] BLOCKED: Production credentials cannot be used while NODE_ENV=development. ' +
+      'Go to Settings → Payments and set datacapEnvironment to "cert".'
+    )
+  }
+  // Warn: cert credentials active on a production server (might be intentional, but always log it).
+  if (process.env.NODE_ENV === 'production' && isTestMode) {
+    console.warn(
+      `[Datacap] WARNING: Cert/test credentials are active in production for location ${locationId}. ` +
+      'Transactions will route to the Datacap cert environment — no real money will be charged.'
+    )
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   const config: DatacapConfig = {
     merchantId: payments.datacapMerchantId || '',
     operatorId: 'POS',
@@ -101,6 +118,26 @@ export function datacapErrorResponse(error: unknown, status = 500) {
   }
   console.error('[Datacap API]', message)
   return Response.json({ error: message }, { status })
+}
+
+/**
+ * Normalize cardholder name from Datacap card reader.
+ * Datacap returns "LAST/FIRST" format — convert to "First Last" for display.
+ * Shared by open-tab (server-side Datacap) and record-card-auth (Android SDK).
+ */
+export function normalizeCardholderName(cardholderName: string | undefined): string | undefined {
+  if (!cardholderName) return undefined
+  const trimmed = cardholderName.trim()
+  // Datacap returns "LAST/FIRST" format — convert to "First Last"
+  if (trimmed.includes('/')) {
+    const [last, first] = trimmed.split('/')
+    const firstName = first?.trim() || ''
+    const lastName = last?.trim() || ''
+    if (firstName && lastName) return `${firstName} ${lastName}`
+    return firstName || lastName || trimmed
+  }
+  // Already "FIRST LAST" format
+  return trimmed
 }
 
 /**

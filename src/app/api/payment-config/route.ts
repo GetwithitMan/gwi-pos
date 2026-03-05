@@ -7,6 +7,36 @@ import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
 import { withVenue } from '@/lib/with-venue'
 
 /**
+ * GET /api/payment-config
+ *
+ * Returns the current payment environment so the POS UI can show TEST MODE
+ * badges without needing full settings access.
+ */
+export const GET = withVenue(async function GET() {
+  try {
+    const location = await db.location.findFirst({ select: { id: true, settings: true } })
+    if (!location) {
+      return NextResponse.json({ error: 'No location found' }, { status: 404 })
+    }
+    const settings = parseSettings(location.settings)
+    const payments = settings.payments
+    const isTestMode = payments.datacapEnvironment
+      ? payments.datacapEnvironment === 'cert'
+      : payments.testMode
+    return NextResponse.json({
+      data: {
+        isTestMode,
+        environment: payments.datacapEnvironment ?? (payments.testMode ? 'cert' : 'production'),
+        processor: payments.processor,
+      },
+    })
+  } catch (error) {
+    console.error('[payment-config] GET failed:', error)
+    return NextResponse.json({ error: 'Failed to fetch payment config' }, { status: 500 })
+  }
+})
+
+/**
  * PUT /api/payment-config
  *
  * Internal-only endpoint — called by the NUC sync agent when it receives an

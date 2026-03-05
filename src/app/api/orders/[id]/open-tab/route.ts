@@ -1,30 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
-import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
+import { requireDatacapClient, validateReader, normalizeCardholderName } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchTabUpdated, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
-import { emitOrderEvent } from '@/lib/order-events/emitter'
-
-/**
- * Normalize cardholder name from card reader.
- * Datacap returns "LAST/FIRST" format — convert to "First Last" for display.
- */
-function normalizeCardholderName(cardholderName: string | undefined): string | undefined {
-  if (!cardholderName) return undefined
-  const trimmed = cardholderName.trim()
-  // Datacap returns "LAST/FIRST" format — convert to "First Last"
-  if (trimmed.includes('/')) {
-    const [last, first] = trimmed.split('/')
-    const firstName = first?.trim() || ''
-    const lastName = last?.trim() || ''
-    if (firstName && lastName) return `${firstName} ${lastName}`
-    return firstName || lastName || trimmed
-  }
-  // Already "FIRST LAST" format
-  return trimmed
-}
+import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 
 // POST - Card-first tab open flow
 // 1. CollectCardData (reads chip for cardholder name)
@@ -218,102 +199,51 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Pre-auth approved but no RecordNo token received' }, { status: 500 })
     }
 
-    // Stage 2 safety net: check by preAuth RecordNo (handles first-time vault entries)
-    const existingByRecordNo = await db.orderCard.findFirst({
-      where: {
+    // Stage 2 + record: use shared recordTab() for duplicate check, OrderCard creation,
+    // Order update, event emission, and socket dispatches.
+    try {
+      const result = await recordTab({
+        locationId,
+        orderId,
+        readerId: resolvedReaderId,
         recordNo,
-        deletedAt: null,
-        order: { status: 'open', orderType: 'bar_tab', locationId },
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        order: { select: { id: true, tabName: true, orderNumber: true } },
-      },
-    })
-    if (existingByRecordNo) {
-      // Void the new hold — RecordNo-based, no card present needed
-      void client.voidSale(resolvedReaderId, { recordNo }).catch(err =>
-        console.error('[Tab Open] Failed to void duplicate hold:', err)
-      )
-      void db.order.update({ where: { id: orderId }, data: { tabStatus: 'open' } }).catch(() => {})
-      return NextResponse.json({
-        data: {
-          tabStatus: 'existing_tab_found',
-          existingTab: {
-            orderId: existingByRecordNo.order.id,
-            tabName: existingByRecordNo.order.tabName ?? `Tab #${existingByRecordNo.order.orderNumber}`,
-            tabNumber: existingByRecordNo.order.orderNumber,
-            authAmount: Number(existingByRecordNo.authAmount),
-            brand: existingByRecordNo.cardType,
-            last4: existingByRecordNo.cardLast4,
-          },
-        },
-      })
-    }
-
-    // Create OrderCard + update Order in a transaction
-    const [orderCard] = await db.$transaction([
-      db.orderCard.create({
-        data: {
-          locationId,
-          orderId,
-          readerId: resolvedReaderId,
-          recordNo,
-          cardType: finalCardType,
-          cardLast4: finalCardLast4,
-          cardholderName: finalCardholderName,
-          authAmount: preAuthAmount,
-          isDefault: true,
-          status: 'authorized',
-        },
-      }),
-      db.order.update({
-        where: { id: orderId },
-        data: {
-          tabStatus: 'open',
-          tabName: finalCardholderName || order.tabName,
-          preAuthId: preAuthResponse.authCode,
-          preAuthAmount: preAuthAmount,
-          preAuthLast4: finalCardLast4,
-          preAuthCardBrand: finalCardType,
-          preAuthExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Pre-auths expire in ~24h
-          preAuthRecordNo: recordNo,
-          preAuthReaderId: resolvedReaderId,
-          version: { increment: 1 },
-        },
-      }),
-    ])
-
-    // Emit order event for tab opened (fire-and-forget)
-    void emitOrderEvent(locationId, orderId, 'TAB_OPENED', {
-      cardLast4: finalCardLast4,
-      preAuthId: preAuthResponse.authCode || null,
-      tabName: finalCardholderName || order.tabName || null,
-    })
-
-    // Fire-and-forget socket dispatches for cross-terminal sync
-    void dispatchTabUpdated(locationId, {
-      orderId,
-      status: 'open',
-    }).catch(() => {})
-    void dispatchOpenOrdersChanged(locationId, {
-      trigger: 'created',
-      orderId,
-      tableId: order.tableId || undefined,
-    }).catch(() => {})
-
-    return NextResponse.json({
-      data: {
-        approved: true,
-        tabStatus: 'open',
-        cardholderName: finalCardholderName,
         cardType: finalCardType,
         cardLast4: finalCardLast4,
+        cardholderName: finalCardholderName,
         authAmount: preAuthAmount,
-        recordNo,
-        orderCardId: orderCard.id,
-      },
-    })
+        authCode: preAuthResponse.authCode,
+        tabName: order.tabName || undefined,
+        tableId: order.tableId,
+      })
+
+      return NextResponse.json({
+        data: {
+          approved: true,
+          tabStatus: 'open',
+          cardholderName: finalCardholderName,
+          cardType: finalCardType,
+          cardLast4: finalCardLast4,
+          authAmount: preAuthAmount,
+          recordNo,
+          orderCardId: result.orderCardId,
+        },
+      })
+    } catch (err) {
+      if (err instanceof DuplicateTabError) {
+        // Void the new hold -- RecordNo-based, no card present needed
+        void client.voidSale(resolvedReaderId, { recordNo }).catch(voidErr =>
+          console.error('[Tab Open] Failed to void duplicate hold:', voidErr)
+        )
+        void db.order.update({ where: { id: orderId }, data: { tabStatus: 'open' } }).catch(() => {})
+        return NextResponse.json({
+          data: {
+            tabStatus: 'existing_tab_found',
+            existingTab: err.existingTab,
+          },
+        })
+      }
+      throw err
+    }
   } catch (error) {
     console.error('Failed to open tab:', error)
 
