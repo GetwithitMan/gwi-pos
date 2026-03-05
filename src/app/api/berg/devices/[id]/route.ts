@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { generateBridgeSecret } from '@/lib/berg/hmac'
+import { createHash } from 'crypto'
 
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
@@ -41,6 +43,41 @@ export const PUT = withVenue(async function PUT(
   } catch (err) {
     console.error('[berg/devices/[id] PUT]', err)
     return NextResponse.json({ error: 'Failed to update device' }, { status: 500 })
+  }
+})
+
+export const PATCH = withVenue(async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const body = await request.json()
+    const { confirmDeviceId, locationId } = body
+    const requestingEmployeeId = body.employeeId || ''
+
+    if (!confirmDeviceId || confirmDeviceId !== id) {
+      return NextResponse.json({ error: 'confirmDeviceId must match the device ID in the URL' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, locationId || '', PERMISSIONS.SETTINGS_EDIT)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    const existing = await db.bergDevice.findFirst({ where: { id, isActive: true } })
+    if (!existing) return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+
+    const newSecret = generateBridgeSecret()
+    const newHash = createHash('sha256').update(newSecret).digest('hex')
+
+    await db.bergDevice.update({ where: { id }, data: { bridgeSecretHash: newHash } })
+
+    return NextResponse.json({
+      bridgeSecret: newSecret,
+      warning: 'Save this secret now — it cannot be retrieved again.',
+    })
+  } catch (err) {
+    console.error('[berg/devices/[id] PATCH]', err)
+    return NextResponse.json({ error: 'Failed to rotate secret' }, { status: 500 })
   }
 })
 

@@ -94,10 +94,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     return NextResponse.json({
       period: { startDate, endDate },
+      generatedAt: new Date().toISOString(),
       events,
+      summary: {
+        totalCost: Math.round(totalExposure * 100) / 100,
+        totalPours: events.length,
+        byType: Object.fromEntries(
+          Object.entries(byType).map(([type, data]) => [type, data.count])
+        ),
+      },
+      // Keep at top level for backward compat
       totalExposure: Math.round(totalExposure * 100) / 100,
       totalCount: events.length,
-      summary,
       unmatchedTypeLabels: UNMATCHED_TYPE_LABELS,
     })
   } catch (err) {

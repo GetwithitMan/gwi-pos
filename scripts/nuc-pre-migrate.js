@@ -1239,12 +1239,24 @@ async function runPrePushMigrations() {
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           CONSTRAINT "BergPluMapping_pkey" PRIMARY KEY ("id"),
-          CONSTRAINT "BergPluMapping_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+          CONSTRAINT "BergPluMapping_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+          CONSTRAINT "BergPluMapping_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "BergDevice"("id") ON DELETE SET NULL ON UPDATE CASCADE
         )
       `)
       await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "BergPluMapping_mappingScopeKey_pluNumber_key" ON "BergPluMapping"("mappingScopeKey", "pluNumber")`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergPluMapping_locationId_idx" ON "BergPluMapping"("locationId")`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergPluMapping_locationId_isActive_idx" ON "BergPluMapping"("locationId", "isActive")`)
+      await prisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'check_mapping_scope_key'
+          ) THEN
+            ALTER TABLE "BergPluMapping" ADD CONSTRAINT "check_mapping_scope_key"
+              CHECK ("mappingScopeKey" ~ '^(device|location):[a-z0-9]+$');
+          END IF;
+        END $$;
+      `)
       console.log(`${PREFIX}   BergPluMapping table ready`)
     } catch (err) {
       console.error(`${PREFIX}   FAILED BergPluMapping:`, err.message)
@@ -1319,7 +1331,9 @@ async function runPrePushMigrations() {
           CONSTRAINT "BergDispenseEvent_pkey" PRIMARY KEY ("id"),
           CONSTRAINT "BergDispenseEvent_idempotencyKey_key" UNIQUE ("idempotencyKey"),
           CONSTRAINT "BergDispenseEvent_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-          CONSTRAINT "BergDispenseEvent_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "BergDevice"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+          CONSTRAINT "BergDispenseEvent_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "BergDevice"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+          CONSTRAINT "BergDispenseEvent_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+          CONSTRAINT "BergDispenseEvent_orderItemId_fkey" FOREIGN KEY ("orderItemId") REFERENCES "OrderItem"("id") ON DELETE SET NULL ON UPDATE CASCADE
         )
       `)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_locationId_receivedAt_idx" ON "BergDispenseEvent"("locationId", "receivedAt")`)
@@ -1328,6 +1342,8 @@ async function runPrePushMigrations() {
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_locationId_unmatchedType_idx" ON "BergDispenseEvent"("locationId", "unmatchedType")`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_pluMappingId_receivedAt_idx" ON "BergDispenseEvent"("pluMappingId", "receivedAt")`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_orderId_idx" ON "BergDispenseEvent"("orderId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_deviceId_receivedAt_idx" ON "BergDispenseEvent"("deviceId", "receivedAt")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_deviceId_businessDate_idx" ON "BergDispenseEvent"("deviceId", "businessDate")`)
       console.log(`${PREFIX}   BergDispenseEvent table ready`)
     } catch (err) {
       console.error(`${PREFIX}   FAILED BergDispenseEvent:`, err.message)

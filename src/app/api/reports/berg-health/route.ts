@@ -52,16 +52,25 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         const lrcErrorRate = total > 0 ? Math.round((badLrc / total) * 100 * 10) / 10 : 0
         const dedupRate = total > 0 ? Math.round((dedupedCount / total) * 100 * 10) / 10 : 0
 
-        // Latency p95 approximation — query top 5% highest
+        // FIX 8: Compute p95 on filtered set (non-null latency only)
         let p95LatencyMs: number | null = null
         if (total > 0) {
-          const p95Offset = Math.max(0, Math.floor(total * 0.95))
-          const p95Event = await db.bergDispenseEvent.findFirst({
-            where: { deviceId: device.id, receivedAt: dateRange, ackLatencyMs: { not: null } },
+          const latencyRecords = await db.bergDispenseEvent.findMany({
+            where: {
+              deviceId: device.id,
+              receivedAt: dateRange,
+              ackLatencyMs: { not: null },
+            },
+            select: { ackLatencyMs: true },
             orderBy: { ackLatencyMs: 'asc' },
-            skip: p95Offset,
           })
-          p95LatencyMs = p95Event?.ackLatencyMs ?? null
+          if (latencyRecords.length > 0) {
+            const p95Index = Math.min(
+              Math.floor(latencyRecords.length * 0.95),
+              latencyRecords.length - 1
+            )
+            p95LatencyMs = latencyRecords[p95Index]?.ackLatencyMs ?? null
+          }
         }
 
         const alerts: string[] = []

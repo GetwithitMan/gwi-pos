@@ -32,6 +32,10 @@ interface DispenseBody {
  * Find the most recent open order on the terminal linked to a Berg device.
  * BergDevice.terminalId stores a Terminal.id — orders reference terminals
  * via offlineTerminalId (the terminal that created the order).
+ *
+ * NOTE: If multiple orders are open on the same terminal, returns the most recently
+ * updated one. There is no way for the ECU to specify which tab a pour belongs to.
+ * This is a known limitation — the terminal-per-device model assumes one active tab.
  */
 async function findOpenOrderForTerminal(locationId: string, terminalId: string) {
   // Look up the terminal name to match against offlineTerminalId
@@ -77,30 +81,50 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unknown device' }, { status: 404 })
   }
 
-  // HMAC validation
+  // Venue isolation: verify device belongs to the venue this request was routed to
+  const requestSlug = request.headers.get('x-venue-slug')
+  if (requestSlug) {
+    const venueLocation = await db.location.findFirst({
+      where: { id: device.locationId },
+      select: { slug: true },
+    })
+    if (!venueLocation || venueLocation.slug !== requestSlug) {
+      console.error(`[berg/dispense] Device ${deviceId} locationId mismatch — device slug: ${venueLocation?.slug}, request slug: ${requestSlug}`)
+      return NextResponse.json({ error: 'Device not found' }, { status: 404 })
+    }
+  }
+
+  // HMAC validation (fail-closed: reject if secret exists but can't validate)
   if (device.bridgeSecretHash) {
     const authHeader = request.headers.get('Authorization')
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    // Full HMAC validation requires plaintext secret accessible at runtime.
-    // The bridge stores it in GWI_BRIDGE_SECRETS env var as JSON: { deviceId: secret }.
+
     const bridgeSecretsEnv = process.env.GWI_BRIDGE_SECRETS
-    if (bridgeSecretsEnv) {
-      try {
-        const secrets: Record<string, string> = JSON.parse(bridgeSecretsEnv)
-        const plainSecret = secrets[deviceId]
-        if (plainSecret) {
-          const result = validateBridgeHMAC(authHeader, deviceId, plainSecret)
-          if (!result.valid) {
-            console.error(`[berg/dispense] HMAC failed for device ${deviceId}: ${result.reason}`)
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-          }
-        }
-      } catch {
-        // Secrets env not parseable — log and continue (fail open in Sprint A)
-        console.warn('[berg/dispense] Could not parse GWI_BRIDGE_SECRETS env')
-      }
+    if (!bridgeSecretsEnv) {
+      console.error('[berg/dispense] GWI_BRIDGE_SECRETS not set — rejecting request for device with secret')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    let secrets: Record<string, string>
+    try {
+      secrets = JSON.parse(bridgeSecretsEnv)
+    } catch {
+      console.error('[berg/dispense] GWI_BRIDGE_SECRETS is not valid JSON — rejecting')
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const plainSecret = secrets[deviceId]
+    if (!plainSecret) {
+      console.error(`[berg/dispense] Device ${deviceId} not found in GWI_BRIDGE_SECRETS — rejecting`)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const result = validateBridgeHMAC(authHeader, deviceId, plainSecret)
+    if (!result.valid) {
+      console.error(`[berg/dispense] HMAC failed for device ${deviceId}: ${result.reason}`)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
   }
 
@@ -163,30 +187,33 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
   // ===== BEST_EFFORT mode =====
   if (pourReleaseMode === 'BEST_EFFORT') {
-    // ACK immediately — do NOT block on DB work
-    const eventData = {
-      locationId: device.locationId,
-      deviceId,
-      pluMappingId: resolvedPlu?.mappingId || null,
-      pluNumber: pluNumber ?? 0,
-      rawPacket,
-      modifierBytes: modifierBytes || null,
-      trailerBytes: trailerBytes || null,
-      parseStatus: 'OK' as const,
-      lrcReceived,
-      lrcCalculated,
-      lrcValid: true,
-      status: 'ACK_BEST_EFFORT' as const,
-      pourSizeOz: resolvedPlu?.pourSizeOz ? String(resolvedPlu.pourSizeOz) : null,
-      ackTimeoutMs,
-      businessDate,
-      idempotencyKey,
-      receivedAt: receivedAtDate,
-      acknowledgedAt: new Date(),
-      ackLatencyMs: Date.now() - startMs,
-    }
+    // Write the event synchronously BEFORE sending ACK — prevents idempotency race.
+    // Order/OrderItem resolution happens async after ACK.
+    const event = await db.bergDispenseEvent.create({
+      data: {
+        locationId: device.locationId,
+        deviceId,
+        pluMappingId: resolvedPlu?.mappingId || null,
+        pluNumber: pluNumber ?? 0,
+        rawPacket,
+        modifierBytes: modifierBytes || null,
+        trailerBytes: trailerBytes || null,
+        parseStatus: 'OK' as const,
+        lrcReceived,
+        lrcCalculated,
+        lrcValid: true,
+        status: 'ACK_BEST_EFFORT' as const,
+        pourSizeOz: resolvedPlu?.pourSizeOz ? String(resolvedPlu.pourSizeOz) : null,
+        ackTimeoutMs,
+        businessDate,
+        idempotencyKey,
+        receivedAt: receivedAtDate,
+        acknowledgedAt: new Date(),
+        ackLatencyMs: Date.now() - startMs,
+      },
+    })
 
-    // Fire-and-forget: resolve order and ring if AUTO_RING
+    // Fire-and-forget: resolve order linkage and auto-ring
     void (async () => {
       try {
         let orderId: string | null = null
@@ -201,7 +228,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             : null
 
           if (order && autoRingMode === 'AUTO_RING' && resolvedPlu?.menuItemId) {
-            // Create OrderItem
             const menuItem = await db.menuItem.findUnique({ where: { id: resolvedPlu.menuItemId } })
             if (menuItem) {
               const oi = await db.orderItem.create({
@@ -223,20 +249,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           }
         }
 
-        await db.bergDispenseEvent.create({
-          data: {
-            ...eventData,
-            pourSizeOz: eventData.pourSizeOz,
-            orderId,
-            orderItemId,
-            unmatchedType,
-          },
+        // Update event with resolved order linkage
+        await db.bergDispenseEvent.update({
+          where: { id: event.id },
+          data: { orderId, orderItemId, unmatchedType },
         })
 
-        // Update device lastSeenAt
         await db.bergDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } })
       } catch (err) {
-        console.error('[berg/dispense] Async post-ACK processing failed:', err)
+        console.error('[berg/dispense] Async post-ACK order resolution failed:', err)
       }
     })()
 
