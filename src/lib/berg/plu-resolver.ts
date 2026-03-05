@@ -11,6 +11,7 @@
  */
 
 import { db } from '@/lib/db'
+import { resolveVariant } from './modifier'
 
 export interface ResolvedPlu {
   mappingId: string
@@ -22,6 +23,9 @@ export interface ResolvedPlu {
   pourSizeOz: number
   /** Whether this is a device-scoped mapping (true) or location fallback (false) */
   isDeviceScoped: boolean
+  variantKey: string | null
+  variantLabel: string | null
+  resolutionStatus: 'NONE' | 'PARTIAL' | 'FULL'
 }
 
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -33,7 +37,8 @@ const DEFAULT_POUR_SIZE_OZ = 1.5
 export async function resolvePlu(
   pluNumber: number,
   deviceId: string,
-  locationId: string
+  locationId: string,
+  modifierBytesHex?: string | null
 ): Promise<ResolvedPlu | null> {
   // 1. Try device-scoped mapping first
   const deviceScopedKey = `device:${deviceId}`
@@ -46,17 +51,22 @@ export async function resolvePlu(
   })
 
   if (deviceMapping) {
+    const baseOz = deviceMapping.pourSizeOzOverride
+      ? Number(deviceMapping.pourSizeOzOverride)
+      : DEFAULT_POUR_SIZE_OZ
+    const variant = resolveVariant(deviceMapping.modifierRule, modifierBytesHex, baseOz)
     return {
       mappingId: deviceMapping.id,
       pluNumber: deviceMapping.pluNumber,
       description: deviceMapping.description,
       bottleProductId: deviceMapping.bottleProductId,
       inventoryItemId: deviceMapping.inventoryItemId,
-      menuItemId: deviceMapping.menuItemId,
-      pourSizeOz: deviceMapping.pourSizeOzOverride
-        ? Number(deviceMapping.pourSizeOzOverride)
-        : DEFAULT_POUR_SIZE_OZ,
+      menuItemId: variant.menuItemIdOverride ?? deviceMapping.menuItemId,
+      pourSizeOz: variant.ozResolved ?? baseOz,
       isDeviceScoped: true,
+      variantKey: variant.variantKey,
+      variantLabel: variant.variantLabel,
+      resolutionStatus: variant.resolutionStatus,
     }
   }
 
@@ -71,17 +81,22 @@ export async function resolvePlu(
   })
 
   if (locationMapping) {
+    const baseOz = locationMapping.pourSizeOzOverride
+      ? Number(locationMapping.pourSizeOzOverride)
+      : DEFAULT_POUR_SIZE_OZ
+    const variant = resolveVariant(locationMapping.modifierRule, modifierBytesHex, baseOz)
     return {
       mappingId: locationMapping.id,
       pluNumber: locationMapping.pluNumber,
       description: locationMapping.description,
       bottleProductId: locationMapping.bottleProductId,
       inventoryItemId: locationMapping.inventoryItemId,
-      menuItemId: locationMapping.menuItemId,
-      pourSizeOz: locationMapping.pourSizeOzOverride
-        ? Number(locationMapping.pourSizeOzOverride)
-        : DEFAULT_POUR_SIZE_OZ,
+      menuItemId: variant.menuItemIdOverride ?? locationMapping.menuItemId,
+      pourSizeOz: variant.ozResolved ?? baseOz,
       isDeviceScoped: false,
+      variantKey: variant.variantKey,
+      variantLabel: variant.variantLabel,
+      resolutionStatus: variant.resolutionStatus,
     }
   }
 

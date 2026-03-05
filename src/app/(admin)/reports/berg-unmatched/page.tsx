@@ -5,37 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
-
-interface UnmatchedEvent {
-  id: string
-  timestamp: string
-  deviceName: string
-  pluNumber: number
-  description: string
-  pourSize: string
-  cost: number
-  status: string
-  unmatchedType: string
-}
-
-interface UnmatchedSummary {
-  totalCost: number
-  totalPours: number
-  byType: Record<string, number>
-}
-
-interface UnmatchedData {
-  summary: UnmatchedSummary
-  events: UnmatchedEvent[]
-}
-
-const UNMATCHED_LABELS: Record<string, string> = {
-  NO_ORDER_ACKED: "ACK'd — No Open Ticket",
-  NO_ORDER_NAKED: "NAK'd — No Open Ticket",
-  UNKNOWN_PLU_ACKED: "ACK'd — Unmapped PLU",
-  UNKNOWN_PLU_NAKED: "NAK'd — Unmapped PLU",
-  LOG_ONLY: 'Log Only Mode',
-}
+import type { BergUnmatchedReportResponse } from '@/lib/berg/report-types'
 
 const TYPE_COLORS: Record<string, string> = {
   NO_ORDER_ACKED: 'bg-orange-100 text-orange-800',
@@ -66,7 +36,7 @@ export default function BergUnmatchedReportPage() {
   const [startDate, setStartDate] = useState(weekAgo)
   const [endDate, setEndDate] = useState(today)
   const [loading, setLoading] = useState(false)
-  const [report, setReport] = useState<UnmatchedData | null>(null)
+  const [report, setReport] = useState<BergUnmatchedReportResponse | null>(null)
 
   async function runReport() {
     if (!locationId || !employee?.id) return
@@ -81,7 +51,7 @@ export default function BergUnmatchedReportPage() {
       const res = await fetch(`/api/reports/berg-unmatched?${params}`)
       if (!res.ok) throw new Error()
       const data = await res.json()
-      setReport(data.data ?? null)
+      setReport(data)
     } catch {
       toast.error('Failed to load report')
     } finally {
@@ -132,9 +102,9 @@ export default function BergUnmatchedReportPage() {
         <>
           {/* Big stat header */}
           <div className="rounded-lg bg-red-50 border border-red-200 p-6 mb-6 text-center">
-            <div className="text-4xl font-bold text-red-600">{fmtMoney(report.summary.totalCost)}</div>
+            <div className="text-4xl font-bold text-red-600">{fmtMoney(report.totalExposure)}</div>
             <div className="text-sm text-red-700 mt-1">
-              unaccounted across {report.summary.totalPours} pours this period
+              unaccounted across {report.totalCount} pours this period
             </div>
           </div>
 
@@ -145,7 +115,7 @@ export default function BergUnmatchedReportPage() {
                 key={type}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${TYPE_COLORS[type] ?? 'bg-gray-100 text-gray-800'}`}
               >
-                {UNMATCHED_LABELS[type] ?? type}
+                {report.unmatchedTypeLabels[type] ?? type}
                 <span className="font-bold">{count}</span>
               </span>
             ))}
@@ -172,12 +142,12 @@ export default function BergUnmatchedReportPage() {
                   <tbody className="divide-y">
                     {report.events.map(ev => (
                       <tr key={ev.id}>
-                        <td className="py-2 px-3 whitespace-nowrap">{new Date(ev.timestamp).toLocaleString()}</td>
-                        <td className="py-2 px-3">{ev.deviceName}</td>
+                        <td className="py-2 px-3 whitespace-nowrap">{new Date(ev.receivedAt).toLocaleString()}</td>
+                        <td className="py-2 px-3">{ev.device?.name ?? '—'}</td>
                         <td className="py-2 px-3 font-mono">{ev.pluNumber}</td>
-                        <td className="py-2 px-3">{ev.description}</td>
-                        <td className="py-2 px-3">{ev.pourSize}</td>
-                        <td className="py-2 px-3 text-right">{fmtMoney(ev.cost)}</td>
+                        <td className="py-2 px-3">{ev.pluMapping?.description ?? '—'}</td>
+                        <td className="py-2 px-3">{ev.pourSizeOz ? `${ev.pourSizeOz} oz` : '—'}</td>
+                        <td className="py-2 px-3 text-right">{ev.pourCost ? fmtMoney(parseFloat(ev.pourCost)) : '—'}</td>
                         <td className="py-2 px-3">
                           <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
                             ev.status === 'ACK' || ev.status === 'ACK_BEST_EFFORT'
@@ -188,9 +158,11 @@ export default function BergUnmatchedReportPage() {
                           </span>
                         </td>
                         <td className="py-2 px-3">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[ev.unmatchedType] ?? 'bg-gray-100 text-gray-800'}`}>
-                            {UNMATCHED_LABELS[ev.unmatchedType] ?? ev.unmatchedType}
-                          </span>
+                          {ev.unmatchedType && (
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${TYPE_COLORS[ev.unmatchedType] ?? 'bg-gray-100 text-gray-800'}`}>
+                              {report.unmatchedTypeLabels[ev.unmatchedType] ?? ev.unmatchedType}
+                            </span>
+                          )}
                         </td>
                         <td className="py-2 px-3">
                           {(ev.unmatchedType === 'UNKNOWN_PLU_ACKED' || ev.unmatchedType === 'UNKNOWN_PLU_NAKED') && (

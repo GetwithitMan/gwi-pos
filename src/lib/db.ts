@@ -15,7 +15,11 @@ const globalForPrisma = globalThis as unknown as {
 /**
  * Models that do NOT have a `deletedAt` column — skip soft-delete filtering.
  */
-const NO_SOFT_DELETE_MODELS = new Set(['Organization', 'Location', 'SyncAuditEntry', 'HardwareCommand'])
+const NO_SOFT_DELETE_MODELS = new Set([
+  'Organization', 'Location', 'SyncAuditEntry', 'HardwareCommand',
+  // Berg tables have no deletedAt column — must skip soft-delete filter or all queries crash
+  'BergDevice', 'BergPluMapping', 'BergDispenseEvent',
+])
 
 function createPrismaClient(url?: string) {
   const baseUrl = url || process.env.DATABASE_URL || ''

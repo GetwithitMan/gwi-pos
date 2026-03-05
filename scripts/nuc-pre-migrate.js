@@ -1253,13 +1253,51 @@ async function runPrePushMigrations() {
             SELECT 1 FROM pg_constraint WHERE conname = 'check_mapping_scope_key'
           ) THEN
             ALTER TABLE "BergPluMapping" ADD CONSTRAINT "check_mapping_scope_key"
-              CHECK ("mappingScopeKey" ~ '^(device|location):[a-z0-9]+$');
+              CHECK ("mappingScopeKey" ~ '^(device|location):[a-zA-Z0-9_-]+$');
           END IF;
         END $$;
       `)
       console.log(`${PREFIX}   BergPluMapping table ready`)
     } catch (err) {
       console.error(`${PREFIX}   FAILED BergPluMapping:`, err.message)
+    }
+
+    // --- Berg enum types (Prisma 6.x casts to native PG enums — must exist before table ops) ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergDeviceModel') THEN
+            CREATE TYPE "BergDeviceModel" AS ENUM ('MODEL_1504_704','LASER','ALL_BOTTLE_ABID','TAP2','FLOW_MONITOR');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergInterfaceMethod') THEN
+            CREATE TYPE "BergInterfaceMethod" AS ENUM ('DIRECT_RING_UP','PRE_CHECK','FILE_POSTING','RING_AND_SLING');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergPourReleaseMode') THEN
+            CREATE TYPE "BergPourReleaseMode" AS ENUM ('BEST_EFFORT','REQUIRES_OPEN_ORDER');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergTimeoutPolicy') THEN
+            CREATE TYPE "BergTimeoutPolicy" AS ENUM ('ACK_ON_TIMEOUT','NAK_ON_TIMEOUT');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergAutoRingMode') THEN
+            CREATE TYPE "BergAutoRingMode" AS ENUM ('OFF','AUTO_RING');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergDispenseStatus') THEN
+            CREATE TYPE "BergDispenseStatus" AS ENUM ('ACK','NAK','ACK_TIMEOUT','NAK_TIMEOUT','ACK_BEST_EFFORT');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergParseStatus') THEN
+            CREATE TYPE "BergParseStatus" AS ENUM ('OK','BAD_LRC','BAD_PACKET','NO_STX','OVERFLOW','UNMAPPED_PLU');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergResolutionStatus') THEN
+            CREATE TYPE "BergResolutionStatus" AS ENUM ('NONE','PARTIAL','FULL');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergPostProcessStatus') THEN
+            CREATE TYPE "BergPostProcessStatus" AS ENUM ('PENDING','DONE','FAILED');
+          END IF;
+        END $$
+      `)
+      console.log(`${PREFIX}   Berg enum types ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Berg enum types:`, err.message)
     }
 
     // --- BergDevice table (Berg Liquor Controls Tier 2) ---
@@ -1292,7 +1330,36 @@ async function runPrePushMigrations() {
       `)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDevice_locationId_idx" ON "BergDevice"("locationId")`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDevice_locationId_isActive_idx" ON "BergDevice"("locationId", "isActive")`)
+      // Alter TEXT enum columns to native PG enum types (idempotent — checks current type first)
+      await prisma.$executeRawUnsafe(`
+        DO $$ BEGIN
+          IF (SELECT data_type FROM information_schema.columns WHERE table_name='BergDevice' AND column_name='model') = 'text' THEN
+            ALTER TABLE "BergDevice" ALTER COLUMN "model" DROP DEFAULT;
+            ALTER TABLE "BergDevice" ALTER COLUMN "interfaceMethod" DROP DEFAULT;
+            ALTER TABLE "BergDevice" ALTER COLUMN "pourReleaseMode" DROP DEFAULT;
+            ALTER TABLE "BergDevice" ALTER COLUMN "timeoutPolicy" DROP DEFAULT;
+            ALTER TABLE "BergDevice" ALTER COLUMN "autoRingMode" DROP DEFAULT;
+            ALTER TABLE "BergDevice" ALTER COLUMN "model" TYPE "BergDeviceModel" USING "model"::"BergDeviceModel";
+            ALTER TABLE "BergDevice" ALTER COLUMN "interfaceMethod" TYPE "BergInterfaceMethod" USING "interfaceMethod"::"BergInterfaceMethod";
+            ALTER TABLE "BergDevice" ALTER COLUMN "pourReleaseMode" TYPE "BergPourReleaseMode" USING "pourReleaseMode"::"BergPourReleaseMode";
+            ALTER TABLE "BergDevice" ALTER COLUMN "timeoutPolicy" TYPE "BergTimeoutPolicy" USING "timeoutPolicy"::"BergTimeoutPolicy";
+            ALTER TABLE "BergDevice" ALTER COLUMN "autoRingMode" TYPE "BergAutoRingMode" USING "autoRingMode"::"BergAutoRingMode";
+            ALTER TABLE "BergDevice" ALTER COLUMN "model" SET DEFAULT 'MODEL_1504_704'::"BergDeviceModel";
+            ALTER TABLE "BergDevice" ALTER COLUMN "interfaceMethod" SET DEFAULT 'DIRECT_RING_UP'::"BergInterfaceMethod";
+            ALTER TABLE "BergDevice" ALTER COLUMN "pourReleaseMode" SET DEFAULT 'BEST_EFFORT'::"BergPourReleaseMode";
+            ALTER TABLE "BergDevice" ALTER COLUMN "timeoutPolicy" SET DEFAULT 'ACK_ON_TIMEOUT'::"BergTimeoutPolicy";
+            ALTER TABLE "BergDevice" ALTER COLUMN "autoRingMode" SET DEFAULT 'AUTO_RING'::"BergAutoRingMode";
+          END IF;
+        END $$
+      `)
       console.log(`${PREFIX}   BergDevice table ready`)
+      // Add new BergDevice columns (idempotent)
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "bridgeSecretEncrypted" TEXT;
+        ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "bridgeSecretKeyVersion" INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "autoRingOnlyWhenSingleOpenOrder" BOOLEAN NOT NULL DEFAULT false;
+      `)
+      console.log(`${PREFIX}   BergDevice new columns added`)
     } catch (err) {
       console.error(`${PREFIX}   FAILED BergDevice:`, err.message)
     }
@@ -1344,7 +1411,35 @@ async function runPrePushMigrations() {
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_orderId_idx" ON "BergDispenseEvent"("orderId")`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_deviceId_receivedAt_idx" ON "BergDispenseEvent"("deviceId", "receivedAt")`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_deviceId_businessDate_idx" ON "BergDispenseEvent"("deviceId", "businessDate")`)
+      // Alter TEXT enum columns to native PG enum types
+      await prisma.$executeRawUnsafe(`
+        DO $$ BEGIN
+          IF (SELECT data_type FROM information_schema.columns WHERE table_name='BergDispenseEvent' AND column_name='parseStatus') = 'text' THEN
+            ALTER TABLE "BergDispenseEvent" ALTER COLUMN "parseStatus" TYPE "BergParseStatus" USING "parseStatus"::"BergParseStatus";
+            ALTER TABLE "BergDispenseEvent" ALTER COLUMN "status" TYPE "BergDispenseStatus" USING "status"::"BergDispenseStatus";
+          END IF;
+        END $$
+      `)
       console.log(`${PREFIX}   BergDispenseEvent table ready`)
+      // Add new BergDispenseEvent columns (idempotent)
+      await prisma.$executeRawUnsafe(`
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergResolutionStatus') THEN
+            CREATE TYPE "BergResolutionStatus" AS ENUM ('NONE','PARTIAL','FULL');
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergPostProcessStatus') THEN
+            CREATE TYPE "BergPostProcessStatus" AS ENUM ('PENDING','DONE','FAILED');
+          END IF;
+        END $$;
+        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "variantKey" TEXT;
+        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "variantLabel" TEXT;
+        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "resolutionStatus" "BergResolutionStatus" NOT NULL DEFAULT 'NONE';
+        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "postProcessStatus" "BergPostProcessStatus" NOT NULL DEFAULT 'PENDING';
+        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "postProcessError" TEXT;
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_deviceId_receivedAt_idx" ON "BergDispenseEvent"("deviceId", "receivedAt")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_deviceId_businessDate_idx" ON "BergDispenseEvent"("deviceId", "businessDate")`)
+      console.log(`${PREFIX}   BergDispenseEvent new columns added`)
     } catch (err) {
       console.error(`${PREFIX}   FAILED BergDispenseEvent:`, err.message)
     }

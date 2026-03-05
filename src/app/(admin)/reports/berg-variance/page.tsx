@@ -5,32 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
-
-interface VarianceRow {
-  pluNumber: number
-  description: string
-  posRings: number
-  bergPours: number
-  varCount: number
-  posOz: number
-  bergOz: number
-  varOz: number
-  varPct: number
-  revenue: number
-  alert: boolean
-}
-
-interface VarianceSummary {
-  totalPosRings: number
-  totalBergPours: number
-  itemsOverThreshold: number
-  unknownPluCount: number
-}
-
-interface VarianceData {
-  summary: VarianceSummary
-  rows: VarianceRow[]
-}
+import type { BergVarianceReportResponse } from '@/lib/berg/report-types'
 
 function fmtMoney(n: number) {
   return '$' + n.toFixed(2)
@@ -46,7 +21,8 @@ function weekAgo() {
   return d.toISOString().split('T')[0]
 }
 
-function varianceColor(pct: number, threshold: number) {
+function varianceColor(pct: number | null, threshold: number) {
+  if (pct == null) return ''
   const abs = Math.abs(pct)
   if (abs < 2) return 'bg-green-50'
   if (abs < threshold) return 'bg-yellow-50'
@@ -61,7 +37,7 @@ export default function BergVarianceReportPage() {
   const [endDate, setEndDate] = useState(today)
   const [threshold, setThreshold] = useState('5')
   const [loading, setLoading] = useState(false)
-  const [report, setReport] = useState<VarianceData | null>(null)
+  const [report, setReport] = useState<BergVarianceReportResponse | null>(null)
 
   async function runReport() {
     if (!locationId || !employee?.id) return
@@ -77,7 +53,7 @@ export default function BergVarianceReportPage() {
       const res = await fetch(`/api/reports/berg-variance?${params}`)
       if (!res.ok) throw new Error()
       const data = await res.json()
-      setReport(data.data ?? null)
+      setReport(data)
     } catch {
       toast.error('Failed to load report')
     } finally {
@@ -199,7 +175,7 @@ export default function BergVarianceReportPage() {
                   </thead>
                   <tbody className="divide-y">
                     {report.rows.map(row => (
-                      <tr key={row.pluNumber} className={varianceColor(row.varPct, parseFloat(threshold) || 5)}>
+                      <tr key={row.pluNumber} className={varianceColor(row.variancePct, parseFloat(threshold) || 5)}>
                         <td className="py-2 px-3 font-mono">{row.pluNumber}</td>
                         <td className="py-2 px-3">{row.description}</td>
                         <td className="py-2 px-3 text-right">{row.posRings}</td>
@@ -208,8 +184,10 @@ export default function BergVarianceReportPage() {
                         <td className="py-2 px-3 text-right">{row.posOz.toFixed(1)}</td>
                         <td className="py-2 px-3 text-right">{row.bergOz.toFixed(1)}</td>
                         <td className="py-2 px-3 text-right font-mono">{row.varOz > 0 ? '+' : ''}{row.varOz.toFixed(1)}</td>
-                        <td className="py-2 px-3 text-right font-mono">{row.varPct > 0 ? '+' : ''}{row.varPct.toFixed(1)}%</td>
-                        <td className="py-2 px-3 text-right">{fmtMoney(row.revenue)}</td>
+                        <td className="py-2 px-3 text-right font-mono">
+                          {row.variancePct != null ? `${row.variancePct > 0 ? '+' : ''}${row.variancePct.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right">{fmtMoney(row.posRevenue)}</td>
                         <td className="py-2 px-3">
                           {row.alert && (
                             <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Alert</span>

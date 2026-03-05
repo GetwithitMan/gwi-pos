@@ -80,7 +80,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         e.unmatchedType || '',
         e.errorReason || '',
         ...(includeRaw ? [e.rawPacket] : []),
-      ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      // Sanitize: escape quotes and strip newlines (rawPacket may contain binary with \r\n)
+      ].map(v => `"${String(v).replace(/[\r\n]/g, ' ').replace(/"/g, '""')}"`).join(','))
       const csv = [headers.map(h => `"${h}"`).join(','), ...rows].join('\n')
       return new NextResponse(csv, {
         headers: {

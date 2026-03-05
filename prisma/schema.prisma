@@ -536,6 +536,18 @@ enum BergParseStatus {
   UNMAPPED_PLU
 }
 
+enum BergResolutionStatus {
+  NONE
+  PARTIAL
+  FULL
+}
+
+enum BergPostProcessStatus {
+  PENDING
+  DONE
+  FAILED
+}
+
 // ============================================
 // ORGANIZATION & LOCATIONS (Skill 53)
 // ============================================
@@ -8509,6 +8521,9 @@ model BergDevice {
   lastSeenAt                 DateTime?
   lastError                  String?
   bridgeSecretHash           String?
+  bridgeSecretEncrypted      String?
+  bridgeSecretKeyVersion     Int?                 @default(1)
+  autoRingOnlyWhenSingleOpenOrder Boolean         @default(false)
   createdAt                  DateTime             @default(now())
   updatedAt                  DateTime             @updatedAt
 
@@ -8548,6 +8563,11 @@ model BergDispenseEvent {
   idempotencyKey   String             @unique
   receivedAt       DateTime           @default(now())
   acknowledgedAt   DateTime?
+  variantKey         String?
+  variantLabel       String?
+  resolutionStatus   BergResolutionStatus @default(NONE)
+  postProcessStatus  BergPostProcessStatus @default(PENDING)
+  postProcessError   String?
 
   location   Location        @relation(fields: [locationId], references: [id])
   device     BergDevice      @relation(fields: [deviceId], references: [id])
@@ -8562,4 +8582,6 @@ model BergDispenseEvent {
   @@index([pluMappingId, receivedAt])
   @@index([orderId])
   @@index([idempotencyKey])
+  @@index([deviceId, receivedAt])
+  @@index([deviceId, businessDate])
 }

@@ -5,26 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
-
-interface DeviceHealth {
-  deviceId: string
-  deviceName: string
-  model: string
-  connectionStatus: 'connected' | 'idle' | 'error'
-  totalEvents: number
-  ackRate: number
-  nakRate: number
-  lrcErrorRate: number
-  avgLatencyMs: number
-  maxLatencyMs: number
-  dedupRate: number
-  alerts: string[]
-}
-
-interface HealthData {
-  devices: DeviceHealth[]
-  overallAlerts: string[]
-}
+import type { BergHealthReportResponse } from '@/lib/berg/report-types'
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -36,15 +17,18 @@ function yesterday() {
   return d.toISOString().split('T')[0]
 }
 
-function connectionBadge(status: string) {
-  if (status === 'connected')
+function connectionBadge(lastSeenAt: string | null, minutesSinceLastSeen: number | null) {
+  if (!lastSeenAt)
+    return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Never seen</span>
+  if (minutesSinceLastSeen != null && minutesSinceLastSeen < 5)
     return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Connected</span>
-  if (status === 'idle')
-    return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Idle</span>
-  return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Error</span>
+  if (minutesSinceLastSeen != null && minutesSinceLastSeen < 30)
+    return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Idle</span>
+  return <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Offline</span>
 }
 
-function latencyColor(ms: number) {
+function latencyColor(ms: number | null) {
+  if (ms == null) return ''
   if (ms < 500) return 'text-green-600'
   if (ms < 1500) return 'text-yellow-600'
   return 'text-red-600'
@@ -57,26 +41,17 @@ export default function BergHealthPage() {
   const [startDate, setStartDate] = useState(yesterday)
   const [endDate, setEndDate] = useState(today)
   const [loading, setLoading] = useState(false)
-  const [report, setReport] = useState<HealthData | null>(null)
-  const [timeSyncWarning, setTimeSyncWarning] = useState(false)
+  const [report, setReport] = useState<BergHealthReportResponse | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const runReport = useCallback(async () => {
     if (!locationId || !employee?.id) return
     setLoading(true)
     try {
-      const [healthRes, statusRes] = await Promise.all([
-        fetch(`/api/reports/berg-health?locationId=${locationId}&startDate=${startDate}&endDate=${endDate}&employeeId=${employee.id}`),
-        fetch(`/api/berg/status?locationId=${locationId}&employeeId=${employee.id}`),
-      ])
-      if (healthRes.ok) {
-        const data = await healthRes.json()
-        setReport(data.data ?? null)
-      }
-      if (statusRes.ok) {
-        const status = await statusRes.json()
-        setTimeSyncWarning(status.timeSyncWarning ?? false)
-      }
+      const res = await fetch(`/api/reports/berg-health?locationId=${locationId}&startDate=${startDate}&endDate=${endDate}&employeeId=${employee.id}`)
+      if (!res.ok) throw new Error()
+      const data = await res.json()
+      setReport(data)
     } catch {
       toast.error('Failed to load health data')
     } finally {
@@ -120,7 +95,7 @@ export default function BergHealthPage() {
       </div>
 
       {/* NTP warning */}
-      {timeSyncWarning && (
+      {report?.timeSyncWarning && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 mb-6 text-sm text-amber-800">
           NUC clock not NTP-synchronized &mdash; variance reports may be inaccurate.
         </div>
@@ -146,54 +121,56 @@ export default function BergHealthPage() {
       {report && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {report.devices.map(device => (
-            <Card key={device.deviceId}>
+            <Card key={device.id}>
               <CardContent className="pt-4">
                 {/* Device header */}
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-lg">{device.deviceName}</span>
+                    <span className="font-semibold text-lg">{device.name}</span>
                     <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
                       {device.model}
                     </span>
                   </div>
-                  {connectionBadge(device.connectionStatus)}
+                  {connectionBadge(device.lastSeenAt, device.minutesSinceLastSeen)}
                 </div>
 
                 {/* Stats grid */}
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   <div>
                     <div className="text-xs text-gray-500 uppercase">Events</div>
-                    <div className="text-lg font-bold">{device.totalEvents}</div>
+                    <div className="text-lg font-bold">{device.stats.total}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase">ACK Rate</div>
-                    <div className="text-lg font-bold text-green-600">{device.ackRate.toFixed(1)}%</div>
+                    <div className="text-xs text-gray-500 uppercase">ACK Count</div>
+                    <div className="text-lg font-bold text-green-600">{device.stats.ackCount}</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 uppercase">NAK Rate</div>
-                    <div className="text-lg font-bold text-red-600">{device.nakRate.toFixed(1)}%</div>
+                    <div className="text-lg font-bold text-red-600">{device.stats.nakRate.toFixed(1)}%</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 uppercase">LRC Errors</div>
-                    <div className="text-lg font-bold">{device.lrcErrorRate.toFixed(1)}%</div>
+                    <div className="text-lg font-bold">{device.stats.lrcErrorRate.toFixed(1)}%</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 uppercase">Avg Latency</div>
-                    <div className={`text-lg font-bold ${latencyColor(device.avgLatencyMs)}`}>
-                      {device.avgLatencyMs}ms
+                    <div className={`text-lg font-bold ${latencyColor(device.stats.avgAckLatencyMs)}`}>
+                      {device.stats.avgAckLatencyMs != null ? `${device.stats.avgAckLatencyMs}ms` : '—'}
                     </div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 uppercase">Max Latency</div>
-                    <div className="text-lg font-bold">{device.maxLatencyMs}ms</div>
+                    <div className="text-lg font-bold">
+                      {device.stats.maxAckLatencyMs != null ? `${device.stats.maxAckLatencyMs}ms` : '—'}
+                    </div>
                   </div>
                 </div>
 
                 {/* Dedup rate */}
-                {device.dedupRate > 0 && (
-                  <div className={`text-xs mb-3 ${device.dedupRate > 5 ? 'text-amber-600 font-medium' : 'text-gray-500'}`}>
-                    {device.dedupRate.toFixed(1)}% dedup rate
-                    {device.dedupRate > 5 && ' — high duplicate rate detected'}
+                {device.stats.dedupRate > 0 && (
+                  <div className={`text-xs mb-3 ${device.stats.dedupRate > 5 ? 'text-amber-600 font-medium' : 'text-gray-500'}`}>
+                    {device.stats.dedupRate.toFixed(1)}% dedup rate
+                    {device.stats.dedupRate > 5 && ' — high duplicate rate detected'}
                   </div>
                 )}
 

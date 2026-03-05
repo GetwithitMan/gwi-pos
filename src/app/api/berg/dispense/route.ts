@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { validateBridgeHMAC } from '@/lib/berg/hmac'
+import { validateBridgeHMAC, decryptBridgeSecret } from '@/lib/berg/hmac'
 import { resolvePlu } from '@/lib/berg/plu-resolver'
 import { getBusinessDateForTimestamp } from '@/lib/business-day'
 import { createHash } from 'crypto'
@@ -40,23 +40,32 @@ interface DispenseBody {
  * updated one. There is no way for the ECU to specify which tab a pour belongs to.
  * This is a known limitation — the terminal-per-device model assumes one active tab.
  */
-async function findOpenOrderForTerminal(locationId: string, terminalId: string) {
+async function findOpenOrderForTerminal(
+  locationId: string,
+  terminalId: string,
+): Promise<{ order: import('@prisma/client').Order | null; multipleOpen: boolean }> {
   // Look up the terminal name to match against offlineTerminalId
   const terminal = await db.terminal.findUnique({
     where: { id: terminalId },
     select: { id: true, name: true },
   })
-  if (!terminal) return null
+  if (!terminal) return { order: null, multipleOpen: false }
 
   // Orders track terminal via offlineTerminalId (Terminal.id) or tableId
-  return db.order.findFirst({
+  const openOrders = await db.order.findMany({
     where: {
       locationId,
       offlineTerminalId: terminal.id,
       status: { in: ['open', 'in_progress'] },
     },
     orderBy: { updatedAt: 'desc' },
+    take: 2, // only need to know if > 1
   })
+
+  return {
+    order: openOrders[0] ?? null,
+    multipleOpen: openOrders.length > 1,
+  }
 }
 
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -98,33 +107,45 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   // HMAC validation (fail-closed: reject if secret exists but can't validate)
-  if (device.bridgeSecretHash) {
-    const authHeader = request.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (device.bridgeSecretHash || device.bridgeSecretEncrypted) {
+    // Resolve the plain secret: encrypted DB field first, then legacy env var
+    let plainSecret: string | null = null
+
+    if (device.bridgeSecretEncrypted) {
+      try {
+        plainSecret = decryptBridgeSecret(device.bridgeSecretEncrypted)
+      } catch (err) {
+        console.error(`[berg/dispense] Failed to decrypt secret for device ${deviceId}:`, err)
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+    } else {
+      // Legacy fallback: GWI_BRIDGE_SECRETS JSON env var
+      const bridgeSecretsEnv = process.env.GWI_BRIDGE_SECRETS
+      if (!bridgeSecretsEnv) {
+        console.error('[berg/dispense] GWI_BRIDGE_SECRETS not set — rejecting request for device with secret')
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      try {
+        const secrets: Record<string, string> = JSON.parse(bridgeSecretsEnv)
+        plainSecret = secrets[deviceId] ?? null
+      } catch {
+        console.error('[berg/dispense] GWI_BRIDGE_SECRETS is not valid JSON — rejecting')
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
-    const bridgeSecretsEnv = process.env.GWI_BRIDGE_SECRETS
-    if (!bridgeSecretsEnv) {
-      console.error('[berg/dispense] GWI_BRIDGE_SECRETS not set — rejecting request for device with secret')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    let secrets: Record<string, string>
-    try {
-      secrets = JSON.parse(bridgeSecretsEnv)
-    } catch {
-      console.error('[berg/dispense] GWI_BRIDGE_SECRETS is not valid JSON — rejecting')
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const plainSecret = secrets[deviceId]
     if (!plainSecret) {
-      console.error(`[berg/dispense] Device ${deviceId} not found in GWI_BRIDGE_SECRETS — rejecting`)
+      console.error(`[berg/dispense] No secret resolved for device ${deviceId} — rejecting`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const result = validateBridgeHMAC(authHeader, deviceId, plainSecret)
+    const hmacHeaders = {
+      authorization: request.headers.get('Authorization'),
+      ts: request.headers.get('x-berg-ts'),
+      bodySha256: request.headers.get('x-berg-body-sha256'),
+    }
+
+    const result = validateBridgeHMAC(hmacHeaders, deviceId, plainSecret)
     if (!result.valid) {
       console.error(`[berg/dispense] HMAC failed for device ${deviceId}: ${result.reason}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -184,9 +205,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const businessDateStr = getBusinessDateForTimestamp(receivedAtDate, dayStartTime)
   const businessDate = new Date(businessDateStr + 'T00:00:00')
 
-  // Resolve PLU
+  // Resolve PLU (pass modifierBytes for pour-size variant resolution)
   const resolvedPlu = pluNumber !== null
-    ? await resolvePlu(pluNumber, deviceId, device.locationId)
+    ? await resolvePlu(pluNumber, deviceId, device.locationId, modifierBytes)
     : null
 
   const { pourReleaseMode, autoRingMode, timeoutPolicy, ackTimeoutMs } = device
@@ -210,12 +231,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         lrcValid: true,
         status: 'ACK_BEST_EFFORT' as const,
         pourSizeOz: resolvedPlu?.pourSizeOz ? String(resolvedPlu.pourSizeOz) : null,
+        variantKey: resolvedPlu?.variantKey ?? null,
+        variantLabel: resolvedPlu?.variantLabel ?? null,
+        resolutionStatus: resolvedPlu?.resolutionStatus ?? 'NONE',
         ackTimeoutMs,
         businessDate,
         idempotencyKey,
         receivedAt: receivedAtDate,
         acknowledgedAt: new Date(),
         ackLatencyMs: Date.now() - startMs,
+        postProcessStatus: 'PENDING',
       },
     })
 
@@ -227,21 +252,35 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           let orderId: string | null = null
           let orderItemId: string | null = null
           let unmatchedType: BergUnmatchedType | null = null
+          let errorReason: string | null = null
+          let pourCost: import('@prisma/client').Prisma.Decimal | null = null
 
           if (resolvedPlu === null) {
             unmatchedType = 'UNKNOWN_PLU_ACKED'
           } else if (autoRingMode === 'AUTO_RING' || autoRingMode === 'OFF') {
-            const order = device.terminalId
+            const result = device.terminalId
               ? await findOpenOrderForTerminal(device.locationId, device.terminalId)
-              : null
+              : { order: null, multipleOpen: false }
 
-            if (order && autoRingMode === 'AUTO_RING' && resolvedPlu?.menuItemId) {
+            // H5: If device requires single open order and multiple are open, skip auto-ring
+            if (result.multipleOpen && device.autoRingOnlyWhenSingleOpenOrder) {
+              unmatchedType = 'NO_ORDER_ACKED'
+              errorReason = 'MULTIPLE_OPEN_ORDERS'
+              // Still look up price for dollar exposure
+              if (resolvedPlu?.menuItemId) {
+                const menuItem = await db.menuItem.findUnique({
+                  where: { id: resolvedPlu.menuItemId },
+                  select: { price: true },
+                })
+                if (menuItem) pourCost = menuItem.price
+              }
+            } else if (result.order && autoRingMode === 'AUTO_RING' && resolvedPlu?.menuItemId) {
               const menuItem = await db.menuItem.findUnique({ where: { id: resolvedPlu.menuItemId } })
               if (menuItem) {
                 const oi = await db.orderItem.create({
                   data: {
                     locationId: device.locationId,
-                    orderId: order.id,
+                    orderId: result.order.id,
                     menuItemId: menuItem.id,
                     name: menuItem.name,
                     price: menuItem.price,
@@ -249,18 +288,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                     status: 'active',
                   },
                 })
-                orderId = order.id
+                orderId = result.order.id
                 orderItemId = oi.id
+                pourCost = menuItem.price
               }
-            } else if (!order) {
+            } else if (!result.order) {
+              // Still look up price for dollar exposure even when no order found
+              if (resolvedPlu?.menuItemId) {
+                const menuItem = await db.menuItem.findUnique({
+                  where: { id: resolvedPlu.menuItemId },
+                  select: { price: true },
+                })
+                if (menuItem) pourCost = menuItem.price
+              }
               unmatchedType = 'NO_ORDER_ACKED'
             }
           }
 
-          // Update event with resolved order linkage
+          // Update event with resolved order linkage, cost, and post-process status
           await db.bergDispenseEvent.update({
             where: { id: event.id },
-            data: { orderId, orderItemId, unmatchedType },
+            data: { orderId, orderItemId, unmatchedType, errorReason, pourCost, postProcessStatus: 'DONE' },
           })
 
           await db.bergDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } })
@@ -271,6 +319,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             await new Promise(resolve => setTimeout(resolve, 1000))
           } else {
             console.error(`[berg/dispense] Order resolution failed after ${MAX_ATTEMPTS} attempts for event ${event.id} (device ${deviceId} PLU ${pluNumber}). Event exists in DB but orderId/orderItemId may be null.`, err)
+            // Mark post-process as failed after all retries exhausted
+            await db.bergDispenseEvent.update({
+              where: { id: event.id },
+              data: { postProcessStatus: 'FAILED', postProcessError: err instanceof Error ? err.message : String(err) },
+            }).catch(console.error)
           }
         }
       }
@@ -284,16 +337,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   let orderId: string | null = null
   let orderItemId: string | null = null
   let orderFound = false
+  let pourCostResolved: import('@prisma/client').Prisma.Decimal | null = null
+
+  let multipleOpenDetected = false
 
   if (resolvedPlu !== null) {
     // Look for open order on linked terminal
-    const order = device.terminalId
+    const result = device.terminalId
       ? await findOpenOrderForTerminal(device.locationId, device.terminalId)
-      : null
+      : { order: null, multipleOpen: false }
 
-    if (order) {
+    multipleOpenDetected = result.multipleOpen
+
+    // H5: If device requires single open order and multiple are open, treat as no order
+    if (result.order && !(result.multipleOpen && device.autoRingOnlyWhenSingleOpenOrder)) {
       orderFound = true
-      orderId = order.id
+      orderId = result.order.id
 
       if (autoRingMode === 'AUTO_RING' && resolvedPlu.menuItemId) {
         const menuItem = await db.menuItem.findUnique({ where: { id: resolvedPlu.menuItemId } })
@@ -301,7 +360,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           const oi = await db.orderItem.create({
             data: {
               locationId: device.locationId,
-              orderId: order.id,
+              orderId: result.order.id,
               menuItemId: menuItem.id,
               name: menuItem.name,
               price: menuItem.price,
@@ -310,6 +369,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             },
           })
           orderItemId = oi.id
+          pourCostResolved = menuItem.price
         }
       }
     }
@@ -331,10 +391,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       action = 'NAK'; status = 'NAK_TIMEOUT'; unmatchedType = 'UNKNOWN_PLU_NAKED'; errorReason = 'UNKNOWN_PLU'
     }
   } else if (!orderFound) {
+    const reason = multipleOpenDetected ? 'MULTIPLE_OPEN_ORDERS' : 'NO_OPEN_ORDER'
     if (timedOut && timeoutPolicy === 'ACK_ON_TIMEOUT') {
-      action = 'ACK'; status = 'ACK_TIMEOUT'; unmatchedType = 'NO_ORDER_ACKED'; errorReason = 'NO_OPEN_ORDER'
+      action = 'ACK'; status = 'ACK_TIMEOUT'; unmatchedType = 'NO_ORDER_ACKED'; errorReason = reason
     } else {
-      action = 'NAK'; status = 'NAK_TIMEOUT'; unmatchedType = 'NO_ORDER_NAKED'; errorReason = 'NO_OPEN_ORDER'
+      action = 'NAK'; status = 'NAK_TIMEOUT'; unmatchedType = 'NO_ORDER_NAKED'; errorReason = reason
     }
   } else {
     action = 'ACK'; status = 'ACK'
@@ -358,6 +419,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       status,
       unmatchedType,
       pourSizeOz: resolvedPlu?.pourSizeOz ? String(resolvedPlu.pourSizeOz) : null,
+      variantKey: resolvedPlu?.variantKey ?? null,
+      variantLabel: resolvedPlu?.variantLabel ?? null,
+      resolutionStatus: resolvedPlu?.resolutionStatus ?? 'NONE',
+      pourCost: pourCostResolved,
       orderId,
       orderItemId,
       ackTimeoutMs,
@@ -367,6 +432,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       receivedAt: receivedAtDate,
       acknowledgedAt: new Date(),
       ackLatencyMs,
+      postProcessStatus: 'DONE',
     },
   })
 

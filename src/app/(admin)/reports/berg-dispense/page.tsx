@@ -1,40 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
-
-interface DispenseEvent {
-  id: string
-  timestamp: string
-  deviceName: string
-  pluNumber: number
-  description: string
-  pourSize: string
-  cost: number
-  status: string
-  lrcValid: boolean
-  latencyMs: number
-  orderNumber: string | null
-  unmatchedType: string | null
-}
-
-interface DispenseSummary {
-  totalEvents: number
-  ackCount: number
-  nakCount: number
-  badLrcCount: number
-  avgLatencyMs: number
-}
-
-interface DispenseData {
-  summary: DispenseSummary
-  events: DispenseEvent[]
-  totalPages: number
-  page: number
-}
+import type { BergDispenseLogResponse } from '@/lib/berg/report-types'
 
 function fmtMoney(n: number) {
   return '$' + n.toFixed(2)
@@ -79,9 +50,36 @@ export default function BergDispenseReportPage() {
   const [includeRaw, setIncludeRaw] = useState(false)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
-  const [report, setReport] = useState<DispenseData | null>(null)
+  const [report, setReport] = useState<BergDispenseLogResponse | null>(null)
   const [devices, setDevices] = useState<{ id: string; name: string }[]>([])
   const [devicesLoaded, setDevicesLoaded] = useState(false)
+
+  // Compute summary stats client-side from events
+  const summary = useMemo(() => {
+    if (!report) return null
+    const events = report.events
+    let ackCount = 0
+    let nakCount = 0
+    let badLrcCount = 0
+    let latencySum = 0
+    let latencyCount = 0
+    for (const ev of events) {
+      if (ev.status === 'ACK' || ev.status === 'ACK_BEST_EFFORT' || ev.status === 'ACK_TIMEOUT') ackCount++
+      if (ev.status === 'NAK' || ev.status === 'NAK_TIMEOUT') nakCount++
+      if (!ev.lrcValid) badLrcCount++
+      if (ev.ackLatencyMs != null) {
+        latencySum += ev.ackLatencyMs
+        latencyCount++
+      }
+    }
+    return {
+      totalEvents: report.total,
+      ackCount,
+      nakCount,
+      badLrcCount,
+      avgLatencyMs: latencyCount > 0 ? Math.round(latencySum / latencyCount) : 0,
+    }
+  }, [report])
 
   async function loadDevices() {
     if (devicesLoaded || !locationId || !employee?.id) return
@@ -115,7 +113,7 @@ export default function BergDispenseReportPage() {
       const res = await fetch(`/api/reports/berg-dispense?${params}`)
       if (!res.ok) throw new Error()
       const data = await res.json()
-      setReport(data.data ?? null)
+      setReport(data)
       setPage(p)
     } catch {
       toast.error('Failed to load report')
@@ -184,38 +182,38 @@ export default function BergDispenseReportPage() {
         </div>
       )}
 
-      {report && (
+      {report && summary && (
         <>
           {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
             <Card>
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-500 uppercase font-medium">Total Events</div>
-                <div className="text-2xl font-bold mt-1">{report.summary.totalEvents}</div>
+                <div className="text-2xl font-bold mt-1">{summary.totalEvents}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-500 uppercase font-medium">ACK&apos;d</div>
-                <div className="text-2xl font-bold mt-1 text-green-600">{report.summary.ackCount}</div>
+                <div className="text-2xl font-bold mt-1 text-green-600">{summary.ackCount}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-500 uppercase font-medium">NAK&apos;d</div>
-                <div className="text-2xl font-bold mt-1 text-red-600">{report.summary.nakCount}</div>
+                <div className="text-2xl font-bold mt-1 text-red-600">{summary.nakCount}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-500 uppercase font-medium">Bad LRC</div>
-                <div className="text-2xl font-bold mt-1 text-red-600">{report.summary.badLrcCount}</div>
+                <div className="text-2xl font-bold mt-1 text-red-600">{summary.badLrcCount}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
                 <div className="text-xs text-gray-500 uppercase font-medium">Avg Latency</div>
-                <div className="text-2xl font-bold mt-1">{report.summary.avgLatencyMs}ms</div>
+                <div className="text-2xl font-bold mt-1">{summary.avgLatencyMs}ms</div>
               </CardContent>
             </Card>
           </div>
@@ -236,23 +234,23 @@ export default function BergDispenseReportPage() {
                       <th className="py-2 px-3 font-medium">Status</th>
                       <th className="py-2 px-3 font-medium">LRC</th>
                       <th className="py-2 px-3 font-medium text-right">Latency</th>
-                      <th className="py-2 px-3 font-medium">Order #</th>
+                      <th className="py-2 px-3 font-medium">Order</th>
                       <th className="py-2 px-3 font-medium">Unmatched</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
                     {report.events.map(ev => (
                       <tr key={ev.id}>
-                        <td className="py-2 px-3 whitespace-nowrap">{new Date(ev.timestamp).toLocaleString()}</td>
-                        <td className="py-2 px-3">{ev.deviceName}</td>
+                        <td className="py-2 px-3 whitespace-nowrap">{new Date(ev.receivedAt).toLocaleString()}</td>
+                        <td className="py-2 px-3">{ev.device?.name ?? '—'}</td>
                         <td className="py-2 px-3 font-mono">{ev.pluNumber}</td>
-                        <td className="py-2 px-3">{ev.description}</td>
-                        <td className="py-2 px-3">{ev.pourSize}</td>
-                        <td className="py-2 px-3 text-right">{fmtMoney(ev.cost)}</td>
+                        <td className="py-2 px-3">{ev.pluMapping?.description ?? '—'}</td>
+                        <td className="py-2 px-3">{ev.pourSizeOz ? `${ev.pourSizeOz} oz` : '—'}</td>
+                        <td className="py-2 px-3 text-right">{ev.pourCost ? fmtMoney(parseFloat(ev.pourCost)) : '—'}</td>
                         <td className="py-2 px-3">{statusBadge(ev.status)}</td>
                         <td className="py-2 px-3">{lrcBadge(ev.lrcValid)}</td>
-                        <td className="py-2 px-3 text-right font-mono">{ev.latencyMs}ms</td>
-                        <td className="py-2 px-3">{ev.orderNumber ?? '—'}</td>
+                        <td className="py-2 px-3 text-right font-mono">{ev.ackLatencyMs != null ? `${ev.ackLatencyMs}ms` : '—'}</td>
+                        <td className="py-2 px-3">{ev.orderId ?? '—'}</td>
                         <td className="py-2 px-3 text-gray-500">{ev.unmatchedType ?? '—'}</td>
                       </tr>
                     ))}
@@ -270,13 +268,13 @@ export default function BergDispenseReportPage() {
           </Card>
 
           {/* Pagination */}
-          {report.totalPages > 1 && (
+          {report.pages > 1 && (
             <div className="flex items-center justify-center gap-3 mt-4">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => runReport(page - 1)}>
                 Previous
               </Button>
-              <span className="text-sm text-gray-600">Page {page} of {report.totalPages}</span>
-              <Button variant="outline" size="sm" disabled={page >= report.totalPages} onClick={() => runReport(page + 1)}>
+              <span className="text-sm text-gray-600">Page {page} of {report.pages}</span>
+              <Button variant="outline" size="sm" disabled={page >= report.pages} onClick={() => runReport(page + 1)}>
                 Next
               </Button>
             </div>

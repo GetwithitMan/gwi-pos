@@ -1,71 +1,134 @@
 /**
- * Berg Bridge — HMAC Authentication
+ * Berg Bridge — HMAC Authentication (v2)
  *
  * The berg-bridge service signs each request to /api/berg/dispense:
- *   Authorization: Bearer <HMAC-SHA256(deviceId + ":" + timestamp, bridgeSecret)>
- *
- * /api/berg/dispense validates the HMAC before processing.
+ *   Headers: x-berg-ts (unix ms), x-berg-body-sha256 (hex SHA256 of body)
+ *   Authorization: Bearer HMAC_SHA256(deviceId.ts.bodySha256, plainSecret)
  *
  * Security properties:
- * - bridgeSecret is generated per device at creation, stored as bcrypt hash in DB
- * - The plaintext secret is shown once in the UI and never stored in plaintext
- * - HMAC includes timestamp to prevent replay attacks (±60s window)
- * - deviceId is bound into the HMAC to prevent cross-device replay
+ * - Body SHA256 bound into HMAC prevents body tampering
+ * - Timestamp prevents replay attacks (±60s window)
+ * - deviceId bound into HMAC prevents cross-device replay
+ * - Secrets can be AES-256-GCM encrypted in DB (BRIDGE_MASTER_KEY)
+ * - Falls back to GWI_BRIDGE_SECRETS env var (legacy)
  */
 
-import { createHmac, timingSafeEqual } from 'crypto'
+import {
+  createHmac,
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  timingSafeEqual,
+} from 'crypto'
 
 /** Max clock skew allowed between bridge and POS (milliseconds) */
 const MAX_CLOCK_SKEW_MS = 60_000
 
 /**
  * Generate a new random bridge secret (hex string, 32 bytes = 64 hex chars).
- * Call this on device creation; show it once in UI; store only the hash.
+ * Call this on device creation; show it once in UI; store encrypted or hashed.
  */
 export function generateBridgeSecret(): string {
-  return require('crypto').randomBytes(32).toString('hex')
+  return randomBytes(32).toString('hex')
 }
 
 /**
- * Compute the HMAC token for a bridge request.
- * @param deviceId - The BergDevice.id
- * @param timestamp - Unix timestamp in ms (Date.now())
- * @param secret - The plaintext bridge secret (held only by the bridge process)
+ * Encrypt a bridge secret using AES-256-GCM with BRIDGE_MASTER_KEY.
+ * Stored format: `${iv_hex}:${authTag_hex}:${ciphertext_hex}`
  */
-export function computeBridgeHMAC(deviceId: string, timestamp: number, secret: string): string {
-  const message = `${deviceId}:${timestamp}`
+export function encryptBridgeSecret(secret: string): { encrypted: string; keyVersion: number } {
+  const masterKeyHex = process.env.BRIDGE_MASTER_KEY
+  if (!masterKeyHex) {
+    throw new Error('BRIDGE_MASTER_KEY env var not set')
+  }
+  const key = Buffer.from(masterKeyHex, 'hex')
+  if (key.length !== 32) {
+    throw new Error('BRIDGE_MASTER_KEY must be 32 bytes (64 hex chars)')
+  }
+
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', key, iv)
+
+  const encrypted = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()])
+  const authTag = cipher.getAuthTag()
+
+  return {
+    encrypted: `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`,
+    keyVersion: 1,
+  }
+}
+
+/**
+ * Decrypt a bridge secret from AES-256-GCM format using BRIDGE_MASTER_KEY.
+ * Input format: `${iv_hex}:${authTag_hex}:${ciphertext_hex}`
+ */
+export function decryptBridgeSecret(encrypted: string): string {
+  const masterKeyHex = process.env.BRIDGE_MASTER_KEY
+  if (!masterKeyHex) {
+    throw new Error('BRIDGE_MASTER_KEY env var not set')
+  }
+  const key = Buffer.from(masterKeyHex, 'hex')
+  if (key.length !== 32) {
+    throw new Error('BRIDGE_MASTER_KEY must be 32 bytes (64 hex chars)')
+  }
+
+  const parts = encrypted.split(':')
+  if (parts.length !== 3) {
+    throw new Error('Invalid encrypted secret format (expected iv:authTag:ciphertext)')
+  }
+
+  const iv = Buffer.from(parts[0], 'hex')
+  const authTag = Buffer.from(parts[1], 'hex')
+  const ciphertext = Buffer.from(parts[2], 'hex')
+
+  const decipher = createDecipheriv('aes-256-gcm', key, iv)
+  decipher.setAuthTag(authTag)
+
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8')
+}
+
+/**
+ * Compute the HMAC token for a bridge request (v2).
+ * Message format: `${deviceId}.${ts}.${bodySha256}`
+ */
+export function computeBridgeHMAC(
+  deviceId: string,
+  ts: number,
+  bodySha256: string,
+  secret: string,
+): string {
+  const message = `${deviceId}.${ts}.${bodySha256}`
   return createHmac('sha256', secret).update(message).digest('hex')
 }
 
 /**
- * Validate an Authorization header from the bridge.
- * Returns { valid: boolean, deviceId?: string, reason?: string }
- *
- * @param authHeader - The raw Authorization header value (e.g. "Bearer abc123")
- * @param deviceId - The claimed deviceId from the request body
- * @param secret - The plaintext bridge secret for this device (retrieved from DB or env)
+ * Validate bridge request headers (v2 scheme).
+ * Expects: Authorization: Bearer <hmac>, x-berg-ts, x-berg-body-sha256
  */
 export function validateBridgeHMAC(
-  authHeader: string | null,
+  headers: {
+    authorization: string | null
+    ts: string | null
+    bodySha256: string | null
+  },
   deviceId: string,
-  secret: string
+  secret: string,
 ): { valid: boolean; reason?: string } {
-  if (!authHeader?.startsWith('Bearer ')) {
+  const { authorization, ts, bodySha256 } = headers
+
+  if (!authorization?.startsWith('Bearer ')) {
     return { valid: false, reason: 'Missing or malformed Authorization header' }
   }
-
-  const token = authHeader.slice(7)
-  // Token format: <timestamp>.<hmac>
-  const dotIdx = token.indexOf('.')
-  if (dotIdx === -1) {
-    return { valid: false, reason: 'Invalid token format' }
+  if (!ts) {
+    return { valid: false, reason: 'Missing x-berg-ts header' }
+  }
+  if (!bodySha256) {
+    return { valid: false, reason: 'Missing x-berg-body-sha256 header' }
   }
 
-  const timestamp = parseInt(token.slice(0, dotIdx), 10)
-  const receivedHmac = token.slice(dotIdx + 1)
-
+  const timestamp = parseInt(ts, 10)
   if (isNaN(timestamp)) {
-    return { valid: false, reason: 'Invalid timestamp in token' }
+    return { valid: false, reason: 'Invalid timestamp' }
   }
 
   const skew = Math.abs(Date.now() - timestamp)
@@ -73,7 +136,8 @@ export function validateBridgeHMAC(
     return { valid: false, reason: `Clock skew too large: ${skew}ms (max ${MAX_CLOCK_SKEW_MS}ms)` }
   }
 
-  const expectedHmac = computeBridgeHMAC(deviceId, timestamp, secret)
+  const receivedHmac = authorization.slice(7)
+  const expectedHmac = computeBridgeHMAC(deviceId, timestamp, bodySha256, secret)
 
   try {
     const expected = Buffer.from(expectedHmac, 'hex')
