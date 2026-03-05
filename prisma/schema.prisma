@@ -486,6 +486,57 @@ enum DeductionType {
 }
 
 // ============================================
+// BERG LIQUOR CONTROLS — ENUMS (Sprint A)
+// ============================================
+
+enum BergInterfaceMethod {
+  DIRECT_RING_UP
+  PRE_CHECK
+  FILE_POSTING
+  RING_AND_SLING
+}
+
+enum BergPourReleaseMode {
+  BEST_EFFORT
+  REQUIRES_OPEN_ORDER
+}
+
+enum BergTimeoutPolicy {
+  ACK_ON_TIMEOUT
+  NAK_ON_TIMEOUT
+}
+
+enum BergAutoRingMode {
+  OFF
+  AUTO_RING
+}
+
+enum BergDeviceModel {
+  MODEL_1504_704
+  LASER
+  ALL_BOTTLE_ABID
+  TAP2
+  FLOW_MONITOR
+}
+
+enum BergDispenseStatus {
+  ACK
+  NAK
+  ACK_TIMEOUT
+  NAK_TIMEOUT
+  ACK_BEST_EFFORT
+}
+
+enum BergParseStatus {
+  OK
+  BAD_LRC
+  BAD_PACKET
+  NO_STX
+  OVERFLOW
+  UNMAPPED_PLU
+}
+
+// ============================================
 // ORGANIZATION & LOCATIONS (Skill 53)
 // ============================================
 
@@ -764,7 +815,9 @@ model Location {
   pendingDeductions     PendingDeduction[]
 
   // Berg Liquor Controls (Tier 1)
-  bergPluMappings BergPluMapping[]
+  bergPluMappings    BergPluMapping[]
+  bergDevices        BergDevice[]
+  bergDispenseEvents BergDispenseEvent[]
 
   @@index([organizationId])
 }
@@ -1052,6 +1105,9 @@ model Employee {
   performanceLogs         PerformanceLog[]           @relation("PerformanceLogEmployee")
   syncAuditEntries        SyncAuditEntry[]           @relation("SyncAuditEmployee")
   quickBarPreference      QuickBarPreference?
+
+  // Berg Liquor Controls (Tier 2)
+  bergDispenseEvents BergDispenseEvent[] @relation("BergDispenseEmployee")
 
   // 7shifts integration
   sevenShiftsUserId       String? // 7shifts user ID for time punch push
@@ -2340,6 +2396,7 @@ model Order {
   printJobs         PrintJob[]             @relation("PrintJobOrder")
   chargebackCases   ChargebackCase[]       @relation("ChargebackOrder")
   errorLogs         ErrorLog[]             @relation("ErrorLogOrder")
+  bergDispenseEvents BergDispenseEvent[]
 
   @@index([employeeId])
   @@index([tableId])
@@ -8421,8 +8478,88 @@ model BergPluMapping {
   updatedAt           DateTime  @updatedAt
 
   location Location @relation(fields: [locationId], references: [id])
+  device         BergDevice?         @relation(fields: [deviceId], references: [id])
+  dispenseEvents BergDispenseEvent[]
 
   @@unique([mappingScopeKey, pluNumber])
   @@index([locationId])
   @@index([locationId, isActive])
+}
+
+// ============================================
+// BERG LIQUOR CONTROLS — TIER 2 (Sprint A)
+// ============================================
+
+model BergDevice {
+  id                         String               @id @default(cuid())
+  locationId                 String
+  terminalId                 String?
+  name                       String
+  model                      BergDeviceModel      @default(MODEL_1504_704)
+  portName                   String
+  baudRate                   Int                  @default(9600)
+  isPluBased                 Boolean              @default(true)
+  isActive                   Boolean              @default(true)
+  interfaceMethod            BergInterfaceMethod  @default(DIRECT_RING_UP)
+  pourReleaseMode            BergPourReleaseMode  @default(BEST_EFFORT)
+  timeoutPolicy              BergTimeoutPolicy    @default(ACK_ON_TIMEOUT)
+  autoRingMode               BergAutoRingMode     @default(AUTO_RING)
+  ackTimeoutMs               Int                  @default(3000)
+  deductInventoryWhenNoOrder Boolean              @default(false)
+  lastSeenAt                 DateTime?
+  lastError                  String?
+  bridgeSecretHash           String?
+  createdAt                  DateTime             @default(now())
+  updatedAt                  DateTime             @updatedAt
+
+  location       Location            @relation(fields: [locationId], references: [id])
+  pluMappings    BergPluMapping[]
+  dispenseEvents BergDispenseEvent[]
+
+  @@index([locationId])
+  @@index([locationId, isActive])
+}
+
+model BergDispenseEvent {
+  id               String             @id @default(cuid())
+  locationId       String
+  deviceId         String
+  pluMappingId     String?
+  pluNumber        Int
+  rawPacket        String
+  modifierBytes    String?
+  trailerBytes     String?
+  parseStatus      BergParseStatus
+  lrcReceived      String
+  lrcCalculated    String
+  lrcValid         Boolean
+  status           BergDispenseStatus
+  unmatchedType    String?
+  pourSizeOz       Decimal?           @db.Decimal(6, 3)
+  pourCost         Decimal?           @db.Decimal(10, 2)
+  orderId          String?
+  orderItemId      String?
+  employeeId       String?
+  terminalId       String?
+  ackLatencyMs     Int?
+  ackTimeoutMs     Int
+  errorReason      String?
+  businessDate     DateTime?
+  idempotencyKey   String             @unique
+  receivedAt       DateTime           @default(now())
+  acknowledgedAt   DateTime?
+
+  location   Location        @relation(fields: [locationId], references: [id])
+  device     BergDevice      @relation(fields: [deviceId], references: [id])
+  pluMapping BergPluMapping? @relation(fields: [pluMappingId], references: [id])
+  order      Order?          @relation(fields: [orderId], references: [id])
+  employee   Employee?       @relation("BergDispenseEmployee", fields: [employeeId], references: [id])
+
+  @@index([locationId, receivedAt])
+  @@index([locationId, status])
+  @@index([locationId, lrcValid])
+  @@index([locationId, unmatchedType])
+  @@index([pluMappingId, receivedAt])
+  @@index([orderId])
+  @@index([idempotencyKey])
 }

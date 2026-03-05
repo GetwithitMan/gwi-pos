@@ -1250,6 +1250,89 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED BergPluMapping:`, err.message)
     }
 
+    // --- BergDevice table (Berg Liquor Controls Tier 2) ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "BergDevice" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "terminalId" TEXT,
+          "name" TEXT NOT NULL,
+          "model" TEXT NOT NULL DEFAULT 'MODEL_1504_704',
+          "portName" TEXT NOT NULL,
+          "baudRate" INTEGER NOT NULL DEFAULT 9600,
+          "isPluBased" BOOLEAN NOT NULL DEFAULT true,
+          "isActive" BOOLEAN NOT NULL DEFAULT true,
+          "interfaceMethod" TEXT NOT NULL DEFAULT 'DIRECT_RING_UP',
+          "pourReleaseMode" TEXT NOT NULL DEFAULT 'BEST_EFFORT',
+          "timeoutPolicy" TEXT NOT NULL DEFAULT 'ACK_ON_TIMEOUT',
+          "autoRingMode" TEXT NOT NULL DEFAULT 'AUTO_RING',
+          "ackTimeoutMs" INTEGER NOT NULL DEFAULT 3000,
+          "deductInventoryWhenNoOrder" BOOLEAN NOT NULL DEFAULT false,
+          "lastSeenAt" TIMESTAMP(3),
+          "lastError" TEXT,
+          "bridgeSecretHash" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL,
+          CONSTRAINT "BergDevice_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "BergDevice_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDevice_locationId_idx" ON "BergDevice"("locationId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDevice_locationId_isActive_idx" ON "BergDevice"("locationId", "isActive")`)
+      console.log(`${PREFIX}   BergDevice table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED BergDevice:`, err.message)
+    }
+
+    // --- BergDispenseEvent table (Berg Liquor Controls Tier 2) ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "BergDispenseEvent" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "deviceId" TEXT NOT NULL,
+          "pluMappingId" TEXT,
+          "pluNumber" INTEGER NOT NULL,
+          "rawPacket" TEXT NOT NULL,
+          "modifierBytes" TEXT,
+          "trailerBytes" TEXT,
+          "parseStatus" TEXT NOT NULL,
+          "lrcReceived" TEXT NOT NULL,
+          "lrcCalculated" TEXT NOT NULL,
+          "lrcValid" BOOLEAN NOT NULL,
+          "status" TEXT NOT NULL,
+          "unmatchedType" TEXT,
+          "pourSizeOz" DECIMAL(6,3),
+          "pourCost" DECIMAL(10,2),
+          "orderId" TEXT,
+          "orderItemId" TEXT,
+          "employeeId" TEXT,
+          "terminalId" TEXT,
+          "ackLatencyMs" INTEGER,
+          "ackTimeoutMs" INTEGER NOT NULL,
+          "errorReason" TEXT,
+          "businessDate" TIMESTAMP(3),
+          "idempotencyKey" TEXT NOT NULL,
+          "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "acknowledgedAt" TIMESTAMP(3),
+          CONSTRAINT "BergDispenseEvent_pkey" PRIMARY KEY ("id"),
+          CONSTRAINT "BergDispenseEvent_idempotencyKey_key" UNIQUE ("idempotencyKey"),
+          CONSTRAINT "BergDispenseEvent_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+          CONSTRAINT "BergDispenseEvent_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "BergDevice"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_locationId_receivedAt_idx" ON "BergDispenseEvent"("locationId", "receivedAt")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_locationId_status_idx" ON "BergDispenseEvent"("locationId", "status")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_locationId_lrcValid_idx" ON "BergDispenseEvent"("locationId", "lrcValid")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_locationId_unmatchedType_idx" ON "BergDispenseEvent"("locationId", "unmatchedType")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_pluMappingId_receivedAt_idx" ON "BergDispenseEvent"("pluMappingId", "receivedAt")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_orderId_idx" ON "BergDispenseEvent"("orderId")`)
+      console.log(`${PREFIX}   BergDispenseEvent table ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED BergDispenseEvent:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()
