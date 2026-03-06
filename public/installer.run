@@ -536,6 +536,11 @@ elif [[ "$STATION_ROLE" == "server" ]]; then
     log "Using default Git repo URL (existing registration)."
   fi
 
+  # Ensure sync vars are set (only set during initial registration)
+  SYNC_ENABLED="${SYNC_ENABLED:-false}"
+  NEON_DATABASE_URL="${NEON_DATABASE_URL:-}"
+  NEON_DIRECT_URL="${NEON_DIRECT_URL:-}"
+
   # Determine local PG
   if [[ -z "$DATABASE_URL" ]] || [[ "$DATABASE_URL" == *"localhost"* ]] || [[ "$DATABASE_URL" == *"127.0.0.1"* ]]; then
     USE_LOCAL_PG=true
