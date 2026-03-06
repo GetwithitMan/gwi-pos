@@ -591,7 +591,7 @@ model DeviceSession {
 
 ## GWI Admin Access to Venue POS
 
-Authenticated GWI admins (super_admin, sub_admin) can access any venue's POS admin panel directly from Mission Control without a PIN:
+Authenticated GWI admins (super_admin, sub_admin, enterprise_admin) can access any venue's POS admin panel directly from Mission Control without a PIN (enterprise_admin scoped to their enterprise's locations):
 
 1. MC Location Detail → "Open Admin (authenticated)" button → `/pos-access/{slug}`
 2. `getVenueAdminContext()` validates Clerk auth + role-based venue access

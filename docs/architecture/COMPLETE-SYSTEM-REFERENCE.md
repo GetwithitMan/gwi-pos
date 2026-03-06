@@ -8,10 +8,10 @@ A comprehensive inventory of the GWI POS system — its architecture, hardware, 
 
 | | GWI POS | GWI Mission Control | GWI Backoffice |
 |---|---------|-------------------|----------------|
-| **Purpose** | POS app (ordering, payments, KDS, menu, reports) | Fleet management, NUC provisioning, onboarding | Event ingestion, cloud reporting, admin dashboard |
+| **Purpose** | POS app (ordering, payments, KDS, menu, reports) | Enterprise/org/location fleet management, catalog sync, NUC provisioning | Event ingestion, cloud reporting, admin dashboard |
 | **Domain** | `barpos.restaurant`, `*.ordercontrolcenter.com` | `app.thepasspos.com` | `api.ordercontrolcenter.com` (API), `{slug}.ordercontrolcenter.com/admin` (UI) |
 | **Database** | Neon PostgreSQL (one DB per venue: `gwi_pos_{slug}`) | Neon PostgreSQL (single master) | Neon PostgreSQL (shared cloud) |
-| **Auth** | PIN-based (local) + JWT cloud sessions | Clerk B2B (org-level) | HMAC-SHA256 (NUC events), API key (reports) |
+| **Auth** | PIN-based (local) + JWT cloud sessions | Clerk B2B (enterprise + org-level RBAC) | HMAC-SHA256 (NUC events), API key (reports) |
 | **Deployment** | Vercel (cloud) + NUC installer (local) | Vercel | TBD (Java 25 + Spring Boot) |
 
 ### Communication Flow
@@ -444,8 +444,8 @@ npm start     → NODE_ENV=production node -r ./preload.js server.js
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │          MISSION CONTROL (app.thepasspos.com)                   │
-│  Fleet registration, NUC provisioning, monitoring, billing      │
-│  Clerk B2B auth | Neon PostgreSQL (single master)               │
+│  Enterprise/org fleet mgmt, catalog sync, NUC provisioning      │
+│  Clerk B2B auth (RBAC) | Neon PostgreSQL (single master)        │
 └─────────────────────────────────────────────────────────────────┘
         ▲ Heartbeat (60s POST) | Sync Agent (SSE) | HMAC-SHA256 ▼
 ┌─────────────────────────────────────────────────────────────────┐
