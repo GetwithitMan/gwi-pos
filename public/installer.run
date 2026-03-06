@@ -770,7 +770,7 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   fi
 
   log "Running pre-migrate backfill..."
-  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" || log_warn "Pre-migrate backfill had warnings (non-fatal)"
+  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" || warn "Pre-migrate backfill had warnings (non-fatal)"
 
   log "Applying database migrations..."
   sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>/dev/null || npx prisma db push --accept-data-loss" || {
@@ -781,7 +781,7 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   # Seed local PG from Neon cloud (offline-first mode)
   if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
     log "Seeding local PostgreSQL from Neon cloud..."
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && bash scripts/seed-from-neon.sh" || log_warn "Neon seed had warnings (non-fatal — local PG will sync on first run)"
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && bash scripts/seed-from-neon.sh" || warn "Neon seed had warnings (non-fatal — local PG will sync on first run)"
   fi
 
   log "Building Next.js application..."
