@@ -356,6 +356,8 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
   # locationId is the MC CloudLocation.id (used for fleet management)
   POS_LOCATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.posLocationId // empty')
   MC_LOCATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.locationId // empty')
+  CLOUD_ORGANIZATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.organizationId // empty')
+  CLOUD_ENTERPRISE_ID=$(echo "$REG_RESPONSE" | jq -r '.data.enterpriseId // empty')
   LOCATION_ID="${POS_LOCATION_ID:-$MC_LOCATION_ID}"
   ENCRYPTED_API_KEY=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedApiKey // empty')
   ENCRYPTED_DB_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedDatabaseUrl // empty')
@@ -473,6 +475,9 @@ SERVER_API_KEY="${SERVER_API_KEY}"
 HARDWARE_FINGERPRINT="${HARDWARE_FINGERPRINT}"
 MISSION_CONTROL_URL="${MC_URL}"
 LOCATION_ID="${LOCATION_ID}"
+CLOUD_LOCATION_ID="${MC_LOCATION_ID}"
+CLOUD_ORGANIZATION_ID="${CLOUD_ORGANIZATION_ID}"
+CLOUD_ENTERPRISE_ID="${CLOUD_ENTERPRISE_ID}"
 
 # Cloud Backoffice (NUC → Cloud event pipeline)
 BACKOFFICE_API_URL="${BACKOFFICE_API_URL}"

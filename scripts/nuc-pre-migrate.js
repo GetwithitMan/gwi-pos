@@ -1458,6 +1458,27 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED Order.incrementAuthFailed:`, err.message)
     }
 
+    // --- Cloud identity fields on Location ---
+    const cloudIdFields = [
+      ['cloudLocationId',     'TEXT', null],
+      ['cloudOrganizationId', 'TEXT', null],
+      ['cloudEnterpriseId',   'TEXT', null],
+    ]
+    for (const [column] of cloudIdFields) {
+      try {
+        const exists = await columnExists(prisma, 'Location', column)
+        if (!exists) {
+          console.log(`${PREFIX}   Adding ${column} to Location...`)
+          await prisma.$executeRawUnsafe(
+            `ALTER TABLE "Location" ADD COLUMN "${column}" TEXT`
+          )
+          console.log(`${PREFIX}   Done — Location.${column} added`)
+        }
+      } catch (err) {
+        console.error(`${PREFIX}   FAILED Location.${column}:`, err.message)
+      }
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

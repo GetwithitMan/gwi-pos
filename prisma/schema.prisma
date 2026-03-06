@@ -586,6 +586,11 @@ model Location {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  // Cloud identity — populated from Mission Control during registration/heartbeat
+  cloudLocationId     String?  // CloudLocation.id in Mission Control
+  cloudOrganizationId String?  // CloudOrganization.id in Mission Control
+  cloudEnterpriseId   String?  // CloudEnterprise.id (null if org not in enterprise)
+
   // Relations
   employees             Employee[]
   roles                 Role[]

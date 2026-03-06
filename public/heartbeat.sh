@@ -49,11 +49,29 @@ EOJSON
 # HMAC signature
 SIG=$(echo -n "$BODY" | openssl dgst -sha256 -hmac "$API_KEY" | awk '{print $NF}')
 
-# Send to Mission Control
-curl -s --max-time 10 \
+# Send to Mission Control and capture response
+RESPONSE=$(curl -s --max-time 10 \
   -X POST "${MC_URL}/api/fleet/heartbeat" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $API_KEY" \
   -H "X-Server-Node-Id: $NODE_ID" \
   -H "X-Request-Signature: $SIG" \
-  -d "$BODY" >/dev/null 2>&1 || true
+  -d "$BODY" 2>/dev/null || echo "")
+
+# Update cloud identity if heartbeat returned it
+if [ -n "$RESPONSE" ]; then
+  CLOUD_LOC=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',{}); print(d.get('cloudLocationId',''))" 2>/dev/null || echo "")
+  if [ -n "$CLOUD_LOC" ]; then
+    CLOUD_ORG=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',{}); print(d.get('cloudOrganizationId',''))" 2>/dev/null || echo "")
+    CLOUD_ENT=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',{}); print(d.get('cloudEnterpriseId',''))" 2>/dev/null || echo "")
+    INTERNAL_SECRET="${INTERNAL_API_SECRET:-}"
+    if [ -n "$INTERNAL_SECRET" ]; then
+      curl -s --max-time 5 \
+        -X POST "http://localhost:3005/api/internal/cloud-identity" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $INTERNAL_SECRET" \
+        -d "{\"cloudLocationId\":\"$CLOUD_LOC\",\"cloudOrganizationId\":\"$CLOUD_ORG\",\"cloudEnterpriseId\":\"$CLOUD_ENT\"}" \
+        >/dev/null 2>&1 || true
+    fi
+  fi
+fi

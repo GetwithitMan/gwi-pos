@@ -546,11 +546,52 @@ function checkBootUpdate(done) {
   }
 }
 
+// ── Backfill cloud identity from env vars to POS database (runs once at startup) ──
+function backfillCloudIdentity() {
+  var cloudLocationId = env.CLOUD_LOCATION_ID
+  var internalSecret = env.INTERNAL_API_SECRET
+  if (!cloudLocationId || !internalSecret) return Promise.resolve()
+
+  var body = JSON.stringify({
+    cloudLocationId: cloudLocationId,
+    cloudOrganizationId: env.CLOUD_ORGANIZATION_ID || null,
+    cloudEnterpriseId: env.CLOUD_ENTERPRISE_ID || null,
+  })
+  return new Promise(function(resolve) {
+    var url = new URL('/api/internal/cloud-identity', 'http://localhost:3005')
+    var req = http.request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + internalSecret,
+      },
+    }, function(res) {
+      var d = ''
+      res.on('data', function(c) { d += c })
+      res.on('end', function() {
+        if (res.statusCode === 200) {
+          log('[sync-agent] Cloud identity backfilled to POS')
+        }
+        resolve()
+      })
+    })
+    req.on('error', function() {
+      // Non-blocking — POS might not be ready yet. heartbeat.sh will retry.
+      resolve()
+    })
+    req.setTimeout(5000, function() { req.destroy(); resolve() })
+    req.write(body)
+    req.end()
+  })
+}
+
 // ── Start ──────────────────────────────────────────────────────────────────
 log('[Sync] GWI POS Sync Agent started')
 log('[Sync] MC: ' + MC_URL + '  Node: ' + NODE_ID)
 checkBootUpdate(function() {
-  connectStream()
+  backfillCloudIdentity().then(function() {
+    connectStream()
+  })
 })
 
 // Trim log periodically (every hour)
