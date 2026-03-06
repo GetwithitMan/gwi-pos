@@ -530,6 +530,12 @@ elif [[ "$STATION_ROLE" == "server" ]]; then
     log "Added INTERNAL_API_SECRET to existing .env"
   fi
 
+  # Ensure GIT_REPO is set (not provided during re-run since registration is skipped)
+  if [[ -z "$GIT_REPO" ]]; then
+    GIT_REPO="https://github.com/GetwithitMan/gwi-pos.git"
+    log "Using default Git repo URL (existing registration)."
+  fi
+
   # Determine local PG
   if [[ -z "$DATABASE_URL" ]] || [[ "$DATABASE_URL" == *"localhost"* ]] || [[ "$DATABASE_URL" == *"127.0.0.1"* ]]; then
     USE_LOCAL_PG=true
