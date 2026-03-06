@@ -340,7 +340,7 @@ export default function VenueSettingsPage() {
                 <p className="mt-2">
                   Use this code during NUC installation:{' '}
                   <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-500">
-                    curl -sSL https://www.thepasspos.com/installer.run | sudo bash
+                    curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
                   </code>
                 </p>
               </details>

@@ -212,7 +212,7 @@ Hidden 5-tap zone in top-left corner (64×64px, invisible).
 
 ```bash
 # Fresh install
-curl -sSL https://gwi-pos.vercel.app/installer.run | sudo bash
+curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
 
 # Re-run (update existing)
 sudo bash /opt/gwi-pos/installer.run

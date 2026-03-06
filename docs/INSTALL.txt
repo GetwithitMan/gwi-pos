@@ -23,7 +23,7 @@ PART 1: AUTOMATED INSTALLATION (RECOMMENDED)
 --------------------------------------------------------------------------------
 From the NUC terminal (or via SSH):
 
-    curl -sSL https://www.thepasspos.com/installer.run | sudo bash
+    curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
 
 The installer will prompt you for:
     1. Station role: Server or Terminal

@@ -9,7 +9,7 @@ Reference doc for AI agents working on the GWI POS codebase. Covers NUC provisio
 Each venue runs on an Ubuntu NUC provisioned by `public/installer.run` (~1,454 lines). One command:
 
 ```bash
-curl -sSL https://gwi-pos.vercel.app/installer.run | sudo bash
+curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
 ```
 
 ### What the Installer Does

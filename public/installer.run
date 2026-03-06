@@ -10,7 +10,7 @@
 #   Terminal — Chromium kiosk pointing at server + x11vnc + optional RealVNC cloud
 #
 # Usage:
-#   curl -sSL https://gwi-pos.vercel.app/installer.run | sudo bash
+#   curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
 #
 # Re-running is idempotent: detects existing registration, backs up data,
 # pulls latest code, restarts services.
@@ -1493,6 +1493,6 @@ if [[ "$STATION_ROLE" == "server" ]]; then
 fi
 echo ""
 echo -e "  ${CYAN}Re-run this installer to update:${NC}"
-echo "    curl -sSL https://gwi-pos.vercel.app/installer.run | sudo bash"
+echo "    curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
 echo ""
 log "Done! GWI POS is ready."

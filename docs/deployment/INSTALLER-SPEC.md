@@ -7,7 +7,7 @@ The NUC Installer (`installer.run`) is a single bash script that provisions Ubun
 ## Quick Start
 
 ```bash
-curl -sSL https://www.thepasspos.com/installer.run | sudo bash
+curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
 ```
 
 ## Prerequisites
