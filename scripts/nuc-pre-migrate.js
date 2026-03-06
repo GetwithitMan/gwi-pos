@@ -1353,12 +1353,10 @@ async function runPrePushMigrations() {
         END $$
       `)
       console.log(`${PREFIX}   BergDevice table ready`)
-      // Add new BergDevice columns (idempotent)
-      await prisma.$executeRawUnsafe(`
-        ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "bridgeSecretEncrypted" TEXT;
-        ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "bridgeSecretKeyVersion" INTEGER NOT NULL DEFAULT 1;
-        ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "autoRingOnlyWhenSingleOpenOrder" BOOLEAN NOT NULL DEFAULT false;
-      `)
+      // Add new BergDevice columns (idempotent — one statement per call for Prisma compatibility)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "bridgeSecretEncrypted" TEXT`)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "bridgeSecretKeyVersion" INTEGER NOT NULL DEFAULT 1`)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BergDevice" ADD COLUMN IF NOT EXISTS "autoRingOnlyWhenSingleOpenOrder" BOOLEAN NOT NULL DEFAULT false`)
       console.log(`${PREFIX}   BergDevice new columns added`)
     } catch (err) {
       console.error(`${PREFIX}   FAILED BergDevice:`, err.message)
@@ -1421,7 +1419,7 @@ async function runPrePushMigrations() {
         END $$
       `)
       console.log(`${PREFIX}   BergDispenseEvent table ready`)
-      // Add new BergDispenseEvent columns (idempotent)
+      // Add new BergDispenseEvent columns (idempotent — split for Prisma compatibility)
       await prisma.$executeRawUnsafe(`
         DO $$ BEGIN
           IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergResolutionStatus') THEN
@@ -1430,13 +1428,13 @@ async function runPrePushMigrations() {
           IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BergPostProcessStatus') THEN
             CREATE TYPE "BergPostProcessStatus" AS ENUM ('PENDING','DONE','FAILED');
           END IF;
-        END $$;
-        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "variantKey" TEXT;
-        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "variantLabel" TEXT;
-        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "resolutionStatus" "BergResolutionStatus" NOT NULL DEFAULT 'NONE';
-        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "postProcessStatus" "BergPostProcessStatus" NOT NULL DEFAULT 'PENDING';
-        ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "postProcessError" TEXT;
+        END $$
       `)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "variantKey" TEXT`)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "variantLabel" TEXT`)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "resolutionStatus" "BergResolutionStatus" NOT NULL DEFAULT 'NONE'`)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "postProcessStatus" "BergPostProcessStatus" NOT NULL DEFAULT 'PENDING'`)
+      await prisma.$executeRawUnsafe(`ALTER TABLE "BergDispenseEvent" ADD COLUMN IF NOT EXISTS "postProcessError" TEXT`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_deviceId_receivedAt_idx" ON "BergDispenseEvent"("deviceId", "receivedAt")`)
       await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "BergDispenseEvent_deviceId_businessDate_idx" ON "BergDispenseEvent"("deviceId", "businessDate")`)
       console.log(`${PREFIX}   BergDispenseEvent new columns added`)
