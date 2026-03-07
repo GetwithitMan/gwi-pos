@@ -17,8 +17,12 @@ const globalForPrisma = globalThis as unknown as {
  */
 const NO_SOFT_DELETE_MODELS = new Set([
   'Organization', 'Location', 'SyncAuditEntry', 'HardwareCommand',
-  // Berg tables have no deletedAt column — must skip soft-delete filter or all queries crash
+  // Tables without deletedAt column — must skip soft-delete filter or queries crash
   'BergDevice', 'BergPluMapping', 'BergDispenseEvent',
+  'QuickBarPreference', 'QuickBarDefault',
+  'DeductionRun', 'PendingDeduction', 'IngredientCostHistory',
+  'InventoryCountEntry', 'MarginEdgeProductMapping', 'MenuItemDailyMetrics',
+  'PmsChargeAttempt', 'SevenShiftsDailySalesPush', 'WasteLog',
 ])
 
 function createPrismaClient(url?: string) {

@@ -172,14 +172,27 @@ function buildTicketBuffer(order: OrderContext, manifest: RoutingManifest): Buff
     if (!isImpact) content.push(ESCPOS.BOLD_OFF)
     content.push(NORMAL)
 
+    // Aggregate stacked modifiers by (name, preModifier, depth)
+    const aggregatedMods = item.modifiers.reduce((acc, mod) => {
+      const key = `${mod.name}|${mod.preModifier || ''}|${mod.depth || 0}`
+      const existing = acc.find(a => a.key === key)
+      if (existing) {
+        existing.count++
+      } else {
+        acc.push({ ...mod, key, count: 1 })
+      }
+      return acc
+    }, [] as (typeof item.modifiers[number] & { key: string; count: number })[])
+
     // Modifiers with depth indentation and pre-modifier labels
-    for (const mod of item.modifiers) {
+    for (const mod of aggregatedMods) {
       const indent = mod.depth > 0 ? '  '.repeat(mod.depth) + '- ' : '  '
       // T-042: handle compound preModifier strings (e.g. "side,extra" → "SIDE EXTRA Ranch")
       const preLabel = mod.preModifier
         ? mod.preModifier.split(',').map(t => t.trim().toUpperCase()).filter(Boolean).join(' ') + ' '
         : ''
-      const modText = `${preLabel}${mod.name.toUpperCase()}`
+      const countSuffix = mod.count > 1 ? ` ×${mod.count}` : ''
+      const modText = `${preLabel}${mod.name.toUpperCase()}${countSuffix}`
       content.push(line(`${indent}${modText}`))
     }
 

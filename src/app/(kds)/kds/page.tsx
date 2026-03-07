@@ -871,24 +871,38 @@ function KDSContent() {
                               </div>
                             )}
 
-                            {item.modifiers.length > 0 && (
-                              <div className="mt-1 space-y-0.5">
-                                {item.modifiers.map(mod => {
-                                  const depth = mod.depth || 0
-                                  const prefix = depth > 0 ? '-'.repeat(depth) + ' ' : '• '
-                                  return (
-                                    <div
-                                      key={mod.id}
-                                      className={`text-sm pl-4 ${
-                                        item.isCompleted ? 'text-gray-600' : depth === 0 ? 'text-yellow-400' : 'text-yellow-300'
-                                      }`}
-                                    >
-                                      {prefix}{mod.name}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
+                            {item.modifiers.length > 0 && (() => {
+                              // Aggregate stacked modifiers by (name, preModifier, depth)
+                              const aggregatedMods = item.modifiers.reduce((acc, mod) => {
+                                const key = `${mod.name}|${mod.depth || 0}`
+                                const existing = acc.find(a => a.key === key)
+                                if (existing) {
+                                  existing.count++
+                                } else {
+                                  acc.push({ ...mod, key, count: 1 })
+                                }
+                                return acc
+                              }, [] as (typeof item.modifiers[number] & { key: string; count: number })[])
+
+                              return (
+                                <div className="mt-1 space-y-0.5">
+                                  {aggregatedMods.map((mod, idx) => {
+                                    const depth = mod.depth || 0
+                                    const prefix = depth > 0 ? '-'.repeat(depth) + ' ' : '• '
+                                    return (
+                                      <div
+                                        key={`${mod.key}-${idx}`}
+                                        className={`text-sm pl-4 ${
+                                          item.isCompleted ? 'text-gray-600' : depth === 0 ? 'text-yellow-400' : 'text-yellow-300'
+                                        }`}
+                                      >
+                                        {prefix}{mod.name}{mod.count > 1 ? ` ×${mod.count}` : ''}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )
+                            })()}
 
                             {item.specialNotes && (
                               <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-orange-400'}`}>
