@@ -65,7 +65,7 @@ NUC (installer.run)                     Cloud (app.thepasspos.com)
 | Venue subdomains | `{slug}.ordercontrolcenter.com` |
 | MC dashboard | `app.thepasspos.com` |
 | Fleet registration | `app.thepasspos.com/api/fleet/register` |
-| Installer download | `https://gwi-pos.vercel.app/installer.run` |
+| Installer download | `https://app.thepasspos.com/installer.run` |
 | Git repo | `https://github.com/GetwithitMan/gwi-pos.git` |
 
 ## Installer Sections (~1,454 lines)

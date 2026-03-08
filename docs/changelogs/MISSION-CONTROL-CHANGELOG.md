@@ -145,7 +145,7 @@ Ran 6-point comprehensive audit verifying alignment between installer and MC fle
 3. Heartbeat auth headers: HMAC-SHA256 aligned
 4. Register request body: Fields aligned
 5. MC URLs: `app.thepasspos.com` correct
-6. Installer download URL: `gwi-pos.vercel.app/installer.run` correct
+6. Installer download URL: `app.thepasspos.com/installer.run` correct
 - **Zero mismatches found**
 
 ### Backup Server Failover Architecture (Research + Deferred)

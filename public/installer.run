@@ -563,6 +563,141 @@ apt-get install -y cron 2>/dev/null || true
 systemctl enable cron 2>/dev/null || true
 systemctl start cron 2>/dev/null || true
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Server Role: Heartbeat Script + Cron (runs early — before app build)
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANT: Heartbeat is set up immediately after cron + .env exist so that
+# Mission Control sees the NUC even if a later step (npm build, service start)
+# fails. The heartbeat script is self-contained and doesn't need the app.
+
+if [[ "$STATION_ROLE" == "server" ]] && [[ -f "$ENV_FILE" ]]; then
+  header "Setting Up Heartbeat"
+
+  # Ensure POSUSER owns the base directory (needed to write heartbeat.log)
+  chown "$POSUSER":"$POSUSER" "$APP_BASE"
+
+  HB_SCRIPT="$APP_BASE/heartbeat.sh"
+  cat > "$HB_SCRIPT" <<'HBEOF'
+#!/usr/bin/env bash
+# GWI POS Heartbeat — sends system metrics to Mission Control
+set -uo pipefail
+
+LOG="/opt/gwi-pos/heartbeat.log"
+ENV_FILE="/opt/gwi-pos/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "ERR no-env $(date -u +%H:%M:%S)" >> "$LOG"
+  exit 1
+fi
+
+# Parse env (line-by-line, handles values with = signs and # in values)
+SERVER_NODE_ID="" SERVER_API_KEY="" HARDWARE_FINGERPRINT="" MISSION_CONTROL_URL="" LOCATION_ID=""
+while IFS= read -r line; do
+  [[ -z "$line" ]] && continue
+  [[ "$line" =~ ^[[:space:]]*# ]] && continue
+  line="${line#"${line%%[![:space:]]*}"}"
+  [[ -z "$line" ]] && continue
+  key="${line%%=*}"; val="${line#*=}"
+  case "$key" in
+    SERVER_NODE_ID)       SERVER_NODE_ID="$val" ;;
+    SERVER_API_KEY)       SERVER_API_KEY="$val" ;;
+    HARDWARE_FINGERPRINT) HARDWARE_FINGERPRINT="$val" ;;
+    MISSION_CONTROL_URL)  MISSION_CONTROL_URL="$val" ;;
+    LOCATION_ID)          LOCATION_ID="$val" ;;
+  esac
+done < "$ENV_FILE"
+
+if [[ -z "$SERVER_NODE_ID" || -z "$SERVER_API_KEY" || -z "$MISSION_CONTROL_URL" ]]; then
+  echo "ERR missing-env NODE=${SERVER_NODE_ID:-(empty)} KEY=${SERVER_API_KEY:+set} MC=${MISSION_CONTROL_URL:-(empty)} $(date -u +%H:%M:%S)" >> "$LOG"
+  exit 1
+fi
+
+# Metrics
+UPTIME=$(awk '{printf "%d", $1}' /proc/uptime 2>/dev/null || echo 0)
+CPU=$(awk '/^cpu /{u=$2+$4; t=$2+$4+$5; printf "%.1f", u*100/t}' /proc/stat 2>/dev/null || echo "0")
+MEM_TOTAL=$(free -m 2>/dev/null | awk '/Mem:/{print $2}' || echo 1)
+MEM_USED=$(free -m 2>/dev/null | awk '/Mem:/{print $3}' || echo 0)
+DISK_TOTAL=$(df -BG / 2>/dev/null | awk 'NR==2{gsub("G",""); print $2+0}' || echo 1)
+DISK_USED=$(df -BG / 2>/dev/null | awk 'NR==2{gsub("G",""); print $3+0}' || echo 0)
+VERSION=$(jq -r '.version // "unknown"' /opt/gwi-pos/app/package.json 2>/dev/null || echo "unknown")
+LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")
+
+# Read last batch info (from file written at batch close time)
+BATCH_CLOSED_AT="null"
+BATCH_STATUS="null"
+BATCH_ITEM_COUNT="null"
+BATCH_NO="null"
+if [ -f /opt/gwi-pos/last-batch.json ]; then
+  BATCH_CLOSED_AT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.closedAt||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+  BATCH_STATUS=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.status||'unknown')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+  BATCH_ITEM_COUNT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write(String(d.itemCount||0))}catch(e){process.stdout.write('null')}" 2>/dev/null)
+  BATCH_NO=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.batchNo||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+fi
+
+# Get live batch status from local POS API (open orders, unadjusted tips, batch total)
+OPEN_ORDER_COUNT="null"
+UNADJUSTED_TIP_COUNT="null"
+CURRENT_BATCH_TOTAL="null"
+BATCH_API=$(curl -sf --max-time 3 "http://localhost:3005/api/system/batch-status" 2>/dev/null || echo '{}')
+if [ -n "$BATCH_API" ] && [ "$BATCH_API" != '{}' ]; then
+  OPEN_ORDER_COUNT=$(echo "$BATCH_API" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));const v=d?.data?.openOrderCount;process.stdout.write(v!=null?String(v):'null')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+  UNADJUSTED_TIP_COUNT=$(echo "$BATCH_API" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));const v=d?.data?.unadjustedTipCount;process.stdout.write(v!=null?String(v):'null')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+  CURRENT_BATCH_TOTAL=$(echo "$BATCH_API" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));const v=d?.data?.currentBatchTotal;process.stdout.write(v!=null?String(v):'null')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+fi
+
+BODY=$(printf '{"version":"%s","uptime":%d,"activeOrders":0,"cpuPercent":%s,"memoryUsedMb":%d,"memoryTotalMb":%d,"diskUsedGb":%s,"diskTotalGb":%s,"localIp":"%s","posLocationId":"%s","batchClosedAt":%s,"batchStatus":%s,"batchItemCount":%s,"batchNo":%s,"openOrderCount":%s,"unadjustedTipCount":%s,"currentBatchTotal":%s}' \
+  "$VERSION" "$UPTIME" "$CPU" "$MEM_USED" "$MEM_TOTAL" "$DISK_USED" "$DISK_TOTAL" "$LOCAL_IP" "${LOCATION_ID:-}" "$BATCH_CLOSED_AT" "$BATCH_STATUS" "$BATCH_ITEM_COUNT" "$BATCH_NO" "$OPEN_ORDER_COUNT" "$UNADJUSTED_TIP_COUNT" "$CURRENT_BATCH_TOTAL")
+
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
+
+RESP_FILE=$(mktemp)
+HTTP_CODE=$(curl -sS --max-time 15 -o "$RESP_FILE" -w "%{http_code}" -X POST \
+  "${MISSION_CONTROL_URL}/api/fleet/heartbeat" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SERVER_API_KEY" \
+  -H "X-Server-Node-Id: $SERVER_NODE_ID" \
+  -H "X-Hardware-Fingerprint: ${HARDWARE_FINGERPRINT:-none}" \
+  -H "X-Request-Signature: $SIG" \
+  -d "$BODY" 2>&1) || HTTP_CODE="err"
+
+# Log result — include response body on failures for debugging
+if [[ "$HTTP_CODE" == "200" ]] || [[ "$HTTP_CODE" == "201" ]]; then
+  echo "OK $HTTP_CODE $(date -u +%H:%M:%S)" >> "$LOG"
+else
+  RESP_BODY=$(cat "$RESP_FILE" 2>/dev/null | head -c 200 || echo "")
+  echo "FAIL $HTTP_CODE $(date -u +%H:%M:%S) $RESP_BODY" >> "$LOG"
+fi
+rm -f "$RESP_FILE"
+
+# Keep log small
+if [[ -f "$LOG" ]] && [[ $(wc -l < "$LOG") -gt 500 ]]; then
+  tail -200 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+fi
+HBEOF
+
+  chmod +x "$HB_SCRIPT"
+  chown "$POSUSER":"$POSUSER" "$HB_SCRIPT"
+
+  # Add heartbeat cron (every minute, as POSUSER)
+  HB_CRON="* * * * * $HB_SCRIPT"
+  ( crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$HB_SCRIPT" || true ; echo "$HB_CRON" ) | crontab -u "$POSUSER" -
+
+  # Run first heartbeat NOW (visible output so user can see if it works)
+  log "Testing first heartbeat..."
+  if sudo -u "$POSUSER" bash "$HB_SCRIPT"; then
+    LAST_HB=$(tail -1 "$APP_BASE/heartbeat.log" 2>/dev/null || echo "no log")
+    if [[ "$LAST_HB" == OK* ]]; then
+      log "Heartbeat: $LAST_HB"
+    else
+      warn "Heartbeat response: $LAST_HB"
+      warn "Check /opt/gwi-pos/heartbeat.log for details."
+    fi
+  else
+    warn "First heartbeat failed. Check /opt/gwi-pos/heartbeat.log"
+  fi
+
+  log "Heartbeat configured (every 60 seconds)."
+fi
+
 # Install Chromium (try both package names)
 apt-get install -y chromium-browser 2>/dev/null \
   || apt-get install -y chromium 2>/dev/null \
@@ -919,7 +1054,7 @@ SVCEOF
   systemctl enable thepasspos-kiosk
 
   log "Starting POS server..."
-  systemctl restart thepasspos
+  systemctl restart thepasspos || warn "POS service restart failed — will retry on reboot"
 
   # Wait for POS to be ready before starting kiosk
   log "Waiting for POS to start..."
@@ -931,7 +1066,7 @@ SVCEOF
     sleep 2
   done
 
-  systemctl restart thepasspos-kiosk
+  systemctl restart thepasspos-kiosk || warn "Kiosk service restart failed — will retry on reboot"
   log "Services configured and started."
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -1011,146 +1146,22 @@ SUDEOF
   log "Sudoers rules configured."
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Server Role: Heartbeat Script + Cron
-  # ───────────────────────────────────────────────────────────────────────────
-
-  header "Setting Up Heartbeat"
-
-  # Ensure POSUSER owns the base directory (needed to write heartbeat.log)
-  chown "$POSUSER":"$POSUSER" "$APP_BASE"
-
-  HB_SCRIPT="$APP_BASE/heartbeat.sh"
-  cat > "$HB_SCRIPT" <<'HBEOF'
-#!/usr/bin/env bash
-# GWI POS Heartbeat — sends system metrics to Mission Control
-set -uo pipefail
-
-LOG="/opt/gwi-pos/heartbeat.log"
-ENV_FILE="/opt/gwi-pos/.env"
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "ERR no-env $(date -u +%H:%M:%S)" >> "$LOG"
-  exit 1
-fi
-
-# Parse env (line-by-line, handles values with = signs and # in values)
-SERVER_NODE_ID="" SERVER_API_KEY="" HARDWARE_FINGERPRINT="" MISSION_CONTROL_URL="" LOCATION_ID=""
-while IFS= read -r line; do
-  [[ -z "$line" ]] && continue
-  [[ "$line" =~ ^[[:space:]]*# ]] && continue
-  line="${line#"${line%%[![:space:]]*}"}"
-  [[ -z "$line" ]] && continue
-  key="${line%%=*}"; val="${line#*=}"
-  case "$key" in
-    SERVER_NODE_ID)       SERVER_NODE_ID="$val" ;;
-    SERVER_API_KEY)       SERVER_API_KEY="$val" ;;
-    HARDWARE_FINGERPRINT) HARDWARE_FINGERPRINT="$val" ;;
-    MISSION_CONTROL_URL)  MISSION_CONTROL_URL="$val" ;;
-    LOCATION_ID)          LOCATION_ID="$val" ;;
-  esac
-done < "$ENV_FILE"
-
-if [[ -z "$SERVER_NODE_ID" || -z "$SERVER_API_KEY" || -z "$MISSION_CONTROL_URL" ]]; then
-  echo "ERR missing-env NODE=${SERVER_NODE_ID:-(empty)} KEY=${SERVER_API_KEY:+set} MC=${MISSION_CONTROL_URL:-(empty)} $(date -u +%H:%M:%S)" >> "$LOG"
-  exit 1
-fi
-
-# Metrics
-UPTIME=$(awk '{printf "%d", $1}' /proc/uptime 2>/dev/null || echo 0)
-CPU=$(awk '/^cpu /{u=$2+$4; t=$2+$4+$5; printf "%.1f", u*100/t}' /proc/stat 2>/dev/null || echo "0")
-MEM_TOTAL=$(free -m 2>/dev/null | awk '/Mem:/{print $2}' || echo 1)
-MEM_USED=$(free -m 2>/dev/null | awk '/Mem:/{print $3}' || echo 0)
-DISK_TOTAL=$(df -BG / 2>/dev/null | awk 'NR==2{gsub("G",""); print $2+0}' || echo 1)
-DISK_USED=$(df -BG / 2>/dev/null | awk 'NR==2{gsub("G",""); print $3+0}' || echo 0)
-VERSION=$(jq -r '.version // "unknown"' /opt/gwi-pos/app/package.json 2>/dev/null || echo "unknown")
-LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "")
-
-# Read last batch info (from file written at batch close time)
-BATCH_CLOSED_AT="null"
-BATCH_STATUS="null"
-BATCH_ITEM_COUNT="null"
-BATCH_NO="null"
-if [ -f /opt/gwi-pos/last-batch.json ]; then
-  BATCH_CLOSED_AT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.closedAt||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
-  BATCH_STATUS=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.status||'unknown')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
-  BATCH_ITEM_COUNT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write(String(d.itemCount||0))}catch(e){process.stdout.write('null')}" 2>/dev/null)
-  BATCH_NO=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.batchNo||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
-fi
-
-# Get live batch status from local POS API (open orders, unadjusted tips, batch total)
-OPEN_ORDER_COUNT="null"
-UNADJUSTED_TIP_COUNT="null"
-CURRENT_BATCH_TOTAL="null"
-BATCH_API=$(curl -sf --max-time 3 "http://localhost:3005/api/system/batch-status" 2>/dev/null || echo '{}')
-if [ -n "$BATCH_API" ] && [ "$BATCH_API" != '{}' ]; then
-  OPEN_ORDER_COUNT=$(echo "$BATCH_API" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));const v=d?.data?.openOrderCount;process.stdout.write(v!=null?String(v):'null')}catch(e){process.stdout.write('null')}" 2>/dev/null)
-  UNADJUSTED_TIP_COUNT=$(echo "$BATCH_API" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));const v=d?.data?.unadjustedTipCount;process.stdout.write(v!=null?String(v):'null')}catch(e){process.stdout.write('null')}" 2>/dev/null)
-  CURRENT_BATCH_TOTAL=$(echo "$BATCH_API" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));const v=d?.data?.currentBatchTotal;process.stdout.write(v!=null?String(v):'null')}catch(e){process.stdout.write('null')}" 2>/dev/null)
-fi
-
-BODY=$(printf '{"version":"%s","uptime":%d,"activeOrders":0,"cpuPercent":%s,"memoryUsedMb":%d,"memoryTotalMb":%d,"diskUsedGb":%s,"diskTotalGb":%s,"localIp":"%s","posLocationId":"%s","batchClosedAt":%s,"batchStatus":%s,"batchItemCount":%s,"batchNo":%s,"openOrderCount":%s,"unadjustedTipCount":%s,"currentBatchTotal":%s}' \
-  "$VERSION" "$UPTIME" "$CPU" "$MEM_USED" "$MEM_TOTAL" "$DISK_USED" "$DISK_TOTAL" "$LOCAL_IP" "${LOCATION_ID:-}" "$BATCH_CLOSED_AT" "$BATCH_STATUS" "$BATCH_ITEM_COUNT" "$BATCH_NO" "$OPEN_ORDER_COUNT" "$UNADJUSTED_TIP_COUNT" "$CURRENT_BATCH_TOTAL")
-
-SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
-
-RESP_FILE=$(mktemp)
-HTTP_CODE=$(curl -sS --max-time 15 -o "$RESP_FILE" -w "%{http_code}" -X POST \
-  "${MISSION_CONTROL_URL}/api/fleet/heartbeat" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $SERVER_API_KEY" \
-  -H "X-Server-Node-Id: $SERVER_NODE_ID" \
-  -H "X-Hardware-Fingerprint: ${HARDWARE_FINGERPRINT:-none}" \
-  -H "X-Request-Signature: $SIG" \
-  -d "$BODY" 2>&1) || HTTP_CODE="err"
-
-# Log result — include response body on failures for debugging
-if [[ "$HTTP_CODE" == "200" ]] || [[ "$HTTP_CODE" == "201" ]]; then
-  echo "OK $HTTP_CODE $(date -u +%H:%M:%S)" >> "$LOG"
-else
-  RESP_BODY=$(cat "$RESP_FILE" 2>/dev/null | head -c 200 || echo "")
-  echo "FAIL $HTTP_CODE $(date -u +%H:%M:%S) $RESP_BODY" >> "$LOG"
-fi
-rm -f "$RESP_FILE"
-
-# Keep log small
-if [[ -f "$LOG" ]] && [[ $(wc -l < "$LOG") -gt 500 ]]; then
-  tail -200 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
-fi
-HBEOF
-
-  chmod +x "$HB_SCRIPT"
-  chown "$POSUSER":"$POSUSER" "$HB_SCRIPT"
-
-  # Add heartbeat cron (every minute, as POSUSER)
-  HB_CRON="* * * * * $HB_SCRIPT"
-  ( crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$HB_SCRIPT" || true ; echo "$HB_CRON" ) | crontab -u "$POSUSER" -
-
-  # Run first heartbeat NOW (visible output so user can see if it works)
-  log "Testing first heartbeat..."
-  if sudo -u "$POSUSER" bash "$HB_SCRIPT"; then
-    LAST_HB=$(tail -1 "$APP_BASE/heartbeat.log" 2>/dev/null || echo "no log")
-    if [[ "$LAST_HB" == OK* ]]; then
-      log "Heartbeat: $LAST_HB"
-    else
-      warn "Heartbeat response: $LAST_HB"
-      warn "Check /opt/gwi-pos/heartbeat.log for details."
-    fi
-  else
-    warn "First heartbeat failed. Check /opt/gwi-pos/heartbeat.log"
-  fi
-
-  log "Heartbeat configured (every 60 seconds)."
-
-  # ───────────────────────────────────────────────────────────────────────────
   # Server Role: Sync Agent (receives deploy commands from Mission Control)
   # ───────────────────────────────────────────────────────────────────────────
+  # NOTE: Heartbeat was already set up earlier (right after cron install +
+  # .env write) so it runs even if later steps fail. Sync agent must be
+  # after git clone since it copies sync-agent.js from the repo.
 
   header "Setting Up Sync Agent"
 
   SYNC_SCRIPT="$APP_BASE/sync-agent.js"
   # Copy sync agent from repo (self-updating — updated by FORCE_UPDATE deployments)
-  cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT"
-
-  chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
+  if [[ -f "$APP_DIR/public/sync-agent.js" ]]; then
+    cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT"
+    chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
+  else
+    warn "sync-agent.js not found in repo — sync agent will not start."
+  fi
 
   # thepasspos-sync.service — Sync Agent
   cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
@@ -1175,7 +1186,7 @@ SVCEOF
 
   systemctl daemon-reload
   systemctl enable thepasspos-sync
-  systemctl restart thepasspos-sync
+  systemctl restart thepasspos-sync || warn "Sync agent failed to start — check journalctl -u thepasspos-sync"
 
   log "Sync agent configured and started."
 
