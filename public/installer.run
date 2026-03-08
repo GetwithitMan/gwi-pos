@@ -865,7 +865,7 @@ log "Node.js: $(node -v)"
 log "npm: $(npm -v)"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Server Role: Local PostgreSQL (only if no cloud database URL)
+# Server Role: Local PostgreSQL (always — offline-first architecture)
 # ─────────────────────────────────────────────────────────────────────────────
 
 if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
@@ -881,9 +881,13 @@ if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   DB_NAME="thepasspos"
 
   # Reuse existing password from .env on re-runs; generate random on first install
+  # Try 3 sources: DATABASE_URL in .env, then .pgpass, then generate new
   EXISTING_DB_PW=""
   if [[ -f "$ENV_FILE" ]]; then
     EXISTING_DB_PW=$(grep -oP '^DATABASE_URL="?postgresql://[^:]+:\K[^@]+' "$ENV_FILE" 2>/dev/null | head -1 || echo "")
+  fi
+  if [[ -z "$EXISTING_DB_PW" ]] && [[ -f "$POSUSER_HOME/.pgpass" ]]; then
+    EXISTING_DB_PW=$(grep "localhost:5432:$DB_NAME:$DB_USER:" "$POSUSER_HOME/.pgpass" 2>/dev/null | cut -d: -f5 | head -1 || echo "")
   fi
   if [[ -n "$EXISTING_DB_PW" ]]; then
     DB_PASSWORD="$EXISTING_DB_PW"
