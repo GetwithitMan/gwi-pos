@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-03-08 — Installer Production Hardening + Sync Agent Safety
+
+### Session Summary
+Production-grade installer hardening across 12+ commits driven by 3 independent third-party security reviews (final score: 9.8/10). Fixed critical NUC deployment bugs: empty database after P3005 baseline, PORT=3000 from old installers, stale `pulse_pos` branding in .env, and `--accept-data-loss` flag in sync agent. All changes synced to both gwi-pos and gwi-mission-control repos.
+
+### Commits
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | `5aadf856` | Scrub server identity on terminal switch + path-restrict exit endpoint |
+| gwi-pos | `71212447` | Auto-baseline db-push databases for prisma migrate deploy |
+| gwi-pos | `bc1a87f5` | Sync-agent: remove --accept-data-loss, add P3005 baselining |
+| gwi-pos | `68a81b8c` | Fix empty schema after P3005 baseline + PORT canonicalization |
+| gwi-pos | `8b90cd42` | Canonicalize DB_NAME/DB_USER on server re-runs |
+| gwi-mission-control | `928f22b` | Sync: server identity scrub + exit endpoint hardening |
+| gwi-mission-control | `ed97d04` | Sync: auto-baseline for prisma migrate deploy |
+| gwi-mission-control | `179c189` | Sync: P3005 db push + PORT canonicalization |
+| gwi-mission-control | `602675b` | Sync: canonicalize DB_NAME on re-runs |
+
+### Installer Fixes (this session)
+- **Server→terminal .env scrub:** Role switch now removes all 16 server-only keys (SERVER_NODE_ID, SERVER_API_KEY, cloud IDs, DATABASE_URL, NEON vars, etc.)
+- **Terminal .env canonicalization:** Re-runs also scrub stale server keys
+- **Exit endpoint path restriction:** `exit-kiosk-server.py` now returns 404 for anything other than POST /exit
+- **P3005 auto-baseline:** `prisma migrate deploy` failing on db-push databases → auto-mark all migrations as applied → `prisma db push` to create any missing tables
+- **PORT canonicalization:** Server re-runs now force PORT=3005 (old installers set PORT=3000)
+- **DB_NAME canonicalization:** Server re-runs now force DB_NAME=thepasspos (old installers left DB_NAME=pulse_pos)
+
+### Sync Agent Fixes
+- **Removed `--accept-data-loss`:** Local PG `db push` fallback removed entirely — `migrate deploy` is the only production migration tool
+- **Neon `db push`:** Kept but without `--accept-data-loss` flag
+- **P3005 baselining:** Same auto-baseline + db push logic added to FORCE_UPDATE handler
+
+### Bugs Found on Live NUC
+- POS server listening on port 3000 instead of 3005 (kiosk → "site can't be reached")
+- Database tables missing (Organization, Location, Order, etc.) — P3005 baseline marked init migration as applied without actually creating tables
+- Backup trying to dump `pulse_pos` database (old branding in .env)
+
+### Deployment
+- All changes pushed to both repos
+- MC Vercel deploy serves updated installer at `app.thepasspos.com/installer.run`
+- NUC re-run pending (waiting for Vercel deploy)
+
+---
+
 ## 2026-03-05 — Berg Liquor Controls Integration (Sprints B + C)
 
 ### Session Summary

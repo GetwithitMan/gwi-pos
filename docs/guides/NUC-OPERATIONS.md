@@ -57,6 +57,21 @@ Two scripts handle schema migrations across environments:
 
 **Problem solved:** Prisma `db push` fails on String→Enum cast. Fix: pre-flight SQL with `ALTER COLUMN TYPE ... USING cast`.
 
+### P3005 Baseline (db-push → migrate deploy transition)
+
+NUCs originally provisioned with `prisma db push` have no `_prisma_migrations` table. When the installer switched to `prisma migrate deploy`, it fails with P3005 ("schema not empty"). The installer and sync agent handle this automatically:
+
+1. `prisma migrate deploy` → P3005 detected
+2. Mark all existing migrations as applied via `prisma migrate resolve --applied`
+3. Run `prisma db push` to create any tables the baselined migrations would have created
+4. Future `migrate deploy` runs work normally (only applies new migrations)
+
+**Important:** `nuc-pre-migrate.js` creates supplementary tables (BergDevice, PmsChargeAttempt, etc.) that make the schema "non-empty" even before core tables exist. The `db push` step after baselining is critical to create the core tables (Organization, Location, Order, etc.).
+
+### Server .env Canonicalization
+
+The installer canonicalizes critical .env values on every server re-run: `PORT=3005`, `NODE_ENV=production`, `STATION_ROLE=server`, `DB_NAME=thepasspos`, `DB_USER=thepasspos`. This fixes stale values from old installers (PORT=3000, DB_NAME=pulse_pos).
+
 ---
 
 ## SSH Credentials
