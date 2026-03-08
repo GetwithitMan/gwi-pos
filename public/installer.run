@@ -194,7 +194,7 @@ echo ""
 read -rsp "VNC remote access password [press Enter to auto-generate]: " VNC_PASSWORD < /dev/tty
 echo ""
 if [[ -z "$VNC_PASSWORD" ]]; then
-  VNC_PASSWORD=$(openssl rand -base64 12)
+  VNC_PASSWORD=$(openssl rand -base64 20 | tr '+/' '-_' | cut -c1-20)
   log "Generated VNC password: $VNC_PASSWORD  (save this — it won't be shown again)"
 fi
 
@@ -315,15 +315,17 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
 
   log "Calling $MC_REGISTER_URL..."
 
+  REG_RESP_FILE=$(mktemp)
+  REG_ERR_FILE=$(mktemp)
   HTTP_CODE=$(curl -sS --max-time 30 -X POST \
     "$MC_REGISTER_URL" \
     -H "Content-Type: application/json" \
     -d "$REG_PAYLOAD" \
-    -o /tmp/gwi-reg-response.json \
-    -w "%{http_code}" 2>/tmp/gwi-reg-error.txt) || HTTP_CODE="000"
+    -o "$REG_RESP_FILE" \
+    -w "%{http_code}" 2>"$REG_ERR_FILE") || HTTP_CODE="000"
 
-  REG_RESPONSE=$(cat /tmp/gwi-reg-response.json 2>/dev/null || echo "{}")
-  rm -f /tmp/gwi-reg-response.json /tmp/gwi-reg-error.txt
+  REG_RESPONSE=$(cat "$REG_RESP_FILE" 2>/dev/null || echo "{}")
+  rm -f "$REG_RESP_FILE" "$REG_ERR_FILE"
 
   if [[ "$HTTP_CODE" != "201" ]] && [[ "$HTTP_CODE" != "200" ]]; then
     err "Mission Control registration failed (HTTP $HTTP_CODE)."
@@ -573,7 +575,7 @@ if [[ "$STATION_ROLE" == "server" ]] && [[ -f "$ENV_FILE" ]]; then
   cat > "$HB_SCRIPT" <<'HBEOF'
 #!/usr/bin/env bash
 # GWI POS Heartbeat — sends system metrics to Mission Control
-set -uo pipefail
+set -eo pipefail
 
 LOG="/opt/gwi-pos/heartbeat.log"
 ENV_FILE="/opt/gwi-pos/.env"
@@ -741,7 +743,7 @@ if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   # Reuse existing password from .env on re-runs; generate random on first install
   EXISTING_DB_PW=""
   if [[ -f "$ENV_FILE" ]]; then
-    EXISTING_DB_PW=$(grep -oP '(?<=thepasspos:)[^@]+' "$ENV_FILE" 2>/dev/null | head -1 || echo "")
+    EXISTING_DB_PW=$(grep -oP '^DATABASE_URL="?postgresql://[^:]+:\K[^@]+' "$ENV_FILE" 2>/dev/null | head -1 || echo "")
   fi
   if [[ -n "$EXISTING_DB_PW" ]]; then
     DB_PASSWORD="$EXISTING_DB_PW"
@@ -906,10 +908,14 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" || warn "Pre-migrate backfill had warnings (non-fatal)"
 
   log "Applying database migrations..."
-  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>/dev/null || npx prisma db push --accept-data-loss" || {
-    err "Database migration failed. Check DATABASE_URL and PostgreSQL status."
-    exit 1
-  }
+  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy" 2>/dev/null; then
+    warn "prisma migrate deploy failed — falling back to db push."
+    warn "This may reset columns that diverged from the schema. Data in standard columns is preserved."
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss" || {
+      err "Database migration failed. Check DATABASE_URL and PostgreSQL status."
+      exit 1
+    }
+  fi
 
   # Seed local PG from Neon cloud (offline-first mode)
   if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
@@ -1080,8 +1086,8 @@ BACKUP_DIR=/opt/gwi-pos/backups
 RETENTION_DAYS=7
 
 if [ -f /opt/gwi-pos/.env ]; then
-  DB_NAME=$(grep -oP '^DB_NAME=\K.*' /opt/gwi-pos/.env 2>/dev/null || echo "thepasspos")
-  DB_USER=$(grep -oP '^DB_USER=\K.*' /opt/gwi-pos/.env 2>/dev/null || echo "thepasspos")
+  DB_NAME=$(grep -oP '^DB_NAME="\K[^"]+' /opt/gwi-pos/.env 2>/dev/null || echo "thepasspos")
+  DB_USER=$(grep -oP '^DB_USER="\K[^"]+' /opt/gwi-pos/.env 2>/dev/null || echo "thepasspos")
 else
   DB_NAME="${DB_NAME:-thepasspos}"
   DB_USER="${DB_USER:-thepasspos}"
@@ -1129,9 +1135,10 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*
-$POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown
-$POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium-browser
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium
+$POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown -h now
+$POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
 SUDEOF
   chmod 440 /etc/sudoers.d/gwi-pos
@@ -1309,10 +1316,11 @@ if command -v x11vnc >/dev/null 2>&1; then
   # Store VNC password
   mkdir -p /etc/x11vnc
   x11vnc -storepasswd "$VNC_PASSWORD" /etc/x11vnc/passwd
-  chmod 644 /etc/x11vnc/passwd
+  chmod 600 /etc/x11vnc/passwd
+  chown root:root /etc/x11vnc/passwd
 
   # Create systemd service for persistent unattended access
-  cat > /etc/systemd/system/x11vnc.service << 'VNCSVC'
+  cat > /etc/systemd/system/x11vnc.service <<VNCSVC
 [Unit]
 Description=x11vnc VNC Server
 After=display-manager.service network-online.target
@@ -1320,7 +1328,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/x11vnc -display :0 -auth guess -forever -loop -noxdamage -repeat -rfbauth /etc/x11vnc/passwd -rfbport 5900 -shared
+ExecStart=/usr/bin/x11vnc -display :0 -auth ${POSUSER_HOME}/.Xauthority -forever -loop -noxdamage -repeat -rfbauth /etc/x11vnc/passwd -rfbport 5900 -shared
 Restart=always
 RestartSec=3
 
