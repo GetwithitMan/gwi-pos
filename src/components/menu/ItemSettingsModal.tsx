@@ -7,6 +7,7 @@ import { toast } from '@/stores/toast-store'
 import { SizingOptionsInline } from './SizingOptionsInline'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { calculateCardPrice } from '@/lib/pricing'
+import { BarcodeManager } from '@/components/admin/BarcodeManager'
 
 interface ItemSettings {
   id: string
@@ -335,6 +336,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
     { id: 'kitchen', label: 'Kitchen & Print' },
     { id: 'availability', label: 'Availability' },
     { id: 'pricing', label: 'Tax & Commission' },
+    { id: 'barcodes', label: 'Barcodes' },
   ]
 
   const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
@@ -803,6 +805,14 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                     )}
                   </div>
                 </>
+              )}
+
+              {/* BARCODES TAB */}
+              {activeTab === 'barcodes' && (
+                <BarcodeManager
+                  menuItemId={itemId}
+                  locationId={locationId}
+                />
               )}
             </div>
 

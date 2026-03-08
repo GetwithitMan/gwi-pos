@@ -1528,6 +1528,35 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED ReasonAccess:`, err.message)
     }
 
+    // --- ItemBarcode table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ItemBarcode" (
+          "id" TEXT NOT NULL,
+          "barcode" TEXT NOT NULL,
+          "label" TEXT,
+          "packSize" INTEGER NOT NULL DEFAULT 1,
+          "price" DECIMAL(65,30),
+          "menuItemId" TEXT,
+          "inventoryItemId" TEXT,
+          "locationId" TEXT NOT NULL,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "deletedAt" TIMESTAMP(3),
+          "syncedAt" TIMESTAMP(3),
+          CONSTRAINT "ItemBarcode_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "ItemBarcode_locationId_barcode_key" ON "ItemBarcode"("locationId", "barcode")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ItemBarcode_barcode_idx" ON "ItemBarcode"("barcode")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ItemBarcode_menuItemId_idx" ON "ItemBarcode"("menuItemId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ItemBarcode_inventoryItemId_idx" ON "ItemBarcode"("inventoryItemId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ItemBarcode_locationId_idx" ON "ItemBarcode"("locationId")`)
+      console.log(`${PREFIX}   ItemBarcode table ensured`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED ItemBarcode:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

@@ -587,9 +587,9 @@ model Location {
   syncedAt  DateTime?
 
   // Cloud identity — populated from Mission Control during registration/heartbeat
-  cloudLocationId     String?  // CloudLocation.id in Mission Control
-  cloudOrganizationId String?  // CloudOrganization.id in Mission Control
-  cloudEnterpriseId   String?  // CloudEnterprise.id (null if org not in enterprise)
+  cloudLocationId     String? // CloudLocation.id in Mission Control
+  cloudOrganizationId String? // CloudOrganization.id in Mission Control
+  cloudEnterpriseId   String? // CloudEnterprise.id (null if org not in enterprise)
 
   // Relations
   employees             Employee[]
@@ -837,6 +837,9 @@ model Location {
   bergPluMappings    BergPluMapping[]
   bergDevices        BergDevice[]
   bergDispenseEvents BergDispenseEvent[]
+
+  // Barcode scanning
+  itemBarcodes ItemBarcode[]
 
   @@index([organizationId])
 }
@@ -1666,6 +1669,9 @@ model MenuItem {
   // COGS daily metrics
   dailyMetrics MenuItemDailyMetrics[]
 
+  // Barcode scanning
+  barcodes ItemBarcode[]
+
   @@unique([locationId, sku])
   // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([categoryId])
@@ -2407,15 +2413,15 @@ model Order {
   // @@index([locationId]) — removed: redundant with compound indexes below
 
   // C-SCHEMA-1: Reverse relations (batch 2)
-  menuItemsInUse    MenuItem[]             @relation("MenuItemCurrentOrder")
-  floorPlanElements FloorPlanElement[]     @relation("FloorPlanCurrentOrder")
-  tipLedgerEntries  TipLedgerEntry[]       @relation("TipLedgerOrder")
-  tipTransactions   TipTransaction[]       @relation("TipTransactionOrder")
-  tickets           Ticket[]               @relation("TicketOrder")
-  invTransactions   InventoryTransaction[] @relation("InvTxnOrder")
-  printJobs         PrintJob[]             @relation("PrintJobOrder")
-  chargebackCases   ChargebackCase[]       @relation("ChargebackOrder")
-  errorLogs         ErrorLog[]             @relation("ErrorLogOrder")
+  menuItemsInUse     MenuItem[]             @relation("MenuItemCurrentOrder")
+  floorPlanElements  FloorPlanElement[]     @relation("FloorPlanCurrentOrder")
+  tipLedgerEntries   TipLedgerEntry[]       @relation("TipLedgerOrder")
+  tipTransactions    TipTransaction[]       @relation("TipTransactionOrder")
+  tickets            Ticket[]               @relation("TicketOrder")
+  invTransactions    InventoryTransaction[] @relation("InvTxnOrder")
+  printJobs          PrintJob[]             @relation("PrintJobOrder")
+  chargebackCases    ChargebackCase[]       @relation("ChargebackOrder")
+  errorLogs          ErrorLog[]             @relation("ErrorLogOrder")
   bergDispenseEvents BergDispenseEvent[]
 
   @@index([employeeId])
@@ -4404,9 +4410,9 @@ model CompReason {
 
 // Access control for reasons and discounts (role/employee allow/deny)
 model ReasonAccess {
-  id          String   @id @default(cuid())
-  locationId  String
-  location    Location @relation(fields: [locationId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   subjectType String // "role" | "employee"
   subjectId   String // role name or employee id
@@ -4540,6 +4546,9 @@ model InventoryItem {
   countEntries       InventoryCountEntry[]
   wasteLogs          WasteLog[]
   marginEdgeMappings MarginEdgeProductMapping[]
+
+  // Barcode scanning
+  barcodes ItemBarcode[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -8522,23 +8531,23 @@ model DeductionRun {
 // ============================================
 
 model BergPluMapping {
-  id                  String    @id @default(cuid())
-  locationId          String
-  deviceId            String?
-  mappingScopeKey     String    // "device:{deviceId}" OR "location:{locationId}" — computed on create
-  pluNumber           Int
-  bottleProductId     String?
-  inventoryItemId     String?
-  menuItemId          String?
-  description         String?
-  pourSizeOzOverride  Decimal?  @db.Decimal(6, 3)
-  modifierRule        Json?
-  trailerRule         Json?
-  isActive            Boolean   @default(true)
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                 String   @id @default(cuid())
+  locationId         String
+  deviceId           String?
+  mappingScopeKey    String // "device:{deviceId}" OR "location:{locationId}" — computed on create
+  pluNumber          Int
+  bottleProductId    String?
+  inventoryItemId    String?
+  menuItemId         String?
+  description        String?
+  pourSizeOzOverride Decimal? @db.Decimal(6, 3)
+  modifierRule       Json?
+  trailerRule        Json?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  location Location @relation(fields: [locationId], references: [id])
+  location       Location            @relation(fields: [locationId], references: [id])
   device         BergDevice?         @relation(fields: [deviceId], references: [id])
   dispenseEvents BergDispenseEvent[]
 
@@ -8552,29 +8561,29 @@ model BergPluMapping {
 // ============================================
 
 model BergDevice {
-  id                         String               @id @default(cuid())
-  locationId                 String
-  terminalId                 String?
-  name                       String
-  model                      BergDeviceModel      @default(MODEL_1504_704)
-  portName                   String
-  baudRate                   Int                  @default(9600)
-  isPluBased                 Boolean              @default(true)
-  isActive                   Boolean              @default(true)
-  interfaceMethod            BergInterfaceMethod  @default(DIRECT_RING_UP)
-  pourReleaseMode            BergPourReleaseMode  @default(BEST_EFFORT)
-  timeoutPolicy              BergTimeoutPolicy    @default(ACK_ON_TIMEOUT)
-  autoRingMode               BergAutoRingMode     @default(AUTO_RING)
-  ackTimeoutMs               Int                  @default(3000)
-  deductInventoryWhenNoOrder Boolean              @default(false)
-  lastSeenAt                 DateTime?
-  lastError                  String?
-  bridgeSecretHash           String?
-  bridgeSecretEncrypted      String?
-  bridgeSecretKeyVersion     Int?                 @default(1)
-  autoRingOnlyWhenSingleOpenOrder Boolean         @default(false)
-  createdAt                  DateTime             @default(now())
-  updatedAt                  DateTime             @updatedAt
+  id                              String              @id @default(cuid())
+  locationId                      String
+  terminalId                      String?
+  name                            String
+  model                           BergDeviceModel     @default(MODEL_1504_704)
+  portName                        String
+  baudRate                        Int                 @default(9600)
+  isPluBased                      Boolean             @default(true)
+  isActive                        Boolean             @default(true)
+  interfaceMethod                 BergInterfaceMethod @default(DIRECT_RING_UP)
+  pourReleaseMode                 BergPourReleaseMode @default(BEST_EFFORT)
+  timeoutPolicy                   BergTimeoutPolicy   @default(ACK_ON_TIMEOUT)
+  autoRingMode                    BergAutoRingMode    @default(AUTO_RING)
+  ackTimeoutMs                    Int                 @default(3000)
+  deductInventoryWhenNoOrder      Boolean             @default(false)
+  lastSeenAt                      DateTime?
+  lastError                       String?
+  bridgeSecretHash                String?
+  bridgeSecretEncrypted           String?
+  bridgeSecretKeyVersion          Int?                @default(1)
+  autoRingOnlyWhenSingleOpenOrder Boolean             @default(false)
+  createdAt                       DateTime            @default(now())
+  updatedAt                       DateTime            @updatedAt
 
   location       Location            @relation(fields: [locationId], references: [id])
   pluMappings    BergPluMapping[]
@@ -8585,38 +8594,38 @@ model BergDevice {
 }
 
 model BergDispenseEvent {
-  id               String             @id @default(cuid())
-  locationId       String
-  deviceId         String
-  pluMappingId     String?
-  pluNumber        Int
-  rawPacket        String
-  modifierBytes    String?
-  trailerBytes     String?
-  parseStatus      BergParseStatus
-  lrcReceived      String
-  lrcCalculated    String
-  lrcValid         Boolean
-  status           BergDispenseStatus
-  unmatchedType    String?
-  pourSizeOz       Decimal?           @db.Decimal(6, 3)
-  pourCost         Decimal?           @db.Decimal(10, 2)
-  orderId          String?
-  orderItemId      String?
-  employeeId       String?
-  terminalId       String?
-  ackLatencyMs     Int?
-  ackTimeoutMs     Int
-  errorReason      String?
-  businessDate     DateTime?
-  idempotencyKey   String             @unique
-  receivedAt       DateTime           @default(now())
-  acknowledgedAt   DateTime?
-  variantKey         String?
-  variantLabel       String?
-  resolutionStatus   BergResolutionStatus @default(NONE)
-  postProcessStatus  BergPostProcessStatus @default(PENDING)
-  postProcessError   String?
+  id                String                @id @default(cuid())
+  locationId        String
+  deviceId          String
+  pluMappingId      String?
+  pluNumber         Int
+  rawPacket         String
+  modifierBytes     String?
+  trailerBytes      String?
+  parseStatus       BergParseStatus
+  lrcReceived       String
+  lrcCalculated     String
+  lrcValid          Boolean
+  status            BergDispenseStatus
+  unmatchedType     String?
+  pourSizeOz        Decimal?              @db.Decimal(6, 3)
+  pourCost          Decimal?              @db.Decimal(10, 2)
+  orderId           String?
+  orderItemId       String?
+  employeeId        String?
+  terminalId        String?
+  ackLatencyMs      Int?
+  ackTimeoutMs      Int
+  errorReason       String?
+  businessDate      DateTime?
+  idempotencyKey    String                @unique
+  receivedAt        DateTime              @default(now())
+  acknowledgedAt    DateTime?
+  variantKey        String?
+  variantLabel      String?
+  resolutionStatus  BergResolutionStatus  @default(NONE)
+  postProcessStatus BergPostProcessStatus @default(PENDING)
+  postProcessError  String?
 
   location   Location        @relation(fields: [locationId], references: [id])
   device     BergDevice      @relation(fields: [deviceId], references: [id])
@@ -8633,4 +8642,37 @@ model BergDispenseEvent {
   @@index([idempotencyKey])
   @@index([deviceId, receivedAt])
   @@index([deviceId, businessDate])
+}
+
+// ============================================
+// BARCODE SCANNING
+// Maps multiple barcodes to menu/inventory items with pack-size pricing
+// ============================================
+
+model ItemBarcode {
+  id       String   @id @default(cuid())
+  barcode  String // UPC/EAN/custom code
+  label    String? // "Single", "6-Pack", "Case", "750ml"
+  packSize Int      @default(1) // Units per scan (1, 6, 12, 24)
+  price    Decimal? // Override price for this pack size (null = use base × packSize)
+
+  // Link to one of: MenuItem or InventoryItem (or both)
+  menuItemId      String?
+  menuItem        MenuItem?      @relation(fields: [menuItemId], references: [id])
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, barcode]) // One barcode per location
+  @@index([barcode]) // Fast lookup
+  @@index([menuItemId])
+  @@index([inventoryItemId])
+  @@index([locationId])
 }
