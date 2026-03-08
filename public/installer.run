@@ -272,12 +272,13 @@ if [[ -d "$APP_BASE" ]]; then
       log "Disabling server services..."
       systemctl disable --now thepasspos 2>/dev/null || true
       systemctl disable --now thepasspos-sync 2>/dev/null || true
-      # Stop and mask PostgreSQL — terminal doesn't need it
-      # Data left on disk intentionally (recoverable if role switched back)
+      # Fully remove PostgreSQL — terminal doesn't need it
       systemctl disable --now postgresql 2>/dev/null || true
       systemctl mask postgresql 2>/dev/null || true
-      log "PostgreSQL stopped, disabled, and masked (data preserved in /var/lib/postgresql)."
-      log "To fully remove: sudo systemctl unmask postgresql && sudo apt purge postgresql*"
+      apt-get purge -y --auto-remove postgresql* postgresql-contrib* 2>/dev/null || true
+      rm -rf /var/lib/postgresql /etc/postgresql 2>/dev/null || true
+      rm -f "$POSUSER_HOME/.pgpass" 2>/dev/null || true
+      log "PostgreSQL fully removed (service, data, config, .pgpass)."
       # Remove server-only cron entries
       crontab -u "$POSUSER" -l 2>/dev/null | grep -vF -e "/opt/gwi-pos/heartbeat.sh" -e "/opt/gwi-pos/backup-pos.sh" | crontab -u "$POSUSER" - 2>/dev/null || true
       log "Removed heartbeat and backup cron entries from previous server role"
@@ -1059,6 +1060,7 @@ if [[ "$STATION_ROLE" == "server" ]]; then
       git config credential.helper 'store --file=$CRED_FILE'
       git remote set-url origin '$GIT_REPO' 2>/dev/null || true
       git fetch --all && git reset --hard origin/main
+      git clean -fd
     "; then
       err "Failed to update app code from git."
       err "Check network connectivity and deploy token validity."
@@ -1259,6 +1261,11 @@ SVCEOF
     done
 
     systemctl restart thepasspos-kiosk || track_warn "Kiosk service restart failed — will retry on reboot"
+    # Verify kiosk process actually launched
+    sleep 5
+    if ! pgrep -u "$POSUSER" -f "${CHROMIUM_BIN:-chromium}" >/dev/null 2>&1; then
+      track_warn "Kiosk process not detected — check display, graphics drivers, or X11 session"
+    fi
   fi
   log "Services configured and started."
 
@@ -1478,6 +1485,11 @@ SVCEOF
   if [[ "$TERM_KIOSK_OK" == "true" ]]; then
     systemctl enable thepasspos-kiosk
     systemctl restart thepasspos-kiosk || track_warn "Terminal kiosk service restart failed — will retry on reboot"
+    # Verify kiosk process actually launched
+    sleep 5
+    if ! pgrep -u "$POSUSER" -f "${TERM_CHROMIUM:-chromium}" >/dev/null 2>&1; then
+      track_warn "Terminal kiosk process not detected — check display, graphics drivers, or X11 session"
+    fi
   else
     track_warn "Skipping terminal kiosk service — preflight failed."
     systemctl disable thepasspos-kiosk 2>/dev/null || true
