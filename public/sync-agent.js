@@ -189,12 +189,44 @@ function handleForceUpdate(payload) {
   }
   step('prisma generate', 'npx prisma generate', true, 120)
   step('pre-migrate', 'node scripts/nuc-pre-migrate.js', true, 180)
-  step('prisma migrate', 'npx prisma migrate deploy', true, 120)
-  step('prisma db push', 'npx prisma db push --accept-data-loss', true, 180)
+
+  // Run migrate deploy — if it fails with P3005 (db-push database with no migration
+  // history), baseline all existing migrations as applied and retry.
+  log('  prisma migrate...')
+  var migrateOk = false
+  try {
+    execSync('npx prisma migrate deploy', { cwd: APP_DIR, timeout: 120000, stdio: 'pipe', encoding: 'utf-8' })
+    migrateOk = true
+    steps.push('prisma migrate OK')
+  } catch (e) {
+    var migrateErr = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 1000)
+    if (migrateErr.indexOf('P3005') !== -1) {
+      log('  Database needs baselining (created with db push)...')
+      try {
+        var migDirs = fs.readdirSync(path.join(APP_DIR, 'prisma', 'migrations'))
+        migDirs.forEach(function(name) {
+          var fullPath = path.join(APP_DIR, 'prisma', 'migrations', name)
+          if (fs.statSync(fullPath).isDirectory()) {
+            log('    Marking as applied: ' + name)
+            run('npx prisma migrate resolve --applied ' + name, APP_DIR, 30)
+          }
+        })
+        migrateOk = run('npx prisma migrate deploy', APP_DIR, 120)
+        steps.push('prisma migrate (baselined) ' + (migrateOk ? 'OK' : 'FAIL'))
+      } catch (baseErr) {
+        steps.push('prisma migrate baseline FAIL')
+        log('  Baseline error: ' + (baseErr.message || '').slice(0, 200))
+      }
+    } else {
+      steps.push('prisma migrate FAIL')
+      log('  ' + migrateErr.slice(0, 300))
+    }
+  }
+
   // Also migrate Neon cloud database (if configured for offline-first mode)
   if (env.NEON_DATABASE_URL) {
     step('neon-pre-migrate', 'NEON_MIGRATE=true node scripts/nuc-pre-migrate.js', true, 180)
-    step('neon-db-push', 'DATABASE_URL=' + JSON.stringify(env.NEON_DATABASE_URL) + ' npx prisma db push --accept-data-loss', true, 180)
+    step('neon-db-push', 'DATABASE_URL=' + JSON.stringify(env.NEON_DATABASE_URL) + ' npx prisma db push', true, 180)
   }
   if (!step('build', 'npm run build', false, 600)) {
     return { ok: false, error: 'build failed', steps: steps }
