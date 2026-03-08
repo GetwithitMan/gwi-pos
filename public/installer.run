@@ -88,14 +88,17 @@ if [[ -z "$POSUSER" ]]; then
 fi
 
 if [[ -z "$POSUSER" ]] || [[ "$POSUSER" == "root" ]]; then
-  # Auto-detect: list non-root users with UID >= 1000 and a real home dir
+  # Auto-detect: try UID 1000 first, then first user ≥1000
   POSUSER=$(getent passwd 1000 | cut -d: -f1 || echo "")
   if [[ -z "$POSUSER" ]]; then
-    err "Cannot determine service user."
-    err "Run with: curl -sSL ... | sudo bash -s -- --user <username>"
+    POSUSER=$(awk -F: '$3>=1000 && $3<65534 && $7 !~ /nologin|false/ {print $1; exit}' /etc/passwd || echo "")
+  fi
+  if [[ -z "$POSUSER" ]]; then
+    err "Cannot determine service user. No non-root users with UID >= 1000 found."
+    err "Run with: sudo ./installer.run --user <username>"
     exit 1
   fi
-  warn "Auto-detected service user: $POSUSER (UID 1000)"
+  warn "Auto-detected service user: $POSUSER"
   warn "If this is wrong, re-run with: --user <correct-username>"
 fi
 
@@ -269,10 +272,13 @@ if [[ -d "$APP_BASE" ]]; then
       log "Disabling server services..."
       systemctl disable --now thepasspos 2>/dev/null || true
       systemctl disable --now thepasspos-sync 2>/dev/null || true
-      # Stop local PostgreSQL if running (terminal doesn't need it)
+      # Stop and mask PostgreSQL — terminal doesn't need it
+      # Data left on disk intentionally (recoverable if role switched back)
       systemctl disable --now postgresql 2>/dev/null || true
-      # Remove server-only cron entries (exact script paths, not keywords)
-      # Always run the filtered rewrite — grep -vF with -e is safe even if entries don't exist
+      systemctl mask postgresql 2>/dev/null || true
+      log "PostgreSQL stopped, disabled, and masked (data preserved in /var/lib/postgresql)."
+      log "To fully remove: sudo systemctl unmask postgresql && sudo apt purge postgresql*"
+      # Remove server-only cron entries
       crontab -u "$POSUSER" -l 2>/dev/null | grep -vF -e "/opt/gwi-pos/heartbeat.sh" -e "/opt/gwi-pos/backup-pos.sh" | crontab -u "$POSUSER" - 2>/dev/null || true
       log "Removed heartbeat and backup cron entries from previous server role"
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
@@ -916,7 +922,8 @@ if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   DB_NAME="thepasspos"
 
   # Reuse existing password from .env on re-runs; generate random on first install
-  # Try 3 sources: DATABASE_URL in .env, then .pgpass, then generate new
+  # Try 3 sources: DATABASE_URL in .env → .pgpass → generate new
+  # If generating new, ALTER ROLE will sync PG to match (idempotent)
   EXISTING_DB_PW=""
   if [[ -f "$ENV_FILE" ]]; then
     EXISTING_DB_PW=$(grep -oP '^DATABASE_URL="?postgresql://[^:]+:\K[^@]+' "$ENV_FILE" 2>/dev/null | head -1 || echo "")
@@ -929,6 +936,11 @@ if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
     log "Reusing existing database password."
   else
     DB_PASSWORD=$(openssl rand -hex 16)
+    # If PG role already exists, warn that password is being reset
+    if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" 2>/dev/null | grep -q 1; then
+      warn "Database user '$DB_USER' exists but password not found in .env or .pgpass."
+      warn "Generating new password — ALTER ROLE will update PostgreSQL to match."
+    fi
     log "Generated new random database password."
   fi
 
@@ -1080,6 +1092,9 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   chown "$POSUSER":"$POSUSER" "$APP_DIR/.env" "$APP_DIR/.env.local"
 
   # Build the application (each step checked explicitly)
+  # Clean stale build artifacts first (prevents mixed old+new state)
+  rm -rf "$APP_DIR/.next" 2>/dev/null || true
+
   log "Installing npm dependencies..."
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm ci --production=false"; then
     err "npm install failed. Check Node.js version and network."
