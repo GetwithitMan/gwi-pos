@@ -13,7 +13,7 @@
 
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
-import { getDownstreamModels, DOWNSTREAM_INTERVAL_MS } from './sync-config'
+import { getDownstreamModels, getBidirectionalModelNames, DOWNSTREAM_INTERVAL_MS } from './sync-config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -126,6 +126,9 @@ function buildCast(dataType: string, udtName: string): string {
 
 // ── Core sync logic ───────────────────────────────────────────────────────────
 
+/** Set of bidirectional model names — cached once */
+const biDirModels = getBidirectionalModelNames()
+
 async function syncTableDown(tableName: string, batchSize: number): Promise<number> {
   const columns = columnCache.get(tableName)
   if (!columns || columns.length === 0) return 0
@@ -133,13 +136,17 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
 
   const hwm = highWaterMarks.get(tableName) ?? new Date('1970-01-01T00:00:00Z')
 
+  // Bidirectional models: only pull cloud-originated rows downstream
+  const isBiDir = biDirModels.has(tableName)
+  const biDirFilter = isBiDir ? ` AND "lastMutatedBy" = 'cloud'` : ''
+
   // Fetch rows from Neon newer than high-water mark
   // Use explicit column names instead of SELECT * to avoid "cached plan must not
   // change result type" errors from PgBouncer prepared statement caching after
   // schema changes on the Neon connection pooler.
   const quotedSelectCols = columns.map((c) => `"${c}"`).join(', ')
   const rows = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT ${quotedSelectCols} FROM "${tableName}" WHERE "updatedAt" > $1::timestamptz ORDER BY "updatedAt" ASC LIMIT $2`,
+    `SELECT ${quotedSelectCols} FROM "${tableName}" WHERE "updatedAt" > $1::timestamptz${biDirFilter} ORDER BY "updatedAt" ASC LIMIT $2`,
     hwm.toISOString(),
     batchSize
   )
@@ -147,6 +154,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   if (rows.length === 0) return 0
 
   // Build upsert SQL for local PG
+  // For bidirectional models: only update if local row hasn't been mutated locally
+  // (lastMutatedBy is still 'cloud' or NULL). If local device mutated it → skip update.
   const upsertCols = columns.filter((c) => c !== 'syncedAt')
   const quotedCols = upsertCols.map((c) => `"${c}"`).join(', ')
   const types = columnTypeMap.get(tableName)
@@ -156,7 +165,12 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
     .map((c) => `"${c}" = EXCLUDED."${c}"`)
     .join(', ')
 
-  const sql = `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}`
+  // Bidirectional conflict guard: only overwrite if local row is still cloud-owned
+  const biDirConflictGuard = isBiDir
+    ? ` WHERE "${tableName}"."lastMutatedBy" = 'cloud' OR "${tableName}"."lastMutatedBy" IS NULL`
+    : ''
+
+  const sql = `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}${biDirConflictGuard}`
 
   let synced = 0
   let maxUpdatedAt = hwm
@@ -173,6 +187,10 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
           row.id as string
         )
       }
+
+      // TODO: Fulfillment routing hook — when a cloud-originated Order arrives
+      // with status change (e.g., 'sent'), trigger fulfillment router.
+      // Task #7 will implement: if (tableName === 'Order') routeToFulfillment(row)
 
       // Track max updatedAt for high-water mark
       const rowUpdatedAt = row.updatedAt instanceof Date
@@ -271,13 +289,61 @@ export function getDownstreamSyncMetrics(): DownstreamMetrics {
 /**
  * Trigger an immediate downstream sync cycle (non-blocking).
  * Called when DATA_CHANGED arrives from the sync agent.
+ * @param _domain - Optional domain name (legacy)
+ * @param modelNames - Optional specific model names to sync (e.g., ['Order', 'Payment'])
  */
-export async function triggerImmediateDownstreamSync(_domain?: string): Promise<void> {
+export async function triggerImmediateDownstreamSync(_domain?: string, modelNames?: string[]): Promise<void> {
   if (immediateRunning) return
   immediateRunning = true
   try {
-    await runDownstreamCycle()
+    if (modelNames && modelNames.length > 0) {
+      await runDownstreamCycleForModels(modelNames)
+    } else {
+      await runDownstreamCycle()
+    }
   } finally {
     immediateRunning = false
+  }
+}
+
+/**
+ * Run downstream sync for specific models only.
+ * Used by SSE wake-up to immediately sync newly changed bidirectional models.
+ */
+async function runDownstreamCycleForModels(modelNames: string[]): Promise<void> {
+  if (!hasNeonConnection()) return
+
+  try {
+    const allModels = getDownstreamModels()
+    const targetSet = new Set(modelNames)
+    const models = allModels.filter(([name]) => targetSet.has(name))
+    let totalSynced = 0
+
+    for (const [tableName, config] of models) {
+      if (!columnCache.has(tableName)) continue
+
+      try {
+        const synced = await syncTableDown(tableName, config.batchSize)
+        totalSynced += synced
+
+        if (synced > 0) {
+          console.log(`[DownstreamSync] ${tableName}: ${synced} rows (immediate)`)
+        }
+      } catch (err) {
+        console.error(
+          `[DownstreamSync] Table ${tableName}:`,
+          err instanceof Error ? err.message : err
+        )
+      }
+    }
+
+    metrics.lastSyncAt = new Date()
+    metrics.rowsSyncedTotal += totalSynced
+
+    if (totalSynced > 0) {
+      console.log(`[DownstreamSync] Immediate: ${totalSynced} rows synced for [${modelNames.join(', ')}]`)
+    }
+  } catch (err) {
+    console.error('[DownstreamSync] Immediate cycle error:', err)
   }
 }

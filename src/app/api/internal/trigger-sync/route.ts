@@ -11,11 +11,14 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}))
-    const domain = (body as Record<string, unknown>)?.domain as string | undefined
+    const parsed = body as Record<string, unknown>
+    const domain = parsed?.domain as string | undefined
+    // Model-specific sync: sync-agent can pass specific model names for targeted sync
+    const models = Array.isArray(parsed?.models) ? (parsed.models as string[]) : undefined
 
-    await triggerImmediateDownstreamSync(domain)
+    await triggerImmediateDownstreamSync(domain, models)
 
-    return NextResponse.json({ success: true, domain })
+    return NextResponse.json({ success: true, domain, models })
   } catch {
     return NextResponse.json({ error: 'Sync trigger failed' }, { status: 500 })
   }

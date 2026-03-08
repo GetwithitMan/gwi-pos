@@ -313,6 +313,76 @@ async function runPrePushMigrations() {
     console.log('[vercel-build]   Done')
   }
 
+  // ====================================================================
+  // HA Cellular — FulfillmentType enum + MenuItem/Order/OrderItem/Payment columns
+  // ====================================================================
+
+  // --- FulfillmentType enum ---
+  if (!(await enumTypeExists('FulfillmentType'))) {
+    console.log('[vercel-build]   Creating FulfillmentType enum...')
+    await sql`CREATE TYPE "FulfillmentType" AS ENUM ('SELF_FULFILL', 'KITCHEN_STATION', 'BAR_STATION', 'PREP_STATION', 'NO_ACTION')`
+    console.log('[vercel-build]   Done')
+  }
+
+  // --- MenuItem.fulfillmentType + MenuItem.fulfillmentStationId ---
+  if (await needsColumn('MenuItem', 'fulfillmentType')) {
+    console.log('[vercel-build]   Adding fulfillmentType to MenuItem...')
+    await sql`ALTER TABLE "MenuItem" ADD COLUMN "fulfillmentType" "FulfillmentType" NOT NULL DEFAULT 'KITCHEN_STATION'`
+    console.log('[vercel-build]   Done — MenuItem.fulfillmentType added')
+  }
+  if (await needsColumn('MenuItem', 'fulfillmentStationId')) {
+    console.log('[vercel-build]   Adding fulfillmentStationId to MenuItem...')
+    await sql`ALTER TABLE "MenuItem" ADD COLUMN "fulfillmentStationId" TEXT`
+    console.log('[vercel-build]   Done — MenuItem.fulfillmentStationId added')
+  }
+
+  // --- Order.lastMutatedBy + Order.originTerminalId ---
+  if (await needsColumn('Order', 'lastMutatedBy')) {
+    console.log('[vercel-build]   Adding lastMutatedBy to Order...')
+    await sql`ALTER TABLE "Order" ADD COLUMN "lastMutatedBy" TEXT`
+    console.log('[vercel-build]   Done — Order.lastMutatedBy added')
+  }
+  if (await needsColumn('Order', 'originTerminalId')) {
+    console.log('[vercel-build]   Adding originTerminalId to Order...')
+    await sql`ALTER TABLE "Order" ADD COLUMN "originTerminalId" TEXT`
+    console.log('[vercel-build]   Done — Order.originTerminalId added')
+  }
+
+  // --- OrderItem.lastMutatedBy ---
+  if (await needsColumn('OrderItem', 'lastMutatedBy')) {
+    console.log('[vercel-build]   Adding lastMutatedBy to OrderItem...')
+    await sql`ALTER TABLE "OrderItem" ADD COLUMN "lastMutatedBy" TEXT`
+    console.log('[vercel-build]   Done — OrderItem.lastMutatedBy added')
+  }
+
+  // --- Payment.lastMutatedBy ---
+  if (await needsColumn('Payment', 'lastMutatedBy')) {
+    console.log('[vercel-build]   Adding lastMutatedBy to Payment...')
+    await sql`ALTER TABLE "Payment" ADD COLUMN "lastMutatedBy" TEXT`
+    console.log('[vercel-build]   Done — Payment.lastMutatedBy added')
+  }
+
+  // --- OrderDiscount.lastMutatedBy ---
+  if (await needsColumn('OrderDiscount', 'lastMutatedBy')) {
+    console.log('[vercel-build]   Adding lastMutatedBy to OrderDiscount...')
+    await sql`ALTER TABLE "OrderDiscount" ADD COLUMN "lastMutatedBy" TEXT`
+    console.log('[vercel-build]   Done — OrderDiscount.lastMutatedBy added')
+  }
+
+  // --- OrderCard.lastMutatedBy ---
+  if (await needsColumn('OrderCard', 'lastMutatedBy')) {
+    console.log('[vercel-build]   Adding lastMutatedBy to OrderCard...')
+    await sql`ALTER TABLE "OrderCard" ADD COLUMN "lastMutatedBy" TEXT`
+    console.log('[vercel-build]   Done — OrderCard.lastMutatedBy added')
+  }
+
+  // --- OrderItemModifier.lastMutatedBy ---
+  if (await needsColumn('OrderItemModifier', 'lastMutatedBy')) {
+    console.log('[vercel-build]   Adding lastMutatedBy to OrderItemModifier...')
+    await sql`ALTER TABLE "OrderItemModifier" ADD COLUMN "lastMutatedBy" TEXT`
+    console.log('[vercel-build]   Done — OrderItemModifier.lastMutatedBy added')
+  }
+
   console.log('[vercel-build] Pre-push migrations complete')
 }
 

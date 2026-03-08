@@ -23,6 +23,11 @@ interface HealthResponse {
     database: boolean
     memory: boolean
   }
+  pgRole: 'primary' | 'standby' | 'unknown'
+  stationRole: string
+  virtualIp: string | null
+  replicationLag: number | null
+  isVipOwner: boolean | null
   error?: string
 }
 
@@ -34,15 +39,28 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   const uptime = Math.floor((Date.now() - startTime) / 1000)
   const version = process.env.npm_package_version || '1.0.0'
 
-  // Check database connection
+  // Check database connection + PG recovery state
   let databaseStatus: HealthResponse['database'] = 'disconnected'
   let databaseCheck = false
+  let pgRole: HealthResponse['pgRole'] = 'unknown'
+  let replicationLag: number | null = null
 
   try {
-    // Simple query to verify database is accessible
-    await db.$queryRaw`SELECT 1`
+    // Verify database is accessible and check recovery state
+    const [recoveryResult] = await db.$queryRaw<[{ pg_is_in_recovery: boolean }]>`SELECT pg_is_in_recovery()`
     databaseStatus = 'connected'
     databaseCheck = true
+    pgRole = recoveryResult.pg_is_in_recovery ? 'standby' : 'primary'
+
+    // On standby, measure replication lag
+    if (pgRole === 'standby') {
+      try {
+        const [lagResult] = await db.$queryRaw<[{ lag: number | null }]>`SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())) as lag`
+        replicationLag = lagResult.lag != null ? Math.round(lagResult.lag * 100) / 100 : null
+      } catch {
+        // Non-critical — lag unavailable
+      }
+    }
   } catch (error) {
     databaseStatus = 'error'
     console.error('[Health] Database check failed:', error)
@@ -63,6 +81,9 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     status = 'degraded'
   }
 
+  const stationRole = process.env.STATION_ROLE || 'unknown'
+  const virtualIp = process.env.VIRTUAL_IP || null
+
   const response: HealthResponse = {
     status,
     timestamp,
@@ -74,6 +95,11 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
       database: databaseCheck,
       memory: memoryCheck,
     },
+    pgRole,
+    stationRole,
+    virtualIp,
+    replicationLag,
+    isVipOwner: virtualIp ? stationRole === 'server' : null,
   }
 
   // Return appropriate HTTP status

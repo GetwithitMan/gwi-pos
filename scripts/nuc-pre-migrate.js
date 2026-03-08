@@ -1557,6 +1557,124 @@ async function runPrePushMigrations() {
       console.error(`${PREFIX}   FAILED ItemBarcode:`, err.message)
     }
 
+    // ====================================================================
+    // HA Cellular — FulfillmentType enum + MenuItem/Order/OrderItem/Payment columns
+    // ====================================================================
+
+    // --- FulfillmentType enum ---
+    try {
+      await prisma.$executeRawUnsafe(
+        `DO $$ BEGIN CREATE TYPE "FulfillmentType" AS ENUM ('SELF_FULFILL', 'KITCHEN_STATION', 'BAR_STATION', 'PREP_STATION', 'NO_ACTION'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+      )
+      console.log(`${PREFIX}   FulfillmentType enum ready`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED FulfillmentType enum:`, err.message)
+    }
+
+    // --- MenuItem.fulfillmentType + MenuItem.fulfillmentStationId ---
+    try {
+      const hasFulfillmentType = await columnExists(prisma, 'MenuItem', 'fulfillmentType')
+      if (!hasFulfillmentType) {
+        console.log(`${PREFIX}   Adding MenuItem.fulfillmentType...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "MenuItem" ADD COLUMN "fulfillmentType" "FulfillmentType" NOT NULL DEFAULT 'KITCHEN_STATION'`)
+        console.log(`${PREFIX}   Done — MenuItem.fulfillmentType added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED MenuItem.fulfillmentType:`, err.message)
+    }
+    try {
+      const hasFulfillmentStationId = await columnExists(prisma, 'MenuItem', 'fulfillmentStationId')
+      if (!hasFulfillmentStationId) {
+        console.log(`${PREFIX}   Adding MenuItem.fulfillmentStationId...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "MenuItem" ADD COLUMN "fulfillmentStationId" TEXT`)
+        console.log(`${PREFIX}   Done — MenuItem.fulfillmentStationId added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED MenuItem.fulfillmentStationId:`, err.message)
+    }
+
+    // --- Order.lastMutatedBy + Order.originTerminalId ---
+    try {
+      const hasLastMutatedBy = await columnExists(prisma, 'Order', 'lastMutatedBy')
+      if (!hasLastMutatedBy) {
+        console.log(`${PREFIX}   Adding Order.lastMutatedBy...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "Order" ADD COLUMN "lastMutatedBy" TEXT`)
+        console.log(`${PREFIX}   Done — Order.lastMutatedBy added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Order.lastMutatedBy:`, err.message)
+    }
+    try {
+      const hasOriginTerminalId = await columnExists(prisma, 'Order', 'originTerminalId')
+      if (!hasOriginTerminalId) {
+        console.log(`${PREFIX}   Adding Order.originTerminalId...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "Order" ADD COLUMN "originTerminalId" TEXT`)
+        console.log(`${PREFIX}   Done — Order.originTerminalId added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Order.originTerminalId:`, err.message)
+    }
+
+    // --- OrderItem.lastMutatedBy ---
+    try {
+      const hasLastMutatedBy = await columnExists(prisma, 'OrderItem', 'lastMutatedBy')
+      if (!hasLastMutatedBy) {
+        console.log(`${PREFIX}   Adding OrderItem.lastMutatedBy...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "OrderItem" ADD COLUMN "lastMutatedBy" TEXT`)
+        console.log(`${PREFIX}   Done — OrderItem.lastMutatedBy added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED OrderItem.lastMutatedBy:`, err.message)
+    }
+
+    // --- Payment.lastMutatedBy ---
+    try {
+      const hasLastMutatedBy = await columnExists(prisma, 'Payment', 'lastMutatedBy')
+      if (!hasLastMutatedBy) {
+        console.log(`${PREFIX}   Adding Payment.lastMutatedBy...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "Payment" ADD COLUMN "lastMutatedBy" TEXT`)
+        console.log(`${PREFIX}   Done — Payment.lastMutatedBy added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED Payment.lastMutatedBy:`, err.message)
+    }
+
+    // --- OrderDiscount.lastMutatedBy ---
+    try {
+      const has = await columnExists(prisma, 'OrderDiscount', 'lastMutatedBy')
+      if (!has) {
+        console.log(`${PREFIX}   Adding OrderDiscount.lastMutatedBy...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "OrderDiscount" ADD COLUMN "lastMutatedBy" TEXT`)
+        console.log(`${PREFIX}   Done — OrderDiscount.lastMutatedBy added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED OrderDiscount.lastMutatedBy:`, err.message)
+    }
+
+    // --- OrderCard.lastMutatedBy ---
+    try {
+      const has = await columnExists(prisma, 'OrderCard', 'lastMutatedBy')
+      if (!has) {
+        console.log(`${PREFIX}   Adding OrderCard.lastMutatedBy...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "OrderCard" ADD COLUMN "lastMutatedBy" TEXT`)
+        console.log(`${PREFIX}   Done — OrderCard.lastMutatedBy added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED OrderCard.lastMutatedBy:`, err.message)
+    }
+
+    // --- OrderItemModifier.lastMutatedBy ---
+    try {
+      const has = await columnExists(prisma, 'OrderItemModifier', 'lastMutatedBy')
+      if (!has) {
+        console.log(`${PREFIX}   Adding OrderItemModifier.lastMutatedBy...`)
+        await prisma.$executeRawUnsafe(`ALTER TABLE "OrderItemModifier" ADD COLUMN "lastMutatedBy" TEXT`)
+        console.log(`${PREFIX}   Done — OrderItemModifier.lastMutatedBy added`)
+      }
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED OrderItemModifier.lastMutatedBy:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

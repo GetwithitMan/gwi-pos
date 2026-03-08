@@ -5,8 +5,8 @@
  * and batch size. Drives both upstream and downstream sync workers.
  */
 
-export type SyncDirection = 'upstream' | 'downstream' | 'none'
-export type SyncOwner = 'nuc' | 'cloud' | 'none'
+export type SyncDirection = 'upstream' | 'downstream' | 'bidirectional' | 'none'
+export type SyncOwner = 'nuc' | 'cloud' | 'both' | 'none'
 
 export interface SyncModelConfig {
   direction: SyncDirection
@@ -22,20 +22,25 @@ export interface SyncModelConfig {
  *
  * NUC-owned (upstream): transactional data generated on the NUC
  * Cloud-owned (downstream): configuration data managed from admin/cloud
+ * Bidirectional: syncs both ways, filtered by lastMutatedBy column
+ *   - Upstream: rows WHERE lastMutatedBy != 'cloud' (NUC-originated)
+ *   - Downstream: rows WHERE lastMutatedBy = 'cloud' (cloud-originated)
  * None: local-only or special handling
  */
 export const SYNC_MODELS: Record<string, SyncModelConfig> = {
+  // ── Bidirectional (NUC ↔ Neon, filtered by lastMutatedBy) ─────────────
+  Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 50 },
+  OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 50 },
+  OrderDiscount:          { direction: 'bidirectional', owner: 'both', priority: 22, batchSize: 100 },
+  OrderCard:              { direction: 'bidirectional', owner: 'both', priority: 24, batchSize: 100 },
+  OrderItemModifier:      { direction: 'bidirectional', owner: 'both', priority: 25, batchSize: 100 },
+  Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 50 },
+
   // ── NUC-owned (upstream: NUC → Neon) ──────────────────────────────────
-  Order:                  { direction: 'upstream', owner: 'nuc', priority: 10, batchSize: 50 },
   OrderOwnership:         { direction: 'upstream', owner: 'nuc', priority: 12, batchSize: 100 },
   OrderOwnershipEntry:    { direction: 'upstream', owner: 'nuc', priority: 13, batchSize: 100 },
   Ticket:                 { direction: 'upstream', owner: 'nuc', priority: 15, batchSize: 100 },
-  OrderItem:              { direction: 'upstream', owner: 'nuc', priority: 20, batchSize: 50 },
-  OrderDiscount:          { direction: 'upstream', owner: 'nuc', priority: 22, batchSize: 100 },
   OrderItemDiscount:      { direction: 'upstream', owner: 'nuc', priority: 23, batchSize: 100 },
-  OrderCard:              { direction: 'upstream', owner: 'nuc', priority: 24, batchSize: 100 },
-  OrderItemModifier:      { direction: 'upstream', owner: 'nuc', priority: 25, batchSize: 100 },
-  Payment:                { direction: 'upstream', owner: 'nuc', priority: 30, batchSize: 50 },
   RefundLog:              { direction: 'upstream', owner: 'nuc', priority: 32, batchSize: 100 },
   Shift:                  { direction: 'upstream', owner: 'nuc', priority: 35, batchSize: 100 },
   Drawer:                 { direction: 'upstream', owner: 'nuc', priority: 36, batchSize: 100 },
@@ -103,18 +108,29 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   PerformanceLog:         { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
 }
 
-/** Return upstream models sorted by FK-dependency priority (lowest first) */
+/** Return upstream models sorted by FK-dependency priority (lowest first).
+ *  Includes bidirectional models (they sync upstream with lastMutatedBy filter). */
 export function getUpstreamModels(): [string, SyncModelConfig][] {
   return Object.entries(SYNC_MODELS)
-    .filter(([, c]) => c.direction === 'upstream')
+    .filter(([, c]) => c.direction === 'upstream' || c.direction === 'bidirectional')
     .sort(([, a], [, b]) => a.priority - b.priority)
 }
 
-/** Return downstream models sorted by FK-dependency priority (lowest first) */
+/** Return downstream models sorted by FK-dependency priority (lowest first).
+ *  Includes bidirectional models (they sync downstream with lastMutatedBy filter). */
 export function getDownstreamModels(): [string, SyncModelConfig][] {
   return Object.entries(SYNC_MODELS)
-    .filter(([, c]) => c.direction === 'downstream')
+    .filter(([, c]) => c.direction === 'downstream' || c.direction === 'bidirectional')
     .sort(([, a], [, b]) => a.priority - b.priority)
+}
+
+/** Return only bidirectional model names */
+export function getBidirectionalModelNames(): Set<string> {
+  return new Set(
+    Object.entries(SYNC_MODELS)
+      .filter(([, c]) => c.direction === 'bidirectional')
+      .map(([name]) => name)
+  )
 }
 
 export const UPSTREAM_INTERVAL_MS = parseInt(

@@ -548,6 +548,14 @@ enum BergPostProcessStatus {
   FAILED
 }
 
+enum FulfillmentType {
+  SELF_FULFILL
+  KITCHEN_STATION
+  BAR_STATION
+  PREP_STATION
+  NO_ACTION
+}
+
 // ============================================
 // ORGANIZATION & LOCATIONS (Skill 53)
 // ============================================
@@ -1611,6 +1619,10 @@ model MenuItem {
   // Customer-Facing Display (CFD) - featured items shown on idle screen
   isFeaturedCfd Boolean @default(false)
 
+  // Fulfillment routing (HA cellular)
+  fulfillmentType      FulfillmentType @default(KITCHEN_STATION)
+  fulfillmentStationId String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -2375,6 +2387,10 @@ model Order {
   // Tax exemption (manager.tax_exempt permission required to set)
   isTaxExempt Boolean @default(false)
 
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy    String? // 'cloud' | 'local' | null
+  originTerminalId String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -2552,6 +2568,9 @@ model OrderItem {
   addedByEmployeeId String?
   addedByEmployee   Employee? @relation("OrderItemAddedBy", fields: [addedByEmployeeId], references: [id])
 
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy String? // 'cloud' | 'local' | null
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -2622,6 +2641,9 @@ model OrderItemModifier {
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
+
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy String? // 'cloud' | 'local' | null
 
   @@index([locationId])
   @@index([orderItemId])
@@ -2723,6 +2745,9 @@ model Payment {
   // Sync audit tracking
   syncAttempts        Int     @default(0) // How many times sync was attempted
   wasDuplicateBlocked Boolean @default(false) // Was a duplicate blocked by idempotency?
+
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy String? // 'cloud' | 'local' | null
 
   processedAt DateTime @default(now())
   createdAt   DateTime @default(now())
@@ -3041,6 +3066,9 @@ model OrderDiscount {
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
+
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy String? // 'cloud' | 'local' | null
 
   @@index([locationId])
   @@index([orderId])
@@ -7414,6 +7442,9 @@ model OrderCard {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
   syncedAt  DateTime?
+
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy String? // 'cloud' | 'local' | null
 
   // C-SCHEMA-1: Added reverse relations
   walkoutRetries WalkoutRetry[]

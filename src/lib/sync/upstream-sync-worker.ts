@@ -10,7 +10,7 @@
 
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
-import { getUpstreamModels, UPSTREAM_INTERVAL_MS } from './sync-config'
+import { getUpstreamModels, getBidirectionalModelNames, UPSTREAM_INTERVAL_MS } from './sync-config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -99,6 +99,9 @@ function buildCast(dataType: string, udtName: string): string {
 
 // ── Core sync logic ───────────────────────────────────────────────────────────
 
+/** Set of bidirectional model names — cached once */
+const biDirModels = getBidirectionalModelNames()
+
 async function syncTable(tableName: string, batchSize: number): Promise<number> {
   const columns = columnCache.get(tableName)
   if (!columns || columns.length === 0) return 0
@@ -108,7 +111,11 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
   const hasUpdatedAt = columns.includes('updatedAt')
   if (!hasUpdatedAt || !hasSyncedAt) return 0 // Need both columns to track sync state
 
-  const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)`
+  // Bidirectional models: only sync NUC-originated rows upstream (skip cloud-originated)
+  const isBiDir = biDirModels.has(tableName) && columns.includes('lastMutatedBy')
+  const biDirFilter = isBiDir ? ` AND ("lastMutatedBy" IS NULL OR "lastMutatedBy" != 'cloud')` : ''
+
+  const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)${biDirFilter}`
 
   const rows = await masterClient.$queryRawUnsafe<Record<string, unknown>[]>(
     `SELECT * FROM "${tableName}" WHERE ${whereClause} ORDER BY "updatedAt" ASC LIMIT $1`,
@@ -171,8 +178,10 @@ async function runSyncCycle(): Promise<void> {
         const hasUpdatedAt = columns.includes('updatedAt')
         if (!hasUpdatedAt || !hasSyncedAt) continue
 
-        // Count pending rows
-        const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)`
+        // Count pending rows (bidirectional models exclude cloud-originated rows)
+        const isBiDir = biDirModels.has(tableName) && columns.includes('lastMutatedBy')
+        const biDirFilter = isBiDir ? ` AND ("lastMutatedBy" IS NULL OR "lastMutatedBy" != 'cloud')` : ''
+        const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)${biDirFilter}`
         const [{ count }] = await masterClient.$queryRawUnsafe<{ count: bigint }[]>(
           `SELECT COUNT(*) as count FROM "${tableName}" WHERE ${whereClause}`
         )

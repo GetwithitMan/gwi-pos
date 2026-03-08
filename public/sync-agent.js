@@ -118,21 +118,6 @@ function postJsonLocal(urlPath, data) {
   })
 }
 
-function postJsonLocal(urlPath, data) {
-  return new Promise(function(resolve, reject) {
-    var body = JSON.stringify(data)
-    var url = new URL(urlPath, 'http://localhost:3005')
-    var req = http.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, function(res) {
-      var d = ''
-      res.on('data', function(c) { d += c })
-      res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
-    })
-    req.on('error', reject)
-    req.write(body)
-    req.end()
-  })
-}
-
 // ── Shell exec ─────────────────────────────────────────────────────────────
 function run(cmd, cwd, timeoutSec) {
   try {
@@ -287,7 +272,8 @@ async function processCommand(dataStr) {
       result = handleForceUpdate(cmd.payload || {})
     } else if (cmd.type === 'DATA_CHANGED') {
       var domain = (cmd.payload && cmd.payload.domain) || 'unknown'
-      log('[Sync] DATA_CHANGED for domain: ' + domain)
+      var models = (cmd.payload && Array.isArray(cmd.payload.models)) ? cmd.payload.models : null
+      log('[Sync] DATA_CHANGED for domain: ' + domain + (models ? ' models: ' + models.join(',') : ''))
 
       if (domain === 'settings') {
         try {
@@ -320,9 +306,14 @@ async function processCommand(dataStr) {
       }
 
       // Trigger immediate downstream sync for any DATA_CHANGED event
+      // If models are specified, pass them for targeted model-specific sync
       try {
-        await postJsonLocal('/api/internal/trigger-sync', { domain: domain })
-        log('[Sync] Triggered immediate downstream sync for domain: ' + domain)
+        var triggerPayload = { domain: domain }
+        if (models) {
+          triggerPayload.models = models
+        }
+        await postJsonLocal('/api/internal/trigger-sync', triggerPayload)
+        log('[Sync] Triggered immediate downstream sync for domain: ' + domain + (models ? ' (' + models.length + ' models)' : ''))
       } catch (triggerErr) {
         log('[Sync] Failed to trigger downstream sync: ' + triggerErr.message)
       }

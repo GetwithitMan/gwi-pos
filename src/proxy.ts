@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyCloudToken, isBlockedInCloudMode } from '@/lib/cloud-auth'
 import { verifyAccessToken } from '@/lib/access-gate'
+import {
+  verifyCellularToken,
+  checkIdleTimeout,
+  recordActivity,
+  checkRateLimit,
+} from '@/lib/cellular-auth'
 
 const GWI_ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
 
@@ -110,6 +116,62 @@ const ONLINE_ORDER_PATH_RE = /^\/([A-Z0-9]{4,8})\/([a-z0-9-]+)(\/.*)?$/
  */
 const PUBLIC_API_PATH_RE = /^\/api\/(online|public)\//
 
+// ═══════════════════════════════════════════════════════════
+// Cellular terminal route policies
+// ═══════════════════════════════════════════════════════════
+
+/** Routes allowed for cellular terminals */
+const CELLULAR_ALLOWLIST: Array<string | RegExp> = [
+  /^\/api\/orders(\/|$)/,       // create, update, send, close, pay
+  /^\/api\/menu(\/|$)/,         // read-only menu access
+  '/api/barcode/lookup',        // barcode scanning
+  '/api/auth/refresh-cellular', // token refresh
+]
+
+/** Routes hard-blocked for CELLULAR_ROAMING (403 always) */
+const CELLULAR_HARD_BLOCKED: Array<string | RegExp> = [
+  /^\/api\/orders\/[^/]+\/refund/,
+  /^\/api\/orders\/[^/]+\/tip-adjust/,
+  /^\/api\/shifts\/[^/]+\/close/,
+  /^\/api\/(admin|settings|reports)(\/|$)/,
+  /^\/api\/employees(\/|$)/,
+  /^\/api\/inventory(\/|$)/,
+  /^\/api\/integrations(\/|$)/,
+  /^\/api\/dashboard(\/|$)/,
+  /^\/api\/cron(\/|$)/,
+  /^\/api\/internal(\/|$)/,
+  /^\/api\/fleet(\/|$)/,
+]
+
+/** Routes that require re-auth (pass through but flagged) */
+const CELLULAR_REAUTH_ROUTES: RegExp[] = [
+  /^\/api\/orders\/[^/]+\/void/,
+  /^\/api\/orders\/[^/]+\/comp/,
+]
+
+function matchesRouteList(pathname: string, routes: Array<string | RegExp>): boolean {
+  for (const route of routes) {
+    if (typeof route === 'string') {
+      if (pathname === route) return true
+    } else {
+      if (route.test(pathname)) return true
+    }
+  }
+  return false
+}
+
+function logCellularBlock(terminalId: string, locationId: string, pathname: string, reason: string): void {
+  console.error(JSON.stringify({
+    event: 'cellular_request_blocked',
+    terminalId,
+    locationId,
+    pathname,
+    reason,
+    authDecisionSource: 'proxy',
+    timestamp: new Date().toISOString(),
+  }))
+}
+
 export async function proxy(request: NextRequest) {
   const host = request.headers.get('host') || ''
   const hostname = host.split(':')[0]
@@ -133,6 +195,78 @@ export async function proxy(request: NextRequest) {
   if (PUBLIC_API_PATH_RE.test(pathname)) {
     // Public APIs need no venue context — pass through unmodified
     return NextResponse.next()
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // CELLULAR TERMINAL AUTH
+  //
+  // Cellular terminals (LTE/5G) authenticate via Bearer JWT
+  // with x-cellular-terminal header. This check runs BEFORE
+  // cloud/local auth so cellular requests never hit cookie checks.
+  // No DB queries — all checks are in-memory for speed.
+  // ═══════════════════════════════════════════════════════════
+  const isCellularRequest = request.headers.get('x-cellular-terminal') === 'true'
+
+  if (isCellularRequest) {
+    const authHeader = request.headers.get('authorization')
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+    if (!token) {
+      return NextResponse.json({ error: 'Missing cellular token' }, { status: 401 })
+    }
+
+    const payload = await verifyCellularToken(token)
+    if (!payload) {
+      return NextResponse.json({ error: 'Invalid or expired cellular token' }, { status: 401 })
+    }
+
+    // Fingerprint check: header must match token
+    const fingerprintHeader = request.headers.get('x-device-fingerprint')
+    if (fingerprintHeader && fingerprintHeader !== payload.deviceFingerprint) {
+      logCellularBlock(payload.terminalId, payload.locationId, pathname, 'fingerprint_mismatch')
+      return NextResponse.json({ error: 'Device fingerprint mismatch' }, { status: 401 })
+    }
+
+    // Idle timeout check
+    if (checkIdleTimeout(payload.terminalId)) {
+      logCellularBlock(payload.terminalId, payload.locationId, pathname, 'idle_timeout')
+      return NextResponse.json({ error: 'Session expired due to inactivity' }, { status: 401 })
+    }
+
+    // Rate limit: 10 req/s per terminalId
+    if (!checkRateLimit(payload.terminalId)) {
+      logCellularBlock(payload.terminalId, payload.locationId, pathname, 'rate_limited')
+      return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
+    }
+
+    // Hard-blocked routes (403 — admin, settings, reports, refund, etc.)
+    if (matchesRouteList(pathname, CELLULAR_HARD_BLOCKED)) {
+      logCellularBlock(payload.terminalId, payload.locationId, pathname, 'hard_blocked')
+      return NextResponse.json({ error: 'Route not available for cellular terminals' }, { status: 403 })
+    }
+
+    // Allowlisted routes — pass through with terminal context headers
+    if (matchesRouteList(pathname, CELLULAR_ALLOWLIST)) {
+      recordActivity(payload.terminalId)
+
+      const headers = new Headers(request.headers)
+      headers.set('x-terminal-id', payload.terminalId)
+      headers.set('x-location-id', payload.locationId)
+      headers.set('x-terminal-role', payload.terminalRole)
+      headers.set('x-cellular-authenticated', '1')
+      headers.set('x-can-refund', String(payload.canRefund))
+
+      // Re-auth required routes: void/comp pass through but flagged
+      if (matchesRouteList(pathname, CELLULAR_REAUTH_ROUTES)) {
+        headers.set('x-requires-reauth', 'true')
+      }
+
+      return NextResponse.next({ request: { headers } })
+    }
+
+    // Not on allowlist and not hard-blocked → default deny
+    logCellularBlock(payload.terminalId, payload.locationId, pathname, 'not_allowlisted')
+    return NextResponse.json({ error: 'Route not available for cellular terminals' }, { status: 403 })
   }
 
   // ═══════════════════════════════════════════════════════════

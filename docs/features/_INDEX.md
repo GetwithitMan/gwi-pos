@@ -114,6 +114,14 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Mission Control** | [mission-control.md](mission-control.md) | Active | mission-control, pos | Settings, Employees, Payments |
 | **Live Dashboard** | [live-dashboard.md](live-dashboard.md) | Active | pos | Reports, Orders, Payments, Employees |
 
+### Infrastructure & HA
+
+| Feature | Doc | Status | Repos | Top Dependencies |
+|---------|-----|--------|-------|-----------------|
+| **HA Failover (Backup NUC)** | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-1--backup-nuc--ha-failover) | In Progress | pos, mission-control, android | Offline Sync, Hardware, Mission Control |
+| **Cellular Edge Path** | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-2--cellular-edge-path) | In Progress | pos, mission-control, android | Orders, Payments, Offline Sync, Security |
+| **Fulfillment Routing** | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-3--fulfillment-routing) | In Progress | pos | Orders, KDS, Hardware, Menu, Print Routing |
+
 ### Guest & Ordering Channels
 
 | Feature | Doc | Status | Repos | Top Dependencies |

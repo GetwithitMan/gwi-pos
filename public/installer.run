@@ -7,6 +7,7 @@
 #
 # Roles:
 #   Server   — POS app + Chromium kiosk + heartbeat + sync agent + backups + x11vnc + RealVNC
+#   Backup   — Hot standby: PG streaming replication + keepalived VIP failover
 #   Terminal — Chromium kiosk pointing at server + x11vnc + RealVNC
 #
 # Usage:
@@ -145,13 +146,15 @@ header "Station Configuration"
 echo "What role is this station?"
 echo "  1) Server  — Runs POS app + database + kiosk"
 echo "  2) Terminal — Kiosk only (connects to a server)"
+echo "  3) Backup  — Hot standby (PG replication + VIP failover)"
 echo ""
 while true; do
-  read -rp "Select (1 or 2): " role_choice < /dev/tty
+  read -rp "Select (1, 2, or 3): " role_choice < /dev/tty
   case $role_choice in
     1) STATION_ROLE="server"; break ;;
     2) STATION_ROLE="terminal"; break ;;
-    *) echo "Please enter 1 or 2." ;;
+    3) STATION_ROLE="backup"; break ;;
+    *) echo "Please enter 1, 2, or 3." ;;
   esac
 done
 log "Role: $STATION_ROLE"
@@ -163,7 +166,7 @@ ALREADY_REGISTERED=false
 if [[ -f "$ENV_FILE" ]]; then
   if grep -q "^SERVER_NODE_ID=" "$ENV_FILE" && grep -q "^SERVER_API_KEY=" "$ENV_FILE"; then
     ALREADY_REGISTERED=true
-    log "Existing server registration found in $ENV_FILE"
+    log "Existing server/backup registration found in $ENV_FILE"
   elif grep -q "^STATION_ROLE=terminal" "$ENV_FILE" && grep -q "^SERVER_URL=" "$ENV_FILE"; then
     ALREADY_REGISTERED=true
     log "Existing terminal configuration found in $ENV_FILE"
@@ -195,16 +198,16 @@ if [[ -f "$ENV_FILE" ]]; then
   fi
 fi
 
-# 3. Registration code (if not already registered and server role)
+# 3. Registration code (if not already registered and server/backup role)
 REG_CODE=""
-if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; then
+if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
   echo ""
   echo "Enter the registration code from Mission Control."
   echo "(Generate one at: Settings > Venue > NUC Registration)"
   echo ""
   read -rp "Registration code: " REG_CODE < /dev/tty
   if [[ -z "$REG_CODE" ]]; then
-    err "Registration code is required for new server installations."
+    err "Registration code is required for new server/backup installations."
     exit 1
   fi
   # Validate UUID format (MC expects a UUID v4)
@@ -246,6 +249,59 @@ if [[ "$STATION_ROLE" == "terminal" ]]; then
   fi
 fi
 
+# 6. Backup: primary NUC IP + virtual IP
+PRIMARY_NUC_IP=""
+VIRTUAL_IP=""
+IP_REGEX='^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'
+if [[ "$STATION_ROLE" == "backup" ]]; then
+  echo ""
+  echo "Enter the PRIMARY server NUC's IP address."
+  echo "(This is the server NUC this backup will replicate from)"
+  echo ""
+  read -rp "Primary NUC IP (e.g., 192.168.1.50): " PRIMARY_NUC_IP < /dev/tty
+  if [[ -z "$PRIMARY_NUC_IP" ]]; then
+    err "Primary NUC IP is required for backup stations."
+    exit 1
+  fi
+  if [[ ! "$PRIMARY_NUC_IP" =~ $IP_REGEX ]]; then
+    err "Invalid IP address format. Example: 192.168.1.50"
+    exit 1
+  fi
+
+  echo ""
+  echo "Enter the Virtual IP (VIP) address for HA failover."
+  echo "(This shared IP floats between primary and backup, e.g., 10.10.10.50)"
+  echo ""
+  read -rp "Virtual IP: " VIRTUAL_IP < /dev/tty
+  if [[ -z "$VIRTUAL_IP" ]]; then
+    err "Virtual IP is required for backup stations."
+    exit 1
+  fi
+  if [[ ! "$VIRTUAL_IP" =~ $IP_REGEX ]]; then
+    err "Invalid IP address format. Example: 10.10.10.50"
+    exit 1
+  fi
+fi
+
+# 7. Server: optional VIP for HA (skip if solo NUC)
+if [[ "$STATION_ROLE" == "server" ]] && [[ "$ALREADY_REGISTERED" == "false" ]]; then
+  echo ""
+  echo "High Availability setup (optional)"
+  echo "  If this server will be paired with a backup NUC, enter the Virtual IP."
+  echo "  Press Enter to skip (solo NUC — no HA)."
+  echo ""
+  read -rp "Virtual IP (or press Enter to skip): " VIRTUAL_IP < /dev/tty
+  if [[ -n "$VIRTUAL_IP" ]]; then
+    if [[ ! "$VIRTUAL_IP" =~ $IP_REGEX ]]; then
+      err "Invalid IP address format. Example: 10.10.10.50"
+      exit 1
+    fi
+    log "HA mode: Virtual IP = $VIRTUAL_IP"
+  else
+    log "Solo NUC mode (no HA)."
+  fi
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Existing Install Detection (Idempotent)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -272,6 +328,7 @@ if [[ -d "$APP_BASE" ]]; then
       log "Disabling server services..."
       systemctl disable --now thepasspos 2>/dev/null || true
       systemctl disable --now thepasspos-sync 2>/dev/null || true
+      systemctl disable --now keepalived 2>/dev/null || true
       # Fully remove PostgreSQL — terminal doesn't need it
       systemctl disable --now postgresql 2>/dev/null || true
       systemctl mask postgresql 2>/dev/null || true
@@ -288,9 +345,42 @@ if [[ -d "$APP_BASE" ]]; then
       sed -i '/^CLOUD_ORGANIZATION_ID=/d; /^CLOUD_ENTERPRISE_ID=/d' "$ENV_FILE" 2>/dev/null || true
       sed -i '/^DATABASE_URL=/d; /^DIRECT_URL=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
       sed -i '/^SYNC_ENABLED=/d; /^BACKOFFICE_API_URL=/d; /^INTERNAL_API_SECRET=/d' "$ENV_FILE" 2>/dev/null || true
-      sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d; /^VIRTUAL_IP=/d; /^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
       log "Scrubbed server-only identity and database keys from .env"
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
+      log "Disabling terminal-only services..."
+      systemctl disable --now thepasspos-kiosk 2>/dev/null || true
+      systemctl disable --now thepasspos-exit-kiosk 2>/dev/null || true
+      rm -f /opt/gwi-pos/exit-kiosk-server.py
+    elif [[ "$PREV_ROLE" == "backup" ]] && [[ "$STATION_ROLE" == "server" ]]; then
+      log "Promoting backup → server: removing standby config..."
+      systemctl disable --now keepalived 2>/dev/null || true
+      rm -f /var/lib/postgresql/16/main/standby.signal 2>/dev/null || true
+      sed -i '/^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
+      log "Removed standby.signal and PRIMARY_NUC_IP (will reconfigure as primary)"
+    elif [[ "$PREV_ROLE" == "server" ]] && [[ "$STATION_ROLE" == "backup" ]]; then
+      log "Demoting server → backup: will reconfigure PG as standby..."
+      systemctl disable --now thepasspos 2>/dev/null || true
+      systemctl disable --now thepasspos-sync 2>/dev/null || true
+      systemctl disable --now thepasspos-kiosk 2>/dev/null || true
+    elif [[ "$PREV_ROLE" == "backup" ]] && [[ "$STATION_ROLE" == "terminal" ]]; then
+      log "Disabling backup services..."
+      systemctl disable --now thepasspos 2>/dev/null || true
+      systemctl disable --now thepasspos-sync 2>/dev/null || true
+      systemctl disable --now keepalived 2>/dev/null || true
+      systemctl disable --now postgresql 2>/dev/null || true
+      systemctl mask postgresql 2>/dev/null || true
+      apt-get purge -y --auto-remove postgresql* postgresql-contrib* 2>/dev/null || true
+      rm -rf /var/lib/postgresql /etc/postgresql 2>/dev/null || true
+      rm -f "$POSUSER_HOME/.pgpass" 2>/dev/null || true
+      sed -i '/^SERVER_NODE_ID=/d; /^SERVER_API_KEY=/d; /^HARDWARE_FINGERPRINT=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^MISSION_CONTROL_URL=/d; /^LOCATION_ID=/d; /^CLOUD_LOCATION_ID=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^CLOUD_ORGANIZATION_ID=/d; /^CLOUD_ENTERPRISE_ID=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^DATABASE_URL=/d; /^DIRECT_URL=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^SYNC_ENABLED=/d; /^BACKOFFICE_API_URL=/d; /^INTERNAL_API_SECRET=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d; /^VIRTUAL_IP=/d; /^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
+      log "Scrubbed backup identity and database keys from .env"
+    elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "backup" ]]; then
       log "Disabling terminal-only services..."
       systemctl disable --now thepasspos-kiosk 2>/dev/null || true
       systemctl disable --now thepasspos-exit-kiosk 2>/dev/null || true
@@ -305,11 +395,12 @@ if [[ -d "$APP_BASE" ]]; then
     log "Updated STATION_ROLE=$STATION_ROLE in .env"
   fi
 
-  # Disable new service names if re-running installer
+  # Disable new service names if re-running installer (will re-enable relevant ones later)
   systemctl disable --now thepasspos 2>/dev/null || true
   systemctl disable --now thepasspos-sync 2>/dev/null || true
   systemctl disable --now thepasspos-kiosk 2>/dev/null || true
   systemctl disable --now thepasspos-exit-kiosk 2>/dev/null || true
+  systemctl stop keepalived 2>/dev/null || true
 
   # Clean up legacy pulse-* services from pre-rebrand installs
   systemctl disable --now pulse-pos 2>/dev/null || true
@@ -335,7 +426,7 @@ DIRECT_URL=""
 HARDWARE_FINGERPRINT=""
 USE_LOCAL_PG=false
 
-if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; then
+if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
   header "Registering with Mission Control"
 
   # ── Generate hardware fingerprint (SHA-256 of machine-id + MAC addresses) ──
@@ -362,7 +453,8 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
     --arg token "$REG_CODE" \
     --arg fp "$HARDWARE_FINGERPRINT" \
     --arg pk "$PUBLIC_KEY" \
-    '{registrationToken: $token, hardwareFingerprint: $fp, fingerprintVersion: 1, publicKey: $pk}')
+    --arg role "$STATION_ROLE" \
+    '{registrationToken: $token, hardwareFingerprint: $fp, fingerprintVersion: 1, publicKey: $pk, role: $role}')
 
   log "Calling $MC_REGISTER_URL..."
 
@@ -511,6 +603,19 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
   # ── Write environment file (DEPLOY_TOKEN is never stored here — goes to .git-credentials only) ──
   mkdir -p "$APP_BASE"
   INTERNAL_SECRET=$(openssl rand -hex 32)
+
+  # Build HA section for .env (server or backup)
+  HA_ENV_SECTION=""
+  if [[ -n "${VIRTUAL_IP:-}" ]]; then
+    HA_ENV_SECTION="
+# High Availability
+VIRTUAL_IP=${VIRTUAL_IP}"
+    if [[ -n "${PRIMARY_NUC_IP:-}" ]]; then
+      HA_ENV_SECTION="${HA_ENV_SECTION}
+PRIMARY_NUC_IP=${PRIMARY_NUC_IP}"
+    fi
+  fi
+
   cat > "$ENV_FILE" <<ENVEOF
 # Generated by installer.run — $(date -u +%Y-%m-%dT%H:%M:%SZ)
 STATION_ROLE=${STATION_ROLE}
@@ -542,7 +647,7 @@ NODE_ENV=production
 NEXT_PUBLIC_EVENT_PROVIDER=socket
 PORT=3005
 INTERNAL_API_SECRET=${INTERNAL_SECRET}
-SERVER_URL=${SERVER_URL}
+SERVER_URL=${SERVER_URL}${HA_ENV_SECTION}
 ENVEOF
 
   chmod 600 "$ENV_FILE"
@@ -581,6 +686,8 @@ else
       DIRECT_URL)   DIRECT_URL="$val" ;;
       HARDWARE_FINGERPRINT) HARDWARE_FINGERPRINT="$val" ;;
       SERVER_URL)   [[ -z "$SERVER_URL" ]] && SERVER_URL="$val" ;;
+      PRIMARY_NUC_IP) [[ -z "$PRIMARY_NUC_IP" ]] && PRIMARY_NUC_IP="$val" ;;
+      VIRTUAL_IP)   [[ -z "$VIRTUAL_IP" ]] && VIRTUAL_IP="$val" ;;
     esac
   done < "$ENV_FILE"
 
@@ -698,7 +805,34 @@ else
       echo "DB_NAME=thepasspos"
       echo "DB_USER=thepasspos"
     } >> "$ENV_FILE"
+    # Ensure VIRTUAL_IP is persisted if provided on re-run
+    if [[ -n "${VIRTUAL_IP:-}" ]]; then
+      sed -i '/^VIRTUAL_IP=/d' "$ENV_FILE" 2>/dev/null || true
+      echo "VIRTUAL_IP=$VIRTUAL_IP" >> "$ENV_FILE"
+    fi
     log "Canonicalized server .env (STATION_ROLE, NODE_ENV, PORT=3005, DB_NAME=thepasspos)"
+  fi
+
+  # Canonicalize backup .env on re-runs
+  if [[ "$STATION_ROLE" == "backup" ]]; then
+    sed -i '/^PORT=/d; /^NODE_ENV=/d; /^STATION_ROLE=/d; /^DB_NAME=/d; /^DB_USER=/d' "$ENV_FILE" 2>/dev/null || true
+    {
+      echo "STATION_ROLE=backup"
+      echo "NODE_ENV=production"
+      echo "PORT=3005"
+      echo "DB_NAME=thepasspos"
+      echo "DB_USER=thepasspos"
+    } >> "$ENV_FILE"
+    # Ensure HA vars are persisted
+    if [[ -n "${VIRTUAL_IP:-}" ]]; then
+      sed -i '/^VIRTUAL_IP=/d' "$ENV_FILE" 2>/dev/null || true
+      echo "VIRTUAL_IP=$VIRTUAL_IP" >> "$ENV_FILE"
+    fi
+    if [[ -n "${PRIMARY_NUC_IP:-}" ]]; then
+      sed -i '/^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
+      echo "PRIMARY_NUC_IP=$PRIMARY_NUC_IP" >> "$ENV_FILE"
+    fi
+    log "Canonicalized backup .env (STATION_ROLE=backup, NODE_ENV, PORT=3005, DB_NAME=thepasspos)"
   fi
 fi
 
@@ -759,7 +893,7 @@ chmod +x /opt/gwi-pos/clear-kiosk-session.sh
 # Mission Control sees the NUC even if a later step (npm build, service start)
 # fails. The heartbeat script is self-contained and doesn't need the app.
 
-if [[ "$STATION_ROLE" == "server" ]] && [[ -f "$ENV_FILE" ]]; then
+if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]] && [[ -f "$ENV_FILE" ]]; then
   header "Setting Up Heartbeat"
 
   # Ensure POSUSER owns the base directory (needed to write heartbeat.log)
@@ -1055,13 +1189,306 @@ HBAEOF
   fi
 
   log "PostgreSQL ready: $DB_NAME owned by $DB_USER"
+
+  # ── Server HA: configure PG as primary for streaming replication ──
+  if [[ -n "${VIRTUAL_IP:-}" ]]; then
+    header "Configuring PostgreSQL Primary for Replication"
+
+    # Ensure NTP is running (clock sync critical for replication)
+    timedatectl set-ntp true 2>/dev/null || true
+
+    PG_CONF=$(sudo -u postgres psql -t -c "SHOW config_file;" | tr -d '[:space:]')
+    PG_HBA=${PG_HBA:-$(sudo -u postgres psql -t -c "SHOW hba_file;" | tr -d '[:space:]')}
+
+    # Configure WAL settings for streaming replication
+    REPL_MARKER="# GWI POS HA — streaming replication"
+    if ! grep -qF "$REPL_MARKER" "$PG_CONF" 2>/dev/null; then
+      log "Configuring postgresql.conf for replication..."
+      cat >> "$PG_CONF" <<REPLEOF
+
+$REPL_MARKER
+wal_level = replica
+max_wal_senders = 3
+wal_keep_size = '1GB'
+REPLEOF
+    fi
+
+    # Create replication user (idempotent)
+    REPL_PASSWORD=$(openssl rand -hex 16)
+    sudo -u postgres psql -v ON_ERROR_STOP=0 <<REPLSQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'replicator') THEN
+    CREATE ROLE replicator WITH REPLICATION LOGIN PASSWORD '$REPL_PASSWORD';
+  ELSE
+    ALTER ROLE replicator WITH PASSWORD '$REPL_PASSWORD';
+  END IF;
+END\$\$;
+REPLSQL
+
+    # Save replication password for backup NUC provisioning
+    if ! grep -q "^REPL_PASSWORD=" "$ENV_FILE" 2>/dev/null; then
+      echo "REPL_PASSWORD=$REPL_PASSWORD" >> "$ENV_FILE"
+    else
+      sed -i "s|^REPL_PASSWORD=.*|REPL_PASSWORD=$REPL_PASSWORD|" "$ENV_FILE"
+    fi
+
+    # Add pg_hba entry allowing replication connections from any local subnet
+    REPL_HBA_MARKER="# GWI POS HA — replication access"
+    if ! grep -qF "$REPL_HBA_MARKER" "$PG_HBA" 2>/dev/null; then
+      log "Adding replication access to pg_hba.conf..."
+      cat >> "$PG_HBA" <<REPHBA
+
+$REPL_HBA_MARKER
+host    replication     replicator      0.0.0.0/0       md5
+REPHBA
+    fi
+
+    systemctl restart postgresql
+    log "PostgreSQL primary configured for streaming replication."
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Server Role: POS App Install
+# Backup Role: PostgreSQL Streaming Replication (standby)
 # ─────────────────────────────────────────────────────────────────────────────
 
-if [[ "$STATION_ROLE" == "server" ]]; then
+if [[ "$STATION_ROLE" == "backup" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
+  header "Setting Up PostgreSQL Standby (Backup)"
+
+  # Ensure NTP is running (clock sync critical for replication)
+  timedatectl set-ntp true 2>/dev/null || true
+
+  # Unmask first — may have been masked by a prior role switch
+  systemctl unmask postgresql 2>/dev/null || true
+
+  apt-get install -y postgresql postgresql-contrib
+
+  DB_USER="thepasspos"
+  DB_NAME="thepasspos"
+
+  # Get replication password from user (must match primary's REPL_PASSWORD)
+  echo ""
+  echo "Enter the replication password from the primary server."
+  echo "(Found in the primary's /opt/gwi-pos/.env as REPL_PASSWORD)"
+  echo ""
+  read -rsp "Replication password: " REPL_PASSWORD < /dev/tty
+  echo ""
+  if [[ -z "$REPL_PASSWORD" ]]; then
+    err "Replication password is required for backup setup."
+    exit 1
+  fi
+
+  # Get the app database password from primary (for DATABASE_URL)
+  echo ""
+  echo "Enter the database password from the primary server."
+  echo "(Found in primary's /opt/gwi-pos/.env in DATABASE_URL after the colon)"
+  echo ""
+  read -rsp "Database password: " DB_PASSWORD < /dev/tty
+  echo ""
+  if [[ -z "$DB_PASSWORD" ]]; then
+    err "Database password is required for backup setup."
+    exit 1
+  fi
+
+  # Stop PostgreSQL before pg_basebackup
+  systemctl stop postgresql
+
+  # Clear existing data directory for fresh base backup
+  PG_DATA="/var/lib/postgresql/16/main"
+  if [[ -d "$PG_DATA" ]]; then
+    log "Clearing existing PostgreSQL data directory..."
+    rm -rf "$PG_DATA"
+  fi
+
+  # Run pg_basebackup from primary
+  log "Running pg_basebackup from primary ($PRIMARY_NUC_IP)..."
+  log "This may take several minutes depending on database size..."
+  if ! PGPASSWORD="$REPL_PASSWORD" sudo -u postgres pg_basebackup \
+    -h "$PRIMARY_NUC_IP" -U replicator -D "$PG_DATA" -P -R -Xs; then
+    err "pg_basebackup failed. Check:"
+    err "  - Primary NUC IP ($PRIMARY_NUC_IP) is reachable"
+    err "  - Replication password matches primary's REPL_PASSWORD"
+    err "  - Primary has replication configured (wal_level=replica)"
+    err "  - Primary pg_hba.conf allows replication from this IP"
+    exit 1
+  fi
+
+  # pg_basebackup with -R creates standby.signal and sets primary_conninfo
+  # Verify standby.signal was created
+  if [[ ! -f "$PG_DATA/standby.signal" ]]; then
+    log "Creating standby.signal..."
+    touch "$PG_DATA/standby.signal"
+    chown postgres:postgres "$PG_DATA/standby.signal"
+  fi
+
+  # Ensure correct ownership
+  chown -R postgres:postgres "$PG_DATA"
+
+  # Start PostgreSQL in standby mode
+  systemctl enable postgresql
+  systemctl start postgresql
+
+  # Verify replication is working
+  sleep 3
+  RECOVERY_STATUS=$(sudo -u postgres psql -tAc "SELECT pg_is_in_recovery();" 2>/dev/null || echo "")
+  if [[ "$RECOVERY_STATUS" == "t" ]]; then
+    log "PostgreSQL standby is running and receiving WAL from primary."
+  else
+    warn "PostgreSQL started but may not be in recovery mode."
+    warn "Check: sudo -u postgres psql -c 'SELECT pg_is_in_recovery();'"
+  fi
+
+  # Create .pgpass for the app database user
+  PGPASS_FILE="$POSUSER_HOME/.pgpass"
+  echo "localhost:5432:$DB_NAME:$DB_USER:$DB_PASSWORD" > "$PGPASS_FILE"
+  chmod 600 "$PGPASS_FILE"
+  chown "$POSUSER":"$POSUSER" "$PGPASS_FILE"
+
+  # Set DATABASE_URL for local PostgreSQL (read-only on standby)
+  DATABASE_URL="postgresql://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME"
+  DIRECT_URL="$DATABASE_URL"
+
+  # Update .env with local database URLs
+  if grep -q "^DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=$DATABASE_URL|" "$ENV_FILE"
+    sed -i "s|^DIRECT_URL=.*|DIRECT_URL=$DIRECT_URL|" "$ENV_FILE"
+  else
+    echo "" >> "$ENV_FILE"
+    echo "# Local PostgreSQL (standby — read-only until promoted)" >> "$ENV_FILE"
+    echo "DATABASE_URL=$DATABASE_URL" >> "$ENV_FILE"
+    echo "DIRECT_URL=$DIRECT_URL" >> "$ENV_FILE"
+  fi
+
+  # Also add DB_USER/DB_NAME + REPL_PASSWORD for scripts
+  if ! grep -q "^DB_USER=" "$ENV_FILE" 2>/dev/null; then
+    echo "DB_USER=$DB_USER" >> "$ENV_FILE"
+    echo "DB_NAME=$DB_NAME" >> "$ENV_FILE"
+  fi
+  if ! grep -q "^REPL_PASSWORD=" "$ENV_FILE" 2>/dev/null; then
+    echo "REPL_PASSWORD=$REPL_PASSWORD" >> "$ENV_FILE"
+  else
+    sed -i "s|^REPL_PASSWORD=.*|REPL_PASSWORD=$REPL_PASSWORD|" "$ENV_FILE"
+  fi
+
+  log "PostgreSQL standby ready: replicating from $PRIMARY_NUC_IP"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Server + Backup Roles: keepalived (VIP failover)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ -n "${VIRTUAL_IP:-}" ]] && [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
+  header "Setting Up keepalived (VIP Failover)"
+
+  apt-get install -y keepalived
+
+  # Auto-detect network interface
+  HA_IFACE=$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
+  if [[ -z "$HA_IFACE" ]]; then
+    HA_IFACE="eth0"
+    warn "Could not auto-detect network interface — defaulting to eth0"
+  fi
+  log "Network interface: $HA_IFACE"
+
+  # Determine priority: primary=101, backup=100
+  if [[ "$STATION_ROLE" == "server" ]]; then
+    KA_STATE="MASTER"
+    KA_PRIORITY=101
+  else
+    KA_STATE="BACKUP"
+    KA_PRIORITY=100
+  fi
+
+  # Create HA health check script
+  mkdir -p /opt/gwi-pos/scripts
+  cat > /opt/gwi-pos/scripts/ha-check.sh <<'HACHKEOF'
+#!/usr/bin/env bash
+# HA health check for keepalived — returns 0 if POS is healthy, 1 if not.
+# keepalived runs this as a vrrp_script — non-zero causes priority demotion.
+
+# Check 1: PostgreSQL is running
+if ! systemctl is-active --quiet postgresql; then
+  exit 1
+fi
+
+# Check 2: POS app is responding (only on server role — backup may not run app)
+if [[ -f /opt/gwi-pos/.env ]]; then
+  ROLE=$(grep -oP '(?<=^STATION_ROLE=).*' /opt/gwi-pos/.env 2>/dev/null || echo "")
+  if [[ "$ROLE" == "server" ]]; then
+    if ! curl -sf --max-time 5 http://localhost:3005/api/health >/dev/null 2>&1; then
+      exit 1
+    fi
+  fi
+fi
+
+exit 0
+HACHKEOF
+  chmod +x /opt/gwi-pos/scripts/ha-check.sh
+
+  # Generate keepalived.conf
+  cat > /etc/keepalived/keepalived.conf <<KAEOF
+# GWI POS HA — keepalived configuration
+# Generated by installer.run — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+vrrp_script chk_gwi_pos {
+    script "/opt/gwi-pos/scripts/ha-check.sh"
+    interval 5
+    weight -20
+    fall 3
+    rise 2
+}
+
+vrrp_instance GWI_POS {
+    state $KA_STATE
+    interface $HA_IFACE
+    virtual_router_id 51
+    priority $KA_PRIORITY
+    advert_int 1
+
+    authentication {
+        auth_type PASS
+        auth_pass gwip0sha
+    }
+
+    virtual_ipaddress {
+        $VIRTUAL_IP/24
+    }
+
+    track_script {
+        chk_gwi_pos
+    }
+}
+KAEOF
+
+  # Firewall rules for VRRP (protocol 112) — only if firewalld is active
+  if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then
+    log "Adding VRRP firewall rule..."
+    firewall-cmd --add-rich-rule='rule protocol value="vrrp" accept' --permanent 2>/dev/null || true
+    firewall-cmd --reload 2>/dev/null || true
+  elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+    log "Adding VRRP ufw rule..."
+    ufw allow proto vrrp from any to any 2>/dev/null || true
+  fi
+
+  systemctl daemon-reload
+  systemctl enable keepalived
+  systemctl start keepalived
+
+  # Verify keepalived is running
+  sleep 2
+  if systemctl is-active --quiet keepalived; then
+    log "keepalived running — state=$KA_STATE, priority=$KA_PRIORITY, VIP=$VIRTUAL_IP"
+  else
+    track_warn "keepalived failed to start — check: journalctl -u keepalived"
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Server + Backup Roles: POS App Install
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
   header "Installing POS Application"
 
   # Disk space check — build requires ~5 GB temp space, 10 GB gives margin
@@ -1140,46 +1567,51 @@ if [[ "$STATION_ROLE" == "server" ]]; then
     exit 1
   fi
 
-  log "Running pre-migrate backfill..."
-  sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" || warn "Pre-migrate backfill had warnings (non-fatal)"
+  # Database migrations only run on server (backup gets data via pg_basebackup)
+  if [[ "$STATION_ROLE" == "server" ]]; then
+    log "Running pre-migrate backfill..."
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" || warn "Pre-migrate backfill had warnings (non-fatal)"
 
-  log "Applying database migrations..."
-  MIGRATE_OUTPUT=$(sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>&1") && {
-    log "Database migrations applied successfully."
-  } || {
-    if echo "$MIGRATE_OUTPUT" | grep -q "P3005"; then
-      # P3005: database has tables but no _prisma_migrations table.
-      # This can happen when:
-      #   a) NUC was originally provisioned with `prisma db push` (all tables exist)
-      #   b) Only pre-migrate tables exist (nuc-pre-migrate.js ran but schema was never pushed)
-      # Fix: baseline migrations as applied, then db push to create any missing tables.
-      warn "Database has tables but no migration history (P3005). Baselining..."
-      for mdir in "$APP_DIR"/prisma/migrations/*/; do
-        [[ -d "$mdir" ]] || continue
-        mname=$(basename "$mdir")
-        log "  Marking as applied: $mname"
-        sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate resolve --applied '$mname'" || true
-      done
-      # db push (without --accept-data-loss) creates any missing tables/columns
-      # that the baselined migrations would have created. Safe: refuses destructive changes.
-      log "Running db push to create any missing tables..."
-      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push"; then
-        warn "prisma db push had issues — some tables may need manual creation."
+    log "Applying database migrations..."
+    MIGRATE_OUTPUT=$(sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>&1") && {
+      log "Database migrations applied successfully."
+    } || {
+      if echo "$MIGRATE_OUTPUT" | grep -q "P3005"; then
+        # P3005: database has tables but no _prisma_migrations table.
+        # This can happen when:
+        #   a) NUC was originally provisioned with `prisma db push` (all tables exist)
+        #   b) Only pre-migrate tables exist (nuc-pre-migrate.js ran but schema was never pushed)
+        # Fix: baseline migrations as applied, then db push to create any missing tables.
+        warn "Database has tables but no migration history (P3005). Baselining..."
+        for mdir in "$APP_DIR"/prisma/migrations/*/; do
+          [[ -d "$mdir" ]] || continue
+          mname=$(basename "$mdir")
+          log "  Marking as applied: $mname"
+          sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate resolve --applied '$mname'" || true
+        done
+        # db push (without --accept-data-loss) creates any missing tables/columns
+        # that the baselined migrations would have created. Safe: refuses destructive changes.
+        log "Running db push to create any missing tables..."
+        if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push"; then
+          warn "prisma db push had issues — some tables may need manual creation."
+        fi
+        log "Baseline + schema sync complete."
+      else
+        err "Database migration failed (prisma migrate deploy)."
+        echo "$MIGRATE_OUTPUT" >&2
+        err "Check DATABASE_URL and PostgreSQL status."
+        err "If schema is out of sync, fix migrations manually or contact support."
+        exit 1
       fi
-      log "Baseline + schema sync complete."
-    else
-      err "Database migration failed (prisma migrate deploy)."
-      echo "$MIGRATE_OUTPUT" >&2
-      err "Check DATABASE_URL and PostgreSQL status."
-      err "If schema is out of sync, fix migrations manually or contact support."
-      exit 1
-    fi
-  }
+    }
 
-  # Seed local PG from Neon cloud (offline-first mode)
-  if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
-    log "Seeding local PostgreSQL from Neon cloud..."
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && bash scripts/seed-from-neon.sh" || warn "Neon seed had warnings (non-fatal — local PG will sync on first run)"
+    # Seed local PG from Neon cloud (offline-first mode)
+    if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
+      log "Seeding local PostgreSQL from Neon cloud..."
+      sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && bash scripts/seed-from-neon.sh" || warn "Neon seed had warnings (non-fatal — local PG will sync on first run)"
+    fi
+  else
+    log "Skipping database migrations (backup standby — data replicated from primary)."
   fi
 
   log "Building Next.js application..."
@@ -1295,35 +1727,44 @@ SVCEOF
   systemctl daemon-reload
   systemctl enable thepasspos
 
-  if [[ "$KIOSK_OK" == "true" ]]; then
-    systemctl enable thepasspos-kiosk
-  else
-    track_warn "Skipping kiosk service — preflight failed (Chromium missing or Wayland)."
+  if [[ "$STATION_ROLE" == "backup" ]]; then
+    # Backup role: install service unit but do NOT start POS app (standby mode)
+    # POS will be started by promote.sh if this NUC takes over as primary
     systemctl disable thepasspos-kiosk 2>/dev/null || true
-  fi
-
-  log "Starting POS server..."
-  systemctl restart thepasspos || track_warn "POS service restart failed — will retry on reboot"
-
-  # Wait for POS to be ready before starting kiosk
-  if [[ "$KIOSK_OK" == "true" ]]; then
-    log "Waiting for POS to start (up to 120s)..."
-    for i in $(seq 1 60); do
-      if curl -fsS http://localhost:3005/api/health >/dev/null 2>&1; then
-        log "POS is ready!"
-        break
-      fi
-      sleep 2
-    done
-
-    systemctl restart thepasspos-kiosk || track_warn "Kiosk service restart failed — will retry on reboot"
-    # Verify kiosk process actually launched
-    sleep 5
-    if ! pgrep -u "$POSUSER" -f "${CHROMIUM_BIN:-chromium}" >/dev/null 2>&1; then
-      track_warn "Kiosk process not detected — check display, graphics drivers, or X11 session"
+    log "POS service installed but NOT started (backup standby mode)."
+    log "POS will start automatically on promotion via promote.sh."
+  else
+    # Server role: start POS app + kiosk
+    if [[ "$KIOSK_OK" == "true" ]]; then
+      systemctl enable thepasspos-kiosk
+    else
+      track_warn "Skipping kiosk service — preflight failed (Chromium missing or Wayland)."
+      systemctl disable thepasspos-kiosk 2>/dev/null || true
     fi
+
+    log "Starting POS server..."
+    systemctl restart thepasspos || track_warn "POS service restart failed — will retry on reboot"
+
+    # Wait for POS to be ready before starting kiosk
+    if [[ "$KIOSK_OK" == "true" ]]; then
+      log "Waiting for POS to start (up to 120s)..."
+      for i in $(seq 1 60); do
+        if curl -fsS http://localhost:3005/api/health >/dev/null 2>&1; then
+          log "POS is ready!"
+          break
+        fi
+        sleep 2
+      done
+
+      systemctl restart thepasspos-kiosk || track_warn "Kiosk service restart failed — will retry on reboot"
+      # Verify kiosk process actually launched
+      sleep 5
+      if ! pgrep -u "$POSUSER" -f "${CHROMIUM_BIN:-chromium}" >/dev/null 2>&1; then
+        track_warn "Kiosk process not detected — check display, graphics drivers, or X11 session"
+      fi
+    fi
+    log "Services configured and started."
   fi
-  log "Services configured and started."
 
   # ───────────────────────────────────────────────────────────────────────────
   # Server Role: Backup Script + Cron (local PostgreSQL only)
@@ -1408,6 +1849,8 @@ KIOSKCTL
   cat > /etc/sudoers.d/gwi-pos <<SUDEOF
 # GWI POS — allow service user to manage POS services without password
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
@@ -1415,6 +1858,12 @@ $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh
 $POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown -h now
 $POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/promote.sh
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/rejoin-as-standby.sh
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart keepalived
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop keepalived
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start keepalived
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart postgresql
 SUDEOF
   chmod 440 /etc/sudoers.d/gwi-pos
 
@@ -1465,7 +1914,7 @@ SVCEOF
     systemctl disable thepasspos-sync 2>/dev/null || true
   fi
 
-fi  # end server role
+fi  # end server + backup roles
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Terminal Role: Kiosk Only
@@ -1715,6 +2164,7 @@ if command -v vncserver-x11 >/dev/null 2>&1; then
   # Set friendly name from venue name (query local POS if running)
   ROLE_SUFFIX="Server"
   [[ "$STATION_ROLE" == "terminal" ]] && ROLE_SUFFIX="Terminal"
+  [[ "$STATION_ROLE" == "backup" ]] && ROLE_SUFFIX="Backup"
   VENUE_NAME=""
   if curl -sf --max-time 3 "http://localhost:3005/api/settings" >/dev/null 2>&1; then
     VENUE_NAME=$(curl -sf --max-time 5 "http://localhost:3005/api/settings" 2>/dev/null \
@@ -1880,10 +2330,14 @@ echo -e "  ${GREEN}Location:${NC} $LOCATION_NAME"
 if [[ "$STATION_ROLE" == "server" ]]; then
   echo -e "  ${GREEN}POS URL:${NC}  http://localhost:3005"
   if [[ "$USE_LOCAL_PG" == "true" ]]; then
-    echo -e "  ${GREEN}Database:${NC} PostgreSQL (local)"
+    echo -e "  ${GREEN}Database:${NC} PostgreSQL (local primary)"
     echo -e "  ${GREEN}Backups:${NC}  $BACKUP_DIR (daily 4 AM, 7-day retention)"
   else
     echo -e "  ${GREEN}Database:${NC} Neon (cloud)"
+  fi
+  if [[ -n "${VIRTUAL_IP:-}" ]]; then
+    echo -e "  ${GREEN}HA Mode:${NC}  Primary (VIP: $VIRTUAL_IP)"
+    echo -e "  ${GREEN}keepalived:${NC} $(systemctl is-active keepalived 2>/dev/null || echo 'not installed')"
   fi
   echo -e "  ${GREEN}Heartbeat:${NC} Every 60 seconds → Mission Control"
   # Only show sync status if agent was actually installed
@@ -1905,9 +2359,28 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   fi
   echo "    thepasspos-sync   — $SYNC_STATUS"
   echo "    postgresql        — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
+  if [[ -n "${VIRTUAL_IP:-}" ]]; then
+    echo "    keepalived        — $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
+  fi
   echo "    x11vnc            — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
   if command -v vncserver-x11 >/dev/null 2>&1; then
     echo "    realvnc      — $(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo 'unknown')"
+  fi
+elif [[ "$STATION_ROLE" == "backup" ]]; then
+  echo -e "  ${GREEN}HA Mode:${NC}  Backup standby (VIP: ${VIRTUAL_IP:-none})"
+  echo -e "  ${GREEN}Primary:${NC}  ${PRIMARY_NUC_IP:-unknown}"
+  echo -e "  ${GREEN}Database:${NC} PostgreSQL (streaming replica)"
+  echo -e "  ${GREEN}Heartbeat:${NC} Every 60 seconds → Mission Control"
+  SYNC_STATUS=$(systemctl is-active thepasspos-sync 2>/dev/null || echo "not installed")
+  echo ""
+  echo -e "  ${CYAN}Services:${NC}"
+  echo "    thepasspos        — $(systemctl is-active thepasspos 2>/dev/null || echo 'standby (not started)')"
+  echo "    thepasspos-sync   — $SYNC_STATUS"
+  echo "    postgresql        — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown') (standby)"
+  echo "    keepalived        — $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
+  echo "    x11vnc            — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
+  if command -v vncserver-x11 >/dev/null 2>&1; then
+    echo "    realvnc           — $(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo 'unknown')"
   fi
 else
   echo -e "  ${GREEN}Server:${NC}   $SERVER_URL"
@@ -1941,7 +2414,18 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   if [[ "$USE_LOCAL_PG" == "true" ]]; then
     echo "    sudo bash $BACKUP_SCRIPT               — Run manual backup"
   fi
+  if [[ -n "${VIRTUAL_IP:-}" ]]; then
+    echo "    sudo systemctl status keepalived        — Check HA status"
+    echo "    ip addr show | grep $VIRTUAL_IP         — Check if VIP is on this node"
+  fi
   echo "    cat /opt/gwi-pos/heartbeat.log          — View heartbeat log"
+elif [[ "$STATION_ROLE" == "backup" ]]; then
+  echo "    sudo systemctl status postgresql         — Check PG standby"
+  echo "    sudo systemctl status keepalived         — Check HA status"
+  echo "    sudo -u postgres psql -c 'SELECT pg_is_in_recovery();'  — Verify standby mode"
+  echo "    ip addr show | grep ${VIRTUAL_IP:-VIP}   — Check if VIP is on this node"
+  echo "    sudo /opt/gwi-pos/scripts/promote.sh     — Promote to primary (failover)"
+  echo "    cat /opt/gwi-pos/heartbeat.log           — View heartbeat log"
 else
   echo "    sudo systemctl status thepasspos-kiosk  — Check kiosk status"
   echo "    sudo journalctl -u thepasspos-kiosk -f  — View kiosk logs"
