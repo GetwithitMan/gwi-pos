@@ -1937,7 +1937,7 @@ function LiquorBuilderContent() {
               : '/api/menu/categories'
             const res = await fetch(url, {
               method,
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'x-employee-id': employee?.id || '' },
               body: JSON.stringify({ ...data, categoryType: 'liquor' }),
             })
             if (res.ok) {
@@ -1951,7 +1951,7 @@ function LiquorBuilderContent() {
           }}
           onDelete={editingMenuCategory ? async () => {
             if (!confirm(`Delete "${editingMenuCategory.name}" and all its items?`)) return
-            const res = await fetch(`/api/menu/categories/${editingMenuCategory.id}`, { method: 'DELETE' })
+            const res = await fetch(`/api/menu/categories/${editingMenuCategory.id}`, { method: 'DELETE', headers: { 'x-employee-id': employee?.id || '' } })
             if (res.ok) {
               await loadDrinks()
               if (selectedMenuCategoryId === editingMenuCategory.id) setSelectedMenuCategoryId('')
