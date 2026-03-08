@@ -282,6 +282,14 @@ if [[ -d "$APP_BASE" ]]; then
       # Remove server-only cron entries
       crontab -u "$POSUSER" -l 2>/dev/null | grep -vF -e "/opt/gwi-pos/heartbeat.sh" -e "/opt/gwi-pos/backup-pos.sh" | crontab -u "$POSUSER" - 2>/dev/null || true
       log "Removed heartbeat and backup cron entries from previous server role"
+      # Scrub server-only identity keys from .env — terminal must not carry stale server metadata
+      sed -i '/^SERVER_NODE_ID=/d; /^SERVER_API_KEY=/d; /^HARDWARE_FINGERPRINT=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^MISSION_CONTROL_URL=/d; /^LOCATION_ID=/d; /^CLOUD_LOCATION_ID=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^CLOUD_ORGANIZATION_ID=/d; /^CLOUD_ENTERPRISE_ID=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^DATABASE_URL=/d; /^DIRECT_URL=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^SYNC_ENABLED=/d; /^BACKOFFICE_API_URL=/d; /^INTERNAL_API_SECRET=/d' "$ENV_FILE" 2>/dev/null || true
+      sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d' "$ENV_FILE" 2>/dev/null || true
+      log "Scrubbed server-only identity and database keys from .env"
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
       log "Disabling terminal-only services..."
       systemctl disable --now thepasspos-kiosk 2>/dev/null || true
@@ -670,7 +678,14 @@ else
       sed -i '/^SERVER_URL=/d' "$ENV_FILE" 2>/dev/null || true
       echo "SERVER_URL=$SERVER_URL" >> "$ENV_FILE"
     fi
-    log "Canonicalized terminal .env (STATION_ROLE, NODE_ENV, PORT, SERVER_URL)"
+    # Scrub any stale server-only keys (from prior role switch or manual copy)
+    sed -i '/^SERVER_NODE_ID=/d; /^SERVER_API_KEY=/d; /^HARDWARE_FINGERPRINT=/d' "$ENV_FILE" 2>/dev/null || true
+    sed -i '/^MISSION_CONTROL_URL=/d; /^LOCATION_ID=/d; /^CLOUD_LOCATION_ID=/d' "$ENV_FILE" 2>/dev/null || true
+    sed -i '/^CLOUD_ORGANIZATION_ID=/d; /^CLOUD_ENTERPRISE_ID=/d' "$ENV_FILE" 2>/dev/null || true
+    sed -i '/^DATABASE_URL=/d; /^DIRECT_URL=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
+    sed -i '/^SYNC_ENABLED=/d; /^BACKOFFICE_API_URL=/d; /^INTERNAL_API_SECRET=/d' "$ENV_FILE" 2>/dev/null || true
+    sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d' "$ENV_FILE" 2>/dev/null || true
+    log "Canonicalized terminal .env (STATION_ROLE, NODE_ENV, PORT, SERVER_URL) + scrubbed server-only keys"
   fi
 fi
 
@@ -1535,13 +1550,26 @@ SUDEOF
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import subprocess
 
+# Security model: bound to 127.0.0.1 (no network access), path-restricted to /exit.
+# On a dedicated appliance NUC with no user shell, localhost binding is the primary
+# security boundary. Custom header auth is not feasible because the client uses
+# fetch mode: 'no-cors' (browser strips custom headers in no-cors mode).
+
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
+        if self.path != '/exit':
+            self.send_response(404)
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', 'http://localhost:3005')
         self.end_headers()
         subprocess.Popen(['sudo', '/opt/gwi-pos/kiosk-control.sh', 'stop'])
     def do_OPTIONS(self):
+        if self.path != '/exit':
+            self.send_response(404)
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', 'http://localhost:3005')
         self.send_header('Access-Control-Allow-Methods', 'POST')
