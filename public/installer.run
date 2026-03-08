@@ -260,16 +260,22 @@ if [[ -d "$APP_BASE" ]]; then
       # Stop local PostgreSQL if running (terminal doesn't need it)
       systemctl disable --now postgresql 2>/dev/null || true
       # Remove server-only cron entries (exact script paths, not keywords)
-      if crontab -u "$POSUSER" -l 2>/dev/null | grep -qF "/opt/gwi-pos/heartbeat.sh\|/opt/gwi-pos/backup-pos.sh"; then
-        crontab -u "$POSUSER" -l 2>/dev/null | grep -vF -e "/opt/gwi-pos/heartbeat.sh" -e "/opt/gwi-pos/backup-pos.sh" | crontab -u "$POSUSER" - 2>/dev/null || true
-        log "Removed heartbeat and backup cron entries from previous server role"
-      fi
+      # Always run the filtered rewrite — grep -vF with -e is safe even if entries don't exist
+      crontab -u "$POSUSER" -l 2>/dev/null | grep -vF -e "/opt/gwi-pos/heartbeat.sh" -e "/opt/gwi-pos/backup-pos.sh" | crontab -u "$POSUSER" - 2>/dev/null || true
+      log "Removed heartbeat and backup cron entries from previous server role"
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
       log "Disabling terminal-only services..."
       systemctl disable --now thepasspos-kiosk 2>/dev/null || true
       systemctl disable --now thepasspos-exit-kiosk 2>/dev/null || true
       rm -f /opt/gwi-pos/exit-kiosk-server.py
     fi
+    # Persist new role to .env so future re-runs see the correct STATION_ROLE
+    if grep -q "^STATION_ROLE=" "$ENV_FILE" 2>/dev/null; then
+      sed -i "s|^STATION_ROLE=.*|STATION_ROLE=$STATION_ROLE|" "$ENV_FILE"
+    else
+      echo "STATION_ROLE=$STATION_ROLE" >> "$ENV_FILE"
+    fi
+    log "Updated STATION_ROLE=$STATION_ROLE in .env"
   fi
 
   # Disable new service names if re-running installer
@@ -629,6 +635,23 @@ else
   # Determine local PG — after offline-first redirect, DATABASE_URL should be empty or local
   if [[ -z "$DATABASE_URL" ]] || [[ "$DATABASE_URL" == *"localhost"* ]] || [[ "$DATABASE_URL" == *"127.0.0.1"* ]]; then
     USE_LOCAL_PG=true
+  fi
+
+  # Canonicalize terminal .env on re-runs (ensure NODE_ENV + PORT are present)
+  if [[ "$STATION_ROLE" == "terminal" ]]; then
+    if ! grep -q "^NODE_ENV=" "$ENV_FILE" 2>/dev/null; then
+      echo "NODE_ENV=production" >> "$ENV_FILE"
+      log "Added NODE_ENV=production to existing terminal .env"
+    fi
+    if ! grep -q "^PORT=" "$ENV_FILE" 2>/dev/null; then
+      echo "PORT=3005" >> "$ENV_FILE"
+      log "Added PORT=3005 to existing terminal .env"
+    fi
+    # Ensure STATION_ROLE is present (may be missing from very old installs)
+    if ! grep -q "^STATION_ROLE=" "$ENV_FILE" 2>/dev/null; then
+      echo "STATION_ROLE=terminal" >> "$ENV_FILE"
+      log "Added STATION_ROLE=terminal to existing .env"
+    fi
   fi
 fi
 
@@ -1410,6 +1433,21 @@ SVCEOF
   fi
 
   log "Terminal kiosk configured → $SERVER_URL"
+
+  # Kiosk control script (also needed on terminals — exit-kiosk-server.py calls it)
+  cat > /opt/gwi-pos/kiosk-control.sh <<'KIOSKCTL'
+#!/bin/bash
+set -euo pipefail
+ACTION="${1:-stop}"
+case "$ACTION" in
+  stop)    systemctl stop    thepasspos-kiosk 2>/dev/null || true ;;
+  start)   systemctl start   thepasspos-kiosk 2>/dev/null || true ;;
+  restart) systemctl restart thepasspos-kiosk 2>/dev/null || true ;;
+  *) echo "Usage: $0 {stop|start|restart}"; exit 1 ;;
+esac
+KIOSKCTL
+  chown root:root /opt/gwi-pos/kiosk-control.sh
+  chmod 755 /opt/gwi-pos/kiosk-control.sh
 
   # Sudoers for terminal — allow service user to manage kiosk + shutdown
   cat > /etc/sudoers.d/gwi-pos << SUDEOF
