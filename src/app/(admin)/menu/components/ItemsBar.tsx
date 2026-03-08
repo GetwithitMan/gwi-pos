@@ -38,7 +38,7 @@ export function ItemsBar({
   return (
     <div className="bg-white border-b px-4 py-1.5 shrink-0">
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-medium text-gray-500">
+        <span className="text-xs font-medium text-gray-700">
           {selectedCategoryData?.name} Items
         </span>
         {selectedCategoryData?.categoryType === 'liquor' && (
@@ -121,7 +121,7 @@ export function ItemsBar({
                 }`}
               >
                 <div className="flex items-center justify-between gap-1">
-                  <span className={`font-medium text-xs ${isSelected ? 'text-blue-700' : ''}`}>
+                  <span className={`font-medium text-xs ${isSelected ? 'text-blue-700' : 'text-gray-800'}`}>
                     {item.name}
                   </span>
                   {!item.isAvailable && (

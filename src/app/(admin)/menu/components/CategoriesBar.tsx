@@ -27,7 +27,7 @@ export function CategoriesBar({
   return (
     <div className="bg-white border-b px-4 py-1.5 shrink-0">
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-medium text-gray-500">Categories</span>
+        <span className="text-xs font-medium text-gray-700">Categories</span>
         <Button
           variant="ghost"
           size="sm"
@@ -84,10 +84,10 @@ export function CategoriesBar({
                   className="w-3 h-3 rounded"
                   style={{ backgroundColor: category.color }}
                 />
-                <span className={`font-medium whitespace-nowrap ${isSelected ? 'text-blue-700' : ''}`}>
+                <span className={`font-medium whitespace-nowrap ${isSelected ? 'text-blue-700' : 'text-gray-800'}`}>
                   {category.name}
                 </span>
-                <span className={`text-sm ${isSelected ? 'text-blue-500' : 'text-gray-400'}`}>
+                <span className={`text-sm ${isSelected ? 'text-blue-500' : 'text-gray-600'}`}>
                   ({category.itemCount})
                 </span>
                 {isSelected && (
