@@ -542,10 +542,11 @@ elif [[ "$STATION_ROLE" == "server" ]]; then
   NEON_DATABASE_URL="${NEON_DATABASE_URL:-}"
   NEON_DIRECT_URL="${NEON_DIRECT_URL:-}"
 
-  # Fix: strip double-quotes from .env values (older installers wrote PORT="3005" etc)
+  # Fix: strip surrounding double-quotes from .env values (older installers wrote PORT="3005" etc)
   # systemd EnvironmentFile treats quotes as literal — PORT="3005" → Node gets "3005" → NaN
-  if grep -q '="' "$ENV_FILE" 2>/dev/null; then
-    sed -i 's/="\(.*\)"/=\1/g' "$ENV_FILE"
+  # Only strip quotes that wrap the entire value (KEY="value" → KEY=value), not mid-value quotes
+  if grep -qE '^[A-Z_]+=".+"$' "$ENV_FILE" 2>/dev/null; then
+    sed -i '/^[A-Z_]*=".*"$/s/="\([^"]*\)"/=\1/' "$ENV_FILE"
     log "Stripped legacy double-quotes from .env values"
   fi
 
@@ -1072,8 +1073,8 @@ SVCEOF
 
   # Wait for POS to be ready before starting kiosk
   if [[ "$KIOSK_OK" == "true" ]]; then
-    log "Waiting for POS to start..."
-    for i in $(seq 1 30); do
+    log "Waiting for POS to start (up to 120s)..."
+    for i in $(seq 1 60); do
       if curl -fsS http://localhost:3005/api/health >/dev/null 2>&1; then
         log "POS is ready!"
         break
@@ -1115,14 +1116,18 @@ timestamp=$(date +%Y%m%d-%H%M%S)
 backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz"
 
 echo "[Backup] Starting PostgreSQL backup of '$DB_NAME'..."
-if pg_dump -U "$DB_USER" "$DB_NAME" 2>/dev/null | gzip > "$backup_file"; then
+# Use pipefail to catch pg_dump failures (otherwise gzip succeeds on empty input)
+set -o pipefail
+if pg_dump -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip > "$backup_file"; then
   size=$(du -h "$backup_file" | cut -f1)
   echo "[Backup] Success: $backup_file ($size)"
 else
   echo "[Backup] WARNING: pg_dump failed."
-  rm -f "$backup_file"
+  cat /tmp/pgdump_err 2>/dev/null || true
+  rm -f "$backup_file" /tmp/pgdump_err
   exit 1
 fi
+rm -f /tmp/pgdump_err
 
 find "$BACKUP_DIR" -type f -name 'pos-*.sql.gz' -mtime +"$RETENTION_DAYS" -delete
 echo "[Backup] Done."
@@ -1146,14 +1151,25 @@ BKEOF
 
   header "Configuring Sudoers"
 
+  # Dedicated kiosk control script — safer than allowing pkill in sudoers
+  cat > /opt/gwi-pos/kiosk-control.sh <<'KIOSKCTL'
+#!/bin/bash
+# Controlled kiosk stop: stops systemd service + kills only our kiosk Chromium
+set -e
+systemctl stop thepasspos-kiosk 2>/dev/null || true
+# Only kill Chromium processes running as the kiosk service (match our exact URL)
+pkill -f "chromium.*localhost:3005" 2>/dev/null || true
+pkill -f "chromium-browser.*localhost:3005" 2>/dev/null || true
+KIOSKCTL
+  chmod 755 /opt/gwi-pos/kiosk-control.sh
+
   cat > /etc/sudoers.d/gwi-pos <<SUDEOF
 # GWI POS — allow service user to manage POS services without password
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium-browser
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh
 $POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown -h now
 $POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
@@ -1267,8 +1283,7 @@ SVCEOF
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium-browser
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh
 SUDEOF
   chmod 440 /etc/sudoers.d/gwi-pos
 
@@ -1284,13 +1299,12 @@ import subprocess
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:3005')
         self.end_headers()
-        subprocess.Popen(['sudo', 'systemctl', 'stop', 'thepasspos-kiosk'])
-        subprocess.Popen(['sudo', 'pkill', '-f', 'chromium'])
+        subprocess.Popen(['sudo', '/opt/gwi-pos/kiosk-control.sh'])
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', 'http://localhost:3005')
         self.send_header('Access-Control-Allow-Methods', 'POST')
         self.end_headers()
     def log_message(self, format, *args):

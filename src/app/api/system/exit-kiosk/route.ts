@@ -9,16 +9,14 @@ import { exec } from 'child_process'
  * 1. Stops the thepasspos-kiosk systemd service (auto-restart kiosk)
  * 2. Kills any Chromium processes running the POS (desktop launcher)
  *
- * The installer adds sudoers rules:
- *   posuser ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
- *   posuser ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium.*localhost
+ * The installer creates /opt/gwi-pos/kiosk-control.sh (sudoers-allowed)
+ * which stops the kiosk service and kills only our Chromium processes.
  */
 export async function POST() {
   if (process.env.NODE_ENV === 'production') {
     return new Promise<Response>((resolve) => {
-      // Stop the kiosk service first (prevents auto-restart)
-      exec('sudo systemctl stop thepasspos-kiosk 2>/dev/null; sudo pkill -f "chromium.*localhost" 2>/dev/null', (error) => {
-        // Both commands may "fail" (service not running, no process to kill) — that's fine
+      // Use the dedicated kiosk control script (falls back to direct systemctl if script missing)
+      exec('sudo /opt/gwi-pos/kiosk-control.sh 2>/dev/null || sudo systemctl stop thepasspos-kiosk 2>/dev/null', (error) => {
         resolve(NextResponse.json({ data: { ok: true } }))
       })
     })
