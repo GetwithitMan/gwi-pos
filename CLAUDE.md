@@ -285,7 +285,7 @@ npm run db:studio    # Prisma Studio
 | Any API route | `docs/guides/CODING-STANDARDS.md` | `src/lib/with-venue.ts` |
 | Socket / real-time | `docs/guides/SOCKET-REALTIME.md` | `src/lib/socket-server.ts`, `shared-socket.ts` |
 | Android interop | `docs/guides/ANDROID-INTEGRATION.md` | `src/app/api/sync/` |
-| NUC deployment | `docs/guides/NUC-OPERATIONS.md` | `public/installer.run` |
+| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (source of truth) + `gwi-mission-control/scripts/installer.run` (served copy — MUST sync both) |
 | Database / schema | `docs/guides/ARCHITECTURE-RULES.md` | `prisma/schema.prisma` |
 | UI / components | `docs/guides/CODING-STANDARDS.md` | `src/stores/` |
 | Splits | — | `src/app/api/orders/[id]/split/` |

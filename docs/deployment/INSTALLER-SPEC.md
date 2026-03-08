@@ -33,7 +33,10 @@ The primary NUC at each venue. Runs the full POS stack locally for offline opera
 
 **Systemd Services:**
 - `thepasspos` — Node.js POS server (`node -r ./preload.js server.js`)
-- `thepasspos-kiosk` — Chromium in kiosk mode pointing to `http://localhost:3000`
+- `thepasspos-kiosk` — Chromium in kiosk mode pointing to `http://localhost:3005`
+- `thepasspos-sync` — Sync agent (SSE listener for cloud commands)
+
+**Port:** 3005 (configured unquoted in `.env` — systemd `EnvironmentFile` treats quoted values as literal)
 
 ### Terminal
 
@@ -44,7 +47,8 @@ Additional display terminals at the venue (bar screens, host stand, etc.). No lo
 - RealVNC (optional)
 
 **Systemd Services:**
-- `thepasspos-kiosk` — Chromium in kiosk mode pointing to server URL (e.g., `http://192.168.1.50:3000`)
+- `thepasspos-kiosk` — Chromium in kiosk mode pointing to server URL (e.g., `http://192.168.1.50:3005`)
+- `thepasspos-exit-kiosk` — Python micro-service on localhost:3006 for local kiosk exit
 
 ## Installation Flow
 
@@ -58,9 +62,8 @@ curl installer.run | sudo bash
         │
         ├─ Interactive prompts
         │   ├─ Role: Server or Terminal?
-        │   ├─ Venue domain (e.g., fruittabar.ordercontrolcenter.com)
-        │   ├─ Registration code (from MC admin)
-        │   ├─ RealVNC: Company name, terminal name, cloud token
+        │   ├─ Registration code (UUID from MC admin)
+        │   ├─ VNC password (or auto-generate)
         │   └─ (Terminal only) Server URL
         │
         ├─ MC Registration
@@ -79,7 +82,9 @@ curl installer.run | sudo bash
         │    ├─ Clone/pull repo → /opt/gwi-pos/app
         │    ├─ npm ci + prisma generate + db push + build
         │    ├─ Create thepasspos.service
-        │    ├─ Create thepasspos-kiosk.service (→ localhost:3000)
+        │    ├─ Create thepasspos-kiosk.service (→ localhost:3005)
+        │    ├─ Create thepasspos-sync.service (sync agent)
+        │    ├─ Install heartbeat.sh + cron (every 60s)
         │    ├─ Install backup-pos.sh + cron (4 AM)
         │    └─ Start services (wait for health check)
         │
@@ -98,13 +103,18 @@ curl installer.run | sudo bash
 
 ```
 /opt/gwi-pos/
-├── .env                    # Environment variables (chmod 600)
-├── installer.run           # Copy of installer for re-runs
-├── backup-pos.sh           # Daily PostgreSQL backup script
+├── .env                    # Environment variables (chmod 600, unquoted values)
+├── backup-pos.sh           # Daily PostgreSQL backup script (server only)
+├── heartbeat.sh            # 60s HMAC-signed metrics to Mission Control (server only)
+├── sync-agent.js           # SSE listener for cloud commands (server only)
+├── kiosk-control.sh        # Stops kiosk service + kills Chromium (sudoers-allowed)
+├── wait-for-pos.sh         # Waits for POS health endpoint before starting kiosk
+├── clear-kiosk-session.sh  # Clears stale Chromium session data
+├── exit-kiosk-server.py    # Terminal-only: localhost:3006 kiosk exit micro-service
 ├── backups/                # pg_dump .sql.gz files (7-day retention)
+├── keys/                   # RSA keypair (server_key.pem, server_key_pub.pem)
 └── app/                    # GWI POS application (server role only)
-    ├── .env                # Symlink to /opt/gwi-pos/.env
-    ├── .env.local          # Copy of .env for Next.js
+    ├── .env.local          # Symlink to /opt/gwi-pos/.env
     ├── server.js           # Compiled server (from server.ts)
     ├── preload.js          # AsyncLocalStorage polyfill
     ├── .next/              # Next.js build output
@@ -241,9 +251,10 @@ Re-running `installer.run` on an existing installation:
 ### Factory Reset
 
 ```bash
-sudo systemctl stop thepasspos thepasspos-kiosk
+sudo systemctl stop thepasspos thepasspos-kiosk thepasspos-sync thepasspos-exit-kiosk
 sudo rm -rf /opt/gwi-pos
-sudo rm -f /etc/systemd/system/thepasspos.service /etc/systemd/system/thepasspos-kiosk.service
+sudo rm -f /etc/systemd/system/thepasspos.service /etc/systemd/system/thepasspos-kiosk.service /etc/systemd/system/thepasspos-sync.service /etc/systemd/system/thepasspos-exit-kiosk.service
+sudo rm -f /etc/sudoers.d/gwi-pos
 sudo systemctl daemon-reload
 ```
 
@@ -253,18 +264,29 @@ Then re-run `installer.run`.
 
 When a VNC cloud token is provided during installation:
 
-1. Downloads RealVNC Server .deb package
-2. Installs via `apt-get`
-3. Enrolls with naming convention: `PulsePOS-{Company}-{Location}-{Role}`
-4. Example: `PulsePOS-GWI-FruitBar-Server`
+1. Downloads RealVNC Server .deb package via `curl`
+2. Installs via `dpkg -i`
+3. Enrolls with provided cloud connectivity token
+4. Both x11vnc (LAN) and RealVNC (cloud) available
 
 This allows remote support via RealVNC Connect portal.
 
-## Supported Domains
+## Dual-Repo Installer Sync (CRITICAL)
 
-The installer validates venue domains against these parent domains:
-- `*.ordercontrolcenter.com`
-- `*.barpos.restaurant`
+The installer exists in **two** repos. Both must stay in sync:
+
+| Repo | Path | Purpose |
+|------|------|---------|
+| **gwi-pos** (source of truth) | `public/installer.run` | Canonical copy, edit here first |
+| **gwi-mission-control** | `scripts/installer.run` | Served via `GET /installer.run` route handler |
+
+**After any installer change:**
+1. Edit `gwi-pos/public/installer.run`
+2. Copy to `gwi-mission-control/scripts/installer.run`
+3. Commit + push **both** repos
+4. Wait for MC Vercel deploy before re-running on NUCs
+
+The MC route at `src/app/installer.run/route.ts` reads from `scripts/installer.run` at runtime (5-min cache).
 
 ## Useful Commands After Installation
 
@@ -293,7 +315,7 @@ sudo bash /opt/gwi-pos/installer.run
 
 | # | Test | How to Verify |
 |---|------|---------------|
-| 1 | Fresh server install | Run on clean Ubuntu 22.04 → POS at `http://localhost:3000` |
+| 1 | Fresh server install | Run on clean Ubuntu 22.04 → POS at `http://localhost:3005` |
 | 2 | Fresh terminal install | Run on second NUC → Chromium opens pointing at server |
 | 3 | Idempotent re-run | Run installer again → DB backed up, code updated, no data loss |
 | 4 | Offline operation | Disconnect network after install → POS works with local Postgres |

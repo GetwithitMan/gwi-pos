@@ -6,7 +6,7 @@ Reference doc for AI agents working on the GWI POS codebase. Covers NUC provisio
 
 ## Installer Flow
 
-Each venue runs on an Ubuntu NUC provisioned by `public/installer.run` (~1,454 lines). One command:
+Each venue runs on an Ubuntu NUC provisioned by `installer.run` (~1,650 lines). One command:
 
 ```bash
 curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
@@ -15,12 +15,14 @@ curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x
 ### What the Installer Does
 
 1. **Registration** — RSA-2048 keypair + hardware fingerprint → `POST /api/fleet/register` → RSA-encrypted secrets back
-2. **PostgreSQL** — Installs PG 16, creates `thepasspos` database (server role only)
-3. **POS App** — Git clone → `npm ci` → `prisma db push` → `npm run build` → `thepasspos.service` (systemd)
-4. **Kiosk** — Chromium in kiosk mode via `thepasspos-kiosk.service` + KDE/GNOME autostart
-5. **Heartbeat** — 60s cron: HMAC-signed JSON with CPU/memory/disk/localIp/posLocationId → MC
-6. **Sync Agent** — SSE listener for cloud commands (FORCE_UPDATE, KILL_SWITCH, etc.)
-7. **Backups** — Daily `pg_dump` at 4 AM, 7-day retention
+2. **PostgreSQL** — Installs PG 16, creates database (server role only)
+3. **POS App** — Git clone → `npm ci` → `prisma db push` → `npm run build` → `thepasspos.service` (port 3005)
+4. **Kiosk** — Chromium in kiosk mode via `thepasspos-kiosk.service` (preflight checks: X11 session + Chromium installed)
+5. **Heartbeat** — 60s cron: jq-built HMAC-signed JSON with CPU/memory/disk/localIp/posLocationId → MC
+6. **Sync Agent** — `thepasspos-sync.service` (only created if `sync-agent.js` exists in repo)
+7. **Backups** — Daily `pg_dump` at 4 AM, 7-day retention (`set -o pipefail` + stderr capture)
+8. **Kiosk Control** — Dedicated `kiosk-control.sh` script for sudoers (stops service + kills Chromium)
+9. **Terminal Exit Service** — `thepasspos-exit-kiosk.service` (Python on localhost:3006, CORS restricted)
 
 ---
 
@@ -28,8 +30,8 @@ curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x
 
 | Role | What's Installed |
 |------|-----------------|
-| Server | PostgreSQL + Node.js POS + Chromium kiosk + heartbeat + sync agent + backups |
-| Terminal | Chromium kiosk only (points to server IP) + optional RealVNC |
+| Server | PostgreSQL + Node.js POS (port 3005) + Chromium kiosk + heartbeat + sync agent + backups + VNC |
+| Terminal | Chromium kiosk (points to server IP:3005) + exit-kiosk micro-service + VNC |
 
 ---
 
@@ -68,19 +70,23 @@ Two scripts handle schema migrations across environments:
 
 ## Sync Agent
 
+- `thepasspos-sync.service` — standalone Node.js process (not part of POS server)
 - SSE (Server-Sent Events) listener connecting to Mission Control
 - Listens for cloud commands: `FORCE_UPDATE`, `KILL_SWITCH`, `FORCE_UPDATE_APK`, etc.
 - Auto-reconnects on connection loss
-- Runs as background worker within the POS process
+- Systemd unit only created if `sync-agent.js` exists in the repo
+- Timeouts: pre-migrate 180s, build 600s, prisma generate/migrate 120s each
 
 ---
 
 ## Heartbeat
 
-- 60-second cron job
-- HMAC-signed JSON payload with: CPU usage, memory, disk, localIp, posLocationId
+- 60-second cron job (`/opt/gwi-pos/heartbeat.sh`)
+- JSON payload built with `jq` (safe escaping, not printf)
+- HMAC-SHA256 signed with `openssl dgst`
+- Metrics: CPU, memory, disk, localIp, posLocationId, app version, batch status
 - Posts to Mission Control fleet API
-- Used for monitoring and auto-provisioning
+- Log: `/opt/gwi-pos/heartbeat.log` (auto-trimmed to 200 lines)
 
 ---
 
@@ -114,15 +120,29 @@ Before deploying to a production venue:
 
 ---
 
+## Dual-Repo Installer Sync (CRITICAL)
+
+The installer exists in **two** repos and both must stay in sync:
+
+| Repo | Path | Purpose |
+|------|------|---------|
+| **gwi-pos** (source of truth) | `public/installer.run` | Canonical copy — edit here first |
+| **gwi-mission-control** | `scripts/installer.run` | Served to NUCs via `GET /installer.run` route |
+
+**After any installer change:** edit gwi-pos → copy to gwi-mission-control → commit + push both repos → wait for MC Vercel deploy.
+
+---
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `public/installer.run` | NUC provisioning script (~1,454 lines) |
+| `public/installer.run` | NUC provisioning script (source of truth) |
 | `scripts/vercel-build.js` | Neon migration script |
 | `scripts/nuc-pre-migrate.js` | NUC migration script |
+| `public/sync-agent.js` | Sync agent (copied to NUC at `/opt/gwi-pos/sync-agent.js`) |
 | `src/components/KioskExitZone.tsx` | Kiosk exit tap zone |
-| `src/app/api/system/exit-kiosk/route.ts` | Kiosk exit API |
+| `src/app/api/system/exit-kiosk/route.ts` | Kiosk exit API (uses `kiosk-control.sh`) |
 
 ---
 
