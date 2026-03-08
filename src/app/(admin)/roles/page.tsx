@@ -30,6 +30,7 @@ export default function RolesPage() {
   const crud = useAdminCRUD<Role>({
     apiBase: '/api/roles',
     locationId: currentEmployee?.location?.id,
+    requestingEmployeeId: currentEmployee?.id,
     resourceName: 'role',
     parseResponse: (data) => data.roles || [],
   })

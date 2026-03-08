@@ -39,6 +39,7 @@ export default function DiscountsPage() {
   const crud = useAdminCRUD<DiscountRule>({
     apiBase: '/api/discounts',
     locationId: employee?.location?.id,
+    requestingEmployeeId: employee?.id,
     resourceName: 'discount',
     parseResponse: (data) => data.discounts || [],
   })
@@ -155,7 +156,7 @@ export default function DiscountsPage() {
     try {
       const response = await fetch(`/api/discounts/${discount.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-employee-id': employee?.id || '' },
         body: JSON.stringify({ isActive: !discount.isActive }),
       })
 

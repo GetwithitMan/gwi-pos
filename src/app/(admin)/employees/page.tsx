@@ -90,6 +90,7 @@ export default function EmployeesPage() {
   const crud = useAdminCRUD<Employee>({
     apiBase: '/api/employees',
     locationId: currentEmployee?.location?.id,
+    requestingEmployeeId: currentEmployee?.id,
     resourceName: 'employee',
     parseResponse: (data) => data.employees || [],
     skipReloadOnSave: true,

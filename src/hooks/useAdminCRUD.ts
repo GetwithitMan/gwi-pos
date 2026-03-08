@@ -116,9 +116,12 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
       const url = isEdit ? `${apiBase}/${getId(editingItem)}` : apiBase
       const method = isEdit ? 'PUT' : 'POST'
 
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (requestingEmployeeId) headers['x-employee-id'] = requestingEmployeeId
+
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       })
 
@@ -143,7 +146,10 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
 
   const handleDelete = useCallback(async (id: string, _confirmMessage?: string): Promise<boolean> => {
     try {
-      const res = await fetch(`${apiBase}/${id}`, { method: 'DELETE' })
+      const deleteHeaders: Record<string, string> = {}
+      if (requestingEmployeeId) deleteHeaders['x-employee-id'] = requestingEmployeeId
+
+      const res = await fetch(`${apiBase}/${id}`, { method: 'DELETE', headers: deleteHeaders })
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}))

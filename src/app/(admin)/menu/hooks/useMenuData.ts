@@ -262,7 +262,7 @@ export function useMenuData() {
 
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-employee-id': employee?.id || '' },
         body: JSON.stringify(categoryData),
       })
 
@@ -284,7 +284,7 @@ export function useMenuData() {
       message: 'Delete this category and all its items?',
       action: async () => {
         try {
-          await fetch(`/api/menu/categories/${id}`, { method: 'DELETE' })
+          await fetch(`/api/menu/categories/${id}`, { method: 'DELETE', headers: { 'x-employee-id': employee?.id || '' } })
           loadMenu()
           if (selectedCategory === id) {
             setSelectedCategory(categories[0]?.id || null)

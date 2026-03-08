@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/stores/toast-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface LMGEIngredient {
   id: string
@@ -45,6 +46,7 @@ interface LiquorModifierGroupEditorProps {
 }
 
 export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorModifierGroupEditorProps) {
+  const employee = useAuthStore(s => s.employee)
   const [groupName, setGroupName] = useState(group.name)
   const [minSel, setMinSel] = useState(group.minSelections)
   const [maxSel, setMaxSel] = useState(group.maxSelections)
@@ -86,13 +88,16 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
 
   // Load ingredients for inventory tracking picker
   useEffect(() => {
-    fetch('/api/ingredients')
+    const params = new URLSearchParams()
+    if (employee?.location?.id) params.set('locationId', employee.location.id)
+    if (employee?.id) params.set('requestingEmployeeId', employee.id)
+    fetch(`/api/ingredients?${params}`)
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
         if (data) setIngredients(data.data || data || [])
       })
       .catch(() => {})
-  }, [])
+  }, [employee?.id, employee?.location?.id])
 
   const addMod = () => {
     setMods([...mods, { name: '', price: 0, isDefault: false, isActive: true, showOnPOS: true, ingredientId: null }])
