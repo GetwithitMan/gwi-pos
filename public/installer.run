@@ -1131,12 +1131,35 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" || warn "Pre-migrate backfill had warnings (non-fatal)"
 
   log "Applying database migrations..."
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy"; then
-    err "Database migration failed (prisma migrate deploy)."
-    err "Check DATABASE_URL and PostgreSQL status. Do NOT use db push --accept-data-loss on production."
-    err "If schema is out of sync, fix migrations manually or contact support."
-    exit 1
-  fi
+  MIGRATE_OUTPUT=$(sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>&1") && {
+    log "Database migrations applied successfully."
+  } || {
+    if echo "$MIGRATE_OUTPUT" | grep -q "P3005"; then
+      # P3005: database has tables but no _prisma_migrations table.
+      # This happens on NUCs originally provisioned with `prisma db push`.
+      # Fix: baseline by marking all existing migrations as already applied.
+      warn "Database was created with 'db push' — no migration history. Baselining..."
+      for mdir in "$APP_DIR"/prisma/migrations/*/; do
+        [[ -d "$mdir" ]] || continue
+        mname=$(basename "$mdir")
+        log "  Marking as applied: $mname"
+        sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate resolve --applied '$mname'" || true
+      done
+      log "Baseline complete. Retrying migrate deploy..."
+      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy"; then
+        err "Database migration failed after baseline attempt."
+        err "Check DATABASE_URL and PostgreSQL status."
+        exit 1
+      fi
+      log "Database migrations applied successfully (after baseline)."
+    else
+      err "Database migration failed (prisma migrate deploy)."
+      echo "$MIGRATE_OUTPUT" >&2
+      err "Check DATABASE_URL and PostgreSQL status. Do NOT use db push --accept-data-loss on production."
+      err "If schema is out of sync, fix migrations manually or contact support."
+      exit 1
+    fi
+  }
 
   # Seed local PG from Neon cloud (offline-first mode)
   if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
