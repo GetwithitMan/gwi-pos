@@ -10,6 +10,7 @@ import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import { BarcodeScanField } from '@/components/admin/BarcodeScanField'
 
 interface InventoryItem {
   id: string
@@ -447,6 +448,23 @@ function WasteEntryModal({
   return (
     <Modal isOpen={true} onClose={onClose} title="Log Waste Entry" size="lg">
         <div className="space-y-4">
+          {/* Barcode Scan */}
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Scan Barcode</label>
+            <BarcodeScanField
+              locationId={locationId}
+              placeholder="Scan barcode to select item..."
+              onResult={(result) => {
+                if (!result.inventoryItem) {
+                  toast.warning('Scanned item is not an inventory item')
+                  return
+                }
+                setForm(f => ({ ...f, inventoryItemId: result.inventoryItem!.id }))
+                setSearch(result.inventoryItem.name)
+              }}
+            />
+          </div>
+
           {/* Item Selection */}
           <div>
             <label className="block text-sm text-gray-600 mb-1">Inventory Item *</label>

@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
+import { BarcodeScanField } from '@/components/admin/BarcodeScanField'
 
 interface VendorOrderLineItem {
   id: string
@@ -41,6 +42,7 @@ interface VendorOrderDetail {
 
 interface ReceiveItem {
   lineItemId: string
+  inventoryItemId: string
   itemName: string
   orderedQty: number
   alreadyReceived: number
@@ -116,6 +118,7 @@ export default function PurchaseOrderDetailPage() {
       .filter(li => li.receivedQty < li.quantity)
       .map(li => ({
         lineItemId: li.id,
+        inventoryItemId: li.inventoryItemId,
         itemName: li.inventoryItemName,
         orderedQty: li.quantity,
         alreadyReceived: li.receivedQty,
@@ -404,6 +407,42 @@ export default function PurchaseOrderDetailPage() {
               <p className="text-gray-500 text-sm py-4 text-center">All items have been fully received.</p>
             ) : (
               <>
+                {/* Barcode Scan */}
+                <div className="mb-4 p-3 bg-blue-50/50 rounded-lg">
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Scan Barcode to Find Line Item</label>
+                  <BarcodeScanField
+                    locationId={locationId || ''}
+                    placeholder="Scan barcode to jump to line item..."
+                    onResult={(result) => {
+                      if (!result.inventoryItem) {
+                        toast.warning('Scanned item is not an inventory item')
+                        return
+                      }
+                      const idx = receiveItems.findIndex(
+                        ri => ri.inventoryItemId === result.inventoryItem!.id
+                      )
+                      if (idx === -1) {
+                        toast.warning('Item not in this purchase order')
+                        return
+                      }
+                      // Pre-fill with packSize if case barcode
+                      if (result.packSize > 1) {
+                        updateReceiveItem(idx, 'receivedQty', String(result.packSize))
+                        toast.success(`${result.inventoryItem.name} — pre-filled with pack size ${result.packSize}`)
+                      } else {
+                        toast.success(`Found: ${result.inventoryItem.name}`)
+                      }
+                      // Focus the receive qty input
+                      setTimeout(() => {
+                        const inputs = document.querySelectorAll<HTMLInputElement>('table input[type="number"]')
+                        // Each row has 2 inputs (receivedQty, actualCost), so the receive input is at idx * 2
+                        inputs[idx * 2]?.focus()
+                        inputs[idx * 2]?.select()
+                      }, 100)
+                    }}
+                  />
+                </div>
+
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b">

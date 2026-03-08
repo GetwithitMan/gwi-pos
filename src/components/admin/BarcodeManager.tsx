@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from '@/stores/toast-store'
+import { BarcodeImport } from './BarcodeImport'
 
 interface Barcode {
   id: string
@@ -25,6 +26,7 @@ export function BarcodeManager({ menuItemId, inventoryItemId, locationId }: Barc
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
 
   // Form state
   const [formBarcode, setFormBarcode] = useState('')
@@ -176,6 +178,17 @@ export function BarcodeManager({ menuItemId, inventoryItemId, locationId }: Barc
       )}
 
       {/* Add Form */}
+      {/* CSV Import */}
+      {showImport && (
+        <BarcodeImport
+          locationId={locationId}
+          onComplete={() => {
+            loadBarcodes()
+            setShowImport(false)
+          }}
+        />
+      )}
+
       {showForm ? (
         <div className="border border-blue-200 rounded-lg p-3 space-y-3 bg-blue-50/30">
           <div>
@@ -241,12 +254,20 @@ export function BarcodeManager({ menuItemId, inventoryItemId, locationId }: Barc
           </div>
         </div>
       ) : (
-        <button
-          onClick={() => setShowForm(true)}
-          className="w-full py-2 rounded-lg text-sm font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
-        >
-          + Add Barcode
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex-1 py-2 rounded-lg text-sm font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+          >
+            + Add Barcode
+          </button>
+          <button
+            onClick={() => setShowImport(!showImport)}
+            className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            {showImport ? 'Hide Import' : 'Import CSV'}
+          </button>
+        </div>
       )}
     </div>
   )

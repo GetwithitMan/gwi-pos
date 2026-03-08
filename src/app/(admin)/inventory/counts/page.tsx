@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { GroupedVirtuoso } from 'react-virtuoso'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { GroupedVirtuoso, GroupedVirtuosoHandle } from 'react-virtuoso'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
@@ -11,6 +11,7 @@ import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import { BarcodeScanField } from '@/components/admin/BarcodeScanField'
 
 interface StorageLocation {
   id: string
@@ -97,6 +98,10 @@ export default function CountsPage() {
 
   // Count entries being edited
   const [editedItems, setEditedItems] = useState<Record<string, string>>({})
+
+  // Barcode scan highlight
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null)
+  const virtuosoRef = useRef<GroupedVirtuosoHandle>(null)
 
   // Filter (client-side)
   const [statusFilter, setStatusFilter] = useState('')
@@ -399,12 +404,42 @@ export default function CountsPage() {
               </div>
             </CardHeader>
 
+            {/* Barcode Scan */}
+            {countDetail.status === 'in_progress' && (
+              <div className="flex-shrink-0 border-b px-4 py-2 bg-blue-50/50">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Scan Barcode to Find Item</label>
+                <BarcodeScanField
+                  locationId={employee?.location?.id || ''}
+                  placeholder="Scan barcode to jump to item..."
+                  onResult={(result) => {
+                    if (!result.inventoryItem) {
+                      toast.warning('Scanned item is not an inventory item')
+                      return
+                    }
+                    // Find the matching item in the count sheet
+                    const idx = flatItems.findIndex(
+                      ci => ci.inventoryItemId === result.inventoryItem!.id
+                    )
+                    if (idx === -1) {
+                      toast.warning('Item not in this count sheet')
+                      return
+                    }
+                    setHighlightedItemId(flatItems[idx].id)
+                    virtuosoRef.current?.scrollToIndex({ index: idx, align: 'center', behavior: 'smooth' })
+                    // Clear highlight after 3 seconds
+                    setTimeout(() => setHighlightedItemId(null), 3000)
+                  }}
+                />
+              </div>
+            )}
+
             {/* Count Sheet - Virtualized */}
             <CardContent className="flex-1 overflow-hidden p-0">
               {flatItems.length === 0 ? (
                 <div className="p-8 text-center text-gray-500">No items in this count</div>
               ) : (
                 <GroupedVirtuoso
+                  ref={virtuosoRef}
                   style={{ height: '100%' }}
                   groupCounts={groupCounts}
                   groupContent={(index) => (
@@ -419,7 +454,11 @@ export default function CountsPage() {
                     const hasVariance = variance !== null && variance !== 0
 
                     return (
-                      <div className="flex items-center border-b hover:bg-gray-50 px-4 py-2">
+                      <div className={`flex items-center border-b px-4 py-2 transition-colors ${
+                        highlightedItemId === item.id
+                          ? 'bg-yellow-100 ring-2 ring-yellow-400 ring-inset'
+                          : 'hover:bg-gray-50'
+                      }`}>
                         {/* Item Name */}
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate">{item.inventoryItem.name}</div>

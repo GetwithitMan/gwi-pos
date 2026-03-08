@@ -11,6 +11,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { BarcodeManager } from '@/components/admin/BarcodeManager'
 
 interface InventoryItem {
   id: string
@@ -999,6 +1000,14 @@ function InventoryItemModal({
               </div>
             </div>
           </div>
+
+          {/* Barcodes (edit only) */}
+          {item && (
+            <div>
+              <h3 className="font-semibold mb-3">Barcodes</h3>
+              <BarcodeManager inventoryItemId={item.id} locationId={locationId} />
+            </div>
+          )}
         </div>
 
         {/* Footer */}

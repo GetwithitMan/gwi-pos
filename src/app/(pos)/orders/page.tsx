@@ -39,6 +39,7 @@ import { usePaymentFlow } from '@/hooks/usePaymentFlow'
 import { useModifierModal } from '@/hooks/useModifierModal'
 import { useComboBuilder } from '@/hooks/useComboBuilder'
 import { useCardTabFlow } from '@/hooks/useCardTabFlow'
+import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import { useTabsPanel } from '@/hooks/useTabsPanel'
 import { usePizzaBuilder } from '@/hooks/usePizzaBuilder'
 import { useOrderPageModals } from './useOrderPageModals'
@@ -276,6 +277,57 @@ export default function OrdersPage() {
       pricingPickerCallbackRef.current = onComplete
       setPricingPickerItem(item)
     },
+  })
+
+  // ── Barcode scanner — auto-add scanned items to order ──
+  const handleBarcodeScan = useCallback(async (barcode: string) => {
+    const locId = employee?.location?.id
+    if (!locId) return
+
+    try {
+      const res = await fetch(`/api/barcode/lookup?code=${encodeURIComponent(barcode)}&locationId=${locId}`)
+      if (!res.ok) {
+        toast.error('Barcode lookup failed')
+        return
+      }
+
+      const { data } = await res.json()
+
+      if (!data) {
+        toast.error(`Unknown barcode: ${barcode}`)
+        return
+      }
+
+      if (!data.menuItem) {
+        toast.error(`Barcode "${barcode}" is not linked to a menu item`)
+        return
+      }
+
+      if (!data.menuItem.isAvailable) {
+        toast.error(`${data.menuItem.name} is 86'd`)
+        return
+      }
+
+      // Determine price: barcode pack price > menu item base price
+      const price = data.price ?? Number(data.menuItem.price)
+      const label = data.label ? ` (${data.label})` : ''
+
+      engine.addItemDirectly({
+        menuItemId: data.menuItem.id,
+        name: data.menuItem.name + label,
+        price,
+        quantity: 1,
+      })
+
+      toast.success(`Added: ${data.menuItem.name}${label}`)
+    } catch {
+      toast.error('Barcode scan failed')
+    }
+  }, [employee?.location?.id, engine])
+
+  useBarcodeScanner({
+    onScan: handleBarcodeScan,
+    enabled: true,
   })
 
   const panelCallbacks = useOrderPanelCallbacks({
