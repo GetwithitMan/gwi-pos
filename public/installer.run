@@ -6,8 +6,8 @@
 # Provisions Ubuntu 22.04+ NUCs as POS stations.
 #
 # Roles:
-#   Server   — POS app + Chromium kiosk + heartbeat + sync agent + backups + x11vnc
-#   Terminal — Chromium kiosk pointing at server + x11vnc + optional RealVNC cloud
+#   Server   — POS app + Chromium kiosk + heartbeat + sync agent + backups + x11vnc + RealVNC
+#   Terminal — Chromium kiosk pointing at server + x11vnc + RealVNC
 #
 # Usage:
 #   curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
@@ -198,14 +198,7 @@ if [[ -z "$VNC_PASSWORD" ]]; then
   log "Generated VNC password: $VNC_PASSWORD  (save this — it won't be shown again)"
 fi
 
-# 5. RealVNC Cloud (optional — enterprise only)
-read -rp "RealVNC cloud token (enterprise only — press Enter to skip): " REALVNC_TOKEN < /dev/tty
-if [[ -n "$REALVNC_TOKEN" ]]; then
-  read -rp "Company name (for VNC grouping): " COMPANY_NAME < /dev/tty
-  read -rp "Location / terminal name: " TERMINAL_NAME < /dev/tty
-fi
-
-# 6. Terminal: server URL
+# 5. Terminal: server URL
 SERVER_URL=""
 if [[ "$STATION_ROLE" == "terminal" ]]; then
   echo ""
@@ -1341,38 +1334,87 @@ VNCSVC
   log "x11vnc: Running on port 5900 (connect via vnc://STATION_IP:5900)"
 fi
 
-# Optional: RealVNC Cloud enrollment (enterprise license only)
-if [[ -n "${REALVNC_TOKEN:-}" ]]; then
-  log "Setting up RealVNC Cloud enrollment..."
+# ─────────────────────────────────────────────────────────────────────────────
+# RealVNC Connect Server (always installed — sign in via desktop icon)
+# ─────────────────────────────────────────────────────────────────────────────
 
-  if ! command -v vncserver-x11 >/dev/null 2>&1; then
-    wget -q -O /tmp/vncserver.deb \
-      "https://www.realvnc.com/download/file/vnc.files/VNC-Server-Latest-Linux-x64.deb" || {
-      warn "Failed to download RealVNC. Skipping cloud enrollment."
-      REALVNC_TOKEN=""
+header "Setting Up RealVNC Connect"
+
+if ! command -v vncserver-x11 >/dev/null 2>&1; then
+  log "Downloading RealVNC Server..."
+  wget -q -O /tmp/vncserver.deb \
+    "https://www.realvnc.com/download/file/vnc.files/VNC-Server-Latest-Linux-x64.deb" 2>/dev/null || {
+    warn "Failed to download RealVNC Server. You can install it manually later."
+  }
+
+  if [[ -f /tmp/vncserver.deb ]]; then
+    apt-get install -y /tmp/vncserver.deb 2>/dev/null || {
+      warn "RealVNC Server install failed. You can install it manually later."
     }
+    rm -f /tmp/vncserver.deb
+  fi
+else
+  log "RealVNC Server already installed."
+fi
 
-    if [[ -n "$REALVNC_TOKEN" ]]; then
-      apt-get install -y /tmp/vncserver.deb
-      rm -f /tmp/vncserver.deb
+if command -v vncserver-x11 >/dev/null 2>&1; then
+  # Enable and start the RealVNC service
+  systemctl enable vncserver-x11-serviced 2>/dev/null || true
+  systemctl start vncserver-x11-serviced 2>/dev/null || true
+
+  # Set friendly name from venue name (query local POS if running)
+  ROLE_SUFFIX="Server"
+  [[ "$STATION_ROLE" == "terminal" ]] && ROLE_SUFFIX="Terminal"
+  VENUE_NAME=""
+  if curl -sf --max-time 3 "http://localhost:3005/api/settings" >/dev/null 2>&1; then
+    VENUE_NAME=$(curl -sf --max-time 5 "http://localhost:3005/api/settings" 2>/dev/null \
+      | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));process.stdout.write(d?.data?.locationName||'')}catch(e){}" 2>/dev/null || echo "")
+  fi
+  if [[ -n "$VENUE_NAME" ]]; then
+    FRIENDLY_NAME="ThePassPOS-${VENUE_NAME}-${ROLE_SUFFIX}"
+  else
+    FRIENDLY_NAME="ThePassPOS-$(hostname)-${ROLE_SUFFIX}"
+  fi
+  FRIENDLY_NAME=$(echo "$FRIENDLY_NAME" | tr ' ' '-' | tr -cd 'A-Za-z0-9-_')
+
+  # Write friendly name to RealVNC config
+  mkdir -p /root/.vnc/config.d
+  if [[ -f /root/.vnc/config.d/vncserver-x11-serviced ]]; then
+    # Update existing config
+    if grep -q "FriendlyName" /root/.vnc/config.d/vncserver-x11-serviced 2>/dev/null; then
+      sed -i "s/^FriendlyName=.*/FriendlyName=$FRIENDLY_NAME/" /root/.vnc/config.d/vncserver-x11-serviced
+    else
+      echo "FriendlyName=$FRIENDLY_NAME" >> /root/.vnc/config.d/vncserver-x11-serviced
     fi
+  else
+    echo "FriendlyName=$FRIENDLY_NAME" > /root/.vnc/config.d/vncserver-x11-serviced
   fi
 
-  if [[ -n "$REALVNC_TOKEN" ]]; then
-    ROLE_SUFFIX="Server"
-    [[ "$STATION_ROLE" == "terminal" ]] && ROLE_SUFFIX="Terminal"
+  log "RealVNC Server installed — FriendlyName: $FRIENDLY_NAME"
+  log "Sign in: Open 'RealVNC Server' from the desktop, or run: vncserver-x11 -service"
+  log "Then sign in with your RealVNC Connect email/password."
 
-    FRIENDLY_NAME="PulsePOS"
-    [[ -n "${COMPANY_NAME:-}" ]] && FRIENDLY_NAME="$FRIENDLY_NAME-$COMPANY_NAME"
-    [[ -n "${TERMINAL_NAME:-}" ]] && FRIENDLY_NAME="$FRIENDLY_NAME-$TERMINAL_NAME"
-    FRIENDLY_NAME="$FRIENDLY_NAME-$ROLE_SUFFIX"
-    FRIENDLY_NAME=$(echo "$FRIENDLY_NAME" | tr ' ' '-' | tr -cd 'A-Za-z0-9-_')
-
-    log "Enrolling as: $FRIENDLY_NAME"
-    vncserver-x11 -service -joinCloud "$REALVNC_TOKEN" -joinName "$FRIENDLY_NAME" 2>&1 || {
-      warn "RealVNC enrollment failed. Check your cloud token and try manually."
-    }
+  # Desktop shortcut for RealVNC Server settings
+  DESKTOP_DIR="$POSUSER_HOME/Desktop"
+  mkdir -p "$DESKTOP_DIR"
+  cat > "$DESKTOP_DIR/realvnc-server.desktop" <<RVNCEOF
+[Desktop Entry]
+Type=Application
+Name=RealVNC Server — Sign In
+Comment=Open RealVNC Server to sign in with your RealVNC Connect account
+Exec=/usr/bin/vncserver-x11 -config
+Icon=preferences-desktop-remote-desktop
+Terminal=false
+Categories=Network;RemoteAccess;
+StartupNotify=true
+RVNCEOF
+  chown "$POSUSER":"$POSUSER" "$DESKTOP_DIR/realvnc-server.desktop"
+  chmod +x "$DESKTOP_DIR/realvnc-server.desktop"
+  if command -v gio >/dev/null 2>&1; then
+    sudo -u "$POSUSER" gio set "$DESKTOP_DIR/realvnc-server.desktop" metadata::trusted true 2>/dev/null || true
   fi
+else
+  warn "RealVNC Server not available. Use x11vnc for LAN access (port 5900)."
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1386,7 +1428,12 @@ mkdir -p "$APP_BASE"
 POS_URL="http://localhost:3005"
 [[ "$STATION_ROLE" == "terminal" ]] && POS_URL="$SERVER_URL"
 
-LOCATION_NAME="${TERMINAL_NAME:-GWI POS}"
+# Reuse venue name from RealVNC setup if available, else query POS, else hostname
+if [[ -z "${VENUE_NAME:-}" ]]; then
+  VENUE_NAME=$(curl -sf --max-time 3 "http://localhost:3005/api/settings" 2>/dev/null \
+    | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));process.stdout.write(d?.data?.locationName||'')}catch(e){}" 2>/dev/null || echo "")
+fi
+LOCATION_NAME="${VENUE_NAME:-ThePassPOS}"
 
 # Detect Chromium binary (may already be set from kiosk section)
 if [[ -z "${CHROMIUM_BIN:-}" ]]; then
@@ -1400,7 +1447,7 @@ fi
 # Download icon to shared location (works for both server and terminal roles)
 POS_ICON="$APP_BASE/icon.svg"
 if [[ ! -f "$POS_ICON" ]]; then
-  curl -fsSL "https://gwi-pos.vercel.app/icon.svg" -o "$POS_ICON" 2>/dev/null || true
+  curl -fsSL "https://app.thepasspos.com/icon.svg" -o "$POS_ICON" 2>/dev/null || true
 fi
 if [[ ! -f "$POS_ICON" ]]; then
   # Fall back to system icon if download fails
@@ -1483,15 +1530,18 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   echo "    thepasspos-sync   — $(systemctl is-active thepasspos-sync 2>/dev/null || echo 'unknown')"
   echo "    postgresql   — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
   echo "    x11vnc       — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
+  if command -v vncserver-x11 >/dev/null 2>&1; then
+    echo "    realvnc      — $(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo 'unknown')"
+  fi
 else
   echo -e "  ${GREEN}Server:${NC}   $SERVER_URL"
 fi
 
 if command -v x11vnc >/dev/null 2>&1; then
-  echo -e "  ${GREEN}VNC:${NC}      vnc://$(hostname -I | awk '{print $1}'):5900 (password protected)"
+  echo -e "  ${GREEN}VNC (LAN):${NC}    vnc://$(hostname -I | awk '{print $1}'):5900 (password protected)"
 fi
-if [[ -n "${REALVNC_TOKEN:-}" ]]; then
-  echo -e "  ${GREEN}RealVNC:${NC}  Enrolled as $FRIENDLY_NAME"
+if command -v vncserver-x11 >/dev/null 2>&1; then
+  echo -e "  ${GREEN}RealVNC:${NC}      Installed — sign in via desktop icon or: vncserver-x11 -config"
 fi
 
 echo ""
