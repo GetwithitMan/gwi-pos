@@ -186,7 +186,7 @@ if [[ -f "$ENV_FILE" ]]; then
              log "Cleared old registration credentials from .env"
            fi
            # Rotate RSA keys — MC will issue new identity
-           rm -f "$KEY_DIR/server_key.pem" "$KEY_DIR/server_key_pub.pem" 2>/dev/null || true
+           rm -f "$KEY_DIR/private.pem" "$KEY_DIR/public.pem" 2>/dev/null || true
            log "Removed old RSA keypair (new keys will be generated)"
            break ;;
         *) echo "Please enter 1 or 2." ;;
@@ -912,6 +912,9 @@ log "npm: $(npm -v)"
 
 if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   header "Setting Up Local PostgreSQL"
+
+  # Unmask first — may have been masked by a prior server→terminal switch
+  systemctl unmask postgresql 2>/dev/null || true
 
   apt-get install -y postgresql postgresql-contrib
 
@@ -1817,14 +1820,26 @@ if [[ "$STATION_ROLE" == "server" ]]; then
     echo -e "  ${GREEN}Database:${NC} Neon (cloud)"
   fi
   echo -e "  ${GREEN}Heartbeat:${NC} Every 60 seconds → Mission Control"
-  echo -e "  ${GREEN}Sync:${NC}     Listening for deploy commands"
+  # Only show sync status if agent was actually installed
+  SYNC_STATUS=$(systemctl is-active thepasspos-sync 2>/dev/null || echo "not installed")
+  if [[ "$SYNC_STATUS" == "active" ]]; then
+    echo -e "  ${GREEN}Sync:${NC}     Listening for deploy commands"
+  else
+    echo -e "  ${YELLOW}Sync:${NC}     $SYNC_STATUS"
+  fi
   echo ""
   echo -e "  ${CYAN}Services:${NC}"
-  echo "    thepasspos    — $(systemctl is-active thepasspos 2>/dev/null || echo 'unknown')"
-  echo "    thepasspos-kiosk  — $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
-  echo "    thepasspos-sync   — $(systemctl is-active thepasspos-sync 2>/dev/null || echo 'unknown')"
-  echo "    postgresql   — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
-  echo "    x11vnc       — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
+  echo "    thepasspos        — $(systemctl is-active thepasspos 2>/dev/null || echo 'unknown')"
+  # Only show kiosk if it was enabled (not skipped by preflight)
+  KIOSK_STATUS=$(systemctl is-enabled thepasspos-kiosk 2>/dev/null || echo "disabled")
+  if [[ "$KIOSK_STATUS" != "disabled" ]]; then
+    echo "    thepasspos-kiosk  — $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
+  else
+    echo "    thepasspos-kiosk  — skipped (preflight failed)"
+  fi
+  echo "    thepasspos-sync   — $SYNC_STATUS"
+  echo "    postgresql        — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
+  echo "    x11vnc            — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
   if command -v vncserver-x11 >/dev/null 2>&1; then
     echo "    realvnc      — $(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo 'unknown')"
   fi
