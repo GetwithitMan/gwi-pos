@@ -688,15 +688,17 @@ else
     log "Canonicalized terminal .env (STATION_ROLE, NODE_ENV, PORT, SERVER_URL) + scrubbed server-only keys"
   fi
 
-  # Canonicalize server .env on re-runs (fix PORT and NODE_ENV from old installers)
+  # Canonicalize server .env on re-runs (fix PORT, NODE_ENV, and stale branding from old installers)
   if [[ "$STATION_ROLE" == "server" ]]; then
-    sed -i '/^PORT=/d; /^NODE_ENV=/d; /^STATION_ROLE=/d' "$ENV_FILE" 2>/dev/null || true
+    sed -i '/^PORT=/d; /^NODE_ENV=/d; /^STATION_ROLE=/d; /^DB_NAME=/d; /^DB_USER=/d' "$ENV_FILE" 2>/dev/null || true
     {
       echo "STATION_ROLE=server"
       echo "NODE_ENV=production"
       echo "PORT=3005"
+      echo "DB_NAME=thepasspos"
+      echo "DB_USER=thepasspos"
     } >> "$ENV_FILE"
-    log "Canonicalized server .env (STATION_ROLE, NODE_ENV, PORT=3005)"
+    log "Canonicalized server .env (STATION_ROLE, NODE_ENV, PORT=3005, DB_NAME=thepasspos)"
   fi
 fi
 
