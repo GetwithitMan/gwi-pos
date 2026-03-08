@@ -249,6 +249,11 @@ if [[ -d "$APP_BASE" ]]; then
       systemctl disable --now thepasspos-sync 2>/dev/null || true
       # Stop local PostgreSQL if running (terminal doesn't need it)
       systemctl disable --now postgresql 2>/dev/null || true
+      # Remove server-only cron entries (heartbeat + backup)
+      if crontab -u "$POSUSER" -l 2>/dev/null | grep -q "heartbeat\|backup"; then
+        crontab -u "$POSUSER" -l 2>/dev/null | grep -v "heartbeat\|backup" | crontab -u "$POSUSER" - 2>/dev/null || true
+        log "Removed heartbeat and backup cron entries from previous server role"
+      fi
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
       log "Disabling terminal-only kiosk..."
       systemctl disable --now thepasspos-kiosk 2>/dev/null || true
@@ -492,14 +497,15 @@ NODE_ENV=production
 NEXT_PUBLIC_EVENT_PROVIDER=socket
 PORT=3005
 INTERNAL_API_SECRET=${INTERNAL_SECRET}
+SERVER_URL=${SERVER_URL}
 ENVEOF
 
   chmod 600 "$ENV_FILE"
   chown "$POSUSER":"$POSUSER" "$ENV_FILE"
   log "Environment written to $ENV_FILE"
 
-elif [[ "$STATION_ROLE" == "server" ]]; then
-  # Already registered — load values from existing .env
+else
+  # Already registered — load values from existing .env (both server + terminal re-runs)
   log "Using existing registration from $ENV_FILE"
   while IFS= read -r line; do
     # Skip blank lines and lines starting with #
@@ -514,6 +520,7 @@ elif [[ "$STATION_ROLE" == "server" ]]; then
       DATABASE_URL) DATABASE_URL="$val" ;;
       DIRECT_URL)   DIRECT_URL="$val" ;;
       HARDWARE_FINGERPRINT) HARDWARE_FINGERPRINT="$val" ;;
+      SERVER_URL)   [[ -z "$SERVER_URL" ]] && SERVER_URL="$val" ;;
     esac
   done < "$ENV_FILE"
 
@@ -529,6 +536,12 @@ elif [[ "$STATION_ROLE" == "server" ]]; then
   if ! grep -q "^INTERNAL_API_SECRET=" "$ENV_FILE" 2>/dev/null; then
     echo "INTERNAL_API_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
     log "Added INTERNAL_API_SECRET to existing .env"
+  fi
+
+  # Ensure SERVER_URL is persisted (added in later installer versions)
+  if [[ -n "$SERVER_URL" ]] && ! grep -q "^SERVER_URL=" "$ENV_FILE" 2>/dev/null; then
+    echo "SERVER_URL=$SERVER_URL" >> "$ENV_FILE"
+    log "Added SERVER_URL to existing .env"
   fi
 
   # Ensure GIT_REPO is set (not provided during re-run since registration is skipped)
