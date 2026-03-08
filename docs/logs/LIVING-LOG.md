@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-03-08 — Barcode Scanning Feature (Full Stack)
+
+### Session Summary
+Built complete barcode scanning system across gwi-pos (NUC server) and gwi-pax-a6650 (PAX handheld). Covers schema, CRUD API, admin UI, CSV import, USB scanner detection on web POS, inventory page scanner integration, and PAX A6650 hardware scanner with Neptune SDK reflection.
+
+### Commits
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | `78465209` | Phase 1 — ItemBarcode schema + CRUD API + Admin UI + useBarcodeScanner hook |
+| gwi-pos | `d7a5c6ab` | Phases 2b/4/5 — CSV import + Inventory scan fields + POS order scanner |
+| gwi-pax-a6650 | `1ffde45` | Phase 3 — PAX hardware scanner (ScannerService + ViewModel + Room migration 40→41) |
+| gwi-pax-a6650 | `c035139` | Camera barcode scanner (CameraX + ML Kit, bottom sheet, any Android device) |
+| gwi-android-register | `2763f35` | Barcode scanning — USB, Bluetooth, camera (3-step lookup, Room migration 37→38) |
+
+### What Was Built
+- **Schema:** `ItemBarcode` join table (barcode → MenuItem/InventoryItem, with packSize + price override per barcode)
+- **API:** `/api/barcode/` CRUD, `/api/barcode/lookup` (barcode→SKU fallback), `/api/barcode/import` (CSV bulk, max 5000 rows)
+- **Admin UI:** BarcodeManager component (in ItemSettingsModal + inventory item edit), BarcodeImport with preview table + sample CSV
+- **Web POS:** `useBarcodeScanner` hook detects USB scanner via keystroke timing (<50ms gap), auto-adds items to order
+- **Inventory:** BarcodeScanField on count sheets (auto-scroll + highlight), waste entry (auto-select item), PO receiving (auto-find line item)
+- **PAX A6650:** ScannerService (Neptune SDK reflection + keyboard-mode buffer), dispatchKeyEvent in MainActivity, handleBarcodeScan in HandheldOrderViewModel (local SKU → server barcode lookup → addItem with pack price)
+
+### Design Decisions
+- GS1 UPC standard: each packaging config (single, 6-pack, case) gets its own barcode
+- Pack-size pricing: a 6-pack = 1 order item at pack price, not 6 items
+- Local-first: PAX tries Room SKU lookup before server barcode API (works offline for simple items)
+- USB scanners detected by keystroke timing, not device enumeration
+
+---
+
 ## 2026-03-08 — Installer Production Hardening + Sync Agent Safety
 
 ### Session Summary
