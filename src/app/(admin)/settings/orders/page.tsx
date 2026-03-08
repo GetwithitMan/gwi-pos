@@ -357,27 +357,6 @@ export default function OrderSettingsPage() {
           </section>
         )}
 
-        {/* ═══════════════════════════════════════════
-            Card 5: Coming Soon
-            ═══════════════════════════════════════════ */}
-        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 opacity-60">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
-            Additional Configuration
-            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Coming Soon</span>
-          </h2>
-          <p className="text-sm text-gray-400 mt-2">The following features will be available in a future update:</p>
-          <ul className="mt-3 space-y-2 text-sm text-gray-400">
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-200" />
-              Custom tender types
-            </li>
-            <li className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-200" />
-              Ticket format configuration
-            </li>
-          </ul>
-        </section>
-
         {/* Bottom save bar */}
         <SettingsSaveBar isDirty={isDirty} isSaving={isSaving} onSave={handleSave} />
       </div>

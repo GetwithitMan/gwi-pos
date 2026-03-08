@@ -86,7 +86,7 @@ export function buildDailyReportReceipt(data: DailyReportPrintData): Buffer {
   parts.push(twoColumnLine('Sales Tax', fmt(data.salesTax), W))
   parts.push(twoColumnLine('Tips', fmt(data.tips), W))
   if (data.surchargeTotal && data.surchargeTotal > 0) {
-    parts.push(twoColumnLine('Surcharges Collected', fmt(data.surchargeTotal), W))
+    parts.push(twoColumnLine('Dual Pricing Adj.', fmt(data.surchargeTotal), W))
   }
   parts.push(divider(W, '-'))
   parts.push(ESCPOS.BOLD_ON)

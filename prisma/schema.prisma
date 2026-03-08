@@ -692,6 +692,8 @@ model Location {
 
   // Inventory & Recipe Costing (Skill 115)
   voidReasons               VoidReason[]
+  compReasons               CompReason[]
+  reasonAccess              ReasonAccess[]
   storageLocations          StorageLocation[]
   inventoryItems            InventoryItem[]
   inventoryItemStorages     InventoryItemStorage[]
@@ -4376,6 +4378,47 @@ model VoidReason {
 
   @@unique([locationId, name])
   @@index([locationId])
+}
+
+// Comp reasons (mirrors VoidReason structure)
+model CompReason {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name            String // "Manager Comp", "VIP Guest", "Service Recovery"
+  description     String?
+  deductInventory Boolean @default(false) // Auto-deduct from theoretical inventory
+  requiresManager Boolean @default(false) // Requires manager PIN
+  isActive        Boolean @default(true)
+  sortOrder       Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+// Access control for reasons and discounts (role/employee allow/deny)
+model ReasonAccess {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  subjectType String // "role" | "employee"
+  subjectId   String // role name or employee id
+  reasonType  String // "void_reason" | "comp_reason" | "discount"
+  reasonId    String // id of the reason or discount
+  accessType  String @default("allow") // "allow" | "deny"
+
+  createdAt DateTime @default(now())
+
+  @@unique([locationId, subjectType, subjectId, reasonType, reasonId])
+  @@index([locationId])
+  @@index([locationId, subjectType, subjectId])
 }
 
 // Storage locations for inventory (Walk-in, Dry Storage, Bar, etc.)

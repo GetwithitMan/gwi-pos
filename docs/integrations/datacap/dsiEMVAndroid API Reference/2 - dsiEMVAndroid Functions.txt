@@ -1,0 +1,383 @@
+﻿dsiEMVAndroid Functions
+dsiEMVAndroid Constructor
+Used to create a new instance of the dsiEMVAndroid class.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	dsiEMVAndroid (Context context)
+	Arguments
+	Context context – Global information about an application environment. Pass in the current activity context.
+	Returns
+	An object of the dsiEMVAndroid class.
+	ProcessTransaction
+To process EMV credit and debit transactions using an attached SecureDevice to the NETePay Hosted platform.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	String ProcessTransaction (String xmlRequest)
+	Arguments
+	String xmlRequest – An XML formatted string containing the transaction request. See EMV and Admin transactions for available XML commands, formats and usage.
+	Returns
+	XML formatted string response of type RStream. See XML Responses.
+	Note
+	dsiEMVAndroid provides the POS the ability to process payments without handling sensitive cardholder data (i.e. account number, expiration date, CVV/CID, PIN). dsiEMVAndroid directly controls the card account input device, such as an MSR, PIN pad, contactless reader, etc, facilitating an ‘out of scope’ position from a PCI-DSC (Payment Card Industry Data Security Council) PA-DSS (Payment Application – Data Security Standard) perspective for a POS application.
+	GetDevicesInfo
+To determine which SecureDevices are supported in the dsiEMVAndroid library in use. Includes device capabilities and characteristics.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	String GetDevicesInfo ()
+	Arguments
+	None
+	Returns
+	XML formatted string response of type Devices.
+	GetDevicesInfo Example
+* xml
+<?xml version="1.0"?>
+<Devices>
+    <NumSecureDevices>3</NumSecureDevices>
+    <SecureDevice1>
+        <Description1>IDTech VP3300 - Datacap</Description1>
+        <Interface1>USB/HID/Bluetooth</Interface1>
+        <SecureDeviceID1>EMV_VP3300_DATACAP</SecureDeviceID1>
+    </SecureDevice1>
+    <SecureDevice2>
+        <Description2>IDTech VP3300 - Mercury</Description2>
+        <Interface2>USB/HID/Bluetooth </Interface2>
+        <SecureDeviceID2>EMV_VP3300_MERCURY</SecureDeviceID2>
+    </SecureDevice2>
+    <SecureDevice3>
+        <Description3>IDTech VP3300 - Heartland</Description3>
+        <Interface3>USB/HID/Bluetooth </Interface3>
+        <SecureDeviceID3>EMV_VP3300_HEARTLAND</SecureDeviceID3>
+    </SecureDevice3>
+</Devices>
+
+NumSecureDevices
+(Number 1-6 chars)
+	Required
+Where SSSSSS indicates the number of Secure Devices supported in the version of dsiEMVAndroid
+	SecureDeviceNN:DescriptionNN
+(String 1-40 chars)
+	Required
+Description text of SecureDeviceNN. NN = 1 to SSSSSS.
+	SecureDeviceNN:InterfaceNN
+(String 1-40 chars)
+	Required
+Interface type(s) supported for SecureDeviceNN. NN = 1 to SSSSSS.
+	SecureDeviceNN:SecureDeviceIDNN
+(String 1-40 chars)
+	Required
+SecureDeviceID for SecureDeviceNN. NN = 1 to SSSSSS.
+	CancelRequest
+Attempts to cancel a previously initiated transaction for a device without a cancel button.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	void CancelRequest ()
+	Arguments
+	None
+	Returns
+	None. If successful, the original ProcessTransaction will return a “Transacation Not Complete” message indicating the transaction as canceled by the user.
+	Note
+	A transaction can only be canceled until the point of a successful card read. Unsuccesful cancel attempts are ignored. Successful attempts will return from the ProcessTransaction method already in progress.
+	AddLineItem
+To add a single item or set of line items and optionally update the running total.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	Boolean AddLineItem (String lineItem, @Nullable String runningTotal) OR (ArrayList<String> lineItems, @Nullable String runningTotal)
+	Arguments
+	String lineItem - A string to be displayed as a singular line item ** OR ArrayList<String> lineItems** - An ArrayList of strings to be displayed as set of line Items. AND @Nullable String runningTotal - A string to display the new running total after the line item/s have been accounted for (optionally nullable)
+	Returns
+	Boolean indicating if the item was successfully added.
+	RemoveLineItem
+To remove a single item or set of line items and optionally update the running total.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	Boolean RemoveLineItem (String lineItem, @Nullable String runningTotal) OR (ArrayList lineItems, @Nullable String runningTotal)
+	Arguments
+	String lineItem - A string to be displayed as a singular line item ** OR ArrayList lineItems** - An ArrayList of strings to be displayed as set of line Items. AND @Nullable String runningTotal - A string to display the new running total after the line item/s have been accounted for (optionally nullable)
+	Returns
+	Boolean indicating if the item was successfully removed.
+	ClearLineItems
+To clear all line items.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	Boolean ClearLineItems ( )
+	Arguments
+	None
+	Returns
+	Boolean indicating if the line items were successfully cleared.
+	EstablishBluetoothConnection
+Establishes a Bluetooth connection to the Bluetooth device provided.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	String EstablishBluetoothConnection (String bluetoothDeviceName)
+	Arguments
+	String bluetoothDeviceName – Bluetooth device to connect to. Use the identifier returned by Bluetooth device during BLE discovery.
+	Returns
+	XML formatted string response of type RStream containing whether connection was successful.
+	Note
+	The ProcessTransaction function implicitly calls EstablishBluetoothConnection if the supplied Bluetooth device is not already connected. Use EstablishBluetoothConnection prior to ProcessTransaction to avoid waiting for a Bluetooth connection while processing an active transaction (and potentially delaying customer interraction).
+	Disconnect
+To disconnect the currently connected Bluetooth device.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	void Disconnect ()
+	Arguments
+	None
+	Returns
+	None
+	Note
+	This should be used when switching between Bluetooth devices.
+	AddBluetoothConnectionListener
+Use to add listener for changes in the connection status of a bluetooth connected device.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	void AddBluetoothConnectionListener (BluetoothConnectionListener l)
+	Arguments
+	BluetoothConnectionListener l – Event Listener receiving on connection changed events.
+	Returns
+	None
+	Note
+	Bluetooth connection events are raised when the bluetooth ghatt adapter detects a change.
+	AddDisplayMessageListener
+Use to add listener for changes in the Display Message event.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	void AddDisplayMessageListener (DisplayMessageListener l)
+	Arguments
+	DisplayMessageListener l – Event Listener for Display Message events.
+	Returns
+	None.
+	Note
+	Display Message events are raised when a secure device without a display publishes a message to the POS.
+	AddProcessTransactionResponseListener
+Use to add listener for changes in the response to ProcessTransaction.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	void AddProcessTransactionResponseListener (ProcessTransactionResponseListener l)
+	Arguments
+	ProcessTransactionResponseListener l – Event Listener for ProcessTransaction response events.
+	Returns
+	None.
+	Note
+	ProcessTransaction response events are raised when a response is returned from the ProcessTransaction function. Use this to asynchronously handle the ProcessTransaction response.
+	SetProcessListener
+Use to track ForwardAll progress.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	void SetProcessListener (SAFEventListener l)
+	Arguments
+	SAFEventListener l – Event Listener for SAF_ForwardAll events.
+	Returns
+	None.
+	AddEstablishBluetoothConnectionResponseListener
+Use to add listener for changes in the response to EstablishBluetoothConnection.
+Element
+	Definition
+	Library
+	dsiEMVAndroid.aar
+	Syntax
+	void AddEstablishBluetoothConnectionResponseListener (BluetoothConnectionResponseListener l)
+	Arguments
+	BluetoothConnectionResponseListener l – Event Listener for EstablishBluetoothConnection response events.
+	Returns
+	None.
+	Note
+	EstablishBluetoothConnection response events are raised when a response is returned from the EstablishBluetoothConnection function. Use this to asynchronously handle the EstablishBluetoothConnection response.
+	Supported EMV Transactions and Operations
+The following transaction codes TranCode are supported in dsiEMVAndroid
+Credit/Debit Transactions
+Operation
+	Definition
+	Supported By
+	EMVPadReset
+	This command must be performed after every monetary transaction (Sale, VoidSale, Return, VoidReturn, VoiceAuth, ZeroAuth, etc) to assure that no card remains in the PIN pad chip reader. If no card is in the reader, then a response should be returned in 2-3 seconds. If there’s a card in the reader, the PIN pad displays ‘Remove Card’ and waits for the card to be removed before returning a response.
+	Credit or Debit
+	EMVSale
+	EMV Sale transaction
+	Credit or Debit
+	EMVSaleWithSplit
+	EMV Sale with Split Fee Funding
+	Credit or Debit
+	SaleByRecordNo
+	Sale transaction using a processor supplied multi-use token
+	Credit
+	EMVPreAuth
+	To preauthorize a credit card which must be subsequently captured for settlement
+	Credit
+	PreAuthByRecordNo
+	To preauthorize a credit card using a processor supplied multi-use token
+	Credit
+	EMVVoidSale
+	Void of a previously completed EMV Sale transaction
+	Credit
+	VoidSaleByRecordNo
+	Void of a previously completed EMV Sale transaction using transaction reference identifier(s)
+	Credit
+	EMVReturn
+	EMV Return transaction
+	Credit or Debit
+	ReturnByRecordNo
+	Return transaction using a processor supplied multi-use token
+	Credit
+	EMVVoidReturn
+	Void of a previously completed EMV Return transaction
+	Credit
+	VoidReturnByRecordNo
+	Void of a previously completed EMV Return transaction using transaction reference identifier(s)
+	Credit
+	EMVVoiceAuth
+	Capture a transaction that was authorized by voice into the current batch
+	Credit
+	EMVZeroAuth
+	To verify a card is valid without charging any amount
+	Credit
+	AdjustByRecordNo
+	To adjust the gratuity amount on a previously processed EMVSale or EMVVoiceAuth transaction.
+	Credit
+	PreAuthCaptureByRecordNo
+	To add a gratuity to a previously processed EMVPreAuth transaction and capture the transaction to the Credit current batch.
+	Credit
+	IncrementalAuthByRecordNo
+	To increase the authorized amount of a previous PreAuth transaction
+	Credit
+	PartialReversalByRecordNo
+	To decrease the authorized amount of a previous PreAuth transaction.
+	Credit
+	VoidByInvoiceNo
+	To void the authorized amount of a previous sale transaction.
+	Credit
+	EBT
+Operation
+	Definition
+	EBT Foodstamp EMVSale
+	Process a Foodstamp payment on an EBT card. Foodstamp EBT sales require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+	EBT Foodstamp EMVReturn
+	Process a Foodstamp return (refund) on an EBT card. Foodstamp EBT returns require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+	EBT Foodstamp EMVBalance
+	Process a foodstamp balance inquiry on an EBT card. Foodstamp EBT balance inquiries require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+	EBT Foodstamp EMVVoucher
+	Process a Foodstamp voucher payment. The AcctNo, ExpDate, AuthCode and VoucherNo data must be supplied from the printed voucher.
+	EBT Cash EMVSale
+	Process a cash payment on an EBT card. Cash EBT sales require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+	EBT Cash EMVBalance
+	Process a cash balance inquiry on an EBT card. EBT cash balance inquiries require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+	eWIC
+Operation
+	Definition
+	eWIC Balance
+	The eWIC Balance is processed to get the balance for customer’s card on demand from eWIC processor.
+	eWIC BalancePreVal
+	The eWIC BalancePreVal is processed prior to an eWIC Sale to get the customer’s prescription from the eWIC processor.
+	eWIC Sale
+	The eWIC Sale transaction is used to process payment for an included list of eWIC eligible items.
+	eWIC VoidSale
+	The eWIC VoidSale transaction is used to process a refund (return) for a previously completed eWIC Sale transaction.
+	eWIC Voucher
+	To process a eWIC Voucher payment. The AcctNo must be manually input on PIN pad and the AuthCode and VoucherNo data must be supplied from the printed voucher.
+	FSA
+Operation
+	Definition
+	FSA EMVSale
+	Process a payment on a Flexible Spending Account credit card.
+	FSA EMVVoidSale
+	Void (reverse) a previously completed sale (payment) transaction in the current batch on a Flexible Spending Account credit card.
+	Admin
+Operation
+	Definition
+	EMVParamDownload
+	This command loads essential parameter and security information into the EMV PIN pad. This command must be performed as requested by the payment service provider OR when a pad is replaced OR new PIN pad installation
+	ServerVersion
+	Reports the NETePay server version with which the dsiEMVAndroid is communicating
+	BatchSummary
+	Retrieves current batch summary information (overall counts and net amount; optionally totals by card type)
+	BatchClose
+	To close the currently open batch
+	Other
+Operation
+	Definition
+	PrintReceipt
+	Print a receipt on PIN pad devices which support this feature. (Currently the Ingenico Move/3500, Ingenico Move/5000, Ingenico Desk/3500, Ingenico Desk/5000, PAX A920Pro).
+	GetAnswer
+	To prompt a question and obtain an answer using the attached PIN pad.
+	GetYesNo
+	Custom two choice prompt on pad.
+	GetMultipleChoice
+	Custom multi choice prompt, max 6 choices.
+	GetSuggestiveTip
+	Gratuity multiple choice prompt, max 6 choices.
+	GetSignature
+	Get a digitized signature from a signature capture capable PIN pad.
+	GetPhoneNumber
+	To obtain a customer’s phone number using the attached PIN pad.
+	GetID
+	To obtain a customer’s ID number using the attached PIN pad.
+	SetTerms
+	To set terms and conditions on a signature capture PIN Pad.
+	DisplayTerms
+	To display terms and conditions on a signature capture PIN pad for customers to accept or decline.
+	DisplayOnDevice
+	To display text on connected PIN pad.
+	GetGenericAmount
+	To obtain an amount outside of a normal transaction flow.
+	GetManualTip
+	To obtain a manual tip outside of the suggestive tip prompt flow.
+	GetZipCode
+	To obtain the zip code for the cardholder’s credit card using the attached PIN pad.
+	DisplayQRCode
+	Used to display a QR Code to the pinpad with optional yes/no buttons for responding to a prompt.
+	Additional Use Cases
+Operation
+	Definition
+	Payment Fee Suite
+	dsiEMVAndroid supports Datacap’s Payment Fee Suite (Compliant Surcharge with Lookup, Dual or multi-pricing, and Convenience Fee / Split fee funding)
+	CardholderID
+	CardholderID allows ISVs to track unique cardholders across their entire merchant base for data aggregation and proactive marketing.
+	SuggestiveTipPrompt
+	dsiEMVAndroid supports Sugggestive Tip Prompting on select supported PIN pads.
+	Custom Amount Format
+	On PAX Android devices, dsiEMVAndroid supports the <CustomAmountFormat> field, which allows integrators to display a custom message to the cardholder on the “collect card data” form screen.
+	Custom Forms
+	dsiEMVAndroid supports customs forms, so integrators can develop/design their own forms packages on PAX Android devices.
+	Parking IN/OUT
+	dsiEMVAndroid PAX Android devices support a method to uniquely identify a customer’s payment card, allowing the POS to determine when the customer is entering and exiting a parking lot or garage. Datacap’s control combines and hashes the unencrypted parts of the payment card, and provides them back to the POS as a base-64 encoded string.
+	Stored Credential On File
+	Ideal for situations of recurring payments and installment payments. By using COF, the merchant and POS avoid storing card data for recurring transactions, and maintain compliance with the card brands.
+	Important: Support for any particular transaction code depends on the processing host’s support of that transaction.

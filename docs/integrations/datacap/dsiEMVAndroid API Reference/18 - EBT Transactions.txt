@@ -1,0 +1,3187 @@
+﻿EBT Transactions
+EBT Foodstamp EMVBalance
+To process a foodstamp balance inquiry on an EBT card. Foodstamp EBT balance inquiries require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+Implementation Notes:
+1. <TranCode> should be set to EMVBalance
+2. <TranType> should be set to EBT
+3. <CardType> should be set to Foodstamp
+4. <Amount:Purchase> should be set to 0.00
+5. If processing with WorldPay Core or Fiserv RapidConnect, EMV EBT is supported. In which case exclude <TranType> to support EMV EBT and MSR EBT cards.
+Sample Request
+* Required
+* Optional
+<?xml version="1.0"?>
+  <TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <POSPackageID>AndroidApp:1.02</POSPackageID>
+        <OperationMode>CERT</OperationMode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <TranType>EBT</TranType>
+        <CardType>Foodstamp</CardType>
+        <TranCode>EMVBalance</TranCode>
+        <InvoiceNo>260119</InvoiceNo>
+        <RefNo>260119</RefNo>
+        <Amount>
+            <Purchase>0.00</Purchase>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <PinPadIpAddress>192.168.1.151</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+    </Transaction>
+</TStream>
+
+MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranType
+(String 1-24 chars)
+	Conditional
+Used with the CardType to specify payment type for MSR EBT transaction.
+	CardType
+(String 1-24)
+	Required
+Include with value “Foodstamp” or “Cash”. Only CardType is included for EMV EBT transactions.
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return)
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	RefNo
+(String 1-50 chars)
+	Required
+Transaction reference number. Use the same data as InvoiceNo.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Total amount of eligible EBT items.
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperationMode
+(String 1-4 chars)
+	Conditional
+used to direct transactions to CERT or PROD NETePay Hosted environment. Supported values are “CERT” and “PROD”. Default value is “PROD”.
+	PinPadIpAddress
+(String 7-15 chars)
+	Conditional
+IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Conditional
+Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	Account:AcctNo
+(String 1-24 chars)
+	When the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	OKAmount
+(String 1-24 chars)
+	When the optional OKAmount tag is included with the value “Disallow”, dsiEMVAndroid will not prompt the cardholder to approve the transaction amount. If the OKAmount tag is omitted, the PIN pad will ask the cardholder to approve the transaction amount by default.
+	TerminalID
+(String 1-24 chars)
+	Terminal ID data must be supplied in this tag only if required by the processor or merchant service provider; otherwise this tag should not be included. The POS system should store this value as a parameter to be included when required.
+	LaneID
+(Number 1-8 chars)
+	A unique LaneID (lane number) can be supplied to identify each POS/ECR in a single store location with multiple payment points
+	OperatorID
+(String 1-24 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	UserTrace
+(String 1-24 chars)
+	A unique value created and supplied by POS system
+	Sample Response
+* Required
+* Optional
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace></UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <AcctNo>507719******4720</AcctNo>
+        <CardType>Foodstamp</CardType>
+        <TranCode>EMVBalance</TranCode>
+        <AuthCode>CHJNvkS</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>R0FnbAv440FyjJJayBWfX</RefNo>
+        <InvoiceNo>260119</InvoiceNo>
+        <Amount>
+            <Purchase>0.00</Purchase>
+            <Balance>1000.00</Balance>
+            <FoodBalance>1000.00</FoodBalance>
+            <CashBalance>2000.00</CashBalance>
+        </Amount>
+        <AcqRefData>||98ulHZMzQiTJlbQhEiNcRGGqlr|Balance</AcqRefData>
+        <ProcessData>EX5yDTP99fmZo6Am19R95qQBrjGquJgS</ProcessData>
+        <RecordNo>
+            DC4:AQGItGLXIeyT8probGC4Y5P9mYluUQ2vBl7zEVmstxRmI2ISfbI2veGIbXxZzsN8kafv-6nDjPEBaxl227jWXAD0qFGtBbpII0c21uWWgtjaEHH82-az2L6tJFbO_2oHBAmeTTMC-6-wIVECC8ATlErM
+        </RecordNo>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/06/2026</Date>
+        <Time>05:14:35</Time>
+        <PayAPI_Id>q-37r45orqVx8116aiwY3kiBhfbjB</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>. </Line1>
+        <Line2>. BALANCE </Line2>
+        <Line3>. </Line3>
+        <Line4>.EBT Foodstamp ************4720</Line4>
+        <Line5>.ENTRY METHOD: SWIPED </Line5>
+        <Line6>. </Line6>
+        <Line7>.DATE: 01/06/2026 TIME: 05:14:35 </Line7>
+        <Line8>. </Line8>
+        <Line9>.INVOICE: 260119 </Line9>
+        <Line10>.REFERENCE: R0FnbAv440FyjJJayBWfX </Line10>
+        <Line11>.AUTH CODE: CHJNvkS </Line11>
+        <Line12>.BALANCE USD$ 1000.00</Line12>
+        <Line13>. </Line13>
+        <Line14>. APPROVED - THANK YOU </Line14>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values.
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Success” = command completed successfully
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Declined Offline” = chip transaction transaction declined offline
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error.
+	TextResponse
+(String 1-255 chars)
+	For Successful responses, this field can contain an optional message from the server or processor. For other response codes, see Errors on Error Codes for values.
+	SequenceNo
+(Number 1-20 chars)
+	The sequence number returned in all responses to be used on the next request. If the SequenceNo is lost or initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	UserTrace
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	The merchant ID supplied in the transaction request.
+	AcctNo
+(String 1-24 chars)
+	The account number from the card used for a manually entered transaction – will be truncated.
+	CardType
+(String 3-24 chars)
+	Card type used on transaction. Values include: AMEX, VISA, M/C, DCLB, DCVR, JCB, Debit, Foodstamp, Cash, OTHER, UNDETERMINED (returned on tokenized transactions).
+	TranCode
+(String 1-40 chars)
+	TranCode value in response will indicate if transaction was processed as FSA.
+	AuthCode
+(String 1-24 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-24 chars)
+	Indicates whether the host has captured the transaction. eg. “Captured”, “NotCaptured”
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. Should initially match InvoiceNo. The RefNo value returned by the processor should be saved since it is required for subsequent VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	InvoiceNo
+(Number 1-8 chars)
+	The invoice number supplied in the transaction request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction (to 2 decimal places).
+	Amount:Authorize
+(Number 1-8 chars)
+	The amount actually authorized for the transaction. This amount could be less than the Purchase amount requested and the POS/ECR system should verify to determine if additional tendering is required to satisfy the total payment.
+	Amount:Balance
+(Number 1-8 chars)
+	EBT balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:FoodBalance
+(Number 1-8 chars)
+	Foodstamp balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:CashBalance
+(Number 1-8 chars)
+	Cash balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	optionally returned by processor. This value must be retained for use in a subsequent requests.
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method.
+	RecordNo
+(String 1-256 chars)
+	Returned when optional<RecordNo> tag used in a request. Only card present EBT transactions are supported.
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	PrintData:LineNNN
+(String 1-41 chars)
+	Receipt print lines. Each <LineN> tag should be printed on a new line. Each <LineN> tag begins with a “.” which should not be printed – empty lines (blank) have only “.” as data. When <PrintData> elements exist, they should always be printed as the draft for the transaction.
+	EBT Cash EMVBalance
+To process a cash balance inquiry on an EBT card. EBT cash balance inquiries require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+Implementation Notes:
+1. <TranCode> should be set to EMVBalance
+2. <TranType> should be set to EBT
+3. <CardType> should be set to Cash
+4. <Amount:Purchase> should be set to 0.00
+5. If processing with WorldPay Core or Fiserv RapidConnect, EMV EBT is supported. In which case exclude <TranType> to support EMV EBT and MSR EBT cards.
+Sample Request
+* Required
+* Optional
+<?xml version="1.0"?>
+  <TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <POSPackageID>AndroidApp:1.02</POSPackageID>
+        <OperationMode>CERT</OperationMode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <TranType>EBT</TranType>
+        <CardType>Cash</CardType>
+        <TranCode>EMVBalance</TranCode>
+        <InvoiceNo>260121</InvoiceNo>
+        <RefNo>260121</RefNo>
+        <Amount>
+            <Purchase>0.00</Purchase>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <PinPadIpAddress>192.168.1.151</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+    </Transaction>
+</TStream>
+
+MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranType
+(String 1-24 chars)
+	Conditional
+Used with the CardType to specify payment type for MSR EBT transaction.
+	CardType
+(String 1-24)
+	Required
+Include with value “Foodstamp” or “Cash”. Only CardType is included for EMV EBT transactions.
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return)
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	RefNo
+(String 1-50 chars)
+	Required
+Transaction reference number. Use the same data as InvoiceNo.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Total amount of eligible EBT items.
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperationMode
+(String 1-4 chars)
+	Conditional
+used to direct transactions to CERT or PROD NETePay Hosted environment. Supported values are “CERT” and “PROD”. Default value is “PROD”.
+	PinPadIpAddress
+(String 7-15 chars)
+	Conditional
+IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Conditional
+Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	Account:AcctNo
+(String 1-24 chars)
+	When the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	OKAmount
+(String 1-24 chars)
+	When the optional OKAmount tag is included with the value “Disallow”, dsiEMVAndroid will not prompt the cardholder to approve the transaction amount. If the OKAmount tag is omitted, the PIN pad will ask the cardholder to approve the transaction amount by default.
+	TerminalID
+(String 1-24 chars)
+	Terminal ID data must be supplied in this tag only if required by the processor or merchant service provider; otherwise this tag should not be included. The POS system should store this value as a parameter to be included when required.
+	LaneID
+(Number 1-8 chars)
+	A unique LaneID (lane number) can be supplied to identify each POS/ECR in a single store location with multiple payment points
+	OperatorID
+(String 1-24 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	UserTrace
+(String 1-24 chars)
+	A unique value created and supplied by POS system
+	Sample Response
+* Required
+* Optional
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace></UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <AcctNo>507719******4720</AcctNo>
+        <CardType>Cash</CardType>
+        <TranCode>EMVBalance</TranCode>
+        <AuthCode>bT4LWtqL</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>QWaFzqNKrVqFoBsuxbF4</RefNo>
+        <InvoiceNo>260121</InvoiceNo>
+        <Amount>
+            <Purchase>0.00</Purchase>
+            <Balance>2000.00</Balance>
+            <FoodBalance>1000.00</FoodBalance>
+            <CashBalance>2000.00</CashBalance>
+        </Amount>
+        <AcqRefData>||JIxUB1yibhsIgcr5zl0Jnk9W|Balance</AcqRefData>
+        <ProcessData>
+            CQHrnbvsyvTfVTscC2LE3tDPvDLHssKPCvSFgorxYNRdWm8t11U4qMSMly7au9nhGPAyc3twDT70yQ0TiErdz4QlaC2NXVZ8OPZhrZa0vCQ4sWqSYdcyHBFE7bd7Qv6TVub8LZG2PhJxqXBaMt6c02djz1khHlRBblNszwzFfeqmi1XXm0Sln0y
+        </ProcessData>
+        <RecordNo>
+            DC4:AQFa4qZaJ8gYQHiOI5LUQpS9xMOWj88e8FhUWlmpWMRolhKXF1HagVz1zpAj4DMmVWLjKLLfh-fowTvGX4YgTH4Ncs_Dp5gY7xQ-s4PiT9v36Fo9HKc3-pbDDuZaBGts_Wo9JoZ_WY_0h_bfJdURQ_V9
+        </RecordNo>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/06/2026</Date>
+        <Time>05:30:58</Time>
+        <PayAPI_Id>q-37r65M7ATIfgYLpERs5V3Q7szs8</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>. </Line1>
+        <Line2>. BALANCE </Line2>
+        <Line3>. </Line3>
+        <Line4>.EBT Cash ************4720</Line4>
+        <Line5>.ENTRY METHOD: SWIPED </Line5>
+        <Line6>. </Line6>
+        <Line7>.DATE: 01/06/2026 TIME: 05:30:58 </Line7>
+        <Line8>. </Line8>
+        <Line9>.INVOICE: 260121 </Line9>
+        <Line10>.REFERENCE: QWaFzqNKrVqFoBsuxbF4 </Line10>
+        <Line11>.AUTH CODE: bT4LWtqL </Line11>
+        <Line12>.BALANCE USD$ 2000.00</Line12>
+        <Line13>. </Line13>
+        <Line14>. APPROVED - THANK YOU </Line14>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values.
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Success” = command completed successfully
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Declined Offline” = chip transaction transaction declined offline
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error.
+	TextResponse
+(String 1-255 chars)
+	For Successful responses, this field can contain an optional message from the server or processor. For other response codes, see Errors on Error Codes for values.
+	SequenceNo
+(Number 1-20 chars)
+	The sequence number returned in all responses to be used on the next request. If the SequenceNo is lost or initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	UserTrace
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	The merchant ID supplied in the transaction request.
+	AcctNo
+(String 1-24 chars)
+	The account number from the card used for a manually entered transaction – will be truncated.
+	CardType
+(String 3-24 chars)
+	Card type used on transaction. Values include: AMEX, VISA, M/C, DCLB, DCVR, JCB, Debit, Foodstamp, Cash, OTHER, UNDETERMINED (returned on tokenized transactions).
+	TranCode
+(String 1-40 chars)
+	TranCode value in response will indicate if transaction was processed as FSA.
+	AuthCode
+(String 1-24 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-24 chars)
+	Indicates whether the host has captured the transaction. eg. “Captured”, “NotCaptured”
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. Should initially match InvoiceNo. The RefNo value returned by the processor should be saved since it is required for subsequent VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	InvoiceNo
+(Number 1-8 chars)
+	The invoice number supplied in the transaction request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction (to 2 decimal places).
+	Amount:Authorize
+(Number 1-8 chars)
+	The amount actually authorized for the transaction. This amount could be less than the Purchase amount requested and the POS/ECR system should verify to determine if additional tendering is required to satisfy the total payment.
+	Amount:Balance
+(Number 1-8 chars)
+	EBT balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:FoodBalance
+(Number 1-8 chars)
+	Foodstamp balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:CashBalance
+(Number 1-8 chars)
+	Cash balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	optionally returned by processor. This value must be retained for use in a subsequent requests.
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method.
+	RecordNo
+(String 1-256 chars)
+	Returned when optional<RecordNo> tag used in a request. Only card present EBT transactions are supported.
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	PrintData:LineNNN
+(String 1-41 chars)
+	Receipt print lines. Each <LineN> tag should be printed on a new line. Each <LineN> tag begins with a “.” which should not be printed – empty lines (blank) have only “.” as data. When <PrintData> elements exist, they should always be printed as the draft for the transaction.
+	EBT Foodstamp EMVSale
+To process a Foodstamp payment on an EBT card. Foodstamp EBT sales require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+Implementation Notes:
+1. <TranCode> should be set to EMVSale
+2. <TranType> should be set to EBT
+3. <CardType> should be set to Foodstamp
+4. If processing with WorldPay Core or Fiserv RapidConnect, EMV EBT is supported. In which case exclude <TranType> to support EMV EBT and MSR EBT cards.
+Sample Request
+* Required
+* Optional
+<?xml version="1.0"?>
+  <TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <POSPackageID>AndroidApp:1.02</POSPackageID>
+        <OperationMode>CERT</OperationMode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <TranType>EBT</TranType>
+        <CardType>Foodstamp</CardType>
+        <TranCode>EMVSale</TranCode>
+        <InvoiceNo>260109</InvoiceNo>
+        <RefNo>260109</RefNo>
+        <Amount>
+            <Purchase>15.26</Purchase>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <PinPadIpAddress>192.168.1.151</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+    </Transaction>
+</TStream>
+
+MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranType
+(String 1-24 chars)
+	Conditional
+Used with the CardType to specify payment type for MSR EBT transaction.
+	CardType
+(String 1-24)
+	Required
+Include with value “Foodstamp” or “Cash”. Only CardType is included for EMV EBT transactions.
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return)
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	RefNo
+(String 1-50 chars)
+	Required
+Transaction reference number. Use the same data as InvoiceNo.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Total amount of eligible EBT items.
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperationMode
+(String 1-4 chars)
+	Conditional
+used to direct transactions to CERT or PROD NETePay Hosted environment. Supported values are “CERT” and “PROD”. Default value is “PROD”.
+	PinPadIpAddress
+(String 7-15 chars)
+	Conditional
+IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Conditional
+Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	Account:AcctNo
+(String 1-24 chars)
+	When the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	OKAmount
+(String 1-24 chars)
+	When the optional OKAmount tag is included with the value “Disallow”, dsiEMVAndroid will not prompt the cardholder to approve the transaction amount. If the OKAmount tag is omitted, the PIN pad will ask the cardholder to approve the transaction amount by default.
+	TerminalID
+(String 1-24 chars)
+	Terminal ID data must be supplied in this tag only if required by the processor or merchant service provider; otherwise this tag should not be included. The POS system should store this value as a parameter to be included when required.
+	LaneID
+(Number 1-8 chars)
+	A unique LaneID (lane number) can be supplied to identify each POS/ECR in a single store location with multiple payment points
+	OperatorID
+(String 1-24 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	UserTrace
+(String 1-24 chars)
+	A unique value created and supplied by POS system
+	Sample Response
+* Required
+* Optional
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace></UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <AcctNo>507719******4720</AcctNo>
+        <CardType>Foodstamp</CardType>
+        <TranCode>EMVSale</TranCode>
+        <AuthCode>N5FA3GC</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>aTL3cCcMune8hzv7</RefNo>
+        <InvoiceNo>260109</InvoiceNo>
+        <Amount>
+            <Purchase>15.26</Purchase>
+            <Authorize>15.26</Authorize>
+            <Balance>1000.00</Balance>
+            <FoodBalance>1000.00</FoodBalance>
+            <CashBalance>2000.00</CashBalance>
+        </Amount>
+        <AcqRefData>1526||DjBlixidXmPAsQ6rlrCkTHhkILt8LkL8lfOXGZUlWPCFbqax1U7XdTUNxcu4OSCJslOi8FRB5XlYfxwMXd|Sale
+        </AcqRefData>
+        <ProcessData>frbUE68X7NLqjkb2Qj5x2My4VcXxle4IlheIRqqMzZMwf</ProcessData>
+        <RecordNo>
+            DC4:AQHGxqjvc0Pxui4BBGbH5D5CK_f1-wB7G8sl2dWF2zl-VhVCZ5nEBWWSqaKyGRHy4DYmwTSAO7OoB5WcMrSvrWN54eaZiriFPEtsyYmwfcSCcC1dVZ69XNxVsFvd0dbq9L5rk9I0C6-bFvn8Nj3rllcU
+        </RecordNo>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/06/2026</Date>
+        <Time>03:46:55</Time>
+        <PayAPI_Id>q-37qtQiLYuJwLMJc5n4Eecg9fZX3</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>. </Line1>
+        <Line2>. SALE </Line2>
+        <Line3>. </Line3>
+        <Line4>.EBT Foodstamp ************4720</Line4>
+        <Line5>.ENTRY METHOD: SWIPED </Line5>
+        <Line6>. </Line6>
+        <Line7>.DATE: 01/06/2026 TIME: 03:46:55 </Line7>
+        <Line8>. </Line8>
+        <Line9>.INVOICE: 260109 </Line9>
+        <Line10>.REFERENCE: aTL3cCcMune8hzv7 </Line10>
+        <Line11>.AUTH CODE: N5FA3GC </Line11>
+        <Line12>. </Line12>
+        <Line13>.AMOUNT USD$ 15.26</Line13>
+        <Line14>. ==========</Line14>
+        <Line15>.TOTAL USD$ 15.26</Line15>
+        <Line16>. </Line16>
+        <Line17>.BALANCE USD$ 1000.00</Line17>
+        <Line18>. </Line18>
+        <Line19>. APPROVED - THANK YOU </Line19>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values.
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Success” = command completed successfully
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Declined Offline” = chip transaction transaction declined offline
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error.
+	TextResponse
+(String 1-255 chars)
+	For Successful responses, this field can contain an optional message from the server or processor. For other response codes, see Errors on Error Codes for values.
+	SequenceNo
+(Number 1-20 chars)
+	The sequence number returned in all responses to be used on the next request. If the SequenceNo is lost or initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	UserTrace
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	The merchant ID supplied in the transaction request.
+	AcctNo
+(String 1-24 chars)
+	The account number from the card used for a manually entered transaction – will be truncated.
+	CardType
+(String 3-24 chars)
+	Card type used on transaction. Values include: AMEX, VISA, M/C, DCLB, DCVR, JCB, Debit, Foodstamp, Cash, OTHER, UNDETERMINED (returned on tokenized transactions).
+	TranCode
+(String 1-40 chars)
+	TranCode value in response will indicate if transaction was processed as FSA.
+	AuthCode
+(String 1-24 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-24 chars)
+	Indicates whether the host has captured the transaction. eg. “Captured”, “NotCaptured”
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. Should initially match InvoiceNo. The RefNo value returned by the processor should be saved since it is required for subsequent VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	InvoiceNo
+(Number 1-8 chars)
+	The invoice number supplied in the transaction request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction (to 2 decimal places).
+	Amount:Authorize
+(Number 1-8 chars)
+	The amount actually authorized for the transaction. This amount could be less than the Purchase amount requested and the POS/ECR system should verify to determine if additional tendering is required to satisfy the total payment.
+	Amount:Balance
+(Number 1-8 chars)
+	EBT balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:FoodBalance
+(Number 1-8 chars)
+	Foodstamp balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:CashBalance
+(Number 1-8 chars)
+	Cash balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	optionally returned by processor. This value must be retained for use in a subsequent requests.
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method.
+	RecordNo
+(String 1-256 chars)
+	Returned when optional<RecordNo> tag used in a request. Only card present EBT transactions are supported.
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	PrintData:LineNNN
+(String 1-41 chars)
+	Receipt print lines. Each <LineN> tag should be printed on a new line. Each <LineN> tag begins with a “.” which should not be printed – empty lines (blank) have only “.” as data. When <PrintData> elements exist, they should always be printed as the draft for the transaction.
+	EBT Cash EMVSale
+To process a cash payment on an EBT card. Cash EBT sales require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+Implementation Notes:
+1. <TranCode> should be set to EMVSale
+2. <TranType> should be set to EBT
+3. <CardType> should be set to Cash
+4. If processing with WorldPay Core or Fiserv RapidConnect, EMV EBT is supported. In which case exclude <TranType> to support EMV EBT and MSR EBT cards.
+Sample Request
+* Required
+* Optional
+<?xml version="1.0"?>
+  <TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <POSPackageID>AndroidApp:1.02</POSPackageID>
+        <OperationMode>CERT</OperationMode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <TranType>EBT</TranType>
+        <CardType>Cash</CardType>
+        <TranCode>EMVSale</TranCode>
+        <InvoiceNo>260123</InvoiceNo>
+        <RefNo>260123</RefNo>
+        <Amount>
+            <Purchase>7.50</Purchase>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <PinPadIpAddress>192.168.1.151</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+    </Transaction>
+</TStream>
+
+MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranType
+(String 1-24 chars)
+	Conditional
+Used with the CardType to specify payment type for MSR EBT transaction.
+	CardType
+(String 1-24)
+	Required
+Include with value “Foodstamp” or “Cash”. Only CardType is included for EMV EBT transactions.
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return)
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	RefNo
+(String 1-50 chars)
+	Required
+Transaction reference number. Use the same data as InvoiceNo.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Total amount of eligible EBT items.
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperationMode
+(String 1-4 chars)
+	Conditional
+used to direct transactions to CERT or PROD NETePay Hosted environment. Supported values are “CERT” and “PROD”. Default value is “PROD”.
+	PinPadIpAddress
+(String 7-15 chars)
+	Conditional
+IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Conditional
+Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	Account:AcctNo
+(String 1-24 chars)
+	When the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	OKAmount
+(String 1-24 chars)
+	When the optional OKAmount tag is included with the value “Disallow”, dsiEMVAndroid will not prompt the cardholder to approve the transaction amount. If the OKAmount tag is omitted, the PIN pad will ask the cardholder to approve the transaction amount by default.
+	TerminalID
+(String 1-24 chars)
+	Terminal ID data must be supplied in this tag only if required by the processor or merchant service provider; otherwise this tag should not be included. The POS system should store this value as a parameter to be included when required.
+	LaneID
+(Number 1-8 chars)
+	A unique LaneID (lane number) can be supplied to identify each POS/ECR in a single store location with multiple payment points
+	OperatorID
+(String 1-24 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	UserTrace
+(String 1-24 chars)
+	A unique value created and supplied by POS system
+	Sample Response
+* Required
+* Optional
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace></UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <AcctNo>507719******4720</AcctNo>
+        <CardType>Cash</CardType>
+        <TranCode>EMVSale</TranCode>
+        <AuthCode>4uYJLD8</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>VHuKZs7F</RefNo>
+        <InvoiceNo>260123</InvoiceNo>
+        <Amount>
+            <Purchase>7.50</Purchase>
+            <Authorize>7.50</Authorize>
+            <Balance>2000.00</Balance>
+            <FoodBalance>1000.00</FoodBalance>
+            <CashBalance>2000.00</CashBalance>
+        </Amount>
+        <AcqRefData>750||wEWTHkvWDFAXlMgjELJQYzfNkVydSlO|Sale</AcqRefData>
+        <ProcessData>yuJycoaIWdMnG0o4qSihscoalACwyd3v5wUTCeE5mIsoIxHrmIxCHIO84rl83mN6WzNmX5LPxwlnmmoUenlDvOFyqwQTDY4
+        </ProcessData>
+        <RecordNo>
+            DC4:AQGdxKH6mi0htpgXqnvrS0TyH9fsEIEwxz5yU8uT40rKEInofaIfanF8WkcS4VWHhd5dR-wrEO9PQkqPHBm33rPiM7kryKm87sAsCaZ1baYDrN48TlaK2t35bmixEtoHhVocLakpMNwZbTN6MI75RdcX
+        </RecordNo>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/06/2026</Date>
+        <Time>05:41:18</Time>
+        <PayAPI_Id>q-37r7LKdiBuGTCzhhX8xWjhyyQo8</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>. </Line1>
+        <Line2>. SALE </Line2>
+        <Line3>. </Line3>
+        <Line4>.EBT Cash ************4720</Line4>
+        <Line5>.ENTRY METHOD: SWIPED </Line5>
+        <Line6>. </Line6>
+        <Line7>.DATE: 01/06/2026 TIME: 05:41:18 </Line7>
+        <Line8>. </Line8>
+        <Line9>.INVOICE: 260123 </Line9>
+        <Line10>.REFERENCE: VHuKZs7F </Line10>
+        <Line11>.AUTH CODE: 4uYJLD8 </Line11>
+        <Line12>. </Line12>
+        <Line13>.AMOUNT USD$ 7.50</Line13>
+        <Line14>. =========</Line14>
+        <Line15>.TOTAL USD$ 7.50</Line15>
+        <Line16>. </Line16>
+        <Line17>.BALANCE USD$ 2000.00</Line17>
+        <Line18>. </Line18>
+        <Line19>. APPROVED - THANK YOU </Line19>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values.
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Success” = command completed successfully
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Declined Offline” = chip transaction transaction declined offline
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error.
+	TextResponse
+(String 1-255 chars)
+	For Successful responses, this field can contain an optional message from the server or processor. For other response codes, see Errors on Error Codes for values.
+	SequenceNo
+(Number 1-20 chars)
+	The sequence number returned in all responses to be used on the next request. If the SequenceNo is lost or initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	UserTrace
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	The merchant ID supplied in the transaction request.
+	AcctNo
+(String 1-24 chars)
+	The account number from the card used for a manually entered transaction – will be truncated.
+	CardType
+(String 3-24 chars)
+	Card type used on transaction. Values include: AMEX, VISA, M/C, DCLB, DCVR, JCB, Debit, Foodstamp, Cash, OTHER, UNDETERMINED (returned on tokenized transactions).
+	TranCode
+(String 1-40 chars)
+	TranCode value in response will indicate if transaction was processed as FSA.
+	AuthCode
+(String 1-24 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-24 chars)
+	Indicates whether the host has captured the transaction. eg. “Captured”, “NotCaptured”
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. Should initially match InvoiceNo. The RefNo value returned by the processor should be saved since it is required for subsequent VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	InvoiceNo
+(Number 1-8 chars)
+	The invoice number supplied in the transaction request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction (to 2 decimal places).
+	Amount:Authorize
+(Number 1-8 chars)
+	The amount actually authorized for the transaction. This amount could be less than the Purchase amount requested and the POS/ECR system should verify to determine if additional tendering is required to satisfy the total payment.
+	Amount:Balance
+(Number 1-8 chars)
+	EBT balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:FoodBalance
+(Number 1-8 chars)
+	Foodstamp balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:CashBalance
+(Number 1-8 chars)
+	Cash balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	optionally returned by processor. This value must be retained for use in a subsequent requests.
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method.
+	RecordNo
+(String 1-256 chars)
+	Returned when optional<RecordNo> tag used in a request. Only card present EBT transactions are supported.
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	PrintData:LineNNN
+(String 1-41 chars)
+	Receipt print lines. Each <LineN> tag should be printed on a new line. Each <LineN> tag begins with a “.” which should not be printed – empty lines (blank) have only “.” as data. When <PrintData> elements exist, they should always be printed as the draft for the transaction.
+	EBT Foodstamp EMVReturn
+To process a Foodstamp return (refund) on an EBT card. Foodstamp EBT returns require the input of a PIN (Personal Identification Number) by the cardholder into a PIN pad device which encrypts the PIN number for secure transmission to the bank’s computer for validation.
+Implementation Notes:
+1. <TranCode> should be set to EMVReturn
+2. <TranType> should be set to EBT
+3. <CardType> should be set to Foodstamp
+4. If processing with WorldPay Core or Fiserv RapidConnect, EMV EBT is supported. In which case exclude <TranType> to support EMV EBT and MSR EBT cards.
+Sample Request
+* Required
+* Optional
+<?xml version="1.0"?>
+  <TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <POSPackageID>AndroidApp:1.02</POSPackageID>
+        <OperationMode>CERT</OperationMode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <TranType>EBT</TranType>
+        <CardType>Foodstamp</CardType>
+        <TranCode>EMVReturn</TranCode>
+        <InvoiceNo>260113</InvoiceNo>
+        <RefNo>260113</RefNo>
+        <Amount>
+            <Purchase>15.26</Purchase>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <PinPadIpAddress>192.168.1.151</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+    </Transaction>
+</TStream>
+
+MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranType
+(String 1-24 chars)
+	Conditional
+Used with the CardType to specify payment type for MSR EBT transaction.
+	CardType
+(String 1-24)
+	Required
+Include with value “Foodstamp” or “Cash”. Only CardType is included for EMV EBT transactions.
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return)
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	RefNo
+(String 1-50 chars)
+	Required
+Transaction reference number. Use the same data as InvoiceNo.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Total amount of eligible EBT items.
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperationMode
+(String 1-4 chars)
+	Conditional
+used to direct transactions to CERT or PROD NETePay Hosted environment. Supported values are “CERT” and “PROD”. Default value is “PROD”.
+	PinPadIpAddress
+(String 7-15 chars)
+	Conditional
+IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Conditional
+Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	Account:AcctNo
+(String 1-24 chars)
+	When the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	OKAmount
+(String 1-24 chars)
+	When the optional OKAmount tag is included with the value “Disallow”, dsiEMVAndroid will not prompt the cardholder to approve the transaction amount. If the OKAmount tag is omitted, the PIN pad will ask the cardholder to approve the transaction amount by default.
+	TerminalID
+(String 1-24 chars)
+	Terminal ID data must be supplied in this tag only if required by the processor or merchant service provider; otherwise this tag should not be included. The POS system should store this value as a parameter to be included when required.
+	LaneID
+(Number 1-8 chars)
+	A unique LaneID (lane number) can be supplied to identify each POS/ECR in a single store location with multiple payment points
+	OperatorID
+(String 1-24 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	UserTrace
+(String 1-24 chars)
+	A unique value created and supplied by POS system
+	Sample Response
+* Required
+* Optional
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace></UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <AcctNo>507719******4720</AcctNo>
+        <CardType>Foodstamp</CardType>
+        <TranCode>EMVReturn</TranCode>
+        <AuthCode>s5fc6xY1W</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>xELUCaswDe7hbjKt3bZW36T</RefNo>
+        <InvoiceNo>260113</InvoiceNo>
+        <Amount>
+            <Purchase>15.26</Purchase>
+            <Authorize>15.26</Authorize>
+            <Balance>1000.00</Balance>
+            <FoodBalance>1000.00</FoodBalance>
+            <CashBalance>2000.00</CashBalance>
+        </Amount>
+        <AcqRefData>1526||s5fUAhleMJrHwTH2DhRSyzjNb6AYE0G1QNswaBw0Anoh34vvallfr|Return</AcqRefData>
+        <ProcessData>GXJkzXQmNqgHAe</ProcessData>
+        <RecordNo>
+            DC4:AQEqpdSD27tneJt5NYbJq47UDAEMiv_hn-AU716u1jLmoj0xDVjJq94gdsYG8ZMZgjG246Fs4PijebSC0MO0IphakC16LrX3aZxK7eDRCZQ8sGvH4cppT2n0LRAkm31rw7gHpnCt4KhvOKt4Q6t6xijO
+        </RecordNo>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/06/2026</Date>
+        <Time>04:56:21</Time>
+        <PayAPI_Id>q-37r1sQqaocr4L7TKQmQ49n93Aqf</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>. </Line1>
+        <Line2>. REFUND </Line2>
+        <Line3>. </Line3>
+        <Line4>.EBT Foodstamp ************4720</Line4>
+        <Line5>.ENTRY METHOD: SWIPED </Line5>
+        <Line6>. </Line6>
+        <Line7>.DATE: 01/06/2026 TIME: 04:56:21 </Line7>
+        <Line8>. </Line8>
+        <Line9>.INVOICE: 260113 </Line9>
+        <Line10>.REFERENCE: xELUCaswDe7hbjKt3bZW36T </Line10>
+        <Line11>.AUTH CODE: s5fc6xY1W </Line11>
+        <Line12>. </Line12>
+        <Line13>.AMOUNT USD$ 15.26</Line13>
+        <Line14>. ==========</Line14>
+        <Line15>.TOTAL USD$ 15.26</Line15>
+        <Line16>. </Line16>
+        <Line17>.BALANCE USD$ 1000.00</Line17>
+        <Line18>. </Line18>
+        <Line19>. APPROVED - THANK YOU </Line19>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values.
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Success” = command completed successfully
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Declined Offline” = chip transaction transaction declined offline
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error.
+	TextResponse
+(String 1-255 chars)
+	For Successful responses, this field can contain an optional message from the server or processor. For other response codes, see Errors on Error Codes for values.
+	SequenceNo
+(Number 1-20 chars)
+	The sequence number returned in all responses to be used on the next request. If the SequenceNo is lost or initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	UserTrace
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	The merchant ID supplied in the transaction request.
+	AcctNo
+(String 1-24 chars)
+	The account number from the card used for a manually entered transaction – will be truncated.
+	CardType
+(String 3-24 chars)
+	Card type used on transaction. Values include: AMEX, VISA, M/C, DCLB, DCVR, JCB, Debit, Foodstamp, Cash, OTHER, UNDETERMINED (returned on tokenized transactions).
+	TranCode
+(String 1-40 chars)
+	TranCode value in response will indicate if transaction was processed as FSA.
+	AuthCode
+(String 1-24 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-24 chars)
+	Indicates whether the host has captured the transaction. eg. “Captured”, “NotCaptured”
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. Should initially match InvoiceNo. The RefNo value returned by the processor should be saved since it is required for subsequent VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	InvoiceNo
+(Number 1-8 chars)
+	The invoice number supplied in the transaction request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction (to 2 decimal places).
+	Amount:Authorize
+(Number 1-8 chars)
+	The amount actually authorized for the transaction. This amount could be less than the Purchase amount requested and the POS/ECR system should verify to determine if additional tendering is required to satisfy the total payment.
+	Amount:Balance
+(Number 1-8 chars)
+	EBT balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:FoodBalance
+(Number 1-8 chars)
+	Foodstamp balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:CashBalance
+(Number 1-8 chars)
+	Cash balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	optionally returned by processor. This value must be retained for use in a subsequent requests.
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method.
+	RecordNo
+(String 1-256 chars)
+	Returned when optional<RecordNo> tag used in a request. Only card present EBT transactions are supported.
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	PrintData:LineNNN
+(String 1-41 chars)
+	Receipt print lines. Each <LineN> tag should be printed on a new line. Each <LineN> tag begins with a “.” which should not be printed – empty lines (blank) have only “.” as data. When <PrintData> elements exist, they should always be printed as the draft for the transaction.
+	EBT Foodstamp EMVVoucher
+To process a Foodstamp voucher payment. The AcctNo, ExpDate, AuthCode and VoucherNo data must be supplied from the printed voucher.
+Implementation Notes:
+1. <TranCode> should be set to EMVVoucher
+2. <TranType> should be set to EBT
+3. <CardType> should be set to Foodstamp
+4. <Account:AcctNo> must be set to Prompt (manual entry is the only account input method allowed)
+Sample Request
+* Required
+* Optional
+<?xml version="1.0"?>
+  <TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <POSPackageID>AndroidApp:1.02</POSPackageID>
+        <OperationMode>CERT</OperationMode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <TranType>EBT</TranType>
+        <CardType>Foodstamp</CardType>
+        <TranCode>EMVVoucher</TranCode>
+        <InvoiceNo>260130</InvoiceNo>
+        <RefNo>260130</RefNo>
+        <Account>
+            <AcctNo>Prompt</AcctNo>
+        </Account>
+        <Amount>
+            <Purchase>5.26</Purchase>
+        </Amount>
+        <TranInfo>
+            <AuthCode>787890</AuthCode>
+            <VoucherNo>2342349</VoucherNo>
+        </TranInfo>
+        <SequenceNo>0010010010</SequenceNo>
+        <PartialAuth>Allow</PartialAuth>
+        <PinPadIpAddress>192.168.1.151</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+    </Transaction>
+</TStream>
+
+MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranType
+(String 1-24 chars)
+	Conditional
+Used with the CardType to specify payment type for MSR EBT transaction.
+	CardType
+(String 1-24)
+	Required
+Include with value “Foodstamp” or “Cash”. Only CardType is included for EMV EBT transactions.
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return)
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	RefNo
+(String 1-50 chars)
+	Required
+Transaction reference number. Use the same data as InvoiceNo.
+	Account:AcctNo
+(String 1-24 chars)
+	Required
+Used to supply a manually keyed card number, or when the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Total amount of eligible EBT items.
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	TranInfo:AuthCode
+(String 1-16 chars)
+	Required
+When performing a followup transaction, use the AuthCode returned in the original transaction response.
+	TranInfo:VoucherNo
+(String 1-16 chars)
+	Required
+Use the voucher number printed on the voucher document
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperationMode
+(String 1-4 chars)
+	Conditional
+used to direct transactions to CERT or PROD NETePay Hosted environment. Supported values are “CERT” and “PROD”. Default value is “PROD”.
+	PinPadIpAddress
+(String 7-15 chars)
+	Conditional
+IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Conditional
+Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	OKAmount
+(String 1-24 chars)
+	When the optional OKAmount tag is included with the value “Disallow”, dsiEMVAndroid will not prompt the cardholder to approve the transaction amount. If the OKAmount tag is omitted, the PIN pad will ask the cardholder to approve the transaction amount by default.
+	TerminalID
+(String 1-24 chars)
+	Terminal ID data must be supplied in this tag only if required by the processor or merchant service provider; otherwise this tag should not be included. The POS system should store this value as a parameter to be included when required.
+	LaneID
+(Number 1-8 chars)
+	A unique LaneID (lane number) can be supplied to identify each POS/ECR in a single store location with multiple payment points
+	OperatorID
+(String 1-24 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	UserTrace
+(String 1-24 chars)
+	A unique value created and supplied by POS system
+	Sample Response
+* Required
+* Optional
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace></UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL2GP</MerchantID>
+        <AcctNo>507719******4720</AcctNo>
+        <CardType>Foodstamp</CardType>
+        <TranCode>EMVVoucher</TranCode>
+        <AuthCode>SkfJ1o8P1H</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>sz4bS7lhXhI</RefNo>
+        <InvoiceNo>260130</InvoiceNo>
+        <Amount>
+            <Purchase>5.26</Purchase>
+            <Authorize>5.26</Authorize>
+            <Balance>1000.00</Balance>
+            <FoodBalance>1000.00</FoodBalance>
+            <CashBalance>2000.00</CashBalance>
+        </Amount>
+        <AcqRefData>526||1FeOTwMu1uot7Z9BLLtxgGCaWGGKVGUswizWU|Voucher</AcqRefData>
+        <ProcessData>
+            5HJrhLj3USxZxULDvKbWvFOK6remAlqkrI0dRIeQo33yYUwS3v1yyeS0JZvlaLR43Kk9LOHvS05iWD663UL3nW7aXuowJP1PSRgkhqkNe9ABSmlkUSqEf7GuOVyIvuyMhiQeGhTYC4QGMNeejuQvXXW6Axs4JdNzMvQ9LakYvL47C8ozc4dyjfSPmHtuFmctHDYCjgDLALOJUo06M5Fz9C7ZtxoPwNmjExK9HbyRRfzL0hmdxde
+        </ProcessData>
+        <RecordNo>
+            DC4:AQGf4UxIrg7d29qVwGfUDgW8a2hBuLeqBuWkG2ZqW4IPykEcuUuVxJS1HSEmgZTF2A7G4-kitT9QyOvk16CBtUidQb2A2gzQjstxUt2Oo5ckOh3GcnvOiyQEn0MJnf8ZckWUbRbU88KvLj1SfhV-xMRz
+        </RecordNo>
+        <EntryMethod>MANUAL</EntryMethod>
+        <Date>01/06/2026</Date>
+        <Time>06:13:14</Time>
+        <PayAPI_Id>q-37rBE5OubRF5XSci05MilBvy9uZ</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>. </Line1>
+        <Line2>. VOUCHER </Line2>
+        <Line3>. </Line3>
+        <Line4>.EBT Foodstamp ************4720</Line4>
+        <Line5>.ENTRY METHOD: MANUAL </Line5>
+        <Line6>. </Line6>
+        <Line7>.DATE: 01/06/2026 TIME: 06:13:14 </Line7>
+        <Line8>. </Line8>
+        <Line9>.INVOICE: 260130 </Line9>
+        <Line10>.REFERENCE: sz4bS7lhXhI </Line10>
+        <Line11>.AUTH CODE: SkfJ1o8P1H </Line11>
+        <Line12>.VOUCHER NO: 2342349 </Line12>
+        <Line13>. </Line13>
+        <Line14>.AMOUNT USD$ 5.26</Line14>
+        <Line15>. =========</Line15>
+        <Line16>.TOTAL USD$ 5.26</Line16>
+        <Line17>. </Line17>
+        <Line18>.BALANCE USD$ 1000.00</Line18>
+        <Line19>. </Line19>
+        <Line20>. APPROVED - THANK YOU </Line20>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid application
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values.
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Success” = command completed successfully
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Declined Offline” = chip transaction transaction declined offline
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error.
+	TextResponse
+(String 1-255 chars)
+	For Successful responses, this field can contain an optional message from the server or processor. For other response codes, see Errors on Error Codes for values.
+	SequenceNo
+(Number 1-20 chars)
+	The sequence number returned in all responses to be used on the next request. If the SequenceNo is lost or initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	UserTrace
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	The merchant ID supplied in the transaction request.
+	AcctNo
+(String 1-24 chars)
+	The account number from the card used for a manually entered transaction – will be truncated.
+	CardType
+(String 3-24 chars)
+	Card type used on transaction. Values include: AMEX, VISA, M/C, DCLB, DCVR, JCB, Debit, Foodstamp, Cash, OTHER, UNDETERMINED (returned on tokenized transactions).
+	TranCode
+(String 1-40 chars)
+	TranCode value in response will indicate if transaction was processed as FSA.
+	AuthCode
+(String 1-24 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-24 chars)
+	Indicates whether the host has captured the transaction. eg. “Captured”, “NotCaptured”
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. Should initially match InvoiceNo. The RefNo value returned by the processor should be saved since it is required for subsequent VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	InvoiceNo
+(Number 1-8 chars)
+	The invoice number supplied in the transaction request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction (to 2 decimal places).
+	Amount:Authorize
+(Number 1-8 chars)
+	The amount actually authorized for the transaction. This amount could be less than the Purchase amount requested and the POS/ECR system should verify to determine if additional tendering is required to satisfy the total payment.
+	Amount:Balance
+(Number 1-8 chars)
+	EBT balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:FoodBalance
+(Number 1-8 chars)
+	Foodstamp balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	Amount:CashBalance
+(Number 1-8 chars)
+	Cash balance amount formatted to 2 decimal places. Included in response if returned by payment processor.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	optionally returned by processor. This value must be retained for use in a subsequent requests.
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method.
+	RecordNo
+(String 1-256 chars)
+	Returned when optional<RecordNo> tag used in a request. Only card present EBT transactions are supported.
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	PrintData:LineNNN
+(String 1-41 chars)
+	Receipt print lines. Each <LineN> tag should be printed on a new line. Each <LineN> tag begins with a “.” which should not be printed – empty lines (blank) have only “.” as data. When <PrintData> elements exist, they should always be printed as the draft for the transaction.
+	VoucherNo
+(String 0-40 chars)
+	value returned within PrintData fields for receipt printing.
+	eWIC Use and Implementation Notes
+eWIC transactions are used to electronically process payments for the WIC (Women, Infants and Children) state benefits programs. Each state administering a WIC program defines the specific requirements for systems deployed in that state.
+An eWIC system must regularly download an updated Approved Product List (APL) file that is used as part of the transaction process to identify WIC vs. non-WIC items. The APL includes Categories and Sub-Categories of eligible items that can be used in an eWIC sale. Universal Product Codes (UPC’s) and Price Look Up (PLU) codes may also be provided in the APL and are used to identify state agency approved items available in a store for eWIC redemption.
+EWIC transactions are based on redeeming food quantities by specific food category. EWIC systems use the APL to determine what items in a sale are eligible for eWIC redemption at the time the eWIC tender is offered at an eWIC capable POS.
+An eWIC purchase transaction is a combination of two transactions: a pre-purchase balance inquiry (BalancePreVal) and a purchase (Sale). When an eWIC card is presented, the eWIC POS system must first query (Balance) the state records for the eWIC cardholder account to determine what item categories to which the account may be entitled.
+To process the eWIC redemption (Sale), the POS then ‘looks back’ into the items accumulated in the transaction and compares them to the APL to determine which are eligible for eWIC redemption. Then the eWIC system submits a redemption (Sale) request to determine which items will be accepted for the sale. The request contains a UPC or PLU, quantity and item price for each item to be processed in the eWIC Sale transaction.
+Responses for eWIC Sale and Voucher transactions may include item data with changes that differ from the request. The eWIC system must be able to adjust an eWIC redemption (Sale or Voucher) based on the response for each item since items may be denied or reduced in quantity and/or price.
+eWIC responses include grouped information on each of the individual requested items in the following tags:
+Tag
+	Description
+	UPCItem#
+	UPC for item #
+	PLUItem#
+	PLU for item #
+	ItemPrice#
+	Actual price allowed for Item #
+	ItemQty#
+	Actual quantity allowed for Item #
+	ItemStatus
+	Status of Item # (see below)
+	The eWIC system must evaluate the ItemStatus values for each Item#. The following chart is a guideline outlining the actions to be taken on each Item#:
+Action
+	Description
+	Approved
+	Item approved at price and quantity requested.
+	Approved for lower qty
+	Item approved for a lesser quantity than requested. POS should adjust eWIC sale detail as needed. POS should allow inclusion of excess item quantities in sale for alternate payment at cardholder’s discretion.
+	Approved for lower price
+	Item approved for a lesser price than requested. POS should adjust eWIC sale price detail as needed
+	Denied
+	Item not allowed for eWIC sale. POS should allow inclusion of items in sale for alternate payment at cardholder’s discretion.
+	Denied CAT not prescribed
+	Item category not prescribed for card account. POS should allow inclusion of items in sale for alternate payment at cardholder’s discretion.
+	Denied insufficient units
+	Item units insufficient. POS should allow inclusion of items in sale for alternate payment at cardholder’s discretion.
+	Denied UPC/PLU not prescribed
+	Item not allowed or prescribed for eWIC sale. POS should allow inclusion of items in sale for alternate payment at cardholder’s discretion.
+	Important: Since the rules for eWIC transaction processing are defined and controlled by state governmental agencies, a developer incorporating NETePay transaction support in their POS system must contact those agencies directly to get a full understanding of the state specific eWIC program requirements.
+eWIC Processing Provider Support
+NETePay supports two processors for eWIC transactions: Fiserv (FDMS RapidConnect) and Worldpay Core610. There are slight differences in some the transactions supported as well as the form of the requests and response data returned. These differences are noted in each transaction definition section.
+The following are the supported transactions for each processing service provider:
+Processor
+	Balance
+	BalancePreVal
+	Sale
+	ReverseSale
+	Voucher
+	Fiserv (FDMS RapidConnect)
+	✓
+	✓
+	✓
+	✓
+	✓
+	Worldpay Core610
+	✓
+	✓
+	✓
+	✓
+	✓
+	BIN Lists and eWIC Terminal IDs
+Up to the first 8 digits of an eWIC card number are known as the Issuer Identification Number (IIN), also known as bank identification number (BIN). For eWIC cards, these are defined by the state that issues cards to the cardholders.
+An eWIC system must verify that a card to be used for an eWIC transaction is allowed for the state by checking the BIN before submitting transactions for processing. A terminal ID assigned by the processing service provider may also need to be associated with the BIN. The responsible state agency is the source for the applicable BIN ranges supported; the processing service provider is the source for the Terminal IDs.
+NETePay eWIC transaction requests include a tag, EWICBins, where the allowed card BIN ranges and Terminal IDs are supplied for verification by the processing service provider. The EWICBins tag must be included in every eWIC transaction request.
+The format of the data for EWICBins tag is processor dependent as follows:
+Processor
+	Template
+	Example
+	Fiserv (FDMS RapidConnect)
+	<EWICBins>binvalue,binvalue,binvalue,(etc)<EWICBins>
+	<EWICBins>610348,944111,633555</EWICBins>
+	Worldpay Core610
+	<EWICBins>binvalue:terminalid,binvalue:terminalid,(etc)<EWICBins>
+	<EWICBins>610348:711293,944111:711294,633555:711295</EWICBins>
+	eWIC Balance
+The eWIC Balance is processed to get the balance for customer’s card on demand from eWIC processor.
+Implementation Notes
+1. eWIC Balance is not the same as BalancePreVal. A BalancePreVal, must precede an eWIC Sale.
+Sample Request
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <OperationMode>CERT</OperationMode>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+        <POSPackageID>PyTest:2.0</POSPackageID>
+        <TranCode>EMVBalance</TranCode>
+        <SecureDevice>EMV_A77_DATACAP_E2E</SecureDevice>
+        <PinPadIpAddress>192.168.0.248</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <RefNo>1304126833</RefNo>
+        <InvoiceNo>1304126833</InvoiceNo>
+        <SequenceNo>0010010010</SequenceNo>
+        <OperatorID>001</OperatorID>
+        <ReturnClearExpDate>Allow</ReturnClearExpDate>
+        <ReturnClearCardBin>Allow</ReturnClearCardBin>
+        <Duplicate>None</Duplicate>
+        <Account>
+            <AcctNo>SecureDevice</AcctNo>
+        </Account>
+        <Amount>
+            <Purchase>0.00</Purchase>
+        </Amount>
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>OneTime</Frequency>
+        <PartialAuth>Allow</PartialAuth>
+        <TranType>EBT</TranType>
+        <CardType>EWIC</CardType>
+        <EWICBins>476173,507680,610296</EWICBins>
+    </Transaction>
+</TStream>
+
+OperationMode
+(String 1-4 chars)
+	Used to direct dsiEMVAndroid traffic to a specific NETePay Hosted environment. Values include “CERT” and “PROD”. Default value is “PROD”.
+	MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	UserTrace
+(String 1-40 chars)
+	A unique value created and supplied by POS system.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return, void, etc)
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	PinPadIpAddress
+(String 7-15 chars)
+	IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	RefNo
+(String 1-50 chars)
+	Required
+Use the RefNo value returned in the original transaction response
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	ReturnClearExpDate
+(String 1-5 chars)
+	Use “Allow” to return unmasked card expiraton date in <ExpDateMonth> and <ExpDateYear>.
+	ReturnClearCardBin
+(String 1-24 chars)
+	Use “Allow” to return the Six-digit Bin from the card account number will be returned in tag <CardBin>.
+	Duplicate
+(String 1-24 chars)
+	“None” OR “Override” to force approval of a transaction that was previously rejected as a duplicate by the processor.
+	Account:AcctNo
+(String 1-24 chars)
+	Used to supply a manually keyed card number, or when the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Purchase price (with 2 place decimal – e.g. 29.95)
+	RecordNo
+(String 1-256 chars)
+	The last RecordNo value returned in any of the following: the original credit Sale; PreAuth or Adjust by Record transaction. To request a new token, provide the value “RecordNumberRequested.”
+	Frequency
+(String 1-20 chars)
+	Required
+“OneTime”
+	PartialAuth
+(String 1-16 chars)
+	If value equals “Allow”, then transaction may be authorized for an amount different than supplied in <Amount>:<Purchase> tag. See the <Authorize> tag in the response to determine how much was actually authorized. Note: The ability to support Partial Authoization will be mandated by the processors in the near future.
+	TranType
+(String 1-20 chars)
+	Required
+Used with the TranCode to specify payment type.
+	CardType
+(String 3-20 chars)
+	Required
+“VISA”, “M/C”, “AMEX”, “DCLB”, “DCVR”, “JCB”, “OTHER”, “DEBIT”, “Foodstamp”, “Cash”, “EWIC”, “OTHER”, “LOYALTY”, “PersonalCheck”
+	EWICBins
+(String 1-2048 chars)
+	Required
+List of BIN numbers for eWIC processing. See BIN Lists and eWIC Terminal IDs for processor specific formatting.
+	Sample Response
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <AcctNo>610296******2225</AcctNo>
+        <CardType>EWIC</CardType>
+        <TranCode>EMVBalance</TranCode>
+        <AuthCode>015970</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>1304126833</RefNo>
+        <InvoiceNo>1304126833</InvoiceNo>
+        <OperatorID>001</OperatorID>
+        <Amount>
+            <Purchase>0.00</Purchase>
+        </Amount>
+        <AcqRefData>BalanceInquiry|20240129162032|20240129212032|000|901|||435962|||||||||75|||015970|N</AcqRefData>
+        <ProcessData>!!!|12|25|EWIC||</ProcessData>
+        <ExpDateMonth>12</ExpDateMonth>
+        <ExpDateYear>25</ExpDateYear>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/29/2024</Date>
+        <Time>16:20:33</Time>
+        <EarliestBenefitExpDate>01292024</EarliestBenefitExpDate>
+        <ProductData>
+            <ProductCat1>00</ProductCat1>
+            <ProductSubCat1>000</ProductSubCat1>
+            <ProductQty1>40.33</ProductQty1>
+            <ProductCat2>01</ProductCat2>
+            <ProductSubCat2>000</ProductSubCat2>
+            <ProductQty2>4.50</ProductQty2>
+            <ProductCat3>02</ProductCat3>
+            <ProductSubCat3>000</ProductSubCat3>
+            <ProductQty3>1.00</ProductQty3>
+            <ProductCat4>03</ProductCat4>
+            <ProductSubCat4>000</ProductSubCat4>
+            <ProductQty4>2.00</ProductQty4>
+            <ProductCat5>04</ProductCat5>
+            <ProductSubCat5>000</ProductSubCat5>
+            <ProductQty5>3.00</ProductQty5>
+            <ProductCat6>05</ProductCat6>
+            <ProductSubCat6>000</ProductSubCat6>
+            <ProductQty6>36.00</ProductQty6>
+            <ProductCat7>06</ProductCat7>
+            <ProductSubCat7>000</ProductSubCat7>
+            <ProductQty7>1.00</ProductQty7>
+            <ProductCat8>11</ProductCat8>
+            <ProductSubCat8>110</ProductSubCat8>
+            <ProductQty8>610.48</ProductQty8>
+            <ProductCat9>19</ProductCat9>
+            <ProductSubCat9>000</ProductSubCat9>
+            <ProductQty9>5.00</ProductQty9>
+        </ProductData>
+        <PayAPI_Id>q-2be6X6i1uW8NJVqOJJu0msu4AoH</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>.CLERK ID: 001                           </Line1>
+        <Line2>. </Line2>
+        <Line3>.                 BALANCE                </Line3>
+        <Line4>. </Line4>
+        <Line5>.EBT eWIC                ************2225</Line5>
+        <Line6>.ENTRY METHOD: SWIPED                    </Line6>
+        <Line7>. </Line7>
+        <Line8>.DATE: 01/29/2024  TIME: 16:20:33        </Line8>
+        <Line9>. </Line9>
+        <Line10>.INVOICE: 1304126833                     </Line10>
+        <Line11>.REFERENCE: 1304126833                   </Line11>
+        <Line12>.AUTH CODE: 015970                       </Line12>
+        <Line13>.          APPROVED - THANK YOU          </Line13>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Success” = command completed successfully
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error
+	TextResponse
+(String 1-255 chars)
+	This field contains an optional message from the server or processor.
+	UserTraceData
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	Merchant identification assigned by processor.
+	AcctNo
+(Number 1-20 chars)
+	Cardholder Account number. Keep original AcctNo information used in Loyalty request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	CardType
+(String 3-20 chars)
+	Card type used on transaction. For an EBT transaction, possible card types include: Foodstamp, EBT, EWIC.
+	TranCode
+(String 1-40 chars)
+	The type of transaction (eg. sale, return, void, etc)
+	AuthCode
+(String 1-16 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-16 chars)
+	“Captured” or “NotCaptured”
+Note:If the CaptureStatus value returned is ‘NotCaptured’ for a check transaction, then the check will not be automatically deposited by ACH and it must be physically deposited in the bank to receive funds.
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. If no InvoiceNo returned in response, retain original InvoiceNo. The RefNo should be retained as it is necessary for all Void transaction requests.
+	InvoiceNo
+(Number 1-8 chars)
+	Use the InvoiceNo value supplied in the original request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	Returned when optional <RecordNo> tag used in a request. This value must be retained for use in a subsequent AdjustByRecordNo request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	EarliestBenefitExpDate
+(Number 1-8 chars)
+	Date as MMDDYYYY
+	ProductData:ProductCat#
+(Number 1-5 chars)
+	eWIC eligible product category - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ProductData:ProductSubCat#
+(Number 1-5 chars)
+	eWIC eligible product sub-category - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ProductData:ProductQty#
+(Number 1-8 chars)
+	eWIC eligible product quantity - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	eWIC BalancePreVal
+The eWIC BalancePreVal is processed prior to an eWIC Sale to get the customer’s prescription from the eWIC processor.
+Sample Request
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <OperationMode>CERT</OperationMode>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+        <POSPackageID>PyTest:2.0</POSPackageID>
+        <TranCode>EMVBalancePreVal</TranCode>
+        <SecureDevice>EMV_A77_DATACAP_E2E</SecureDevice>
+        <PinPadIpAddress>192.168.0.248</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <RefNo>1304126834</RefNo>
+        <InvoiceNo>1304126834</InvoiceNo>
+        <SequenceNo>0010010010</SequenceNo>
+        <OperatorID>001</OperatorID>
+        <ReturnClearExpDate>Allow</ReturnClearExpDate>
+        <ReturnClearCardBin>Allow</ReturnClearCardBin>
+        <Duplicate>None</Duplicate>
+        <Account>
+            <AcctNo>SecureDevice</AcctNo>
+        </Account>
+        <Amount>
+            <Purchase>0.00</Purchase>
+        </Amount>
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>OneTime</Frequency>
+        <PartialAuth>Allow</PartialAuth>
+        <TranType>EBT</TranType>
+        <CardType>EWIC</CardType>
+        <EWICBins>476173,507680,610296</EWICBins>
+    </Transaction>
+</TStream>
+
+OperationMode
+(String 1-4 chars)
+	Used to direct dsiEMVAndroid traffic to a specific NETePay Hosted environment. Values include “CERT” and “PROD”. Default value is “PROD”.
+	MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	UserTrace
+(String 1-40 chars)
+	A unique value created and supplied by POS system.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return, void, etc)
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	PinPadIpAddress
+(String 7-15 chars)
+	IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	RefNo
+(String 1-50 chars)
+	Required
+Use the RefNo value returned in the original transaction response
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	ReturnClearExpDate
+(String 1-5 chars)
+	Use “Allow” to return unmasked card expiraton date in <ExpDateMonth> and <ExpDateYear>.
+	ReturnClearCardBin
+(String 1-24 chars)
+	Use “Allow” to return the Six-digit Bin from the card account number will be returned in tag <CardBin>.
+	Duplicate
+(String 1-24 chars)
+	“None” OR “Override” to force approval of a transaction that was previously rejected as a duplicate by the processor.
+	Account:AcctNo
+(String 1-24 chars)
+	Used to supply a manually keyed card number, or when the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Purchase price (with 2 place decimal – e.g. 29.95)
+	RecordNo
+(String 1-256 chars)
+	The last RecordNo value returned in any of the following: the original credit Sale; PreAuth or Adjust by Record transaction. To request a new token, provide the value “RecordNumberRequested.”
+	Frequency
+(String 1-20 chars)
+	Required
+“OneTime”
+	PartialAuth
+(String 1-16 chars)
+	If value equals “Allow”, then transaction may be authorized for an amount different than supplied in <Amount>:<Purchase> tag. See the <Authorize> tag in the response to determine how much was actually authorized. Note: The ability to support Partial Authoization will be mandated by the processors in the near future.
+	TranType
+(String 1-20 chars)
+	Required
+Used with the TranCode to specify payment type.
+	CardType
+(String 3-20 chars)
+	Required
+“VISA”, “M/C”, “AMEX”, “DCLB”, “DCVR”, “JCB”, “OTHER”, “DEBIT”, “Foodstamp”, “Cash”, “EWIC”, “OTHER”, “LOYALTY”, “PersonalCheck”
+	EWICBins
+(String 1-2048 chars)
+	Required
+List of BIN numbers for eWIC processing. See BIN Lists and eWIC Terminal IDs for processor specific formatting.
+	Sample Response
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <AcctNo>610296******2225</AcctNo>
+        <CardType>EWIC</CardType>
+        <TranCode>EMVBalancePreVal</TranCode>
+        <AuthCode>015972</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>1304126834</RefNo>
+        <InvoiceNo>1304126834</InvoiceNo>
+        <OperatorID>001</OperatorID>
+        <Amount>
+            <Purchase>0.00</Purchase>
+        </Amount>
+        <AcqRefData>Authorization|20240129162043|20240129212043|000|901|||435963|||||||||75|||015972|N</AcqRefData>
+        <ProcessData>!!!|12|25|EWIC||</ProcessData>
+        <ExpDateMonth>12</ExpDateMonth>
+        <ExpDateYear>25</ExpDateYear>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/29/2024</Date>
+        <Time>16:20:46</Time>
+        <EarliestBenefitExpDate>01292024</EarliestBenefitExpDate>
+        <ProductData>
+            <ProductCat1>00</ProductCat1>
+            <ProductSubCat1>000</ProductSubCat1>
+            <ProductQty1>40.33</ProductQty1>
+            <ProductCat2>01</ProductCat2>
+            <ProductSubCat2>000</ProductSubCat2>
+            <ProductQty2>4.50</ProductQty2>
+            <ProductCat3>02</ProductCat3>
+            <ProductSubCat3>000</ProductSubCat3>
+            <ProductQty3>1.00</ProductQty3>
+            <ProductCat4>03</ProductCat4>
+            <ProductSubCat4>000</ProductSubCat4>
+            <ProductQty4>2.00</ProductQty4>
+            <ProductCat5>04</ProductCat5>
+            <ProductSubCat5>000</ProductSubCat5>
+            <ProductQty5>3.00</ProductQty5>
+            <ProductCat6>05</ProductCat6>
+            <ProductSubCat6>000</ProductSubCat6>
+            <ProductQty6>36.00</ProductQty6>
+            <ProductCat7>06</ProductCat7>
+            <ProductSubCat7>000</ProductSubCat7>
+            <ProductQty7>1.00</ProductQty7>
+            <ProductCat8>11</ProductCat8>
+            <ProductSubCat8>110</ProductSubCat8>
+            <ProductQty8>610.48</ProductQty8>
+            <ProductCat9>19</ProductCat9>
+            <ProductSubCat9>000</ProductSubCat9>
+            <ProductQty9>5.00</ProductQty9>
+        </ProductData>
+        <PayAPI_Id>q-2be6YbHn8ibKt3vxaUFjdOzxQVy</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>.CLERK ID: 001                           </Line1>
+        <Line2>. </Line2>
+        <Line3>.                                        </Line3>
+        <Line4>. </Line4>
+        <Line5>.EBT eWIC                ************2225</Line5>
+        <Line6>.ENTRY METHOD: SWIPED                    </Line6>
+        <Line7>. </Line7>
+        <Line8>.DATE: 01/29/2024  TIME: 16:20:46        </Line8>
+        <Line9>. </Line9>
+        <Line10>.INVOICE: 1304126834                     </Line10>
+        <Line11>.REFERENCE: 1304126834                   </Line11>
+        <Line12>.AUTH CODE: 015972                       </Line12>
+        <Line13>.          APPROVED - THANK YOU          </Line13>
+    </PrintData>
+</RStream>
+
+
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Success” = command completed successfully
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error
+	TextResponse
+(String 1-255 chars)
+	This field contains an optional message from the server or processor.
+	UserTraceData
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	Merchant identification assigned by processor.
+	AcctNo
+(Number 1-20 chars)
+	Cardholder Account number. Keep original AcctNo information used in Loyalty request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	CardType
+(String 3-20 chars)
+	Card type used on transaction. For an EBT transaction, possible card types include: Foodstamp, EBT, EWIC.
+	TranCode
+(String 1-40 chars)
+	The type of transaction (eg. sale, return, void, etc)
+	AuthCode
+(String 1-16 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-16 chars)
+	“Captured” or “NotCaptured”
+Note:If the CaptureStatus value returned is ‘NotCaptured’ for a check transaction, then the check will not be automatically deposited by ACH and it must be physically deposited in the bank to receive funds.
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. If no InvoiceNo returned in response, retain original InvoiceNo. The RefNo should be retained as it is necessary for all Void transaction requests.
+	InvoiceNo
+(Number 1-8 chars)
+	Use the InvoiceNo value supplied in the original request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	Returned when optional <RecordNo> tag used in a request. This value must be retained for use in a subsequent AdjustByRecordNo request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	EarliestBenefitExpDate
+(Number 1-8 chars)
+	Date as MMDDYYYY
+	ProductData:ProductCat#
+(Number 1-5 chars)
+	eWIC eligible product category - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ProductData:ProductSubCat#
+(Number 1-5 chars)
+	eWIC eligible product sub-category - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ProductData:ProductQty#
+(Number 1-8 chars)
+	eWIC eligible product quantity - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	eWIC Sale
+The eWIC Sale transaction is used to process payment for an included list of eWIC eligible items. The eWIC Sale transaction is used to process payment for an included list of eWIC eligible items. An eWIC BalancePreVal transaction must be performed successfully before an eWIC Sale transaction.
+Implementation Notes
+1. For each item a UPC or PLU will be provided, never both. The item number increments regardless of whether the item was sent with a UPC or PLU.
+Sample Request
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <OperationMode>CERT</OperationMode>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+        <POSPackageID>PyTest:2.0</POSPackageID>
+        <TranCode>EMVSale</TranCode>
+        <SecureDevice>EMV_A77_DATACAP_E2E</SecureDevice>
+        <PinPadIpAddress>192.168.0.248</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <RefNo>1304126835</RefNo>
+        <InvoiceNo>1304126835</InvoiceNo>
+        <SequenceNo>0010010010</SequenceNo>
+        <OperatorID>001</OperatorID>
+        <ReturnClearExpDate>Allow</ReturnClearExpDate>
+        <ReturnClearCardBin>Allow</ReturnClearCardBin>
+        <Duplicate>None</Duplicate>
+        <Account>
+            <AcctNo>SecureDevice</AcctNo>
+        </Account>
+        <Amount>
+            <Purchase>32.26</Purchase>
+            <Tax>18.00</Tax>
+        </Amount>
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>Recurring</Frequency>
+        <PartialAuth>Allow</PartialAuth>
+        <TranType>EBT</TranType>
+        <CardType>EWIC</CardType>
+        <EWICBins>476173,507680,610296</EWICBins>
+        <UseLastCardID>2225</UseLastCardID>
+        <UPCItem1>130476</UPCItem1>
+        <ItemPrice1>1.00</ItemPrice1>
+        <ItemQty1>1.30</ItemQty1>
+        <UPCItem2>130476</UPCItem2>
+        <ItemPrice2>1.00</ItemPrice2>
+        <ItemQty2>1.20</ItemQty2>
+        <UPCItem3>130476</UPCItem3>
+        <ItemPrice3>1.00</ItemPrice3>
+        <ItemQty3>3.00</ItemQty3>
+        <UPCItem4>130476</UPCItem4>
+        <ItemPrice4>1.00</ItemPrice4>
+        <ItemQty4>3.00</ItemQty4>
+        <UPCItem5>130476</UPCItem5>
+        <ItemPrice5>1.00</ItemPrice5>
+        <ItemQty5>3.00</ItemQty5>
+        <PLUItem6>130476</PLUItem6>
+        <ItemPrice6>1.00</ItemPrice6>
+        <ItemQty6>3.00</ItemQty6>
+        <PLUItem7>130476</PLUItem7>
+        <ItemPrice7>1.00</ItemPrice7>
+        <ItemQty7>3.00</ItemQty7>
+        <PLUItem8>130476</PLUItem8>
+        <ItemPrice8>1.00</ItemPrice8>
+        <ItemQty8>3.00</ItemQty8>
+        <PLUItem9>130476</PLUItem9>
+        <ItemPrice9>1.00</ItemPrice9>
+        <ItemQty9>3.00</ItemQty9>
+        <PLUItem10>130476</PLUItem10>
+        <ItemPrice10>1.00</ItemPrice10>
+        <ItemQty10>3.00</ItemQty10>
+    </Transaction>
+</TStream>
+
+OperationMode
+(String 1-4 chars)
+	Used to direct dsiEMVAndroid traffic to a specific NETePay Hosted environment. Values include “CERT” and “PROD”. Default value is “PROD”.
+	MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	UserTrace
+(String 1-40 chars)
+	A unique value created and supplied by POS system.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return, void, etc)
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	PinPadIpAddress
+(String 7-15 chars)
+	IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	RefNo
+(String 1-50 chars)
+	Required
+Use the RefNo value returned in the original transaction response
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	ReturnClearExpDate
+(String 1-5 chars)
+	Use “Allow” to return unmasked card expiraton date in <ExpDateMonth> and <ExpDateYear>.
+	ReturnClearCardBin
+(String 1-24 chars)
+	Use “Allow” to return the Six-digit Bin from the card account number will be returned in tag <CardBin>.
+	Duplicate
+(String 1-24 chars)
+	“None” OR “Override” to force approval of a transaction that was previously rejected as a duplicate by the processor.
+	Account:AcctNo
+(String 1-24 chars)
+	Used to supply a manually keyed card number, or when the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Purchase price (with 2 place decimal – e.g. 29.95)
+	RecordNo
+(String 1-256 chars)
+	The last RecordNo value returned in any of the following: the original credit Sale; PreAuth or Adjust by Record transaction. To request a new token, provide the value “RecordNumberRequested.”
+	Frequency
+(String 1-20 chars)
+	Required
+“OneTime”
+	PartialAuth
+(String 1-16 chars)
+	If value equals “Allow”, then transaction may be authorized for an amount different than supplied in <Amount>:<Purchase> tag. See the <Authorize> tag in the response to determine how much was actually authorized. Note: The ability to support Partial Authoization will be mandated by the processors in the near future.
+	TranType
+(String 1-20 chars)
+	Required
+Used with the TranCode to specify payment type.
+	CardType
+(String 3-20 chars)
+	Required
+“VISA”, “M/C”, “AMEX”, “DCLB”, “DCVR”, “JCB”, “OTHER”, “DEBIT”, “Foodstamp”, “Cash”, “EWIC”, “OTHER”, “LOYALTY”, “PersonalCheck”
+	EWICBins
+(String 1-2048 chars)
+	Required
+List of BIN numbers for eWIC processing. See BIN Lists and eWIC Terminal IDs for processor specific formatting.
+	UseLastCardID
+(String 1-4 chars)
+	The last 4 digits of the card number last used on an eWIC transaction
+	ItemData:UPCItem#
+(String 1-5 chars)
+	Required
+eWIC eligible UPC (tag number # - repeats up to 50 occurrences)
+	ItemData:PLUItem#
+(String 1-16 chars)
+	Required
+eWIC eligible item PLU (tag number # - repeats up to 50 occurrences)
+	ItemData:ItemPrice#
+(String 1-5 chars)
+	Required
+eWIC eligible item price approved - (number # - repeats up to 50 occurrences). May be different from requested price. See eWIC Use and Implementation Notes for instructions on how to handle the data field for this tag.
+	ItemData:ItemQty#
+(String 1-5 chars)
+	Required
+eWIC eligible item quantity approved - (number # - repeats up to 50 occurrences). May be different from requested quantity. See eWIC Use and Implementation Notes for instructions on how to handle the data field for this tag.
+	Sample Response
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <AcctNo>610296******2225</AcctNo>
+        <CardType>EWIC</CardType>
+        <TranCode>EMVSale</TranCode>
+        <AuthCode>015974</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>1304126835</RefNo>
+        <InvoiceNo>1304126835</InvoiceNo>
+        <OperatorID>001</OperatorID>
+        <Amount>
+            <Purchase>32.26</Purchase>
+            <Authorize>32.26</Authorize>
+        </Amount>
+        <AcqRefData>Sale|20240129162048|20240129212048|000|901|||435964|3226||||||||75|3226||015974|N</AcqRefData>
+        <ProcessData>!!!|12|25|EWIC||</ProcessData>
+        <ExpDateMonth>12</ExpDateMonth>
+        <ExpDateYear>25</ExpDateYear>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/29/2024</Date>
+        <Time>16:20:50</Time>
+        <EarliestBenefitExpDate>01292024</EarliestBenefitExpDate>
+        <ProductData>
+            <ProductCat1>00</ProductCat1>
+            <ProductSubCat1>000</ProductSubCat1>
+            <ProductQty1>40.33</ProductQty1>
+            <ProductCat2>01</ProductCat2>
+            <ProductSubCat2>000</ProductSubCat2>
+            <ProductQty2>4.50</ProductQty2>
+            <ProductCat3>02</ProductCat3>
+            <ProductSubCat3>000</ProductSubCat3>
+            <ProductQty3>1.00</ProductQty3>
+            <ProductCat4>03</ProductCat4>
+            <ProductSubCat4>000</ProductSubCat4>
+            <ProductQty4>2.00</ProductQty4>
+            <ProductCat5>04</ProductCat5>
+            <ProductSubCat5>000</ProductSubCat5>
+            <ProductQty5>3.00</ProductQty5>
+            <ProductCat6>05</ProductCat6>
+            <ProductSubCat6>000</ProductSubCat6>
+            <ProductQty6>36.00</ProductQty6>
+            <ProductCat7>06</ProductCat7>
+            <ProductSubCat7>000</ProductSubCat7>
+            <ProductQty7>1.00</ProductQty7>
+            <ProductCat8>11</ProductCat8>
+            <ProductSubCat8>110</ProductSubCat8>
+            <ProductQty8>610.48</ProductQty8>
+            <ProductCat9>19</ProductCat9>
+            <ProductSubCat9>000</ProductSubCat9>
+            <ProductQty9>5.00</ProductQty9>
+        </ProductData>
+        <ItemData>
+            <UPCItem1>130476</UPCItem1>
+            <ItemPrice1>1.00</ItemPrice1>
+            <ItemQty1>1.30</ItemQty1>
+            <ItemStatus1>Approved</ItemStatus1>
+            <UPCItem2>130476</UPCItem2>
+            <ItemPrice2>1.00</ItemPrice2>
+            <ItemQty2>1.20</ItemQty2>
+            <ItemStatus2>Approved</ItemStatus2>
+            <UPCItem3>130476</UPCItem3>
+            <ItemPrice3>1.00</ItemPrice3>
+            <ItemQty3>3.00</ItemQty3>
+            <ItemStatus3>Approved</ItemStatus3>
+            <UPCItem4>130476</UPCItem4>
+            <ItemPrice4>1.00</ItemPrice4>
+            <ItemQty4>3.00</ItemQty4>
+            <ItemStatus4>Approved</ItemStatus4>
+            <UPCItem5>130476</UPCItem5>
+            <ItemPrice5>1.00</ItemPrice5>
+            <ItemQty5>3.00</ItemQty5>
+            <ItemStatus5>Approved</ItemStatus5>
+            <PLUItem6>130476</PLUItem6>
+            <ItemPrice6>1.00</ItemPrice6>
+            <ItemQty6>3.00</ItemQty6>
+            <ItemStatus6>Approved</ItemStatus6>
+            <PLUItem7>130476</PLUItem7>
+            <ItemPrice7>1.00</ItemPrice7>
+            <ItemQty7>3.00</ItemQty7>
+            <ItemStatus7>Approved</ItemStatus7>
+            <PLUItem8>130476</PLUItem8>
+            <ItemPrice8>1.00</ItemPrice8>
+            <ItemQty8>3.00</ItemQty8>
+            <ItemStatus8>Approved</ItemStatus8>
+            <PLUItem9>130476</PLUItem9>
+            <ItemPrice9>1.00</ItemPrice9>
+            <ItemQty9>3.00</ItemQty9>
+            <ItemStatus9>Approved</ItemStatus9>
+            <PLUItem10>130476</PLUItem10>
+            <ItemPrice10>1.00</ItemPrice10>
+            <ItemQty10>3.00</ItemQty10>
+            <ItemStatus10>Approved</ItemStatus10>
+        </ItemData>
+        <PayAPI_Id>q-2be6Z3pUL9wovjqvHtRmtl85kJ8</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>.CLERK ID: 001                           </Line1>
+        <Line2>. </Line2>
+        <Line3>.                  SALE                  </Line3>
+        <Line4>. </Line4>
+        <Line5>.EBT eWIC                ************2225</Line5>
+        <Line6>.ENTRY METHOD: SWIPED                    </Line6>
+        <Line7>. </Line7>
+        <Line8>.DATE: 01/29/2024  TIME: 16:20:50        </Line8>
+        <Line9>. </Line9>
+        <Line10>.INVOICE: 1304126835                     </Line10>
+        <Line11>.REFERENCE: 1304126835                   </Line11>
+        <Line12>.AUTH CODE: 015974                       </Line12>
+        <Line13>. </Line13>
+        <Line14>.AMOUNT                        USD$ 32.26</Line14>
+        <Line15>.                              ==========</Line15>
+        <Line16>.TOTAL                         USD$ 32.26</Line16>
+        <Line17>. </Line17>
+        <Line18>.          APPROVED - THANK YOU          </Line18>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Success” = command completed successfully
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error
+	TextResponse
+(String 1-255 chars)
+	This field contains an optional message from the server or processor.
+	UserTraceData
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	Merchant identification assigned by processor.
+	TerminalID
+(String 0-24 chars)
+	For general use: Terminal ID data must be supplied in this tag only if provided by the processor or merchant service provider; otherwise this tag should not be included.
+For reversal support with selected processors: Use a unique POS workstation number (exactly 3 digits 000-999) for multi-workstation locations. See 1.4.5 for details.
+	AcctNo
+(Number 1-20 chars)
+	Cardholder Account number. Keep original AcctNo information used in Loyalty request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	CardType
+(String 3-20 chars)
+	Card type used on transaction. For an EBT transaction, possible card types include: Foodstamp, EBT, EWIC.
+	TranCode
+(String 1-40 chars)
+	The type of transaction (eg. sale, return, void, etc)
+	AuthCode
+(String 1-16 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-16 chars)
+	“Captured” or “NotCaptured”
+Note:If the CaptureStatus value returned is ‘NotCaptured’ for a check transaction, then the check will not be automatically deposited by ACH and it must be physically deposited in the bank to receive funds.
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. If no InvoiceNo returned in response, retain original InvoiceNo. The RefNo should be retained as it is necessary for all Void transaction requests.
+	InvoiceNo
+(Number 1-8 chars)
+	Use the InvoiceNo value supplied in the original request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	Purchase price (with 2 decimal places)
+	mount:Authorize
+(Number 1-8 chars)
+	Authorized amount (with 2 decimal places)
+	mount:Discount
+(Number 1-8 chars)
+	Authorized discount amount (with 2 decimal places)
+	ItemData:UPCItem#
+(String 1-5 chars)
+	eWIC eligible UPC (tag number # - repeats up to 50 occurrences)
+	ItemData:PLUItem#
+(String 1-16 chars)
+	eWIC eligible item PLU (tag number # - repeats up to 50 occurrences)
+	ItemData:ItemPrice#
+(String 1-5 chars)
+	eWIC eligible item price approved - (number # - repeats up to 50 occurrences). May be different from requested price. See eWIC Use and Implementation Notes for instructions on how to handle the data field for this tag.
+	ItemData:ItemQty#
+(String 1-5 chars)
+	eWIC eligible item quantity approved - (number # - repeats up to 50 occurrences). May be different from requested quantity. See eWIC Use and Implementation Notes for instructions on how to handle the data field for this tag.
+	ItemData:ItemStatus#
+(String 1-5 chars)
+	eWIC eligible product status for item - (number # - repeats up to 50 occurrences). See eWIC Use and Implementation Notes for instructions on possible response values and how to interpret.
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	eWIC VoidSale
+The eWIC VoidSale transaction is used to process a refund (return) for a previously completed eWIC Sale transaction.
+Sample Request
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <OperationMode>CERT</OperationMode>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+        <POSPackageID>PyTest:2.0</POSPackageID>
+        <TranCode>EMVVoidSale</TranCode>
+        <SecureDevice>EMV_A77_DATACAP_E2E</SecureDevice>
+        <PinPadIpAddress>192.168.0.248</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <RefNo>1304126835</RefNo>
+        <InvoiceNo>1304126835</InvoiceNo>
+        <SequenceNo>0010010010</SequenceNo>
+        <OperatorID>001</OperatorID>
+        <ReturnClearExpDate>Allow</ReturnClearExpDate>
+        <ReturnClearCardBin>Allow</ReturnClearCardBin>
+        <Duplicate>None</Duplicate>
+        <Amount>
+            <Purchase>32.26</Purchase>
+        </Amount>
+        <AuthCode>015974</AuthCode>
+        <AcqRefData>Sale|20240129162048|20240129212048|000|901|||435964|3226||||||||75|3226||015974|N</AcqRefData>
+        <ProcessData>!!!|12|25|EWIC||</ProcessData>
+        <TranType>EBT</TranType>
+        <CardType>EWIC</CardType>
+        <EWICBins>476173,507680,610296</EWICBins>
+        <UseLastCardID>2225</UseLastCardID>
+    </Transaction>
+</TStream>
+
+OperationMode
+(String 1-4 chars)
+	Used to direct dsiEMVAndroid traffic to a specific NETePay Hosted environment. Values include “CERT” and “PROD”. Default value is “PROD”.
+	MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	UserTrace
+(String 1-40 chars)
+	A unique value created and supplied by POS system.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return, void, etc)
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	PinPadIpAddress
+(String 7-15 chars)
+	IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	RefNo
+(String 1-50 chars)
+	Required
+Use the RefNo value returned in the original transaction response
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	SequenceNo
+(String 1-20 chars)
+	Required
+Use the value returned for SequenceNo from the last response. If the SequenceNo is lost or for initial deployment of the PIN pad, the ECR/POS should attempt any transaction (using “0010010010” as a SequenceNo value) to re-sync.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	ReturnClearExpDate
+(String 1-5 chars)
+	Use “Allow” to return unmasked card expiraton date in <ExpDateMonth> and <ExpDateYear>.
+	ReturnClearCardBin
+(String 1-24 chars)
+	Use “Allow” to return the Six-digit Bin from the card account number will be returned in tag <CardBin>.
+	Duplicate
+(String 1-24 chars)
+	“None” OR “Override” to force approval of a transaction that was previously rejected as a duplicate by the processor.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Purchase price (with 2 place decimal – e.g. 29.95)
+	AuthCode
+(String 1-16 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference returned by processor on transaction requests. The AcqRefData value returned by the processor should be saved since it may be required for subsequent transactions.
+	TranType
+(String 1-20 chars)
+	Required
+Used with the TranCode to specify payment type.
+	CardType
+(String 3-20 chars)
+	Required
+“VISA”, “M/C”, “AMEX”, “DCLB”, “DCVR”, “JCB”, “OTHER”, “DEBIT”, “Foodstamp”, “Cash”, “EWIC”, “OTHER”, “LOYALTY”, “PersonalCheck”
+	EWICBins
+(String 1-2048 chars)
+	Required
+List of BIN numbers for eWIC processing. See BIN Lists and eWIC Terminal IDs for processor specific formatting.
+	UseLastCardID
+(String 1-4 chars)
+	The last 4 digits of the card number last used on an eWIC transaction
+	Sample Response
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <AcctNo>610296******2225</AcctNo>
+        <CardType>EWIC</CardType>
+        <TranCode>EMVVoidSale</TranCode>
+        <AuthCode>015974</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>1304126835</RefNo>
+        <InvoiceNo>1304126835</InvoiceNo>
+        <OperatorID>001</OperatorID>
+        <Amount>
+            <Purchase>32.26</Purchase>
+            <Authorize>32.26</Authorize>
+        </Amount>
+        <AcqRefData>Sale|20240129162111|20240129212111|000|901|||435966|3226||||||||75|3226||015974|N</AcqRefData>
+        <ProcessData>!!!|12|25|EWIC||</ProcessData>
+        <ExpDateMonth>12</ExpDateMonth>
+        <ExpDateYear>25</ExpDateYear>
+        <EntryMethod>SWIPED</EntryMethod>
+        <Date>01/29/2024</Date>
+        <Time>16:21:13</Time>
+        <PayAPI_Id>q-2be6c8h7juB8NhKppG44b8TPwCg</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>.CLERK ID: 001                           </Line1>
+        <Line2>. </Line2>
+        <Line3>.                VOID SALE               </Line3>
+        <Line4>. </Line4>
+        <Line5>.EBT eWIC                ************2225</Line5>
+        <Line6>.ENTRY METHOD: SWIPED                    </Line6>
+        <Line7>. </Line7>
+        <Line8>.DATE: 01/29/2024  TIME: 16:21:13        </Line8>
+        <Line9>. </Line9>
+        <Line10>.INVOICE: 1304126835                     </Line10>
+        <Line11>.REFERENCE: 1304126835                   </Line11>
+        <Line12>.AUTH CODE: 015974                       </Line12>
+        <Line13>. </Line13>
+        <Line14>.AMOUNT                        USD$ 32.26</Line14>
+        <Line15>.                              ==========</Line15>
+        <Line16>.TOTAL                         USD$ 32.26</Line16>
+        <Line17>. </Line17>
+        <Line18>.          APPROVED - THANK YOU          </Line18>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Success” = command completed successfully
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error
+	TextResponse
+(String 1-255 chars)
+	This field contains an optional message from the server or processor.
+	UserTraceData
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	Merchant identification assigned by processor.
+	AcctNo
+(Number 1-20 chars)
+	Cardholder Account number. Keep original AcctNo information used in Loyalty request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	CardType
+(String 3-20 chars)
+	Card type used on transaction. For an EBT transaction, possible card types include: Foodstamp, EBT, EWIC.
+	TranCode
+(String 1-40 chars)
+	The type of transaction (eg. sale, return, void, etc)
+	AuthCode
+(String 1-16 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-16 chars)
+	“Captured” or “NotCaptured”
+Note:If the CaptureStatus value returned is ‘NotCaptured’ for a check transaction, then the check will not be automatically deposited by ACH and it must be physically deposited in the bank to receive funds.
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. If no InvoiceNo returned in response, retain original InvoiceNo. The RefNo should be retained as it is necessary for all Void transaction requests.
+	InvoiceNo
+(Number 1-8 chars)
+	Use the InvoiceNo value supplied in the original request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	Returned when optional <RecordNo> tag used in a request. This value must be retained for use in a subsequent AdjustByRecordNo request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	ProductData:ProductCat#
+(Number 1-5 chars)
+	eWIC eligible product category - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ProductData:ProductSubCat#
+(Number 1-5 chars)
+	eWIC eligible product sub-category - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ProductData:ProductQty#
+(Number 1-8 chars)
+	eWIC eligible product quantity - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	eWIC Voucher
+To process a eWIC Voucher payment. The AcctNo must be manually input on PIN pad and the AuthCode and VoucherNo data must be supplied from the printed voucher.
+Account Input Methods Allowed: Prompt (Manual)
+Sample Request
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <OperationMode>CERT</OperationMode>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+        <POSPackageID>PyTest:2.0</POSPackageID>
+        <TranCode>EMVVoucher</TranCode>
+        <SecureDevice>EMV_A77_DATACAP_E2E</SecureDevice>
+        <PinPadIpAddress>192.168.0.248</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <RefNo>1304126835</RefNo>
+        <InvoiceNo>1304126839</InvoiceNo>
+        <SequenceNo>0010010010</SequenceNo>
+        <OperatorID>001</OperatorID>
+        <ReturnClearExpDate>Allow</ReturnClearExpDate>
+        <ReturnClearCardBin>Allow</ReturnClearCardBin>
+        <Duplicate>None</Duplicate>
+        <Account>
+            <AcctNo>Prompt</AcctNo>
+        </Account>
+        <Amount>
+            <Purchase>32.00</Purchase>
+        </Amount>
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>Recurring</Frequency>
+        <PartialAuth>Allow</PartialAuth>
+        <TranType>EBT</TranType>
+        <CardType>EWIC</CardType>
+        <EWICBins>476173,507680,610296</EWICBins>
+        <UPCItem1>130476</UPCItem1>
+        <ItemPrice1>1.00</ItemPrice1>
+        <ItemQty1>1.30</ItemQty1>
+        <UPCItem2>130476</UPCItem2>
+        <ItemPrice2>1.00</ItemPrice2>
+        <ItemQty2>1.20</ItemQty2>
+        <UPCItem3>130476</UPCItem3>
+        <ItemPrice3>1.00</ItemPrice3>
+        <ItemQty3>3.00</ItemQty3>
+        <UPCItem4>130476</UPCItem4>
+        <ItemPrice4>1.00</ItemPrice4>
+        <ItemQty4>3.00</ItemQty4>
+        <UPCItem5>130476</UPCItem5>
+        <ItemPrice5>1.00</ItemPrice5>
+        <ItemQty5>3.00</ItemQty5>
+        <PLUItem6>130476</PLUItem6>
+        <ItemPrice6>1.00</ItemPrice6>
+        <ItemQty6>3.00</ItemQty6>
+        <PLUItem7>130476</PLUItem7>
+        <ItemPrice7>1.00</ItemPrice7>
+        <ItemQty7>3.00</ItemQty7>
+        <AcqRefData>Sale|20240129162111|20240129212111|000|901|||435966|3226||||||||75|3226||015974|N</AcqRefData>
+        <ProcessData>!!!|12|25|EWIC||</ProcessData>
+        <TranInfo>
+            <AuthCode>787890</AuthCode>
+            <VoucherNo>12345678-B</VoucherNo>
+        </TranInfo>
+    </Transaction>
+</TStream>
+
+OperationMode
+(String 1-4 chars)
+	Used to direct dsiEMVAndroid traffic to a specific NETePay Hosted environment. Values include “CERT” and “PROD”. Default value is “PROD”.
+	MerchantID
+(String 1-24 chars)
+	Required
+Merchant identification assigned by processor.
+	UserTrace
+(String 1-40 chars)
+	A unique value created and supplied by POS system.
+	POSPackageID
+(String 1-99 chars)
+	Required
+Include this tag with POS package name and version where the name and version are separated with a colon (“:”). Ex: EMVUSClient:1.26
+	TranCode
+(String 1-40 chars)
+	Required
+The type of transaction (eg. sale, return, void, etc)
+	SecureDevice
+(String 1-40 chars)
+	Required
+Secure Device type. See Supported Devices for ValidSecureDeviceID values.
+	PinPadIpAddress
+(String 7-15 chars)
+	IP (v4) address of PIN pad on local network.
+	PinPadIpPort
+(Number 1-5 chars)
+	Defaults to 12000 for Ingenico TETRA pads. PAX devices listen on port 1235. Verifone devices listen on port 12345.
+	RefNo
+(String 1-50 chars)
+	Required
+Use the RefNo value returned in the original transaction response
+	InvoiceNo
+(Number 1-8 chars)
+	Required
+Invoice number - sequential receipt number, check number, or other unique transaction identifier created and supplied by POS system.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the transaction.
+	ReturnClearExpDate
+(String 1-5 chars)
+	Use “Allow” to return unmasked card expiraton date in <ExpDateMonth> and <ExpDateYear>.
+	ReturnClearCardBin
+(String 1-24 chars)
+	Use “Allow” to return the Six-digit Bin from the card account number will be returned in tag <CardBin>.
+	Duplicate
+(String 1-24 chars)
+	“None” OR “Override” to force approval of a transaction that was previously rejected as a duplicate by the processor.
+	Account:AcctNo
+(String 1-24 chars)
+	Used to supply a manually keyed card number, or when the optional Account tag is included with the value “Prompt”, the PIN pad will prompt the operator for manual input of account number and expiration date.
+	Amount:Purchase
+(Number 1-8 chars)
+	Required
+Purchase price (with 2 place decimal – e.g. 29.95)
+	RecordNo
+(String 1-256 chars)
+	The last RecordNo value returned in any of the following: the original credit Sale; PreAuth or Adjust by Record transaction. To request a new token, provide the value “RecordNumberRequested.”
+	Frequency
+(String 1-20 chars)
+	Required
+“OneTime”
+	PartialAuth
+(String 1-16 chars)
+	If value equals “Allow”, then transaction may be authorized for an amount different than supplied in <Amount>:<Purchase> tag. See the <Authorize> tag in the response to determine how much was actually authorized. Note: The ability to support Partial Authoization will be mandated by the processors in the near future.
+	TranType
+(String 1-20 chars)
+	Required
+Used with the TranCode to specify payment type.
+	CardType
+(String 3-20 chars)
+	Required
+“VISA”, “M/C”, “AMEX”, “DCLB”, “DCVR”, “JCB”, “OTHER”, “DEBIT”, “Foodstamp”, “Cash”, “EWIC”, “OTHER”, “LOYALTY”, “PersonalCheck”
+	EWICBins
+(String 1-2048 chars)
+	Required
+List of BIN numbers for eWIC processing. See BIN Lists and eWIC Terminal IDs for processor specific formatting.
+	UseLastCardID
+(String 1-4 chars)
+	The last 4 digits of the card number last used on an eWIC transaction
+	ItemData:UPCItem#
+(String 1-5 chars)
+	Required
+eWIC eligible UPC (tag number # - repeats up to 50 occurrences)
+	ItemData:PLUItem#
+(String 1-16 chars)
+	Required
+eWIC eligible item PLU (tag number # - repeats up to 50 occurrences)
+	ItemData:ItemPrice#
+(String 1-5 chars)
+	Required
+eWIC eligible item price approved - (number # - repeats up to 50 occurrences). May be different from requested price. See eWIC Use and Implementation Notes for instructions on how to handle the data field for this tag.
+	ItemData:ItemQty#
+(String 1-5 chars)
+	Required
+eWIC eligible item quantity approved - (number # - repeats up to 50 occurrences). May be different from requested quantity. See eWIC Use and Implementation Notes for instructions on how to handle the data field for this tag.
+	Sample Response
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace>JERRYS:1057802280236614858920325035034052</UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>JPETERMAN3GE</MerchantID>
+        <AcctNo>610296******2225</AcctNo>
+        <CardType>EWIC</CardType>
+        <TranCode>EMVVoucher</TranCode>
+        <AuthCode>015982</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>1304126835</RefNo>
+        <InvoiceNo>1304126839</InvoiceNo>
+        <OperatorID>001</OperatorID>
+        <Amount>
+            <Purchase>32.00</Purchase>
+            <Authorize>32.00</Authorize>
+        </Amount>
+        <AcqRefData>VoucherClear|20240129162126|20240129212126|000|011|||435967|3200||||||||75|3200||015982|N</AcqRefData>
+        <ProcessData>!!!|12|49|EWIC||</ProcessData>
+        <ExpDateMonth>12</ExpDateMonth>
+        <ExpDateYear>49</ExpDateYear>
+        <EntryMethod>MANUAL</EntryMethod>
+        <Date>01/29/2024</Date>
+        <Time>16:21:29</Time>
+        <ItemData>
+            <UPCItem1>130476</UPCItem1>
+            <ItemPrice1>1.00</ItemPrice1>
+            <ItemQty1>1.30</ItemQty1>
+            <ItemStatus1>Approved</ItemStatus1>
+            <UPCItem2>130476</UPCItem2>
+            <ItemPrice2>1.00</ItemPrice2>
+            <ItemQty2>1.20</ItemQty2>
+            <ItemStatus2>Approved</ItemStatus2>
+            <UPCItem3>130476</UPCItem3>
+            <ItemPrice3>1.00</ItemPrice3>
+            <ItemQty3>3.00</ItemQty3>
+            <ItemStatus3>Approved</ItemStatus3>
+            <UPCItem4>130476</UPCItem4>
+            <ItemPrice4>1.00</ItemPrice4>
+            <ItemQty4>3.00</ItemQty4>
+            <ItemStatus4>Approved</ItemStatus4>
+            <UPCItem5>130476</UPCItem5>
+            <ItemPrice5>1.00</ItemPrice5>
+            <ItemQty5>3.00</ItemQty5>
+            <ItemStatus5>Approved</ItemStatus5>
+            <PLUItem6>130476</PLUItem6>
+            <ItemPrice6>1.00</ItemPrice6>
+            <ItemQty6>3.00</ItemQty6>
+            <ItemStatus6>Approved</ItemStatus6>
+            <PLUItem7>130476</PLUItem7>
+            <ItemPrice7>1.00</ItemPrice7>
+            <ItemQty7>3.00</ItemQty7>
+            <ItemStatus7>Approved</ItemStatus7>
+        </ItemData>
+        <PayAPI_Id>q-2be6e4aLJsNR2apimgqyzomu79b</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>.CLERK ID: 001                           </Line1>
+        <Line2>. </Line2>
+        <Line3>.                 VOUCHER                </Line3>
+        <Line4>. </Line4>
+        <Line5>.EBT eWIC                ************2225</Line5>
+        <Line6>.ENTRY METHOD: MANUAL                    </Line6>
+        <Line7>. </Line7>
+        <Line8>.DATE: 01/29/2024  TIME: 16:21:29        </Line8>
+        <Line9>. </Line9>
+        <Line10>.INVOICE: 1304126839                     </Line10>
+        <Line11>.REFERENCE: 1304126835                   </Line11>
+        <Line12>.AUTH CODE: 015982                       </Line12>
+        <Line13>.VOUCHER NO: 12345678-B                  </Line13>
+        <Line14>. </Line14>
+        <Line15>.AMOUNT                        USD$ 32.00</Line15>
+        <Line16>.                              ==========</Line16>
+        <Line17>.TOTAL                         USD$ 32.00</Line17>
+        <Line18>. </Line18>
+        <Line19>.          APPROVED - THANK YOU          </Line19>
+    </PrintData>
+</RStream>
+
+ResponseOrigin
+(String 1-10 chars)
+	Indicates the source of the response:
+“Client” = generated by dsiEMVAndroid
+“Server” = generated by Datacap server
+“Processor” = generated by payment processor
+	DSIXReturnCode
+(Number 6-6 chars)
+	Six digit return code that identifies the error type. See Errors on error codes for possible values
+	CmdStatus
+(String 1-10 chars)
+	Indicates the outcome of the command:
+“Approved” = transaction approved by payment processor
+“Declined” = transaction declined by payment processor
+“Success” = command completed successfully
+“Error” = error processing command. Check DSIXReturnCode and TextResponse for additional info on error
+	TextResponse
+(String 1-255 chars)
+	This field contains an optional message from the server or processor.
+	UserTraceData
+(String 0-40 chars)
+	Echo of data supplied by the user system in the request; for use by the user system for internal tracking. May be null if no user system data was supplied in the request
+	MerchantID
+(String 1-24 chars)
+	Merchant identification assigned by processor.
+	AcctNo
+(Number 1-20 chars)
+	Cardholder Account number. Keep original AcctNo information used in Loyalty request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	CardType
+(String 3-20 chars)
+	Card type used on transaction. For an EBT transaction, possible card types include: Foodstamp, EBT, EWIC.
+	TranCode
+(String 1-40 chars)
+	The type of transaction (eg. sale, return, void, etc)
+	AuthCode
+(String 1-16 chars)
+	The authorization code returned by the processor for the approved transaction. The AuthCode value should be saved since it is required for VoidSale, Adjust, VoiceAuth and PreAuthCapture transactions.
+	CaptureStatus
+(String 1-16 chars)
+	“Captured” or “NotCaptured”
+Note:If the CaptureStatus value returned is ‘NotCaptured’ for a check transaction, then the check will not be automatically deposited by ACH and it must be physically deposited in the bank to receive funds.
+	RefNo
+(String 1-50 chars)
+	A reference returned by the processor. If no InvoiceNo returned in response, retain original InvoiceNo. The RefNo should be retained as it is necessary for all Void transaction requests.
+	InvoiceNo
+(Number 1-8 chars)
+	Use the InvoiceNo value supplied in the original request.
+	OperatorID
+(Number 1-10 chars)
+	Operator (clerk, server, etc.) associated with the Transaction.
+	Amount:Purchase
+(Number 1-8 chars)
+	The purchase amount requested in the transaction.
+	AcqRefData
+(String 1-200 chars)
+	Acquirer Reference Data returned by processor.
+	ProcessData
+(String 1-999 chars)
+	Returned when optional <RecordNo> tag used in a request. This value must be retained for use in a subsequent AdjustByRecordNo request.
+	ExpDate
+(Number 4-4 chars)
+	Expiration date as MMYY
+	EntryMethod
+(String 1-40 chars)
+	Transaction entry method
+	Date
+(String 1-40 chars)
+	Transaction date
+	Time
+(String 1-40 chars)
+	Transaction time
+	PayAPI_Id
+(String 1-34 chars)
+	The Pay API reference number to be used through Pay API for follow up transactions.
+	ProductData:ProductCat#
+(Number 1-5 chars)
+	eWIC eligible product category - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ProductData:ProductSubCat#
+(Number 1-5 chars)
+	eWIC eligible product sub-category - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ProductData:ProductQty#
+(Number 1-8 chars)
+	eWIC eligible product quantity - Incrementing tag # beginning with 1 (repeats up to 50 times).
+	ItemData:UPCItem#
+(String 1-5 chars)
+	eWIC eligible UPC (tag number # - repeats up to 50 occurrences)
+	ItemData:PLUItem#
+(String 1-16 chars)
+	eWIC eligible item PLU (tag number # - repeats up to 50 occurrences)
+	ItemData:ItemPrice#
+(String 1-5 chars)
+	eWIC eligible item price approved - (number # - repeats up to 50 occurrences). May be different from requested price. See eWIC Use and Implementation Notes for instructions on how to handle the data field for this tag.
+	ItemData:ItemQty#
+(String 1-5 chars)
+	eWIC eligible item quantity approved - (number # - repeats up to 50 occurrences). May be different from requested quantity. See eWIC Use and Implementation Notes for instructions on how to handle the data field for this tag.

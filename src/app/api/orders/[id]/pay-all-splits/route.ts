@@ -101,7 +101,7 @@ export const POST = withVenue(async function POST(
     // Parse settings before tx — needed for loyalty inside tx and tips outside
     const settings = parseSettings(parentOrder.location.settings)
 
-    // Dual pricing: determine if card surcharge applies to this payment method
+    // Dual pricing: determine if card price applies to this payment method
     const dualPricing = settings.dualPricing
     const isCard = method !== 'cash'
     const dualPricingApplies = dualPricing.enabled && isCard && (

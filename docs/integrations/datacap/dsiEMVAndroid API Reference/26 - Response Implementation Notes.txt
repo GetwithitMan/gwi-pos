@@ -1,0 +1,429 @@
+﻿Response Implementation Notes
+Response Handling
+If CmdStatus response is
+	 
+	Approved
+	Transaction was successfully processed and cardholder account was charged
+	Declined
+	Transaction was successfully processed but cardholder account was declined and not charged– an alternative tender should be processed.
+	Error
+	Transaction was not successfully processed due to some error – See error codes.  Transaction should be retried or alternative tender attempted.
+	Success
+	Admin type request was successfully completed
+	1. The TextResponse, CmdStatus, DSIXReturnCode and ResponseOrigin must be displayed for operator.
+2. The order of the tags may differ from the presentation above and depends on the XML parser used..
+Receipt Printing
+Merchant processing agreements require that a separate receipt document must be printed in addition to the POS receipt.  Two copies must be printed; one for presentation to the cardholder (a separate receipt from the usual receipt) and one for retention by the merchant.  A PrintData stream is included in the dsiEMVAndroid response that can be used to print the receipt document(s).  Before printing the contents of the PrintData stream, the POS system should print the merchant name, address and phone number as separate lines at the top of the receipt.   After printing the contents of the PrintData stream, the POS must add the phrase “Cardholder Copy” as the last line of the first receipt copy and the phrase “Merchant Copy” as the last line of the second receipt copy.  See the following example.
+* Cardholder Copy
+* Merchant Copy
+            MERCHANT NAME             
+            MERCHANT STREET            
+            CITY, STATE ZIP            
+             123-456-7890              
+
+
+MERCHANT ID: DEMODCHAL2GP
+
+
+
+
+                 SALE
+
+
+************0043
+VISA                 ENTRY METHOD: CHIP
+DATE: 01/07/2026  TIME: 00:04:44
+
+
+INVOICE: 260107   AUTH CODE: bMF11DLScn
+REFERENCE: KKcdWaQJN0IU
+
+
+AMOUNT                       USD$ 13.00
+                                 ==========
+TOTAL                        USD$ 13.00
+
+
+         APPROVED - THANK YOU
+
+
+I AGREE TO PAY THE ABOVE TOTAL AMOUNT
+ACCORDING TO CARD ISSUER AGREEMENT
+
+
+Application Label: Visa Credit
+AID: A0000000031010
+TVR: 0840008000
+IAD: 06010A03A0B004
+TSI: E800
+ARC: 00
+CVM: SIGN
+
+
+Cardholder Copy
+Note: If the cardholder is prompted to enter a PIN during a transaction and does so successfully, the receipt copy will indicate that the cardholder was verified by PIN entry.  In the event that a requested PIN entry is unsuccessful, the receipt copy will include a signature line for the cardholder to sign.  The merchant should have the cardholder sign the Merchant Copy of the receipt and retain for their records.
+As an alternative to using the <PrintData> stream, a software developer can create their own receipt documents from tag data included in the dsiEMVAndroid transaction response.  Two identical copies of the receipt document should be printed  with the exception that the POS must add the phrase “Cardholder Copy” as the last line of the first receipt copy and the phrase “Merchant Copy” as the last line of the second receipt copy.
+Every receipt for an approved transaction must contain the following information:
+Data
+	Source
+	Merchant name
+	POS system
+	Merchant address
+	POS system
+	Merchant phone number
+	POS system
+	Merchant ID
+	Merchant ID: <MerchantID>
+	Transaction type
+	POS system (e.g. sale, return, etc.)
+	Truncated card account number
+	<AcctNo>
+	Card type
+	<CardType>
+	Entry method
+	Entry Method: <EntryMethod>
+	Transaction date
+	Date: <Date>
+	Transaction time
+	Time: <Time>
+	Invoice number
+	Invoice: <InvoiceNo>
+	Authorization code
+	Auth Code: <AuthCode>
+	Reference number
+	Reference: <RefNo>
+	Amount
+	Amount: <Authorize>
+	If the approved transaction EntryMethod = “CHIP” and CVM = “PIN VERIFIED”, then print the following additional information on the receipt:
+Data
+	Source
+	Cardholder agreement
+	BY ENTERING A VERIFIED PIN, CARHOLDER AGREES TO PAY ISSUER SUCH TOTAL IN ACCORDANCE WITH ISSUER’S AGREEMENT WITH CARDHOLDER
+	Application label
+	Application Label:
+	AID
+	AID: <AID>
+	TVR
+	TVR: <TVR>
+	IAD
+	IAD: <IAD>
+	TSI
+	TSI: <TSI>
+	ARC
+	ARC: <ARC>
+	CVM
+	CVM: PIN VERIFIED
+	If the approved transaction EntryMethod = “CHIP” and CVM is not “PIN VERIFIED”, then print the following additional information on the receipt:
+Data
+	Source
+	Cardholder agreement
+	I AGREE TO PAY THE ABOVE TOTAL AMOUNT ACCORDING TO CARD ISSUER AGREEMENT (MERCHANT AGREEMENT IF CREDIT VOUCHER)
+	Cardholder signature line
+	POS system (underline for signature with leading X)
+	Application label
+	Application Label: <ApplicationLabel>
+	AID
+	AID: <AID>
+	TVR
+	TVR: <TVR>
+	IAD
+	IAD: <IAD>
+	TSI
+	TSI: <TSI>
+	ARC
+	ARC: <ARC>
+	CVM
+	CVM: <CVM>
+	If the approved transaction EntryMethod is not CHIP and the transaction uses a credit card (not debit card), then print the following additional information on the receipt:
+Data
+	Source
+	Cardholder agreement
+	I AGREE TO PAY THE ABOVE TOTAL AMOUNT ACCORDING TO CARD ISSUER AGREEMENT (MERCHANT AGREEMENT IF CREDIT VOUCHER)
+	Cardholder signature line
+	POS system (underline for signature with leading X)
+	If CmdStatus = “Declined” and TextResponse = “Declined Offline.” then the POS should capture any PrintLine data returned in the response for printing a receipt if the cardholder requests.  Since the contents of the response for an offline decline will not necessarily contain the usual receipt tags, the POS system must utilize the <PrintData> lines.
+A sample offline decline response is as follows:
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Client</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Declined</CmdStatus>
+        <TextResponse>Declined Offline.</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace>TranID12</UserTrace>
+    </CmdResponse>
+    <PrintData>
+        <Line1>. CHIP OFFLINE DECLINED TRANSACTION: </Line1>
+        <Line2>. </Line2>
+        <Line3>.CLERK ID: POS2 </Line3>
+        <Line4>. </Line4>
+        <Line5>.DATE: 01/06/2026 TIME: 23:21:28 </Line5>
+        <Line6>.PAN: ************0052 </Line6>
+        <Line7>.PAN SEQ: 03 </Line7>
+        <Line8>.IAC Default: </Line8>
+        <Line9>.IAC Denial: </Line9>
+        <Line10>.IAC Online: </Line10>
+        <Line11>.TAC Default: FC50B8A000 </Line11>
+        <Line12>.TAC Denial: 0000000000 </Line12>
+        <Line13>.TAC Online: FC50B8F800 </Line13>
+        <Line14>.MODE: Card </Line14>
+        <Line15>.AID: A0000000041010 </Line15>
+        <Line16>.ARC: Z1 </Line16>
+        <Line17>.DE055: </Line17>
+        <Line18>.4F: A0000000041010 </Line18>
+        <Line19>.50: MASTERCARD </Line19>
+        <Line20>.82: </Line20>
+        <Line21>.95: </Line21>
+        <Line22>.9A: </Line22>
+        <Line23>.9B: </Line23>
+        <Line24>.9C: </Line24>
+        <Line25>.5F2A: 0840 </Line25>
+        <Line26>.5F34: 03 </Line26>
+        <Line27>.9F02: 1300 </Line27>
+        <Line28>.9F03: 000 </Line28>
+        <Line29>.9F10: </Line29>
+        <Line30>.9F12: MasterCard </Line30>
+        <Line31>.9F1A: </Line31>
+        <Line32>.9F26: </Line32>
+        <Line33>.9F27: </Line33>
+        <Line34>.9F34: </Line34>
+        <Line35>.9F36: </Line35>
+        <Line36>.9F37: </Line36>
+    </PrintData>
+</RStream>
+Note: Some EMV transactions that are not approved by selected processors may still require that a receipt be printed.  In the case where the CmdStatus is not “Approved”, the POS should inspect the response for the presence of <PrintData> and create two separate receipts using the <PrintData> lines.
+Receipt Examples
+EMVSale
+* xml
+<Line1>.CLERK ID: POS2 </Line1>
+<Line2>. </Line2>
+<Line3>. SALE </Line3>
+<Line4>. </Line4>
+<Line5>.VISA ************0043</Line5>
+<Line6>.ENTRY METHOD: CHIP </Line6>
+<Line7>.DATE: 01/06/2026 TIME: 21:32:23 </Line7>
+<Line8>. </Line8>
+<Line9>.INVOICE: 260107 </Line9>
+<Line10>.REFERENCE: FZkHKHhfgLkUubKU </Line10>
+<Line11>.AUTH CODE: L1gHl4sdsQ </Line11>
+<Line12>. </Line12>
+<Line13>.AMOUNT USD$ 13.00</Line13>
+<Line14>. ==========</Line14>
+<Line15>.TOTAL USD$ 13.00</Line15>
+<Line16>. </Line16>
+<Line17>. APPROVED - THANK YOU </Line17>
+<Line18>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line18>
+<Line19>.ACCORDING TO CARD ISSUER AGREEMENT. </Line19>
+<Line20>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line20>
+<Line21>. </Line21>
+<Line22>. </Line22>
+<Line23>. </Line23>
+<Line24>.x_______________________________________</Line24>
+<Line25>.Cardholder Signature </Line25>
+<Line26>. </Line26>
+<Line27>.APPLICATION LABEL: Visa Credit </Line27>
+<Line28>.AID: A0000000031010 </Line28>
+<Line29>.TVR: 0840008000 </Line29>
+<Line30>.IAD: 06010A03A0B004 </Line30>
+<Line31>.TSI: E800 </Line31>
+EMVPreAuth
+* xml
+<Line1>.CLERK ID: POS2 </Line1>
+<Line2>. </Line2>
+<Line3>. PREAUTH </Line3>
+<Line4>. </Line4>
+<Line5>.VISA ************0043</Line5>
+<Line6>.ENTRY METHOD: CHIP </Line6>
+<Line7>.DATE: 01/06/2026 TIME: 21:35:23 </Line7>
+<Line8>. </Line8>
+<Line9>.INVOICE: 26127 </Line9>
+<Line10>.REFERENCE: UraQlYzw5liejQDxdI </Line10>
+<Line11>.AUTH CODE: RUwaSQn4 </Line11>
+<Line12>. </Line12>
+<Line13>.AMOUNT USD$ 19.53</Line13>
+<Line14>. ==========</Line14>
+<Line15>.TOTAL USD$ 19.53</Line15>
+<Line16>. </Line16>
+<Line17>. APPROVED - THANK YOU </Line17>
+<Line18>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line18>
+<Line19>.ACCORDING TO CARD ISSUER AGREEMENT. </Line19>
+<Line20>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line20>
+<Line21>. </Line21>
+<Line22>. </Line22>
+<Line23>. </Line23>
+<Line24>.x_______________________________________</Line24>
+<Line25>.Cardholder Signature </Line25>
+<Line26>. </Line26>
+<Line27>.APPLICATION LABEL: Visa Credit </Line27>
+<Line28>.AID: A0000000031010 </Line28>
+<Line29>.TVR: 0840008000 </Line29>
+<Line30>.IAD: 06010A03A0B004 </Line30>
+<Line31>.TSI: E800 </Line31>
+EMVVoidSale
+* xml
+<Line1>.CLERK ID: POS2 </Line1>
+<Line2>. </Line2>
+<Line3>. VOID SALE </Line3>
+<Line4>. </Line4>
+<Line5>.VISA ************0043</Line5>
+<Line6>.ENTRY METHOD: CHIP </Line6>
+<Line7>.DATE: 01/06/2026 TIME: 21:38:53 </Line7>
+<Line8>. </Line8>
+<Line9>.INVOICE: 260107 </Line9>
+<Line10>.REFERENCE: 2QriENnoLqZ2E </Line10>
+<Line11>.AUTH CODE: OICXcniefX </Line11>
+<Line12>. </Line12>
+<Line13>.AMOUNT USD$ 13.00</Line13>
+<Line14>. ==========</Line14>
+<Line15>.TOTAL USD$ 13.00</Line15>
+<Line16>. </Line16>
+<Line17>. APPROVED - THANK YOU </Line17>
+<Line18>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line18>
+<Line19>.ACCORDING TO CARD ISSUER AGREEMENT. </Line19>
+<Line20>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line20>
+<Line21>. </Line21>
+<Line22>. </Line22>
+<Line23>. </Line23>
+<Line24>.x_______________________________________</Line24>
+<Line25>.Merchant Signature </Line25>
+<Line26>. </Line26>
+<Line27>.APPLICATION LABEL: Visa Credit </Line27>
+<Line28>.AID: A0000000031010 </Line28>
+<Line29>.TVR: 0840008000 </Line29>
+<Line30>.IAD: 06010A03A0B004 </Line30>
+<Line31>.TSI: E800 </Line31>
+EMVReturn
+* xml
+<Line1>.CLERK ID: Lane1 </Line1>
+<Line2>. </Line2>
+<Line3>. REFUND </Line3>
+<Line4>. </Line4>
+<Line5>.VISA ************0043</Line5>
+<Line6>.ENTRY METHOD: CHIP </Line6>
+<Line7>.DATE: 01/06/2026 TIME: 21:46:02 </Line7>
+<Line8>. </Line8>
+<Line9>.INVOICE: 26125 </Line9>
+<Line10>.REFERENCE: PbkSwgmfLDKfXw40LOymG </Line10>
+<Line11>.AUTH CODE: 5z5d6y7lg </Line11>
+<Line12>. </Line12>
+<Line13>.AMOUNT USD$ 12.50</Line13>
+<Line14>. ==========</Line14>
+<Line15>.TOTAL USD$ 12.50</Line15>
+<Line16>. </Line16>
+<Line17>. APPROVED - THANK YOU </Line17>
+<Line18>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line18>
+<Line19>.ACCORDING TO CARD ISSUER AGREEMENT. </Line19>
+<Line20>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line20>
+<Line21>. </Line21>
+<Line22>. </Line22>
+<Line23>. </Line23>
+<Line24>.x_______________________________________</Line24>
+<Line25>.Merchant Signature </Line25>
+<Line26>. </Line26>
+<Line27>.APPLICATION LABEL: Visa Credit </Line27>
+<Line28>.AID: A0000000031010 </Line28>
+<Line29>.TVR: 0840008000 </Line29>
+<Line30>.IAD: 06010A03A0B004 </Line30>
+<Line31>.TSI: E800 </Line31>
+EMVVoidReturn
+* xml
+<Line1>.MERCHANT ID: 700000012262</Line1>
+<Line2>.TERMINAL ID: 002</Line2>
+<Line3>.CLERK ID: TEST</Line3>
+<Line4>.</Line4>
+<Line5>.               VOID REFUND              </Line5>
+<Line6>.</Line6>
+<Line7>.************4111</Line7>
+<Line8>.MASTERCARD           ENTRY METHOD: CHIP</Line8>
+<Line9>.DATE: 07/06/2015  TIME: 10:14:03</Line9>
+<Line10>.</Line10>
+<Line11>.INVOICE: 00000003</Line11>
+<Line12>.REFERENCE: 00000004</Line12>
+<Line13>.AUTH CODE: ______</Line13>
+<Line14>.</Line14>
+<Line15>.AMOUNT                       USD$ 7.00</Line15>
+<Line16>.                            ==========</Line16>
+<Line17>.TOTAL                        USD$ 7.00</Line17>
+<Line18>.</Line18>
+<Line19>.          APPROVED - THANK YOU          </Line19>
+<Line20>.</Line20>
+<Line21>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT</Line21>
+<Line22>.ACCORDING TO CARD ISSUER AGREEMENT</Line22>
+<Line23>.(MERCHANT AGREEMENT IF CREDIT VOUCHER)</Line23>
+<Line24>.</Line24>
+<Line25>.</Line25>
+<Line26>.</Line26>
+<Line27>.x_______________________________________</Line27>
+<Line28>.           Merchant Signature           </Line28>
+<Line29>.</Line29>
+<Line30>.</Line30>
+<Line31>.Application Label: MasterCardCredit</Line31>
+<Line32>.AID: A0000000041010</Line32>
+<Line33>.TVR: 0000008000</Line33>
+<Line34>.IAD: 0110808003220000FF0500000000000000F</Line34>
+<Line35>.TSI: A800</Line35>
+<Line36>.CVM: SIGN</Line36>
+EMVVoiceAuth
+* xml
+ <Line1>.CLERK ID: Lane3 </Line1>
+<Line2>. </Line2>
+<Line3>. VOICE AUTH </Line3>
+<Line4>. </Line4>
+<Line5>.VISA ************0043</Line5>
+<Line6>.ENTRY METHOD: CHIP/MANUAL </Line6>
+<Line7>.DATE: 01/06/2026 TIME: 22:22:02 </Line7>
+<Line8>. </Line8>
+<Line9>.INVOICE: 26125 </Line9>
+<Line10>.REFERENCE: k2tGdIFW4WPxsta9 </Line10>
+<Line11>.AUTH CODE: 9hva9yGbl </Line11>
+<Line12>. </Line12>
+<Line13>.AMOUNT USD$ 7.00</Line13>
+<Line14>. =========</Line14>
+<Line15>.TOTAL USD$ 7.00</Line15>
+<Line16>. </Line16>
+<Line17>. APPROVED - THANK YOU </Line17>
+<Line18>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line18>
+<Line19>.ACCORDING TO CARD ISSUER AGREEMENT. </Line19>
+<Line20>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line20>
+<Line21>. </Line21>
+<Line22>. </Line22>
+<Line23>. </Line23>
+<Line24>.x_______________________________________</Line24>
+<Line25>.Cardholder Signature </Line25>
+<Line26>. </Line26>
+EMVZeroAuth
+* xml
+<Line1>.CLERK ID: Lane3 </Line1>
+<Line2>. </Line2>
+<Line3>. CARD VERIFICATION </Line3>
+<Line4>. </Line4>
+<Line5>.VISA ************0043</Line5>
+<Line6>.ENTRY METHOD: CHIP </Line6>
+<Line7>.DATE: 01/06/2026 TIME: 22:25:06 </Line7>
+<Line8>. </Line8>
+<Line9>.INVOICE: 26225 </Line9>
+<Line10>.REFERENCE: 7nFNa9XaqdqdZw42ULSQ </Line10>
+<Line11>.AUTH CODE: uWaIHss </Line11>
+<Line12>. </Line12>
+<Line13>.AMOUNT USD$ 0.00</Line13>
+<Line14>. =========</Line14>
+<Line15>.TOTAL USD$ 0.00</Line15>
+<Line16>. </Line16>
+<Line17>. APPROVED - THANK YOU </Line17>
+<Line18>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line18>
+<Line19>.ACCORDING TO CARD ISSUER AGREEMENT. </Line19>
+<Line20>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line20>
+<Line21>. </Line21>
+<Line22>. </Line22>
+<Line23>. </Line23>
+<Line24>.x_______________________________________</Line24>
+<Line25>.Cardholder Signature </Line25>
+<Line26>. </Line26>
+<Line27>.APPLICATION LABEL: Visa Credit </Line27>
+<Line28>.AID: A0000000031010 </Line28>
+<Line29>.TVR: 0840008000 </Line29>
+<Line30>.IAD: 06010A03A0B004 </Line30>
+<Line31>.TSI: E800 </Line31>
+

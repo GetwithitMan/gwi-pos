@@ -1,0 +1,188 @@
+﻿Cardholder Management
+CardHolderID
+The POS can send the optional <CardHolderID> tag in the payment request to track unique cardholders across their entire merchant base for data aggregation and proactive marketing. The CardHolderID in the response is a unique ID representing the card data. The same card presented multiple times will always return the same CardHolderID.
+Note: CardHolderID is supported via NETePay Hosted only.
+Implementation Notes:
+1. Always send the value “Allow_V2” on transaction requests.
+In the example below, an EMVSale is used to collect the CardHolderID.
+Request
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <OperationMode>CERT</OperationMode>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <POSPackageID>EMVUSClient:1.26</POSPackageID>
+        <CardType>Credit</CardType>
+        <TranCode>EMVSale</TranCode>
+        <SecureDevice>EMV_A3700_DATACAP_E2E</SecureDevice>
+        <PinPadIpAddress>192.168.0.218</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>       
+        <InvoiceNo>0003</InvoiceNo>
+        <RefNo>0003</RefNo>
+        <Amount>
+            <Purchase>10.00</Purchase>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <PartialAuth>Allow</PartialAuth>       
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>Recurring</Frequency>
+        <CardHolderID>Allow_V2</CardHolderID>
+    </Transaction>
+</TStream>
+Response
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace></UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <AcctNo>476173******0043</AcctNo>
+        <CardType>VISA</CardType>
+        <TranCode>EMVSale</TranCode>
+        <AuthCode>5N4fJvka</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>2HzabWUJ10h2zsQCrGreq8oi</RefNo>
+        <InvoiceNo>0003</InvoiceNo>
+        <Amount>
+            <Purchase>10.00</Purchase>
+            <Authorize>10.00</Authorize>
+        </Amount>
+        <AcqRefData>1000||w1tDwMvkf3aDfCSXvDgNjDsgT6j2XyByRIqgV1wujTxoDjQikq6PgXrHAL6O2maPvQ0k1Ajn|EMVSale</AcqRefData>
+        <ProcessData>9aq0uinCPGKhaPNjTfLBzYwAAuTa</ProcessData>
+        <CardHolderID>h0wNUINB5MDwt1Wv8aTBVTP2KCrU5mfqt0Fdv0OjS9s</CardHolderID>
+        <RecordNo>
+            DC4:AQGscGKiBnkWoNu2kQkxDNv0kFjh0DjlNnxFnxBOiP8C4LIZdpg0p1bYh6nl4lD5gS_Olf6L3KJ2cSHmuGKG2lSW62XaW4whESUGvM7j_w1KVfomdo4fczMB5t0Wskop0UDggyE1k8WomGvCaanCSGlH
+        </RecordNo>
+        <EntryMethod>CHIP</EntryMethod>
+        <Date>12/04/2025</Date>
+        <Time>17:14:18</Time>
+        <ApplicationLabel>Visa Credit</ApplicationLabel>
+        <AID>A0000000031010</AID>
+        <TVR>0000008000</TVR>
+        <IAD>06010A03A0B006</IAD>
+        <TSI>E800</TSI>
+        <CVM>SIGN</CVM>
+        <PayAPI_Id>q-36OnPa8zp7NPglcz8sv4rMSnuVA</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>. </Line1>
+        <Line2>. SALE </Line2>
+        <Line3>. </Line3>
+        <Line4>.VISA ************0043</Line4>
+        <Line5>.ENTRY METHOD: CHIP </Line5>
+        <Line6>.DATE: 12/04/2025 TIME: 17:14:18 </Line6>
+        <Line7>. </Line7>
+        <Line8>.INVOICE: 0003 </Line8>
+        <Line9>.REFERENCE: 2HzabWUJ10h2zsQCrGreq8oi </Line9>
+        <Line10>.AUTH CODE: 5N4fJvka </Line10>
+        <Line11>. </Line11>
+        <Line12>.AMOUNT USD$ 10.00</Line12>
+        <Line13>. ==========</Line13>
+        <Line14>.TOTAL USD$ 10.00</Line14>
+        <Line15>. </Line15>
+        <Line16>. APPROVED - THANK YOU </Line16>
+        <Line17>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line17>
+        <Line18>.ACCORDING TO CARD ISSUER AGREEMENT. </Line18>
+        <Line19>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line19>
+        <Line20>. </Line20>
+        <Line21>. </Line21>
+        <Line22>. </Line22>
+        <Line23>.x_______________________________________</Line23>
+        <Line24>.Cardholder Signature </Line24>
+        <Line25>. </Line25>
+        <Line26>.APPLICATION LABEL: Visa Credit </Line26>
+        <Line27>.AID: A0000000031010 </Line27>
+        <Line28>.TVR: 0000008000 </Line28>
+        <Line29>.IAD: 06010A03A0B006 </Line29>
+        <Line30>.TSI: E800 </Line30>
+    </PrintData>
+</RStream>
+Stored Credential On File
+The POS can request a stored Credential on File (COF) for a given payment method, so that payment method doesn’t need to be presented for future COF transactions. This is ideal in situations of recurring payments and installment payments. By using COF, the merchant and POS avoid storing card data for recurring transactions, and maintain compliance with the card brands.
+Implementation Notes:
+1. Specific to Networks where Datacap supports Card on File.
+2. Mastercard does not support recurring via Apple Pay and Google Pay.
+Usage
+A series of COF transactions begins with an initial transaction where card data is collected and sent to NETePay. The transaction must include the <RecurringData> field with the value Recurring. In response, NETePay generates <RecordNo> and <RecurringData> fields that must be supplied on subsequent COF transactions. These fields dictate what COF to use and how to use it.
+In the example below, an EMVSale is used to collect cardholder data from a PIN pad in order to initiate a recurring COF series of transactions.
+Request
+* xml
+<TStream>
+    <Transaction>
+        <OperationMode>CERT</OperationMode>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <TranCode>EMVSale</TranCode>
+        <PinPadIpAddress>192.168.0.218</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <SecureDevice>EMV_A3700_DATACAP_E2E</SecureDevice>
+        <InvoiceNo>0004</InvoiceNo>
+        <RefNo>0004</RefNo>
+        <Amount>
+            <Purchase>10.00</Purchase>
+        </Amount>
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>Recurring</Frequency>
+        <SequenceNo>0010010010</SequenceNo>
+        <RecurringData>Recurring</RecurringData>
+    </Transaction>
+</TStream>
+Response
+* xml
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <AcctNo>XXXXXXXXXXXX0043</AcctNo>
+        <ExpDate>XXXX</ExpDate>
+        <CardType>VISA</CardType>
+        <TranCode>Sale</TranCode>
+        <AuthCode>92787A</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>026819657522</RefNo>
+        <InvoiceNo>0004</InvoiceNo>
+        <Amount>
+            <Purchase>10.00</Purchase>
+            <Authorize>10.00</Authorize>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <RecurringData>Recurring|00|000268626410880</RecurringData>
+        <RecordNo>DC4:AQGno7ak1lNNmelXyNBfz1oqkjMUCL0BH2JZbWAo7LUbTDTCoEjueP0ezj5cxpbaonK7zq-RO4-H7IDmx-fd3A7OsflX5XXihvbP0lbJPIR8czskFV7clNa5a-DW6u5BGjhK84P2_RJ8aZgkzKys798V</RecordNo>
+    </TranResponse>
+</RStream>
+The POS retains the RecurringData and RecordNo for the next transaction in the series. Whenever it’s time to run that next transaction, the POS sends a SaleByRecordNo using the retained fields.
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <HostOrIP>127.0.0.1</HostOrIP>
+        <IpPort>9000</IpPort>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <PinPadIpAddress>192.168.0.218</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <TranCode>SaleByRecordNo</TranCode>
+        <SecureDevice>EMV_VP3300_DATACAP</SecureDevice>
+        <InvoiceNo>10002</InvoiceNo>
+        <RefNo>10002</RefNo>
+        <Amount>
+            <Purchase>10.00</Purchase>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <RecordNo>DC4:AQGno7ak1lNNmelXyNBfz1oqkjMUCL0BH2JZbWAo7LUbTDTCoEjueP0ezj5cxpbaonK7zq-RO4-H7IDmx-fd3A7OsflX5XXihvbP0lbJPIR8czskFV7clNa5a-DW6u5BGjhK84P2_RJ8aZgkzKys798V</RecordNo>
+        <Frequency>Recurring</Frequency>
+        <RecurringData>Recurring|00|000268626410880</RecurringData>
+    </Transaction>
+</TStream>
+The POS captures the response fields, and uses them for the next COF transaction in the series. This process continues until the COF series is complete.

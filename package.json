@@ -10,6 +10,7 @@
     "start": "NODE_ENV=production node -r ./preload.js server.js",
     "start:next": "next start",
     "lint": "eslint",
+    "check:auth": "node scripts/check-auth-patterns.mjs",
     "postinstall": "prisma generate",
     "setup": "prisma generate && prisma db push && npm run db:seed",
     "db:seed": "dotenv -e .env.local -- tsx prisma/seed.ts",

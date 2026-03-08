@@ -207,6 +207,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         receiptPrinterId: auth.terminal.receiptPrinterId ?? null,
         kitchenPrinterId: auth.terminal.kitchenPrinterId ?? null,
         barPrinterId: auth.terminal.barPrinterId ?? null,
+        isTestMode: (() => {
+          const p = (settings as any)?.payments
+          return p?.datacapEnvironment ? p.datacapEnvironment === 'cert' : (p?.testMode ?? false)
+        })(),
       },
       cfdSettings: cfdSettings ? {
         tipMode: cfdSettings.tipMode,

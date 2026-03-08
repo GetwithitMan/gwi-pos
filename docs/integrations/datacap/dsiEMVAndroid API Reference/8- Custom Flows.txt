@@ -1,0 +1,147 @@
+﻿Custom Flows
+Suggestive TIP Prompt
+dsiEMVAndroid supports suggestive tip prompting on select supported PIN pads.
+When the Gratuity value is “SuggestivePrompt”, this field defines the values displayed in the custom gratuity buttons. Four values must be provided, using format “Button1-Label [colon] Gratuity1-Amount [comma] Button2-Label [colon] Gratuity2-Amount [comma] Button3-Label [colon] Gratuity3-Amount [comma] Button4-Label [colon] Gratuity4-Amount” (ex: 10%:1.00,15%:1.50,18%:1.80,20%:2.00).
+ Suggestive TIP Prompt 
+
+	 Suggestive TIP Prompt Amounts 
+
+	Tip Prompt using percentages
+	Tip Prompt using amounts
+	 Suggestive TIP Prompt amounts and percents 
+
+	 Suggestive TIP Prompt amounts and percents 
+
+	Tip Prompt using percentages and amounts
+	Tip Prompt including the amount total
+	If one of the buttons are pressed, the corresponding gratuity amount is used for the transaction. The gratuity entry form also has a button for “Other” and “No” or “None”. Pressing “Other” will cause the pad to display a prompt to manually enter a gratuity amount. Pressing “No” or “None” will cause the pad to skip any gratuity entry.
+View Demo 
+Custom Amount Format
+On Android devices, dsiEMVAndroid supports the <CustomAmountFormat> field, which allows integrators to display a custom message to the cardholder on the “collect card data” form screen.
+ standard collect card data 
+
+	 Custom Amount Format 1 
+
+	Standard Card Collection Screen
+	Custom Amount Format
+	For Android devices, the <CustomAmountFormat> tag includes the following predefined elements:
+1. #PAYMENT# - The amount of the payment (Purchase + Gratuity + Cash Back).
+2. #GRATUITY# - The amount of the tip.
+3. #N# - a new line.
+4. #FEE1# - The amount of SplitFee1.
+5. #CASHBACK# - The cashback amount.
+6. #PAYMENTFEE# - The amount of the “Payment Fee”.
+7. #TAX# - The amount of the tax.
+8. #SURCHARGEWITHLOOKUP# - The amount of the surcharge.
+9. #PAYMENT_WITH_SURCHARGE# - The total amount of the payment with the surcharge (Purchase + Gratuity + Cash Back).
+Note: #PAYMENT# and #PAYMENT_WITH_SURCHARGE# will still include Gratuity and Cash Back even if displayed separately.
+Example of the CustomAmountFormat sent on an EMVSale:
+<CustomAmountFormat>Payment Amount: $#PAYMENT##N#Fee Amount: $#FEE1#</CustomAmountFormat>
+For additional examples, see EMVSaleWithSplit. <CustomAmountFormat> is not exclusive to EMVSaleWithSplit and can be used with other transactions.
+Custom Forms
+Integrators can develop/design their own forms packages on PAX Android devices. To use a custom forms package, the <UseForms> tag must be sent as part of each transaction request.
+EMVSale with custom forms
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <OperationMode>CERT</OperationMode>
+        <UserTrace>Dev1</UserTrace>
+        <POSPackageID>PyTest:2.0</POSPackageID>
+        <TranCode>EMVSale</TranCode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <RefNo>6773577033</RefNo>
+        <InvoiceNo>6773577033</InvoiceNo>
+        <SequenceNo>0010010010</SequenceNo>
+        <OperatorID>001</OperatorID>
+        <UseForms>DifferentForms</UseForms>
+        <ReturnClearExpDate>Allow</ReturnClearExpDate>
+        <ReturnClearCardBin>Allow</ReturnClearCardBin>
+        <Duplicate>None</Duplicate>
+        <Amount>
+            <Purchase>6.19</Purchase>
+            <Gratuity>1.50</Gratuity>
+        </Amount>
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>OneTime</Frequency>
+        <PartialAuth>Allow</PartialAuth>
+    </Transaction>
+</TStream>
+Alternate forms
+Datacap has already implemented custom forms which are ready for use out of the box.
+Send <UseForms>Datacap2Light</UseForms> with your requests to make use of “Light Mode” payment forms. (Currently only available on PAX Android Devices)
+Note To use Datacap’s light mode forms, please download the latest forms package release from Datacap.
+Examples
+ Default Form 
+  Default Form 
+	 Light Mode Form 
+  Light Mode Form 
+	Default Form
+	Light Mode
+	
+
+ Default DMP Form 
+
+	 Light Mode DMP Form 
+
+	Default Form
+	Light Mode
+	Hidden Forms
+In the event a companion app has been developed with a customized appearance, the POS can choose to hide the provided Datacap form package on PAX devices.
+* Hiding Forms
+* Handling Messaging
+Note: Because of the inability to prompt for signatures or pin entry, hidden forms should only be used with Datacap deployments where the PSCS parameters are set to “Credit Only” with CVM set to “None”
+Hiding Forms
+Hiding the default form package is as simple as supplying the <UseForms> tag with a value of Suppressed on any request. This feature requires a Datacap form package version 1400 or higher, attempting to use it on lower versions may result in undefined behavior. This cannot be used with the Canadian integration.
+When forms are hidden, certain aspects of device operation are changed, including an increased card entry timeout. Any request sent to the device that requires user input (GetSuggestiveTip, GetPhoneNumber, et. al.) are automatically rejected.
+Note: Sending any request without <UseForms>Suppressed</UseForms> will result in the default forms becoming visible.
+Request
+* xml
+<TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <OperationMode>CERT</OperationMode>
+        <POSPackageID>PyTest:2.0</POSPackageID>
+        <TranCode>EMVSale</TranCode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <InvoiceNo>0003</InvoiceNo>
+        <RefNo>0003</RefNo>
+        <Amount>
+            <Purchase>10.00</Purchase>
+        </Amount>
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>Recurring</Frequency>
+        <PartialAuth>Allow</PartialAuth>
+        <UseForms>Suppressed</UseForms>
+    </Transaction>
+</TStream>
+Handling Messaging
+In order to provide the users instruction from the PAX devices, the library sends prompts that should be displayed within on the screen visible to the user. These are handled through the AddDisplayMessageListener callback. The <CustomAmountFormat> can be supplied in the request if desired to create custom prompts with dynamic transaction data through the DisplayMessageListener.
+Below is an example
+* java
+DSIEMVAndroid.AddDisplayMessageListener((message) -> runOnUiThread(() ->
+{
+    TextView statusView1 = findViewById(R.id.displayEventMessage);
+    statusView1.setText(message);
+}
+Pre-Dip/Tap
+Support for Pre-Dip/Tap was added in dsiEMVAndroid 2.07.
+Pre-Dip/Tap allows customers to dip or tap their cards prior to the sale.
+To use Pre-Dip/Tap, integrators must use the CollectCardData command.
+View Demo 
+CollectCardData Request Example
+* xml
+<?xml version="1.0" ?>
+<TStream>
+      <MerchantID>DEMODCHAL0GP</MerchantID>
+      <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+      <SequenceNo>0010010010</SequenceNo>
+      <ComPort>1</ComPort>
+      <UserTrace>89d860a5</UserTrace>
+      <PlaceHolderAmount>1.00</PlaceHolderAmount>
+      <PinPadIpAddress>192.168.0.18</PinPadIpAddress>
+      <PinPadIpPort>1235</PinPadIpPort>
+      <POSPackageID>POSName:1.2.3</POSPackageID>
+</TStream>
+

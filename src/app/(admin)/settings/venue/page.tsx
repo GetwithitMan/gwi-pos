@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
-import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -27,8 +26,6 @@ interface LocationData {
 
 export default function VenueSettingsPage() {
   const hydrated = useAuthenticationGuard()
-  const employeeId = useAuthStore(s => s.employee?.id)
-
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [name, setName] = useState('')
@@ -37,26 +34,6 @@ export default function VenueSettingsPage() {
   const [timezone, setTimezone] = useState('America/New_York')
   const [hasChanges, setHasChanges] = useState(false)
   const [original, setOriginal] = useState({ name: '', address: '', phone: '', timezone: 'America/New_York' })
-
-  // NUC Registration
-  const [regCode, setRegCode] = useState<string | null>(null)
-  const [regStatus, setRegStatus] = useState<'none' | 'active' | 'expired' | 'used' | 'revoked'>('none')
-  const [regExpiresAt, setRegExpiresAt] = useState<string | null>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
-
-  const loadRegCode = useCallback(async () => {
-    try {
-      const res = await fetch('/api/location/registration-code')
-      if (res.ok) {
-        const { data } = await res.json()
-        setRegCode(data.code)
-        setRegStatus(data.status)
-        setRegExpiresAt(data.expiresAt)
-      }
-    } catch {
-      // Non-critical — don't toast on load failure
-    }
-  }, [])
 
   useEffect(() => {
     async function loadLocation() {
@@ -82,8 +59,7 @@ export default function VenueSettingsPage() {
       }
     }
     loadLocation()
-    loadRegCode()
-  }, [loadRegCode])
+  }, [])
 
   useEffect(() => {
     setHasChanges(
@@ -126,45 +102,6 @@ export default function VenueSettingsPage() {
     } finally {
       setIsSaving(false)
     }
-  }
-
-  const handleGenerateCode = async () => {
-    setIsGenerating(true)
-    try {
-      const res = await fetch('/api/location/registration-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId }),
-      })
-      if (res.ok) {
-        const { data } = await res.json()
-        setRegCode(data.code)
-        setRegStatus(data.status)
-        setRegExpiresAt(data.expiresAt)
-        toast.success('Registration code generated — expires in 24 hours')
-      } else {
-        toast.error('Failed to generate registration code')
-      }
-    } catch {
-      toast.error('Failed to generate registration code')
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  const handleCopyCode = () => {
-    if (regCode) {
-      navigator.clipboard.writeText(regCode).catch(() => {})
-      toast.success('Code copied')
-    }
-  }
-
-  const formatExpiry = (iso: string): string => {
-    const diff = new Date(iso).getTime() - Date.now()
-    if (diff <= 0) return 'Expired'
-    const hours = Math.floor(diff / (1000 * 60 * 60))
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-    return `${hours}h ${minutes}m`
   }
 
   if (!hydrated) return null
@@ -280,110 +217,6 @@ export default function VenueSettingsPage() {
           </CardContent>
         </Card>
 
-        {/* NUC Registration */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>NUC Registration</CardTitle>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                regStatus === 'active' ? 'bg-green-100 text-green-700' :
-                regStatus === 'expired' ? 'bg-red-100 text-red-700' :
-                regStatus === 'used' ? 'bg-gray-200 text-gray-600' :
-                'bg-gray-100 text-gray-500'
-              }`}>
-                {regStatus === 'active' ? 'Active' :
-                 regStatus === 'expired' ? 'Expired' :
-                 regStatus === 'used' ? 'Used' :
-                 regStatus === 'revoked' ? 'Revoked' :
-                 'No Code'}
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">This code is used by your IT person or our support team when setting up your back-of-house server. You do not need to do anything with it yourself.</p>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 bg-gray-50 border rounded px-4 py-3 font-mono text-2xl tracking-widest text-center select-all">
-                  {regCode || '\u2014'}
-                </div>
-                {regCode && regStatus === 'active' && (
-                  <Button variant="outline" onClick={handleCopyCode} className="shrink-0">
-                    Copy
-                  </Button>
-                )}
-              </div>
-
-              {regExpiresAt && regStatus === 'active' && (
-                <p className="text-sm text-gray-500">
-                  Expires in {formatExpiry(regExpiresAt)}
-                </p>
-              )}
-              {regStatus === 'expired' && (
-                <p className="text-sm text-red-500">
-                  Code has expired. Generate a new one.
-                </p>
-              )}
-
-              <Button
-                variant={regStatus === 'active' ? 'outline' : 'primary'}
-                onClick={handleGenerateCode}
-                disabled={isGenerating}
-                isLoading={isGenerating}
-                className="w-full"
-              >
-                {isGenerating ? 'Generating...' :
-                 regStatus === 'active' ? 'Regenerate Code' : 'Generate Code'}
-              </Button>
-
-              <details className="text-xs text-gray-400">
-                <summary className="cursor-pointer hover:text-gray-500">Show for IT</summary>
-                <p className="mt-2">
-                  Use this code during NUC installation:{' '}
-                  <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-500">
-                    curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
-                  </code>
-                </p>
-              </details>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Coming Soon */}
-        <Card className="opacity-60">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <CardTitle>Additional Configuration</CardTitle>
-              <span className="text-xs font-medium bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
-                Coming Soon
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-gray-400">The following features will be available in a future update:</p>
-            <ul className="mt-3 space-y-2 text-sm text-gray-400">
-              <li className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-                Operating Hours
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-                Week Start Day
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-                Fiscal Year Start
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-                Logo Upload
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
-                Venue Type
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

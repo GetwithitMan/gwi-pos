@@ -21,7 +21,7 @@ function exportDailyCSV(report: DailyReport) {
   rows.push(['Revenue', 'Discounts', report.revenue.discounts.toFixed(2)])
   rows.push(['Revenue', 'Net Sales', report.revenue.netSales.toFixed(2)])
   rows.push(['Revenue', 'Sales Tax', report.revenue.salesTax.toFixed(2)])
-  rows.push(['Revenue', 'Surcharge', report.revenue.surcharge.toFixed(2)])
+  rows.push(['Revenue', 'Dual Pricing Adj.', report.revenue.surcharge.toFixed(2)])
   rows.push(['Revenue', 'Gross Sales', report.revenue.grossSales.toFixed(2)])
   rows.push(['Revenue', 'Tips', report.revenue.tips.toFixed(2)])
   rows.push(['Revenue', 'Refunds', report.revenue.refunds.toFixed(2)])
@@ -412,7 +412,7 @@ export default function DailyReportPage() {
                     <span>{formatCurrency(report.revenue.salesTax)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>+ Surcharge</span>
+                    <span>+ Dual Pricing Adj.</span>
                     <span>{formatCurrency(report.revenue.surcharge)}</span>
                   </div>
                   <div className="flex justify-between font-semibold border-t pt-1">

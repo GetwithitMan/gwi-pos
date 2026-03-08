@@ -92,7 +92,7 @@ interface OrderPanelItemProps {
   onFireItem?: (itemId: string) => void
   onCancelItemDelay?: (itemId: string) => void
   // Dual pricing: multiplier to convert cash (DB) price to card (display) price
-  // e.g. 1.04 for 4% surcharge. When undefined or 1, shows cash price as-is.
+  // e.g. 1.04 for 4% dual pricing markup. When undefined or 1, shows cash price as-is.
   cardPriceMultiplier?: number
   // Item-level discounts (P2-D01)
   onItemDiscount?: (itemId: string) => void

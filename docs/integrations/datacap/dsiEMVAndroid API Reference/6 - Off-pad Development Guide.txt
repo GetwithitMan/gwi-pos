@@ -1,0 +1,27 @@
+﻿Off-pad Development Guide
+ID TECH
+VP3300/VP3350
+For utilizing USB communication mode, include the following in your Android code. Note: This will disable the ability to communicate via Bluetooth by defaulting to USB automatically.
+Add the following to the manifest:
+* xml
+<intent-filter>
+    <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+</intent-filter>
+
+
+<meta-data
+    android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+    android:resource="@xml/device_filter" />
+Add the following to the res/xml/device_filter.xml:
+* xml
+<usb-device vendor-id="0x0acd" product-id="0x4650" />
+<usb-device vendor-id="0x0acd" product-id="0x4651" />
+Doing this, out of the box, will prompt a pop up for the first connection with a checkbox to always start the application when this device is connected. To prevent the Android system from constantly restarting the application add android:launchMode="singleTop" to the activity in the manifest:
+* xml
+<activity
+    android:name=".MainActivity"
+    android:launchMode="singleTop"
+    android:directBootAware="true"
+    android:label="@string/app_name"
+    >
+

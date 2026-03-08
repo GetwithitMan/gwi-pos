@@ -60,8 +60,8 @@ interface UsePricingReturn {
   // === For PaymentModal props ===
   cashDiscountRate: number  // The percentage (4.0, not 0.04)
 
-  // === Surcharge (T-080 Phase 3) ===
-  surchargeAmount: number   // Surcharge line item amount (0 for all non-surcharge models)
+  // === Pricing Program ===
+  surchargeAmount: number   // Dual pricing adjustment amount (0 for all non-surcharge models)
   pricingProgram: PricingProgram
 }
 

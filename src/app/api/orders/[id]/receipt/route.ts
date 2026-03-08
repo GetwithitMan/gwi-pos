@@ -132,32 +132,47 @@ export const GET = withVenue(async function GET(
         amountTendered: payment.amountTendered ? Number(payment.amountTendered) : null,
         changeGiven: payment.changeGiven ? Number(payment.changeGiven) : null,
       })),
-      subtotal: Number(order.subtotal),
-      discountTotal: Number(order.discountTotal),
-      taxTotal: Number(order.taxTotal),
-      tipTotal: Number(order.tipTotal),
-      // For cash discount (dual pricing) model: order.total IS the cash price.
-      // If the order was paid by card with dual pricing, show the card price as the total.
-      total: isDualCard
-        ? calculateCardPrice(Number(order.total), cashDiscountPercent)
-        : Number(order.total),
-      // Dual pricing breakdown fields (only present when dual pricing + card payment)
-      ...(isDualCard ? (() => {
-        const cashTotal = Number(order.total)
-        const cashNetSubtotal = Number(order.subtotal) - Number(order.discountTotal)
-        const cardSubtotal = calculateCardPrice(cashNetSubtotal, cashDiscountPercent)
-        const cardTotal = calculateCardPrice(cashTotal, cashDiscountPercent)
-        const cashTax = Number(order.taxTotal)
-        const cardTax = calculateCardPrice(cashTax, cashDiscountPercent)
-        return {
-          cardSubtotal,
-          cardTax,
-          cardTotal,
-          cashSubtotal: cashNetSubtotal,
-          cashTax,
-          cashTotal,
+      ...(() => {
+        const taxRateDecimal = (settings.tax?.defaultRate ?? 0) / 100
+        const calcAfterDiscount = settings.tax?.calculateAfterDiscount ?? true
+        const activeItems = order.items.filter(i => !i.status || i.status === 'active')
+        // Compute cash subtotal from items (not stored value which may be stale)
+        const cashSubtotal = Math.round(
+          activeItems.reduce((sum, i) => sum + Number(i.itemTotal), 0) * 100
+        ) / 100
+        const disc = Math.round(Number(order.discountTotal) * 100) / 100
+        const tipTotal = Number(order.tipTotal)
+        const cashTaxable = calcAfterDiscount ? Math.max(0, cashSubtotal - disc) : cashSubtotal
+        const cashTax = Math.round(cashTaxable * taxRateDecimal * 100) / 100
+        const cashTotal = Math.round((cashSubtotal - disc + cashTax) * 100) / 100
+
+        if (isDualCard) {
+          const cardSubtotal = calculateCardPrice(cashSubtotal, cashDiscountPercent)
+          const cardTaxable = calcAfterDiscount ? Math.max(0, cardSubtotal - disc) : cardSubtotal
+          const cardTax = Math.round(cardTaxable * taxRateDecimal * 100) / 100
+          const cardTotal = Math.round((cardSubtotal - disc + cardTax) * 100) / 100
+          return {
+            subtotal: cardSubtotal,
+            discountTotal: disc,
+            taxTotal: cardTax,
+            tipTotal,
+            total: cardTotal,
+            cardSubtotal,
+            cardTax,
+            cardTotal,
+            cashSubtotal,
+            cashTax,
+            cashTotal,
+          }
         }
-      })() : {}),
+        return {
+          subtotal: cashSubtotal,
+          discountTotal: disc,
+          taxTotal: cashTax,
+          tipTotal,
+          total: cashTotal,
+        }
+      })(),
       createdAt: order.createdAt.toISOString(),
       paidAt: order.paidAt?.toISOString() || null,
       // Loyalty data

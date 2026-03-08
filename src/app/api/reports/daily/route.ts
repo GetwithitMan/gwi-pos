@@ -292,10 +292,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    // B16 fix: Derive per-order surcharges from pricing program settings.
-    // surchargeAmount is not stored per-payment in the DB yet, so we back-derive
+    // B16 fix: Derive per-order dual pricing adjustments from pricing program settings.
+    // Amount is not stored per-payment in the DB yet, so we back-derive
     // from the current pricing program. For exact historical tracking, add a
-    // surchargeAmount field to the Payment model.
+    // dualPricingAmount field to the Payment model.
     const pricingProgram = getPricingProgram(locationSettings)
     const orderSurcharges = new Map<string, number>()
     if (pricingProgram.model === 'surcharge' && pricingProgram.enabled && pricingProgram.surchargePercent) {

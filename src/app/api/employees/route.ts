@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { createEmployeeSchema, validateRequest } from '@/lib/validations'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
@@ -98,7 +98,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Auth check — require staff.edit_profile permission
-    const auth = await requirePermission(body.requestingEmployeeId, body.locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.requestingEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, body.locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Validate request body

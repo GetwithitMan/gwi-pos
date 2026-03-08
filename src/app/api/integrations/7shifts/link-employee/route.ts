@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 
@@ -22,7 +22,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'employeeId and adminEmployeeId are required' }, { status: 400 })
   }
 
-  const auth = await requirePermission(body.adminEmployeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
+  const actor = await getActorFromRequest(request)
+  const resolvedEmployeeId = actor.employeeId ?? body.adminEmployeeId
+  const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.SETTINGS_INTEGRATIONS)
   if (!auth.authorized) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }

@@ -1,0 +1,244 @@
+﻿On-pad Development Guide
+For integrators looking to create an Android application that runs on Android payment devices, use this guide to help achieve the desired payment flow.
+Introduction
+Before beginning, it’s helpful to familiarize yourself with the pieces involved with on-pad development.
+On PAX devices, the retail application dsiEMVAndroid communicates with is PXRetailer. PXRetailer also hosts the Datacap form package, and is responsible for installing all other applications through PayLoader. Communication settings can also be changed via PXRetailer but this is not recommended as it can communicate on all supported interfaces on receipt of the device. Note: Uninstalling PXRetailer will require you to return the device to Datacap for reloading!
+Ingenico devices have more nuanced pieces. Ingenico’s retail application is AXIUM Retail Core, referred to as ARC, but is not something that displays anything to the user.
+Instead, Datacap’s UXR application is built on top of Ingenico’s UXResources and handles the forms. ARC’s communication settings can be changed through the ARC Comm Config application, and can only communicate on one interface at a time. For use with dsiEMVAndroid, ensure that the settings are TCP_IP_SERVER listening on port 12001. Note: Uninstalling any of these three applications will cause the device to cease functioning.
+Minimum SDK support required by device
+When developing your application, please make sure to set your minSdkVersion to match the lowest API level of the devices you wish to support (e.g. supporting A920 Pro, A800, A6650; minSdkVersion should be set to 27).
+Device Name
+	Android Version
+	Android API version
+	PAX A30
+	8.1.0
+	27
+	PAX A35
+	10
+	29
+	PAX A77
+	8.1.0
+	27
+	PAX A6650
+	12
+	31
+	PAX A800
+	10
+	29
+	PAX A920Pro
+	8.1.0
+	27
+	PAX A920MAX
+	10
+	29
+	PAX A3700
+	11
+	30
+	PAX Aries8
+	7.1.1
+	25
+	PAX IM30
+	7.1.1
+	25
+	Ingenico DX4000
+	10
+	29
+	Ingenico DX8000
+	10
+	29
+	Ingenico EX6000
+	10
+	29
+	Ingenico EX8000
+	10
+	29
+	Ingenico RX5000
+	11
+	30
+	Ingenico RX7000
+	11
+	30
+	MPlus Hera51
+	8.1.0
+	27
+	The dsiEMVAndroid control interacts with all devices through IP communication to the device’s retail application. This requires integrators to provide a PinPadIpAddress and PinPadIpPort. For integrators building an on-pad app should use address 127.0.0.1 and ports 1235 for PAX devices, 12001 for Ingenico.
+Integrator’s on-pad application will share screen time with the device’s retail application where the dsiEMVAndroid calls PXRetailer or ARC to accept payments. The payment forms will enter the device foreground to enter a card, pin, signature, etc. The Integrators on-pad application will have to take the screen back after receiving a response from the dsiEMVAndroid control.
+Starting in Android API level 29, reclaiming the foreground requires permissions that are not available to user apps. To get around this, Datacap provides two different ways to do so depending on the manufacturer of the pin pad. Below are manufacturer specific steps to both optionally launch your application on boot and share screen time with the device’s retail application.
+PAX
+Starting your app at launch:
+Adding both of these permissions to your app manifest will allow your application to listen to the RECV_BOOT_COMPLETED event and start itself from the background.
+* xml
+<uses-permission android:name="com.pax.permission.RECV_BOOT_COMPLETED" />
+<uses-permission android:name="com.pax.permission.PAX_START_ACTIVITIES_FROM_BACKGROUND" />
+Also in AndroidManifest.xml, add the following under the application element:
+* xml
+<?xml version="1.0"?>
+<receiver android:name=".BootReceiver" android:enabled="true" android:exported="false">
+    <intent-filter>
+        <action android:name="paydroid.intent.action.BOOT_COMPLETED" />
+        <category android:name="android.intent.category.HOME" />
+    </intent-filter>
+</receiver>
+Finally, create the following class, replacing MainActivity.class with the activity you wish to start.
+* java
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent; 
+
+
+public class BootReceiver extends BroadcastReceiver
+{
+    @Override
+    public void onReceive(Context context, Intent intent)
+    {
+        String action = intent.getAction();
+
+
+        // When BOOT_COMPLETED event is received
+        if (action.equals("android.intent.action.QUICKBOOT_POWERON")
+                || action.equals(Intent.ACTION_BOOT_COMPLETED)
+                || action.equals("paydroid.intent.action.BOOT_COMPLETED"))
+        {
+            Intent serviceIntent = new Intent(context, MainActivity.class);
+            serviceIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(serviceIntent);
+        }
+    }
+}
+
+
+Reclaiming the foreground space
+With PAX, tying the integration tag <UseForms>Suppressed</UseForms> to EMVPadReset should be sufficient to bring your application to the foreground.
+Example
+(In Integration)
+* xml
+<?xml version="1.0" ?>
+<TStream>
+  <Transaction>
+    <OperationMode>ENV</OperationMode>
+    <MerchantID>DEMOMERCHANT0GP</MerchantID>
+    <UserTrace>uuid:2200716510460880537590938246154175</UserTrace>
+    <TranCode>EMVPadReset</TranCode>
+    <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+    <PinPadIpAddress>127.0.0.1</PinPadIpAddress>
+    <PinPadIpPort>1235</PinPadIpPort>
+    <SequenceNo>0010010010</SequenceNo>
+    <OperatorID>001</OperatorID>
+  </Transaction>
+</TStream>
+Considerations
+With PAX, a few things are beyond control. Namely, the time it takes to switch between the two applications may vary significantly dependent on how much an application is attempting to do. In some cases, PXRetailer must re-instantiate its own activity and may take 1-3 seconds to appear.
+PAX Application Submissions
+Submit all third party Android applications (companion apps) to Datacap for use with PAX Android hardware
+All production applications need to get a release .apk signed by PAX to be loaded on a production pad. A release .apk should be sent to Datacap via the PayLoader site and then a signed copy will be returned in 3 business days. That signed copy can be loaded to the device for production use utilizing Datacap’s PayLoader application.
+Datacap PayLoader
+After your application is signed, you will receive an email from Datacap with two Partner Package Codes: one to install the package, and another to uninstall it.
+Enter the Partner Package Code into the text prompt present in the PayLoader application to load their application to the pad. Note that anyone who has access to the application’s Partner Package Code can load it onto any Datacap PAX device that has the PayLoader application, so only distribute the code to trusted parties.
+To reach the PayLoader application from PXRetailer, swipe up from the bottom of the device, and double-tap the back arrow on the taskbar. For most devices, the password is “pax9876@@”. This will put PXRetailer into the background. If the Android home screen is not visible, press the center button on the bottom task bar to reach it.
+From the Android home screen, open the PayLoader app > Codes. The UI should look similar to the following:
+ Payloader with credentials 
+
+Note: older versions of Datacap Payloader do not support Package Code entry, please contact Datacap support to receive the newest version.
+Enter your PayLoader Code, then press the “Submit” button. Your package should begin loading after a few seconds.
+ Payloader with credentials 
+
+	PayLoader Code
+	Ingenico
+Starting your application at launch:
+For Ingenico devices, the standard boot_completeed permission is required to listen for the event.
+* xml
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+<uses-permission android:name="com.datacap.permission.REQUEST_ACTIVITY" />
+<uses-permission android:name="com.datacap.permission.BROADCAST" />
+Also in AndroidManifest.xml, add the following under the application element:
+* xml
+<?xml version="1.0"?>
+<receiver android:name=".BootReceiver" android:enabled="true" android:exported="false">
+  <intent-filter>
+    <action android:name="android.intent.action.BOOT_COMPLETED" />
+    <category android:name="android.intent.category.HOME"/>
+  </intent-filter>
+</receiver>
+<receiver android:name=".BootReceiver$Secondary" android:enabled="true" android:exported="false"
+          android:permission="com.datacap.permission.BROADCAST">
+  <intent-filter>
+    <action android:name="com.datacap.action.BROADCAST_RECEIVER_READY"/>
+  </intent-filter>
+</receiver>
+Note the second receiver for BROADCAST_RECEIVER_READY this is because Datacap provides a unique way to switch applications to the foreground on Axium. The first receiver can be used to start services but should not show an application activity until after BROADCAST_RECEIVER_READY is triggered.
+Inside the application onCreate() function, add java registerReceiver(new BootReceiver.Secondary(), new IntentFilter("com.datacap.action.BROADCAST_RECEIVER_READY"));
+Finally, just like PAX, create the following class, replacing MainActivity.class with the activity you wish to start.
+* java
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent; 
+
+
+public class BootReceiver extends BroadcastReceiver
+{
+    @Override
+    public void onReceive(Context context, Intent intent)
+    {
+        String action = intent.getAction();
+
+
+        if (action.equals("android.intent.action.QUICKBOOT_POWERON")
+                || action.equals(Intent.ACTION_BOOT_COMPLETED))
+        {
+            Intent activityIntent = new Intent(context, MainActivity.class);
+            activityIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+            context.startActivity(activityIntent);
+        }
+    }
+
+
+    public static class Secondary extends BroadcastReceiver
+    {
+        @Override
+        public void onReceive(Context context, Intent intent)
+        {
+            if (action.equals("com.datacap.action.BROADCAST_RECEIVER_READY"))
+            {
+                Intent launchIntent = new Intent(context, MainActivity.class);
+                PendingIntent pendingIntent = PendingIntent.getActivity(context, 32347328, launchIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+
+                Intent activityIntent = new Intent("com.datacap.action.START_ACTIVITY");
+                activityIntent.putExtra("callingPackage", "com.example.yourpackagename");
+                activityIntent.putExtra("pendingIntent", pendingIntent);
+                context.sendBroadcast(activityIntent);
+                context.unregisterReceiver(Secondary.this);
+            }
+        }
+    }
+}
+The class can be unregistered after the broadcast is received since it won’t happen again in this boot cycle.
+Reclaiming the foreground space
+For Ingenico Axium devices, returning the integrator app to the foreground is similar to the secondary broadcast receiver in the startup code. Requiring the following two permissions:
+* xml
+<uses-permission android:name="com.datacap.permission.REQUEST_ACTIVITY" />
+<uses-permission android:name="com.datacap.permission.BROADCAST" />
+When the application receives the BROADCAST_RECEIVER_READY event, then we know that UXR is prepared to share screen space with other apps.
+* kotlin
+* java
+fun requestAppForeground(context: Context, activity: Activity?)
+{
+    val launchIntent = Intent(context, activity?.javaClass)
+    val pendingIntent = PendingIntent.getActivity(
+        context,
+        0123456789, // requestCode is ignored for pending intent broadcasts
+        launchIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+
+    val activityIntent = Intent("com.datacap.action.RESUME_ACTIVITY")
+    activityIntent.putExtra("callingPackage", "com.example.yourpackagename")
+    activityIntent.putExtra("pendingIntent", pendingIntent)
+    context.sendBroadcast(activityIntent)
+}
+Considerations
+* Starting your application too quickly on boot will cause ARC to stop responding, please ensure there is ample time for Ingenico services to begin before starting any foreground activities.
+* Development units may behave in drastically different ways to production units, please be sure to test both environments thoroughly.
+* Your application must allow UXR to retake the foreground otherwise integration commands to dsiEMVAndroid may fail.
+*

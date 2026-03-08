@@ -1479,6 +1479,55 @@ async function runPrePushMigrations() {
       }
     }
 
+    // --- CompReason table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "CompReason" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "name" TEXT NOT NULL,
+          "description" TEXT,
+          "deductInventory" BOOLEAN NOT NULL DEFAULT false,
+          "requiresManager" BOOLEAN NOT NULL DEFAULT false,
+          "isActive" BOOLEAN NOT NULL DEFAULT true,
+          "sortOrder" INTEGER NOT NULL DEFAULT 0,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL,
+          "deletedAt" TIMESTAMP(3),
+          "syncedAt" TIMESTAMP(3),
+          CONSTRAINT "CompReason_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "CompReason_locationId_name_key" ON "CompReason"("locationId", "name")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "CompReason_locationId_idx" ON "CompReason"("locationId")`)
+      console.log(`${PREFIX}   CompReason table ensured`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED CompReason:`, err.message)
+    }
+
+    // --- ReasonAccess table ---
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "ReasonAccess" (
+          "id" TEXT NOT NULL,
+          "locationId" TEXT NOT NULL,
+          "subjectType" TEXT NOT NULL,
+          "subjectId" TEXT NOT NULL,
+          "reasonType" TEXT NOT NULL,
+          "reasonId" TEXT NOT NULL,
+          "accessType" TEXT NOT NULL DEFAULT 'allow',
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT "ReasonAccess_pkey" PRIMARY KEY ("id")
+        )
+      `)
+      await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "ReasonAccess_locationId_subjectType_subjectId_reasonType_reasonId_key" ON "ReasonAccess"("locationId", "subjectType", "subjectId", "reasonType", "reasonId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ReasonAccess_locationId_idx" ON "ReasonAccess"("locationId")`)
+      await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ReasonAccess_locationId_subjectType_subjectId_idx" ON "ReasonAccess"("locationId", "subjectType", "subjectId")`)
+      console.log(`${PREFIX}   ReasonAccess table ensured`)
+    } catch (err) {
+      console.error(`${PREFIX}   FAILED ReasonAccess:`, err.message)
+    }
+
     console.log(`${PREFIX} Pre-push migrations complete`)
   } finally {
     await prisma.$disconnect()

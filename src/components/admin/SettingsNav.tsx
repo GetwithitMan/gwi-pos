@@ -194,6 +194,10 @@ const settingsSections: SettingsSection[] = [
     permission: PERMISSIONS.SETTINGS_SECURITY,
     items: [
       { name: 'PIN & Lockout', href: '/settings/security' },
+      { name: 'Discounts', href: '/discounts' },
+      { name: 'Void Reasons', href: '/settings/void-reasons' },
+      { name: 'Comp Reasons', href: '/settings/comp-reasons' },
+      { name: 'Reason Access', href: '/settings/reason-access' },
     ],
   },
   {
@@ -216,6 +220,14 @@ const settingsSections: SettingsSection[] = [
     items: [
       { name: 'Dashboard', href: '/settings/monitoring' },
       { name: 'Error Logs', href: '/settings/monitoring/errors' },
+    ],
+  },
+  {
+    title: 'Mission Control',
+    icon: '🛰️',
+    permission: PERMISSIONS.SETTINGS_EDIT,
+    items: [
+      { name: 'Internal Config', href: '/settings/mission-control' },
     ],
   },
 ]

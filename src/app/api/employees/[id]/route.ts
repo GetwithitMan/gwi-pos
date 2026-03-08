@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationId } from '@/lib/location-cache'
@@ -138,16 +138,18 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Auth check — require staff.edit_profile permission
-    const auth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.requestingEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Sensitive field checks — require elevated permissions for wage and role assignment
     if (body.hourlyRate !== undefined || body.hireDate !== undefined) {
-      const wageAuth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_WAGES)
+      const wageAuth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_WAGES)
       if (!wageAuth.authorized) return NextResponse.json({ error: wageAuth.error }, { status: wageAuth.status })
     }
     if (body.roleId !== undefined || body.additionalRoleIds !== undefined) {
-      const roleAuth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.STAFF_ASSIGN_ROLES)
+      const roleAuth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.STAFF_ASSIGN_ROLES)
       if (!roleAuth.authorized) return NextResponse.json({ error: roleAuth.error }, { status: roleAuth.status })
     }
 

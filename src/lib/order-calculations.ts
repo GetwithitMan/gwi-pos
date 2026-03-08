@@ -6,7 +6,7 @@
  *
  * PRINCIPLES:
  * - All money rounding goes through roundToCents() from pricing.ts
- * - Rounding is the absolute last step (sum raw → surcharge → discount → tax → tip → THEN round)
+ * - Rounding is the absolute last step (sum raw → dual pricing → discount → tax → tip → THEN round)
  * - Tax lines are rounded to 2 decimals (compliance), final total optionally rounded per settings
  * - taxRate is always a decimal (0.08), never ambiguous 8 vs 0.08
  */

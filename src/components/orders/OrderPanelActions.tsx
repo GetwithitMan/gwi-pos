@@ -23,7 +23,7 @@ interface OrderPanelActionsProps {
   // All pricing comes pre-calculated from usePricing — no local recalculation
   subtotal?: number      // Cash subtotal (stored DB price)
   cashSubtotal?: number  // Cash subtotal (same as subtotal, explicit)
-  cardSubtotal?: number  // Card subtotal (with surcharge if dual pricing)
+  cardSubtotal?: number  // Card subtotal (dual pricing)
   tax?: number           // Tax amount
   cashTax?: number       // Tax on cash subtotal
   cardTax?: number       // Tax on card subtotal
@@ -737,7 +737,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
             >
               {/* Line Items — show card price as default when dual pricing enabled */}
               {items.map((item) => {
-                // Per-item card price: items stored as cash prices, apply surcharge for display
+                // Per-item card price: items stored as cash prices, apply dual pricing markup for display
                 const cpm = cashDiscountPct > 0 ? 1 + cashDiscountPct / 100 : 1
                 const displayPrice = roundToCents(item.price * cpm)
                 return (

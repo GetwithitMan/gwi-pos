@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { withVenue } from '@/lib/with-venue'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
 
 // GET - List all discount rules for a location
@@ -126,9 +126,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    const auth = await requirePermission(body.requestingEmployeeId, locationId, PERMISSIONS.SETTINGS_MENU)
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.requestingEmployeeId
+    if (resolvedEmployeeId) {
+      const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_MENU)
+      if (!auth.authorized) {
+        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
     }
 
     const discount = await db.discountRule.create({

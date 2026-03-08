@@ -777,10 +777,11 @@ export class PrintTemplateFactory {
       total: number
       payments?: { method: string; amount: number }[]
       change?: number
-      // Surcharge (T-080 Phase 5)
-      surchargeAmount?: number
-      surchargePercent?: number
-      surchargeDisclosure?: string
+      // Dual pricing (cash discount program)
+      cashSubtotal?: number
+      cashTax?: number
+      cashTotal?: number
+      cashDiscountPercent?: number
     }
   ): Buffer {
     const s = mergePrintTemplateSettings(settings)
@@ -826,20 +827,43 @@ export class PrintTemplateFactory {
     content.push(buildDivider({ style: 'dash', fullWidth: true }, width))
 
     // Totals
-    content.push(twoColumnLine('Subtotal:', `$${totals.subtotal.toFixed(2)}`, width))
-    if (totals.discount && totals.discount > 0) {
-      content.push(twoColumnLine('Discount:', `-$${totals.discount.toFixed(2)}`, width))
+    if (totals.cashTotal != null) {
+      // Dual pricing layout — Visa-compliant card-first format
+      content.push(twoColumnLine('Subtotal:', `$${totals.subtotal.toFixed(2)}`, width))
+      if (totals.discount && totals.discount > 0) {
+        content.push(twoColumnLine('Discount:', `-$${totals.discount.toFixed(2)}`, width))
+      }
+      content.push(twoColumnLine('Tax:', `$${totals.tax.toFixed(2)}`, width))
+      content.push(TALL)
+      content.push(ESCPOS.BOLD_ON)
+      content.push(twoColumnLine('Card Total:', `$${totals.total.toFixed(2)}`, width))
+      content.push(ESCPOS.BOLD_OFF)
+      content.push(NORMAL)
+      // Cash breakdown
+      content.push(ESCPOS.BOLD_ON)
+      content.push(twoColumnLine('Cash Total:', `$${totals.cashTotal.toFixed(2)}`, width))
+      content.push(ESCPOS.BOLD_OFF)
+      content.push(twoColumnLine('  Cash Subtotal:', `$${(totals.cashSubtotal ?? 0).toFixed(2)}`, width))
+      content.push(twoColumnLine('  Cash Tax:', `$${(totals.cashTax ?? 0).toFixed(2)}`, width))
+      // Rounding line if there's a delta
+      const cashExpected = (totals.cashSubtotal ?? 0) + (totals.cashTax ?? 0) - (totals.discount ?? 0)
+      const roundingDelta = totals.cashTotal - cashExpected
+      if (Math.abs(roundingDelta) >= 0.005) {
+        content.push(twoColumnLine('  Rounding:', `$${roundingDelta.toFixed(2)}`, width))
+      }
+    } else {
+      // Standard single-total layout
+      content.push(twoColumnLine('Subtotal:', `$${totals.subtotal.toFixed(2)}`, width))
+      if (totals.discount && totals.discount > 0) {
+        content.push(twoColumnLine('Discount:', `-$${totals.discount.toFixed(2)}`, width))
+      }
+      content.push(twoColumnLine('Tax:', `$${totals.tax.toFixed(2)}`, width))
+      content.push(TALL)
+      content.push(ESCPOS.BOLD_ON)
+      content.push(twoColumnLine('TOTAL:', `$${totals.total.toFixed(2)}`, width))
+      content.push(ESCPOS.BOLD_OFF)
+      content.push(NORMAL)
     }
-    if (totals.surchargeAmount && totals.surchargeAmount > 0) {
-      const surchargePctLabel = totals.surchargePercent ? ` (${totals.surchargePercent}%)` : ''
-      content.push(twoColumnLine(`CC Surcharge${surchargePctLabel}:`, `$${totals.surchargeAmount.toFixed(2)}`, width))
-    }
-    content.push(twoColumnLine('Tax:', `$${totals.tax.toFixed(2)}`, width))
-    content.push(TALL)
-    content.push(ESCPOS.BOLD_ON)
-    content.push(twoColumnLine('TOTAL:', `$${totals.total.toFixed(2)}`, width))
-    content.push(ESCPOS.BOLD_OFF)
-    content.push(NORMAL)
 
     // Payments
     if (totals.payments && totals.payments.length > 0) {
@@ -906,14 +930,6 @@ export class PrintTemplateFactory {
         content.push(line(sig.customerCopyLabel || 'CUSTOMER COPY'))
         content.push(ESCPOS.BOLD_OFF)
       }
-      content.push(ESCPOS.ALIGN_LEFT)
-    }
-
-    // Surcharge disclosure (T-080 Phase 5)
-    if (totals.surchargeAmount && totals.surchargeAmount > 0) {
-      content.push(line(''))
-      content.push(ESCPOS.ALIGN_CENTER)
-      content.push(line(totals.surchargeDisclosure || '*Credit card surcharge applied per Visa/MC guidelines'))
       content.push(ESCPOS.ALIGN_LEFT)
     }
 

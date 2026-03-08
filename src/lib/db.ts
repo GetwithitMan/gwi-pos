@@ -23,6 +23,7 @@ const NO_SOFT_DELETE_MODELS = new Set([
   'DeductionRun', 'PendingDeduction', 'IngredientCostHistory',
   'InventoryCountEntry', 'MarginEdgeProductMapping', 'MenuItemDailyMetrics',
   'PmsChargeAttempt', 'SevenShiftsDailySalesPush', 'WasteLog',
+  'ReasonAccess',
 ])
 
 function createPrismaClient(url?: string) {

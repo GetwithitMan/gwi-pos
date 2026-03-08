@@ -138,6 +138,35 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Validate reason against allowed presets (backward compatible — only if presets exist)
+    const reasonType = action === 'comp' ? 'comp_reason' : 'void_reason'
+    const reasonPresets = reasonType === 'void_reason'
+      ? await db.voidReason.findMany({ where: { locationId: order.locationId, isActive: true, deletedAt: null }, select: { id: true, name: true } })
+      : await db.compReason.findMany({ where: { locationId: order.locationId, isActive: true, deletedAt: null }, select: { id: true, name: true } })
+
+    if (reasonPresets.length > 0) {
+      // Presets are configured — validate the reason matches one
+      const reasonMatch = reasonPresets.find(
+        r => r.id === reason || r.name.toLowerCase() === reason.toLowerCase()
+      )
+      if (!reasonMatch) {
+        return NextResponse.json(
+          { error: `Invalid ${action} reason. Must be one of the configured presets.` },
+          { status: 400 }
+        )
+      }
+
+      // Check employee access rules (only if access rules exist for this reason type)
+      const { resolveAllowedReasonIds } = await import('@/app/api/settings/reason-access/allowed/route')
+      const { ids: allowedIds, hasRules } = await resolveAllowedReasonIds(order.locationId, employeeId, reasonType)
+      if (hasRules && !allowedIds.includes(reasonMatch.id)) {
+        return NextResponse.json(
+          { error: `You do not have access to use this ${action} reason` },
+          { status: 403 }
+        )
+      }
+    }
+
     // W4-1: Enforce configurable void approval from location settings
     const settings = parseSettings(order.location.settings)
     const approvalSettings = settings.approvals

@@ -73,7 +73,7 @@ export function buildShiftCloseoutReceipt(data: ShiftCloseoutData): Buffer {
   parts.push(twoColumnLine('  Card', formatDollars(data.cardSales), W))
   parts.push(twoColumnLine('Orders', String(data.orderCount), W))
   if (data.surchargeTotal && data.surchargeTotal > 0) {
-    parts.push(twoColumnLine('Surcharges Collected', formatDollars(data.surchargeTotal), W))
+    parts.push(twoColumnLine('Dual Pricing Adj.', formatDollars(data.surchargeTotal), W))
   }
 
   // Drawer

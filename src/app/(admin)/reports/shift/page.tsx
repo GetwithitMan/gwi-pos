@@ -438,7 +438,7 @@ function EmployeeShiftReportContent() {
                     <span>{formatCurrency(report.revenue.salesTax)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span>+ Surcharge</span>
+                    <span>+ Dual Pricing Adj.</span>
                     <span>{formatCurrency(report.revenue.surcharge)}</span>
                   </div>
                   <div className="flex justify-between font-semibold border-t pt-1">

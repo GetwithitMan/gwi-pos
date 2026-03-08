@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { execSync } from 'child_process'
 
 /**
  * GET /api/reports/berg-health
@@ -33,7 +34,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const deviceStats = await Promise.all(
       devices.map(async (device) => {
-        const [total, ackCount, nakCount, badLrc, badPacket, overflow, latencyAgg, dedupedCount] = await Promise.all([
+        const [total, ackCount, nakCount, badLrc, badPacket, overflow, latencyAgg, dedupedCount, exceededLatencyCount] = await Promise.all([
           db.bergDispenseEvent.count({ where: { deviceId: device.id, receivedAt: dateRange } }),
           db.bergDispenseEvent.count({ where: { deviceId: device.id, receivedAt: dateRange, status: { in: ['ACK', 'ACK_BEST_EFFORT', 'ACK_TIMEOUT'] } } }),
           db.bergDispenseEvent.count({ where: { deviceId: device.id, receivedAt: dateRange, status: { in: ['NAK', 'NAK_TIMEOUT'] } } }),
@@ -46,6 +47,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             _max: { ackLatencyMs: true },
           }),
           db.bergDispenseEvent.count({ where: { deviceId: device.id, receivedAt: dateRange, errorReason: 'IDEMPOTENT_DUPLICATE' } }),
+          db.bergDispenseEvent.count({ where: { deviceId: device.id, receivedAt: dateRange, ackLatencyMs: { gt: 3000 } } }),
         ])
 
         const nakRate = total > 0 ? Math.round((nakCount / total) * 100 * 10) / 10 : 0
@@ -102,7 +104,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             avgAckLatencyMs: latencyAgg._avg.ackLatencyMs ? Math.round(Number(latencyAgg._avg.ackLatencyMs)) : null,
             maxAckLatencyMs: latencyMs || null,
             p95LatencyMs,
-            exceededLatencyCount: latencyMs > 3000 ? 1 : 0,
+            exceededLatencyCount,
           },
           alerts,
         }
@@ -111,11 +113,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const overallAlerts = deviceStats.flatMap(d => d.alerts.map(a => `[${d.name}] ${a}`))
 
+    // NTP sync check — same logic as /api/berg/status
+    let timeSyncWarning = false
+    try {
+      const timedatectl = execSync('timedatectl status 2>/dev/null', { timeout: 2000 }).toString()
+      timeSyncWarning = !timedatectl.includes('NTP synchronized: yes')
+    } catch {
+      // Not on Linux / timedatectl not available — skip
+    }
+
     return NextResponse.json({
       period: { start: dateRange.gte, end: dateRange.lte },
       devices: deviceStats,
       overallAlerts,
-      timeSyncWarning: false, // checked separately in /api/berg/status
+      timeSyncWarning,
     })
   } catch (err) {
     console.error('[reports/berg-health]', err)

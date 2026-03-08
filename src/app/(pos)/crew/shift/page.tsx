@@ -165,7 +165,7 @@ export default function CrewShiftReportPage() {
                 <div className="flex justify-between"><span className="text-white/60">Sales Tax</span><span className="text-white">{formatCurrency(report.revenue.salesTax)}</span></div>
                 <div className="flex justify-between"><span className="text-white/60">Tips</span><span className="text-white">{formatCurrency(report.revenue.tips)}</span></div>
                 {report.revenue.surcharge > 0 && (
-                  <div className="flex justify-between"><span className="text-white/60">Surcharge</span><span className="text-white">{formatCurrency(report.revenue.surcharge)}</span></div>
+                  <div className="flex justify-between"><span className="text-white/60">Dual Pricing Adj.</span><span className="text-white">{formatCurrency(report.revenue.surcharge)}</span></div>
                 )}
                 {report.revenue.discounts > 0 && (
                   <div className="flex justify-between"><span className="text-white/60">Discounts</span><span className="text-red-400">-{formatCurrency(report.revenue.discounts)}</span></div>

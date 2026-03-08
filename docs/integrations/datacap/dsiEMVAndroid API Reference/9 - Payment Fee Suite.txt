@@ -1,0 +1,417 @@
+﻿Payment Fee Suite
+Datacap’s Payment Fee Suite enables:
+* Surcharge With Lookup
+* Dual/Multi-pricing (cash discounting)
+* Split fee funding
+* Convenience Fee / Payment Fee
+Surcharge With Lookup
+dsiEMVAndroid supports surcharging to help merchants mitigate processor fees associated with processing credit card transactions. Datacap’s “Surcharge with Lookup” function checks the card’s BIN in real-time to confirm that the card is eligible for surcharge (credit only). Surcharging is legal in most states, but we recommend that you check your merchant’s local and state regulations specific to surcharging prior to implementation. To learn more about surcharging, check Visa’s guidelines surrounding regulated fees.
+To use Datacap’s Surcharging With Lookup feature, partners must utilize Datacap’s NETePay Hosted platform and incorporate the <SurchargeWithLookup> tag in the sale request of the transaction. If a <SurchargeWithLookup> amount is supplied on a debit transaction, the surcharge amount will not be applied to the total.
+EMVSale Request including SurchargeWithLookup
+* xml
+<?xml version="1.0"?>
+<TStream>
+    <Transaction>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <POSPackageID>POSName:3.0</POSPackageID>
+        <OperationMode>CERT</OperationMode>
+        <PinPadIpAddress>192.168.0.218</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <CardType>Credit</CardType>
+        <TranCode>EMVSale</TranCode>
+        <SecureDevice>EMV_A920PRO_DATACAP_E2E</SecureDevice>
+        <InvoiceNo>0003</InvoiceNo>
+        <RefNo>0003</RefNo>
+        <Amount>
+            <Purchase>6.00</Purchase>
+            <Tax>0.60</Tax>
+            <TaxIfSurchargeable>0.62</TaxIfSurchargeable>
+            <SurchargeWithLookup>0.18</SurchargeWithLookup>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <PartialAuth>Allow</PartialAuth>
+        <OKAmount>Disallow</OKAmount>
+        <RecordNo>RecordNumberRequested</RecordNo>
+        <Frequency>Recurring</Frequency>
+        <TranInfo>
+            <CustomerCode>A12345</CustomerCode>
+        </TranInfo>
+    </Transaction>
+</TStream> 
+EMVSale Response including SurchargeWithLookup
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace>Dev1</UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <AcctNo>476173******0043</AcctNo>
+        <CardType>VISA</CardType>
+        <TranCode>EMVSale</TranCode>
+        <AuthCode>8eUage7y8</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>KAW2j6ojP0JXNEf2uSzLq</RefNo>
+        <InvoiceNo>0003</InvoiceNo>
+        <OperatorID>TEST</OperatorID>
+        <Amount>
+            <Purchase>6.00</Purchase>
+            <Authorize>6.18</Authorize>
+            <SurchargeWithLookup>0.18</SurchargeWithLookup>
+        </Amount>
+        <AcqRefData>600|000|T7u9JmYXFVOKrBaO8TO9af43kGYi7Zg|EMVSale</AcqRefData>
+        <ProcessData>YmL8WCHZM</ProcessData>
+        <RecordNo>
+            DC4:AQG4WRVqaZWcwMuBFrfCKly0hnjyt2Mc_UTfCucF7EJ7Mlkkx_iR_XJ0-HEl96pXEA1yeCupnsfTblXlXUuJtoMapzEZI1q8cUMFpa5yoaAguYK0a7sBxu3QLfJHS2L4Ffcpq35X_-c7ZgsyMK8l0GbW
+        </RecordNo>
+        <CardholderName>Datacap/Test Card 01 </CardholderName>
+        <ExpDateMonth>12</ExpDateMonth>
+        <ExpDateYear>31</ExpDateYear>
+        <EntryMethod>CHIP</EntryMethod>
+        <Date>12/03/2025</Date>
+        <Time>17:16:27</Time>
+        <ApplicationLabel>Visa Credit</ApplicationLabel>
+        <AID>A0000000031010</AID>
+        <TVR>0000008000</TVR>
+        <IAD>06010A03A0B006</IAD>
+        <TSI>E800</TSI>
+        <CVM>SIGN</CVM>
+        <PayAPI_Id>q-36LyYBusTGFanbSYbH8lI84SVim</PayAPI_Id>
+    </TranResponse>
+</RStream>
+EMVSale Receipt Data including SurchargeWithLookup
+* xml
+    <PrintData>
+        <Line1>.CLERK ID: TEST </Line1>
+        <Line2>. </Line2>
+        <Line3>. SALE </Line3>
+        <Line4>. </Line4>
+        <Line5>.VISA ************0043</Line5>
+        <Line6>.ENTRY METHOD: CHIP </Line6>
+        <Line7>.DATE: 12/03/2025 TIME: 17:16:27 </Line7>
+        <Line8>. </Line8>
+        <Line9>.INVOICE: 0003 </Line9>
+        <Line10>.REFERENCE: KAW2j6ojP0JXNEf2uSzLq </Line10>
+        <Line11>.AUTH CODE: 8eUage7y8 </Line11>
+        <Line12>. </Line12>
+        <Line13>.AMOUNT USD$ 6.00</Line13>
+        <Line14>.TIP USD$ 0.00</Line14>
+        <Line15>.CASH BACK 0.00</Line15>
+        <Line16>.SURCHARGE 0.18</Line16>
+        <Line17>. =========</Line17>
+        <Line18>.TOTAL USD$ 6.18</Line18>
+        <Line19>. </Line19>
+        <Line20>. APPROVED - THANK YOU </Line20>
+        <Line21>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line21>
+        <Line22>.ACCORDING TO CARD ISSUER AGREEMENT. </Line22>
+        <Line23>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line23>
+        <Line24>. </Line24>
+        <Line25>. </Line25>
+        <Line26>. </Line26>
+        <Line27>.x_______________________________________</Line27>
+        <Line28>.Test Card 01 Datacap </Line28>
+        <Line29>. </Line29>
+        <Line30>.APPLICATION LABEL: Visa Credit </Line30>
+        <Line31>.AID: A0000000031010 </Line31>
+        <Line32>.TVR: 0000008000 </Line32>
+        <Line33>.IAD: 06010A03A0B006 </Line33>
+        <Line34>.TSI: E800 </Line34>
+    </PrintData>
+Receipt Example
+* Cardholder Copy
+            MERCHANT NAME             
+            MERCHANT STREET            
+            CITY, STATE ZIP            
+             123-456-7890       
+
+
+ SALE
+
+
+VISA                    ************0043
+ENTRY METHOD: CONTACTLESS
+DATE: 12/03/2025  TIME: 05:44:28
+
+
+INVOICE: 101
+REFERENCE: 0RhaHyzdwMI8ADOs
+AUTH CODE: OIQTe09Hf
+
+
+AMOUNT                        USD$ 6.00
+SURCHARGE                           0.18
+                              ==========
+TOTAL                         USD$ 6.18
+
+
+          APPROVED - THANK YOU
+
+
+APPLICATION LABEL: VISA CREDIT
+AID: A0000000031010
+TVR: 0000000000
+IAD: 06010A03A00000
+TSI: 0000
+
+
+Cardholder Copy
+Dual or Multi-Pricing
+Building on the “payment type selection” flow implemented above using <GetMultipleChoice>, it’s possible for merchants to implement Dual/Multi-Pricing, a more compliant alternative to traditional cash-discounting programs. Dual/Multi-Pricing allows the merchant to display different prices on the payment device based on tender type. Customers can then choose how they would like to pay.
+View Demo 
+See example below.
+ Dual Pricing 
+
+Sample Request
+* xml
+<?xml version="1.0" ?>
+<TStream>
+  <Transaction>
+    <OperationMode>CERT</OperationMode>
+    <MerchantID>DEMODCHAL0GP</MerchantID>
+    <UserTrace>Dev1</UserTrace>
+    <POSPackageID>POSName:1.2.3</POSPackageID>
+    <TranCode>GetMultipleChoice</TranCode>
+    <SecureDevice>EMV_ARIES8_DATACAP_E2E</SecureDevice>
+    <PinPadIpAddress>192.168.0.44</PinPadIpAddress>
+    <PinPadIpPort>1235</PinPadIpPort>
+    <SequenceNo>0010010010</SequenceNo>
+    <Prompt>Please select a method of payment.</Prompt>
+    <ButtonData>Cash          $30.00,Debit       $31.50,Credit        $32.70,EBT           $30.00</ButtonData>
+  </Transaction>
+</TStream>
+When a selection is made, the form will remain on screen until a new request is sent. A new request transitions the device away from the selection screen. For cash transactions, you wouldn’t follow up immediately with an <EMVSale>. The POS would need to reset the device to the welcome/idle screen using an <EMVPadReset>.
+EMVPadReset Request
+* xml
+<?xml version="1.0" ?>
+<TStream>
+  <Transaction>
+    <SecureDevice>EMV_ARIES8_DATACAP_E2E</SecureDevice>
+    <SequenceNo>0010010010</SequenceNo>
+    <TranCode>EMVPadReset</TranCode>
+    <POSPackageID>POSName:1.2.3</POSPackageID>
+    <MerchantID>DEMODCHAL0GP</MerchantID>
+    <PinPadIpAddress>192.168.0.44</PinPadIpAddress>
+    <PinPadIpPort>1235</PinPadIpPort>
+    <SequenceNo>0010010010</SequenceNo>
+    </Transaction>
+</TStream>
+Recommended <CardType> Enforcement
+To prevent customers from selecting a lower price option when paying with their credit card (i.e. “Debit”), the POS can include the optional <CardType> request field. Values for CardType can be set to “Credit” or “Debit”.
+In the example below, we’ll include <CardType>Debit</CardType> for a “Debit” selection.
+Request
+* xml
+<?xml version="1.0" ?>
+<TStream>
+  <Transaction>
+    <OperationMode>CERT</OperationMode>
+    <MerchantID>DEMODCHAL0GP</MerchantID>
+    <OKAmount>Disallow</OKAmount>
+    <TranCode>EMVSale</TranCode>
+    <SecureDevice>EMV_ARIES8_DATACAP_E2E</SecureDevice>
+    <PinPadIpAddress>192.168.0.44</PinPadIpAddress>
+    <PinPadIpPort>1235</PinPadIpPort>
+    <InvoiceNo>523231</InvoiceNo>
+    <RefNo>523231</RefNo>
+    <Amount>
+        <Purchase>25.00</Purchase>
+    </Amount>
+    <POSPackageID>POSName:1.2.3</POSPackageID>
+    <PartialAuth>Allow</PartialAuth>
+    <RecordNo>RecordNumberRequested</RecordNo>
+    <Frequency>Recurring</Frequency>
+    <SequenceNo>0010010010</SequenceNo>
+    <CardType>Debit</CardType>
+  </Transaction>
+</TStream>
+In this case, the cardholder attempted to use their credit card, which resulted in an error.
+Response
+* xml
+<?xml version="1.0" ?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Client</ResponseOrigin>
+        <DSIXReturnCode>003328</DSIXReturnCode>
+        <CmdStatus>Error</CmdStatus>
+        <TextResponse>TRANSACTION NOT COMPLETE - POS Demands Debit which is not available on this card.</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace></UserTrace>
+    </CmdResponse>
+</RStream>
+EMVSale Receipt Data after Dual/Multi prompt w Debit Enforcement
+* xml
+<Line1>. </Line1>
+    <Line2>. SALE </Line2>
+    <Line3>. </Line3>
+    <Line4>.DEBIT ***************0051\
+    </Line4>
+    <Line5>.ENTRY METHOD: CHIP </Line5>
+    <Line6>.DATE: 12/03/2025 TIME: 06:15:37 </Line6>
+    <Line7>. </Line7>
+    <Line8>.INVOICE: 523231 </Line8>
+    <Line9>.REFERENCE: G3kyFX34lh87TC9xq1 </Line9>
+    <Line10>.AUTH CODE: P7i6KjG1D </Line10>
+    <Line11>. </Line11>
+    <Line12>.AMOUNT USD$ 25.00</Line12>
+    <Line13>. ==========</Line13>
+    <Line14>.TOTAL USD$ 25.00</Line14>
+    <Line15>. </Line15>
+    <Line16>. APPROVED - THANK YOU </Line16>
+    <Line17>. </Line17>
+    <Line18>.APPLICATION LABEL: US DEBIT </Line18>
+    <Line19>.AID: A0000000042203 </Line19>
+    <Line20>.TVR: 8000048000 </Line20>
+    <Line21>.IAD: 0110A00009220000000000000000000000F</Line21>
+    <Line22>.TSI: 6800 </Line22>
+Receipt Example
+* Cardholder Copy
+            MERCHANT NAME             
+            MERCHANT STREET            
+            CITY, STATE ZIP            
+             123-456-7890       
+
+
+SALE
+
+
+DEBIT ***************0051
+ENTRY METHOD: CHIP
+DATE: 12/03/2025 TIME: 06:15:37
+
+
+INVOICE: 523231
+REFERENCE: G3kyFX34lh87TC9xq1
+AUTH CODE: P7i6KjG1D
+
+
+AMOUNT                         USD$ 25.00
+                               ==========
+TOTAL                          USD$ 25.00
+
+
+           APPROVED - THANK YOU
+
+
+APPLICATION LABEL: US DEBIT
+AID: A0000000042203
+TVR: 8000048000
+IAD: 0110A00009220000000000000000000000F
+TSI: 6800
+
+
+Cardholder Copy
+Convenience Fee or Payment Fee
+dsiEMVAndroid supports a “Payment Fee” field that allows merchants to add a “non-cash adjustment” as part of an electronic payment.
+To use Datacap’s Payment Fee adjustment, the <PaymentFee> tag must be added to the <Amount> tag. ISV’s can also supply the description of the fee by providing the <PaymentFeeDescription> tag. If the description is not provided, then “PAYMENT FEE” will be used as the description for the fee on the receipt.
+EMVSale Request including Payment Fee
+* xml
+<?xml version="1.0"?>
+<TStream>
+     <Transaction>
+        <OperationMode>CERT</OperationMode>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <UserTrace>Test</UserTrace>
+        <POSPackageID>EMVUSClient:1.27</POSPackageID>
+        <TranCode>EMVSale</TranCode>
+        <SecureDevice>EMV_A3700_DATACAP_E2E</SecureDevice>
+        <PinPadIpAddress>192.168.0.218</PinPadIpAddress>
+        <PinPadIpPort>1235</PinPadIpPort>
+        <InvoiceNo>100034</InvoiceNo>
+        <RefNo>100034</RefNo>
+        <Amount>
+            <Purchase>21.50</Purchase>
+            <PaymentFee>1.50</PaymentFee>
+        </Amount>
+        <SequenceNo>0010010010</SequenceNo>
+        <PartialAuth>Allow</PartialAuth>
+        <PaymentFeeDescription>NON-CASH ADJ</PaymentFeeDescription>
+     </Transaction>
+</TStream>
+EMVSale Response including Payment Fee
+* xml
+<?xml version="1.0"?>
+<RStream>
+    <CmdResponse>
+        <ResponseOrigin>Processor</ResponseOrigin>
+        <DSIXReturnCode>000000</DSIXReturnCode>
+        <CmdStatus>Approved</CmdStatus>
+        <TextResponse>APPROVED</TextResponse>
+        <SequenceNo>0010010010</SequenceNo>
+        <UserTrace>Test</UserTrace>
+    </CmdResponse>
+    <TranResponse>
+        <MerchantID>DEMODCHAL0GP</MerchantID>
+        <AcctNo>476173******0043</AcctNo>
+        <CardType>VISA</CardType>
+        <TranCode>EMVSale</TranCode>
+        <AuthCode>G6RRgcLreJ</AuthCode>
+        <CaptureStatus>Captured</CaptureStatus>
+        <RefNo>STJHWiQquMaUuOwO6VdYzaV</RefNo>
+        <InvoiceNo>100034</InvoiceNo>
+        <Amount>
+            <Purchase>21.50</Purchase>
+            <Authorize>21.50</Authorize>
+        </Amount>
+        <AcqRefData>2150||lVqgJbLAT600yrGYmlODODAs4SflMV358xZXQFPlLz5rSrVODOEaxk7AQ383av81h|EMVSale</AcqRefData>
+        <ProcessData>
+            rkH2ltAXVnAh1ccualshdbikehOi36txqXTOJvBYXKNwiZa3rrnzYMQrna4kZTnQdSQ6FUaisTJ7fmNCNtUkIxcPV2J5dYDdfM1YVWSmiec795mqGcPLlmIF
+        </ProcessData>
+        <RecordNo>
+            DC4:AQFv4KSUP9ezmDpy-p9u3x0-jM4NoHu2wTOx3hHyVteCsIM_LJ788TUr5GMwK25XoGj3j78cMPbt_8ONOrFP27u9dzibiHJdyN_JR-7Hcrx1vGomRK7Otn-Jmpee0M4R15lglk3TqYti0_tDq7H33kvE
+        </RecordNo>
+        <EntryMethod>CHIP</EntryMethod>
+        <Date>12/09/2025</Date>
+        <Time>16:40:17</Time>
+        <ApplicationLabel>Visa Credit</ApplicationLabel>
+        <AID>A0000000031010</AID>
+        <TVR>0000008000</TVR>
+        <IAD>06010A03A0B006</IAD>
+        <TSI>E800</TSI>
+        <CVM>SIGN</CVM>
+        <PayAPI_Id>q-36cqtWEuu0VfsUeMfhiR6NYDsjt</PayAPI_Id>
+    </TranResponse>
+    <PrintData>
+        <Line1>. </Line1>
+        <Line2>. SALE </Line2>
+        <Line3>. </Line3>
+        <Line4>.VISA ************0043</Line4>
+        <Line5>.ENTRY METHOD: CHIP </Line5>
+        <Line6>.DATE: 12/09/2025 TIME: 16:40:17 </Line6>
+        <Line7>. </Line7>
+        <Line8>.INVOICE: 100034 </Line8>
+        <Line9>.REFERENCE: STJHWiQquMaUuOwO6VdYzaV </Line9>
+        <Line10>.AUTH CODE: G6RRgcLreJ </Line10>
+        <Line11>. </Line11>
+        <Line12>.AMOUNT USD$ 20.00</Line12>
+        <Line13>.NON-CASH ADJ 1.50</Line13>
+        <Line14>. ==========</Line14>
+        <Line15>.TOTAL USD$ 21.50</Line15>
+        <Line16>. </Line16>
+        <Line17>. APPROVED - THANK YOU </Line17>
+        <Line18>.I AGREE TO PAY THE ABOVE TOTAL AMOUNT </Line18>
+        <Line19>.ACCORDING TO CARD ISSUER AGREEMENT. </Line19>
+        <Line20>.(MERCHANT AGREEMENT IF CREDIT VOUCHER) </Line20>
+        <Line21>. </Line21>
+        <Line22>. </Line22>
+        <Line23>. </Line23>
+        <Line24>.x_______________________________________</Line24>
+        <Line25>.Cardholder Signature </Line25>
+        <Line26>. </Line26>
+        <Line27>.APPLICATION LABEL: Visa Credit </Line27>
+        <Line28>.AID: A0000000031010 </Line28>
+        <Line29>.TVR: 0000008000 </Line29>
+        <Line30>.IAD: 06010A03A0B006 </Line30>
+        <Line31>.TSI: E800 </Line31>
+    </PrintData>
+</RStream>
+Split Fee Funding
+dsiEMVAndroid has the ability to process an EMV sale with split fee funding using the EMVSaleWithSplit tran code. This transaction is expected to be used in the government space or similar verticals where a cardholder pays a utility bill in person and is also charged a separate fee to a separate service organization. Split Fee Funding provides a way to process a normal EMV Sale transaction along with a separate, second transaction for a “split fee” amount. Request fields specific to split fee funding include <SplitMerchantID1>, <SplitFee1> and <CustomAmountFormat>. The <SplitMerchantID1> is the Hosted Merchant ID value that should be used to process the split fee payment. <SplitFee1> is the amount of the split fee payment. <CustomAmountFormat> is a field that contains a display message to be shown to the cardholder on a device (PAX PIN pads today) showing the amount of the EMVSale and the amount of the split fee. There is currently no print data produced for the secondary “split” transaction. The primary transaction is processed as an EMV card present transaction with the card data collected from the cardholder. The secondary transaction is processed as a manual ecomm transaction using encrypted card data. It is recommended that <SplitMerchantID1> is boarded as an ecommerce processing account to ensure the highest rate of success for the transaction. 
+Note that both transactions have to complete successfully in order for the transaction to succeed. For example, if the primary transaction is declined or errored the split fee is never processed and a decline or error is returned to the POS. If the primary transaction is Approved and the split fee is declined or errored then the primary transaction is voided and a decline is returned to the POS. This ensures that integrators that utilize split payment ensure the split fee is always funded with each payment attempt. 
+See EMVSaleWithSplit for request/response examples.
+View Demo 
+Note: Split fee funding requires use of the NETePay Hosted platform.

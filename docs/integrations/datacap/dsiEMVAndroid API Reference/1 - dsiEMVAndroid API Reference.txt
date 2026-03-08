@@ -1,0 +1,78 @@
+﻿dsiEMVAndroid API Reference
+EMV Programming Interface Specification For Android Applications
+Notice: This document contains information proprietary to Datacap Systems Inc. The only acceptable use for the information contained herein is to interface third party systems exclusively to Datacap’s ePay server and Tran products. Any other use is strictly prohibited.
+dsiPDCX®, dsiEMVUS®, dsiEMVX®, Pay API™, EasyCheckout™. dsiEMVAndroid™, dsiEMVApple™, DSIEMVClientX®, DSIClientX®, DataTran™, NETePay™, NETePay Hosted™, TranCloud™, dsiTranCloud™, DC Direct™, DIALePay™, GIFTePay™, ePay™, ePay Administrator™, DataTran™, DialTran™, IPTran™, IPTranLT™, TwinTran™, AutoLoad™, NoLoad™, PSCS™, DatacapConnect™, dsiPDCiOS™, dsiPDCAndroid™ and Datacap names and logos and all related trademarks, trade names, and other intellectual property are the property of Datacap Systems Inc. and cannot be used without its express prior written permission. All other names or trademarks are the property of the other owners.
+
+About dsiEMVAndroid
+What is dsiEMVAndroid?
+dsiEMVAndroid is an Android library that provides applications with the ability to process an EMV (chip card) electronic payment. More Specifically, dsiEMVAndroid is an Android .aar library that is compatible with most Android devices with an minimum API level of 23. dsiEMVAndroid is designed to communicate exclusively to Datacap’s NETePay Hosted platform, and doesn’t require an in-store NETePay application. Communication to NETePay Hosted uses the Android device’s IP stack, and all messages are encrypted for secure transmission over open networks (such as the Internet).
+dsiEMVAndroid does not use any transaction storage on the client device; logging and transaction management occur at the NETePay Hosted servers.
+dsiEMVAndroid directly controls an approved EMV device over Bluetooth LE, USB, and IP to manage all card data interactions. See dsiEMVAndroid Secure Devices for a list of supported EMV devices and communication interfaces.
+The dsiEMVAndroid control uses XML formatted requests and responses for transaction processing requests. For help getting started with DSIEMVAnroid, see Datacap’s dsiEMVAndroid Demo app on GitHub, or contact Datacap Integration Support.
+Supported EMV PIN Pad Devices (SecureDevice)
+The EMV PIN pads supported by dsiEMVAndroid can be determined by performing the GetDevicesInfo method available in dsiEMVAndroid. See GetDevicesInfo for details.
+Or, please see dsiEMVAndroid Secure Devices for an evolving list of supported devices.
+Datacap Splash Screen guide
+Datacap partners can replace the default Datacap “splash screen” or “welcome screen” with their own brand or merchant branding. Splash screens can be deployed using Datacap’s PayLoader™ application. Contact Datacap to get started with PayLoader.
+Examples
+ Datacap Splash Screen 
+
+	 Partner Branding 
+
+	 Merchant Screen 
+
+	Default Datacap Splash Screen
+	Partner Splash Screen
+	Merchant Splash Screen
+	Splash Screen File Specifications
+All splash screens should be in .GIF format (both for moving or static images). The max file size allowed is 2MB.
+Screen sizes by device
+Download a pre-configured Photoshop template file containing all the device sizes here (.zip) or refer to the chart below:
+Device
+	Screen size (WxH)
+	PAX A920Pro/A77/A800
+	720px x 1440px
+	PAX IM30
+	720px x 1280px
+	PAX Aries8/A3700(Elys tablet)
+	1280px x 800px
+	PAX A35
+	480px x 800px
+	PAX A30
+	1280px x 720px
+	PAX A6650
+	1080px x 2480px
+	PAX A920MAX
+	720px x 1480px
+	Ingenico DX4000/EX6000
+	720px x 1280px
+	Ingenico DX8000/EX8000
+	720px x 1440px
+	Ingenico RX5000
+	480px x 800px
+	Ingenico RX7000
+	1280px x 720px
+	Ingenico RX9000
+	1280px x 800px
+	Datacap Gift - omnichannel gift card platform
+
+
+ Datacap Gift logo 
+
+What is Datacap Gift?
+Datacap Gift™ is Datacap’s omnichannel gift card platform that enables card-present and card-not-present gift. dsiEMVAndroid connects card-present gift to the Datacap Gift platform - see PrePaid Transactions in section 3.
+Note: For card-present gift, Datacap Gift mirrors Datacap’s GIFTePay™ integration. To pair card-not-present gift, refer to Pay API.
+To learn more about Datacap Gift click here.
+See Datacap Gift in action - Datacap Gift Demo
+Datacap Gift key features
+* Omnichannel Gift - sell, load or redeem gift cards online or in-store for a consistent experience across all channels.
+* Real-time reporting for credit and gift transactions available 24/7 for solution providers and merchants.
+* Pre-loaded promotions for products and services with automated expiration.
+* White-label ready - White-label all aspects of Datacap’s gift platform: pre-branded gift cards, reporting dashboard, etc.
+* Multi-location management - Manage gift cards across multiple chain locations or groups with shared reporting.
+* Easy migration to and from dozens of third party gift services.
+* Alternative Gift - Add support for alternative gift payments such as QR Code, Text-to-Pay, memberships, etc.
+* Check Balances options - Cardholders can check gift card balances online or via QR code.
+Datacap Gift Reporting
+Use Datacap’s Reportal dashboard or build your own cusom dashboard using Reporting API
+ Datacap Reporting

@@ -253,7 +253,7 @@ export const GET = withVenue(async function GET(
       .reduce((sum, p) => sum + Number(p.totalAmount), 0)
 
     // Compute server-authoritative cash/card totals so clients don't need to recalculate
-    // (prevents discrepancies from different client-side tax+surcharge calculation orders)
+    // (prevents discrepancies from different client-side tax+dual pricing calculation orders)
     let cashTotal = Number(order.total)
     let cardTotal = Number(order.total)
     let cashDiscountPercent = 0

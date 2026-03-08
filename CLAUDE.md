@@ -313,3 +313,13 @@ When you add or significantly change a feature:
 4. Note the change in `docs/logs/LIVING-LOG.md`
 
 Feature docs are the source of truth for **what exists**. Domain docs are the source of truth for **how it works architecturally**. Both must stay in sync.
+
+---
+
+## GWI Golf Add-on (Planning Only — Not Yet Built)
+
+A golf course management vertical add-on to GWI POS. Planning docs live at:
+`/Users/brianlewis/Documents/My websites/GWI-POS FULL/Golf Course - Tee Time/`
+
+Key entry points: `README.md` (index of all 25 docs), `MASTER-PLAN.md` (vision + phases), `GAP-ANALYSIS.md` (open decisions before coding).
+No code has been written. This is planning only.

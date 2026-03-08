@@ -120,10 +120,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
     } else {
-      // Legacy fallback: GWI_BRIDGE_SECRETS JSON env var
+      // Legacy fallback: GWI_BRIDGE_SECRETS JSON env var.
+      // bridgeSecretEncrypted being null here means either:
+      //   (a) BRIDGE_MASTER_KEY was never set, so encryption was skipped at device creation, OR
+      //   (b) Secret was rotated while BRIDGE_MASTER_KEY was absent — hash updated but encrypted field not.
+      // In case (b) the new plaintext secret must be added to GWI_BRIDGE_SECRETS manually.
       const bridgeSecretsEnv = process.env.GWI_BRIDGE_SECRETS
       if (!bridgeSecretsEnv) {
-        console.error('[berg/dispense] GWI_BRIDGE_SECRETS not set — rejecting request for device with secret')
+        console.error(
+          `[berg/dispense] No bridgeSecretEncrypted for device ${deviceId} and GWI_BRIDGE_SECRETS not set. ` +
+          `If the secret was recently rotated without BRIDGE_MASTER_KEY, add the new plaintext secret to ` +
+          `GWI_BRIDGE_SECRETS={"${deviceId}":"<new-secret>"} or set BRIDGE_MASTER_KEY and re-rotate.`
+        )
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
       }
       try {
@@ -300,6 +308,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 orderId = result.order.id
                 orderItemId = oi.id
                 pourCost = menuItem.price
+                // Surface ambiguous tab selection — ring succeeded but operator should be aware
+                if (result.multipleOpen) errorReason = 'MULTIPLE_OPEN_ORDERS'
               }
             } else if (!result.order) {
               // Still look up price for dollar exposure even when no order found

@@ -319,7 +319,7 @@ export const POST = withVenue(async function POST(
         throw new Error('Order not found')
       }
 
-      if (!['open', 'draft', 'in_progress'].includes(lockedOrder.status)) {
+      if (!['open', 'draft', 'in_progress', 'sent'].includes(lockedOrder.status)) {
         throw new Error('ORDER_NOT_MODIFIABLE')
       }
 

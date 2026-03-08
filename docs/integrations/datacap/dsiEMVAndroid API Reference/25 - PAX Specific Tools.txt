@@ -1,0 +1,511 @@
+﻿PAX Specific Tools
+DAL Library
+The DAL library allows access to certain device functions, such as LED Control and the ability to hide and disable the status bar or navigation bar.
+Download the DAL Library
+Example Usages
+Showing/Hiding Status and Navigation Bars
+* java
+IDAL mDal = null;
+ISystem mSystem = null;
+
+
+try{
+    mDal = DALManager.getInstance().getDAL(getApplicationContext());
+} catch (Exception ex){
+
+
+}
+if (mDal != null){
+    mSystem = mDal.getSystem();
+    mSystem.setStatusBarDisable(true);
+    mSystem.setStatusBarInvisible(true);
+    mSystem.setNavigationBarInvisible(true);
+}
+Methods
+Get DAL Version
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	String getDALVersion ( );
+	Arguments
+	None
+	Returns
+	Library version string
+	Beep
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void beep ( EBeepMode mode, int duration );
+	Arguments
+	EBeepMode mode: Sound Frequency
+	
+
+	int duration: Length of time to play the sound
+	Returns
+	None
+	getSn
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	String getSn ( );
+	Arguments
+	None
+	Returns
+	Serial Number string
+	setDateTime
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void setDateTime ( String time );
+	Arguments
+	String time: Pointer to date and time parameter, format YYMMDDhhmmss
+	Returns
+	None
+	getDateTime
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	String getDateTime ( );
+	Arguments
+	None
+	Returns
+	Date and time in format YYYYMMDDhhmmssEE
+	getTermInfo
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	Map getTermInfo ( );
+	Arguments
+	None
+	Returns
+	ETermInfoKey
+	ledControl
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void ledControl ( ELedLightMode ucLedmode, ELedMode mode );
+	Arguments
+	ucLedmode: mode
+	
+
+	mode: 0 close, 1 open
+	Returns
+	None
+	piccLogo
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void piccLogo ( ELedMode mode );
+	Arguments
+	mode: 0 close, 1 open
+	Returns
+	None
+	magLight
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void magLight ( ELedMode mode );
+	Arguments
+	mode: 0 close, 1 open
+	Returns
+	None
+	iccLight
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void iccLight ( ELedMode mode );
+	Arguments
+	mode: 0 close, 1 open
+	Returns
+	None
+	reboot
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void reboot ( );
+	Arguments
+	None
+	Returns
+	None
+	setStatusBarInvisible
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void setStatusBarInvisible ( boolean invisible );
+	Arguments
+	invisible: true to hide, false to show status bar
+	Returns
+	None
+	setStatusBarDisable
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void setStatusBarDisable ( boolean disable );
+	Arguments
+	disable: true to disable, false to enable status bar
+	Returns
+	None
+	setHomeKeyDisable
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void setHomeKeyDisable ( boolean disable );
+	Arguments
+	disable: true to disable, false to enable home key
+	Returns
+	None
+	Note
+	This removes the Home button from the Nav Bar
+	setRecentKeyDisable
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void setRecentKeyDisable ( boolean disable );
+	Arguments
+	disable: true to disable, false to enable recent key
+	Returns
+	None
+	Note
+	This removes the Overview/Recents button from the Nav Bar
+	setNavigationBarInvisible
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void setNavigationBarInvisible ( boolean invisible );
+	Arguments
+	invisible: true to hide, false to show navigation bar
+	Returns
+	None
+	checkSettingsPassword
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	boolean checkSettingsPassword ( String password);
+	Arguments
+	password: plaintext password to verify
+	Returns
+	correct as true, incorrect as false
+	batteryCheck
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	int batteryCheck ( );
+	Arguments
+	None
+	Returns
+	Battery Level integer
+	setScanResultMode
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void setScanResultMode (int Mode);
+	Arguments
+	Mode: Numeric value for desired Mode
+	Returns
+	None
+	setHwScannerSettings
+Element
+	Definition
+	Library
+	DAL-ISystem.jar
+	Syntax
+	void setHwScannerSettings (Map map);
+	Arguments
+	map : map settings
+	Returns
+	None
+	print
+Element
+	Definition
+	Library
+	DAL-IPrinter.jar
+	Syntax
+	void print (Bitmap pictureInfo, OnPrintListener listener );
+	Arguments
+	pictureInfo: Print information, listener
+	Returns
+	None
+	getFrontScanner
+Element
+	Definition
+	Library
+	DAL-IScannerManager.jar
+	Syntax
+	IScanner getFrontScanner (Context);
+	Arguments
+	Context : Context
+	Returns
+	IScanner
+	getRearScanner
+Element
+	Definition
+	Library
+	DAL-IScannerManager.jar
+	Syntax
+	IScanner getRearScanner (Context);
+	Arguments
+	Context : Context
+	Returns
+	IScanner
+	getHwScanner
+Element
+	Definition
+	Library
+	DAL-IScannerManager.jar
+	Syntax
+	IScanner getHwScanner ( );
+	Arguments
+	None
+	Returns
+	IScanner
+	getScannerLite
+Element
+	Definition
+	Library
+	DAL-IScannerManager.jar
+	Syntax
+	IScanner getScannerLite ( );
+	Arguments
+	None
+	Returns
+	IScannerLite
+	Data Structures
+EBeepMode
+* java
+public enum EBeepMode
+{
+    FREQUENCE_LEVEL_0((byte) 0x00),
+    FREQUENCE_LEVEL_1((byte) 0x01),
+    FREQUENCE_LEVEL_2((byte) 0x02),
+    FREQUENCE_LEVEL_3((byte) 0x03),
+    FREQUENCE_LEVEL_4((byte) 0x04),
+    FREQUENCE_LEVEL_5((byte) 0x05),
+    FREQUENCE_LEVEL_6((byte) 0x06);
+
+
+    private byte beepMode;
+
+
+    private EBeepMode(byte beepMode)
+    {
+        this.beepMode = beepMode;
+    }
+
+
+    public byte getBeepMode()
+    {
+        return beepMode;
+    }
+}
+
+
+ETermInfoKey
+* java
+public enum ETermInfoKey
+{
+    SN(0),  // Terminal Serial Number
+    MODEL(1),  // Terminal Model
+    SP_VER(2),  // Monitor Version
+    AP_VER(3),  // Android Firmware Version
+    BIOS_VER(4),  // Boot Version (Ascending)
+    MON_VER(5),  // Monitor Major Version; Monitor Minor Version
+    MAINB_VER(6),  // Main PCB Hardware Version
+    PORTB_CFG(7),  // PCB Interface Configuration Info
+    EXTB_CFG(8),  // Extended PCB Configuration Info
+    MAGB_CFG(9),  // MSR PCB Configuration Info
+    RF_TYPE(10),  // RF Chip Type
+    RPC_VER(11),  // RPC App Major Version; RPC App Minor Version
+    CSN(12);  // Customer Serial Number
+
+
+    private int key;
+
+
+    private ETermInfoKey(int key)
+    {
+        this.key = key;
+    }
+    public int getKey()
+    {
+        return key;
+    }
+}
+ELedLightMode
+* java
+public enum ELedLightMode
+{
+    RED((byte) 0x01),
+    GREEN((byte) 0x02),
+    RED_GREEN((byte) 0x03),
+    YELLOW((byte) 0x04),
+    RED_YELLOW((byte) 0x05),
+    GREEN_YELLOW((byte)0x06),
+    RED_GREEN_YELLOW((byte)0x07),
+    BLUE((byte) 0x08),
+    RED_BLUE((byte)0x09),
+    GREEN_BLUE((byte)0x0a),
+    RED_GREEN_BLUE((byte)0x0b),
+    YELLOW_BLUE((byte)0x0c),
+    RED_YELLOW_BLUE((byte)0x0d),
+    GREEN_YELLOW_BLUE((byte)0x0e),
+    RED_GREEN_YELLOW_BLUE((byte)0x0f);
+
+
+    private byte lightMode;
+
+
+    private ELedLightMode(byte mode)
+    {
+        this.lightMode = mode;
+    }
+    public byte getLightMode()
+    {
+        return lightMode;
+    }
+}
+ELedMode
+* java
+public enum ELedMode
+{
+    ON((byte) 0x01),
+    OFF((byte) 0x00),
+    GREEN_ON((byte) 0x01),
+    GREEN_OFF((byte) 0x00),
+    RED_ON((byte) 0x11),
+    RED_OFF((byte) 0x10);
+
+
+    private final byte mode;
+
+
+    ELedMode(byte mode)
+    {
+        this.mode = mode;
+    }
+    public byte getMode()
+    {
+        return mode;
+    }
+}
+OnPrintListener
+* java
+
+public interface OnPrintListener {
+/**
+* the underlying called when print error
+* @param errCode
+* @param errMsg
+*/
+void onError(int errCode, String errMsg);
+/**
+* the underlying called when print success
+*/
+void onSucc();
+}
+
+
+IScanner
+* java
+
+public interface IScanner {
+/**
+* Start scanning
+* @param timeout time to scan(MS)
+* @param listener {@link OnScanListener}
+*/
+void start(int timeout, OnScanListener listener);
+/**
+* stop scanning
+*/
+void stop() ;
+}
+
+
+OnScannerListener
+* java
+
+public interface OnScanListener {
+int ERR_CODE_CANCEL = -1;
+int ERR_CODE_FINISH = 0;
+/**
+* Called when the scan fails, times out, or cancels
+*
+* @param errCode error code
+* @param errMsg error message
+*/
+void onError(int errCode, String errMsg);
+/**
+* Called when the scan is successful
+*
+* @param content scanning result
+* @param format code format
+*/
+void onSucc(String content, String format);
+}
+
+
+IScannerLite
+* java
+
+public interface IScannerLite {
+/**
+* <div class="en"> Initialize Scanner Manager Lite (Scanning Lightweight API) </div>
+*
+* @param context context
+* @return true:Success false: Fail
+*/
+boolean init(Context context);
+/**
+* <div class= "en> start decode operations </div>
+*
+* @param data <div class ="en">Raw data that needs to be decoded </div>
+* @return <div class ="en"> scanner result</div>
+*/
+ScanResult startDecode(byte[] data);
+/**
+* <div class ="en">Release the Scanner Manager Lite resources 
+*
+*/
+void unInit();
+}
+
+
+
