@@ -206,7 +206,7 @@ read -rsp "VNC remote access password [press Enter to auto-generate]: " VNC_PASS
 echo ""
 if [[ -z "$VNC_PASSWORD" ]]; then
   VNC_PASSWORD=$(openssl rand -base64 20 | tr '+/' '-_' | cut -c1-20)
-  log "Generated VNC password: $VNC_PASSWORD  (save this — it won't be shown again)"
+  log "Generated VNC password: $VNC_PASSWORD  (also shown in summary at the end)"
 fi
 
 # 5. Terminal: server URL
@@ -938,12 +938,13 @@ EOSQL
 
   # Allow local connections with password
   PG_HBA=$(sudo -u postgres psql -t -c "SHOW hba_file;" | tr -d '[:space:]')
-  if ! grep -q "$DB_USER" "$PG_HBA" 2>/dev/null; then
+  # Check for exact managed lines (not just username anywhere in file)
+  GWI_HBA_MARKER="# GWI POS — added by installer.run"
+  if ! grep -qF "$GWI_HBA_MARKER" "$PG_HBA" 2>/dev/null; then
     log "Adding $DB_USER to pg_hba.conf..."
-    # Append a clearly marked block (safer than sed insert which can break on format differences)
     cat >> "$PG_HBA" <<HBAEOF
 
-# GWI POS — added by installer.run
+$GWI_HBA_MARKER
 local   $DB_NAME   $DB_USER   md5
 host    $DB_NAME   $DB_USER   127.0.0.1/32   md5
 HBAEOF
@@ -1154,10 +1155,22 @@ SVCEOF
     KIOSK_OK=false
   fi
 
-  # Check for Wayland vs X11 (filter by POSUSER to avoid SSH/stale sessions)
+  # Check for Wayland vs X11 (filter by POSUSER, prefer graphical sessions)
   if [[ "$KIOSK_OK" == "true" ]]; then
-    POSUSER_SESSION=$(loginctl list-sessions --no-legend | awk -v user="$POSUSER" '$3==user {print $1; exit}')
-    SESSION_TYPE=$(loginctl show-session "${POSUSER_SESSION:-}" -p Type --value 2>/dev/null || echo "unknown")
+    # Find the best graphical session: prefer x11, then wayland, then any
+    POSUSER_SESSION=""
+    SESSION_TYPE="unknown"
+    while read -r sid _ suser _rest; do
+      [[ "$suser" != "$POSUSER" ]] && continue
+      stype=$(loginctl show-session "$sid" -p Type --value 2>/dev/null || echo "")
+      if [[ "$stype" == "x11" ]]; then
+        POSUSER_SESSION="$sid"; SESSION_TYPE="x11"; break
+      elif [[ "$stype" == "wayland" ]] && [[ -z "$POSUSER_SESSION" ]]; then
+        POSUSER_SESSION="$sid"; SESSION_TYPE="wayland"
+      elif [[ -z "$POSUSER_SESSION" ]]; then
+        POSUSER_SESSION="$sid"; SESSION_TYPE="${stype:-unknown}"
+      fi
+    done < <(loginctl list-sessions --no-legend 2>/dev/null)
     if [[ "$SESSION_TYPE" == "wayland" ]]; then
       warn "Wayland session detected. GWI POS kiosk requires X11."
       warn "Reconfigure Ubuntu for X11 auto-login, then re-run the installer."
@@ -1383,10 +1396,21 @@ if [[ "$STATION_ROLE" == "terminal" ]]; then
     TERM_KIOSK_OK=false
   fi
 
-  # Check for graphical session on terminals too (filter by POSUSER)
+  # Check for graphical session on terminals too (prefer x11 over wayland)
   if [[ "$TERM_KIOSK_OK" == "true" ]]; then
-    TERM_POSUSER_SESSION=$(loginctl list-sessions --no-legend | awk -v user="$POSUSER" '$3==user {print $1; exit}')
-    TERM_SESSION=$(loginctl show-session "${TERM_POSUSER_SESSION:-}" -p Type --value 2>/dev/null || echo "unknown")
+    TERM_POSUSER_SESSION=""
+    TERM_SESSION="unknown"
+    while read -r sid _ suser _rest; do
+      [[ "$suser" != "$POSUSER" ]] && continue
+      stype=$(loginctl show-session "$sid" -p Type --value 2>/dev/null || echo "")
+      if [[ "$stype" == "x11" ]]; then
+        TERM_POSUSER_SESSION="$sid"; TERM_SESSION="x11"; break
+      elif [[ "$stype" == "wayland" ]] && [[ -z "$TERM_POSUSER_SESSION" ]]; then
+        TERM_POSUSER_SESSION="$sid"; TERM_SESSION="wayland"
+      elif [[ -z "$TERM_POSUSER_SESSION" ]]; then
+        TERM_POSUSER_SESSION="$sid"; TERM_SESSION="${stype:-unknown}"
+      fi
+    done < <(loginctl list-sessions --no-legend 2>/dev/null)
     if [[ "$TERM_SESSION" == "wayland" ]]; then
       warn "Wayland detected on terminal — kiosk requires X11."
       TERM_KIOSK_OK=false
@@ -1608,8 +1632,23 @@ if command -v vncserver-x11 >/dev/null 2>&1; then
   fi
 
   log "RealVNC Server installed — FriendlyName: $FRIENDLY_NAME"
-  log "Sign in: Open 'RealVNC Server' from the desktop, or run: vncserver-x11 -service"
-  log "Then sign in with your RealVNC Connect email/password."
+
+  # Optional: auto-join to RealVNC cloud account
+  echo ""
+  echo "RealVNC Cloud Join (optional)"
+  echo "  Get a token from: connect.realvnc.com → Deployment → Cloud join token"
+  read -rp "  Enter RealVNC cloud join token (or press Enter to skip): " REALVNC_TOKEN < /dev/tty
+  if [[ -n "$REALVNC_TOKEN" ]]; then
+    log "Joining RealVNC cloud account..."
+    if vncserver-x11 -service -joinCloud "$REALVNC_TOKEN" 2>/dev/null; then
+      log "Successfully joined RealVNC cloud — device will appear in your portal."
+    else
+      warn "Cloud join failed — sign in manually via desktop icon or: vncserver-x11 -config"
+    fi
+  else
+    log "Skipping RealVNC cloud join."
+    log "Sign in later: Open 'RealVNC Server' from the desktop, or run: vncserver-x11 -config"
+  fi
 
   # Desktop shortcut for RealVNC Server settings
   DESKTOP_DIR="$POSUSER_HOME/Desktop"
@@ -1752,10 +1791,20 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   fi
 else
   echo -e "  ${GREEN}Server:${NC}   $SERVER_URL"
+  echo ""
+  echo -e "  ${CYAN}Services:${NC}"
+  echo "    thepasspos-kiosk      — $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
+  echo "    thepasspos-exit-kiosk — $(systemctl is-active thepasspos-exit-kiosk 2>/dev/null || echo 'unknown')"
+  echo "    x11vnc                — $(systemctl is-active x11vnc 2>/dev/null || echo 'unknown')"
+  if command -v vncserver-x11 >/dev/null 2>&1; then
+    echo "    realvnc               — $(systemctl is-active vncserver-x11-serviced 2>/dev/null || echo 'unknown')"
+  fi
 fi
 
+LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 if command -v x11vnc >/dev/null 2>&1; then
-  echo -e "  ${GREEN}VNC:${NC}          localhost:5900 (SSH tunnel: ssh -L 5900:localhost:5900 $POSUSER@$(hostname -I | awk '{print $1}'))"
+  echo -e "  ${GREEN}VNC:${NC}          localhost:5900 (SSH tunnel: ssh -L 5900:localhost:5900 $POSUSER@$LOCAL_IP)"
+  echo -e "  ${GREEN}VNC Password:${NC} $VNC_PASSWORD"
 fi
 if command -v vncserver-x11 >/dev/null 2>&1; then
   echo -e "  ${GREEN}RealVNC:${NC}      Installed — sign in via desktop icon or: vncserver-x11 -config"
@@ -1763,16 +1812,21 @@ fi
 
 echo ""
 echo -e "  ${CYAN}Useful commands:${NC}"
-echo "    sudo systemctl status thepasspos    — Check POS status"
-echo "    sudo systemctl status thepasspos-sync   — Check sync agent"
-echo "    sudo journalctl -u thepasspos -f    — View POS logs"
-echo "    sudo journalctl -u thepasspos-sync -f   — View sync agent logs"
-echo "    sudo systemctl restart thepasspos   — Restart POS"
 if [[ "$STATION_ROLE" == "server" ]]; then
+  echo "    sudo systemctl status thepasspos        — Check POS status"
+  echo "    sudo systemctl status thepasspos-sync   — Check sync agent"
+  echo "    sudo journalctl -u thepasspos -f        — View POS logs"
+  echo "    sudo journalctl -u thepasspos-sync -f   — View sync agent logs"
+  echo "    sudo systemctl restart thepasspos       — Restart POS"
   if [[ "$USE_LOCAL_PG" == "true" ]]; then
-    echo "    sudo bash $BACKUP_SCRIPT     — Run manual backup"
+    echo "    sudo bash $BACKUP_SCRIPT               — Run manual backup"
   fi
-  echo "    cat /opt/gwi-pos/heartbeat.log   — View heartbeat log"
+  echo "    cat /opt/gwi-pos/heartbeat.log          — View heartbeat log"
+else
+  echo "    sudo systemctl status thepasspos-kiosk  — Check kiosk status"
+  echo "    sudo journalctl -u thepasspos-kiosk -f  — View kiosk logs"
+  echo "    sudo systemctl restart thepasspos-kiosk — Restart kiosk"
+  echo "    sudo /opt/gwi-pos/kiosk-control.sh stop — Exit kiosk mode"
 fi
 echo ""
 echo -e "  ${CYAN}Re-run this installer to update:${NC}"
