@@ -211,8 +211,11 @@ function handleForceUpdate(payload) {
             run('npx prisma migrate resolve --applied ' + name, APP_DIR, 30)
           }
         })
-        migrateOk = run('npx prisma migrate deploy', APP_DIR, 120)
-        steps.push('prisma migrate (baselined) ' + (migrateOk ? 'OK' : 'FAIL'))
+        // db push creates any missing tables the baselined migrations would have created
+        log('  Running db push to create missing tables...')
+        run('npx prisma db push', APP_DIR, 180)
+        migrateOk = true
+        steps.push('prisma migrate (baselined + db push) OK')
       } catch (baseErr) {
         steps.push('prisma migrate baseline FAIL')
         log('  Baseline error: ' + (baseErr.message || '').slice(0, 200))

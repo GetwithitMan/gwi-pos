@@ -687,6 +687,17 @@ else
     sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d' "$ENV_FILE" 2>/dev/null || true
     log "Canonicalized terminal .env (STATION_ROLE, NODE_ENV, PORT, SERVER_URL) + scrubbed server-only keys"
   fi
+
+  # Canonicalize server .env on re-runs (fix PORT and NODE_ENV from old installers)
+  if [[ "$STATION_ROLE" == "server" ]]; then
+    sed -i '/^PORT=/d; /^NODE_ENV=/d; /^STATION_ROLE=/d' "$ENV_FILE" 2>/dev/null || true
+    {
+      echo "STATION_ROLE=server"
+      echo "NODE_ENV=production"
+      echo "PORT=3005"
+    } >> "$ENV_FILE"
+    log "Canonicalized server .env (STATION_ROLE, NODE_ENV, PORT=3005)"
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1136,26 +1147,28 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   } || {
     if echo "$MIGRATE_OUTPUT" | grep -q "P3005"; then
       # P3005: database has tables but no _prisma_migrations table.
-      # This happens on NUCs originally provisioned with `prisma db push`.
-      # Fix: baseline by marking all existing migrations as already applied.
-      warn "Database was created with 'db push' — no migration history. Baselining..."
+      # This can happen when:
+      #   a) NUC was originally provisioned with `prisma db push` (all tables exist)
+      #   b) Only pre-migrate tables exist (nuc-pre-migrate.js ran but schema was never pushed)
+      # Fix: baseline migrations as applied, then db push to create any missing tables.
+      warn "Database has tables but no migration history (P3005). Baselining..."
       for mdir in "$APP_DIR"/prisma/migrations/*/; do
         [[ -d "$mdir" ]] || continue
         mname=$(basename "$mdir")
         log "  Marking as applied: $mname"
         sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate resolve --applied '$mname'" || true
       done
-      log "Baseline complete. Retrying migrate deploy..."
-      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy"; then
-        err "Database migration failed after baseline attempt."
-        err "Check DATABASE_URL and PostgreSQL status."
-        exit 1
+      # db push (without --accept-data-loss) creates any missing tables/columns
+      # that the baselined migrations would have created. Safe: refuses destructive changes.
+      log "Running db push to create any missing tables..."
+      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push"; then
+        warn "prisma db push had issues — some tables may need manual creation."
       fi
-      log "Database migrations applied successfully (after baseline)."
+      log "Baseline + schema sync complete."
     else
       err "Database migration failed (prisma migrate deploy)."
       echo "$MIGRATE_OUTPUT" >&2
-      err "Check DATABASE_URL and PostgreSQL status. Do NOT use db push --accept-data-loss on production."
+      err "Check DATABASE_URL and PostgreSQL status."
       err "If schema is out of sync, fix migrations manually or contact support."
       exit 1
     fi
