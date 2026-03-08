@@ -24,6 +24,9 @@ set -euo pipefail
 
 APP_BASE="/opt/gwi-pos"
 APP_DIR="$APP_BASE/app"
+# Health tracker — accumulates non-fatal warnings for honest summary
+INSTALL_WARNINGS=()
+track_warn() { INSTALL_WARNINGS+=("$1"); warn "$1"; }
 ENV_FILE="$APP_BASE/.env"
 KEY_DIR="$APP_BASE/keys"
 BACKUP_DIR="$APP_BASE/backups"
@@ -173,7 +176,16 @@ if [[ -f "$ENV_FILE" ]]; then
       read -rp "Select (1 or 2): " reg_choice < /dev/tty
       case $reg_choice in
         1) break ;;
-        2) ALREADY_REGISTERED=false; break ;;
+        2) ALREADY_REGISTERED=false
+           # Clean old identity so re-registration starts fresh
+           if [[ -f "$ENV_FILE" ]]; then
+             sed -i '/^SERVER_NODE_ID=/d; /^SERVER_API_KEY=/d; /^HARDWARE_FINGERPRINT=/d' "$ENV_FILE" 2>/dev/null || true
+             log "Cleared old registration credentials from .env"
+           fi
+           # Rotate RSA keys — MC will issue new identity
+           rm -f "$KEY_DIR/server_key.pem" "$KEY_DIR/server_key_pub.pem" 2>/dev/null || true
+           log "Removed old RSA keypair (new keys will be generated)"
+           break ;;
         *) echo "Please enter 1 or 2." ;;
       esac
     done
@@ -637,21 +649,21 @@ else
     USE_LOCAL_PG=true
   fi
 
-  # Canonicalize terminal .env on re-runs (ensure NODE_ENV + PORT are present)
+  # Canonicalize terminal .env on re-runs (normalize values, not just add missing)
   if [[ "$STATION_ROLE" == "terminal" ]]; then
-    if ! grep -q "^NODE_ENV=" "$ENV_FILE" 2>/dev/null; then
-      echo "NODE_ENV=production" >> "$ENV_FILE"
-      log "Added NODE_ENV=production to existing terminal .env"
+    # Remove and re-add canonical values (fixes wrong values from manual edits or old installers)
+    sed -i '/^NODE_ENV=/d; /^PORT=/d; /^STATION_ROLE=/d' "$ENV_FILE" 2>/dev/null || true
+    {
+      echo "STATION_ROLE=terminal"
+      echo "NODE_ENV=production"
+      echo "PORT=3005"
+    } >> "$ENV_FILE"
+    # Ensure SERVER_URL is correct (may have changed)
+    if [[ -n "$SERVER_URL" ]]; then
+      sed -i '/^SERVER_URL=/d' "$ENV_FILE" 2>/dev/null || true
+      echo "SERVER_URL=$SERVER_URL" >> "$ENV_FILE"
     fi
-    if ! grep -q "^PORT=" "$ENV_FILE" 2>/dev/null; then
-      echo "PORT=3005" >> "$ENV_FILE"
-      log "Added PORT=3005 to existing terminal .env"
-    fi
-    # Ensure STATION_ROLE is present (may be missing from very old installs)
-    if ! grep -q "^STATION_ROLE=" "$ENV_FILE" 2>/dev/null; then
-      echo "STATION_ROLE=terminal" >> "$ENV_FILE"
-      log "Added STATION_ROLE=terminal to existing .env"
-    fi
+    log "Canonicalized terminal .env (STATION_ROLE, NODE_ENV, PORT, SERVER_URL)"
   fi
 fi
 
@@ -859,7 +871,7 @@ fi
 # Install Chromium (try both package names)
 apt-get install -y chromium-browser 2>/dev/null \
   || apt-get install -y chromium 2>/dev/null \
-  || warn "Chromium install failed — kiosk mode may not work."
+  || track_warn "Chromium install failed — kiosk mode may not work."
 
 log "Browser installed."
 
@@ -1151,7 +1163,7 @@ SVCEOF
   elif command -v chromium >/dev/null 2>&1; then
     CHROMIUM_BIN="chromium"
   else
-    warn "Chromium not found — kiosk mode will not work."
+    track_warn "Chromium not found — kiosk mode will not work."
     KIOSK_OK=false
   fi
 
@@ -1213,12 +1225,12 @@ SVCEOF
   if [[ "$KIOSK_OK" == "true" ]]; then
     systemctl enable thepasspos-kiosk
   else
-    warn "Skipping kiosk service — preflight failed (Chromium missing or Wayland)."
+    track_warn "Skipping kiosk service — preflight failed (Chromium missing or Wayland)."
     systemctl disable thepasspos-kiosk 2>/dev/null || true
   fi
 
   log "Starting POS server..."
-  systemctl restart thepasspos || warn "POS service restart failed — will retry on reboot"
+  systemctl restart thepasspos || track_warn "POS service restart failed — will retry on reboot"
 
   # Wait for POS to be ready before starting kiosk
   if [[ "$KIOSK_OK" == "true" ]]; then
@@ -1231,7 +1243,7 @@ SVCEOF
       sleep 2
     done
 
-    systemctl restart thepasspos-kiosk || warn "Kiosk service restart failed — will retry on reboot"
+    systemctl restart thepasspos-kiosk || track_warn "Kiosk service restart failed — will retry on reboot"
   fi
   log "Services configured and started."
 
@@ -1368,10 +1380,10 @@ SVCEOF
 
     systemctl daemon-reload
     systemctl enable thepasspos-sync
-    systemctl restart thepasspos-sync || warn "Sync agent failed to start — check journalctl -u thepasspos-sync"
+    systemctl restart thepasspos-sync || track_warn "Sync agent failed to start — check journalctl -u thepasspos-sync"
     log "Sync agent configured and started."
   else
-    warn "sync-agent.js not found in repo — sync agent will not start."
+    track_warn "sync-agent.js not found in repo — sync agent will not start."
     systemctl disable thepasspos-sync 2>/dev/null || true
   fi
 
@@ -1392,7 +1404,7 @@ if [[ "$STATION_ROLE" == "terminal" ]]; then
   elif command -v chromium >/dev/null 2>&1; then
     TERM_CHROMIUM="chromium"
   else
-    warn "Chromium not found — terminal kiosk will not work."
+    track_warn "Chromium not found — terminal kiosk will not work."
     TERM_KIOSK_OK=false
   fi
 
@@ -1450,9 +1462,9 @@ SVCEOF
   systemctl daemon-reload
   if [[ "$TERM_KIOSK_OK" == "true" ]]; then
     systemctl enable thepasspos-kiosk
-    systemctl restart thepasspos-kiosk || warn "Terminal kiosk service restart failed — will retry on reboot"
+    systemctl restart thepasspos-kiosk || track_warn "Terminal kiosk service restart failed — will retry on reboot"
   else
-    warn "Skipping terminal kiosk service — preflight failed."
+    track_warn "Skipping terminal kiosk service — preflight failed."
     systemctl disable thepasspos-kiosk 2>/dev/null || true
   fi
 
@@ -1546,8 +1558,9 @@ if ! command -v x11vnc >/dev/null 2>&1; then
 fi
 
 if command -v x11vnc >/dev/null 2>&1; then
-  # Store VNC password
+  # Store VNC password (remove old file first to prevent partial state on re-runs)
   mkdir -p /etc/x11vnc
+  rm -f /etc/x11vnc/passwd 2>/dev/null || true
   x11vnc -storepasswd "$VNC_PASSWORD" /etc/x11vnc/passwd
   chmod 600 /etc/x11vnc/passwd
   chown root:root /etc/x11vnc/passwd
@@ -1618,18 +1631,9 @@ if command -v vncserver-x11 >/dev/null 2>&1; then
   fi
   FRIENDLY_NAME=$(echo "$FRIENDLY_NAME" | tr ' ' '-' | tr -cd 'A-Za-z0-9-_')
 
-  # Write friendly name to RealVNC config
+  # Write friendly name to RealVNC config (always overwrite — handles renames + role switches)
   mkdir -p /root/.vnc/config.d
-  if [[ -f /root/.vnc/config.d/vncserver-x11-serviced ]]; then
-    # Update existing config
-    if grep -q "FriendlyName" /root/.vnc/config.d/vncserver-x11-serviced 2>/dev/null; then
-      sed -i "s/^FriendlyName=.*/FriendlyName=$FRIENDLY_NAME/" /root/.vnc/config.d/vncserver-x11-serviced
-    else
-      echo "FriendlyName=$FRIENDLY_NAME" >> /root/.vnc/config.d/vncserver-x11-serviced
-    fi
-  else
-    echo "FriendlyName=$FRIENDLY_NAME" > /root/.vnc/config.d/vncserver-x11-serviced
-  fi
+  echo "FriendlyName=$FRIENDLY_NAME" > /root/.vnc/config.d/vncserver-x11-serviced
 
   log "RealVNC Server installed — FriendlyName: $FRIENDLY_NAME"
 
@@ -1680,6 +1684,10 @@ fi
 header "Creating Desktop Launcher"
 
 mkdir -p "$APP_BASE"
+
+# Clean old launchers before re-creating (prevents stale URLs after role switch)
+rm -f /usr/share/applications/gwi-pos.desktop 2>/dev/null || true
+rm -f "$POSUSER_HOME/Desktop/gwi-pos.desktop" 2>/dev/null || true
 
 POS_URL="http://localhost:3005"
 [[ "$STATION_ROLE" == "terminal" ]] && POS_URL="$SERVER_URL"
@@ -1764,7 +1772,11 @@ log "  Quick launch: $LAUNCHER_SCRIPT"
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 
-header "Installation Complete!"
+if [[ ${#INSTALL_WARNINGS[@]} -eq 0 ]]; then
+  header "Installation Complete!"
+else
+  header "Installation Complete (with warnings)"
+fi
 
 echo -e "  ${GREEN}Role:${NC}     $STATION_ROLE"
 echo -e "  ${GREEN}Location:${NC} $LOCATION_NAME"
@@ -1832,4 +1844,19 @@ echo ""
 echo -e "  ${CYAN}Re-run this installer to update:${NC}"
 echo "    curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
 echo ""
-log "Done! GWI POS is ready."
+
+# Honest health summary
+if [[ ${#INSTALL_WARNINGS[@]} -eq 0 ]]; then
+  log "Done! GWI POS is fully installed and healthy."
+else
+  echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
+  echo -e "${YELLOW}  Installation completed with ${#INSTALL_WARNINGS[@]} warning(s):${NC}"
+  echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
+  for w in "${INSTALL_WARNINGS[@]}"; do
+    echo -e "  ${YELLOW}⚠${NC}  $w"
+  done
+  echo ""
+  echo -e "  The station is installed but may not be fully operational."
+  echo -e "  Review the warnings above and re-run the installer after fixing."
+  echo ""
+fi
