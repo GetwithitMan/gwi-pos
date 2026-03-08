@@ -187,16 +187,16 @@ function handleForceUpdate(payload) {
   if (!step('npm install', 'npm install --production=false', false, 180)) {
     return { ok: false, error: 'npm install failed', steps: steps }
   }
-  step('prisma generate', 'npx prisma generate', true, 60)
-  step('pre-migrate', 'node scripts/nuc-pre-migrate.js', true, 60)
-  step('prisma migrate', 'npx prisma migrate deploy', true, 60)
-  step('prisma db push', 'npx prisma db push --accept-data-loss', true, 120)
+  step('prisma generate', 'npx prisma generate', true, 120)
+  step('pre-migrate', 'node scripts/nuc-pre-migrate.js', true, 180)
+  step('prisma migrate', 'npx prisma migrate deploy', true, 120)
+  step('prisma db push', 'npx prisma db push --accept-data-loss', true, 180)
   // Also migrate Neon cloud database (if configured for offline-first mode)
   if (env.NEON_DATABASE_URL) {
-    step('neon-pre-migrate', 'NEON_MIGRATE=true node scripts/nuc-pre-migrate.js', true, 60)
-    step('neon-db-push', 'DATABASE_URL=' + JSON.stringify(env.NEON_DATABASE_URL) + ' npx prisma db push --accept-data-loss', true, 120)
+    step('neon-pre-migrate', 'NEON_MIGRATE=true node scripts/nuc-pre-migrate.js', true, 180)
+    step('neon-db-push', 'DATABASE_URL=' + JSON.stringify(env.NEON_DATABASE_URL) + ' npx prisma db push --accept-data-loss', true, 180)
   }
-  if (!step('build', 'npm run build', false, 300)) {
+  if (!step('build', 'npm run build', false, 600)) {
     return { ok: false, error: 'build failed', steps: steps }
   }
   // Try current service name (thepasspos), fall back to legacy (pulse-pos)
