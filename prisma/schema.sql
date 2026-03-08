@@ -1,5 +1,5 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  enable debug logging with { debug: true }
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -205,6 +205,33 @@ CREATE TYPE "DeductionStatus" AS ENUM ('pending', 'processing', 'succeeded', 'fa
 CREATE TYPE "DeductionType" AS ENUM ('order_deduction', 'liquor_only', 'food_only');
 
 -- CreateEnum
+CREATE TYPE "BergInterfaceMethod" AS ENUM ('DIRECT_RING_UP', 'PRE_CHECK', 'FILE_POSTING', 'RING_AND_SLING');
+
+-- CreateEnum
+CREATE TYPE "BergPourReleaseMode" AS ENUM ('BEST_EFFORT', 'REQUIRES_OPEN_ORDER');
+
+-- CreateEnum
+CREATE TYPE "BergTimeoutPolicy" AS ENUM ('ACK_ON_TIMEOUT', 'NAK_ON_TIMEOUT');
+
+-- CreateEnum
+CREATE TYPE "BergAutoRingMode" AS ENUM ('OFF', 'AUTO_RING');
+
+-- CreateEnum
+CREATE TYPE "BergDeviceModel" AS ENUM ('MODEL_1504_704', 'LASER', 'ALL_BOTTLE_ABID', 'TAP2', 'FLOW_MONITOR');
+
+-- CreateEnum
+CREATE TYPE "BergDispenseStatus" AS ENUM ('ACK', 'NAK', 'ACK_TIMEOUT', 'NAK_TIMEOUT', 'ACK_BEST_EFFORT');
+
+-- CreateEnum
+CREATE TYPE "BergParseStatus" AS ENUM ('OK', 'BAD_LRC', 'BAD_PACKET', 'NO_STX', 'OVERFLOW', 'UNMAPPED_PLU');
+
+-- CreateEnum
+CREATE TYPE "BergResolutionStatus" AS ENUM ('NONE', 'PARTIAL', 'FULL');
+
+-- CreateEnum
+CREATE TYPE "BergPostProcessStatus" AS ENUM ('PENDING', 'DONE', 'FAILED');
+
+-- CreateEnum
 CREATE TYPE "RegistrationTokenStatus" AS ENUM ('PENDING', 'USED', 'EXPIRED', 'REVOKED');
 
 -- CreateEnum
@@ -237,6 +264,9 @@ CREATE TABLE "Location" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "cloudLocationId" TEXT,
+    "cloudOrganizationId" TEXT,
+    "cloudEnterpriseId" TEXT,
 
     CONSTRAINT "Location_pkey" PRIMARY KEY ("id")
 );
@@ -938,6 +968,7 @@ CREATE TABLE "Order" (
     "bottleServiceDeposit" DECIMAL(65,30),
     "bottleServiceMinSpend" DECIMAL(65,30),
     "bottleServiceCurrentSpend" DECIMAL(10,2) DEFAULT 0,
+    "incrementAuthFailed" BOOLEAN NOT NULL DEFAULT false,
     "isWalkout" BOOLEAN NOT NULL DEFAULT false,
     "walkoutAt" TIMESTAMP(3),
     "walkoutMarkedBy" TEXT,
@@ -2038,6 +2069,38 @@ CREATE TABLE "VoidReason" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "VoidReason_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CompReason" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "deductInventory" BOOLEAN NOT NULL DEFAULT false,
+    "requiresManager" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "CompReason_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ReasonAccess" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "subjectType" TEXT NOT NULL,
+    "subjectId" TEXT NOT NULL,
+    "reasonType" TEXT NOT NULL,
+    "reasonId" TEXT NOT NULL,
+    "accessType" TEXT NOT NULL DEFAULT 'allow',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ReasonAccess_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -4396,6 +4459,94 @@ CREATE TABLE "DeductionRun" (
     CONSTRAINT "DeductionRun_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "BergPluMapping" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "deviceId" TEXT,
+    "mappingScopeKey" TEXT NOT NULL,
+    "pluNumber" INTEGER NOT NULL,
+    "bottleProductId" TEXT,
+    "inventoryItemId" TEXT,
+    "menuItemId" TEXT,
+    "description" TEXT,
+    "pourSizeOzOverride" DECIMAL(6,3),
+    "modifierRule" JSONB,
+    "trailerRule" JSONB,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "BergPluMapping_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "BergDevice" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "terminalId" TEXT,
+    "name" TEXT NOT NULL,
+    "model" "BergDeviceModel" NOT NULL DEFAULT 'MODEL_1504_704',
+    "portName" TEXT NOT NULL,
+    "baudRate" INTEGER NOT NULL DEFAULT 9600,
+    "isPluBased" BOOLEAN NOT NULL DEFAULT true,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "interfaceMethod" "BergInterfaceMethod" NOT NULL DEFAULT 'DIRECT_RING_UP',
+    "pourReleaseMode" "BergPourReleaseMode" NOT NULL DEFAULT 'BEST_EFFORT',
+    "timeoutPolicy" "BergTimeoutPolicy" NOT NULL DEFAULT 'ACK_ON_TIMEOUT',
+    "autoRingMode" "BergAutoRingMode" NOT NULL DEFAULT 'AUTO_RING',
+    "ackTimeoutMs" INTEGER NOT NULL DEFAULT 3000,
+    "deductInventoryWhenNoOrder" BOOLEAN NOT NULL DEFAULT false,
+    "lastSeenAt" TIMESTAMP(3),
+    "lastError" TEXT,
+    "bridgeSecretHash" TEXT,
+    "bridgeSecretEncrypted" TEXT,
+    "bridgeSecretKeyVersion" INTEGER DEFAULT 1,
+    "autoRingOnlyWhenSingleOpenOrder" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "BergDevice_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "BergDispenseEvent" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "deviceId" TEXT NOT NULL,
+    "pluMappingId" TEXT,
+    "pluNumber" INTEGER NOT NULL,
+    "rawPacket" TEXT NOT NULL,
+    "modifierBytes" TEXT,
+    "trailerBytes" TEXT,
+    "parseStatus" "BergParseStatus" NOT NULL,
+    "lrcReceived" TEXT NOT NULL,
+    "lrcCalculated" TEXT NOT NULL,
+    "lrcValid" BOOLEAN NOT NULL,
+    "status" "BergDispenseStatus" NOT NULL,
+    "unmatchedType" TEXT,
+    "pourSizeOz" DECIMAL(6,3),
+    "pourCost" DECIMAL(10,2),
+    "orderId" TEXT,
+    "orderItemId" TEXT,
+    "employeeId" TEXT,
+    "terminalId" TEXT,
+    "ackLatencyMs" INTEGER,
+    "ackTimeoutMs" INTEGER NOT NULL,
+    "errorReason" TEXT,
+    "businessDate" TIMESTAMP(3),
+    "idempotencyKey" TEXT NOT NULL,
+    "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "acknowledgedAt" TIMESTAMP(3),
+    "variantKey" TEXT,
+    "variantLabel" TEXT,
+    "resolutionStatus" "BergResolutionStatus" NOT NULL DEFAULT 'NONE',
+    "postProcessStatus" "BergPostProcessStatus" NOT NULL DEFAULT 'PENDING',
+    "postProcessError" TEXT,
+
+    CONSTRAINT "BergDispenseEvent_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 
@@ -5298,6 +5449,21 @@ CREATE INDEX "VoidReason_locationId_idx" ON "VoidReason"("locationId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "VoidReason_locationId_name_key" ON "VoidReason"("locationId", "name");
+
+-- CreateIndex
+CREATE INDEX "CompReason_locationId_idx" ON "CompReason"("locationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CompReason_locationId_name_key" ON "CompReason"("locationId", "name");
+
+-- CreateIndex
+CREATE INDEX "ReasonAccess_locationId_idx" ON "ReasonAccess"("locationId");
+
+-- CreateIndex
+CREATE INDEX "ReasonAccess_locationId_subjectType_subjectId_idx" ON "ReasonAccess"("locationId", "subjectType", "subjectId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ReasonAccess_locationId_subjectType_subjectId_reasonType_re_key" ON "ReasonAccess"("locationId", "subjectType", "subjectId", "reasonType", "reasonId");
 
 -- CreateIndex
 CREATE INDEX "StorageLocation_locationId_idx" ON "StorageLocation"("locationId");
@@ -6421,6 +6587,51 @@ CREATE INDEX "PendingDeduction_status_availableAt_idx" ON "PendingDeduction"("st
 -- CreateIndex
 CREATE INDEX "DeductionRun_pendingDeductionId_idx" ON "DeductionRun"("pendingDeductionId");
 
+-- CreateIndex
+CREATE INDEX "BergPluMapping_locationId_idx" ON "BergPluMapping"("locationId");
+
+-- CreateIndex
+CREATE INDEX "BergPluMapping_locationId_isActive_idx" ON "BergPluMapping"("locationId", "isActive");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "BergPluMapping_mappingScopeKey_pluNumber_key" ON "BergPluMapping"("mappingScopeKey", "pluNumber");
+
+-- CreateIndex
+CREATE INDEX "BergDevice_locationId_idx" ON "BergDevice"("locationId");
+
+-- CreateIndex
+CREATE INDEX "BergDevice_locationId_isActive_idx" ON "BergDevice"("locationId", "isActive");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "BergDispenseEvent_idempotencyKey_key" ON "BergDispenseEvent"("idempotencyKey");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_locationId_receivedAt_idx" ON "BergDispenseEvent"("locationId", "receivedAt");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_locationId_status_idx" ON "BergDispenseEvent"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_locationId_lrcValid_idx" ON "BergDispenseEvent"("locationId", "lrcValid");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_locationId_unmatchedType_idx" ON "BergDispenseEvent"("locationId", "unmatchedType");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_pluMappingId_receivedAt_idx" ON "BergDispenseEvent"("pluMappingId", "receivedAt");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_orderId_idx" ON "BergDispenseEvent"("orderId");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_idempotencyKey_idx" ON "BergDispenseEvent"("idempotencyKey");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_deviceId_receivedAt_idx" ON "BergDispenseEvent"("deviceId", "receivedAt");
+
+-- CreateIndex
+CREATE INDEX "BergDispenseEvent_deviceId_businessDate_idx" ON "BergDispenseEvent"("deviceId", "businessDate");
+
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -7104,6 +7315,12 @@ ALTER TABLE "StockAlert" ADD CONSTRAINT "StockAlert_menuItemId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "VoidReason" ADD CONSTRAINT "VoidReason_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CompReason" ADD CONSTRAINT "CompReason_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReasonAccess" ADD CONSTRAINT "ReasonAccess_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "StorageLocation" ADD CONSTRAINT "StorageLocation_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -7845,4 +8062,28 @@ ALTER TABLE "PendingDeduction" ADD CONSTRAINT "PendingDeduction_locationId_fkey"
 
 -- AddForeignKey
 ALTER TABLE "DeductionRun" ADD CONSTRAINT "DeductionRun_pendingDeductionId_fkey" FOREIGN KEY ("pendingDeductionId") REFERENCES "PendingDeduction"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BergPluMapping" ADD CONSTRAINT "BergPluMapping_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BergPluMapping" ADD CONSTRAINT "BergPluMapping_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "BergDevice"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BergDevice" ADD CONSTRAINT "BergDevice_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BergDispenseEvent" ADD CONSTRAINT "BergDispenseEvent_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BergDispenseEvent" ADD CONSTRAINT "BergDispenseEvent_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "BergDevice"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BergDispenseEvent" ADD CONSTRAINT "BergDispenseEvent_pluMappingId_fkey" FOREIGN KEY ("pluMappingId") REFERENCES "BergPluMapping"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BergDispenseEvent" ADD CONSTRAINT "BergDispenseEvent_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BergDispenseEvent" ADD CONSTRAINT "BergDispenseEvent_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 

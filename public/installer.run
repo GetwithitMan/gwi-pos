@@ -255,8 +255,10 @@ if [[ -d "$APP_BASE" ]]; then
         log "Removed heartbeat and backup cron entries from previous server role"
       fi
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
-      log "Disabling terminal-only kiosk..."
+      log "Disabling terminal-only services..."
       systemctl disable --now thepasspos-kiosk 2>/dev/null || true
+      systemctl disable --now thepasspos-exit-kiosk 2>/dev/null || true
+      rm -f /opt/gwi-pos/exit-kiosk-server.py
     fi
   fi
 
@@ -700,8 +702,24 @@ if [ -n "$BATCH_API" ] && [ "$BATCH_API" != '{}' ]; then
   CURRENT_BATCH_TOTAL=$(echo "$BATCH_API" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));const v=d?.data?.currentBatchTotal;process.stdout.write(v!=null?String(v):'null')}catch(e){process.stdout.write('null')}" 2>/dev/null)
 fi
 
-BODY=$(printf '{"version":"%s","uptime":%d,"activeOrders":0,"cpuPercent":%s,"memoryUsedMb":%d,"memoryTotalMb":%d,"diskUsedGb":%s,"diskTotalGb":%s,"localIp":"%s","posLocationId":"%s","batchClosedAt":%s,"batchStatus":%s,"batchItemCount":%s,"batchNo":%s,"openOrderCount":%s,"unadjustedTipCount":%s,"currentBatchTotal":%s}' \
-  "$VERSION" "$UPTIME" "$CPU" "$MEM_USED" "$MEM_TOTAL" "$DISK_USED" "$DISK_TOTAL" "$LOCAL_IP" "${LOCATION_ID:-}" "$BATCH_CLOSED_AT" "$BATCH_STATUS" "$BATCH_ITEM_COUNT" "$BATCH_NO" "$OPEN_ORDER_COUNT" "$UNADJUSTED_TIP_COUNT" "$CURRENT_BATCH_TOTAL")
+BODY=$(jq -nc \
+  --arg version "$VERSION" \
+  --argjson uptime "${UPTIME:-0}" \
+  --argjson cpuPercent "${CPU:-0}" \
+  --argjson memoryUsedMb "${MEM_USED:-0}" \
+  --argjson memoryTotalMb "${MEM_TOTAL:-1}" \
+  --argjson diskUsedGb "${DISK_USED:-0}" \
+  --argjson diskTotalGb "${DISK_TOTAL:-1}" \
+  --arg localIp "$LOCAL_IP" \
+  --arg posLocationId "${LOCATION_ID:-}" \
+  --argjson batchClosedAt "${BATCH_CLOSED_AT:-null}" \
+  --argjson batchStatus "${BATCH_STATUS:-null}" \
+  --argjson batchItemCount "${BATCH_ITEM_COUNT:-null}" \
+  --argjson batchNo "${BATCH_NO:-null}" \
+  --argjson openOrderCount "${OPEN_ORDER_COUNT:-null}" \
+  --argjson unadjustedTipCount "${UNADJUSTED_TIP_COUNT:-null}" \
+  --argjson currentBatchTotal "${CURRENT_BATCH_TOTAL:-null}" \
+  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal}')
 
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
 
@@ -1046,6 +1064,8 @@ SVCEOF
     elif [[ "$SESSION_TYPE" == "unknown" ]]; then
       warn "No active graphical session detected."
       warn "Ensure auto-login is configured for '$POSUSER' before rebooting."
+      warn "Kiosk will be enabled but may not start until a graphical session is available."
+      KIOSK_OK=false
     fi
   fi
 
@@ -1205,12 +1225,9 @@ SUDEOF
   if [[ -f "$APP_DIR/public/sync-agent.js" ]]; then
     cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT"
     chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
-  else
-    warn "sync-agent.js not found in repo — sync agent will not start."
-  fi
 
-  # thepasspos-sync.service — Sync Agent
-  cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
+    # thepasspos-sync.service — Sync Agent (only created when script exists)
+    cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Sync Agent
 After=network-online.target thepasspos.service
@@ -1230,14 +1247,13 @@ SyslogIdentifier=thepasspos-sync
 WantedBy=multi-user.target
 SVCEOF
 
-  systemctl daemon-reload
-  if [[ -f "$SYNC_SCRIPT" ]]; then
+    systemctl daemon-reload
     systemctl enable thepasspos-sync
     systemctl restart thepasspos-sync || warn "Sync agent failed to start — check journalctl -u thepasspos-sync"
     log "Sync agent configured and started."
   else
+    warn "sync-agent.js not found in repo — sync agent will not start."
     systemctl disable thepasspos-sync 2>/dev/null || true
-    warn "Sync agent service created but NOT enabled — file missing."
   fi
 
 fi  # end server role
@@ -1249,21 +1265,35 @@ fi  # end server role
 if [[ "$STATION_ROLE" == "terminal" ]]; then
   header "Configuring Terminal Kiosk"
 
-  # Detect Chromium binary
+  # ── Terminal kiosk preflight ──
+  TERM_KIOSK_OK=true
   TERM_CHROMIUM="chromium-browser"
   if command -v chromium-browser >/dev/null 2>&1; then
     TERM_CHROMIUM="chromium-browser"
   elif command -v chromium >/dev/null 2>&1; then
     TERM_CHROMIUM="chromium"
   else
-    warn "Chromium not found — kiosk may not start."
+    warn "Chromium not found — terminal kiosk will not work."
+    TERM_KIOSK_OK=false
+  fi
+
+  # Check for graphical session on terminals too
+  if [[ "$TERM_KIOSK_OK" == "true" ]]; then
+    TERM_SESSION=$(loginctl show-session $(loginctl list-sessions --no-legend | awk '{print $1}' | head -1) -p Type --value 2>/dev/null || echo "unknown")
+    if [[ "$TERM_SESSION" == "wayland" ]]; then
+      warn "Wayland detected on terminal — kiosk requires X11."
+      TERM_KIOSK_OK=false
+    elif [[ "$TERM_SESSION" == "unknown" ]]; then
+      warn "No graphical session detected on terminal — kiosk may not start until login."
+      TERM_KIOSK_OK=false
+    fi
   fi
 
   # Kill any existing Chromium instances before starting kiosk
   pkill -f "$TERM_CHROMIUM" 2>/dev/null || true
   sleep 1
 
-  # thepasspos-kiosk.service — Chromium pointing at server
+  # thepasspos-kiosk.service — Chromium pointing at server (SERVER_URL via Environment for safety)
   cat > /etc/systemd/system/thepasspos-kiosk.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Kiosk (Terminal)
@@ -1275,6 +1305,7 @@ Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
+Environment=POS_SERVER_URL=$SERVER_URL
 ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
 ExecStartPre=/opt/gwi-pos/wait-for-pos.sh $SERVER_URL
 ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 $SERVER_URL
@@ -1286,8 +1317,13 @@ WantedBy=graphical.target
 SVCEOF
 
   systemctl daemon-reload
-  systemctl enable thepasspos-kiosk
-  systemctl restart thepasspos-kiosk || warn "Terminal kiosk service restart failed — will retry on reboot"
+  if [[ "$TERM_KIOSK_OK" == "true" ]]; then
+    systemctl enable thepasspos-kiosk
+    systemctl restart thepasspos-kiosk || warn "Terminal kiosk service restart failed — will retry on reboot"
+  else
+    warn "Skipping terminal kiosk service — preflight failed."
+    systemctl disable thepasspos-kiosk 2>/dev/null || true
+  fi
 
   log "Terminal kiosk configured → $SERVER_URL"
 
