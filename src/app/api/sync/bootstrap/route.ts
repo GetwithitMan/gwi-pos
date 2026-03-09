@@ -10,6 +10,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
 
+  // Diagnostic: log locationId + terminal info for debugging cellular bootstrap
+  const isCellular = request.headers.get('x-cellular-authenticated') === '1'
+  const venueSlug = request.headers.get('x-venue-slug')
+  if (isCellular) {
+    console.info(`[bootstrap] cellular terminal=${auth.terminal.id} locationId=${locationId} venueSlug=${venueSlug}`)
+  }
+
   const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, taxRules] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
@@ -80,6 +87,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       select: { rate: true },
     }),
   ])
+
+  if (isCellular) {
+    const totalItems = categories.reduce((n, c) => n + c.menuItems.length, 0)
+    console.info(`[bootstrap] cellular result: ${categories.length} categories, ${totalItems} items, ${employees.length} employees, location=${location?.id ?? 'null'}`)
+  }
 
   // Collect child modifier groups via BFS (supports unlimited nesting depth).
   // ownedModifierGroups only carries top-level groups; child groups are referenced
