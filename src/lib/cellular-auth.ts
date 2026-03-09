@@ -148,11 +148,12 @@ export async function verifyCellularToken(token: string): Promise<CellularTokenP
     // Check expiry
     if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null
 
-    // Validate required fields (venueSlug optional for backward compat)
+    // Validate required fields — venueSlug is mandatory (needed for venue DB routing)
     if (
       payload.sub !== 'cellular-terminal' ||
       !payload.terminalId ||
       !payload.locationId ||
+      !payload.venueSlug ||
       !payload.deviceFingerprint ||
       !payload.terminalRole
     ) {

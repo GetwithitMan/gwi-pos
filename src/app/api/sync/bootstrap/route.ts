@@ -94,6 +94,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   if (isCellular) {
     const totalItems = categories.reduce((n, c) => n + c.menuItems.length, 0)
     console.info(`[bootstrap] cellular result: ${categories.length} categories, ${totalItems} items, ${employees.length} employees, location=${location?.id ?? 'null'}`)
+
+    // Sanity check: if location doesn't exist in this venue DB, fail loudly
+    if (!location) {
+      console.error(`[bootstrap] FATAL: locationId=${locationId} not found in venue DB (slug=${venueSlug}). Likely posLocationId mismatch in MC.`)
+      return NextResponse.json({
+        error: `Bootstrap failed: locationId '${locationId}' not found in venue database '${venueSlug}'. Device must be re-paired after fixing posLocationId in Mission Control.`,
+      }, { status: 404 })
+    }
+
+    // Sanity check: if no categories found, warn (might be valid for empty venue, but usually wrong)
+    if (categories.length === 0) {
+      console.warn(`[bootstrap] WARNING: 0 categories for locationId=${locationId} in venue=${venueSlug} — menu may not be configured`)
+    }
   }
 
   // Collect child modifier groups via BFS (supports unlimited nesting depth).

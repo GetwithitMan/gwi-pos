@@ -275,10 +275,12 @@ export async function proxy(request: NextRequest) {
       headers.set('x-terminal-role', payload.terminalRole)
       headers.set('x-cellular-authenticated', '1')
       headers.set('x-can-refund', String(payload.canRefund))
-      // Route to the correct venue database
-      if (payload.venueSlug) {
-        headers.set('x-venue-slug', payload.venueSlug)
+      // Route to the correct venue database — venueSlug is mandatory
+      if (!payload.venueSlug) {
+        console.error(`[proxy] cellular token missing venueSlug — cannot resolve venue DB. terminalId=${payload.terminalId} locationId=${payload.locationId}`)
+        return NextResponse.json({ error: 'Cellular token missing venueSlug; cannot resolve venue DB. Re-pair the device.' }, { status: 400 })
       }
+      headers.set('x-venue-slug', payload.venueSlug)
 
       // Re-auth required routes: void/comp pass through but flagged
       if (matchesRouteList(pathname, CELLULAR_REAUTH_ROUTES)) {
