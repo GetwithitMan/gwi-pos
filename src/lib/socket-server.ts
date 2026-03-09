@@ -625,6 +625,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
     // CFD → Register: relay customer responses back to the paired register.
     // These events come FROM the A3700 CFD and must reach the register terminal.
+    // Uses cached cfdToRegisterMap first; falls back to DB lookup if cache misses.
     const CFD_TO_REGISTER_EVENTS = [
       'cfd:tip-selected',
       'cfd:signature-done',
@@ -635,12 +636,22 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         try {
           const myTerminalId = socket.data.terminalId as string | undefined
           if (!myTerminalId) return
-          // Find the register terminal that has this CFD paired
+
+          // Try cached mapping first (no DB query needed)
+          const cachedRegisterId = cfdToRegisterMap.get(myTerminalId)
+          if (cachedRegisterId) {
+            void emitToTerminal(cachedRegisterId, cfdEvent, data)
+            return
+          }
+
+          // Cache miss — fall back to DB lookup
           void db.terminal.findFirst({
             where: { cfdTerminalId: myTerminalId, deletedAt: null },
             select: { id: true },
           }).then(register => {
             if (!register) return
+            // Populate cache for future relays
+            cfdToRegisterMap.set(myTerminalId, register.id)
             void emitToTerminal(register.id, cfdEvent, data)
           }).catch((err: unknown) => {
             console.error(JSON.stringify({ event: cfdEvent, lookupFailed: true, error: String(err) }))
@@ -714,6 +725,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         // Path B: Android native — auth middleware sets socket.data.terminalId
         if (!handled && socket.data.terminalId && socket.data.locationId) {
           void markTerminalOffline(socket.data.terminalId, socket.data.locationId, reason, socket.id)
+        }
+        // Clean up CFD→register cache when register disconnects
+        if (socket.data.cfdTerminalId) {
+          cfdToRegisterMap.delete(socket.data.cfdTerminalId)
         }
       } catch (err) {
         console.error(JSON.stringify({ event: 'disconnect', socketId: socket.id, error: String(err) }))
