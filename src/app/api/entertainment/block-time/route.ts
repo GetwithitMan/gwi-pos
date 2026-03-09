@@ -130,24 +130,73 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
     // Otherwise keep MenuItem.price as fallback
 
-    // Update the order item with block time info and initial price
-    const updatedItem = await db.orderItem.update({
-      where: { id: orderItemId },
-      data: {
-        blockTimeMinutes: minutes,
-        blockTimeStartedAt: now,
-        blockTimeExpiresAt: expiresAt,
-        price: initialPrice,
-      },
-      select: {
-        id: true,
-        name: true,
-        blockTimeMinutes: true,
-        blockTimeStartedAt: true,
-        blockTimeExpiresAt: true,
-        menuItemId: true,
-      },
+    // Wrap all writes in a transaction with FOR UPDATE lock to prevent double-booking
+    const result = await db.$transaction(async (tx) => {
+      // Lock the MenuItem row and check status
+      const [lockedItem] = await tx.$queryRaw<Array<{ entertainmentStatus: string | null }>>`
+        SELECT "entertainmentStatus" FROM "MenuItem" WHERE "id" = ${orderItem.menuItemId} FOR UPDATE
+      `
+
+      if (lockedItem?.entertainmentStatus === 'in_use') {
+        return { conflict: true as const }
+      }
+
+      // 1. Update the order item with block time info and initial price
+      const updatedItem = await tx.orderItem.update({
+        where: { id: orderItemId },
+        data: {
+          blockTimeMinutes: minutes,
+          blockTimeStartedAt: now,
+          blockTimeExpiresAt: expiresAt,
+          price: initialPrice,
+        },
+        select: {
+          id: true,
+          name: true,
+          blockTimeMinutes: true,
+          blockTimeStartedAt: true,
+          blockTimeExpiresAt: true,
+          menuItemId: true,
+        },
+      })
+
+      // 2. Update the menu item status to in_use
+      await tx.menuItem.update({
+        where: { id: orderItem.menuItemId },
+        data: {
+          entertainmentStatus: 'in_use',
+          currentOrderId: orderItem.orderId,
+          currentOrderItemId: orderItemId,
+        },
+      })
+
+      // 3. Update floor plan element if exists
+      if (orderItem.menuItem.id) {
+        await tx.floorPlanElement.updateMany({
+          where: {
+            linkedMenuItemId: orderItem.menuItem.id,
+            deletedAt: null,
+          },
+          data: {
+            status: 'in_use',
+            currentOrderId: orderItem.orderId,
+            sessionStartedAt: now,
+            sessionExpiresAt: expiresAt,
+          },
+        })
+      }
+
+      return { conflict: false as const, updatedItem }
     })
+
+    if (result.conflict) {
+      return NextResponse.json(
+        { error: 'This entertainment item is already in use' },
+        { status: 409 }
+      )
+    }
+
+    const updatedItem = result.updatedItem
 
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
@@ -157,32 +206,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       blockTimeStartedAt: now.toISOString(),
       blockTimeExpiresAt: expiresAt.toISOString(),
     })
-
-    // Update the menu item status to in_use
-    await db.menuItem.update({
-      where: { id: orderItem.menuItemId },
-      data: {
-        entertainmentStatus: 'in_use',
-        currentOrderId: orderItem.orderId,
-        currentOrderItemId: orderItemId,
-      },
-    })
-
-    // Update floor plan element if exists
-    if (orderItem.menuItem.id) {
-      await db.floorPlanElement.updateMany({
-        where: {
-          linkedMenuItemId: orderItem.menuItem.id,
-          deletedAt: null,
-        },
-        data: {
-          status: 'in_use',
-          currentOrderId: orderItem.orderId,
-          sessionStartedAt: now,
-          sessionExpiresAt: expiresAt,
-        },
-      })
-    }
 
     // Dispatch socket updates (fire-and-forget)
     dispatchFloorPlanUpdate(orderItem.order.locationId, { async: true })
@@ -239,10 +262,29 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       )
     }
 
-    // Get the order item
+    // Get the order item with menuItem for tier-based price recalculation
     const orderItem = await db.orderItem.findUnique({
       where: { id: orderItemId },
       include: {
+        menuItem: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            timedPricing: true,
+            ratePerMinute: true,
+            minimumCharge: true,
+            incrementMinutes: true,
+            graceMinutes: true,
+            blockTimeMinutes: true,
+            happyHourEnabled: true,
+            happyHourDiscount: true,
+            happyHourStart: true,
+            happyHourEnd: true,
+            happyHourDays: true,
+            prepaidPackages: true,
+          },
+        },
         order: {
           select: {
             id: true,
@@ -291,12 +333,41 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     const newExpiresAt = new Date(baseTime.getTime() + additionalMinutes * 60 * 1000)
     const newTotalMinutes = (orderItem.blockTimeMinutes || 0) + additionalMinutes
 
-    // Update the order item
+    // Recalculate price for the new total duration using tier-based pricing
+    const mi = orderItem.menuItem
+    let newPrice = Number(mi.price || 0)
+
+    if (mi.timedPricing && typeof mi.timedPricing === 'object') {
+      const tp = mi.timedPricing as Record<string, unknown>
+      if (newTotalMinutes <= 15 && tp.per15Min) {
+        newPrice = Number(tp.per15Min)
+      } else if (newTotalMinutes <= 30 && tp.per30Min) {
+        newPrice = Number(tp.per30Min)
+      } else if (newTotalMinutes <= 60 && tp.perHour) {
+        newPrice = Number(tp.perHour)
+      } else if (tp.perHour) {
+        // Proportional for durations > 60 min
+        newPrice = (newTotalMinutes / 60) * Number(tp.perHour)
+      }
+    } else if (Number(mi.ratePerMinute || 0) > 0) {
+      // Per-minute pricing: recalculate for new total duration
+      const pricing: EntertainmentPricing = {
+        ratePerMinute: Number(mi.ratePerMinute),
+        minimumCharge: Number(mi.minimumCharge || 0),
+        incrementMinutes: mi.incrementMinutes || 15,
+        graceMinutes: mi.graceMinutes || 0,
+      }
+      const breakdown = calculateCharge(newTotalMinutes, pricing)
+      newPrice = breakdown.totalCharge
+    }
+
+    // Update the order item with new duration and recalculated price
     const updatedItem = await db.orderItem.update({
       where: { id: orderItemId },
       data: {
         blockTimeMinutes: newTotalMinutes,
         blockTimeExpiresAt: newExpiresAt,
+        price: newPrice,
       },
       select: {
         id: true,
@@ -310,6 +381,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync (extend)
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
       lineItemId: orderItemId,
+      price: newPrice,
       blockTimeMinutes: newTotalMinutes,
       blockTimeExpiresAt: newExpiresAt.toISOString(),
     })
@@ -322,6 +394,16 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       currentOrderId: orderItem.orderId,
       expiresAt: newExpiresAt.toISOString(),
     }, { async: true }).catch(() => {})
+
+    // Emit session update for KDS Pit Boss
+    void emitToLocation(orderItem.order.locationId, 'entertainment:session-update', {
+      sessionId: orderItemId,
+      tableId: orderItem.menuItemId,
+      tableName: orderItem.name || '',
+      action: 'extended',
+      expiresAt: newExpiresAt.toISOString(),
+      totalMinutes: newTotalMinutes,
+    }).catch(() => {})
 
     return NextResponse.json({ data: {
       orderItem: {
@@ -408,6 +490,22 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
         { error: 'Location ID mismatch' },
         { status: 403 }
       )
+    }
+
+    // Idempotency guard — check if already processed (cron + manual stop race)
+    const currentMenuItem = await db.menuItem.findUnique({
+      where: { id: orderItem.menuItemId },
+      select: { entertainmentStatus: true, currentOrderItemId: true },
+    })
+
+    if (currentMenuItem?.entertainmentStatus === 'available' ||
+        (currentMenuItem?.currentOrderItemId && currentMenuItem.currentOrderItemId !== orderItemId)) {
+      // Already processed (by cron or another terminal) — return success without re-charging
+      return NextResponse.json({ data: {
+        success: true,
+        alreadyProcessed: true,
+        message: 'Session was already stopped',
+      } })
     }
 
     // Calculate actual minutes used

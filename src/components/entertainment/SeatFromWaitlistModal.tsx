@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/stores/toast-store'
 import type { EntertainmentItem, WaitlistEntry } from '@/lib/entertainment'
 
 interface SeatFromWaitlistModalProps {
@@ -245,7 +246,7 @@ export function SeatFromWaitlistModal({
       const blockMinutes = selectedItem.blockTimeMinutes || 60
       if (currentOrderItemId) {
         try {
-          await fetch('/api/entertainment/block-time', {
+          const blockRes = await fetch('/api/entertainment/block-time', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -253,35 +254,61 @@ export function SeatFromWaitlistModal({
               minutes: blockMinutes,
             }),
           })
+          if (!blockRes.ok) {
+            console.warn('[SeatFromWaitlist] Block-time POST failed:', blockRes.status)
+            toast.warning('Block time could not be started — please start it manually')
+          }
         } catch (err) {
-          console.error('Failed to start block time:', err)
+          console.warn('[SeatFromWaitlist] Block-time POST error:', err)
+          toast.warning('Block time could not be started — please start it manually')
         }
       }
 
       // Fallback: if block-time POST didn't set status (e.g. no orderItemId), set it manually
       if (!currentOrderItemId) {
-        await fetch('/api/entertainment/status', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            elementId: selectedItemId,
-            locationId,
-            status: 'in_use',
-          }),
-        })
+        try {
+          const statusRes = await fetch('/api/entertainment/status', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              elementId: selectedItemId,
+              locationId,
+              status: 'in_use',
+            }),
+          })
+          if (!statusRes.ok) {
+            console.warn('[SeatFromWaitlist] Fallback status PATCH failed:', statusRes.status)
+            toast.warning('Item status could not be updated — please set it manually')
+          }
+        } catch (statusErr) {
+          console.warn('[SeatFromWaitlist] Fallback status PATCH error:', statusErr)
+          toast.warning('Item status could not be updated — please set it manually')
+        }
       }
 
-      // Update waitlist entry status to 'seated'
-      const waitlistResponse = await fetch(`/api/entertainment/waitlist/${entry.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'seated' }),
-      })
-
-      if (!waitlistResponse.ok) {
-        console.error('Failed to update waitlist status')
+      // Mark waitlist entry as seated (with retry)
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const waitlistRes = await fetch(`/api/entertainment/waitlist/${entry.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'seated', locationId }),
+          })
+          if (waitlistRes.ok) break
+          if (attempt === 3) {
+            console.error('[SeatFromWaitlist] Failed to update waitlist status after 3 attempts')
+            toast.warning('Waitlist entry could not be updated — please update manually')
+          }
+        } catch (waitlistErr) {
+          if (attempt === 3) {
+            console.error('[SeatFromWaitlist] Failed to update waitlist status:', waitlistErr)
+            toast.warning('Waitlist entry could not be updated — please update manually')
+          }
+          await new Promise(r => setTimeout(r, 500))
+        }
       }
 
+      toast.success('Customer seated successfully')
       onSuccess?.()
       onClose()
     } catch (err) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOrderClosed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -90,6 +90,54 @@ export const POST = withVenue(async function POST(
       })
     }
 
+    // Clean up entertainment items tied to this order
+    let cleanedEntertainmentIds: string[] = []
+    if (allVoided) {
+      try {
+        // Find all timed_rental MenuItems currently linked to this order
+        const entertainmentItems = await db.menuItem.findMany({
+          where: {
+            currentOrderId: orderId,
+            itemType: 'timed_rental',
+          },
+          select: { id: true, name: true },
+        })
+
+        for (const item of entertainmentItems) {
+          await db.menuItem.update({
+            where: { id: item.id },
+            data: {
+              entertainmentStatus: 'available',
+              currentOrderId: null,
+              currentOrderItemId: null,
+            },
+          })
+
+          await db.floorPlanElement.updateMany({
+            where: {
+              linkedMenuItemId: item.id,
+              deletedAt: null,
+              status: 'in_use',
+            },
+            data: {
+              status: 'available',
+              currentOrderId: null,
+              sessionStartedAt: null,
+              sessionExpiresAt: null,
+            },
+          })
+        }
+
+        cleanedEntertainmentIds = entertainmentItems.map((i) => i.id)
+
+        if (entertainmentItems.length > 0) {
+          console.log(`[Tab Void] Cleaned up ${entertainmentItems.length} entertainment items for order ${orderId}`)
+        }
+      } catch (cleanupErr) {
+        console.error('[Tab Void] Failed to clean up entertainment items:', cleanupErr)
+      }
+    }
+
     // Fire-and-forget event emission
     if (allVoided) {
       void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
@@ -119,6 +167,18 @@ export const POST = withVenue(async function POST(
         locationId,
       }, { async: true }).catch(() => {})
       if (order.tableId) {
+        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+      }
+      // Notify entertainment status changes for cleaned-up items
+      for (const itemId of cleanedEntertainmentIds) {
+        void dispatchEntertainmentStatusChanged(locationId, {
+          itemId,
+          entertainmentStatus: 'available',
+          currentOrderId: null,
+          expiresAt: null,
+        }, { async: true }).catch(() => {})
+      }
+      if (cleanedEntertainmentIds.length > 0) {
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
       }
     }
