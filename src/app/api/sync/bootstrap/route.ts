@@ -5,6 +5,9 @@ import { buildSpiritTiersFromItem, normalizeModifier } from '@/lib/spirit-tiers'
 import { parseSettings } from '@/lib/settings'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 
+// Allow up to 120s for bootstrap on Vercel (Neon queries can be slow on cold starts)
+export const maxDuration = 120
+
 export const GET = withVenue(async function GET(request: NextRequest) {
   const auth = await authenticateTerminal(request)
   if (auth.error) return auth.error
