@@ -200,6 +200,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Allow cellular nonce exchange without auth (nonce IS the credential)
+  if (pathname === '/api/auth/cellular-exchange') {
+    return NextResponse.next()
+  }
+
   // ═══════════════════════════════════════════════════════════
   // CELLULAR TERMINAL AUTH
   //
