@@ -40,6 +40,24 @@ import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat
 import { useOrderEditing } from '@/hooks/useOrderEditing'
 import './styles/floor-plan.css'
 
+function playNotificationSound() {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const oscillator = audioCtx.createOscillator()
+    const gainNode = audioCtx.createGain()
+    oscillator.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+    oscillator.frequency.value = 800
+    oscillator.type = 'sine'
+    gainNode.gain.value = 0.3
+    oscillator.start()
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5)
+    oscillator.stop(audioCtx.currentTime + 0.5)
+  } catch (e) {
+    // Audio not available
+  }
+}
+
 interface Category {
   id: string
   name: string
@@ -832,7 +850,7 @@ export function FloorPlanHome({
       // If within optimistic grace period, extend debounce to let it expire first
       const now = Date.now()
       const graceRemaining = optimisticGraceRef.current ? optimisticGraceRef.current - now : 0
-      const delay = Math.max(300, graceRemaining)
+      const delay = Math.max(100, graceRemaining)
       debounceTimer = setTimeout(() => {
         loadFloorPlanData(false) // snapshot includes count
       }, delay)
@@ -936,6 +954,16 @@ export function FloorPlanHome({
       }
     }
 
+    const onWaitlistNotify = (data: { customerName?: string; elementName?: string; message?: string; action?: string }) => {
+      if (data.action === 'notified' || data.action === 'added') {
+        if (data.action === 'notified') {
+          playNotificationSound()
+        }
+        const msg = data.message || `${data.customerName || 'Customer'} — waitlist update`
+        toast.info(msg)
+      }
+    }
+
     socket.on('floor-plan:updated', onFloorPlanUpdated)
     socket.on('orders:list-changed', onOrdersListChanged)
     socket.on('order:totals-updated', onTotalsUpdated)
@@ -944,6 +972,7 @@ export function FloorPlanHome({
     socket.on('entertainment:session-update', onEntertainmentUpdate)
     socket.on('eod:reset-complete', onEodReset)
     socket.on('order:closed', onOrderClosed)
+    socket.on('entertainment:waitlist-notify', onWaitlistNotify)
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer)
@@ -954,6 +983,7 @@ export function FloorPlanHome({
       socket.off('entertainment:session-update', onEntertainmentUpdate)
       socket.off('eod:reset-complete', onEodReset)
       socket.off('order:closed', onOrderClosed)
+      socket.off('entertainment:waitlist-notify', onWaitlistNotify)
     }
      
   }, [socket, isConnected])

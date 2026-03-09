@@ -14,6 +14,24 @@ import { toast } from '@/stores/toast-store'
 
 const REFRESH_INTERVAL = 30000 // 30s fallback only when socket disconnected
 
+function playNotificationSound() {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const oscillator = audioCtx.createOscillator()
+    const gainNode = audioCtx.createGain()
+    oscillator.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+    oscillator.frequency.value = 800
+    oscillator.type = 'sine'
+    gainNode.gain.value = 0.3
+    oscillator.start()
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5)
+    oscillator.stop(audioCtx.currentTime + 0.5)
+  } catch (e) {
+    // Audio not available
+  }
+}
+
 export default function EntertainmentKDSPage() {
   const router = useRouter()
   const { isReady, employee } = useAuthGuard()
@@ -100,10 +118,22 @@ export default function EntertainmentKDSPage() {
       debouncedFetch()
     }
 
+    const onWaitlistNotify = (data: { customerName?: string; elementName?: string; message?: string; action?: string }) => {
+      if (data.action === 'notified' || data.action === 'added') {
+        if (data.action === 'notified') {
+          playNotificationSound()
+        }
+        const msg = data.message || `${data.customerName || 'Customer'} — waitlist update`
+        toast.info(msg)
+      }
+      debouncedFetch()
+    }
+
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
     socket.on('entertainment:status-changed', onEntertainmentChanged)
     socket.on('orders:list-changed', onListChanged)
+    socket.on('entertainment:waitlist-notify', onWaitlistNotify)
 
     if (socket.connected) {
       onConnect()
@@ -114,6 +144,7 @@ export default function EntertainmentKDSPage() {
       socket.off('disconnect', onDisconnect)
       socket.off('entertainment:status-changed', onEntertainmentChanged)
       socket.off('orders:list-changed', onListChanged)
+      socket.off('entertainment:waitlist-notify', onWaitlistNotify)
       if (debouncedFetchTimer.current) clearTimeout(debouncedFetchTimer.current)
       socketRef.current = null
       releaseSharedSocket()

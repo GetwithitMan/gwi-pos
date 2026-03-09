@@ -12,6 +12,7 @@ import { Modal } from '@/components/ui/modal'
 import { useSocket } from '@/hooks/useSocket'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { calculateCardPrice } from '@/lib/pricing'
+import { calculateTimeRemaining, calculateElapsedTime } from '@/lib/entertainment'
 
 import type { EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals'
 import {
@@ -21,24 +22,30 @@ import {
   type PrepaidPackage,
 } from '@/lib/entertainment-pricing'
 
-interface TimedSession {
+/** Status item from GET /api/entertainment/status */
+interface StatusItem {
   id: string
-  tableId?: string
-  tableName?: string
-  menuItemId: string
-  menuItemName?: string
-  orderId?: string
-  startedAt: string
-  endedAt?: string
-  pausedAt?: string
-  pausedMinutes: number
-  elapsedMinutes: number
-  totalMinutes?: number
-  totalCharge?: number
-  rateType: string
-  rateAmount: number
-  status: string
-  notes?: string
+  name: string
+  displayName: string
+  status: 'available' | 'in_use' | 'maintenance'
+  currentOrder: {
+    orderId: string
+    orderItemId: string | null
+    tabName: string
+  } | null
+  currentOrderItemId?: string | null
+  timeInfo: {
+    type: 'block' | 'per_minute'
+    startedAt?: string
+    expiresAt?: string
+    minutesRemaining?: number
+    minutesElapsed?: number
+    isExpired?: boolean
+    isExpiringSoon?: boolean
+    blockMinutes?: number
+  } | null
+  price: number
+  linkedMenuItem: { id: string; name: string } | null
 }
 
 interface TimedItem {
@@ -94,12 +101,9 @@ function TimedRentalsContent() {
   const { dualPricing } = useOrderSettings()
   const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
   const isDualPricingEnabled = dualPricing.enabled !== false
-  const [sessions, setSessions] = useState<TimedSession[]>([])
+  const [activeItems, setActiveItems] = useState<StatusItem[]>([])
   const [timedItems, setTimedItems] = useState<TimedItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [showStartModal, setShowStartModal] = useState(false)
-  const [selectedItem, setSelectedItem] = useState<TimedItem | null>(null)
-  const [selectedRateType, setSelectedRateType] = useState('hourly')
 
   // Builder state
   const [showBuilder, setShowBuilder] = useState(false)
@@ -127,7 +131,11 @@ function TimedRentalsContent() {
     if (!socket || !isConnected) return
     const onUpdate = () => loadData()
     socket.on('entertainment:session-update', onUpdate)
-    return () => { socket.off('entertainment:session-update', onUpdate) }
+    socket.on('entertainment:status-changed', onUpdate)
+    return () => {
+      socket.off('entertainment:session-update', onUpdate)
+      socket.off('entertainment:status-changed', onUpdate)
+    }
   }, [socket, isConnected])
 
   // 20s fallback polling only when socket is disconnected
@@ -228,14 +236,15 @@ function TimedRentalsContent() {
     if (!employee?.location?.id) return
 
     try {
-      const [sessionsRes, menuRes] = await Promise.all([
-        fetch(`/api/timed-sessions?locationId=${employee.location.id}`),
+      const [statusRes, menuRes] = await Promise.all([
+        fetch(`/api/entertainment/status?locationId=${employee.location.id}`, { cache: 'no-store' }),
         fetch(`/api/menu?locationId=${employee.location.id}`),
       ])
 
-      if (sessionsRes.ok) {
-        const data = await sessionsRes.json()
-        setSessions(data.data.sessions || [])
+      if (statusRes.ok) {
+        const data = await statusRes.json()
+        const items: StatusItem[] = data.data?.items || []
+        setActiveItems(items.filter(i => i.status === 'in_use'))
       }
 
       if (menuRes.ok) {
@@ -253,52 +262,59 @@ function TimedRentalsContent() {
     }
   }
 
-  // NOTE: handleStartSession and handleSessionAction use the legacy /api/timed-sessions
-  // system, which is a completely separate system from the OrderItem-based block time
-  // (at /api/entertainment/block-time). The legacy system creates standalone TimedSession
-  // records, while the modern system uses OrderItems with block time pricing.
-  // Unifying these two systems is planned for Phase 4 but is out of scope here.
-  const handleStartSession = async () => {
-    if (!employee?.location?.id || !selectedItem) return
+  // Extend time on an active session
+  const handleExtendTime = async (item: StatusItem, minutes: number) => {
+    const orderItemId = item.currentOrderItemId || item.currentOrder?.orderItemId
+    if (!orderItemId || !locationId) {
+      toast.error('Cannot find session to extend')
+      return
+    }
 
     try {
-      const res = await fetch('/api/timed-sessions', {
-        method: 'POST',
+      const res = await fetch('/api/entertainment/block-time', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId: employee.location.id,
-          menuItemId: selectedItem.id,
-          rateType: selectedRateType,
-          startedById: employee.id,
-        }),
+        body: JSON.stringify({ orderItemId, additionalMinutes: minutes, locationId }),
       })
 
       if (res.ok) {
-        setShowStartModal(false)
-        setSelectedItem(null)
+        toast.success(`Extended by ${minutes} minutes`)
         loadData()
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to extend time')
       }
-    } catch (error) {
-      console.error('Failed to start session:', error)
+    } catch (err) {
+      console.error('Error extending time:', err)
+      toast.error('Failed to extend time')
     }
   }
 
-  const handleSessionAction = async (sessionId: string, action: string) => {
+  // Stop an active session
+  const handleStopSession = async (item: StatusItem) => {
+    if (!confirm('Stop this session and finalize the charge?')) return
+
+    const orderItemId = item.currentOrderItemId || item.currentOrder?.orderItemId
+    if (!orderItemId || !locationId) {
+      toast.error('Cannot find session to stop')
+      return
+    }
+
     try {
-      const res = await fetch(`/api/timed-sessions/${sessionId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          endedById: employee?.id,
-        }),
+      const res = await fetch(`/api/entertainment/block-time?orderItemId=${orderItemId}&locationId=${locationId}`, {
+        method: 'DELETE',
       })
 
       if (res.ok) {
+        toast.success('Session stopped')
         loadData()
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to stop session')
       }
-    } catch (error) {
-      console.error('Failed to update session:', error)
+    } catch (err) {
+      console.error('Error stopping session:', err)
+      toast.error('Failed to stop session')
     }
   }
 
@@ -375,31 +391,6 @@ function TimedRentalsContent() {
     }
   }
 
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    if (hours > 0) {
-      return `${hours}h ${mins}m`
-    }
-    return `${mins}m`
-  }
-
-  const calculateCurrentCharge = (session: TimedSession) => {
-    const minutes = session.elapsedMinutes
-    switch (session.rateType) {
-      case 'per15Min':
-        return Math.ceil(minutes / 15) * session.rateAmount
-      case 'per30Min':
-        return Math.ceil(minutes / 30) * session.rateAmount
-      case 'hourly':
-      default:
-        return Math.ceil(minutes / 60) * session.rateAmount
-    }
-  }
-
-  const activeSessions = sessions.filter(s => s.status === 'active' || s.status === 'paused')
-  const completedSessions = sessions.filter(s => s.status === 'completed')
-
   // Visual type options with icons
   const VISUAL_TYPES = [
     { value: 'pool_table', label: 'Pool Table', icon: '🎱' },
@@ -432,7 +423,9 @@ function TimedRentalsContent() {
             >
               Create New Item
             </Button>
-            <Button onClick={() => setShowStartModal(true)}>Start Session</Button>
+            <Button onClick={() => router.push('/kds/entertainment')}>
+              Open Entertainment Center
+            </Button>
           </div>
         </div>
 
@@ -501,131 +494,50 @@ function TimedRentalsContent() {
           </CardContent>
         </Card>
 
-        {/* Active Sessions */}
+        {/* Active Sessions — from entertainment status API (real block-time system) */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle>Active Sessions ({activeSessions.length})</CardTitle>
+            <CardTitle>Active Sessions ({activeItems.length})</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <p className="text-gray-500">Loading...</p>
-            ) : activeSessions.length === 0 ? (
+            ) : activeItems.length === 0 ? (
               <p className="text-gray-500">No active sessions</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {activeSessions.map(session => (
-                  <Card key={session.id} className={session.status === 'paused' ? 'border-yellow-500' : 'border-green-500'}>
-                    <CardContent className="p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="font-bold">{session.menuItemName || 'Unknown Item'}</h3>
-                          {session.tableName && (
-                            <p className="text-sm text-gray-500">{session.tableName}</p>
-                          )}
-                        </div>
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          session.status === 'paused' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
-                        }`}>
-                          {session.status}
-                        </span>
-                      </div>
-
-                      <div className="text-3xl font-mono font-bold text-center my-4">
-                        {formatDuration(session.elapsedMinutes)}
-                      </div>
-
-                      <div className="text-center mb-4">
-                        <p className="text-sm text-gray-500">Current Charge</p>
-                        <p className="text-xl font-bold text-green-600">
-                          {formatCurrency(calculateCurrentCharge(session))}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {formatCurrency(session.rateAmount)} / {session.rateType.replace('per', '').replace('Min', ' min')}
-                        </p>
-                      </div>
-
-                      <div className="flex gap-2">
-                        {session.status === 'active' ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => handleSessionAction(session.id, 'pause')}
-                          >
-                            Pause
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="flex-1"
-                            onClick={() => handleSessionAction(session.id, 'resume')}
-                          >
-                            Resume
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => handleSessionAction(session.id, 'stop')}
-                        >
-                          Stop & Bill
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                {activeItems.map(item => (
+                  <ActiveSessionCard
+                    key={item.id}
+                    item={item}
+                    onExtendTime={handleExtendTime}
+                    onStopSession={handleStopSession}
+                    onOpenTab={(orderId) => router.push(`/orders?orderId=${orderId}`)}
+                  />
                 ))}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Recent Completed Sessions */}
+        {/* Recent Sessions — view on Entertainment Center */}
         <Card>
           <CardHeader>
             <CardTitle>Recent Sessions</CardTitle>
           </CardHeader>
           <CardContent>
-            {completedSessions.length === 0 ? (
-              <p className="text-gray-500">No completed sessions</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="text-left p-3 text-sm font-medium text-gray-600">Item</th>
-                      <th className="text-left p-3 text-sm font-medium text-gray-600">Table</th>
-                      <th className="text-left p-3 text-sm font-medium text-gray-600">Started</th>
-                      <th className="text-right p-3 text-sm font-medium text-gray-600">Duration</th>
-                      <th className="text-right p-3 text-sm font-medium text-gray-600">Charge</th>
-                      <th className="text-left p-3 text-sm font-medium text-gray-600">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {completedSessions.slice(0, 20).map(session => (
-                      <tr key={session.id}>
-                        <td className="p-3">{session.menuItemName}</td>
-                        <td className="p-3">{session.tableName || '-'}</td>
-                        <td className="p-3 text-sm text-gray-500">
-                          {new Date(session.startedAt).toLocaleString()}
-                        </td>
-                        <td className="p-3 text-right">
-                          {session.totalMinutes ? formatDuration(session.totalMinutes) : '-'}
-                        </td>
-                        <td className="p-3 text-right font-medium">
-                          {session.totalCharge ? formatCurrency(session.totalCharge) : '-'}
-                        </td>
-                        <td className="p-3">
-                          <span className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">
-                            {session.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <div className="text-center py-6">
+              <p className="text-gray-500 mb-3">
+                Session history is available on the Entertainment Center, which manages
+                all active and completed entertainment sessions tied to customer orders.
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => router.push('/kds/entertainment')}
+              >
+                View on Entertainment Center
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -896,81 +808,137 @@ function TimedRentalsContent() {
             </div>
       </Modal>
 
-      {/* Start Session Modal */}
-      <Modal
-        isOpen={showStartModal}
-        onClose={() => {
-          setShowStartModal(false)
-          setSelectedItem(null)
-        }}
-        title="Start Timed Session"
-        size="md"
-      >
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Select Item</label>
-                  {timedItems.length === 0 ? (
-                    <p className="text-sm text-gray-500">
-                      No timed rental items configured. Add items with type &quot;timed_rental&quot; in the menu.
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {timedItems.map(item => (
-                        <button
-                          key={item.id}
-                          onClick={() => setSelectedItem(item)}
-                          className={`p-3 border rounded-lg text-left ${
-                            selectedItem?.id === item.id
-                              ? 'border-blue-500 bg-blue-50'
-                              : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="font-medium">{item.name}</div>
-                          <div className="text-sm text-gray-500">
-                            {formatCurrency(item.price)}/hr
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {selectedItem && (
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Rate Type</label>
-                    <select
-                      value={selectedRateType}
-                      onChange={(e) => setSelectedRateType(e.target.value)}
-                      className="w-full border rounded px-3 py-2"
-                    >
-                      <option value="hourly">Per Hour</option>
-                      <option value="per30Min">Per 30 Minutes</option>
-                      <option value="per15Min">Per 15 Minutes</option>
-                    </select>
-                  </div>
-                )}
-
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowStartModal(false)
-                      setSelectedItem(null)
-                    }}
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleStartSession}
-                    disabled={!selectedItem}
-                    className="flex-1"
-                  >
-                    Start Timer
-                  </Button>
-                </div>
-              </div>
-      </Modal>
     </div>
+  )
+}
+
+/** Live-updating card for an in-use entertainment item */
+function ActiveSessionCard({
+  item,
+  onExtendTime,
+  onStopSession,
+  onOpenTab,
+}: {
+  item: StatusItem
+  onExtendTime: (item: StatusItem, minutes: number) => void
+  onStopSession: (item: StatusItem) => void
+  onOpenTab: (orderId: string) => void
+}) {
+  const [timerDisplay, setTimerDisplay] = useState('')
+  const [urgencyLevel, setUrgencyLevel] = useState<'normal' | 'warning' | 'critical' | 'expired'>('normal')
+
+  // 1-second timer tick
+  useEffect(() => {
+    if (!item.timeInfo) {
+      setTimerDisplay('')
+      return
+    }
+
+    const updateTimer = () => {
+      if (item.timeInfo?.type === 'block' && item.timeInfo.expiresAt) {
+        const result = calculateTimeRemaining(item.timeInfo.expiresAt)
+        setTimerDisplay(result.formatted)
+        setUrgencyLevel(result.urgencyLevel)
+      } else if (item.timeInfo?.type === 'per_minute' && item.timeInfo.startedAt) {
+        const result = calculateElapsedTime(item.timeInfo.startedAt)
+        setTimerDisplay(result.formatted)
+        setUrgencyLevel('normal')
+      }
+    }
+
+    updateTimer()
+    const interval = setInterval(updateTimer, 1000)
+    return () => clearInterval(interval)
+  }, [item.timeInfo])
+
+  const timerColorClass =
+    urgencyLevel === 'expired' ? 'text-red-600 bg-red-100' :
+    urgencyLevel === 'critical' ? 'text-orange-600 bg-orange-100' :
+    urgencyLevel === 'warning' ? 'text-yellow-600 bg-yellow-100' :
+    'text-gray-900 bg-gray-100'
+
+  const borderClass =
+    urgencyLevel === 'expired' || urgencyLevel === 'critical'
+      ? 'border-red-500'
+      : 'border-green-500'
+
+  return (
+    <Card className={borderClass}>
+      <CardContent className="p-4">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <h3 className="font-bold">{item.displayName}</h3>
+            {item.currentOrder && (
+              <p className="text-sm text-gray-500">Tab: {item.currentOrder.tabName}</p>
+            )}
+          </div>
+          <span className="px-2 py-1 rounded text-xs bg-red-100 text-red-800">
+            in use
+          </span>
+        </div>
+
+        {/* Live timer */}
+        {timerDisplay && (
+          <div className={`text-center p-3 rounded-lg my-3 ${timerColorClass}`}>
+            <div className="text-3xl font-mono font-bold">
+              {timerDisplay}
+            </div>
+            <div className="text-xs mt-1 opacity-75">
+              {item.timeInfo?.type === 'block'
+                ? `${item.timeInfo.blockMinutes || ''} min block`
+                : 'Elapsed time'}
+            </div>
+          </div>
+        )}
+
+        {/* Estimated charge based on per-minute rate */}
+        {item.price > 0 && item.timeInfo?.minutesElapsed != null && (
+          <div className="text-center mb-3">
+            <p className="text-sm text-gray-500">Est. charge</p>
+            <p className="text-lg font-bold text-green-600">
+              {formatCurrency(item.price * (item.timeInfo.minutesElapsed / 60))}
+            </p>
+          </div>
+        )}
+
+        {/* Extend buttons (block time only) */}
+        {item.timeInfo?.type === 'block' && (
+          <div className="flex gap-1 mb-2">
+            {[15, 30, 60].map(min => (
+              <Button
+                key={min}
+                variant="outline"
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => onExtendTime(item, min)}
+              >
+                +{min}m
+              </Button>
+            ))}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div className="flex gap-2">
+          {item.currentOrder && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => onOpenTab(item.currentOrder!.orderId)}
+            >
+              Open Tab
+            </Button>
+          )}
+          <Button
+            size="sm"
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+            onClick={() => onStopSession(item)}
+          >
+            Stop Session
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
