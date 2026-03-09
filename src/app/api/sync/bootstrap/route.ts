@@ -1,24 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { buildSpiritTiersFromItem, normalizeModifier } from '@/lib/spirit-tiers'
 import { parseSettings } from '@/lib/settings'
-
-async function authenticateTerminal(request: NextRequest): Promise<{ terminal: { id: string; locationId: string; name: string; cfdTerminalId: string | null; defaultMode: string | null; receiptPrinterId: string | null; kitchenPrinterId: string | null; barPrinterId: string | null }; error?: never } | { terminal?: never; error: NextResponse }> {
-  const authHeader = request.headers.get('authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  if (!token) {
-    return { error: NextResponse.json({ error: 'Authorization required' }, { status: 401 }) }
-  }
-  const terminal = await db.terminal.findFirst({
-    where: { deviceToken: token, deletedAt: null },
-    select: { id: true, locationId: true, name: true, cfdTerminalId: true, defaultMode: true, receiptPrinterId: true, kitchenPrinterId: true, barPrinterId: true },
-  })
-  if (!terminal) {
-    return { error: NextResponse.json({ error: 'Invalid token' }, { status: 401 }) }
-  }
-  return { terminal }
-}
+import { authenticateTerminal } from '@/lib/terminal-auth'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   const auth = await authenticateTerminal(request)

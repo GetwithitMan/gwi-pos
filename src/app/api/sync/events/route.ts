@@ -1,35 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import type { EventReplayResponse } from '@/lib/order-events/types'
-
-async function authenticateTerminal(
-  request: NextRequest
-): Promise<
-  | { terminal: { id: string; locationId: string; name: string }; error?: never }
-  | { terminal?: never; error: NextResponse }
-> {
-  const authHeader = request.headers.get('authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  if (!token) {
-    return {
-      error: NextResponse.json(
-        { error: 'Authorization required' },
-        { status: 401 }
-      ),
-    }
-  }
-  const terminal = await db.terminal.findFirst({
-    where: { deviceToken: token, deletedAt: null },
-    select: { id: true, locationId: true, name: true },
-  })
-  if (!terminal) {
-    return {
-      error: NextResponse.json({ error: 'Invalid token' }, { status: 401 }),
-    }
-  }
-  return { terminal }
-}
+import { authenticateTerminal } from '@/lib/terminal-auth'
 
 /**
  * GET /api/sync/events?orderId=xxx&afterSequence=0&limit=200

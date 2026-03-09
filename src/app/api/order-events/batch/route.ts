@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import {
@@ -11,34 +11,7 @@ import {
 } from '@/lib/order-events/types'
 import { ingestAndProject, type IngestEvent } from '@/lib/order-events/ingester'
 import { emitToTerminal } from '@/lib/socket-server'
-
-async function authenticateTerminal(
-  request: NextRequest
-): Promise<
-  | { terminal: { id: string; locationId: string; name: string; cfdTerminalId: string | null }; error?: never }
-  | { terminal?: never; error: NextResponse }
-> {
-  const authHeader = request.headers.get('authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-  if (!token) {
-    return {
-      error: NextResponse.json(
-        { error: 'Authorization required' },
-        { status: 401 }
-      ),
-    }
-  }
-  const terminal = await db.terminal.findFirst({
-    where: { deviceToken: token, deletedAt: null },
-    select: { id: true, locationId: true, name: true, cfdTerminalId: true },
-  })
-  if (!terminal) {
-    return {
-      error: NextResponse.json({ error: 'Invalid token' }, { status: 401 }),
-    }
-  }
-  return { terminal }
-}
+import { authenticateTerminal } from '@/lib/terminal-auth'
 
 /**
  * POST /api/order-events/batch
