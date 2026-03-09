@@ -30,7 +30,11 @@ export interface PosSessionPayload {
 }
 
 function getSecret(): string {
-  return process.env.NEXTAUTH_SECRET || process.env.SESSION_SECRET || 'dev-pos-session-secret'
+  const secret = process.env.NEXTAUTH_SECRET || process.env.SESSION_SECRET
+  if (!secret) {
+    throw new Error('NEXTAUTH_SECRET or SESSION_SECRET environment variable must be set')
+  }
+  return secret
 }
 
 // ─── Base64url helpers (same as cloud-auth.ts) ──────────────────────────

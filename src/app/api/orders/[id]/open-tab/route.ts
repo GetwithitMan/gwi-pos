@@ -4,7 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader, normalizeCardholderName } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchTabUpdated, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 
 // POST - Card-first tab open flow
@@ -167,6 +167,7 @@ export const POST = withVenue(async function POST(
         orderId,
         status: 'auth_failed',
       }).catch(() => {})
+      dispatchTabStatusUpdate(locationId, { orderId, status: 'auth_failed' })
       void dispatchOpenOrdersChanged(locationId, {
         trigger: 'created',
         orderId,

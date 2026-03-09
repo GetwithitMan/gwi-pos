@@ -1408,12 +1408,15 @@ if [[ -n "${VIRTUAL_IP:-}" ]] && [[ "$STATION_ROLE" == "server" || "$STATION_ROL
     KA_PRIORITY=100
   fi
 
-  # Create HA health check script
+  # Create HA health check script (bootstrap — overwritten with full version
+  # from public/ha-check.sh after git clone; see "Deploy full ha-check.sh" below)
   mkdir -p /opt/gwi-pos/scripts
   cat > /opt/gwi-pos/scripts/ha-check.sh <<'HACHKEOF'
 #!/usr/bin/env bash
-# HA health check for keepalived — returns 0 if POS is healthy, 1 if not.
-# keepalived runs this as a vrrp_script — non-zero causes priority demotion.
+# Bootstrap HA health check — minimal version so keepalived can start before
+# the git clone completes. The full version (public/ha-check.sh) with
+# pg_is_in_recovery(), replication lag monitoring, and MC alerting is deployed
+# after the repo is cloned.
 
 # Check 1: PostgreSQL is running
 if ! systemctl is-active --quiet postgresql; then
@@ -1453,6 +1456,7 @@ vrrp_instance GWI_POS {
     virtual_router_id 51
     priority $KA_PRIORITY
     advert_int 1
+    $([ "$STATION_ROLE" = "backup" ] && echo "nopreempt")
 
     authentication {
         auth_type PASS
@@ -1733,15 +1737,18 @@ WantedBy=graphical.target
 SVCEOF
 
   systemctl daemon-reload
-  systemctl enable thepasspos
 
   if [[ "$STATION_ROLE" == "backup" ]]; then
-    # Backup role: install service unit but do NOT start POS app (standby mode)
-    # POS will be started by promote.sh if this NUC takes over as primary
+    # Backup role: DISABLE POS app so it does NOT auto-start on reboot.
+    # If backup reboots with POS enabled, the upstream sync worker would read
+    # stale standby PG and overwrite newer data in Neon. POS will be started
+    # by promote.sh if this NUC takes over as primary.
+    systemctl disable thepasspos 2>/dev/null || true
     systemctl disable thepasspos-kiosk 2>/dev/null || true
-    log "POS service installed but NOT started (backup standby mode)."
+    log "POS service installed but DISABLED (backup standby mode)."
     log "POS will start automatically on promotion via promote.sh."
   else
+    systemctl enable thepasspos
     # Server role: start POS app + kiosk
     if [[ "$KIOSK_OK" == "true" ]]; then
       systemctl enable thepasspos-kiosk
@@ -1860,6 +1867,17 @@ BKEOF
     log "Restore script installed: $RESTORE_SCRIPT"
   else
     track_warn "nuc-restore.sh not found in repo — restore script not installed."
+  fi
+
+  # ── Deploy full ha-check.sh (replaces bootstrap version written before git clone) ──
+  if [[ -n "${VIRTUAL_IP:-}" ]] && [[ -f "$APP_DIR/public/ha-check.sh" ]]; then
+    mkdir -p "$APP_BASE/scripts"
+    cp "$APP_DIR/public/ha-check.sh" "$APP_BASE/scripts/ha-check.sh"
+    chmod +x "$APP_BASE/scripts/ha-check.sh"
+    chown root:root "$APP_BASE/scripts/ha-check.sh"
+    log "Full ha-check.sh deployed (pg_is_in_recovery, replication lag, MC alerting)."
+  elif [[ -n "${VIRTUAL_IP:-}" ]]; then
+    track_warn "ha-check.sh not found in repo — using bootstrap version (no replication lag monitoring)."
   fi
 
   # ───────────────────────────────────────────────────────────────────────────

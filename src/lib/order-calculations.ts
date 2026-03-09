@@ -232,13 +232,27 @@ export function calculateOrderTotals(
   exclusiveSubtotal = roundToCents(exclusiveSubtotal)
   const subtotal = roundToCents(inclusiveSubtotal + exclusiveSubtotal)
 
-  // 2. Split tax — rounded to cents for compliance
+  // 2. Allocate discount proportionally between inclusive and exclusive items,
+  //    then compute tax on the POST-DISCOUNT amounts (most US jurisdictions require this).
+  let discountOnInclusive = 0
+  let discountOnExclusive = 0
+  if (existingDiscountTotal > 0 && subtotal > 0) {
+    const inclusiveShare = inclusiveSubtotal / subtotal
+    discountOnInclusive = roundToCents(existingDiscountTotal * inclusiveShare)
+    discountOnExclusive = roundToCents(existingDiscountTotal - discountOnInclusive)
+  }
+
+  const postDiscountInclusive = roundToCents(Math.max(0, inclusiveSubtotal - discountOnInclusive))
+  const postDiscountExclusive = roundToCents(Math.max(0, exclusiveSubtotal - discountOnExclusive))
+
+  // Split tax on post-discount amounts — rounded to cents for compliance
   const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
-    inclusiveSubtotal, exclusiveSubtotal, taxRate
+    postDiscountInclusive, postDiscountExclusive, taxRate
   )
 
   // 3. Total before rounding
   // Inclusive items already contain tax (no extra added), exclusive items get taxFromExclusive added
+  // Discount is already reflected in the post-discount tax, so subtract it from the base amounts
   const totalBeforeRounding = roundToCents(
     inclusiveSubtotal + exclusiveSubtotal + taxFromExclusive
     - existingDiscountTotal + existingTipTotal

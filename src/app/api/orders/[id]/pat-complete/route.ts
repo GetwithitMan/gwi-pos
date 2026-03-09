@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import {
   dispatchOpenOrdersChanged,
   dispatchTabUpdated,
+  dispatchTabStatusUpdate,
   dispatchFloorPlanUpdate,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
@@ -141,6 +142,7 @@ export const POST = withVenue(async function POST(
     ).catch(() => {})
 
     dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(() => {})
+    dispatchTabStatusUpdate(locationId, { orderId, status: 'closed' })
 
     if (order.tableId) {
       dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})

@@ -96,7 +96,7 @@ export const CFD_EVENTS = {
 } as const
 
 // CFD screen states
-export type CFDScreenState = 'idle' | 'order' | 'payment' | 'tip' | 'signature' | 'processing' | 'approved' | 'declined'
+export type CFDScreenState = 'idle' | 'order' | 'payment' | 'tip' | 'signature' | 'processing' | 'approved' | 'declined' | 'receipt'
 
 // ============================================
 // PAY-AT-TABLE (Phase 12)

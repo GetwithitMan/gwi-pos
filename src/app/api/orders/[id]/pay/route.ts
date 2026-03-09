@@ -32,6 +32,7 @@ import { batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -178,13 +179,27 @@ export const POST = withVenue(withTiming(async function POST(
   const { id: orderId } = await params
   const timing = getTimingFromRequest(request)
   let body: Record<string, unknown> = {}
+  let autoVoidRecords: Record<string, unknown>[] = []
+  let autoVoidTerminalId: string | undefined
+  let autoVoidLocationId: string | undefined
   try {
     body = await request.json()
+
+    const txResult = await db.$transaction(async (tx) => {
+
+    // Acquire row-level lock to prevent double-charge from concurrent terminals
+    const [lockedRow] = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "Order" WHERE id = $1 FOR UPDATE`,
+      orderId,
+    )
+    if (!lockedRow) {
+      return { earlyReturn: NextResponse.json({ error: 'Order not found' }, { status: 404 }) }
+    }
 
     // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
     // Includes items/employee/table so we can build receipt data in the response (avoids second fetch)
     timing.start('db-fetch')
-    const order = await db.order.findUnique({
+    const order = await tx.order.findUnique({
       where: { id: orderId },
       include: {
         payments: true,
@@ -199,10 +214,18 @@ export const POST = withVenue(withTiming(async function POST(
     timing.end('db-fetch', 'Fetch order')
 
     if (!order) {
-      return NextResponse.json(
+      return { earlyReturn: NextResponse.json(
         { error: 'Order not found' },
         { status: 404 }
-      )
+      ) }
+    }
+
+    // Guard: reject empty draft orders — they have $0 total but should NOT be closeable
+    if (order.status === 'draft' && (!order.items || order.items.length === 0)) {
+      return { earlyReturn: NextResponse.json(
+        { error: 'Cannot close an empty draft order. Add items first.' },
+        { status: 400 }
+      ) }
     }
 
     // Check for $0 order BEFORE Zod validation (Zod requires amount > 0,
@@ -213,16 +236,16 @@ export const POST = withVenue(withTiming(async function POST(
         .reduce((sum, p) => sum + Number(p.totalAmount), 0)
       const zeroRemaining = Number(order.total) - zeroAlreadyPaid
       if (zeroRemaining <= 0) {
-        await ingestAndProject(db as any, orderId, order.locationId, [
+        await ingestAndProject(tx as any, orderId, order.locationId, [
           { type: 'ORDER_CLOSED', payload: { closedStatus: 'paid' } }
         ])
-        return NextResponse.json({ data: {
+        return { earlyReturn: NextResponse.json({ data: {
           success: true,
           orderId,
           orderStatus: 'paid',
           message: 'Order closed with $0 balance (all items voided/comped)',
           totals: { subtotal: 0, tax: 0, total: 0, tip: 0 },
-        } })
+        } }) }
       }
     }
 
@@ -259,13 +282,13 @@ export const POST = withVenue(withTiming(async function POST(
     // Validate request body with Zod
     const validation = PaymentRequestSchema.safeParse(body)
     if (!validation.success) {
-      return NextResponse.json(
+      return { earlyReturn: NextResponse.json(
         {
           error: 'Invalid payment request data',
           details: validation.error.format(),
         },
         { status: 400 }
-      )
+      ) }
     }
 
     const { payments, employeeId, terminalId, idempotencyKey } = validation.data
@@ -277,8 +300,7 @@ export const POST = withVenue(withTiming(async function POST(
         p => p.idempotencyKey === idempotencyKey && p.status === 'completed'
       )
       if (duplicatePayments.length > 0) {
-        // Return success with existing data — don't process again
-        return NextResponse.json({ data: {
+        return { earlyReturn: NextResponse.json({ data: {
           success: true,
           duplicate: true,
           payments: duplicatePayments.map(p => ({
@@ -291,7 +313,7 @@ export const POST = withVenue(withTiming(async function POST(
           })),
           orderStatus: order.status || 'unknown',
           remainingBalance: 0,
-        } })
+        } }) }
       }
     }
 
@@ -304,14 +326,14 @@ export const POST = withVenue(withTiming(async function POST(
         p => p.datacapRecordNo === firstPaymentRecordNo && p.status === 'completed'
       )
       if (existingByRecordNo) {
-        return NextResponse.json(
+        return { earlyReturn: NextResponse.json(
           {
             error: 'Payment with this recordNo already exists for this order',
             code: 'DUPLICATE_RECORD_NO',
             existingPaymentId: existingByRecordNo.id,
           },
           { status: 409 }
-        )
+        ) }
       }
     }
 
@@ -321,20 +343,17 @@ export const POST = withVenue(withTiming(async function POST(
       PERMISSIONS.POS_CARD_PAYMENTS,
     ])
     if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+      return { earlyReturn: NextResponse.json({ error: auth.error }, { status: auth.status }) }
     }
 
     if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
-      // Return 200 (not 400) for already-paid orders so offline sync queues
-      // treat this as success and stop retrying. The payment already went through.
       if (order.status === 'paid' || order.status === 'closed') {
-        // Include all fields Android's PayOrderData expects so Moshi doesn't choke
-        const existingPayment = await db.payment.findFirst({
+        const existingPayment = await tx.payment.findFirst({
           where: { orderId },
           orderBy: { createdAt: 'desc' },
           select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
         })
-        return NextResponse.json({ data: {
+        return { earlyReturn: NextResponse.json({ data: {
           success: true,
           alreadyPaid: true,
           orderId,
@@ -346,33 +365,33 @@ export const POST = withVenue(withTiming(async function POST(
           newOrderBalance: 0,
           orderStatus: order.status,
           message: `Order already ${order.status}`,
-        } })
+        } }) }
       }
-      return NextResponse.json(
+      return { earlyReturn: NextResponse.json(
         { error: 'Cannot pay an order with status: ' + order.status },
         { status: 400 }
-      )
+      ) }
     }
 
     // Block direct payment of split parent orders — pay individual splits instead
     if (order.status === 'split') {
-      return NextResponse.json(
+      return { earlyReturn: NextResponse.json(
         { error: 'Cannot pay a split parent order directly. Pay individual split checks instead.' },
         { status: 400 }
-      )
+      ) }
     }
 
     // Validate parent order is still in split state when paying a split child
     if (order.parentOrderId) {
-      const parentOrder = await db.order.findUnique({
+      const parentOrder = await tx.order.findUnique({
         where: { id: order.parentOrderId },
         select: { status: true },
       })
       if (!parentOrder || parentOrder.status !== 'split') {
-        return NextResponse.json(
+        return { earlyReturn: NextResponse.json(
           { error: 'Parent order is no longer in split state' },
           { status: 400 }
-        )
+        ) }
       }
     }
 
@@ -390,10 +409,10 @@ export const POST = withVenue(withTiming(async function POST(
         `[PAY] BLOCKED: Location ${order.locationId} is using simulated payment processor in production. ` +
         'Configure a real Datacap merchantId before processing payments.'
       )
-      return NextResponse.json(
+      return { earlyReturn: NextResponse.json(
         { error: 'Payment processor not configured for production. Contact your administrator.' },
         { status: 503 }
-      )
+      ) }
     }
 
     // Compute current business day start for promotion on pay
@@ -413,12 +432,10 @@ export const POST = withVenue(withTiming(async function POST(
       const now = new Date()
       const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
 
-      await db.$transaction(async (tx) => {
-        for (const item of perMinuteItems) {
+      for (const item of perMinuteItems) {
           const startedAt = new Date(item.blockTimeStartedAt!)
           const elapsedMinutes = Math.max(1, Math.ceil((now.getTime() - startedAt.getTime()) / 60000))
 
-          // Fetch the menu item's pricing config
           const mi = await tx.menuItem.findUnique({
             where: { id: item.menuItemId },
             select: { ratePerMinute: true, minimumCharge: true, incrementMinutes: true, graceMinutes: true, price: true },
@@ -426,7 +443,7 @@ export const POST = withVenue(withTiming(async function POST(
           if (!mi) continue
 
           const ratePerMinute = mi.ratePerMinute ? Number(mi.ratePerMinute) : 0
-          if (ratePerMinute <= 0) continue // Not per-minute pricing
+          if (ratePerMinute <= 0) continue
 
           const pricing: EntertainmentPricing = {
             ratePerMinute,
@@ -438,7 +455,6 @@ export const POST = withVenue(withTiming(async function POST(
           const breakdown = calculateCharge(elapsedMinutes, pricing)
           const settledPrice = breakdown.totalCharge
 
-          // Update the order item's price to the settled per-minute charge
           await tx.orderItem.update({
             where: { id: item.id },
             data: {
@@ -448,7 +464,6 @@ export const POST = withVenue(withTiming(async function POST(
           })
         }
 
-        // Recalculate the order total from all active items (once, after all items settled)
         const activeItems = await tx.orderItem.findMany({
           where: { orderId, status: 'active', deletedAt: null },
           include: { modifiers: true },
@@ -459,7 +474,6 @@ export const POST = withVenue(withTiming(async function POST(
           newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
         }
 
-        // H-FIN-4: Recalculate tax from the new subtotal (don't reuse stale taxTotal)
         const newTaxTotal = roundToCents(newSubtotal * taxRate)
         const newTotal = roundToCents(newSubtotal + newTaxTotal)
 
@@ -472,11 +486,9 @@ export const POST = withVenue(withTiming(async function POST(
           },
         })
 
-        // Refresh order reference for accurate total below
         ;(order as any).subtotal = newSubtotal
         ;(order as any).taxTotal = newTaxTotal
         ;(order as any).total = newTotal
-      })
     }
 
     // Calculate how much is already paid
@@ -489,15 +501,15 @@ export const POST = withVenue(withTiming(async function POST(
 
     // If order total is $0 (e.g., all items voided), close the order without payment
     if (remaining <= 0 && alreadyPaid === 0) {
-      await ingestAndProject(db as any, orderId, order.locationId, [
+      await ingestAndProject(tx as any, orderId, order.locationId, [
         { type: 'ORDER_CLOSED', payload: { closedStatus: 'paid' } }
       ])
-      return NextResponse.json({ data: {
+      return { earlyReturn: NextResponse.json({ data: {
         success: true,
         orderId,
         message: 'Order closed with $0 balance (all items voided/comped)',
         totals: { subtotal: 0, tax: 0, total: 0, tip: 0 },
-      } })
+      } }) }
     }
 
     // Calculate total being paid now
@@ -531,10 +543,10 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     if (paymentTotal < validationRemaining - 0.01) {
-      return NextResponse.json(
+      return { earlyReturn: NextResponse.json(
         { error: `Payment amount ($${paymentTotal.toFixed(2)}) is less than remaining balance ($${validationRemaining.toFixed(2)})` },
         { status: 400 }
-      )
+      ) }
     }
 
     // Validate payment amounts upfront
@@ -543,19 +555,19 @@ export const POST = withVenue(withTiming(async function POST(
 
       // Validate amount is a valid number
       if (isNaN(paymentAmount) || paymentAmount <= 0) {
-        return NextResponse.json(
+        return { earlyReturn: NextResponse.json(
           { error: `Invalid payment amount: ${paymentAmount}. Amount must be a positive number.` },
           { status: 400 }
-        )
+        ) }
       }
 
       // Prevent unreasonably large payments (potential UI bugs)
       const maxReasonablePayment = orderTotal * 1.5
       if (paymentAmount > maxReasonablePayment) {
-        return NextResponse.json(
+        return { earlyReturn: NextResponse.json(
           { error: `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (150% of order total). This may indicate an error.` },
           { status: 400 }
-        )
+        ) }
       }
 
       // Validate Datacap field mutual exclusivity for card payments
@@ -577,7 +589,7 @@ export const POST = withVenue(withTiming(async function POST(
 
         // If ANY Datacap field is present, ensure ALL required fields are present
         if (hasAnyDatacapField && !hasAllRequiredDatacapFields) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             {
               error: 'Partial Datacap data detected. Card payments must have either all Datacap fields (RecordNo, RefNumber, CardLast4) or none. This indicates a corrupted payment record.',
               details: {
@@ -587,7 +599,7 @@ export const POST = withVenue(withTiming(async function POST(
               }
             },
             { status: 400 }
-          )
+          ) }
         }
       }
     }
@@ -776,92 +788,72 @@ export const POST = withVenue(withTiming(async function POST(
           safStatus: payment.storedOffline ? 'APPROVED_SAF_PENDING_UPLOAD' : 'APPROVED_ONLINE',
         }
       } else if (payment.method === 'loyalty_points') {
-        // Loyalty points redemption
         if (!settings.loyalty.enabled || !settings.loyalty.redemptionEnabled) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'Loyalty points redemption is not enabled' },
             { status: 400 }
-          )
+          ) }
         }
 
         if (!order.customer) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'Customer is required to redeem loyalty points' },
             { status: 400 }
-          )
+          ) }
         }
 
         const pointsNeeded = Math.ceil(payment.amount * settings.loyalty.pointsPerDollarRedemption)
 
         if (!payment.pointsUsed || payment.pointsUsed < pointsNeeded) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: `${pointsNeeded} points required for $${payment.amount.toFixed(2)} redemption` },
             { status: 400 }
-          )
+          ) }
         }
 
-        // Pre-flight check (non-authoritative — authoritative check is inside tx)
         if (order.customer.loyaltyPoints < payment.pointsUsed) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: `Insufficient points. Customer has ${order.customer.loyaltyPoints} points.` },
             { status: 400 }
-          )
+          ) }
         }
 
-        // Check minimum redemption
         if (payment.pointsUsed < settings.loyalty.minimumRedemptionPoints) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: `Minimum ${settings.loyalty.minimumRedemptionPoints} points required for redemption` },
             { status: 400 }
-          )
+          ) }
         }
 
-        // Check maximum redemption percentage
         const maxRedemptionAmount = orderTotal * (settings.loyalty.maximumRedemptionPercent / 100)
         if (payment.amount > maxRedemptionAmount) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: `Maximum ${settings.loyalty.maximumRedemptionPercent}% of order can be paid with points` },
             { status: 400 }
-          )
+          ) }
         }
 
-        // Store points used in payment record metadata
         paymentRecord = {
           ...paymentRecord,
           transactionId: `LOYALTY:${payment.pointsUsed}pts`,
         }
 
-        // H-FIN-3: Read fresh balance + check + decrement ALL inside transaction
-        // to prevent TOCTOU race where concurrent redemptions bypass balance check
-        const loyaltyResult = await db.$transaction(async (tx) => {
-          const freshCustomer = await tx.customer.findUnique({
-            where: { id: order.customer!.id },
-            select: { loyaltyPoints: true },
-          })
-          if (!freshCustomer || freshCustomer.loyaltyPoints < payment.pointsUsed!) {
-            throw new Error(`LOYALTY_INSUFFICIENT:${freshCustomer?.loyaltyPoints ?? 0}`)
-          }
-          await tx.customer.update({
-            where: { id: order.customer!.id },
-            data: {
-              loyaltyPoints: { decrement: payment.pointsUsed! },
-            },
-          })
-          return { success: true }
-        }).catch((err: Error) => {
-          if (err.message.startsWith('LOYALTY_INSUFFICIENT:')) {
-            const pts = parseInt(err.message.split(':')[1], 10)
-            return { error: `Insufficient points. Customer has ${pts} points.`, status: 400 } as const
-          }
-          throw err
+        const freshCustomer = await tx.customer.findUnique({
+          where: { id: order.customer!.id },
+          select: { loyaltyPoints: true },
         })
-
-        if ('error' in loyaltyResult) {
-          return NextResponse.json(
-            { error: loyaltyResult.error },
-            { status: loyaltyResult.status }
-          )
+        if (!freshCustomer || freshCustomer.loyaltyPoints < payment.pointsUsed!) {
+          return { earlyReturn: NextResponse.json(
+            { error: `Insufficient points. Customer has ${freshCustomer?.loyaltyPoints ?? 0} points.` },
+            { status: 400 }
+          ) }
         }
+        await tx.customer.update({
+          where: { id: order.customer!.id },
+          data: {
+            loyaltyPoints: { decrement: payment.pointsUsed! },
+          },
+        })
 
         allPendingPayments.push(paymentRecord)
         totalTips += payment.tipAmount || 0
@@ -869,295 +861,231 @@ export const POST = withVenue(withTiming(async function POST(
       } else if (payment.method === 'gift_card') {
         // Gift card payment
         if (!settings.payments.acceptGiftCards) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'Gift cards are not accepted' },
             { status: 400 }
-          )
+          ) }
         }
 
         const giftCardLookup = payment.giftCardId || payment.giftCardNumber
         if (!giftCardLookup) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'Gift card ID or number is required' },
             { status: 400 }
-          )
+          ) }
         }
 
-        // Find gift card and deduct balance atomically inside a single transaction
-        // This prevents TOCTOU race conditions on the gift card balance
-        const gcResult = await db.$transaction(async (tx) => {
-          let giftCard = await tx.giftCard.findUnique({
-            where: { id: payment.giftCardId || '' }
-          })
-
-          if (!giftCard && payment.giftCardNumber) {
-            giftCard = await tx.giftCard.findUnique({
-              where: { cardNumber: payment.giftCardNumber.toUpperCase() }
-            })
-          }
-
-          if (!giftCard) {
-            throw new Error('GC_NOT_FOUND')
-          }
-
-          if (giftCard.status !== 'active') {
-            throw new Error(`GC_STATUS:${giftCard.status}`)
-          }
-
-          // Check expiration
-          if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
-            await tx.giftCard.update({
-              where: { id: giftCard.id },
-              data: { status: 'expired' }
-            })
-            throw new Error('GC_EXPIRED')
-          }
-
-          const cardBalance = Number(giftCard.currentBalance)
-          const paymentAmount = payment.amount + (payment.tipAmount || 0)
-
-          // H-FIN-2: Verify balance >= amount INSIDE transaction to prevent negative balance
-          if (cardBalance < paymentAmount) {
-            throw new Error(`GC_INSUFFICIENT:${cardBalance}`)
-          }
-
-          const newBalance = cardBalance - paymentAmount
-
-          paymentRecord = {
-            ...paymentRecord,
-            transactionId: `GC:${giftCard.cardNumber}`,
-            cardLast4: giftCard.cardNumber.slice(-4),
-          }
-
-          // H-FIN-2: Use atomic decrement instead of SET to prevent TOCTOU race
-          await tx.giftCard.update({
-            where: { id: giftCard.id },
-            data: {
-              currentBalance: { decrement: paymentAmount },
-              status: newBalance === 0 ? 'depleted' : 'active',
-              transactions: {
-                create: {
-                  locationId: order.locationId,
-                  type: 'redemption',
-                  amount: -paymentAmount,
-                  balanceBefore: cardBalance,
-                  balanceAfter: newBalance,
-                  orderId,
-                  employeeId: employeeId || null,
-                  notes: `Payment for order #${order.orderNumber}`,
-                }
-              }
-            }
-          })
-          return { success: true }
-        }).catch((err: Error) => {
-          // Convert transaction errors to HTTP responses
-          if (err.message === 'GC_NOT_FOUND') {
-            return { error: 'Gift card not found', status: 404 } as const
-          }
-          if (err.message.startsWith('GC_STATUS:')) {
-            return { error: `Gift card is ${err.message.split(':')[1]}`, status: 400 } as const
-          }
-          if (err.message === 'GC_EXPIRED') {
-            return { error: 'Gift card has expired', status: 400 } as const
-          }
-          if (err.message.startsWith('GC_INSUFFICIENT:')) {
-            const balance = parseFloat(err.message.split(':')[1])
-            return { error: `Insufficient gift card balance ($${balance.toFixed(2)})`, currentBalance: balance, status: 400 } as const
-          }
-          throw err // Re-throw unexpected errors
+        let giftCard = await tx.giftCard.findUnique({
+          where: { id: payment.giftCardId || '' }
         })
 
-        // If the transaction returned an error object, return it as HTTP response
-        if ('error' in gcResult) {
-          return NextResponse.json(
-            { error: gcResult.error, ...('currentBalance' in gcResult ? { currentBalance: gcResult.currentBalance } : {}) },
-            { status: gcResult.status }
-          )
+        if (!giftCard && payment.giftCardNumber) {
+          giftCard = await tx.giftCard.findUnique({
+            where: { cardNumber: payment.giftCardNumber.toUpperCase() }
+          })
         }
+
+        if (!giftCard) {
+          return { earlyReturn: NextResponse.json(
+            { error: 'Gift card not found' },
+            { status: 404 }
+          ) }
+        }
+
+        if (giftCard.status !== 'active') {
+          return { earlyReturn: NextResponse.json(
+            { error: `Gift card is ${giftCard.status}` },
+            { status: 400 }
+          ) }
+        }
+
+        if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
+          await tx.giftCard.update({
+            where: { id: giftCard.id },
+            data: { status: 'expired' }
+          })
+          return { earlyReturn: NextResponse.json(
+            { error: 'Gift card has expired' },
+            { status: 400 }
+          ) }
+        }
+
+        const cardBalance = Number(giftCard.currentBalance)
+        const gcPaymentAmount = payment.amount + (payment.tipAmount || 0)
+
+        if (cardBalance < gcPaymentAmount) {
+          return { earlyReturn: NextResponse.json(
+            { error: `Insufficient gift card balance ($${cardBalance.toFixed(2)})`, currentBalance: cardBalance },
+            { status: 400 }
+          ) }
+        }
+
+        const newBalance = cardBalance - gcPaymentAmount
+
+        paymentRecord = {
+          ...paymentRecord,
+          transactionId: `GC:${giftCard.cardNumber}`,
+          cardLast4: giftCard.cardNumber.slice(-4),
+        }
+
+        await tx.giftCard.update({
+          where: { id: giftCard.id },
+          data: {
+            currentBalance: { decrement: gcPaymentAmount },
+            status: newBalance === 0 ? 'depleted' : 'active',
+            transactions: {
+              create: {
+                locationId: order.locationId,
+                type: 'redemption',
+                amount: -gcPaymentAmount,
+                balanceBefore: cardBalance,
+                balanceAfter: newBalance,
+                orderId,
+                employeeId: employeeId || null,
+                notes: `Payment for order #${order.orderNumber}`,
+              }
+            }
+          }
+        })
 
         allPendingPayments.push(paymentRecord)
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'house_account') {
-        // House account payment
         if (!settings.payments.acceptHouseAccounts) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'House accounts are not accepted' },
             { status: 400 }
-          )
+          ) }
         }
 
         if (!payment.houseAccountId) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'House account ID is required' },
             { status: 400 }
-          )
+          ) }
         }
 
-        const paymentAmount = payment.amount + (payment.tipAmount || 0)
+        const haPaymentAmount = payment.amount + (payment.tipAmount || 0)
 
-        // C-FIN-1: Read balance, check credit limit, and increment ALL inside the
-        // transaction to prevent race conditions on concurrent house account charges.
-        // Previously, balance was read outside the tx and SET inside — two concurrent
-        // payments would both read the same balance and one would overwrite the other.
-        const haResult = await db.$transaction(async (tx) => {
-          const freshAccount = await tx.houseAccount.findUnique({
-            where: { id: payment.houseAccountId! }
-          })
-
-          if (!freshAccount) {
-            throw new Error('HA_NOT_FOUND')
-          }
-
-          if (freshAccount.status !== 'active') {
-            throw new Error(`HA_STATUS:${freshAccount.status}`)
-          }
-
-          const currentBalance = Number(freshAccount.currentBalance)
-          const creditLimit = Number(freshAccount.creditLimit)
-          const newBalance = currentBalance + paymentAmount
-
-          // Check credit limit inside transaction with fresh balance (0 = unlimited)
-          if (creditLimit > 0 && newBalance > creditLimit) {
-            throw new Error(`HA_CREDIT_LIMIT:${currentBalance}:${creditLimit}`)
-          }
-
-          // Calculate due date
-          const dueDate = new Date()
-          dueDate.setDate(dueDate.getDate() + (freshAccount.paymentTerms ?? 30))
-
-          // Atomic increment instead of direct SET to prevent lost updates
-          await tx.houseAccount.update({
-            where: { id: freshAccount.id },
-            data: {
-              currentBalance: { increment: paymentAmount },
-              transactions: {
-                create: {
-                  locationId: order.locationId,
-                  type: 'charge',
-                  amount: paymentAmount,
-                  balanceBefore: currentBalance,
-                  balanceAfter: newBalance,
-                  orderId,
-                  employeeId: employeeId || null,
-                  notes: `Order #${order.orderNumber}`,
-                  dueDate,
-                }
-              }
-            }
-          })
-
-          // Set extra fields on paymentRecord for bridge override
-          paymentRecord.transactionId = `HA:${freshAccount.id}`
-          paymentRecord.authCode = freshAccount.name
-
-          return { success: true }
-        }).catch((err: Error) => {
-          if (err.message === 'HA_NOT_FOUND') {
-            return { error: 'House account not found', status: 404 } as const
-          }
-          if (err.message.startsWith('HA_STATUS:')) {
-            return { error: `House account is ${err.message.split(':')[1]}`, status: 400 } as const
-          }
-          if (err.message.startsWith('HA_CREDIT_LIMIT:')) {
-            const [, bal, lim] = err.message.split(':')
-            const currentBalance = parseFloat(bal)
-            const creditLimit = parseFloat(lim)
-            return {
-              error: 'Charge would exceed credit limit',
-              currentBalance,
-              creditLimit,
-              availableCredit: Math.max(0, creditLimit - currentBalance),
-              status: 400,
-            } as const
-          }
-          throw err
+        const freshAccount = await tx.houseAccount.findUnique({
+          where: { id: payment.houseAccountId! }
         })
 
-        // If the transaction returned an error object, return it as HTTP response
-        if ('error' in haResult) {
-          return NextResponse.json(
-            {
-              error: haResult.error,
-              ...('currentBalance' in haResult ? {
-                currentBalance: (haResult as any).currentBalance,
-                creditLimit: (haResult as any).creditLimit,
-                availableCredit: (haResult as any).availableCredit,
-              } : {}),
-            },
-            { status: haResult.status }
-          )
+        if (!freshAccount) {
+          return { earlyReturn: NextResponse.json(
+            { error: 'House account not found' },
+            { status: 404 }
+          ) }
         }
+
+        if (freshAccount.status !== 'active') {
+          return { earlyReturn: NextResponse.json(
+            { error: `House account is ${freshAccount.status}` },
+            { status: 400 }
+          ) }
+        }
+
+        const haCurrentBalance = Number(freshAccount.currentBalance)
+        const haCreditLimit = Number(freshAccount.creditLimit)
+        const haNewBalance = haCurrentBalance + haPaymentAmount
+
+        if (haCreditLimit > 0 && haNewBalance > haCreditLimit) {
+          return { earlyReturn: NextResponse.json(
+            {
+              error: 'Charge would exceed credit limit',
+              currentBalance: haCurrentBalance,
+              creditLimit: haCreditLimit,
+              availableCredit: Math.max(0, haCreditLimit - haCurrentBalance),
+            },
+            { status: 400 }
+          ) }
+        }
+
+        const dueDate = new Date()
+        dueDate.setDate(dueDate.getDate() + (freshAccount.paymentTerms ?? 30))
+
+        await tx.houseAccount.update({
+          where: { id: freshAccount.id },
+          data: {
+            currentBalance: { increment: haPaymentAmount },
+            transactions: {
+              create: {
+                locationId: order.locationId,
+                type: 'charge',
+                amount: haPaymentAmount,
+                balanceBefore: haCurrentBalance,
+                balanceAfter: haNewBalance,
+                orderId,
+                employeeId: employeeId || null,
+                notes: `Order #${order.orderNumber}`,
+                dueDate,
+              }
+            }
+          }
+        })
+
+        paymentRecord.transactionId = `HA:${freshAccount.id}`
+        paymentRecord.authCode = freshAccount.name
 
         allPendingPayments.push(paymentRecord)
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'room_charge') {
-        // Hotel PMS / Bill to Room payment
         if (!settings.payments.acceptHotelRoomCharge) {
-          return NextResponse.json({ error: 'Bill to Room is not enabled' }, { status: 400 })
+          return { earlyReturn: NextResponse.json({ error: 'Bill to Room is not enabled' }, { status: 400 }) }
         }
 
         const pms = settings.hotelPms
         if (!pms?.enabled || !pms.clientId) {
-          return NextResponse.json({ error: 'Oracle PMS integration is not configured' }, { status: 400 })
+          return { earlyReturn: NextResponse.json({ error: 'Oracle PMS integration is not configured' }, { status: 400 }) }
         }
 
-        // P1.1: Server-trusted guest selection — client sends selectionId from lookup;
-        // server resolves reservation data from in-memory store (never trusts client-supplied OPERA IDs)
         if (!payment.selectionId) {
-          return NextResponse.json({ error: 'Room charge requires a valid guest selection.' }, { status: 400 })
+          return { earlyReturn: NextResponse.json({ error: 'Room charge requires a valid guest selection.' }, { status: 400 }) }
         }
 
         const { consumeRoomChargeSelection } = await import('@/lib/room-charge-selections')
         const sel = consumeRoomChargeSelection(payment.selectionId, order.locationId)
         if (!sel) {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'Guest selection has expired or is invalid. Please look up the guest again.' },
             { status: 400 }
-          )
+          ) }
         }
 
-        // P0.5: Crash-safe idempotency via PmsChargeAttempt table
-        // Key includes amountCents + chargeCode so a legitimate second charge (different amount) is not blocked
         const amountCents = Math.round((payment.amount + (payment.tipAmount || 0)) * 100)
         const idempotencyKey_pms = `${orderId}:${sel.reservationId}:${amountCents}:${pms.chargeCode}`
 
-        // Find existing attempt or create a new PENDING one
-        let pmsAttempt = await db.pmsChargeAttempt.findUnique({ where: { idempotencyKey: idempotencyKey_pms } })
+        let pmsAttempt = await tx.pmsChargeAttempt.findUnique({ where: { idempotencyKey: idempotencyKey_pms } })
 
         if (pmsAttempt?.status === 'COMPLETED') {
-          // Already charged + DB-recorded on a previous request — return idempotent 200
-          return NextResponse.json({
+          return { earlyReturn: NextResponse.json({
             success: true,
             message: 'Room charge already processed.',
             transactionNo: pmsAttempt.operaTransactionId,
-          })
+          }) }
         }
 
         if (pmsAttempt?.status === 'FAILED') {
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'A previous charge attempt failed. Please try a new payment.' },
             { status: 502 }
-          )
+          ) }
         }
 
         if (pmsAttempt?.status === 'PENDING') {
           const ageMs = Date.now() - pmsAttempt.updatedAt.getTime()
           if (ageMs < 60_000) {
-            // Fresh — likely in-flight from a concurrent request
-            return NextResponse.json(
+            return { earlyReturn: NextResponse.json(
               { error: 'Charge in progress. Please wait a moment and try again.' },
               { status: 409 }
-            )
+            ) }
           }
-          // Stale PENDING (≥60s) — server crashed between OPERA post and DB write.
-          // Retry OPERA using the same idempotencyKey; OHIP deduplicates on their side.
         }
 
         if (!pmsAttempt) {
-          pmsAttempt = await db.pmsChargeAttempt.create({
+          pmsAttempt = await tx.pmsChargeAttempt.create({
             data: {
               idempotencyKey: idempotencyKey_pms,
               locationId: order.locationId,
@@ -1190,20 +1118,18 @@ export const POST = withVenue(withTiming(async function POST(
           pmsAttemptId = pmsAttempt.id
           pmsTransactionNo = chargeResult.transactionNo
         } catch (err) {
-          // Mark attempt FAILED so cashier can retry a fresh charge
-          void db.pmsChargeAttempt.update({
+          void tx.pmsChargeAttempt.update({
             where: { id: pmsAttempt.id },
             data: {
-              status: 'FAILED',
+              status: 'FAILED' as PmsAttemptStatus,
               lastErrorMessage: err instanceof Error ? err.message.substring(0, 200) : 'unknown',
             },
           }).catch(e => console.error('[pay/room_charge] Failed to mark attempt FAILED:', e))
-          // P0.3: Log real error server-side; return safe generic message to client
           console.error('[pay/room_charge] OPERA charge failed:', err instanceof Error ? err.message : 'unknown')
-          return NextResponse.json(
+          return { earlyReturn: NextResponse.json(
             { error: 'Failed to post charge to hotel room. Please verify the room and try again.' },
             { status: 502 }
-          )
+          ) }
         }
       }
 
@@ -1342,73 +1268,104 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // ── Ingest synchronously ──────────────────────────────────────────
+    autoVoidRecords = allPendingPayments.filter(
+      (r: any) => (r.paymentMethod === 'credit' || r.paymentMethod === 'debit') && r.datacapRecordNo
+    )
+    autoVoidTerminalId = terminalId
+    autoVoidLocationId = order.locationId
+
     timing.start('db-pay')
-    let ingestResult: IngestResult
-    let parentWasMarkedPaid = false
-    let parentTableId: string | null = null
-    try {
-      ingestResult = await ingestAndProject(db as any, orderId, order.locationId, paymentEvents, {
-        paymentBridgeOverrides: bridgeOverrides,
-        employeeId: employeeId || undefined,
-      })
-    } catch (ingestError) {
-      // W1-P3: If ingestion failed but card was already charged at Datacap,
-      // attempt automatic void to prevent invisible charges
-      const cardRecordsToVoid = allPendingPayments.filter(
-        (r: any) => (r.paymentMethod === 'credit' || r.paymentMethod === 'debit') && r.datacapRecordNo
-      )
-      if (cardRecordsToVoid.length > 0 && terminalId) {
-        void (async () => {
-          try {
-            const terminal = await db.terminal.findUnique({
-              where: { id: terminalId },
-              select: { paymentReaderId: true },
-            })
-            if (!terminal?.paymentReaderId) {
-              console.error('[CRITICAL-PAYMENT] Cannot auto-void: no reader bound to terminal', {
-                terminalId, orderId, records: cardRecordsToVoid.map((r: any) => r.datacapRecordNo),
-              })
-              return
-            }
-            const client = await getDatacapClient(order.locationId)
-            for (const record of cardRecordsToVoid) {
-              const recordNo = (record as any).datacapRecordNo
-              try {
-                const voidResult = await client.voidSale(terminal.paymentReaderId!, { recordNo })
-                const voided = voidResult.cmdStatus === 'Approved'
-                console.error(`[CRITICAL-PAYMENT] Auto-void ${voided ? 'SUCCEEDED' : 'FAILED'} for recordNo=${recordNo}`, {
-                  orderId,
-                  amount: (record as any).amount,
-                  voidResult: { cmdStatus: voidResult.cmdStatus, textResponse: voidResult.textResponse },
-                })
-              } catch (voidErr) {
-                console.error(`[CRITICAL-PAYMENT] Auto-void EXCEPTION for recordNo=${recordNo}`, {
-                  orderId, amount: (record as any).amount, error: voidErr,
-                })
-              }
-            }
-          } catch (lookupErr) {
-            console.error('[CRITICAL-PAYMENT] Auto-void lookup failed', {
-              orderId, terminalId, error: lookupErr,
-            })
-          }
-        })()
-
-        return NextResponse.json(
-          {
-            error: 'Payment approved but recording failed — automatic reversal attempted. Check Datacap portal to confirm.',
-            datacapRecordNos: cardRecordsToVoid.map((r: any) => r.datacapRecordNo),
-          },
-          { status: 500 }
-        )
-      }
-
-      throw ingestError
-    }
+    const ingestResult = await ingestAndProject(tx as any, orderId, order.locationId, paymentEvents, {
+      paymentBridgeOverrides: bridgeOverrides,
+      employeeId: employeeId || undefined,
+    })
     timing.end('db-pay', 'Payment ingestion')
 
-    // Auto-send any items that weren't sent to kitchen before payment (fire-and-forget)
-    // Timed rentals are excluded — they need explicit session start via send route
+    if (ingestResult.alreadyPaid) {
+      const existingPayment = await tx.payment.findFirst({
+        where: { orderId },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
+      })
+      const freshOrder = await tx.order.findUnique({ where: { id: orderId }, select: { total: true, status: true } })
+      return { earlyReturn: NextResponse.json({ data: {
+        success: true,
+        alreadyPaid: true,
+        orderId,
+        paymentId: existingPayment?.id ?? 'already-paid',
+        amount: existingPayment ? Number(existingPayment.amount) : Number(freshOrder?.total ?? 0),
+        tipAmount: existingPayment ? Number(existingPayment.tipAmount) : 0,
+        totalAmount: existingPayment ? Number(existingPayment.totalAmount) : Number(freshOrder?.total ?? 0),
+        paymentMethod: existingPayment?.paymentMethod ?? 'cash',
+        newOrderBalance: 0,
+        orderStatus: freshOrder?.status ?? 'paid',
+      } }) }
+    }
+
+    return {
+      order,
+      ingestResult,
+      settings,
+      payments,
+      employeeId,
+      terminalId,
+      allPendingPayments,
+      totalTips,
+      newTipTotal,
+      newPaidTotal,
+      effectiveTotal,
+      paidTolerance,
+      orderIsPaid,
+      updateData,
+      pointsEarned,
+      newAverageTicket,
+      loyaltyEarningBase,
+      pmsAttemptId,
+      pmsTransactionNo,
+      unsentItems,
+      businessDayStart,
+      paymentMutationOrigin,
+      hasCash,
+    }
+
+    }, { timeout: 30000 })
+
+    if ('earlyReturn' in txResult) {
+      return (txResult as any).earlyReturn as NextResponse
+    }
+
+    const {
+      order,
+      ingestResult,
+      settings,
+      payments,
+      employeeId,
+      terminalId,
+      allPendingPayments,
+      totalTips,
+      newTipTotal,
+      newPaidTotal,
+      effectiveTotal,
+      paidTolerance,
+      orderIsPaid,
+      updateData,
+      pointsEarned,
+      newAverageTicket,
+      loyaltyEarningBase,
+      pmsAttemptId,
+      pmsTransactionNo,
+      unsentItems,
+      businessDayStart,
+      paymentMutationOrigin,
+      hasCash,
+    } = txResult as any
+
+    if (isInOutageMode()) {
+      for (const bp of ingestResult.bridgedPayments) {
+        void queueOutageWrite('Payment', bp.id, 'INSERT', { ...bp } as Record<string, unknown>, order.locationId).catch(console.error)
+      }
+    }
+
     if (unsentItems.length > 0) {
       const autoSendIds = unsentItems
         .filter((i: any) => i.menuItem?.itemType !== 'timed_rental')
@@ -1430,7 +1387,6 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // Mark PMS charge attempt COMPLETED now that payment is durably recorded
     if (pmsAttemptId && pmsTransactionNo) {
       void db.pmsChargeAttempt.update({
         where: { id: pmsAttemptId },
@@ -1438,41 +1394,20 @@ export const POST = withVenue(withTiming(async function POST(
       }).catch(err => console.error('[pay/room_charge] Failed to mark attempt COMPLETED:', err))
     }
 
-    // Handle already-paid race
-    if (ingestResult.alreadyPaid) {
-      const existingPayment = await db.payment.findFirst({
-        where: { orderId },
-        orderBy: { createdAt: 'desc' },
-        select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
-      })
-      const freshOrder = await db.order.findUnique({ where: { id: orderId }, select: { total: true, status: true } })
-      return NextResponse.json({ data: {
-        success: true,
-        alreadyPaid: true,
-        orderId,
-        paymentId: existingPayment?.id ?? 'already-paid',
-        amount: existingPayment ? Number(existingPayment.amount) : Number(freshOrder?.total ?? 0),
-        tipAmount: existingPayment ? Number(existingPayment.tipAmount) : 0,
-        totalAmount: existingPayment ? Number(existingPayment.totalAmount) : Number(freshOrder?.total ?? 0),
-        paymentMethod: existingPayment?.paymentMethod ?? 'cash',
-        newOrderBalance: 0,
-        orderStatus: freshOrder?.status ?? 'paid',
-      } })
-    }
-
-    // Post-ingestion: split parent check (own tx with FOR UPDATE lock)
+    let parentWasMarkedPaid = false
+    let parentTableId: string | null = null
     if (orderIsPaid && order.parentOrderId) {
       try {
-        await db.$transaction(async (tx) => {
-          await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
-          const allSiblings = await tx.order.findMany({
+        await db.$transaction(async (ptx) => {
+          await ptx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
+          const allSiblings = await ptx.order.findMany({
             where: { parentOrderId: order.parentOrderId! },
             select: { id: true, status: true },
           })
           const terminalStatuses = ['paid', 'cancelled', 'voided', 'completed']
           const allSiblingsDone = allSiblings.every(s => terminalStatuses.includes(s.status))
           if (allSiblingsDone) {
-            const parentResult = await tx.order.update({
+            const parentResult = await ptx.order.update({
               where: { id: order.parentOrderId! },
               data: { status: 'paid', paidAt: new Date(), closedAt: new Date() },
               select: { tableId: true },
@@ -1532,8 +1467,8 @@ export const POST = withVenue(withTiming(async function POST(
             orderNumber: order.orderNumber,
             totalPaid: newPaidTotal,
             paymentCount: ingestResult.bridgedPayments.length,
-            paymentMethods: [...new Set(ingestResult.bridgedPayments.map(p => p.paymentMethod))],
-          },
+            paymentMethods: [...new Set(ingestResult.bridgedPayments.map((p: any) => p.paymentMethod))],
+          } as any,
         },
       }).catch(console.error)
     }
@@ -1702,7 +1637,7 @@ export const POST = withVenue(withTiming(async function POST(
           locationId: order.locationId,
           orderId,
           primaryEmployeeId: tipOwnerEmployeeId,
-          createdPayments: ingestResult.bridgedPayments.map(bp => ({
+          createdPayments: ingestResult.bridgedPayments.map((bp: any) => ({
             id: bp.id,
             paymentMethod: bp.paymentMethod,
             amount: bp.amount,
@@ -1797,7 +1732,7 @@ export const POST = withVenue(withTiming(async function POST(
         tipTotal: newTipTotal,
         discountTotal: Number(order.discountTotal),
         total: Number(order.total),
-        payments: ingestResult.bridgedPayments.map(p => ({
+        payments: ingestResult.bridgedPayments.map((p: any) => ({
           id: p.id,
           method: p.paymentMethod,
           amount: p.amount,
@@ -1841,7 +1776,7 @@ export const POST = withVenue(withTiming(async function POST(
           preModifier: mod.preModifier,
         })),
       })),
-      payments: ingestResult.bridgedPayments.map(p => ({
+      payments: ingestResult.bridgedPayments.map((p: any) => ({
         method: p.paymentMethod,
         amount: p.amount,
         tipAmount: p.tipAmount,
@@ -1862,7 +1797,7 @@ export const POST = withVenue(withTiming(async function POST(
         const dualPricing = settings.dualPricing
         if (dualPricing.enabled) {
           const hasCardPayment = ingestResult.bridgedPayments.some(
-            p => (p as any).pricingMode === 'card'
+            (p: any) => p.pricingMode === 'card'
           )
           if (hasCardPayment) {
             return calculateCardPrice(Number(order.total), dualPricing.cashDiscountPercent)
@@ -1896,7 +1831,7 @@ export const POST = withVenue(withTiming(async function POST(
       newOrderBalance: finalBalance,
       orderStatus: finalStatus,
       // Full payment list for web POS
-      payments: ingestResult.bridgedPayments.map(p => ({
+      payments: ingestResult.bridgedPayments.map((p: any) => ({
         id: p.id,
         paymentMethod: p.paymentMethod,
         method: p.paymentMethod,
@@ -1920,7 +1855,55 @@ export const POST = withVenue(withTiming(async function POST(
   } catch (error) {
     console.error('Failed to process payment:', error)
 
-    // Capture CRITICAL payment error
+    if (autoVoidRecords.length > 0 && autoVoidTerminalId && autoVoidLocationId) {
+      const locationId = autoVoidLocationId
+      const tid = autoVoidTerminalId
+      const records = autoVoidRecords
+      void (async () => {
+        try {
+          const terminal = await db.terminal.findUnique({
+            where: { id: tid },
+            select: { paymentReaderId: true },
+          })
+          if (!terminal?.paymentReaderId) {
+            console.error('[CRITICAL-PAYMENT] Cannot auto-void: no reader bound to terminal', {
+              terminalId: tid, orderId, records: records.map((r: any) => r.datacapRecordNo),
+            })
+            return
+          }
+          const client = await getDatacapClient(locationId)
+          for (const record of records) {
+            const recordNo = (record as any).datacapRecordNo
+            try {
+              const voidResult = await client.voidSale(terminal.paymentReaderId!, { recordNo })
+              const voided = voidResult.cmdStatus === 'Approved'
+              console.error(`[CRITICAL-PAYMENT] Auto-void ${voided ? 'SUCCEEDED' : 'FAILED'} for recordNo=${recordNo}`, {
+                orderId,
+                amount: (record as any).amount,
+                voidResult: { cmdStatus: voidResult.cmdStatus, textResponse: voidResult.textResponse },
+              })
+            } catch (voidErr) {
+              console.error(`[CRITICAL-PAYMENT] Auto-void EXCEPTION for recordNo=${recordNo}`, {
+                orderId, amount: (record as any).amount, error: voidErr,
+              })
+            }
+          }
+        } catch (lookupErr) {
+          console.error('[CRITICAL-PAYMENT] Auto-void lookup failed', {
+            orderId, terminalId: tid, error: lookupErr,
+          })
+        }
+      })()
+
+      return NextResponse.json(
+        {
+          error: 'Payment approved but recording failed — automatic reversal attempted. Check Datacap portal to confirm.',
+          datacapRecordNos: records.map((r: any) => r.datacapRecordNo),
+        },
+        { status: 500 }
+      )
+    }
+
     void errorCapture.critical('PAYMENT', 'Payment processing failed', {
       category: 'payment-processing-error',
       action: `Processing payment for Order ${orderId}`,
@@ -1928,9 +1911,7 @@ export const POST = withVenue(withTiming(async function POST(
       error: error instanceof Error ? error : undefined,
       path: `/api/orders/${orderId}/pay`,
       requestBody: body,
-    }).catch(() => {
-      // Silently fail error logging - don't block the error response
-    })
+    }).catch(() => {})
 
     return NextResponse.json(
       { error: 'Failed to process payment' },

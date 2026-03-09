@@ -20,6 +20,9 @@ import { startHardwareCommandWorker } from './src/lib/hardware-command-worker'
 import { scaleService } from './src/lib/scale/scale-service'
 import { startUpstreamSyncWorker, stopUpstreamSyncWorker } from './src/lib/sync/upstream-sync-worker'
 import { startDownstreamSyncWorker, stopDownstreamSyncWorker } from './src/lib/sync/downstream-sync-worker'
+import { startOutageReplayWorker, stopOutageReplayWorker } from './src/lib/sync/outage-replay-worker'
+import { startFulfillmentBridge, stopFulfillmentBridge } from './src/lib/fulfillment-bridge-worker'
+import { startBridgeCheckpoint, stopBridgeCheckpoint } from './src/lib/bridge-checkpoint'
 import { disconnectNeon } from './src/lib/neon-client'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -165,9 +168,16 @@ async function main() {
 
     // Bidirectional sync workers (NUC ↔ Neon)
     if (process.env.SYNC_ENABLED === 'true') {
-      startUpstreamSyncWorker()
-      startDownstreamSyncWorker()
-      console.log('[Server] Bidirectional sync workers started (NUC ↔ Neon)')
+      if (process.env.STATION_ROLE === 'backup') {
+        console.warn('[Server] STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
+      } else {
+        startUpstreamSyncWorker()
+        startDownstreamSyncWorker()
+        startOutageReplayWorker()
+        startFulfillmentBridge()
+        startBridgeCheckpoint()
+        console.log('[Server] Bidirectional sync workers started (NUC ↔ Neon)')
+      }
     }
   })
 
@@ -197,6 +207,9 @@ async function main() {
     if (process.env.SYNC_ENABLED === 'true') {
       stopUpstreamSyncWorker()
       stopDownstreamSyncWorker()
+      stopOutageReplayWorker()
+      stopFulfillmentBridge()
+      stopBridgeCheckpoint()
     }
     await disconnectNeon()
     console.log('[Server] Neon client disconnected')

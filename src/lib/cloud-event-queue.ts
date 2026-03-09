@@ -81,18 +81,23 @@ async function processQueue(): Promise<void> {
       })
 
       const bodyString = JSON.stringify(event.body)
-      const signature = createHmac('sha256', process.env.SERVER_API_KEY || '')
-        .update(bodyString)
-        .digest('hex')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Server-Node-Id': process.env.SERVER_NODE_ID || '',
+      }
+
+      if (process.env.SERVER_API_KEY) {
+        headers['X-Request-Signature'] = createHmac('sha256', process.env.SERVER_API_KEY)
+          .update(bodyString)
+          .digest('hex')
+      } else {
+        console.warn('[CloudEventQueue] SERVER_API_KEY not set — sending unsigned event', { eventType: event.eventType })
+      }
 
       try {
         const res = await fetch(`${cloudUrl}/api/events/ingest`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Server-Node-Id': process.env.SERVER_NODE_ID || '',
-            'X-Request-Signature': signature,
-          },
+          headers,
           body: bodyString,
         })
 

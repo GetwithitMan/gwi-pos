@@ -228,7 +228,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderTypeSales[oType].gross += orderSubtotal
 
       // Item, category, seat, and modifier grouping
-      order.items.forEach(item => {
+      // Skip voided and comped items — they should not count toward category/item revenue
+      order.items.filter(item => item.status !== 'voided' && item.status !== 'comped').forEach(item => {
         itemCount += item.quantity
 
         const itemId = item.pricingOptionLabel

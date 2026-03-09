@@ -92,6 +92,7 @@ function CFDContent() {
       setScreenState('declined')
     }
     const onIdle = () => setScreenState('idle')
+    const onReceiptSent = () => setScreenState('receipt')
 
     socket.on(CFD_EVENTS.SHOW_ORDER, onShowOrder)
     socket.on(CFD_EVENTS.PAYMENT_STARTED, onPaymentStarted)
@@ -101,6 +102,7 @@ function CFDContent() {
     socket.on(CFD_EVENTS.APPROVED, onApproved)
     socket.on(CFD_EVENTS.DECLINED, onDeclined)
     socket.on(CFD_EVENTS.IDLE, onIdle)
+    socket.on(CFD_EVENTS.RECEIPT_SENT, onReceiptSent)
 
     return () => {
       if (locationId) {
@@ -117,6 +119,7 @@ function CFDContent() {
       socket.off(CFD_EVENTS.APPROVED, onApproved)
       socket.off(CFD_EVENTS.DECLINED, onDeclined)
       socket.off(CFD_EVENTS.IDLE, onIdle)
+      socket.off(CFD_EVENTS.RECEIPT_SENT, onReceiptSent)
       socketRef.current = null
       releaseSharedSocket()
     }
@@ -142,10 +145,14 @@ function CFDContent() {
     setScreenState('idle')
   }
 
-  // Auto-return to idle after approved/declined screens
+  // Auto-return to idle after approved/declined/receipt screens
   useEffect(() => {
     if (screenState === 'approved' || screenState === 'declined') {
       const timer = setTimeout(() => setScreenState('idle'), 10000)
+      return () => clearTimeout(timer)
+    }
+    if (screenState === 'receipt') {
+      const timer = setTimeout(() => setScreenState('idle'), 5000)
       return () => clearTimeout(timer)
     }
   }, [screenState])
@@ -217,6 +224,19 @@ function CFDContent() {
             </div>
             <p className="text-2xl text-red-400">Card Declined</p>
             <p className="text-lg text-white/50">{declineReason || 'Please try another card'}</p>
+          </div>
+        )
+
+      case 'receipt':
+        return (
+          <div className="flex flex-col items-center justify-center h-screen gap-6">
+            <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center">
+              <svg className="w-10 h-10 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-3xl text-white font-semibold">Thank You!</p>
+            <p className="text-lg text-white/50">Your receipt has been sent</p>
           </div>
         )
 

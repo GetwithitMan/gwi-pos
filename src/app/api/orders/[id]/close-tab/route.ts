@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabClosed, dispatchOrderClosed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
-import { deductInventoryForOrder } from '@/lib/inventory-calculations'
+import { processNextDeduction } from '@/lib/deduction-processor'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
@@ -38,289 +38,306 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
     }
 
-    // Get order with cards
-    const order = await db.order.findFirst({
-      where: { id: orderId, deletedAt: null },
-      include: {
-        cards: {
-          where: { deletedAt: null, status: 'authorized' },
-          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-        },
-        items: {
-          where: { deletedAt: null, status: 'active' },
-        },
-      },
-    })
+    // BUG FIX: FOR UPDATE row lock prevents double-capture from concurrent close-tab requests.
+    // The entire critical section (order fetch, validation, Datacap capture, payment creation)
+    // runs inside an interactive transaction so only one request can proceed at a time.
+    const txResult = await db.$transaction(async (tx) => {
+      // Acquire row lock — blocks concurrent close-tab requests for this order
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
-    if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
-    }
-
-    // PAYMENT-SAFETY: Double-capture prevention — if order is already paid/closed,
-    // return success with existing state instead of attempting another capture.
-    if (order.status === 'paid' || order.status === 'closed') {
-      return NextResponse.json({
-        data: {
-          success: true,
-          duplicate: true,
-          message: 'Tab already closed',
-          tabStatus: 'closed',
+      // Get order with cards
+      const order = await tx.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        include: {
+          cards: {
+            where: { deletedAt: null, status: 'authorized' },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+          },
+          items: {
+            where: { deletedAt: null, status: 'active' },
+          },
         },
       })
-    }
 
-    // EDGE-7: Reject orders stuck in pending_auth — card authorization is incomplete
-    if (order.tabStatus === 'pending_auth') {
-      return NextResponse.json({
-        error: 'Cannot close tab while card authorization is in progress. Please wait or retry opening the tab.',
-        tabStatus: 'pending_auth',
-      }, { status: 400 })
-    }
+      if (!order) {
+        return { earlyReturn: NextResponse.json({ error: 'Order not found' }, { status: 404 }) }
+      }
 
-    // Concurrency check: if client sent a version, verify it matches
-    if (version != null && order.version !== version) {
-      return NextResponse.json({
-        error: 'Tab was modified on another terminal',
-        conflict: true,
-        currentVersion: order.version,
-      }, { status: 409 })
-    }
-
-    if (order.cards.length === 0) {
-      return NextResponse.json({ error: 'No authorized cards on this tab' }, { status: 400 })
-    }
-
-    const locationId = order.locationId
-
-    // Load tip percentages from location settings
-    const settings = await getLocationSettings(locationId)
-    const locSettings = parseSettings(settings)
-    const rawSuggestions = locSettings.tipBank?.tipGuide?.percentages ?? [15, 18, 20, 25]
-    const tipSuggestions = rawSuggestions
-      .map(Number)
-      .filter(pct => Number.isFinite(pct) && pct > 0 && pct <= 100)
-      .slice(0, 4)
-    if (tipSuggestions.length === 0) tipSuggestions.push(15, 18, 20, 25)
-
-    // Calculate purchase amount from order total.
-    // Tab closes are always card payments (pre-auth capture), so if dual pricing is
-    // enabled we must capture the card price, not the stored cash price.
-    // Pricing model: stored order.total = cash price; card price = cash price × (1 + cashDiscountPercent/100)
-    const cashBaseAmount = Number(order.total) - Number(order.tipTotal)
-    const dualPricing = locSettings.dualPricing
-    const purchaseAmount = dualPricing?.enabled
-      ? calculateCardPrice(cashBaseAmount, dualPricing.cashDiscountPercent ?? 4.0)
-      : cashBaseAmount
-    let gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
-
-    // Bottle service auto-gratuity: apply if no explicit tip was provided
-    if (
-      order.isBottleService &&
-      order.bottleServiceTierId &&
-      gratuityAmount == null &&
-      tipMode !== 'device'
-    ) {
-      const tier = await db.bottleServiceTier.findUnique({
-        where: { id: order.bottleServiceTierId },
-        select: { autoGratuityPercent: true, minimumSpend: true },
-      })
-
-      if (tier && tier.autoGratuityPercent != null) {
-        const autoGratPct = Number(tier.autoGratuityPercent)
-        const minSpend = Number(tier.minimumSpend) || 0
-
-        if (autoGratPct > 0 && (minSpend <= 0 || purchaseAmount >= minSpend)) {
-          gratuityAmount = Math.round(purchaseAmount * (autoGratPct / 100) * 100) / 100
+      // PAYMENT-SAFETY: Double-capture prevention — if order is already paid/closed,
+      // return success with existing state instead of attempting another capture.
+      if (order.status === 'paid' || order.status === 'closed') {
+        return {
+          earlyReturn: NextResponse.json({
+            data: {
+              success: true,
+              duplicate: true,
+              message: 'Tab already closed',
+              tabStatus: 'closed',
+            },
+          }),
         }
       }
-    }
 
-    // If a specific card was requested, filter to just that card
-    let cardsToTry = order.cards
-    if (orderCardId) {
-      cardsToTry = order.cards.filter(c => c.id === orderCardId)
-      if (cardsToTry.length === 0) {
-        return NextResponse.json({ error: 'Specified card not found or not authorized' }, { status: 400 })
+      // EDGE-7: Reject orders stuck in pending_auth — card authorization is incomplete
+      if (order.tabStatus === 'pending_auth') {
+        return {
+          earlyReturn: NextResponse.json({
+            error: 'Cannot close tab while card authorization is in progress. Please wait or retry opening the tab.',
+            tabStatus: 'pending_auth',
+          }, { status: 400 }),
+        }
       }
-    }
 
-    // Try capturing against default card first, then others
-    let capturedCard = null
-    let captureResult = null
+      // Concurrency check: if client sent a version, verify it matches
+      if (version != null && order.version !== version) {
+        return {
+          earlyReturn: NextResponse.json({
+            error: 'Tab was modified on another terminal',
+            conflict: true,
+            currentVersion: order.version,
+          }, { status: 409 }),
+        }
+      }
 
-    for (const card of cardsToTry) {
-      try {
-        await validateReader(card.readerId, locationId)
-        const client = await requireDatacapClient(locationId)
+      if (order.cards.length === 0) {
+        return { earlyReturn: NextResponse.json({ error: 'No authorized cards on this tab' }, { status: 400 }) }
+      }
 
-        // If device tip mode, fire GetSuggestiveTip first
-        if (tipMode === 'device') {
-          try {
-            const tipResponse = await client.getSuggestiveTip(card.readerId, tipSuggestions)
-            if (tipResponse.gratuityAmount) {
-              // Use device-selected tip
-              const deviceTip = roundToCents(parseFloat(tipResponse.gratuityAmount) || 0)
-              const response = await client.preAuthCapture(card.readerId, {
-                recordNo: card.recordNo,
-                purchaseAmount,
-                gratuityAmount: deviceTip,
-              })
-              captureResult = { response, tipAmount: deviceTip }
-              capturedCard = card
-              break
+      const locationId = order.locationId
+
+      // Load tip percentages from location settings
+      const settings = await getLocationSettings(locationId)
+      const locSettings = parseSettings(settings)
+      const rawSuggestions = locSettings.tipBank?.tipGuide?.percentages ?? [15, 18, 20, 25]
+      const tipSuggestions = rawSuggestions
+        .map(Number)
+        .filter(pct => Number.isFinite(pct) && pct > 0 && pct <= 100)
+        .slice(0, 4)
+      if (tipSuggestions.length === 0) tipSuggestions.push(15, 18, 20, 25)
+
+      // Calculate purchase amount from order total.
+      // Tab closes are always card payments (pre-auth capture), so if dual pricing is
+      // enabled we must capture the card price, not the stored cash price.
+      // Pricing model: stored order.total = cash price; card price = cash price × (1 + cashDiscountPercent/100)
+      const cashBaseAmount = Number(order.total) - Number(order.tipTotal)
+      const dualPricing = locSettings.dualPricing
+      const purchaseAmount = dualPricing?.enabled
+        ? calculateCardPrice(cashBaseAmount, dualPricing.cashDiscountPercent ?? 4.0)
+        : cashBaseAmount
+      let gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
+
+      // Bottle service auto-gratuity: apply if no explicit tip was provided
+      if (
+        order.isBottleService &&
+        order.bottleServiceTierId &&
+        gratuityAmount == null &&
+        tipMode !== 'device'
+      ) {
+        const tier = await tx.bottleServiceTier.findUnique({
+          where: { id: order.bottleServiceTierId },
+          select: { autoGratuityPercent: true, minimumSpend: true },
+        })
+
+        if (tier && tier.autoGratuityPercent != null) {
+          const autoGratPct = Number(tier.autoGratuityPercent)
+          const minSpend = Number(tier.minimumSpend) || 0
+
+          if (autoGratPct > 0 && (minSpend <= 0 || purchaseAmount >= minSpend)) {
+            gratuityAmount = Math.round(purchaseAmount * (autoGratPct / 100) * 100) / 100
+          }
+        }
+      }
+
+      // If a specific card was requested, filter to just that card
+      let cardsToTry = order.cards
+      if (orderCardId) {
+        cardsToTry = order.cards.filter(c => c.id === orderCardId)
+        if (cardsToTry.length === 0) {
+          return { earlyReturn: NextResponse.json({ error: 'Specified card not found or not authorized' }, { status: 400 }) }
+        }
+      }
+
+      // Try capturing against default card first, then others
+      let capturedCard = null
+      let captureResult = null
+
+      for (const card of cardsToTry) {
+        try {
+          await validateReader(card.readerId, locationId)
+          const client = await requireDatacapClient(locationId)
+
+          // If device tip mode, fire GetSuggestiveTip first
+          if (tipMode === 'device') {
+            try {
+              const tipResponse = await client.getSuggestiveTip(card.readerId, tipSuggestions)
+              if (tipResponse.gratuityAmount) {
+                // Use device-selected tip
+                const deviceTip = roundToCents(parseFloat(tipResponse.gratuityAmount) || 0)
+                const response = await client.preAuthCapture(card.readerId, {
+                  recordNo: card.recordNo,
+                  purchaseAmount,
+                  gratuityAmount: deviceTip,
+                })
+                captureResult = { response, tipAmount: deviceTip }
+                capturedCard = card
+                break
+              }
+            } catch (tipErr) {
+              console.warn(`[Tab Close] Device tip prompt failed, falling back:`, tipErr)
             }
-          } catch (tipErr) {
-            console.warn(`[Tab Close] Device tip prompt failed, falling back:`, tipErr)
           }
+
+          // Standard capture (receipt tip or included tip)
+          const response = await client.preAuthCapture(card.readerId, {
+            recordNo: card.recordNo,
+            purchaseAmount,
+            gratuityAmount,
+          })
+
+          captureResult = { response, tipAmount: gratuityAmount || 0 }
+          capturedCard = card
+          break
+        } catch (err) {
+          // PAYMENT-SAFETY: Capture may have succeeded on the processor but we didn't get
+          // the response (timeout/network). The charge is ambiguous — the card may have been
+          // debited without our DB reflecting it. Log for reconciliation.
+          console.error('[PAYMENT-SAFETY] Ambiguous state', {
+            orderId,
+            flow: 'close-tab',
+            reason: 'capture_error_or_timeout',
+            datacapRecordNo: card.recordNo,
+            cardLast4: card.cardLast4,
+            attemptedAmount: purchaseAmount + (gratuityAmount || 0),
+            timestamp: new Date().toISOString(),
+            error: err instanceof Error ? err.message : String(err),
+          })
+
+          // PAYMENT-SAFETY: Attempt to void/release the pre-auth so the hold on the
+          // customer's card doesn't linger for days. Fire-and-forget — best effort.
+          void (async () => {
+            try {
+              const voidClient = await requireDatacapClient(locationId)
+              await voidClient.voidSale(card.readerId, { recordNo: card.recordNo })
+              console.info('[PAYMENT-SAFETY] Released pre-auth after capture failure', {
+                orderId, cardRecordNo: card.recordNo, cardLast4: card.cardLast4,
+              })
+            } catch (voidErr) {
+              console.error('[PAYMENT-SAFETY] CRITICAL: Failed to release auth after capture failure', {
+                orderId,
+                cardRecordNo: card.recordNo,
+                cardLast4: card.cardLast4,
+                captureError: err instanceof Error ? err.message : String(err),
+                voidError: voidErr instanceof Error ? voidErr.message : String(voidErr),
+              })
+            }
+          })()
+
+          continue
+        }
+      }
+
+      if (!capturedCard || !captureResult) {
+        // Track the declined capture
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            tabStatus: 'declined_capture',
+            captureDeclinedAt: new Date(),
+            captureRetryCount: { increment: 1 },
+            lastCaptureError: 'All cards failed to capture',
+          },
+        })
+
+        // Check if auto-walkout threshold reached
+        const updatedOrder = await tx.order.findUnique({
+          where: { id: orderId },
+          select: { captureRetryCount: true },
+        })
+        const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 5
+        const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? false
+        if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
+          await tx.order.update({
+            where: { id: orderId },
+            data: { isWalkout: true, walkoutAt: new Date() },
+          })
         }
 
-        // Standard capture (receipt tip or included tip)
-        const response = await client.preAuthCapture(card.readerId, {
-          recordNo: card.recordNo,
-          purchaseAmount,
-          gratuityAmount,
-        })
+        // Notify all terminals
+        dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
 
-        captureResult = { response, tipAmount: gratuityAmount || 0 }
-        capturedCard = card
-        break
-      } catch (err) {
-        // PAYMENT-SAFETY: Capture may have succeeded on the processor but we didn't get
-        // the response (timeout/network). The charge is ambiguous — the card may have been
-        // debited without our DB reflecting it. Log for reconciliation.
-        console.error('[PAYMENT-SAFETY] Ambiguous state', {
-          orderId,
-          flow: 'close-tab',
-          reason: 'capture_error_or_timeout',
-          datacapRecordNo: card.recordNo,
-          cardLast4: card.cardLast4,
-          attemptedAmount: purchaseAmount + (gratuityAmount || 0),
-          timestamp: new Date().toISOString(),
-          error: err instanceof Error ? err.message : String(err),
-        })
-
-        // PAYMENT-SAFETY: Attempt to void/release the pre-auth so the hold on the
-        // customer's card doesn't linger for days. Fire-and-forget — best effort.
-        void (async () => {
-          try {
-            const voidClient = await requireDatacapClient(locationId)
-            await voidClient.voidSale(card.readerId, { recordNo: card.recordNo })
-            console.info('[PAYMENT-SAFETY] Released pre-auth after capture failure', {
-              orderId, cardRecordNo: card.recordNo, cardLast4: card.cardLast4,
-            })
-          } catch (voidErr) {
-            console.error('[PAYMENT-SAFETY] CRITICAL: Failed to release auth after capture failure', {
-              orderId,
-              cardRecordNo: card.recordNo,
-              cardLast4: card.cardLast4,
-              captureError: err instanceof Error ? err.message : String(err),
-              voidError: voidErr instanceof Error ? voidErr.message : String(voidErr),
-            })
-          }
-        })()
-
-        continue
+        return {
+          earlyReturn: NextResponse.json({
+            data: {
+              success: false,
+              error: 'All cards failed to capture',
+              tabStatus: 'declined_capture',
+              retryCount: updatedOrder?.captureRetryCount || 1,
+              maxRetries,
+            },
+          }),
+        }
       }
-    }
 
-    if (!capturedCard || !captureResult) {
-      // Track the declined capture
-      await db.order.update({
-        where: { id: orderId },
-        data: {
-          tabStatus: 'declined_capture',
-          captureDeclinedAt: new Date(),
-          captureRetryCount: { increment: 1 },
-          lastCaptureError: 'All cards failed to capture',
-        },
-      })
+      const { response } = captureResult
+      const approved = response.cmdStatus === 'Approved'
+      const error = parseError(response)
 
-      // Check if auto-walkout threshold reached
-      const updatedOrder = await db.order.findUnique({
-        where: { id: orderId },
-        select: { captureRetryCount: true },
-      })
-      const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 5
-      const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? false
-      if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
-        await db.order.update({
+      if (!approved) {
+        // Track the declined capture
+        await tx.order.update({
           where: { id: orderId },
-          data: { isWalkout: true, walkoutAt: new Date() },
+          data: {
+            tabStatus: 'declined_capture',
+            captureDeclinedAt: new Date(),
+            captureRetryCount: { increment: 1 },
+            lastCaptureError: error?.text || 'Capture declined',
+          },
         })
-      }
 
-      // Notify all terminals
-      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
-
-      return NextResponse.json({
-        data: {
-          success: false,
-          error: 'All cards failed to capture',
-          tabStatus: 'declined_capture',
-          retryCount: updatedOrder?.captureRetryCount || 1,
-          maxRetries,
-        },
-      })
-    }
-
-    const { response } = captureResult
-    const approved = response.cmdStatus === 'Approved'
-    const error = parseError(response)
-
-    if (!approved) {
-      // Track the declined capture
-      await db.order.update({
-        where: { id: orderId },
-        data: {
-          tabStatus: 'declined_capture',
-          captureDeclinedAt: new Date(),
-          captureRetryCount: { increment: 1 },
-          lastCaptureError: error?.text || 'Capture declined',
-        },
-      })
-
-      // Check if auto-walkout threshold reached
-      const updatedOrder = await db.order.findUnique({
-        where: { id: orderId },
-        select: { captureRetryCount: true },
-      })
-      const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 5
-      const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? false
-      if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
-        await db.order.update({
+        // Check if auto-walkout threshold reached
+        const updatedOrder = await tx.order.findUnique({
           where: { id: orderId },
-          data: { isWalkout: true, walkoutAt: new Date() },
+          select: { captureRetryCount: true },
         })
+        const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 5
+        const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? false
+        if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
+          await tx.order.update({
+            where: { id: orderId },
+            data: { isWalkout: true, walkoutAt: new Date() },
+          })
+        }
+
+        // Notify all terminals
+        dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
+
+        return {
+          earlyReturn: NextResponse.json({
+            data: {
+              success: false,
+              cardType: capturedCard.cardType,
+              cardLast4: capturedCard.cardLast4,
+              error: error
+                ? { code: error.code, message: error.text, isRetryable: error.isRetryable }
+                : { code: 'DECLINED', message: 'Capture declined', isRetryable: true },
+              tabStatus: 'declined_capture',
+              retryCount: updatedOrder?.captureRetryCount || 1,
+              maxRetries,
+            },
+          }),
+        }
       }
 
-      // Notify all terminals
-      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
+      // Update OrderCard + Order status + Payment record atomically.
+      // PAYMENT-SAFETY: The order transitions to 'paid' ONLY inside this transaction,
+      // AFTER the Datacap capture response is confirmed as 'Approved'. Never optimistic.
+      // BUG #455 FIX: Create a Payment record so close-tab payments appear in reports/reconciliation.
+      // BUG #456 FIX: Use explicit conditional for tipTotal — 0 is a valid tip amount, not falsy.
+      const now = new Date()
+      const finalTipAmount = captureResult.tipAmount ?? 0
+      const totalCaptured = purchaseAmount + finalTipAmount
 
-      return NextResponse.json({
-        data: {
-          success: false,
-          cardType: capturedCard.cardType,
-          cardLast4: capturedCard.cardLast4,
-          error: error
-            ? { code: error.code, message: error.text, isRetryable: error.isRetryable }
-            : { code: 'DECLINED', message: 'Capture declined', isRetryable: true },
-          tabStatus: 'declined_capture',
-          retryCount: updatedOrder?.captureRetryCount || 1,
-          maxRetries,
-        },
-      })
-    }
-
-    // Update OrderCard + Order status + Payment record atomically.
-    // PAYMENT-SAFETY: The order transitions to 'paid' ONLY inside this transaction,
-    // AFTER the Datacap capture response is confirmed as 'Approved'. Never optimistic.
-    // BUG #455 FIX: Create a Payment record so close-tab payments appear in reports/reconciliation.
-    // BUG #456 FIX: Use explicit conditional for tipTotal — 0 is a valid tip amount, not falsy.
-    const now = new Date()
-    const finalTipAmount = captureResult.tipAmount ?? 0
-    const totalCaptured = purchaseAmount + finalTipAmount
-    await db.$transaction([
-      db.orderCard.update({
+      await tx.orderCard.update({
         where: { id: capturedCard.id },
         data: {
           status: 'captured',
@@ -328,8 +345,8 @@ export const POST = withVenue(async function POST(
           capturedAt: now,
           tipAmount: finalTipAmount,
         },
-      }),
-      db.order.update({
+      })
+      await tx.order.update({
         where: { id: orderId },
         data: {
           status: 'paid',
@@ -340,9 +357,9 @@ export const POST = withVenue(async function POST(
           total: totalCaptured,
           version: { increment: 1 },
         },
-      }),
+      })
       // BUG #455: Create Payment record for close-tab capture
-      db.payment.create({
+      await tx.payment.create({
         data: {
           locationId,
           orderId,
@@ -358,17 +375,35 @@ export const POST = withVenue(async function POST(
           entryMethod: 'Chip', // Tab was opened with card present
           status: 'completed',
         },
-      }),
+      })
       // Void any remaining authorized cards
-      ...order.cards
-        .filter((c) => c.id !== capturedCard!.id && c.status === 'authorized')
-        .map((c) =>
-          db.orderCard.update({
-            where: { id: c.id },
-            data: { status: 'voided' },
-          })
-        ),
-    ])
+      for (const c of order.cards.filter((c) => c.id !== capturedCard!.id && c.status === 'authorized')) {
+        await tx.orderCard.update({
+          where: { id: c.id },
+          data: { status: 'voided' },
+        })
+      }
+
+      return {
+        order,
+        locationId,
+        locSettings,
+        capturedCard,
+        captureResult,
+        purchaseAmount,
+        now,
+        finalTipAmount,
+        totalCaptured,
+        response,
+      }
+    })
+
+    // If the transaction returned an early response, send it
+    if ('earlyReturn' in txResult) {
+      return txResult.earlyReturn as NextResponse
+    }
+
+    const { order, locationId, locSettings, capturedCard, captureResult, purchaseAmount, now, finalTipAmount, totalCaptured, response } = txResult as Exclude<typeof txResult, { earlyReturn: any }>
 
     // Emit order events for tab close (fire-and-forget)
     void emitOrderEvent(locationId, orderId, 'TAB_CLOSED', {
@@ -390,10 +425,19 @@ export const POST = withVenue(async function POST(
       closedStatus: 'paid',
     })
 
-    // Deduct inventory (food + liquor) — fire-and-forget to not block payment
-    void deductInventoryForOrder(orderId, employeeId).catch(err => {
-      console.error('Background inventory deduction failed (close-tab):', err)
+    // Deduct inventory via PendingDeduction outbox (retryable, with exponential backoff)
+    await db.pendingDeduction.upsert({
+      where: { orderId: order.id },
+      create: {
+        orderId: order.id,
+        locationId: locationId,
+        status: 'pending',
+        attempts: 0,
+        maxAttempts: 5,
+      },
+      update: {}
     })
+    void processNextDeduction().catch(console.error)
 
     // Allocate tips via the tip bank pipeline — fire-and-forget
     if (finalTipAmount > 0 && order.employeeId) {
@@ -420,6 +464,9 @@ export const POST = withVenue(async function POST(
 
     // Dispatch tab:updated for tab close (fire-and-forget)
     void dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(() => {})
+
+    // Dispatch mobile tab:status-update for phone sync (fire-and-forget)
+    dispatchTabStatusUpdate(locationId, { orderId, status: 'closed' })
 
     // Dispatch mobile tab:closed for phone sync (fire-and-forget)
     dispatchTabClosed(locationId, {

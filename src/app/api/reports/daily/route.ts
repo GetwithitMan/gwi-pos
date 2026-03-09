@@ -422,8 +422,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }> = {
       cash: { count: 0, amount: 0, tips: 0 },
       credit: { count: 0, amount: 0, tips: 0 },
+      debit: { count: 0, amount: 0, tips: 0 },
       gift: { count: 0, amount: 0, tips: 0 },
       house_account: { count: 0, amount: 0, tips: 0 },
+      room_charge: { count: 0, amount: 0, tips: 0 },
+      loyalty_points: { count: 0, amount: 0, tips: 0 },
       other: { count: 0, amount: 0, tips: 0 },
     }
 
@@ -474,6 +477,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             creditCardBreakdown.other.count++
             creditCardBreakdown.other.amount += amount
           }
+        } else if (paymentType === 'debit') {
+          paymentsByType.debit.count++
+          paymentsByType.debit.amount += amount
+          paymentsByType.debit.tips += tip
         } else if (paymentType === 'gift' || paymentType === 'gift_card') {
           paymentsByType.gift.count++
           paymentsByType.gift.amount += amount
@@ -481,6 +488,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         } else if (paymentType === 'house_account') {
           paymentsByType.house_account.count++
           paymentsByType.house_account.amount += amount
+        } else if (paymentType === 'room_charge') {
+          paymentsByType.room_charge.count++
+          paymentsByType.room_charge.amount += amount
+          paymentsByType.room_charge.tips += tip
+        } else if (paymentType === 'loyalty_points' || paymentType === 'loyalty') {
+          paymentsByType.loyalty_points.count++
+          paymentsByType.loyalty_points.amount += amount
         } else {
           paymentsByType.other.count++
           paymentsByType.other.amount += amount
@@ -815,6 +829,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             other: creditCardBreakdown.other,
           },
         },
+        debit: {
+          count: paymentsByType.debit.count,
+          amount: round(paymentsByType.debit.amount),
+          tips: round(paymentsByType.debit.tips),
+        },
         gift: {
           count: paymentsByType.gift.count,
           amount: round(paymentsByType.gift.amount),
@@ -822,6 +841,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         houseAccount: {
           count: paymentsByType.house_account.count,
           amount: round(paymentsByType.house_account.amount),
+        },
+        roomCharge: {
+          count: paymentsByType.room_charge.count,
+          amount: round(paymentsByType.room_charge.amount),
+          tips: round(paymentsByType.room_charge.tips),
+        },
+        loyaltyPoints: {
+          count: paymentsByType.loyalty_points.count,
+          amount: round(paymentsByType.loyalty_points.amount),
         },
         other: {
           count: paymentsByType.other.count,

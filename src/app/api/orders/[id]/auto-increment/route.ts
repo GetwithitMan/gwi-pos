@@ -4,7 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchTabUpdated } from '@/lib/socket-dispatch'
+import { dispatchTabUpdated, dispatchTabStatusUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Check if tab needs auto-increment and fire IncrementalAuth if so
@@ -149,6 +149,7 @@ export const POST = withVenue(async function POST(
           orderId,
           status: 'incremented',
         }).catch(() => {})
+        dispatchTabStatusUpdate(locationId, { orderId, status: 'incremented' })
 
         return NextResponse.json({
           data: {
@@ -173,6 +174,7 @@ export const POST = withVenue(async function POST(
           orderId,
           status: 'increment_failed',
         }).catch(() => {})
+        dispatchTabStatusUpdate(locationId, { orderId, status: 'increment_failed' })
 
         return NextResponse.json({
           data: {

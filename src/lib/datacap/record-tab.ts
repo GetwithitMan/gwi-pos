@@ -13,7 +13,7 @@
  */
 
 import { db } from '@/lib/db'
-import { dispatchTabUpdated, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export interface RecordTabParams {
@@ -153,6 +153,7 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
     orderId,
     status: 'open',
   }).catch(() => {})
+  dispatchTabStatusUpdate(locationId, { orderId, status: 'open' })
   void dispatchOpenOrdersChanged(locationId, {
     trigger: 'created',
     orderId,

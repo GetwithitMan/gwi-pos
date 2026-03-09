@@ -169,8 +169,8 @@ export const PUT = withVenue(async function PUT(
         shift.drawerId || null
       )
 
-      // Expected cash = starting cash + cash received - change given
-      const expectedCash = Number(shift.startingCash) + summary.netCashReceived
+      // Expected cash = starting cash + cash received - change given + paid in - paid out
+      const expectedCash = Number(shift.startingCash) + summary.netCashReceived + summary.paidIn - summary.paidOut
       const variance = effectiveActualCash - expectedCash
 
       // Guard: large cash variance requires override permission
@@ -484,11 +484,11 @@ async function calculateShiftSummary(
     totalTips += tip
 
     if (payment.paymentMethod === 'cash') {
-      cashSales += amount + tip
+      cashSales += amount
       cashReceived += Number(payment.amountTendered || 0)
       changeGiven += Number(payment.changeGiven || 0)
     } else {
-      cardSales += amount + tip
+      cardSales += amount
     }
   })
 
@@ -527,6 +527,30 @@ async function calculateShiftSummary(
     changeGiven = drawerChangeGiven
     netCashReceived = drawerCashReceived - drawerChangeGiven
   }
+
+  // Query paid-in/out for the shift period (drawer-aware if applicable)
+  const paidInOutWhere: Parameters<typeof db.paidInOut.findMany>[0] = {
+    where: {
+      locationId,
+      createdAt: {
+        gte: startTime,
+        lte: endTime,
+      },
+      ...(drawerId ? { drawerId } : { employeeId }),
+    },
+  }
+  const paidInOuts = await db.paidInOut.findMany(paidInOutWhere)
+
+  let paidIn = 0
+  let paidOut = 0
+  paidInOuts.forEach(pio => {
+    const amount = Number(pio.amount) || 0
+    if (pio.type === 'in') {
+      paidIn += amount
+    } else {
+      paidOut += amount
+    }
+  })
 
   // Calculate sales by category type for tip-out basis
   // Query order items for paid/closed orders and aggregate by categoryType
@@ -637,6 +661,8 @@ async function calculateShiftSummary(
     cashReceived: Math.round(cashReceived * 100) / 100,
     changeGiven: Math.round(changeGiven * 100) / 100,
     netCashReceived: Math.round(netCashReceived * 100) / 100,
+    paidIn: Math.round(paidIn * 100) / 100,
+    paidOut: Math.round(paidOut * 100) / 100,
     orderCount,
     paymentCount,
     voidCount: voids,

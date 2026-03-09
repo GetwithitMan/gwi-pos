@@ -138,7 +138,7 @@ const CELLULAR_ALLOWLIST: Array<string | RegExp> = [
 /** Routes hard-blocked for CELLULAR_ROAMING (403 always) */
 const CELLULAR_HARD_BLOCKED: Array<string | RegExp> = [
   /^\/api\/orders\/[^/]+\/refund/,
-  /^\/api\/orders\/[^/]+\/tip-adjust/,
+  /^\/api\/orders\/[^/]+\/adjust-tip/,
   /^\/api\/shifts\/[^/]+\/close/,
   /^\/api\/(admin|settings|reports)(\/|$)/,
   /^\/api\/inventory(\/|$)/,

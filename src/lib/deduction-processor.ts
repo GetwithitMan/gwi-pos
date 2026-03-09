@@ -2,7 +2,7 @@
  * Inventory Deduction Outbox Processor
  *
  * Atomically claims pending deduction jobs (FOR UPDATE SKIP LOCKED)
- * and runs both food + liquor inventory deductions.
+ * and runs inventory deductions (food + liquor via unified deductInventoryForOrder).
  *
  * Called:
  *  1. Best-effort from pay route (immediate processing)
@@ -12,7 +12,11 @@
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { deductInventoryForOrder } from '@/lib/inventory'
-import { processLiquorInventory } from '@/lib/liquor-inventory'
+// NOTE: processLiquorInventory was removed from this processor (2026-03-09).
+// deductInventoryForOrder() already handles liquor items via recipeIngredients
+// (BottleProduct → InventoryItem) with spirit substitution support. Running both
+// caused every liquor item to be deducted TWICE from InventoryItem.currentStock,
+// inflating COGS by ~100% for liquor.
 
 interface ClaimedDeduction {
   id: string
@@ -66,15 +70,41 @@ export async function processNextDeduction(): Promise<{
   const startMs = Date.now()
 
   try {
-    // Run both food and liquor deductions
-    const [foodResult, liquorResult] = await Promise.allSettled([
-      deductInventoryForOrder(job.orderId, null),
-      processLiquorInventory(job.orderId, null),
-    ])
+    // Run inventory deduction (handles both food recipes AND liquor recipeIngredients)
+    const foodResult = await deductInventoryForOrder(job.orderId, null)
 
     const durationMs = Date.now() - startMs
 
-    // Mark succeeded
+    if (!foodResult.success) {
+      // Deduction returned a failure — treat like a retryable error
+      const errorMessage = foodResult.errors?.[0] ?? 'deductInventoryForOrder returned success: false'
+      const isDead = job.attempts >= job.maxAttempts
+      const backoffSeconds = Math.pow(2, job.attempts) * 30
+      const nextAvailable = new Date(Date.now() + backoffSeconds * 1000)
+
+      await db.pendingDeduction.update({
+        where: { id: job.id },
+        data: {
+          status: isDead ? 'dead' : 'failed',
+          lastError: errorMessage,
+          ...(isDead ? {} : { availableAt: nextAvailable }),
+        },
+      })
+
+      await db.deductionRun.create({
+        data: {
+          pendingDeductionId: job.id,
+          success: false,
+          error: errorMessage,
+          durationMs,
+        },
+      })
+
+      console.error(`[deduction-processor] Order ${job.orderId} deduction failed (attempt ${job.attempts}):`, errorMessage)
+      return { processed: true, orderId: job.orderId, success: false }
+    }
+
+    // Mark succeeded — only when deduction actually succeeded
     await db.pendingDeduction.update({
       where: { id: job.id },
       data: {
@@ -90,8 +120,9 @@ export async function processNextDeduction(): Promise<{
         success: true,
         durationMs,
         resultSummary: {
-          food: foodResult.status === 'fulfilled' ? 'ok' : foodResult.reason?.message,
-          liquor: liquorResult.status === 'fulfilled' ? 'ok' : liquorResult.reason?.message,
+          food: 'ok',
+          itemsDeducted: foodResult.itemsDeducted,
+          totalCost: foodResult.totalCost,
         } as Prisma.JsonObject,
       },
     })

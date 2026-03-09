@@ -650,10 +650,11 @@ export const POST = withVenue(async function POST(
       const remainingTax = calculateTax(remainingSubtotal, taxRate)
       const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
 
-      // Update original order totals
+      // Update original order totals and mark as 'split' so children become payable
       await db.order.update({
         where: { id: order.id },
         data: {
+          status: 'split',
           subtotal: remainingSubtotal,
           taxTotal: remainingTax,
           total: remainingTotal,
@@ -903,10 +904,11 @@ export const POST = withVenue(async function POST(
       const remainingTax = calculateTax(remainingSubtotal, taxRate)
       const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
 
-      // Update original order totals
+      // Update original order totals and mark as 'split' so children become payable
       await db.order.update({
         where: { id: order.id },
         data: {
+          status: 'split',
           subtotal: remainingSubtotal,
           taxTotal: remainingTax,
           total: remainingTotal,

@@ -8,6 +8,8 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig, type OriginDevice } from '@/lib/fulfillment-router'
+import { getLocationTaxRate } from '@/lib/order-calculations'
+import { roundToCents } from '@/lib/pricing'
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -146,6 +148,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         await db.$transaction(async (tx) => {
           // Track the server-side order ID (may differ from clientOrderId)
           let serverOrderId: string | null = null
+
+          // Fetch tax rate once per order group
+          const location = await tx.location.findUnique({
+            where: { id: locationId },
+          })
+          const taxRate = getLocationTaxRate(location?.settings as { tax?: { defaultRate?: number } })
 
           for (const evt of orderEvents) {
             // Idempotency: skip already-processed events
@@ -300,12 +308,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   },
                 })
 
-                // Update order subtotal and total
+                // Update order subtotal, tax, and total
+                const itemTax = roundToCents(itemTotal * taxRate)
                 await tx.order.update({
                   where: { id: targetOrderId },
                   data: {
                     subtotal: { increment: itemTotal },
-                    total: { increment: itemTotal },
+                    taxTotal: { increment: itemTax },
+                    taxFromExclusive: { increment: itemTax },
+                    total: { increment: itemTotal + itemTax },
                     itemCount: { increment: quantity },
                     version: { increment: 1 },
                   },
@@ -347,12 +358,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   data: { deletedAt: new Date() },
                 })
 
-                // Decrement order totals
+                // Decrement order totals (including tax)
+                const removedItemTax = roundToCents(Number(item.itemTotal) * taxRate)
                 await tx.order.update({
                   where: { id: targetOrderId },
                   data: {
                     subtotal: { decrement: Number(item.itemTotal) },
-                    total: { decrement: Number(item.itemTotal) },
+                    taxTotal: { decrement: removedItemTax },
+                    taxFromExclusive: { decrement: removedItemTax },
+                    total: { decrement: Number(item.itemTotal) + removedItemTax },
                     itemCount: { decrement: item.quantity },
                     version: { increment: 1 },
                   },

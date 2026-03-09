@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabStatusUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -82,6 +82,14 @@ export const POST = withVenue(async function POST(
       },
     })
 
+    // Reset table to available when tab is fully voided
+    if (allVoided && order.tableId) {
+      await db.table.update({
+        where: { id: order.tableId },
+        data: { status: 'available' },
+      })
+    }
+
     // Fire-and-forget event emission
     if (allVoided) {
       void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
@@ -101,6 +109,7 @@ export const POST = withVenue(async function POST(
         orderId,
         status: 'voided',
       }).catch(() => {})
+      dispatchTabStatusUpdate(locationId, { orderId, status: 'voided' })
       if (order.tableId) {
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
       }

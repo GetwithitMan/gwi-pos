@@ -37,7 +37,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const range = dateRangeToUTC(startDate || defaultStart, endDate || defaultEnd, timezone)
     const dateFilter = { gte: range.start, lte: range.end }
 
-    // Get all active order items in the date range
+    // Get active + comped order items in the date range
+    // Comped items still consumed food (cost was incurred), only revenue was waived
     const orderItems = await db.orderItem.findMany({
       where: {
         order: {
@@ -45,7 +46,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           status: { in: ['paid', 'closed'] },
           paidAt: dateFilter,
         },
-        status: 'active',
+        status: { in: ['active', 'comped'] },
       },
       include: {
         menuItem: {
@@ -82,7 +83,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     for (const oi of orderItems) {
       const mi = oi.menuItem
-      const itemTotal = Number(oi.itemTotal)
+      const isComped = oi.status === 'comped'
+      // Comped items retain their original itemTotal in the DB, but generate $0 revenue
+      const itemRevenue = isComped ? 0 : Number(oi.itemTotal)
       const unitCost = oi.costAtSale != null
         ? Number(oi.costAtSale)
         : mi.recipe?.totalCost != null
@@ -92,14 +95,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             : null
 
       const hasCost = unitCost !== null && unitCost > 0
+      // Cost is always included — comped items still consumed food
       const costForItem = hasCost ? unitCost! * oi.quantity : 0
 
-      totalRevenue += itemTotal
+      totalRevenue += itemRevenue
       totalCost += costForItem
 
       if (hasCost) {
         itemsWithCost++
-        revenueWithCost += itemTotal
+        revenueWithCost += itemRevenue
       } else {
         itemsWithoutCost++
       }
@@ -108,7 +112,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const catKey = mi.categoryId
       if (categoryMap.has(catKey)) {
         const c = categoryMap.get(catKey)!
-        c.revenue += itemTotal
+        c.revenue += itemRevenue
         c.cost += costForItem
         c.itemCount++
       } else {
@@ -116,7 +120,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           categoryId: mi.categoryId,
           categoryName: mi.category.name,
           categoryType: mi.category.categoryType || 'food',
-          revenue: itemTotal,
+          revenue: itemRevenue,
           cost: costForItem,
           itemCount: 1,
         })
@@ -129,7 +133,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       if (itemMap.has(itemKey)) {
         const it = itemMap.get(itemKey)!
         it.qtySold += oi.quantity
-        it.revenue += itemTotal
+        it.revenue += itemRevenue
         it.totalCost += costForItem
         if (!it.hasCostData && hasCost) it.hasCostData = true
       } else {
@@ -141,7 +145,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           menuItemName: displayName,
           categoryName: mi.category.name,
           qtySold: oi.quantity,
-          revenue: itemTotal,
+          revenue: itemRevenue,
           unitPrice: Number(mi.price),
           unitCost: unitCost ?? 0,
           totalCost: costForItem,

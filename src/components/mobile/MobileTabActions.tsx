@@ -39,12 +39,32 @@ export default function MobileTabActions({ tabId, employeeId, onTabClosed, onSta
       onStatusUpdate?.(data)
     }
 
+    const onTransferComplete = (data: { orderId: string }) => {
+      if (data.orderId !== tabId) return
+      setActionState('idle')
+      setPendingAction(null)
+      setResultMessage('Tab transferred successfully')
+      setTimeout(() => setResultMessage(null), 3000)
+    }
+
+    const onTabError = (data: { orderId: string; message?: string }) => {
+      if (data.orderId !== tabId) return
+      setActionState('idle')
+      setPendingAction(null)
+      setResultMessage(data.message || 'Action failed')
+      setTimeout(() => setResultMessage(null), 3000)
+    }
+
     socket.on(MOBILE_EVENTS.TAB_CLOSED, onClosed)
     socket.on(MOBILE_EVENTS.TAB_STATUS_UPDATE, onStatusChange)
+    socket.on('tab:transfer-complete', onTransferComplete)
+    socket.on('tab:error', onTabError)
 
     return () => {
       socket.off(MOBILE_EVENTS.TAB_CLOSED, onClosed)
       socket.off(MOBILE_EVENTS.TAB_STATUS_UPDATE, onStatusChange)
+      socket.off('tab:transfer-complete', onTransferComplete)
+      socket.off('tab:error', onTabError)
       releaseSharedSocket()
     }
   }, [tabId, onTabClosed, onStatusUpdate])

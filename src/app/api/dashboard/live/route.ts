@@ -100,7 +100,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
       }),
 
-      // Voided items today
+      // Voided items today — use itemTotal (price * quantity) for accurate dollar impact
       db.orderItem.aggregate({
         where: {
           locationId,
@@ -108,11 +108,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           status: 'voided',
           updatedAt: { gte: startOfDay, lte: endOfDay },
         },
-        _sum: { price: true },
+        _sum: { itemTotal: true },
         _count: { id: true },
       }),
 
-      // Comped items today
+      // Comped items today — use itemTotal (price * quantity) for accurate dollar impact
       db.orderItem.aggregate({
         where: {
           locationId,
@@ -120,7 +120,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           status: 'comped',
           updatedAt: { gte: startOfDay, lte: endOfDay },
         },
-        _sum: { price: true },
+        _sum: { itemTotal: true },
         _count: { id: true },
       }),
 
@@ -183,8 +183,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const openTicketCount = openOrders.length
     const openTicketValue = openOrders.reduce((sum, o) => sum + Number(o.total || 0), 0)
 
-    const voidsTotalToday = Number(voidItems._sum.price || 0)
-    const compsTotalToday = Number(compItems._sum.price || 0)
+    const voidsTotalToday = Number(voidItems._sum.itemTotal || 0)
+    const compsTotalToday = Number(compItems._sum.itemTotal || 0)
     const discountsTotalToday = Number(discountedOrders._sum.discountTotal || 0)
 
     // Paid in/out
