@@ -209,7 +209,7 @@ export const POST = withVenue(withTiming(async function POST(
       where: { id: orderId },
       include: {
         payments: true,
-        location: true,
+        location: { select: { id: true, settings: true, name: true, address: true, phone: true } },
         customer: true,
         items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } }, menuItem: { select: { id: true, itemType: true } } } },
         employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },

@@ -56,6 +56,39 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     }
 
+    // Count-only mode: returns just the count, no data (for badge counts)
+    const countOnly = searchParams.get('count') === 'true'
+    if (countOnly) {
+      timing.start('db')
+      const baseWhere = {
+        locationId,
+        status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
+        deletedAt: null,
+        NOT: [
+          { status: 'draft', itemCount: 0 },
+          { status: { in: ['open', 'sent', 'in_progress'] }, itemCount: 0, total: { lte: 0 } },
+        ],
+        ...(employeeId ? { employeeId } : {}),
+        ...(orderType ? { orderType } : {}),
+        ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),
+        ...(minAge ? { openedAt: { lt: new Date(Date.now() - parseInt(minAge) * 60000) } } : {}),
+      } as any
+
+      let count: number
+      if (businessDayMode === 'none') {
+        count = await db.order.count({ where: baseWhere })
+      } else {
+        const op = businessDayMode === 'previous' ? 'lt' : 'gte'
+        const [primary, legacy] = await Promise.all([
+          db.order.count({ where: { ...baseWhere, businessDayDate: { [op]: businessDayStart } } }),
+          db.order.count({ where: { ...baseWhere, businessDayDate: null, createdAt: { [op]: businessDayStart } } }),
+        ])
+        count = primary + legacy
+      }
+      timing.end('db', 'Count query')
+      return NextResponse.json({ data: { count } })
+    }
+
     // Summary mode: lightweight response for sidebar/list views
     const summary = searchParams.get('summary') === 'true'
     if (summary) {

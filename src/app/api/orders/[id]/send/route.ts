@@ -10,6 +10,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig, type OriginDevice } from '@/lib/fulfillment-router'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -46,6 +47,8 @@ export const POST = withVenue(withTiming(async function POST(
       return tx.order.findFirst({
         where: { id, deletedAt: null },
         include: {
+          table: { select: { id: true, name: true, abbreviation: true } },
+          employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
           items: {
             where: { deletedAt: null, kitchenStatus: 'pending', isHeld: false },
             include: {
@@ -180,10 +183,29 @@ export const POST = withVenue(withTiming(async function POST(
 
     timing.end('db-update', 'Batch status updates')
 
+    // Queue for Neon replay if in outage mode (fire-and-forget)
+    if (isInOutageMode()) {
+      void queueOutageWrite('Order', order.id, 'UPDATE', { id: order.id, status: order.status === 'draft' ? 'open' : order.status, kitchenStatus: 'sent' }, order.locationId).catch(console.error)
+    }
+
     // Route order to stations using tag-based routing engine
-    const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)
+    // Pass pre-fetched order data to avoid redundant DB fetch inside resolveRouting
+    const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds, {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      orderType: order.orderType,
+      locationId: order.locationId,
+      tabName: order.tabName,
+      createdAt: order.createdAt,
+      table: order.table,
+      employee: order.employee,
+    })
 
     // Fulfillment routing — item-level station dispatch for HA cellular architecture (fire-and-forget)
+    // The OrderRouter + dispatchNewOrder + printKitchenTicketsForManifests below handle the
+    // actual real-time dispatch (KDS tags, socket, prints). FulfillmentEvents are persisted
+    // as 'completed' (audit trail) when routing succeeds, or as 'pending' (bridge worker
+    // fallback) when routing fails — this prevents duplicate printing.
     void (async () => {
       try {
         // Build FulfillmentItem[] from items that were just sent
@@ -217,15 +239,56 @@ export const POST = withVenue(withTiming(async function POST(
           ? { terminalId: request.headers.get('x-terminal-id') || undefined, type: 'cellular' }
           : undefined
 
-        await routeOrderFulfillment(
+        const actions = await routeOrderFulfillment(
           { id: order.id, locationId: order.locationId },
           fulfillmentItems,
           stationConfigs,
           new Date().toISOString(),
           originDevice,
         )
+
+        // Persist as 'completed' — real-time dispatch is handled by OrderRouter/dispatchNewOrder
+        // below. Bridge worker only picks up 'pending' events, so this prevents double printing.
+        if (actions.length > 0) {
+          await db.fulfillmentEvent.createMany({
+            data: actions.map(action => ({
+              locationId: order.locationId,
+              orderId: order.id,
+              stationId: action.stationId || null,
+              type: action.type,
+              status: 'completed',
+              completedAt: new Date(),
+              payload: JSON.parse(JSON.stringify({
+                items: action.items,
+                stationName: action.stationName,
+                idempotencyKey: action.idempotencyKey,
+              })),
+            }))
+          })
+        }
       } catch (err) {
-        console.error('[API /orders/[id]/send] Fulfillment routing failed:', err)
+        console.error('[API /orders/[id]/send] Fulfillment routing failed, persisting for bridge worker:', err)
+        // Persist as 'pending' so bridge worker picks them up as fallback
+        try {
+          await db.fulfillmentEvent.createMany({
+            data: [{
+              locationId: order.locationId,
+              orderId: order.id,
+              type: 'print_kitchen',
+              status: 'pending',
+              payload: JSON.parse(JSON.stringify({
+                items: itemsToProcess.map(item => ({
+                  orderItemId: item.id,
+                  menuItemId: item.menuItem?.id || item.menuItemId,
+                  name: item.name,
+                  quantity: item.quantity,
+                })),
+              })),
+            }],
+          })
+        } catch (persistErr) {
+          console.error('[API /orders/[id]/send] Failed to persist fallback fulfillment event:', persistErr)
+        }
       }
     })()
 

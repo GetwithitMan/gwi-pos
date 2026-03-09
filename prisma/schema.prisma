@@ -43,6 +43,7 @@ enum TabStatus {
   open
   no_card
   closed
+  closing
   declined_capture
   auth_failed
 }
@@ -690,9 +691,6 @@ model Location {
   // Events (multi-tenancy)
   eventPricingTiers EventPricingTier[]
   eventTableConfigs EventTableConfig[]
-  upsellEvents      UpsellEvent[]
-  upsellConfigs     UpsellConfig[]
-
   // Inventory & Tax (multi-tenancy)
   taxRules              TaxRule[]
   inventoryTransactions InventoryTransaction[]
@@ -798,7 +796,6 @@ model Location {
 
   // Error Reporting (Domain 16)
   errorLogs       ErrorLog[]
-  performanceLogs PerformanceLog[]
   healthChecks    HealthCheck[]
 
   // Fleet Management (Skill 345)
@@ -837,7 +834,6 @@ model Location {
   vendorOrderLineItems  VendorOrderLineItem[]
   wasteLogs             WasteLog[]
   marginEdgeMappings    MarginEdgeProductMapping[]
-  menuItemDailyMetrics  MenuItemDailyMetrics[]
   inventoryCountEntries InventoryCountEntry[]
   pendingDeductions     PendingDeduction[]
 
@@ -848,6 +844,11 @@ model Location {
 
   // Barcode scanning
   itemBarcodes ItemBarcode[]
+
+  // Cloud-Primary Architecture (Fulfillment + Bridge + Outage Queue)
+  fulfillmentEvents  FulfillmentEvent[]
+  bridgeCheckpoints  BridgeCheckpoint[]
+  outageQueueEntries OutageQueueEntry[]
 
   @@index([organizationId])
 }
@@ -1106,7 +1107,6 @@ model Employee {
   paidInOutsApproved           PaidInOut[]               @relation("PaidInOutApprover")
   addedOrderItems              OrderItem[]               @relation("OrderItemAddedBy")
   payments                     Payment[]                 @relation("PaymentEmployee")
-  upsellEvents                 UpsellEvent[]
   voidLogsApproved             VoidLog[]                 @relation("VoidLogApprover")
   tipGroupsCreated             TipGroup[]                @relation("TipGroupCreatedBy")
   tipGroupsOwned               TipGroup[]                @relation("TipGroupOwner")
@@ -1132,7 +1132,6 @@ model Employee {
   invCountsReviewed       InventoryCount[]           @relation("InvCountReviewedBy")
   invItemTransactions     InventoryItemTransaction[] @relation("InvItemTxnEmployee")
   scheduledShiftsOriginal ScheduledShift[]           @relation("ScheduledShiftOriginal")
-  performanceLogs         PerformanceLog[]           @relation("PerformanceLogEmployee")
   syncAuditEntries        SyncAuditEntry[]           @relation("SyncAuditEmployee")
   quickBarPreference      QuickBarPreference?
 
@@ -1494,10 +1493,6 @@ model Category {
 
   // @@index([locationId]) — removed: redundant with compound indexes below
 
-  // C-SCHEMA-1: Reverse relations (batch 2)
-  upsellTriggers    UpsellConfig[] @relation("UpsellTriggerCategory")
-  upsellSuggestions UpsellConfig[] @relation("UpsellSuggestionCategory")
-
   @@index([prepStationId])
   @@index([sortOrder])
   @@index([categoryType])
@@ -1633,8 +1628,6 @@ model MenuItem {
   // Relations
   ownedModifierGroups    ModifierGroup[]        @relation("ItemModifierGroups") // Item-specific modifier groups
   orderItems             OrderItem[]
-  upsellTriggers         UpsellConfig[]         @relation("TriggerItem")
-  upsellSuggestions      UpsellConfig[]         @relation("SuggestionItem")
   comboComponentItems    ComboComponent[]       @relation("ComboComponentItem")
   comboComponentDefaults ComboComponent[]       @relation("ComboComponentDefault")
   comboOptions           ComboComponentOption[]
@@ -1679,9 +1672,6 @@ model MenuItem {
   // Pricing Options (per-item size/variant pricing groups)
   pricingOptionGroups PricingOptionGroup[]
 
-  // COGS daily metrics
-  dailyMetrics MenuItemDailyMetrics[]
-
   // Barcode scanning
   barcodes ItemBarcode[]
 
@@ -1692,6 +1682,7 @@ model MenuItem {
   @@index([isActive, showOnPOS])
   @@index([locationId, isActive, deletedAt])
   @@index([locationId, isActive])
+  @@index([locationId, categoryId])
 }
 
 model ModifierGroup {
@@ -2255,9 +2246,9 @@ model OrderType {
 // ORDERS (Skill 04)
 // ============================================
 
-/// @deprecated LEGACY TABLE — being replaced by OrderSnapshot via event-sourced pipeline.
-/// All mutations MUST emit events via emitOrderEvent(). New reads should use OrderSnapshot.
-/// See CLAUDE.md "Event-Sourced Order Writes" section.
+/// ACTIVE: Primary order table — all reads and writes go here.
+/// Mutations MUST also emit events via emitOrderEvent() for the OrderSnapshot projection.
+/// Order is the source of truth; OrderSnapshot is a materialized read-optimized view.
 model Order {
   id         String   @id @default(cuid())
   locationId String
@@ -2414,7 +2405,6 @@ model Order {
   // C-SCHEMA-1: Reverse relations
   couponRedemptions        CouponRedemption[]
   reservations             Reservation[]             @relation("ReservationOrder")
-  upsellEvents             UpsellEvent[]
   giftCards                GiftCard[]                @relation("GiftCardOrder")
   giftCardTransactions     GiftCardTransaction[]     @relation("GiftCardTransactionOrder")
   houseAccountTransactions HouseAccountTransaction[] @relation("HouseAcctTxnOrder")
@@ -2466,11 +2456,12 @@ model Order {
   @@index([locationId, paidAt])
   @@index([locationId, createdAt, status])
   @@index([locationId, businessDayDate])
+  @@index([locationId, status, businessDayDate])
 }
 
-/// @deprecated LEGACY TABLE — being replaced by OrderItemSnapshot via event-sourced pipeline.
-/// All mutations MUST emit events via emitOrderEvent(). New reads should use OrderItemSnapshot.
-/// See CLAUDE.md "Event-Sourced Order Writes" section.
+/// ACTIVE: Primary order item table — all reads and writes go here.
+/// Mutations MUST also emit events via emitOrderEvent() for the OrderItemSnapshot projection.
+/// OrderItem is the source of truth; OrderItemSnapshot is a materialized read-optimized view.
 model OrderItem {
   id         String   @id @default(cuid())
   locationId String
@@ -2604,6 +2595,7 @@ model OrderItem {
   @@index([menuItemId, createdAt]) // PMIX report: product mix by item over time range
   @@index([pricingOptionId])
   @@index([menuItemId, pricingOptionId]) // PMIX/Sales: group by item + size variant
+  @@index([locationId, status, updatedAt])
 }
 
 model OrderItemModifier {
@@ -2793,6 +2785,8 @@ model Payment {
   @@index([drawerId])
   @@index([idempotencyKey])
   @@index([offlineIntentId])
+  @@index([orderId, status])
+  @@index([employeeId, processedAt])
 }
 
 // Sync Audit Entry - Tracks all sync events for idempotency audit log
@@ -3076,85 +3070,6 @@ model OrderDiscount {
 }
 
 // ============================================
-// UPSELL PROMPTS (Skill 58)
-// ============================================
-
-model UpsellConfig {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-
-  // Trigger
-  triggerType       String // item, category, order_condition
-  triggerItemId     String?
-  triggerItem       MenuItem? @relation("TriggerItem", fields: [triggerItemId], references: [id])
-  triggerCategoryId String?
-  triggerCategory   Category? @relation("UpsellTriggerCategory", fields: [triggerCategoryId], references: [id])
-  triggerCondition  Json?
-
-  // Suggestion
-  suggestionType       String // item, category, combo, upgrade
-  suggestionItemId     String?
-  suggestionItem       MenuItem? @relation("SuggestionItem", fields: [suggestionItemId], references: [id])
-  suggestionCategoryId String?
-  suggestionCategory   Category? @relation("UpsellSuggestionCategory", fields: [suggestionCategoryId], references: [id])
-
-  // Display
-  promptText  String
-  displayMode String  @default("inline") // inline, popup, toast
-  showPrice   Boolean @default(true)
-
-  // Timing
-  triggerOnAdd      Boolean @default(true)
-  triggerBeforeSend Boolean @default(false)
-  triggerAtPayment  Boolean @default(false)
-
-  // Status
-  isActive Boolean @default(true)
-  priority Int     @default(0)
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  events UpsellEvent[]
-
-  @@index([locationId])
-}
-
-model UpsellEvent {
-  id             String       @id @default(cuid())
-  locationId     String
-  location       Location     @relation(fields: [locationId], references: [id])
-  upsellConfigId String
-  upsellConfig   UpsellConfig @relation(fields: [upsellConfigId], references: [id])
-
-  orderId    String
-  order      Order    @relation(fields: [orderId], references: [id])
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
-
-  wasShown     Boolean @default(true)
-  wasAccepted  Boolean @default(false)
-  wasDismissed Boolean @default(false)
-
-  addedAmount Decimal?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  @@index([locationId])
-  @@index([upsellConfigId])
-  @@index([createdAt])
-}
-
-// ============================================
 // VOIDS & AUDIT (Skill 19)
 // ============================================
 
@@ -3391,8 +3306,9 @@ model TipOutRule {
   @@index([toRoleId])
 }
 
-// @deprecated — Use TipLedgerEntry with sourceType='ROLE_TIPOUT' instead (Skill 273)
-// Records actual tip distributions (both automatic role-based and custom one-off)
+// ACTIVE: Payout status tracker for tip distributions (pending → accepted → paid_out).
+// Paired with TipLedgerEntry DEBIT/CREDIT entries for immutable ledger (Skill 273).
+// TipShare tracks payout lifecycle; TipLedgerEntry tracks monetary ledger. Both are required.
 model TipShare {
   id         String   @id @default(cuid())
   locationId String
@@ -3483,6 +3399,7 @@ model TipLedgerEntry {
   @@index([createdAt])
   @@index([locationId, sourceType, createdAt]) // Reports: tip-outs by type + date range
   @@index([locationId, employeeId, createdAt]) // Employee tip history lookups
+  @@index([locationId, type, sourceType, createdAt])
 }
 
 model TipTransaction {
@@ -7739,35 +7656,6 @@ model ErrorLog {
   @@index([locationId, category, createdAt]) // Error reports by category
 }
 
-model PerformanceLog {
-  id String @id @default(cuid())
-
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-
-  // Operation Details
-  operation String // Description (e.g., "API: GET /api/orders", "Database: findMany orders")
-  duration  Int // Milliseconds
-  threshold Int // Expected max duration (alert if exceeded)
-
-  // Context
-  context    String? // Additional context (JSON)
-  stackTrace String? // Where was this called from
-  path       String? // URL or code path
-  employeeId String?
-  employee   Employee? @relation("PerformanceLogEmployee", fields: [employeeId], references: [id])
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  @@index([locationId])
-  @@index([operation])
-  @@index([duration])
-  @@index([createdAt])
-}
-
 model HealthCheck {
   id String @id @default(cuid())
 
@@ -8494,28 +8382,6 @@ model MarginEdgeProductMapping {
   @@index([locationId, inventoryItemId])
 }
 
-// Daily sales snapshot for menu engineering
-model MenuItemDailyMetrics {
-  id                 String   @id @default(cuid())
-  locationId         String
-  menuItemId         String
-  businessDate       DateTime
-  quantitySold       Int      @default(0)
-  totalRevenue       Decimal  @default(0) @db.Decimal(10, 2)
-  totalCost          Decimal  @default(0) @db.Decimal(10, 2)
-  foodCostPct        Decimal? @db.Decimal(6, 2)
-  contributionMargin Decimal? @db.Decimal(10, 2)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  location Location @relation(fields: [locationId], references: [id])
-  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
-
-  @@unique([locationId, menuItemId, businessDate])
-  @@index([locationId, businessDate])
-  @@index([locationId, menuItemId])
-}
-
 // ============================================
 // INVENTORY DEDUCTION OUTBOX
 // ============================================
@@ -8707,4 +8573,63 @@ model ItemBarcode {
   @@index([menuItemId])
   @@index([inventoryItemId])
   @@index([locationId])
+}
+
+// ============================================
+// CLOUD-PRIMARY ARCHITECTURE
+// Fulfillment queue, bridge checkpoints, and outage replay
+// ============================================
+
+model FulfillmentEvent {
+  id          String    @id @default(cuid())
+  locationId  String
+  orderId     String
+  stationId   String?
+  type        String // print_kitchen, print_bar, kds_update, drawer_kick
+  status      String    @default("pending") // pending, claimed, completed, failed, dead_letter
+  payload     Json?
+  claimedBy   String? // NUC node ID that claimed this event
+  claimedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  retryCount  Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  location    Location  @relation(fields: [locationId], references: [id])
+
+  @@index([locationId, status])
+  @@index([claimedBy, status])
+}
+
+model BridgeCheckpoint {
+  id                String    @id @default(cuid())
+  locationId        String
+  nodeId            String // NUC identifier
+  role              String // primary, backup
+  leaseExpiresAt    DateTime
+  lastHeartbeat     DateTime
+  lastFulfillmentAt DateTime?
+  fulfillmentLag    Int? // ms since last processed event
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  location          Location  @relation(fields: [locationId], references: [id])
+
+  @@unique([locationId, nodeId])
+}
+
+model OutageQueueEntry {
+  id             String    @id @default(cuid())
+  locationId     String
+  tableName      String
+  recordId       String
+  operation      String // INSERT, UPDATE, DELETE
+  payload        Json
+  localSeq       Int // monotonic local sequence
+  idempotencyKey String    @unique // {locationId}:{tableName}:{recordId}:{localSeq}
+  status         String    @default("pending") // pending, replayed, conflict, failed
+  createdAt      DateTime  @default(now())
+  replayedAt     DateTime?
+  location       Location  @relation(fields: [locationId], references: [id])
+
+  @@index([locationId, status])
 }

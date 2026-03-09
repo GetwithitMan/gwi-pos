@@ -342,23 +342,23 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
   }
   checkOpenShiftRef.current = checkOpenShift
 
-  // Load open orders count (debounced)
+  // Load open orders count (debounced) — uses count-only endpoint (no joins, no data)
   const loadOpenOrdersCountRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const loadOpenOrdersCount = useCallback(() => {
     if (!locationId) return
     clearTimeout(loadOpenOrdersCountRef.current)
     loadOpenOrdersCountRef.current = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ locationId, summary: 'true' })
+        const params = new URLSearchParams({ locationId, count: 'true' })
         const response = await fetch(`/api/orders/open?${params}`)
         if (response.ok) {
           const data = await response.json()
-          setOpenOrdersCount(data.data?.orders?.length || 0)
+          setOpenOrdersCount(data.data?.count ?? 0)
         }
       } catch (error) {
         console.error('Failed to load open orders count:', error)
       }
-    }, 300)
+    }, 100)
   }, [locationId])
 
   return {

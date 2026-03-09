@@ -270,15 +270,17 @@ export function OpenOrdersPanel({
     if (locationId) loadOrders(ageFilter === 'previous')
   }, [locationId, refreshTrigger, ageFilter, loadOrders])
 
-  // Background fetch: keep previous-day count fresh so the chip shows a count badge
-  // even before the user clicks it. Runs on mount and when orders refresh.
+  // Lazy-load previous-day count: only fetch when the user first clicks "Previous" chip.
+  // Uses count-only endpoint to avoid fetching all order data just for a number.
+  const previousDayCountFetchedRef = useRef(false)
   useEffect(() => {
-    if (!locationId || ageFilter === 'previous') return // already loaded via loadOrders above
-    fetch(`/api/orders/open?locationId=${locationId}&summary=true&previousDay=true`, { cache: 'no-store' })
+    if (ageFilter !== 'previous' || !locationId || previousDayCountFetchedRef.current) return
+    previousDayCountFetchedRef.current = true
+    fetch(`/api/orders/open?locationId=${locationId}&count=true&previousDay=true`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setPreviousDayCount((data.data?.orders || []).length) })
+      .then(data => { if (data) setPreviousDayCount(data.data?.count ?? 0) })
       .catch(() => {})
-  }, [locationId, refreshTrigger, ageFilter])
+  }, [locationId, ageFilter])
 
   // Ref to avoid stale closure when reading orders inside socket handler
   const ordersRef = useRef(orders)
@@ -292,7 +294,7 @@ export function OpenOrdersPanel({
   const debouncedLoadOrdersRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debouncedLoadOrders = useCallback(() => {
     if (debouncedLoadOrdersRef.current) clearTimeout(debouncedLoadOrdersRef.current)
-    debouncedLoadOrdersRef.current = setTimeout(() => { loadOrders() }, 300)
+    debouncedLoadOrdersRef.current = setTimeout(() => { loadOrders() }, 100)
   }, [loadOrders])
   useEffect(() => () => { if (debouncedLoadOrdersRef.current) clearTimeout(debouncedLoadOrdersRef.current) }, [])
 

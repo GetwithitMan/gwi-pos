@@ -22,6 +22,21 @@ import type {
 } from '@/types/routing'
 
 /**
+ * Pre-fetched order data that can be passed to resolveRouting() to avoid
+ * a redundant DB fetch when the caller already has the order loaded.
+ */
+export interface PreloadedOrderData {
+  id: string
+  orderNumber: number
+  orderType: string
+  locationId: string
+  tabName: string | null
+  createdAt: Date
+  table?: { id: string; name: string; abbreviation?: string | null } | null
+  employee?: { id: string; displayName: string | null; firstName: string | null; lastName: string | null } | null
+}
+
+/**
  * Main routing resolution class
  */
 export class OrderRouter {
@@ -30,92 +45,155 @@ export class OrderRouter {
    *
    * @param orderId - The order to route
    * @param itemIds - Optional: specific items to route (for resends)
+   * @param preloadedOrder - Optional: pre-fetched order data to skip redundant order query
    * @returns RoutingResult with manifests grouped by station
    */
   static async resolveRouting(
     orderId: string,
-    itemIds?: string[]
+    itemIds?: string[],
+    preloadedOrder?: PreloadedOrderData
   ): Promise<RoutingResult> {
-    // 1. Fetch order with all necessary relations
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      include: {
-        table: {
-          select: {
-            id: true,
-            name: true,
-            abbreviation: true,
+    let orderData: PreloadedOrderData
+    let items: any[]
+
+    if (preloadedOrder) {
+      // Use pre-fetched order data — only fetch items with routing-specific includes
+      orderData = preloadedOrder
+      items = await db.orderItem.findMany({
+        where: {
+          orderId,
+          ...(itemIds ? { id: { in: itemIds } } : {}),
+        },
+        include: {
+          modifiers: {
+            select: {
+              id: true,
+              name: true,
+              preModifier: true,
+              depth: true,
+              quantity: true,
+            },
+          },
+          ingredientModifications: {
+            select: {
+              ingredientName: true,
+              modificationType: true,
+              swappedToModifierName: true,
+            },
+          },
+          sourceTable: {
+            select: { id: true, name: true, abbreviation: true },
+          },
+          pizzaData: {
+            include: {
+              size: { select: { name: true, inches: true } },
+              crust: { select: { name: true } },
+              sauce: { select: { name: true } },
+              cheese: { select: { name: true } },
+            },
+          },
+          menuItem: {
+            select: {
+              id: true,
+              categoryId: true,
+              routeTags: true,
+              itemType: true,
+              category: {
+                select: {
+                  id: true,
+                  routeTags: true,
+                  categoryType: true,
+                },
+              },
+            },
           },
         },
-        employee: {
-          select: {
-            id: true,
-            displayName: true,
-            firstName: true,
-            lastName: true,
+      })
+    } else {
+      // Full fetch — order + items in one query (original behavior)
+      const order = await db.order.findUnique({
+        where: { id: orderId },
+        include: {
+          table: {
+            select: {
+              id: true,
+              name: true,
+              abbreviation: true,
+            },
           },
-        },
-        location: {
-          select: { id: true },
-        },
-        items: {
-          where: itemIds ? { id: { in: itemIds } } : undefined,
-          include: {
-            modifiers: {
-              select: {
-                id: true,
-                name: true,
-                preModifier: true,
-                depth: true,
-                quantity: true,
+          employee: {
+            select: {
+              id: true,
+              displayName: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          location: {
+            select: { id: true },
+          },
+          items: {
+            where: itemIds ? { id: { in: itemIds } } : undefined,
+            include: {
+              modifiers: {
+                select: {
+                  id: true,
+                  name: true,
+                  preModifier: true,
+                  depth: true,
+                  quantity: true,
+                },
               },
-            },
-            ingredientModifications: {
-              select: {
-                ingredientName: true,
-                modificationType: true,
-                swappedToModifierName: true,
+              ingredientModifications: {
+                select: {
+                  ingredientName: true,
+                  modificationType: true,
+                  swappedToModifierName: true,
+                },
               },
-            },
-            sourceTable: {
-              select: { id: true, name: true, abbreviation: true },
-            },
-            pizzaData: {
-              include: {
-                size: { select: { name: true, inches: true } },
-                crust: { select: { name: true } },
-                sauce: { select: { name: true } },
-                cheese: { select: { name: true } },
+              sourceTable: {
+                select: { id: true, name: true, abbreviation: true },
               },
-            },
-            menuItem: {
-              select: {
-                id: true,
-                categoryId: true,
-                routeTags: true,
-                itemType: true,
-                category: {
-                  select: {
-                    id: true,
-                    routeTags: true,
-                    categoryType: true,
+              pizzaData: {
+                include: {
+                  size: { select: { name: true, inches: true } },
+                  crust: { select: { name: true } },
+                  sauce: { select: { name: true } },
+                  cheese: { select: { name: true } },
+                },
+              },
+              menuItem: {
+                select: {
+                  id: true,
+                  categoryId: true,
+                  routeTags: true,
+                  itemType: true,
+                  category: {
+                    select: {
+                      id: true,
+                      routeTags: true,
+                      categoryType: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-    })
+      })
 
-    if (!order) {
-      throw new Error(`Order not found: ${orderId}`)
+      if (!order) {
+        throw new Error(`Order not found: ${orderId}`)
+      }
+
+      orderData = order
+      items = order.items
     }
 
     // 2. Fetch all active stations for this location
     const stations = await db.station.findMany({
       where: {
-        locationId: order.locationId,
+        locationId: orderData.locationId,
         isActive: true,
         deletedAt: null,
       },
@@ -123,20 +201,20 @@ export class OrderRouter {
 
     // 3. Build order context
     const orderContext: OrderContext = {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      orderType: order.orderType,
-      tableName: order.table?.name || null,
-      tabName: order.tabName,
+      orderId: orderData.id,
+      orderNumber: orderData.orderNumber,
+      orderType: orderData.orderType,
+      tableName: orderData.table?.name || null,
+      tabName: orderData.tabName,
       employeeName:
-        order.employee?.displayName ||
-        `${order.employee?.firstName || ''} ${order.employee?.lastName || ''}`.trim() ||
+        orderData.employee?.displayName ||
+        `${orderData.employee?.firstName || ''} ${orderData.employee?.lastName || ''}`.trim() ||
         'Unknown',
-      createdAt: order.createdAt,
+      createdAt: orderData.createdAt,
     }
 
     // 4. Transform items with resolved tags
-    const routedItems: RoutedItem[] = order.items.map((item) =>
+    const routedItems: RoutedItem[] = items.map((item) =>
       this.transformItem(item)
     )
 
