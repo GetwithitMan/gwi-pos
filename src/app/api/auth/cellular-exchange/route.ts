@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { issueCellularToken } from '@/lib/cellular-auth'
+import { getDbForVenue } from '@/lib/db'
 
 const bodySchema = z.object({
   deviceId: z.string().min(1),
@@ -96,12 +97,60 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Issue a cellular JWT
+    // -----------------------------------------------------------------------
+    // Resolve the REAL Location.id from the venue's Neon DB.
+    //
+    // MC's posLocationId comes from the NUC heartbeat and reflects the
+    // NUC's local PG Location.id. Cellular goes through Neon, which may
+    // have a DIFFERENT Location.id (e.g. CUID vs human-readable).
+    // Always trust the venue DB as the source of truth.
+    // -----------------------------------------------------------------------
+    let resolvedLocationId: string
+    try {
+      const venueDb = getDbForVenue(mcData.venueSlug)
+
+      // Try MC's hint first (works when NUC and Neon IDs match)
+      let location = await venueDb.location.findUnique({
+        where: { id: mcData.locationId },
+        select: { id: true },
+      })
+
+      // Hint didn't match — find the actual Location in this venue DB
+      if (!location) {
+        location = await venueDb.location.findFirst({
+          select: { id: true },
+        })
+        if (location) {
+          console.warn(
+            `[cellular-exchange] MC locationId '${mcData.locationId}' not found in venue '${mcData.venueSlug}'. ` +
+            `Resolved to '${location.id}' from venue DB. MC posLocationId is stale/wrong.`
+          )
+        }
+      }
+
+      if (!location) {
+        console.error(`[cellular-exchange] No Location found in venue DB '${mcData.venueSlug}'. Venue not provisioned.`)
+        return NextResponse.json(
+          { error: `No location found in venue database '${mcData.venueSlug}'. Venue may not be provisioned.` },
+          { status: 500 }
+        )
+      }
+
+      resolvedLocationId = location.id
+    } catch (dbError) {
+      console.error(`[cellular-exchange] Failed to resolve locationId from venue DB '${mcData.venueSlug}':`, dbError)
+      return NextResponse.json(
+        { error: 'Failed to resolve location from venue database' },
+        { status: 500 }
+      )
+    }
+
+    // Issue a cellular JWT with the Neon-resolved locationId
     let token: string
     try {
       token = await issueCellularToken(
         mcData.terminalId,
-        mcData.locationId,
+        resolvedLocationId,
         mcData.venueSlug,
         deviceFingerprint,
         'CELLULAR_ROAMING'
@@ -112,6 +161,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 500 })
     }
 
+    console.info(`[cellular-exchange] JWT issued: terminal=${mcData.terminalId} location=${resolvedLocationId} venue=${mcData.venueSlug}`)
     return NextResponse.json({ token })
   } catch (error) {
     console.error('[cellular-exchange] Unexpected error:', error)
