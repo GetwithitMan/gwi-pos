@@ -603,6 +603,7 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "
   # ── Write environment file (DEPLOY_TOKEN is never stored here — goes to .git-credentials only) ──
   mkdir -p "$APP_BASE"
   INTERNAL_SECRET=$(openssl rand -hex 32)
+  CELLULAR_SECRET=$(openssl rand -hex 32)
 
   # Build HA section for .env (server or backup)
   HA_ENV_SECTION=""
@@ -647,6 +648,7 @@ NODE_ENV=production
 NEXT_PUBLIC_EVENT_PROVIDER=socket
 PORT=3005
 INTERNAL_API_SECRET=${INTERNAL_SECRET}
+CELLULAR_TOKEN_SECRET=${CELLULAR_SECRET}
 SERVER_URL=${SERVER_URL}${HA_ENV_SECTION}
 ENVEOF
 
@@ -703,6 +705,12 @@ else
   if ! grep -q "^INTERNAL_API_SECRET=" "$ENV_FILE" 2>/dev/null; then
     echo "INTERNAL_API_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
     log "Added INTERNAL_API_SECRET to existing .env"
+  fi
+
+  # Ensure cellular token secret is present (for cellular device JWT issuance)
+  if ! grep -q "^CELLULAR_TOKEN_SECRET=" "$ENV_FILE" 2>/dev/null; then
+    echo "CELLULAR_TOKEN_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
+    log "Added CELLULAR_TOKEN_SECRET to existing .env"
   fi
 
   # Ensure SERVER_URL is persisted (added in later installer versions)
