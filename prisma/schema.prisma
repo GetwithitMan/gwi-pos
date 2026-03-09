@@ -1501,6 +1501,7 @@ model Category {
   @@index([prepStationId])
   @@index([sortOrder])
   @@index([categoryType])
+  @@unique([locationId, name])
   @@index([locationId, isActive, deletedAt])
   @@index([locationId, sortOrder])
 }

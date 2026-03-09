@@ -383,6 +383,58 @@ async function runPrePushMigrations() {
     console.log('[vercel-build]   Done — OrderItemModifier.lastMutatedBy added')
   }
 
+  // --- Deduplicate Category rows + add unique constraint ---
+  const [catIdx] = await sql`
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'Category'
+      AND indexname = 'Category_locationId_name_key'
+    LIMIT 1
+  `
+  if (!catIdx) {
+    console.log('[vercel-build]   Deduplicating Category rows by (locationId, name)...')
+    // Reassign menu items from duplicate categories to the keeper (most recently updated)
+    await sql`
+      WITH keepers AS (
+        SELECT DISTINCT ON ("locationId", "name") "id"
+        FROM "Category"
+        WHERE "deletedAt" IS NULL
+        ORDER BY "locationId", "name", "updatedAt" DESC
+      ),
+      dupes AS (
+        SELECT c."id" AS dupe_id, k."id" AS keeper_id
+        FROM "Category" c
+        JOIN "Category" k ON c."locationId" = k."locationId" AND c."name" = k."name"
+        JOIN keepers k2 ON k2."id" = k."id"
+        WHERE c."id" != k."id"
+          AND c."deletedAt" IS NULL
+          AND k."deletedAt" IS NULL
+          AND k."id" = k2."id"
+      )
+      UPDATE "MenuItem" mi
+      SET "categoryId" = d.keeper_id
+      FROM dupes d
+      WHERE mi."categoryId" = d.dupe_id
+    `
+    // Delete the duplicate category rows
+    await sql`
+      WITH keepers AS (
+        SELECT DISTINCT ON ("locationId", "name") "id"
+        FROM "Category"
+        WHERE "deletedAt" IS NULL
+        ORDER BY "locationId", "name", "updatedAt" DESC
+      )
+      DELETE FROM "Category"
+      WHERE "id" NOT IN (SELECT "id" FROM keepers)
+        AND "deletedAt" IS NULL
+    `
+    // Now add the unique constraint
+    await sql`
+      CREATE UNIQUE INDEX "Category_locationId_name_key"
+      ON "Category" ("locationId", "name")
+    `
+    console.log('[vercel-build]   Done — Category deduped + unique constraint added')
+  }
+
   console.log('[vercel-build] Pre-push migrations complete')
 }
 
