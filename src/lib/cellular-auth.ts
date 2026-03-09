@@ -21,6 +21,7 @@ export interface CellularTokenPayload {
   sub: 'cellular-terminal'
   terminalId: string
   locationId: string
+  venueSlug: string
   deviceFingerprint: string
   canRefund: boolean
   terminalRole: CellularTerminalRole
@@ -118,7 +119,7 @@ export async function verifyCellularToken(token: string): Promise<CellularTokenP
     // Check expiry
     if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null
 
-    // Validate required fields
+    // Validate required fields (venueSlug optional for backward compat)
     if (
       payload.sub !== 'cellular-terminal' ||
       !payload.terminalId ||
@@ -145,6 +146,7 @@ export async function verifyCellularToken(token: string): Promise<CellularTokenP
 export async function issueCellularToken(
   terminalId: string,
   locationId: string,
+  venueSlug: string,
   deviceFingerprint: string,
   terminalRole: CellularTerminalRole
 ): Promise<string> {
@@ -155,6 +157,7 @@ export async function issueCellularToken(
     sub: 'cellular-terminal',
     terminalId,
     locationId,
+    venueSlug,
     deviceFingerprint,
     canRefund: false, // HARD rule: CELLULAR_ROAMING can NEVER refund
     terminalRole,
@@ -209,6 +212,7 @@ export async function refreshCellularToken(oldToken: string): Promise<string | n
   return issueCellularToken(
     payload.terminalId,
     payload.locationId,
+    payload.venueSlug,
     payload.deviceFingerprint,
     payload.terminalRole
   )

@@ -124,6 +124,10 @@ const PUBLIC_API_PATH_RE = /^\/api\/(online|public)\//
 const CELLULAR_ALLOWLIST: Array<string | RegExp> = [
   /^\/api\/orders(\/|$)/,       // create, update, send, close, pay
   /^\/api\/menu(\/|$)/,         // read-only menu access
+  /^\/api\/sync\/bootstrap(\/|$)/, // terminal bootstrap (menu, employees, tables)
+  /^\/api\/auth\/login(\/|$)/,  // PIN login
+  /^\/api\/session(\/|$)/,      // session bootstrap
+  /^\/api\/employees(\/|$)/,    // employee list for display
   '/api/barcode/lookup',        // barcode scanning
   '/api/auth/refresh-cellular', // token refresh
 ]
@@ -134,7 +138,6 @@ const CELLULAR_HARD_BLOCKED: Array<string | RegExp> = [
   /^\/api\/orders\/[^/]+\/tip-adjust/,
   /^\/api\/shifts\/[^/]+\/close/,
   /^\/api\/(admin|settings|reports)(\/|$)/,
-  /^\/api\/employees(\/|$)/,
   /^\/api\/inventory(\/|$)/,
   /^\/api\/integrations(\/|$)/,
   /^\/api\/dashboard(\/|$)/,
@@ -255,6 +258,10 @@ export async function proxy(request: NextRequest) {
       headers.set('x-terminal-role', payload.terminalRole)
       headers.set('x-cellular-authenticated', '1')
       headers.set('x-can-refund', String(payload.canRefund))
+      // Route to the correct venue database
+      if (payload.venueSlug) {
+        headers.set('x-venue-slug', payload.venueSlug)
+      }
 
       // Re-auth required routes: void/comp pass through but flagged
       if (matchesRouteList(pathname, CELLULAR_REAUTH_ROUTES)) {
