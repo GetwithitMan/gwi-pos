@@ -126,7 +126,8 @@ const CELLULAR_ALLOWLIST: Array<string | RegExp> = [
   /^\/api\/menu(\/|$)/,         // read-only menu access
   /^\/api\/sync(\/|$)/,         // all sync endpoints (bootstrap, delta, events, floor-plan, outbox)
   /^\/api\/order-events(\/|$)/, // event-sourced order mutations (batch)
-  /^\/api\/auth\/login(\/|$)/,  // PIN login
+  /^\/api\/auth\/login(\/|$)/,      // PIN login
+  /^\/api\/auth\/verify-pin(\/|$)/, // PIN verification for operations (voids, comps, etc.)
   /^\/api\/session(\/|$)/,      // session bootstrap
   /^\/api\/employees(\/|$)/,    // employee list for display
   '/api/barcode/lookup',        // barcode scanning
