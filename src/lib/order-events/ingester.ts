@@ -24,6 +24,63 @@ import {
 import { reduce } from './reducer'
 import { applyProjection, bridgeLegacyFieldsToSnapshot } from './projector'
 
+// ── Snapshot Cache (in-memory LRU) ──────────────────────────────────
+//
+// After each successful replay, we cache the reduced OrderState keyed by
+// orderId. On the next ingestion for the same order we load the cached
+// state and only replay events with serverSequence > cached lastSeq,
+// turning an O(N) full-replay into O(k) where k = new events.
+//
+// Bounded to MAX_SNAPSHOT_CACHE entries. Eviction is LRU: on every hit
+// we delete+re-set so the entry moves to the end of insertion order
+// (Map preserves insertion order in JS). On overflow we delete the
+// oldest (first) entry.
+
+interface CachedSnapshot {
+  state: OrderState
+  lastSeq: number
+}
+
+const MAX_SNAPSHOT_CACHE = 500
+const snapshotCache = new Map<string, CachedSnapshot>()
+
+/** Read from cache with LRU promotion (delete + re-insert). */
+function cacheGet(orderId: string): CachedSnapshot | undefined {
+  const entry = snapshotCache.get(orderId)
+  if (!entry) return undefined
+  // LRU promote: move to end of insertion order
+  snapshotCache.delete(orderId)
+  snapshotCache.set(orderId, entry)
+  return entry
+}
+
+/** Write to cache, evicting oldest entry if at capacity. */
+function cacheSet(orderId: string, state: OrderState, lastSeq: number): void {
+  // If already present, delete first so re-insert goes to end
+  snapshotCache.delete(orderId)
+  // Evict oldest if at capacity
+  if (snapshotCache.size >= MAX_SNAPSHOT_CACHE) {
+    const oldest = snapshotCache.keys().next().value
+    if (oldest != null) snapshotCache.delete(oldest)
+  }
+  snapshotCache.set(orderId, { state, lastSeq })
+}
+
+/** Invalidate a cached snapshot (e.g. on corruption recovery). */
+export function cacheInvalidate(orderId: string): void {
+  snapshotCache.delete(orderId)
+}
+
+/** Clear the entire snapshot cache (useful for tests). */
+export function cacheClear(): void {
+  snapshotCache.clear()
+}
+
+/** Return current cache size (useful for diagnostics). */
+export function cacheSize(): number {
+  return snapshotCache.size
+}
+
 // ── Public interfaces ────────────────────────────────────────────────
 
 export interface IngestEvent {
@@ -145,24 +202,65 @@ export async function ingestAndProject(
     }
   }
 
-  // ── 2. Replay & Project ────────────────────────────────────────────
+  // ── 2. Replay & Project (snapshot-accelerated) ────────────────────
+  //
+  // Check the in-memory snapshot cache for this order. If a cached state
+  // exists, we only fetch events with serverSequence > cached.lastSeq
+  // and reduce incrementally. This turns a 30-event full replay into a
+  // 1-2 event incremental apply — saving 50-200ms inside the locked tx.
 
-  const orderEvents = await (db as any).orderEvent.findMany({
-    where: { orderId },
-    orderBy: { serverSequence: 'asc' },
-    select: { type: true, payloadJson: true, serverSequence: true },
-  })
+  let state: OrderState
+  let lastSequence: number
 
-  let state = emptyOrderState(orderId)
-  let lastSequence = 0
-  for (const oe of orderEvents) {
-    const eventPayload = {
-      type: oe.type,
-      payload: oe.payloadJson,
-    } as OrderEventPayload
-    state = reduce(state, eventPayload)
-    lastSequence = oe.serverSequence
+  const cached = cacheGet(orderId)
+
+  if (cached) {
+    // Incremental path: fetch only events newer than the snapshot
+    const newEvents = await (db as any).orderEvent.findMany({
+      where: { orderId, serverSequence: { gt: cached.lastSeq } },
+      orderBy: { serverSequence: 'asc' },
+      select: { type: true, payloadJson: true, serverSequence: true },
+    })
+
+    if (newEvents.length === 0) {
+      // Snapshot is already up-to-date (all events were idempotent dupes)
+      state = cached.state
+      lastSequence = cached.lastSeq
+    } else {
+      // Reduce only the new events on top of the cached state
+      state = cached.state
+      lastSequence = cached.lastSeq
+      for (const oe of newEvents) {
+        const eventPayload = {
+          type: oe.type,
+          payload: oe.payloadJson,
+        } as OrderEventPayload
+        state = reduce(state, eventPayload)
+        lastSequence = oe.serverSequence
+      }
+    }
+  } else {
+    // Full replay fallback: no cached snapshot, replay all events
+    const orderEvents = await (db as any).orderEvent.findMany({
+      where: { orderId },
+      orderBy: { serverSequence: 'asc' },
+      select: { type: true, payloadJson: true, serverSequence: true },
+    })
+
+    state = emptyOrderState(orderId)
+    lastSequence = 0
+    for (const oe of orderEvents) {
+      const eventPayload = {
+        type: oe.type,
+        payload: oe.payloadJson,
+      } as OrderEventPayload
+      state = reduce(state, eventPayload)
+      lastSequence = oe.serverSequence
+    }
   }
+
+  // Update the snapshot cache for next time
+  cacheSet(orderId, state, lastSequence)
 
   await applyProjection(db as any, state, locationId, lastSequence)
 

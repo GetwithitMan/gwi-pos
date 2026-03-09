@@ -186,6 +186,158 @@ export const POST = withVenue(withTiming(async function POST(
   try {
     body = await request.json()
 
+    // ── PMS Pre-Charge: Extract Oracle OPERA HTTP call OUTSIDE the transaction ──
+    // Room charges require a 1-5s HTTP call to Oracle OPERA. Doing this inside the
+    // FOR UPDATE transaction lock blocks all other terminals. Instead, we:
+    //   1. Validate PMS config and consume the one-time selection token
+    //   2. Create a PENDING pmsChargeAttempt record (outside tx — survives tx rollback for reconciliation)
+    //   3. Make the HTTP call to OPERA
+    //   4. Pass the result into the transaction, which just records the payment
+    // SAFETY: If OPERA succeeds but the DB transaction fails, the pmsChargeAttempt record
+    // (status=PENDING) persists for manual reconciliation — the charge is never silently lost.
+    let preChargeResult: {
+      pmsAttemptId: string
+      pmsTransactionNo: string
+      roomNumber: string
+      guestName: string
+      reservationId: string
+      idempotencyKey: string
+    } | null = null
+
+    // Detect room_charge in payments array (handle both normalized and raw formats)
+    const rawPayments = Array.isArray(body.payments) ? body.payments : []
+    const rawMethod = body.paymentMethodId || body.paymentMethod || body.method
+    const hasRoomCharge = rawPayments.some((p: any) => p.method === 'room_charge') ||
+                          rawMethod === 'room_charge'
+
+    if (hasRoomCharge) {
+      // Lightweight query for settings — no FOR UPDATE, no lock
+      const locationForPms = await db.order.findUnique({
+        where: { id: orderId },
+        select: {
+          locationId: true,
+          orderNumber: true,
+          location: { select: { settings: true } },
+        },
+      })
+
+      if (!locationForPms) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+
+      const pmsSettings = parseSettings(locationForPms.location.settings)
+
+      if (!pmsSettings.payments.acceptHotelRoomCharge) {
+        return NextResponse.json({ error: 'Bill to Room is not enabled' }, { status: 400 })
+      }
+
+      const pms = pmsSettings.hotelPms
+      if (!pms?.enabled || !pms.clientId) {
+        return NextResponse.json({ error: 'Oracle PMS integration is not configured' }, { status: 400 })
+      }
+
+      // Find the room_charge payment in the array
+      const roomPayment = rawPayments.find((p: any) => p.method === 'room_charge') ||
+                          (rawMethod === 'room_charge' ? body : null)
+      const selectionId = roomPayment?.selectionId
+      if (!selectionId) {
+        return NextResponse.json({ error: 'Room charge requires a valid guest selection.' }, { status: 400 })
+      }
+
+      const { consumeRoomChargeSelection } = await import('@/lib/room-charge-selections')
+      const sel = consumeRoomChargeSelection(selectionId, locationForPms.locationId)
+      if (!sel) {
+        return NextResponse.json(
+          { error: 'Guest selection has expired or is invalid. Please look up the guest again.' },
+          { status: 400 }
+        )
+      }
+
+      const amountVal = Number(roomPayment.amount || 0)
+      const tipVal = Number(roomPayment.tipAmount || 0)
+      const amountCents = Math.round((amountVal + tipVal) * 100)
+      const idempotencyKey_pms = `${orderId}:${sel.reservationId}:${amountCents}:${pms.chargeCode}`
+
+      // Check existing attempt (outside tx — read-only, safe)
+      let pmsAttempt = await db.pmsChargeAttempt.findUnique({ where: { idempotencyKey: idempotencyKey_pms } })
+
+      if (pmsAttempt?.status === 'COMPLETED') {
+        return NextResponse.json({
+          success: true,
+          message: 'Room charge already processed.',
+          transactionNo: pmsAttempt.operaTransactionId,
+        })
+      }
+
+      if (pmsAttempt?.status === 'FAILED') {
+        return NextResponse.json(
+          { error: 'A previous charge attempt failed. Please try a new payment.' },
+          { status: 502 }
+        )
+      }
+
+      if (pmsAttempt?.status === 'PENDING') {
+        const ageMs = Date.now() - pmsAttempt.updatedAt.getTime()
+        if (ageMs < 60_000) {
+          return NextResponse.json(
+            { error: 'Charge in progress. Please wait a moment and try again.' },
+            { status: 409 }
+          )
+        }
+      }
+
+      // Create PENDING attempt outside tx — ensures it survives even if the later tx fails
+      if (!pmsAttempt) {
+        pmsAttempt = await db.pmsChargeAttempt.create({
+          data: {
+            idempotencyKey: idempotencyKey_pms,
+            locationId: locationForPms.locationId,
+            orderId,
+            reservationId: sel.reservationId,
+            amountCents,
+            chargeCode: pms.chargeCode,
+            employeeId: sel.employeeId ?? null,
+            status: 'PENDING',
+          },
+        })
+      }
+
+      // ── Make the OPERA HTTP call OUTSIDE the transaction lock ──
+      try {
+        const { postCharge } = await import('@/lib/oracle-pms-client')
+        const chargeResult = await postCharge(pms, locationForPms.locationId, {
+          reservationId: sel.reservationId,
+          amountCents,
+          description: `Restaurant Charge`,
+          reference: `GWI-POS-Order-${locationForPms.orderNumber ?? orderId}`,
+          idempotencyKey: pmsAttempt.idempotencyKey,
+        })
+
+        preChargeResult = {
+          pmsAttemptId: pmsAttempt.id,
+          pmsTransactionNo: chargeResult.transactionNo,
+          roomNumber: sel.roomNumber,
+          guestName: sel.guestName,
+          reservationId: sel.reservationId,
+          idempotencyKey: idempotencyKey_pms,
+        }
+      } catch (err) {
+        // Mark attempt FAILED for reconciliation
+        void db.pmsChargeAttempt.update({
+          where: { id: pmsAttempt.id },
+          data: {
+            status: 'FAILED' as PmsAttemptStatus,
+            lastErrorMessage: err instanceof Error ? err.message.substring(0, 200) : 'unknown',
+          },
+        }).catch(e => console.error('[pay/room_charge] Failed to mark attempt FAILED:', e))
+        console.error('[pay/room_charge] OPERA charge failed:', err instanceof Error ? err.message : 'unknown')
+        return NextResponse.json(
+          { error: 'Failed to post charge to hotel room. Please verify the room and try again.' },
+          { status: 502 }
+        )
+      }
+    }
+
     const txResult = await db.$transaction(async (tx) => {
 
     // Acquire row-level lock to prevent double-charge from concurrent terminals
@@ -1038,105 +1190,25 @@ export const POST = withVenue(withTiming(async function POST(
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'room_charge') {
-        if (!settings.payments.acceptHotelRoomCharge) {
-          return { earlyReturn: NextResponse.json({ error: 'Bill to Room is not enabled' }, { status: 400 }) }
-        }
-
-        const pms = settings.hotelPms
-        if (!pms?.enabled || !pms.clientId) {
-          return { earlyReturn: NextResponse.json({ error: 'Oracle PMS integration is not configured' }, { status: 400 }) }
-        }
-
-        if (!payment.selectionId) {
-          return { earlyReturn: NextResponse.json({ error: 'Room charge requires a valid guest selection.' }, { status: 400 }) }
-        }
-
-        const { consumeRoomChargeSelection } = await import('@/lib/room-charge-selections')
-        const sel = consumeRoomChargeSelection(payment.selectionId, order.locationId)
-        if (!sel) {
+        // PMS charge was already executed OUTSIDE the transaction (pre-charge above).
+        // Here we just apply the pre-fetched result to the payment record.
+        // This eliminates the 1-5s Oracle OPERA HTTP call from inside the FOR UPDATE lock.
+        if (!preChargeResult) {
+          // Defensive: should never happen since pre-charge runs for any room_charge payment
           return { earlyReturn: NextResponse.json(
-            { error: 'Guest selection has expired or is invalid. Please look up the guest again.' },
-            { status: 400 }
+            { error: 'Internal error: PMS pre-charge result missing.' },
+            { status: 500 }
           ) }
         }
 
-        const amountCents = Math.round((payment.amount + (payment.tipAmount || 0)) * 100)
-        const idempotencyKey_pms = `${orderId}:${sel.reservationId}:${amountCents}:${pms.chargeCode}`
-
-        let pmsAttempt = await tx.pmsChargeAttempt.findUnique({ where: { idempotencyKey: idempotencyKey_pms } })
-
-        if (pmsAttempt?.status === 'COMPLETED') {
-          return { earlyReturn: NextResponse.json({
-            success: true,
-            message: 'Room charge already processed.',
-            transactionNo: pmsAttempt.operaTransactionId,
-          }) }
-        }
-
-        if (pmsAttempt?.status === 'FAILED') {
-          return { earlyReturn: NextResponse.json(
-            { error: 'A previous charge attempt failed. Please try a new payment.' },
-            { status: 502 }
-          ) }
-        }
-
-        if (pmsAttempt?.status === 'PENDING') {
-          const ageMs = Date.now() - pmsAttempt.updatedAt.getTime()
-          if (ageMs < 60_000) {
-            return { earlyReturn: NextResponse.json(
-              { error: 'Charge in progress. Please wait a moment and try again.' },
-              { status: 409 }
-            ) }
-          }
-        }
-
-        if (!pmsAttempt) {
-          pmsAttempt = await tx.pmsChargeAttempt.create({
-            data: {
-              idempotencyKey: idempotencyKey_pms,
-              locationId: order.locationId,
-              orderId,
-              reservationId: sel.reservationId,
-              amountCents,
-              chargeCode: pms.chargeCode,
-              employeeId: sel.employeeId ?? null,
-              status: 'PENDING',
-            },
-          })
-        }
-
-        try {
-          const { postCharge } = await import('@/lib/oracle-pms-client')
-          const chargeResult = await postCharge(pms, order.locationId, {
-            reservationId: sel.reservationId,
-            amountCents,
-            description: `Restaurant Charge`,
-            reference: `GWI-POS-Order-${order.orderNumber ?? orderId}`,
-            idempotencyKey: pmsAttempt.idempotencyKey,
-          })
-
-          paymentRecord.roomNumber = sel.roomNumber
-          paymentRecord.guestName = sel.guestName
-          paymentRecord.pmsReservationId = sel.reservationId
-          paymentRecord.pmsTransactionId = chargeResult.transactionNo
-          paymentRecord.transactionId = `PMS:${chargeResult.transactionNo}`
-          paymentRecord.authCode = `Room ${sel.roomNumber}`
-          pmsAttemptId = pmsAttempt.id
-          pmsTransactionNo = chargeResult.transactionNo
-        } catch (err) {
-          void tx.pmsChargeAttempt.update({
-            where: { id: pmsAttempt.id },
-            data: {
-              status: 'FAILED' as PmsAttemptStatus,
-              lastErrorMessage: err instanceof Error ? err.message.substring(0, 200) : 'unknown',
-            },
-          }).catch(e => console.error('[pay/room_charge] Failed to mark attempt FAILED:', e))
-          console.error('[pay/room_charge] OPERA charge failed:', err instanceof Error ? err.message : 'unknown')
-          return { earlyReturn: NextResponse.json(
-            { error: 'Failed to post charge to hotel room. Please verify the room and try again.' },
-            { status: 502 }
-          ) }
-        }
+        paymentRecord.roomNumber = preChargeResult.roomNumber
+        paymentRecord.guestName = preChargeResult.guestName
+        paymentRecord.pmsReservationId = preChargeResult.reservationId
+        paymentRecord.pmsTransactionId = preChargeResult.pmsTransactionNo
+        paymentRecord.transactionId = `PMS:${preChargeResult.pmsTransactionNo}`
+        paymentRecord.authCode = `Room ${preChargeResult.roomNumber}`
+        pmsAttemptId = preChargeResult.pmsAttemptId
+        pmsTransactionNo = preChargeResult.pmsTransactionNo
       }
 
       allPendingPayments.push(paymentRecord)
