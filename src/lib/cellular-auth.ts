@@ -71,9 +71,38 @@ function base64urlDecode(str: string): Uint8Array {
 // Core JWT operations (Web Crypto — edge-compatible)
 // ═══════════════════════════════════════════════════════════
 
+/** Cached secret so we only read from disk once per process lifetime */
+let _cachedSecret: string | null = null
+
 function getCellularSecret(): string {
-  const secret = process.env.CELLULAR_TOKEN_SECRET
+  // Fast path: already cached
+  if (_cachedSecret) return _cachedSecret
+
+  // Try process.env first (works when systemd EnvironmentFile loads correctly)
+  let secret = process.env.CELLULAR_TOKEN_SECRET
+
+  // Fallback: read directly from .env files on disk.
+  // Next.js 16 may sandbox process.env in API routes, so preload.js-set
+  // vars can be invisible here. Reading from disk bypasses this entirely.
+  if (!secret) {
+    try {
+      const fs = require('node:fs')
+      const envPaths = ['/opt/gwi-pos/.env', '/opt/gwi-pos/app/.env', '/opt/gwi-pos/app/.env.local']
+      for (const envPath of envPaths) {
+        try {
+          const content = fs.readFileSync(envPath, 'utf8') as string
+          const match = content.match(/^CELLULAR_TOKEN_SECRET=(.+)$/m)
+          if (match?.[1]) {
+            secret = match[1].trim()
+            break
+          }
+        } catch { /* file doesn't exist */ }
+      }
+    } catch { /* fs not available (edge runtime) */ }
+  }
+
   if (!secret) throw new Error('[cellular-auth] CELLULAR_TOKEN_SECRET is not set')
+  _cachedSecret = secret
   return secret
 }
 
