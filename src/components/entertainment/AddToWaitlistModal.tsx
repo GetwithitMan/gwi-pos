@@ -51,8 +51,8 @@ export function AddToWaitlistModal({
   const [partySize, setPartySize] = useState(1)
   const [notes, setNotes] = useState('')
 
-  // Tab options - default to existing
-  const [tabOption, setTabOption] = useState<'existing' | 'new'>('existing')
+  // Tab options - default to no tab (walk-in)
+  const [tabOption, setTabOption] = useState<'none' | 'existing' | 'new'>('none')
   const [selectedTabId, setSelectedTabId] = useState('')
   const [newTabCardLast4, setNewTabCardLast4] = useState('')
   const [newTabPreAuthAmount, setNewTabPreAuthAmount] = useState('')
@@ -83,7 +83,7 @@ export function AddToWaitlistModal({
     setIsLoading(true)
     try {
       // Fetch waitlist for this item
-      const waitlistRes = await fetch(`/api/entertainment/waitlist?locationId=${locationId}&menuItemId=${menuItemId}&status=waiting`)
+      const waitlistRes = await fetch(`/api/entertainment/waitlist?locationId=${locationId}&elementId=${menuItemId}&status=waiting`)
       if (waitlistRes.ok) {
         const raw = await waitlistRes.json()
         const data = raw.data ?? raw
@@ -138,7 +138,7 @@ export function AddToWaitlistModal({
       return
     }
 
-    // Validate tab selection
+    // Validate tab selection (only when user chose to link a tab)
     if (tabOption === 'existing' && !selectedTabId) {
       setError('Please select an existing tab')
       return
@@ -173,7 +173,7 @@ export function AddToWaitlistModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           locationId,
-          menuItemId,
+          elementId: menuItemId,
           employeeId,
           customerName: customerName.trim(),
           phoneNumber: phoneNumber.trim() || undefined,
@@ -206,7 +206,7 @@ export function AddToWaitlistModal({
       setPhoneNumber('')
       setPartySize(1)
       setNotes('')
-      setTabOption('existing')
+      setTabOption('none')
       setSelectedTabId('')
       setNewTabCardLast4('')
       setNewTabPreAuthAmount('')
@@ -362,12 +362,24 @@ export function AddToWaitlistModal({
               </div>
             </div>
 
-            {/* Tab Options - Required */}
+            {/* Tab Options - Optional */}
             <div className="border-2 border-blue-400 rounded-lg p-4 bg-blue-50">
               <label className="block text-sm font-bold text-blue-900 mb-3">
-                Link to Tab <span className="text-red-600">*</span>
+                Link to Tab
               </label>
               <div className="space-y-3">
+                <label className={`flex items-center gap-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
+                  tabOption === 'none' ? 'border-blue-500 bg-blue-100' : 'border-transparent hover:bg-blue-100'
+                }`}>
+                  <input
+                    type="radio"
+                    name="tabOption"
+                    checked={tabOption === 'none'}
+                    onChange={() => setTabOption('none')}
+                    className="text-blue-600 w-5 h-5"
+                  />
+                  <span className="font-bold text-gray-900">No tab (walk-in)</span>
+                </label>
                 <label className={`flex items-center gap-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
                   tabOption === 'existing' ? 'border-blue-500 bg-blue-100' : 'border-transparent hover:bg-blue-100'
                 }`}>
@@ -470,8 +482,8 @@ export function AddToWaitlistModal({
                       </select>
                     </div>
                   </div>
-                  {/* Card deposit: only show card input if using existing tab (new tab uses same card) */}
-                  {depositMethod === 'card' && tabOption === 'existing' && (
+                  {/* Card deposit: only show card input if not creating new tab (new tab uses same card) */}
+                  {depositMethod === 'card' && tabOption !== 'new' && (
                     <Input
                       type="text"
                       value={depositCardLast4}

@@ -14,7 +14,8 @@ import {
 interface EntertainmentItemCardProps {
   item: EntertainmentItem
   onOpenTab?: (orderId: string) => void
-  onExtendTime?: (itemId: string) => void
+  onExtendTime?: (itemId: string, minutes: number) => void
+  onSetTime?: (itemId: string, totalMinutes: number) => void
   onStopSession?: (itemId: string) => void
   onAddToWaitlist?: (itemId: string) => void
 }
@@ -23,11 +24,14 @@ export function EntertainmentItemCard({
   item,
   onOpenTab,
   onExtendTime,
+  onSetTime,
   onStopSession,
   onAddToWaitlist,
 }: EntertainmentItemCardProps) {
   const [timerDisplay, setTimerDisplay] = useState<string>('')
   const [urgencyLevel, setUrgencyLevel] = useState<'normal' | 'warning' | 'critical' | 'expired'>('normal')
+  const [showTimeAdjust, setShowTimeAdjust] = useState(false)
+  const [adjustMinutes, setAdjustMinutes] = useState(60)
 
   // Update timer every second
   useEffect(() => {
@@ -200,18 +204,61 @@ export function EntertainmentItemCard({
             >
               Open Tab
             </Button>
+            {item.timeInfo?.type === 'block' && (
+              showTimeAdjust ? (
+                <div className="flex gap-1 items-center mb-2">
+                  <input
+                    type="number"
+                    value={adjustMinutes}
+                    onChange={e => setAdjustMinutes(parseInt(e.target.value) || 0)}
+                    className="w-16 px-2 py-1 border rounded text-sm text-center text-gray-900"
+                    min="1"
+                    max="480"
+                  />
+                  <span className="text-xs text-gray-500">min</span>
+                  <Button
+                    size="sm"
+                    className="text-xs bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => { onSetTime?.(item.id, adjustMinutes); setShowTimeAdjust(false) }}
+                  >
+                    OK
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs"
+                    onClick={() => setShowTimeAdjust(false)}
+                  >
+                    ✕
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-1 mb-2">
+                  {[15, 30, 60].map(min => (
+                    <Button
+                      key={min}
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => onExtendTime?.(item.id, min)}
+                      aria-label={`Extend ${item.displayName} by ${min} minutes`}
+                    >
+                      +{min}m
+                    </Button>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => setShowTimeAdjust(true)}
+                    aria-label={`Set exact time for ${item.displayName}`}
+                  >
+                    Set
+                  </Button>
+                </div>
+              )
+            )}
             <div className="flex gap-2">
-              {item.timeInfo?.type === 'block' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => onExtendTime?.(item.id)}
-                  aria-label={`Extend time for ${item.displayName}`}
-                >
-                  Extend
-                </Button>
-              )}
               <Button
                 variant="outline"
                 size="sm"

@@ -67,6 +67,9 @@ interface ItemBuilderForm {
   // Happy hour
   happyHourEnabled: boolean
   happyHourPrice: number | null  // Simple HH price instead of full config
+  happyHourStart: string         // 24h format e.g. "13:00"
+  happyHourEnd: string           // 24h format e.g. "18:00"
+  happyHourDays: string[]        // e.g. ["monday","tuesday",...]
   // Status
   status: 'available' | 'maintenance'
 }
@@ -108,6 +111,9 @@ function TimedRentalsContent() {
     prepaidPackages: DEFAULT_PREPAID_PACKAGES,
     happyHourEnabled: false,
     happyHourPrice: null,
+    happyHourStart: '13:00',
+    happyHourEnd: '18:00',
+    happyHourDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
     status: 'available'
   })
   const [isSaving, setIsSaving] = useState(false)
@@ -154,28 +160,66 @@ function TimedRentalsContent() {
         prepaidPackages: DEFAULT_PREPAID_PACKAGES,
         happyHourEnabled: false,
         happyHourPrice: null,
+        happyHourStart: '13:00',
+        happyHourEnd: '18:00',
+        happyHourDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
         status: 'available'
       })
       setShowBuilder(true)
     } else {
-      // Load existing item
+      // Load existing item — fetch from individual item endpoint to get MenuItem-level happy hour columns
       const item = timedItems.find(i => i.id === itemIdFromUrl)
       if (item) {
-        // Try to extract per-minute rate from existing pricing
         const perHour = item.timedPricing?.perHour || item.price || 15
         const ratePerMinute = perHour / 60
 
-        setBuilderForm({
-          name: item.name,
-          visualType: item.visualType || 'pool_table',
-          ratePerMinute,
-          gracePeriodMinutes: item.gracePeriodMinutes || DEFAULT_PRICING.graceMinutes,
-          prepaidPackages: (item.timedPricing as any)?.prepaidPackages || DEFAULT_PREPAID_PACKAGES,
-          happyHourEnabled: (item.timedPricing as any)?.happyHour?.enabled || false,
-          happyHourPrice: (item.timedPricing as any)?.happyHour?.price || null,
-          status: item.entertainmentStatus || 'available'
-        })
-        setShowBuilder(true)
+        // Start with fallback values from timedPricing JSON
+        let hhEnabled = (item.timedPricing as any)?.happyHour?.enabled || false
+        let hhPrice: number | null = (item.timedPricing as any)?.happyHour?.price || null
+        let hhStart = '13:00'
+        let hhEnd = '18:00'
+        let hhDays: string[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+
+        const applyForm = () => {
+          setBuilderForm({
+            name: item.name,
+            visualType: item.visualType || 'pool_table',
+            ratePerMinute,
+            gracePeriodMinutes: item.gracePeriodMinutes || DEFAULT_PRICING.graceMinutes,
+            prepaidPackages: (item.timedPricing as any)?.prepaidPackages || DEFAULT_PREPAID_PACKAGES,
+            happyHourEnabled: hhEnabled,
+            happyHourPrice: hhPrice,
+            happyHourStart: hhStart,
+            happyHourEnd: hhEnd,
+            happyHourDays: hhDays,
+            status: item.entertainmentStatus || 'available'
+          })
+          setShowBuilder(true)
+        }
+
+        // Fetch full item detail for authoritative happy hour columns
+        void (async () => {
+          try {
+            const detailRes = await fetch(`/api/menu/items/${itemIdFromUrl}?locationId=${employee?.location?.id}`)
+            if (detailRes.ok) {
+              const detailData = await detailRes.json()
+              const detail = detailData.data?.item
+              if (detail) {
+                hhEnabled = detail.happyHourEnabled || false
+                hhStart = detail.happyHourStart || '13:00'
+                hhEnd = detail.happyHourEnd || '18:00'
+                hhDays = Array.isArray(detail.happyHourDays) ? detail.happyHourDays : ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+                // Reverse-calculate HH price from discount percentage
+                if (hhEnabled && detail.happyHourDiscount != null && ratePerMinute > 0) {
+                  hhPrice = ratePerMinute * (1 - Number(detail.happyHourDiscount) / 100)
+                }
+              }
+            }
+          } catch {
+            // Fall back to timedPricing JSON values already set above
+          }
+          applyForm()
+        })()
       }
     }
   }, [itemIdFromUrl, timedItems])
@@ -209,6 +253,11 @@ function TimedRentalsContent() {
     }
   }
 
+  // NOTE: handleStartSession and handleSessionAction use the legacy /api/timed-sessions
+  // system, which is a completely separate system from the OrderItem-based block time
+  // (at /api/entertainment/block-time). The legacy system creates standalone TimedSession
+  // records, while the modern system uses OrderItems with block time pricing.
+  // Unifying these two systems is planned for Phase 4 but is out of scope here.
   const handleStartSession = async () => {
     if (!employee?.location?.id || !selectedItem) return
 
@@ -267,6 +316,12 @@ function TimedRentalsContent() {
         ? '/api/menu/items'
         : `/api/menu/items/${itemIdFromUrl}`
 
+      // Calculate happy hour discount percentage from price difference
+      // e.g. base $0.25/min, HH $0.125/min → (1 - 0.125/0.25) * 100 = 50% discount
+      const hhDiscount = builderForm.happyHourEnabled && builderForm.happyHourPrice && builderForm.ratePerMinute > 0
+        ? Math.round((1 - (builderForm.happyHourPrice / builderForm.ratePerMinute)) * 100)
+        : null
+
       const body = {
         locationId: employee.location.id,
         name: builderForm.name,
@@ -289,6 +344,13 @@ function TimedRentalsContent() {
         visualType: builderForm.visualType,
         // Ensure it's in entertainment category
         categoryId: null, // Will need to set entertainment category
+        // MenuItem-level happy hour columns — these are what the pricing engine
+        // (block-time DELETE, entertainment-expiry cron) actually reads
+        happyHourEnabled: builderForm.happyHourEnabled,
+        happyHourDiscount: hhDiscount,
+        happyHourStart: builderForm.happyHourEnabled ? builderForm.happyHourStart : null,
+        happyHourEnd: builderForm.happyHourEnabled ? builderForm.happyHourEnd : null,
+        happyHourDays: builderForm.happyHourEnabled ? builderForm.happyHourDays : [],
       }
 
       const res = await fetch(url, {
@@ -670,6 +732,56 @@ function TimedRentalsContent() {
                     </>
                   )}
                 </label>
+
+                {/* Happy Hour schedule (start/end time + days) — only shown when enabled */}
+                {builderForm.happyHourEnabled && (
+                  <div className="ml-6 mt-2 space-y-2">
+                    {/* Time range */}
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-500">From</span>
+                      <input
+                        type="time"
+                        value={builderForm.happyHourStart}
+                        onChange={e => setBuilderForm({...builderForm, happyHourStart: e.target.value})}
+                        className="px-2 py-1 border rounded text-sm"
+                      />
+                      <span className="text-gray-500">to</span>
+                      <input
+                        type="time"
+                        value={builderForm.happyHourEnd}
+                        onChange={e => setBuilderForm({...builderForm, happyHourEnd: e.target.value})}
+                        className="px-2 py-1 border rounded text-sm"
+                      />
+                    </div>
+                    {/* Days of week */}
+                    <div className="flex flex-wrap gap-1">
+                      {(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const).map(day => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => {
+                            const days = builderForm.happyHourDays.includes(day)
+                              ? builderForm.happyHourDays.filter(d => d !== day)
+                              : [...builderForm.happyHourDays, day]
+                            setBuilderForm({...builderForm, happyHourDays: days})
+                          }}
+                          className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            builderForm.happyHourDays.includes(day)
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                              : 'bg-gray-100 text-gray-500 border border-gray-200'
+                          }`}
+                        >
+                          {day.charAt(0).toUpperCase() + day.slice(1, 3)}
+                        </button>
+                      ))}
+                    </div>
+                    {builderForm.happyHourPrice && builderForm.ratePerMinute > 0 && (
+                      <div className="text-xs text-amber-600">
+                        {Math.round((1 - (builderForm.happyHourPrice / builderForm.ratePerMinute)) * 100)}% discount applied during happy hour
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Prepaid Packages */}

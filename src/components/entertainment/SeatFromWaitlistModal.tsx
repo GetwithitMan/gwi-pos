@@ -80,19 +80,32 @@ export function SeatFromWaitlistModal({
     setError(null)
 
     try {
-      // End the current session on this item
-      const response = await fetch('/api/entertainment/status', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          menuItemId: selectedItem.id,
-          status: 'available',
-        }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to end session')
+      // End the current session — use block-time DELETE to properly calculate charges
+      const orderItemId = selectedItem.currentOrderItemId || selectedItem.currentOrder?.orderItemId
+      if (orderItemId) {
+        const response = await fetch(
+          `/api/entertainment/block-time?orderItemId=${orderItemId}&locationId=${locationId}`,
+          { method: 'DELETE' }
+        )
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || 'Failed to end session')
+        }
+      } else {
+        // Fallback: reset via status endpoint with correct field names
+        const response = await fetch('/api/entertainment/status', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            elementId: selectedItem.id,
+            locationId,
+            status: 'available',
+          }),
+        })
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || 'Failed to end session')
+        }
       }
 
       // Now seat the customer
@@ -245,17 +258,18 @@ export function SeatFromWaitlistModal({
         }
       }
 
-      // Mark the entertainment item as in_use (block-time POST already does this, but ensure it's set)
-      await fetch('/api/entertainment/status', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          menuItemId: selectedItemId,
-          status: 'in_use',
-          currentOrderId: tabId,
-          currentOrderItemId,
-        }),
-      })
+      // Fallback: if block-time POST didn't set status (e.g. no orderItemId), set it manually
+      if (!currentOrderItemId) {
+        await fetch('/api/entertainment/status', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            elementId: selectedItemId,
+            locationId,
+            status: 'in_use',
+          }),
+        })
+      }
 
       // Update waitlist entry status to 'seated'
       const waitlistResponse = await fetch(`/api/entertainment/waitlist/${entry.id}`, {

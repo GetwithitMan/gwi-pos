@@ -38,6 +38,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             blockTimeMinutes: true,
             timedPricing: true,
             minimumMinutes: true,
+            currentOrderItemId: true,
+            maxConcurrentUses: true,
+            currentUseCount: true,
+            description: true,
           },
         },
         section: {
@@ -102,6 +106,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         if (order) {
           currentOrder = {
             orderId: order.id,
+            orderItemId: element.linkedMenuItem?.currentOrderItemId || null,
             tabName: order.tabName || `Order #${order.displayNumber || order.orderNumber}`,
             orderNumber: order.orderNumber,
             displayNumber: order.displayNumber,
@@ -137,48 +142,44 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Timed pricing from linked menu item (Json column, already an object)
       const timedPricing = element.linkedMenuItem?.timedPricing ?? null
 
+      // Map to EntertainmentItem shape expected by KDS page
       return {
         id: element.id,
-        name: element.name,
-        abbreviation: element.abbreviation,
-        visualType: element.visualType,
-        sectionId: element.sectionId,
-        section: element.section,
-        posX: element.posX,
-        posY: element.posY,
-        width: element.width,
-        height: element.height,
+        name: element.linkedMenuItem?.name || element.name || element.abbreviation || 'Unnamed',
+        displayName: element.name || element.abbreviation || element.linkedMenuItem?.name || 'Unnamed',
+        description: element.linkedMenuItem?.description || null,
+        category: element.section
+          ? { id: element.section.id, name: element.section.name }
+          : { id: 'uncategorized', name: 'Other' },
         status: element.status || 'available',
         currentOrder,
-        currentOrderId: element.currentOrderId,
+        currentOrderItemId: element.linkedMenuItem?.currentOrderItemId || null,
         timeInfo,
         waitlistCount: element.waitlistEntries.length,
         waitlist: element.waitlistEntries.map((w) => ({
           id: w.id,
           customerName: w.customerName,
-          phone: w.phone,
+          phoneNumber: w.phone,
           partySize: w.partySize,
           position: w.position,
           status: w.status,
           notes: w.notes,
-          elementId: element.id,
+          createdAt: w.requestedAt.toISOString(),
           requestedAt: w.requestedAt.toISOString(),
           waitMinutes: Math.floor((now.getTime() - w.requestedAt.getTime()) / 1000 / 60),
+          elementId: element.id,
         })),
-        // Linked menu item for pricing
-        linkedMenuItem: element.linkedMenuItem ? {
-          id: element.linkedMenuItem.id,
-          name: element.linkedMenuItem.name,
-          price: Number(element.linkedMenuItem.price),
-          blockTimeMinutes: element.linkedMenuItem.blockTimeMinutes,
-          timedPricing,
-          minimumMinutes: element.linkedMenuItem.minimumMinutes,
-        } : null,
+        price: element.linkedMenuItem ? Number(element.linkedMenuItem.price) : 0,
+        timedPricing: timedPricing as { per15Min?: number; per30Min?: number; perHour?: number; minimum?: number } | null,
+        blockTimeMinutes: element.linkedMenuItem?.blockTimeMinutes || null,
+        minimumMinutes: element.linkedMenuItem?.minimumMinutes || null,
+        maxConcurrentUses: element.linkedMenuItem?.maxConcurrentUses || 1,
+        currentUseCount: element.linkedMenuItem?.currentUseCount || 0,
       }
     })
 
     const response = NextResponse.json({ data: {
-      elements: elementsWithOrders,
+      items: elementsWithOrders,
       summary: {
         total: elementsWithOrders.length,
         available: elementsWithOrders.filter(i => i.status === 'available').length,

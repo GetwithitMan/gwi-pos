@@ -159,7 +159,7 @@ export default function EntertainmentKDSPage() {
   }
 
   // Handle extending time
-  const handleExtendTime = async (itemId: string) => {
+  const handleExtendTime = async (itemId: string, minutes: number = 30) => {
     const item = items.find(i => i.id === itemId)
     if (!item?.currentOrder) return
 
@@ -189,7 +189,8 @@ export default function EntertainmentKDSPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orderItemId: entertainmentItem.id,
-            additionalMinutes: 30,
+            additionalMinutes: minutes,
+            locationId,
           }),
         })
 
@@ -214,7 +215,8 @@ export default function EntertainmentKDSPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderItemId,
-          additionalMinutes: 30,
+          additionalMinutes: minutes,
+          locationId,
         }),
       })
 
@@ -230,6 +232,28 @@ export default function EntertainmentKDSPage() {
     }
   }
 
+  // Handle setting an exact time remaining (calculates delta and extends)
+  const handleSetTime = async (itemId: string, totalMinutes: number) => {
+    const item = items.find(i => i.id === itemId)
+    if (!item?.timeInfo?.expiresAt) return
+
+    // Calculate how many minutes to add/subtract to reach the target
+    const expiresAt = new Date(item.timeInfo.expiresAt)
+    const now = new Date()
+    const currentRemainingMs = expiresAt.getTime() - now.getTime()
+    const targetMs = totalMinutes * 60 * 1000
+    const deltaMs = targetMs - currentRemainingMs
+    const deltaMinutes = Math.round(deltaMs / 60000)
+
+    if (deltaMinutes <= 0) {
+      toast.warning('Cannot reduce time below current remaining')
+      return
+    }
+
+    // Use extend with the calculated delta
+    await handleExtendTime(itemId, deltaMinutes)
+  }
+
   // Handle stopping a session
   const handleStopSession = async (itemId: string) => {
     if (!confirm('Are you sure you want to stop this session?')) return
@@ -243,7 +267,7 @@ export default function EntertainmentKDSPage() {
 
       if (orderItemId) {
         // Stop the block time via the proper endpoint (also updates MenuItem status)
-        const response = await fetch(`/api/entertainment/block-time?orderItemId=${orderItemId}`, {
+        const response = await fetch(`/api/entertainment/block-time?orderItemId=${orderItemId}&locationId=${locationId}`, {
           method: 'DELETE',
         })
 
@@ -281,8 +305,18 @@ export default function EntertainmentKDSPage() {
 
   // Handle add to waitlist
   const handleAddToWaitlist = (itemId?: string) => {
-    setSelectedItemForWaitlist(itemId)
-    setShowAddWaitlistModal(true)
+    if (itemId) {
+      setSelectedItemForWaitlist(itemId)
+      setShowAddWaitlistModal(true)
+    } else if (items.length === 1) {
+      // Auto-select if only one item
+      setSelectedItemForWaitlist(items[0].id)
+      setShowAddWaitlistModal(true)
+    } else if (items.length > 1) {
+      // Show picker state - set a sentinel so modal renders with picker
+      setSelectedItemForWaitlist(undefined)
+      setShowAddWaitlistModal(true)
+    }
   }
 
   const handleSubmitWaitlist = async (data: {
@@ -468,6 +502,7 @@ export default function EntertainmentKDSPage() {
                       item={item}
                       onOpenTab={handleOpenTab}
                       onExtendTime={handleExtendTime}
+                      onSetTime={handleSetTime}
                       onStopSession={handleStopSession}
                       onAddToWaitlist={handleAddToWaitlist}
                     />
@@ -492,8 +527,38 @@ export default function EntertainmentKDSPage() {
         )}
       </main>
 
+      {/* Add to Waitlist Modal - Item Picker when no item pre-selected */}
+      {showAddWaitlistModal && !selectedItemForWaitlist && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowAddWaitlistModal(false)} />
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-sm mx-4 p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Select an Item</h2>
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {items.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setSelectedItemForWaitlist(item.id)}
+                  className="w-full text-left px-4 py-3 rounded-lg border-2 border-gray-200 hover:border-amber-400 hover:bg-amber-50 transition-colors font-medium text-gray-900"
+                >
+                  {item.displayName}
+                  <span className={`ml-2 text-xs font-semibold ${item.status === 'available' ? 'text-green-600' : item.status === 'in_use' ? 'text-red-600' : 'text-gray-500'}`}>
+                    ({item.status === 'in_use' ? 'In Use' : item.status === 'available' ? 'Available' : item.status})
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowAddWaitlistModal(false)}
+              className="mt-4 w-full px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Add to Waitlist Modal */}
-      {selectedItemForWaitlist && (
+      {showAddWaitlistModal && selectedItemForWaitlist && (
         <AddToWaitlistModal
           isOpen={showAddWaitlistModal}
           onClose={() => {

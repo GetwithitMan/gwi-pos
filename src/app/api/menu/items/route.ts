@@ -217,6 +217,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       backupPrinterIds,
       // Combo print mode
       comboPrintMode,
+      // Entertainment / timed rental fields
+      itemType,
+      timedPricing,
+      entertainmentStatus,
+      visualType,
+      gracePeriodMinutes,
+      // Happy hour (MenuItem-level columns used by pricing engine)
+      happyHourEnabled,
+      happyHourDiscount,
+      happyHourStart,
+      happyHourEnd,
+      happyHourDays,
     } = body
 
     if (!name?.trim()) {
@@ -274,6 +286,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         backupPrinterIds: backupPrinterIds && backupPrinterIds.length > 0 ? backupPrinterIds : null,
         // Combo print mode
         comboPrintMode: comboPrintMode || null,
+        // Entertainment / timed rental fields
+        ...(itemType && { itemType }),
+        ...(timedPricing && { timedPricing }),
+        ...(entertainmentStatus && { entertainmentStatus }),
+        ...(visualType && { visualType }),
+        ...(gracePeriodMinutes !== undefined && { gracePeriodMinutes }),
+        // Happy hour (MenuItem-level columns — used by block-time pricing engine)
+        ...(happyHourEnabled !== undefined && { happyHourEnabled }),
+        ...(happyHourDiscount !== undefined && { happyHourDiscount: happyHourDiscount ?? null }),
+        ...(happyHourStart !== undefined && { happyHourStart: happyHourStart || null }),
+        ...(happyHourEnd !== undefined && { happyHourEnd: happyHourEnd || null }),
+        ...(happyHourDays !== undefined && { happyHourDays: happyHourDays || null }),
       }
     })
 
