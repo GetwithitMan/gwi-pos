@@ -13,13 +13,28 @@ if (!globalThis.AsyncLocalStorage) {
 }
 
 /**
- * Load .env from both /opt/gwi-pos/.env (master) and the app-local copy.
- * dotenv won't override existing process.env values, so systemd
- * EnvironmentFile still takes precedence when it works.
+ * Load .env vars from /opt/gwi-pos/.env into process.env.
+ * Uses plain fs (no dotenv dependency) for maximum compatibility.
+ * Does not override existing values (systemd EnvironmentFile wins).
  */
 try {
-  require('dotenv').config({ path: '/opt/gwi-pos/.env' })
-  require('dotenv').config() // also loads $CWD/.env as fallback
-} catch (_) {
-  // dotenv not available — rely on systemd EnvironmentFile
-}
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const envPaths = ['/opt/gwi-pos/.env', path.resolve('.env'), path.resolve('.env.local')]
+  for (const envPath of envPaths) {
+    try {
+      const content = fs.readFileSync(envPath, 'utf8')
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) continue
+        const eqIdx = trimmed.indexOf('=')
+        if (eqIdx < 1) continue
+        const key = trimmed.slice(0, eqIdx)
+        const val = trimmed.slice(eqIdx + 1)
+        if (!(key in process.env)) {
+          process.env[key] = val
+        }
+      }
+    } catch (_) { /* file doesn't exist */ }
+  }
+} catch (_) { /* fs not available */ }
