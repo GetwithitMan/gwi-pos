@@ -120,19 +120,30 @@ export const POST = withVenue(async function POST(
     // Process all payments atomically
     const now = new Date()
 
-    await db.$transaction(async (tx) => {
-      // Create a payment and mark each unpaid split as paid
-      for (const split of unpaidSplits) {
-        // W2-P2: Round each split total to avoid floating-point imprecision
-        // Dual pricing: split.total is the cash price. For card payments with dual
-        // pricing enabled, charge the card price = cash price × (1 + discount%).
-        const cashSplitTotal = roundToCents(Number(split.total))
-        const splitTotal = dualPricingApplies
-          ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
-          : cashSplitTotal
+    // Build shared card detail fields once
+    const cardDetails = {
+      ...(cardBrand && { cardBrand }),
+      ...(cardLast4 && { cardLast4 }),
+      ...(authCode && { authCode }),
+      ...(datacapRecordNo && { datacapRecordNo }),
+      ...(datacapRefNumber && { datacapRefNumber }),
+      ...(datacapSequenceNo && { datacapSequenceNo }),
+      ...(entryMethod && { entryMethod }),
+      ...(amountAuthorized && { amountAuthorized }),
+    }
 
-        await tx.payment.create({
-          data: {
+    const unpaidSplitIds = unpaidSplits.map(s => s.id)
+
+    await db.$transaction(async (tx) => {
+      // Batch-create all payments at once
+      await tx.payment.createMany({
+        data: unpaidSplits.map(split => {
+          const cashSplitTotal = roundToCents(Number(split.total))
+          const splitTotal = dualPricingApplies
+            ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
+            : cashSplitTotal
+
+          return {
             locationId: split.locationId,
             orderId: split.id,
             employeeId,
@@ -142,45 +153,27 @@ export const POST = withVenue(async function POST(
             totalAmount: splitTotal,
             paymentMethod: method,
             status: 'completed',
-            // Card details (shared across all splits from single card transaction)
-            ...(cardBrand && { cardBrand }),
-            ...(cardLast4 && { cardLast4 }),
-            ...(authCode && { authCode }),
-            ...(datacapRecordNo && { datacapRecordNo }),
-            ...(datacapRefNumber && { datacapRefNumber }),
-            ...(datacapSequenceNo && { datacapSequenceNo }),
-            ...(entryMethod && { entryMethod }),
-            ...(amountAuthorized && { amountAuthorized }),
+            ...cardDetails,
             idempotencyKey: effectiveIdempotencyKey,
-          },
-        })
-
-        await tx.order.update({
-          where: { id: split.id },
-          data: {
-            status: 'paid',
-            paidAt: now,
-          },
-        })
-      }
-
-      // Mark parent order as paid
-      await tx.order.update({
-        where: { id: parentOrderId },
-        data: {
-          status: 'paid',
-          paidAt: now,
-          closedAt: now,
-        },
+          }
+        }),
       })
 
-      // Reset table if parent had one
-      if (parentOrder.tableId) {
-        await tx.table.update({
-          where: { id: parentOrder.tableId },
-          data: { status: 'available' },
-        })
-      }
+      // Batch-update all unpaid splits to paid + mark parent as paid
+      await Promise.all([
+        tx.order.updateMany({
+          where: { id: { in: unpaidSplitIds } },
+          data: { status: 'paid', paidAt: now },
+        }),
+        tx.order.update({
+          where: { id: parentOrderId },
+          data: { status: 'paid', paidAt: now, closedAt: now },
+        }),
+        // Reset table if parent had one
+        ...(parentOrder.tableId
+          ? [tx.table.update({ where: { id: parentOrder.tableId }, data: { status: 'available' } })]
+          : []),
+      ])
 
       // W2-P1: Loyalty points INSIDE transaction to prevent double-credit on retry
       if (parentOrder.customer && settings.loyalty.enabled) {

@@ -15,7 +15,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
@@ -386,6 +386,16 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
+    // C11: Source-state validation — only allow payment on known payable statuses.
+    // This prevents silent transitions from unexpected states (e.g., 'error', future states).
+    const PAYABLE_STATUSES = ['open', 'sent', 'in_progress', 'draft', 'split']
+    if (!PAYABLE_STATUSES.includes(order.status) && !['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
+      return { earlyReturn: NextResponse.json(
+        { error: `Cannot pay order in '${order.status}' status` },
+        { status: 400 }
+      ) }
+    }
+
     // Check for $0 order BEFORE Zod validation (Zod requires amount > 0,
     // but voided orders legitimately have $0 total and need to be closed)
     if (order.status !== 'paid' && order.status !== 'closed') {
@@ -495,11 +505,19 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // Server-side permission check for payment processing
-    const auth = await requireAnyPermission(employeeId, order.locationId, [
-      PERMISSIONS.POS_CASH_PAYMENTS,
-      PERMISSIONS.POS_CARD_PAYMENTS,
-    ])
+    // C18: Server-side permission check — method-specific.
+    // Cash requires POS_CASH_PAYMENTS; all non-cash methods (card, gift_card,
+    // house_account, room_charge, loyalty_points) require POS_CARD_PAYMENTS.
+    const requiredPerms = new Set<string>()
+    for (const p of payments) {
+      if (p.method === 'cash') {
+        requiredPerms.add(PERMISSIONS.POS_CASH_PAYMENTS)
+      } else {
+        // credit, debit, gift_card, house_account, room_charge, loyalty_points
+        requiredPerms.add(PERMISSIONS.POS_CARD_PAYMENTS)
+      }
+    }
+    const auth = await requireAnyPermission(employeeId, order.locationId, [...requiredPerms])
     if (!auth.authorized) {
       return { earlyReturn: NextResponse.json({ error: auth.error }, { status: auth.status }) }
     }
@@ -590,14 +608,21 @@ export const POST = withVenue(withTiming(async function POST(
       const now = new Date()
       const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
 
+      // Batch-fetch all menu items for per-minute settlement in ONE query (N+1 fix)
+      const perMinuteMenuItemIds = [...new Set(perMinuteItems.map((item: any) => item.menuItemId))]
+      const perMinuteMenuItems = await tx.menuItem.findMany({
+        where: { id: { in: perMinuteMenuItemIds } },
+        select: { id: true, ratePerMinute: true, minimumCharge: true, incrementMinutes: true, graceMinutes: true, price: true },
+      })
+      const perMinuteMenuItemMap = new Map(perMinuteMenuItems.map(mi => [mi.id, mi]))
+
+      // Calculate settlements and batch the updates
+      const settlementUpdates: Promise<unknown>[] = []
       for (const item of perMinuteItems) {
           const startedAt = new Date(item.blockTimeStartedAt!)
           const elapsedMinutes = Math.max(1, Math.ceil((now.getTime() - startedAt.getTime()) / 60000))
 
-          const mi = await tx.menuItem.findUnique({
-            where: { id: item.menuItemId },
-            select: { ratePerMinute: true, minimumCharge: true, incrementMinutes: true, graceMinutes: true, price: true },
-          })
+          const mi = perMinuteMenuItemMap.get(item.menuItemId)
           if (!mi) continue
 
           const ratePerMinute = mi.ratePerMinute ? Number(mi.ratePerMinute) : 0
@@ -613,14 +638,17 @@ export const POST = withVenue(withTiming(async function POST(
           const breakdown = calculateCharge(elapsedMinutes, pricing)
           const settledPrice = breakdown.totalCharge
 
-          await tx.orderItem.update({
-            where: { id: item.id },
-            data: {
-              price: settledPrice,
-              itemTotal: settledPrice * item.quantity,
-            },
-          })
+          settlementUpdates.push(
+            tx.orderItem.update({
+              where: { id: item.id },
+              data: {
+                price: settledPrice,
+                itemTotal: settledPrice * item.quantity,
+              },
+            })
+          )
         }
+        await Promise.all(settlementUpdates)
 
         const activeItems = await tx.orderItem.findMany({
           where: { orderId, status: 'active', deletedAt: null },
@@ -1279,7 +1307,7 @@ export const POST = withVenue(withTiming(async function POST(
         loyaltyEarningBase += newTipTotal
       }
       if (loyaltyEarningBase >= settings.loyalty.minimumEarnAmount) {
-        pointsEarned = Math.floor(loyaltyEarningBase * settings.loyalty.pointsPerDollar)
+        pointsEarned = Math.round(loyaltyEarningBase * settings.loyalty.pointsPerDollar)
       }
     }
 
@@ -1287,7 +1315,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Customer stats (totalSpent, totalOrders, lastVisit, averageTicket) update whenever
     // a linked customer's order is fully paid — regardless of loyalty being enabled.
     let newAverageTicket: number | null = null
-    const shouldUpdateCustomerStats = updateData.status === 'paid' && !!order.customer
+    const shouldUpdateCustomerStats = updateData.status === 'paid' && order.status !== 'paid' && !!order.customer
     if (shouldUpdateCustomerStats) {
       const currentTotalSpent = Number((order.customer as any).totalSpent ?? 0)
       const currentTotalOrders = (order.customer as any).totalOrders ?? 0
@@ -1665,7 +1693,7 @@ export const POST = withVenue(withTiming(async function POST(
           })
 
           let recalculatedCommission = 0
-          const itemUpdates: Promise<unknown>[] = []
+          const commissionUpdates: { id: string; commission: number }[] = []
 
           for (const item of activeItems) {
             const mi = item.menuItem
@@ -1679,17 +1707,26 @@ export const POST = withVenue(withTiming(async function POST(
               : Math.round(val * qty * 100) / 100
 
             if (commission !== Number(item.commissionAmount ?? 0)) {
-              itemUpdates.push(
-                db.orderItem.update({
-                  where: { id: item.id },
-                  data: { commissionAmount: commission },
-                })
-              )
+              commissionUpdates.push({ id: item.id, commission })
             }
             recalculatedCommission += commission
           }
 
-          await Promise.all(itemUpdates)
+          // Batch update all changed commissions in a single SQL statement
+          if (commissionUpdates.length > 0) {
+            const caseClauses = commissionUpdates.map((_, i) => `WHEN id = $${i * 2 + 1} THEN $${i * 2 + 2}`).join(' ')
+            const ids = commissionUpdates.map(u => u.id)
+            const params: (string | number)[] = []
+            for (const u of commissionUpdates) {
+              params.push(u.id, u.commission)
+            }
+            params.push(...ids)
+            const idPlaceholders = ids.map((_, i) => `$${commissionUpdates.length * 2 + i + 1}`).join(', ')
+            await db.$executeRawUnsafe(
+              `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END WHERE id IN (${idPlaceholders})`,
+              ...params
+            )
+          }
 
           const currentTotal = Number(order.commissionTotal ?? 0)
           if (Math.abs(recalculatedCommission - currentTotal) > 0.001) {

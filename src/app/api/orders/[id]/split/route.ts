@@ -47,9 +47,23 @@ export const POST = withVenue(async function POST(
             payments: {
               where: { status: 'completed' },
             },
+            items: true,
+          },
+          orderBy: { splitIndex: 'asc' as const },
+        },
+        parentOrder: {
+          include: {
+            splitOrders: {
+              include: {
+                payments: { where: { status: 'completed' } },
+                items: true,
+              },
+              orderBy: { splitIndex: 'asc' as const },
+            },
+            payments: { where: { status: 'completed' } },
+            items: true,
           },
         },
-        parentOrder: true,
       },
     })
 
@@ -74,42 +88,20 @@ export const POST = withVenue(async function POST(
     const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
 
     // Handle get_splits - return all split orders for navigation
+    // Reuse data from the initial fetch (includes splitOrders.items, parentOrder.splitOrders.items)
     if (body.type === 'get_splits') {
       let allSplits
-      if (order.parentOrderId) {
-        // This is a child - get parent and siblings
-        const parent = await db.order.findUnique({
-          where: { id: order.parentOrderId },
-          include: {
-            splitOrders: {
-              include: {
-                payments: { where: { status: 'completed' } },
-                items: true,
-              },
-              orderBy: { splitIndex: 'asc' },
-            },
-            payments: { where: { status: 'completed' } },
-            items: true,
-          },
-        })
-        allSplits = parent ? [parent, ...parent.splitOrders] : [order]
+      if (order.parentOrderId && order.parentOrder) {
+        // This is a child - use already-fetched parent and its splitOrders
+        const parent = order.parentOrder as typeof order.parentOrder & {
+          splitOrders: (typeof order.splitOrders[number])[]
+          payments: (typeof order.payments[number])[]
+          items: (typeof order.items[number])[]
+        }
+        allSplits = [parent, ...parent.splitOrders]
       } else if (order.splitOrders.length > 0) {
-        // This is a parent with children - need to fetch with items
-        const parentWithItems = await db.order.findUnique({
-          where: { id: order.id },
-          include: {
-            splitOrders: {
-              include: {
-                payments: { where: { status: 'completed' } },
-                items: true,
-              },
-              orderBy: { splitIndex: 'asc' },
-            },
-            payments: { where: { status: 'completed' } },
-            items: true,
-          },
-        })
-        allSplits = parentWithItems ? [parentWithItems, ...parentWithItems.splitOrders] : [order]
+        // This is a parent with children - already have splitOrders with items from initial fetch
+        allSplits = [order, ...order.splitOrders]
       } else {
         allSplits = [order]
       }
@@ -177,42 +169,42 @@ export const POST = withVenue(async function POST(
           where: { parentOrderId: order.id },
         })
 
-        // Create split orders
-        const createdSplits = []
-        for (let i = 0; i < numWays; i++) {
-          const splitIndex = existingSplits + i + 1
-          // Last split gets any remaining cents
-          const splitTotal = i === numWays - 1
-            ? Math.round((orderTotal - perSplit * (numWays - 1)) * 100) / 100
-            : perSplit
+        // Create split orders in parallel — each is independent (same parent, unique splitIndex)
+        const createdSplits = await Promise.all(
+          Array.from({ length: numWays }, (_, i) => {
+            const splitIndex = existingSplits + i + 1
+            // Last split gets any remaining cents
+            const splitTotal = i === numWays - 1
+              ? Math.round((orderTotal - perSplit * (numWays - 1)) * 100) / 100
+              : perSplit
 
-          const splitSubtotal = Math.round((splitTotal / (1 + taxRate)) * 100) / 100
-          const splitTax = Math.round((splitTotal - splitSubtotal) * 100) / 100
+            const splitSubtotal = Math.round((splitTotal / (1 + taxRate)) * 100) / 100
+            const splitTax = Math.round((splitTotal - splitSubtotal) * 100) / 100
 
-          const splitOrder = await tx.order.create({
-            data: {
-              orderNumber: order.orderNumber, // Same base number
-              displayNumber: `${order.orderNumber}-${splitIndex}`,
-              locationId: order.locationId,
-              employeeId: order.employeeId,
-              customerId: order.customerId,
-              orderType: order.orderType,
-              status: 'open',
-              tableId: order.tableId,
-              tabName: order.tabName,
-              guestCount: 1,
-              subtotal: splitSubtotal,
-              discountTotal: 0,
-              taxTotal: splitTax,
-              tipTotal: 0,
-              total: splitTotal,
-              parentOrderId: order.id,
-              splitIndex,
-              notes: `Split ${splitIndex} of ${numWays} from order #${order.orderNumber}`,
-            },
+            return tx.order.create({
+              data: {
+                orderNumber: order.orderNumber, // Same base number
+                displayNumber: `${order.orderNumber}-${splitIndex}`,
+                locationId: order.locationId,
+                employeeId: order.employeeId,
+                customerId: order.customerId,
+                orderType: order.orderType,
+                status: 'open',
+                tableId: order.tableId,
+                tabName: order.tabName,
+                guestCount: 1,
+                subtotal: splitSubtotal,
+                discountTotal: 0,
+                taxTotal: splitTax,
+                tipTotal: 0,
+                total: splitTotal,
+                parentOrderId: order.id,
+                splitIndex,
+                notes: `Split ${splitIndex} of ${numWays} from order #${order.orderNumber}`,
+              },
+            })
           })
-          createdSplits.push(splitOrder)
-        }
+        )
 
         // Mark parent order as 'split' so children become payable
         await tx.order.update({

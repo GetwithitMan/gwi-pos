@@ -5,6 +5,10 @@ import { dispatchPrintWithRetry } from '@/lib/print-retry'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
+// Throttle entertainment expiry scan — once per 30s, not every KDS poll
+let _lastExpiryCheck = 0
+const _EXPIRY_INTERVAL = 30_000
+
 // GET - Get orders for KDS display
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -22,8 +26,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // W2-K3: Lazy expiry for entertainment sessions
-    // Auto-complete expired entertainment items on each KDS poll
-    const expiredItems = await db.orderItem.findMany({
+    // Throttled to every 30s — no need to scan on every poll
+    const shouldRunExpiry = Date.now() - _lastExpiryCheck > _EXPIRY_INTERVAL
+    if (shouldRunExpiry) _lastExpiryCheck = Date.now()
+    const expiredItems = shouldRunExpiry ? await db.orderItem.findMany({
       where: {
         order: { locationId },
         blockTimeExpiresAt: { lte: new Date() },
@@ -32,7 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         deletedAt: null,
       },
       select: { id: true, orderId: true },
-    })
+    }) : []
 
     if (expiredItems.length > 0) {
       await db.orderItem.updateMany({
@@ -405,18 +411,17 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         const auditAction = action === 'complete' ? 'kds_complete'
           : action === 'uncomplete' ? 'kds_uncomplete'
           : 'kds_resend'
-        for (const iid of itemIds) {
-          void db.auditLog.create({
-            data: {
-              locationId,
-              employeeId: body.employeeId || null,
-              action: auditAction,
-              entityType: 'order_item',
-              entityId: iid,
-              details: { action, stationId: body.stationId }
-            }
-          }).catch(err => console.error('[AuditLog] KDS audit failed:', err))
-        }
+        // Bulk insert audit logs — single query instead of N individual creates
+        void db.auditLog.createMany({
+          data: itemIds.map((iid: string) => ({
+            locationId,
+            employeeId: body.employeeId || null,
+            action: auditAction,
+            entityType: 'order_item',
+            entityId: iid,
+            details: { action, stationId: body.stationId },
+          })),
+        }).catch(err => console.error('[AuditLog] KDS audit failed:', err))
       }
 
       // Event sourcing: emit ITEM_UPDATED events (fire-and-forget)

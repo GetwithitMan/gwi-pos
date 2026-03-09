@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo, useDeferredValue } from 'react'
+import { Virtuoso, VirtuosoGrid } from 'react-virtuoso'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
@@ -1124,11 +1125,106 @@ export function OpenOrdersPanel({
     </>
   )
 
+  // ── Virtualized list header (bulk actions for rolled-over orders) ──
+  const rolledOverOrders = useMemo(() =>
+    viewMode === 'open' ? filteredOrders.filter((o: any) => o.isRolledOver) : [],
+    [viewMode, filteredOrders]
+  )
+
+  const virtualListHeader = useCallback(() => {
+    if (rolledOverOrders.length === 0) return <></>
+    return (
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-2 ${dark ? 'bg-red-900/20 border border-red-800/30' : 'bg-red-50 border border-red-200'}`}>
+        <span className={`text-xs font-medium ${dark ? 'text-red-300' : 'text-red-700'}`}>
+          {rolledOverOrders.length} rolled-over order{rolledOverOrders.length !== 1 ? 's' : ''}
+        </span>
+        <div className="flex gap-1.5 ml-auto">
+          <button
+            disabled={bulkProcessing}
+            onClick={async () => {
+              if (!confirm(`Void ${rolledOverOrders.length} rolled-over order(s)?`)) return
+              setBulkProcessing(true)
+              try {
+                const res = await fetch('/api/orders/bulk-action', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    orderIds: rolledOverOrders.map((o: any) => o.id),
+                    action: 'void',
+                    employeeId,
+                    reason: 'Bulk void from open orders panel',
+                  }),
+                })
+                if (res.ok) {
+                  toast.success(`Voided ${rolledOverOrders.length} order(s)`)
+                  loadOrders()
+                } else {
+                  const err = await res.json()
+                  toast.error(err.error || 'Failed to void orders')
+                }
+              } catch { toast.error('Failed to void orders') }
+              setBulkProcessing(false)
+            }}
+            className={`px-2 py-1 rounded text-[10px] font-medium ${dark ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-red-600 hover:bg-red-500 text-white'} disabled:opacity-50`}
+          >
+            Void All
+          </button>
+          <button
+            disabled={bulkProcessing}
+            onClick={async () => {
+              setBulkProcessing(true)
+              try {
+                const res = await fetch('/api/orders/bulk-action', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    orderIds: rolledOverOrders.map((o: any) => o.id),
+                    action: 'transfer',
+                    employeeId,
+                    toEmployeeId: employeeId,
+                    reason: 'Bulk transfer from open orders panel',
+                  }),
+                })
+                if (res.ok) {
+                  toast.success(`Transferred ${rolledOverOrders.length} order(s) to you`)
+                  loadOrders()
+                } else {
+                  const err = await res.json()
+                  toast.error(err.error || 'Failed to transfer')
+                }
+              } catch { toast.error('Failed to transfer orders') }
+              setBulkProcessing(false)
+            }}
+            className={`px-2 py-1 rounded text-[10px] font-medium ${dark ? 'bg-zinc-600 hover:bg-zinc-500 text-white' : 'bg-zinc-600 hover:bg-zinc-500 text-white'} disabled:opacity-50`}
+          >
+            Transfer to Me
+          </button>
+        </div>
+      </div>
+    )
+  }, [rolledOverOrders, bulkProcessing, dark, employeeId, loadOrders])
+
+  const virtualListFooter = useCallback(() => {
+    if (!(viewMode === 'closed' && hasMoreClosed)) return <></>
+    return (
+      <div className="text-center py-3">
+        <button
+          onClick={() => loadClosedOrders(closedCursor)}
+          className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            dark ? 'bg-white/10 hover:bg-white/15 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+          }`}
+        >
+          Load More
+        </button>
+      </div>
+    )
+  }, [viewMode, hasMoreClosed, closedCursor, dark, loadClosedOrders])
+
   const ordersList = (
-    <div className={`flex-1 overflow-y-auto p-2 ${isExpanded ? 'grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 auto-rows-min items-start' : 'space-y-2'}`}>
+    <div className="flex-1 min-h-0 p-2">
       {/* Error banner with retry (Item 9) */}
       {loadError && !isLoading && filteredOrders.length === 0 ? (
-        <div className={`text-center py-8 ${isExpanded ? 'col-span-full' : ''}`}>
+        <div className="text-center py-8">
           <p className={`text-sm ${dark ? 'text-red-400' : 'text-red-600'}`}>Failed to load orders</p>
           <button
             onClick={() => loadOrders()}
@@ -1138,11 +1234,11 @@ export function OpenOrdersPanel({
           </button>
         </div>
       ) : isLoading && filteredOrders.length === 0 ? (
-        <div className={`text-center py-8 ${isExpanded ? 'col-span-full' : ''} ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+        <div className={`text-center py-8 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
           Loading orders...
         </div>
       ) : filteredOrders.length === 0 ? (
-        <div className={`text-center py-8 ${isExpanded ? 'col-span-full' : ''} ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
+        <div className={`text-center py-8 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
           <p>No {viewMode} orders</p>
           <p className="text-sm mt-1">
             {viewMode === 'open'
@@ -1151,96 +1247,37 @@ export function OpenOrdersPanel({
             }
           </p>
         </div>
+      ) : isExpanded ? (
+        /* Expanded mode: virtualized grid */
+        <VirtuosoGrid
+          style={{ height: '100%' }}
+          data={filteredOrders}
+          listClassName="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 auto-rows-min items-start"
+          computeItemKey={(_index, order) => order.id}
+          increaseViewportBy={400}
+          components={{
+            Header: virtualListHeader,
+            Footer: virtualListFooter,
+          }}
+          itemContent={(_index, order) => renderOrderCard(order)}
+        />
       ) : (
-        <>
-          {/* Bulk actions for rolled-over orders */}
-          {viewMode === 'open' && (() => {
-            const rolledOverOrders = filteredOrders.filter((o: any) => o.isRolledOver)
-            if (rolledOverOrders.length === 0) return null
-            return (
-              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-2 ${isExpanded ? 'col-span-full' : ''} ${dark ? 'bg-red-900/20 border border-red-800/30' : 'bg-red-50 border border-red-200'}`}>
-                <span className={`text-xs font-medium ${dark ? 'text-red-300' : 'text-red-700'}`}>
-                  {rolledOverOrders.length} rolled-over order{rolledOverOrders.length !== 1 ? 's' : ''}
-                </span>
-                <div className="flex gap-1.5 ml-auto">
-                  <button
-                    disabled={bulkProcessing}
-                    onClick={async () => {
-                      if (!confirm(`Void ${rolledOverOrders.length} rolled-over order(s)?`)) return
-                      setBulkProcessing(true)
-                      try {
-                        const res = await fetch('/api/orders/bulk-action', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            orderIds: rolledOverOrders.map((o: any) => o.id),
-                            action: 'void',
-                            employeeId,
-                            reason: 'Bulk void from open orders panel',
-                          }),
-                        })
-                        if (res.ok) {
-                          toast.success(`Voided ${rolledOverOrders.length} order(s)`)
-                          loadOrders()
-                        } else {
-                          const err = await res.json()
-                          toast.error(err.error || 'Failed to void orders')
-                        }
-                      } catch { toast.error('Failed to void orders') }
-                      setBulkProcessing(false)
-                    }}
-                    className={`px-2 py-1 rounded text-[10px] font-medium ${dark ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-red-600 hover:bg-red-500 text-white'} disabled:opacity-50`}
-                  >
-                    Void All
-                  </button>
-                  <button
-                    disabled={bulkProcessing}
-                    onClick={async () => {
-                      setBulkProcessing(true)
-                      try {
-                        const res = await fetch('/api/orders/bulk-action', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            orderIds: rolledOverOrders.map((o: any) => o.id),
-                            action: 'transfer',
-                            employeeId,
-                            toEmployeeId: employeeId,
-                            reason: 'Bulk transfer from open orders panel',
-                          }),
-                        })
-                        if (res.ok) {
-                          toast.success(`Transferred ${rolledOverOrders.length} order(s) to you`)
-                          loadOrders()
-                        } else {
-                          const err = await res.json()
-                          toast.error(err.error || 'Failed to transfer')
-                        }
-                      } catch { toast.error('Failed to transfer orders') }
-                      setBulkProcessing(false)
-                    }}
-                    className={`px-2 py-1 rounded text-[10px] font-medium ${dark ? 'bg-zinc-600 hover:bg-zinc-500 text-white' : 'bg-zinc-600 hover:bg-zinc-500 text-white'} disabled:opacity-50`}
-                  >
-                    Transfer to Me
-                  </button>
-                </div>
-              </div>
-            )
-          })()}
-          {filteredOrders.map(order => renderOrderCard(order))}
-          {viewMode === 'closed' && hasMoreClosed && (
-            <div className={`${isExpanded ? 'col-span-full' : ''} text-center py-3`}>
-              <button
-                onClick={() => loadClosedOrders(closedCursor)}
-                className={`px-6 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                  dark ? 'bg-white/10 hover:bg-white/15 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                }`}
-              >
-                Load More
-              </button>
+        /* Collapsed sidebar: virtualized single-column list */
+        <Virtuoso
+          style={{ height: '100%' }}
+          data={filteredOrders}
+          computeItemKey={(_index, order) => order.id}
+          overscan={300}
+          components={{
+            Header: virtualListHeader,
+            Footer: virtualListFooter,
+          }}
+          itemContent={(_index, order) => (
+            <div className="pb-2">
+              {renderOrderCard(order)}
             </div>
           )}
-        </>
+        />
       )}
     </div>
   )

@@ -123,6 +123,14 @@ export async function getAllMenuItemsStockStatus(
   locationId: string,
   menuItemIds?: string[]
 ): Promise<Map<string, StockStatusResult>> {
+  // Fast gate: skip the heavy query if no daily-count ingredients exist
+  const dailyCountCount = await db.ingredient.count({
+    where: { locationId, deletedAt: null, isDailyCountItem: true },
+  })
+  if (dailyCountCount === 0) {
+    return new Map<string, StockStatusResult>()
+  }
+
   // Build filter
   const menuItemFilter = menuItemIds
     ? { id: { in: menuItemIds } }

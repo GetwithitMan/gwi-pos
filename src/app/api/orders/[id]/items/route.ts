@@ -450,25 +450,17 @@ export const POST = withVenue(async function POST(
       }
       const taxIncSettings = { taxInclusiveLiquor, taxInclusiveFood }
 
-      // Create the new items
-      const createdItems = []
-      let newItemsSubtotal = 0
-      let newItemsCommission = 0
-
-      for (const item of items) {
-        // For weight-based items, compute the effective price for backward compat
+      // Pre-compute all item data (pure computation, no DB calls)
+      const itemPrepData = items.map(item => {
         const effectivePrice = (item.soldByWeight && item.weight && item.unitPrice)
           ? roundToCents(item.unitPrice * item.weight)
           : item.price
 
-        // Calculate item total using centralized function
         const fullItemTotal = calculateItemTotal({
           ...item,
           price: effectivePrice,
         })
-        newItemsSubtotal += fullItemTotal
 
-        // Calculate commission using centralized function
         const menuItem = menuItemMap.get(item.menuItemId)
         const itemCommission = calculateItemCommission(
           fullItemTotal,
@@ -476,125 +468,138 @@ export const POST = withVenue(async function POST(
           menuItem?.commissionType || null,
           menuItem?.commissionValue ? Number(menuItem.commissionValue) : null
         )
-        newItemsCommission += itemCommission
 
-        // Determine item-level pricing truth
         const catType = menuItem?.category?.categoryType ?? null
         const itemTaxInclusive = isItemTaxInclusive(catType ?? undefined, taxIncSettings)
 
-        // Create the order item
-        const createdItem = await tx.orderItem.create({
-          data: {
-            orderId,
-            locationId: existingOrder.locationId,
-            menuItemId: item.menuItemId,
-            name: item.name,
-            price: effectivePrice,
-            cardPrice: dualPricingEnabled ? calculateCardPrice(effectivePrice, cashDiscountPct) : null,
-            isTaxInclusive: itemTaxInclusive,
-            categoryType: catType,
-            quantity: item.quantity,
-            pourSize: item.pourSize ?? null,
-            pourMultiplier: item.pourMultiplier ?? null,
-            itemTotal: fullItemTotal,
-            commissionAmount: itemCommission,
-            specialNotes: item.specialNotes || null,
-            seatNumber: item.seatNumber || null,
-            courseNumber: item.courseNumber || null,
-            isHeld: item.isHeld || false,
-            delayMinutes: item.delayMinutes || null,
-            // Entertainment/timed rental fields
-            blockTimeMinutes: item.blockTimeMinutes || null,
-            // Idempotency key for duplicate prevention
-            idempotencyKey: idempotencyKey || null,
-            // Weight-based pricing fields
-            soldByWeight: item.soldByWeight || false,
-            weight: item.weight ?? null,
-            weightUnit: item.weightUnit ?? null,
-            unitPrice: item.unitPrice ?? null,
-            grossWeight: item.grossWeight ?? null,
-            tareWeight: item.tareWeight ?? null,
-            // Pricing option (size/variant selection)
-            pricingOptionId: item.pricingOptionId ?? null,
-            pricingOptionLabel: item.pricingOptionLabel ?? null,
-            // Modifiers
-            modifiers: {
-              create: item.modifiers.map(mod => ({
-                locationId: existingOrder.locationId,
-                modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
-                name: mod.name,
-                price: mod.price,
-                quantity: 1,
-                preModifier: mod.preModifier || null,
-                depth: mod.depth || 0,
-                spiritTier: mod.spiritTier || null,
-                linkedBottleProductId: mod.linkedBottleProductId || null,
-              })),
-            },
-            // Ingredient modifications
-            ingredientModifications: item.ingredientModifications && item.ingredientModifications.length > 0
-              ? {
-                  create: item.ingredientModifications.map(ing => ({
-                    locationId: existingOrder.locationId,
-                    ingredientId: ing.ingredientId,
-                    ingredientName: ing.name,
-                    modificationType: ing.modificationType,
-                    priceAdjustment: ing.priceAdjustment || 0,
-                    swappedToModifierId: ing.swappedTo?.modifierId || null,
-                    swappedToModifierName: ing.swappedTo?.name || null,
-                  })),
-                }
-              : undefined,
-            // Pizza data
-            pizzaData: item.pizzaConfig
-              ? {
-                  create: {
-                    locationId: existingOrder.locationId,
-                    sizeId: item.pizzaConfig.sizeId,
-                    crustId: item.pizzaConfig.crustId,
-                    sauceId: item.pizzaConfig.sauceId || null,
-                    cheeseId: item.pizzaConfig.cheeseId || null,
-                    sauceAmount: item.pizzaConfig.sauceAmount || 'regular',
-                    cheeseAmount: item.pizzaConfig.cheeseAmount || 'regular',
-                    // Store full config in toppingsData JSON for easy retrieval
-                    toppingsData: {
-                      toppings: item.pizzaConfig.toppings,
-                      sauces: item.pizzaConfig.sauces,
-                      cheeses: item.pizzaConfig.cheeses,
-                    } as object,
-                    cookingInstructions: item.pizzaConfig.cookingInstructions || null,
-                    cutStyle: item.pizzaConfig.cutStyle || null,
-                    totalPrice: item.pizzaConfig.totalPrice,
-                    sizePrice: item.pizzaConfig.priceBreakdown.sizePrice,
-                    crustPrice: item.pizzaConfig.priceBreakdown.crustPrice,
-                    saucePrice: item.pizzaConfig.priceBreakdown.saucePrice,
-                    cheesePrice: item.pizzaConfig.priceBreakdown.cheesePrice,
-                    toppingsPrice: item.pizzaConfig.priceBreakdown.toppingsPrice,
-                  },
-                }
-              : undefined,
-          },
-          include: {
-            modifiers: true,
-            ingredientModifications: true,
-            pizzaData: true,
-          },
-        })
+        return { item, effectivePrice, fullItemTotal, itemCommission, menuItem, catType, itemTaxInclusive }
+      })
 
-        createdItems.push({ ...createdItem, correlationId: item.correlationId })
+      let newItemsSubtotal = 0
+      let newItemsCommission = 0
+      for (const d of itemPrepData) {
+        newItemsSubtotal += d.fullItemTotal
+        newItemsCommission += d.itemCommission
+      }
 
-        // Mark entertainment items as in_use
-        if (menuItem?.itemType === 'timed_rental') {
-          await tx.menuItem.update({
-            where: { id: item.menuItemId },
+      // Create all order items in parallel (N+1 fix — concurrent creates within transaction)
+      const createdItemResults = await Promise.all(
+        itemPrepData.map(async ({ item, effectivePrice, fullItemTotal, itemCommission, menuItem, catType, itemTaxInclusive }) => {
+          const createdItem = await tx.orderItem.create({
             data: {
-              entertainmentStatus: 'in_use',
-              currentOrderId: orderId,
-              currentOrderItemId: createdItem.id,
+              orderId,
+              locationId: existingOrder.locationId,
+              menuItemId: item.menuItemId,
+              name: item.name,
+              price: effectivePrice,
+              cardPrice: dualPricingEnabled ? calculateCardPrice(effectivePrice, cashDiscountPct) : null,
+              isTaxInclusive: itemTaxInclusive,
+              categoryType: catType,
+              quantity: item.quantity,
+              pourSize: item.pourSize ?? null,
+              pourMultiplier: item.pourMultiplier ?? null,
+              itemTotal: fullItemTotal,
+              commissionAmount: itemCommission,
+              specialNotes: item.specialNotes || null,
+              seatNumber: item.seatNumber || null,
+              courseNumber: item.courseNumber || null,
+              isHeld: item.isHeld || false,
+              delayMinutes: item.delayMinutes || null,
+              // Entertainment/timed rental fields
+              blockTimeMinutes: item.blockTimeMinutes || null,
+              // Idempotency key for duplicate prevention
+              idempotencyKey: idempotencyKey || null,
+              // Weight-based pricing fields
+              soldByWeight: item.soldByWeight || false,
+              weight: item.weight ?? null,
+              weightUnit: item.weightUnit ?? null,
+              unitPrice: item.unitPrice ?? null,
+              grossWeight: item.grossWeight ?? null,
+              tareWeight: item.tareWeight ?? null,
+              // Pricing option (size/variant selection)
+              pricingOptionId: item.pricingOptionId ?? null,
+              pricingOptionLabel: item.pricingOptionLabel ?? null,
+              // Modifiers
+              modifiers: {
+                create: item.modifiers.map(mod => ({
+                  locationId: existingOrder.locationId,
+                  modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
+                  name: mod.name,
+                  price: mod.price,
+                  quantity: 1,
+                  preModifier: mod.preModifier || null,
+                  depth: mod.depth || 0,
+                  spiritTier: mod.spiritTier || null,
+                  linkedBottleProductId: mod.linkedBottleProductId || null,
+                })),
+              },
+              // Ingredient modifications
+              ingredientModifications: item.ingredientModifications && item.ingredientModifications.length > 0
+                ? {
+                    create: item.ingredientModifications.map(ing => ({
+                      locationId: existingOrder.locationId,
+                      ingredientId: ing.ingredientId,
+                      ingredientName: ing.name,
+                      modificationType: ing.modificationType,
+                      priceAdjustment: ing.priceAdjustment || 0,
+                      swappedToModifierId: ing.swappedTo?.modifierId || null,
+                      swappedToModifierName: ing.swappedTo?.name || null,
+                    })),
+                  }
+                : undefined,
+              // Pizza data
+              pizzaData: item.pizzaConfig
+                ? {
+                    create: {
+                      locationId: existingOrder.locationId,
+                      sizeId: item.pizzaConfig.sizeId,
+                      crustId: item.pizzaConfig.crustId,
+                      sauceId: item.pizzaConfig.sauceId || null,
+                      cheeseId: item.pizzaConfig.cheeseId || null,
+                      sauceAmount: item.pizzaConfig.sauceAmount || 'regular',
+                      cheeseAmount: item.pizzaConfig.cheeseAmount || 'regular',
+                      // Store full config in toppingsData JSON for easy retrieval
+                      toppingsData: {
+                        toppings: item.pizzaConfig.toppings,
+                        sauces: item.pizzaConfig.sauces,
+                        cheeses: item.pizzaConfig.cheeses,
+                      } as object,
+                      cookingInstructions: item.pizzaConfig.cookingInstructions || null,
+                      cutStyle: item.pizzaConfig.cutStyle || null,
+                      totalPrice: item.pizzaConfig.totalPrice,
+                      sizePrice: item.pizzaConfig.priceBreakdown.sizePrice,
+                      crustPrice: item.pizzaConfig.priceBreakdown.crustPrice,
+                      saucePrice: item.pizzaConfig.priceBreakdown.saucePrice,
+                      cheesePrice: item.pizzaConfig.priceBreakdown.cheesePrice,
+                      toppingsPrice: item.pizzaConfig.priceBreakdown.toppingsPrice,
+                    },
+                  }
+                : undefined,
+            },
+            include: {
+              modifiers: true,
+              ingredientModifications: true,
+              pizzaData: true,
             },
           })
-        }
-      }
+
+          // Mark entertainment items as in_use
+          if (menuItem?.itemType === 'timed_rental') {
+            await tx.menuItem.update({
+              where: { id: item.menuItemId },
+              data: {
+                entertainmentStatus: 'in_use',
+                currentOrderId: orderId,
+                currentOrderItemId: createdItem.id,
+              },
+            })
+          }
+
+          return { ...createdItem, correlationId: item.correlationId }
+        })
+      )
+
+      const createdItems = createdItemResults
 
       // Recalculate order totals from current database state
       // This ensures accuracy even if other items were added concurrently
@@ -694,17 +699,30 @@ export const POST = withVenue(async function POST(
       })
     }
 
-    // Fire-and-forget: calculate and store costAtSale for each new item
+    // Fire-and-forget: calculate and store costAtSale for all new items in parallel (N+1 fix)
     void (async () => {
       try {
-        for (const item of result.createdItems) {
-          const cost = await calculateCostAtSale(item.menuItemId, item.pricingOptionId)
-          if (cost !== null) {
-            await db.orderItem.update({
-              where: { id: item.id },
-              data: { costAtSale: cost },
-            })
+        const costResults = await Promise.all(
+          result.createdItems.map(async (item: any) => {
+            const cost = await calculateCostAtSale(item.menuItemId, item.pricingOptionId)
+            return { id: item.id, cost }
+          })
+        )
+        const updates = costResults.filter(r => r.cost !== null)
+        if (updates.length > 0) {
+          // Batch update all costAtSale values in a single SQL statement
+          const caseClauses = updates.map((_, i) => `WHEN id = $${i * 2 + 1} THEN $${i * 2 + 2}`).join(' ')
+          const ids = updates.map(u => u.id)
+          const params: (string | number)[] = []
+          for (const u of updates) {
+            params.push(u.id, u.cost!)
           }
+          params.push(...ids)
+          const idPlaceholders = ids.map((_, i) => `$${updates.length * 2 + i + 1}`).join(', ')
+          await db.$executeRawUnsafe(
+            `UPDATE "OrderItem" SET "costAtSale" = CASE ${caseClauses} END WHERE id IN (${idPlaceholders})`,
+            ...params
+          )
         }
       } catch (e) {
         console.error('[costAtSale] Failed to calculate:', e)

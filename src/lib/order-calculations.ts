@@ -113,6 +113,16 @@ export function calculateItemCommission(
 const _totalsCache = new Map<string, OrderTotals>()
 const TOTALS_CACHE_MAX = 20
 
+// Version counter bumped externally (or on cache miss) to cheaply invalidate
+// the totals cache without serializing the entire items array.
+let _totalsCacheVersion = 0
+
+/** Call this whenever order items mutate to invalidate the totals cache. */
+export function invalidateTotalsCache(): void {
+  _totalsCacheVersion++
+  _totalsCache.clear()
+}
+
 function buildTotalsCacheKey(
   items: Array<OrderItemForCalculation & { commissionAmount?: number }>,
   locationSettings: LocationTaxSettings | null,
@@ -121,17 +131,33 @@ function buildTotalsCacheKey(
   priceRounding: PriceRoundingSettings | undefined,
   paymentMethod: string
 ): string {
-  return JSON.stringify([
-    items.map(i => [
-      i.price, i.quantity, i.status ?? 'active', i.itemTotal ?? null,
-      i.commissionAmount ?? null, i.isTaxInclusive ?? false,
-      i.soldByWeight ?? false, i.weight ?? null, i.unitPrice ?? null,
-      (i.modifiers || []).map(m => [m.price, m.quantity ?? 1]),
-      (i.ingredientModifications || []).map(im => im.priceAdjustment),
-    ]),
-    locationSettings?.tax?.defaultRate ?? 0,
-    discountTotal, tipTotal, priceRounding ?? null, paymentMethod,
-  ])
+  // Cheap key: version + item count + sum of price-affecting fields.
+  // This avoids JSON.stringify on 5-10KB of data per call.
+  let hash = _totalsCacheVersion * 100003
+  for (const i of items) {
+    hash = (hash * 31 + (i.price || 0) * 100) | 0
+    hash = (hash * 31 + (i.quantity || 0)) | 0
+    hash = (hash * 31 + (i.itemTotal ?? -1) * 100) | 0
+    hash = (hash * 31 + (i.commissionAmount ?? -1) * 100) | 0
+    hash = (hash * 31 + (i.isTaxInclusive ? 1 : 0)) | 0
+    hash = (hash * 31 + (i.weight ?? 0) * 100) | 0
+    hash = (hash * 31 + (i.unitPrice ?? 0) * 100) | 0
+    const s = i.status
+    hash = (hash * 31 + (s === 'voided' ? 2 : s === 'comped' ? 3 : 1)) | 0
+    const mods = i.modifiers
+    if (mods) for (const m of mods) {
+      hash = (hash * 31 + (m.price || 0) * 100) | 0
+      hash = (hash * 31 + (m.quantity ?? 1)) | 0
+    }
+    const ings = i.ingredientModifications
+    if (ings) for (const ig of ings) {
+      hash = (hash * 31 + (ig.priceAdjustment || 0) * 100) | 0
+    }
+  }
+  hash = (hash * 31 + (locationSettings?.tax?.defaultRate ?? 0) * 100) | 0
+  hash = (hash * 31 + discountTotal * 100) | 0
+  hash = (hash * 31 + tipTotal * 100) | 0
+  return `${items.length}:${hash}:${paymentMethod}:${priceRounding ? 1 : 0}`
 }
 
 /**
