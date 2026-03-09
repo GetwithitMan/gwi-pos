@@ -15,9 +15,24 @@ const bodySchema = z.object({
  */
 export async function GET() {
   try {
+    const fs = await import('node:fs')
+    const envFiles: Record<string, string> = {}
+    for (const p of ['/opt/gwi-pos/.env', '/opt/gwi-pos/app/.env', '/opt/gwi-pos/app/.env.local']) {
+      try {
+        const content = fs.readFileSync(p, 'utf8')
+        const match = content.match(/^CELLULAR_TOKEN_SECRET=(.*)$/m)
+        envFiles[p] = match ? `found (${match[1].slice(0, 8)}...)` : `missing (${content.split('\n').length} lines)`
+      } catch { envFiles[p] = 'file not found' }
+    }
+
     const secret = process.env.CELLULAR_TOKEN_SECRET
     if (!secret) {
-      return NextResponse.json({ error: 'CELLULAR_TOKEN_SECRET not set', envKeys: Object.keys(process.env).filter(k => k.includes('CELLULAR') || k.includes('TOKEN') || k.includes('SECRET')).sort() }, { status: 500 })
+      return NextResponse.json({
+        error: 'CELLULAR_TOKEN_SECRET not set',
+        envFiles,
+        cwd: process.cwd(),
+        envKeys: Object.keys(process.env).filter(k => k.includes('CELLULAR') || k.includes('TOKEN') || k.includes('SECRET')).sort(),
+      }, { status: 500 })
     }
 
     // Test that Web Crypto HMAC works
