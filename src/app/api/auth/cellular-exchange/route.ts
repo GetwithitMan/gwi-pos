@@ -97,17 +97,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Issue a cellular JWT
-    const token = await issueCellularToken(
-      mcData.terminalId,
-      mcData.locationId,
-      mcData.venueSlug,
-      deviceFingerprint,
-      'CELLULAR_ROAMING'
-    )
+    let token: string
+    try {
+      token = await issueCellularToken(
+        mcData.terminalId,
+        mcData.locationId,
+        mcData.venueSlug,
+        deviceFingerprint,
+        'CELLULAR_ROAMING'
+      )
+    } catch (issueError) {
+      console.error('[cellular-exchange] Token issuance failed:', issueError)
+      const msg = issueError instanceof Error ? issueError.message : 'Token issuance failed'
+      return NextResponse.json({ error: msg }, { status: 500 })
+    }
 
     return NextResponse.json({ token })
   } catch (error) {
     console.error('[cellular-exchange] Unexpected error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
