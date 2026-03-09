@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
+import { getTerminalId } from '@/lib/shared-socket'
 import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
 import { TabTransferModal } from './TabTransferModal'
 import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
@@ -297,18 +298,21 @@ export function OpenOrdersPanel({
 
   // Socket-based real-time open orders updates (replaces 3s polling)
   // Delta updates: "paid"/"voided" remove from list locally; others debounce a single refresh
-  const handleSocketOrdersChanged = useCallback((data: { locationId: string; trigger: string; orderId?: string }) => {
+  const handleSocketOrdersChanged = useCallback((data: { locationId: string; trigger: string; orderId?: string; sourceTerminalId?: string }) => {
     if (viewMode !== 'open') return
     if (ageFilter === 'previous') return // Don't overwrite prior-day results with socket refreshes
-    const { trigger, orderId } = data
+    const { trigger, orderId, sourceTerminalId } = data
     if (orderId && (trigger === 'paid' || trigger === 'voided')) {
       // Check if this is a split child being paid — refresh to update parent's split tabs
       const isSplitChild = ordersRef.current.some(o => o.splits?.some(s => s.id === orderId))
       if (isSplitChild) {
         debouncedLoadOrders() // Need to refresh parent's split data
-      } else {
-        // Delta: remove closed/voided order from local state (no fetch)
+      } else if (sourceTerminalId && sourceTerminalId === getTerminalId()) {
+        // This terminal initiated the payment/void — safe to remove instantly
         setOrders(prev => prev.filter(o => o.id !== orderId))
+      } else {
+        // Another terminal paid/voided — refresh from server to confirm actual state
+        debouncedLoadOrders()
       }
     } else if (trigger === 'sent' && orderId) {
       // Sent trigger: order already in open list — no-op unless new
@@ -324,6 +328,13 @@ export function OpenOrdersPanel({
     locationId,
     enabled: viewMode === 'open',
     onOpenOrdersChanged: handleSocketOrdersChanged,
+    onOrderClosed: (data) => {
+      if (viewMode !== 'open') return
+      // Delta: remove closed order from local state (no fetch)
+      if (data.orderId) {
+        setOrders(prev => prev.filter(o => o.id !== data.orderId))
+      }
+    },
   })
 
   // 30s polling fallback when socket is disconnected (Item 10)

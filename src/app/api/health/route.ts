@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchFailoverActive, dispatchFailoverResolved } from '@/lib/socket-dispatch'
+import { getLocalLeaseExpiry } from '@/app/api/fence-check/route'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,6 +32,10 @@ interface HealthResponse {
   isVipOwner: boolean | null
   /** True when this node is a backup that has been promoted to primary */
   isPromotedBackup: boolean
+  /** ISO timestamp when the MC primary lease expires (null if no lease held or not primary) */
+  primaryLeaseExpiry: string | null
+  /** Whether this node currently holds a valid MC primary lease */
+  holdsMcLease: boolean
   error?: string
 }
 
@@ -116,6 +121,12 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   }
   lastKnownPromotedBackup = isPromotedBackup
 
+  // MC primary lease status
+  const leaseExpiry = getLocalLeaseExpiry()
+  const now = new Date()
+  const holdsMcLease = leaseExpiry !== null && leaseExpiry > now
+  const primaryLeaseExpiry = leaseExpiry ? leaseExpiry.toISOString() : null
+
   const response: HealthResponse = {
     status,
     timestamp,
@@ -133,6 +144,8 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     replicationLag,
     isVipOwner: virtualIp ? stationRole === 'server' : null,
     isPromotedBackup,
+    primaryLeaseExpiry,
+    holdsMcLease,
   }
 
   // Return appropriate HTTP status

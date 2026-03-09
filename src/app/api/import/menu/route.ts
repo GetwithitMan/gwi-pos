@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { roundToCents } from '@/lib/pricing'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 
 interface ImportError {
   row: number
@@ -73,19 +74,22 @@ function normalizeHeader(header: string): string {
   return headerMap[h] || h
 }
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+// POST - Bulk import menu items from CSV
+// Auth: session-verified employee with MENU_EDIT_ITEMS permission
+export const POST = withVenue(withAuth('MENU_EDIT_ITEMS', async function POST(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File | null
-    const locationId = formData.get('locationId') as string | null
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
     }
 
-    if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
-    }
+    // Use verified locationId from session
+    const locationId = ctx.auth.locationId
 
     const text = await file.text()
     const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
@@ -122,7 +126,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Cache: category name (lowercase) → category record
+    // Cache: category name (lowercase) -> category record
     const categoryCache = new Map<string, { id: string }>()
 
     // Load existing categories
@@ -225,4 +229,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('CSV import failed:', error)
     return NextResponse.json({ error: 'CSV import failed' }, { status: 500 })
   }
-})
+}))

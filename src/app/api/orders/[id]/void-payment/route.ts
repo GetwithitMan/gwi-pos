@@ -9,6 +9,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
+import { enableSyncReplication } from '@/lib/db-helpers'
 
 /**
  * Voids a payment — handles both Datacap (card) and DB in a single atomic flow.
@@ -143,6 +144,10 @@ export const POST = withVenue(async function POST(
     try {
       // Wrap all critical writes in a single transaction
       voidedPayment = await db.$transaction(async (tx) => {
+        // Acquire row lock + synchronous replication for void durability
+        await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`
+        await enableSyncReplication(tx)
+
         // 1. Update payment to voided
         const updated = await tx.payment.update({
           where: { id: paymentId },

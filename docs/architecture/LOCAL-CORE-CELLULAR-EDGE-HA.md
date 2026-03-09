@@ -1,15 +1,15 @@
 # Local-Core / Cellular-Edge HA Architecture
 
-**Version:** 1.0
-**Updated:** March 8, 2026
-**Status:** Implementation in progress (Phases 1–5)
-**Scope:** NUC-first HA with backup failover, cellular edge for roaming devices, fulfillment routing
+**Version:** 2.0
+**Updated:** March 9, 2026
+**Status:** Implementation in progress (Phases 1–6)
+**Scope:** Cloud-primary HA with local NUC execution layer, cellular edge for roaming devices, fulfillment routing
 
 ---
 
 ## Executive Summary
 
-GWI POS is a NUC-first architecture: every venue runs a local Ubuntu NUC as the single source of truth for all transaction data. Internet can drop, and POS keeps running. This design extends the architecture with three capabilities:
+GWI POS is a cloud-primary architecture: Neon is the canonical source of truth in normal operation, with an on-site NUC as the local execution and continuity layer. The NUC serves LAN devices, drives all hardware, and temporarily becomes the write authority during internet outages. This design extends the architecture with these capabilities:
 
 1. **Backup NUC + HA Failover (Phase 1):** A second NUC at each venue runs as a hot standby via PostgreSQL streaming replication. keepalived manages a Virtual IP (VIP). If the primary NUC goes down, the backup promotes in ≤10 seconds with zero data loss for committed transactions.
 
@@ -18,6 +18,8 @@ GWI POS is a NUC-first architecture: every venue runs a local Ubuntu NUC as the 
 3. **Fulfillment Routing (Phase 3):** Item-level routing engine that resolves each menu item to its correct kitchen/bar/prep station at send time. Supports cloud-originated orders arriving via the cellular path. Uses send-time snapshots so menu edits never retroactively change routing.
 
 **Phases 4–5** formalize disaster recovery (automated backups, Neon-assisted recovery) and observability (Mission Control dashboard, on-device health indicators, alerting).
+
+4. **Cloud-Primary Architecture Transition (Phase 6):** Unified migration system, durable fulfillment queue (FulfillmentEvent), outage detection and replay (OutageQueueEntry), bridge checkpoint failover (BridgeCheckpoint), and ID unification across cloud and local systems.
 
 ---
 
@@ -63,6 +65,10 @@ These MUST hold at all times. Violation of any invariant is a P0 bug.
 > **INV-10 — Cellular Allowlist-Only:** Cellular-authenticated devices may ONLY access routes on the explicit allowlist. All admin routes, settings, reports, shift operations, refunds, and tip adjustments are permanently blocked for `CELLULAR_ROAMING` terminals.
 
 > **INV-11 — VIP Connectivity:** Android devices connect to the Virtual IP, not to individual NUC IPs. Failover is transparent to the device — the VIP simply starts responding from the backup NUC. Direct backup IP is used only as a fallback when VIP is unreachable.
+
+> **INV-12 — Neon is Canonical SOR:** In normal operation, Neon is the source of truth. NUC writes replicate upstream via the 5-second sync interval. During an internet outage, the NUC temporarily becomes the write authority, queueing writes in `OutageQueueEntry`. On recovery, the outage queue replays FIFO with `neon-wins` conflict resolution. Cloud-originated data always takes precedence on timestamp ties.
+
+> **INV-13 — FulfillmentEvent is the Durable Hardware Queue:** All hardware dispatch (kitchen prints, bar prints, KDS updates, drawer kicks) goes through the `FulfillmentEvent` model. The bridge worker claims and executes events via optimistic locking. Fire-and-forget dispatch via Socket.IO is preserved for backward compatibility only — `FulfillmentEvent` is the durable, retryable, dead-letterable path.
 
 ---
 
@@ -524,6 +530,143 @@ New fields in health response:
 
 ---
 
+## Phase 6 — Cloud-Primary Architecture Transition
+
+**Status:** Implemented (2026-03-09)
+
+### The Rule
+
+> GWI cloud-primary venues use Neon as the canonical source of truth in normal operation. The on-site NUC remains mandatory as the local execution and continuity layer: it serves LAN devices, drives all hardware, and temporarily becomes the write authority during internet outages, replaying reconciled changes upstream when connectivity returns.
+
+### 6.1 — Unified Migration Architecture
+
+**Problem:** Two migration scripts (`vercel-build.js` at 641 lines, `nuc-pre-migrate.js` at 1823 lines) with 85% duplicate logic in incompatible SQL dialects.
+
+**Solution:** Single migration runner using PrismaClient (works against both local PG and Neon).
+
+- **Migration files:** `scripts/migrations/001-*.js` through `012-*.js` — each exports `async function up(prisma)`
+- **Tracking table:** `_gwi_migrations` — records applied migrations (no more relying on IF NOT EXISTS guards alone)
+- **`nuc-pre-migrate.js`** — reduced to ~100 lines: PrismaClient init + migration runner + bootstrap
+- **`vercel-build.js`** — reduced to ~110 lines: orchestrator calling nuc-pre-migrate.js against master + venue DBs
+- **Shared helpers:** `scripts/migration-helpers.js` — `columnExists`, `tableExists`, `enumValueExists`, `indexExists`
+
+### 6.2 — New Schema Models
+
+Three new models added to `prisma/schema.prisma`:
+
+**FulfillmentEvent** — Durable hardware dispatch queue
+- Fields: locationId, orderId, stationId, type (print_kitchen/print_bar/kds_update/drawer_kick), status (pending/claimed/completed/failed/dead_letter), payload, claimedBy, claimedAt, completedAt, failedAt, retryCount
+- Indexes: [locationId, status], [claimedBy, status]
+- Lifecycle: pending → claimed (by NUC node) → completed/failed → dead_letter (after 3 retries)
+
+**BridgeCheckpoint** — NUC bridge lease/failover tracking
+- Fields: locationId, nodeId, role (primary/backup), leaseExpiresAt, lastHeartbeat, lastFulfillmentAt, fulfillmentLag
+- Unique: [locationId, nodeId]
+- Lease: 90s duration, 30s heartbeat renewal
+
+**OutageQueueEntry** — Outage write queue for NUC→Neon replay
+- Fields: locationId, tableName, recordId, operation (INSERT/UPDATE/DELETE), payload, localSeq (monotonic), idempotencyKey (unique), status (pending/replayed/conflict/failed)
+- Index: [locationId, status]
+
+### 6.3 — Fulfillment Bridge Worker
+
+**File:** `src/lib/fulfillment-bridge-worker.ts`
+
+- Polls FulfillmentEvent every 2s for pending events
+- Claims via optimistic locking (`updateMany WHERE status='pending'`)
+- Dispatches via Socket.IO (print-ticket, kds:order-received, drawer-kick)
+- Reclaims stale events after 60s (processing timeout)
+- Dead-letters after 3 retries
+- Uses `POS_LOCATION_ID` and `NUC_NODE_ID` env vars
+
+### 6.4 — Bridge Checkpoint (Lease Failover)
+
+**File:** `src/lib/bridge-checkpoint.ts`
+
+- Each NUC node heartbeats every 30s with 90s lease
+- Uses BridgeCheckpoint upsert with compound key [locationId, nodeId]
+- Exports `isLeaseActive()` and `shouldClaimBridge()` for bridge worker
+- Backup NUC claims bridge when primary lease expires
+
+### 6.5 — Outage Replay Worker
+
+**File:** `src/lib/sync/outage-replay-worker.ts`
+
+- Polls every 10s for pending OutageQueueEntry records
+- Checks Neon connectivity before processing (SELECT 1 probe)
+- FIFO replay by localSeq order
+- Handles conflicts (PG unique violation 23505) — marks as 'conflict'
+- Exports `getOutageReplayMetrics()` for monitoring
+
+### 6.6 — Upstream Sync Outage Detection
+
+**File:** `src/lib/sync/upstream-sync-worker.ts` (enhanced)
+
+- Tracks consecutive sync failures (threshold: 3)
+- Sets `isInOutage = true` when threshold reached
+- Clears on successful sync
+- Exports `isInOutageMode()` and `queueOutageWrite()` for API routes
+
+### 6.7 — Downstream Sync Enhancements
+
+**File:** `src/lib/sync/downstream-sync-worker.ts` (enhanced)
+
+- **Conflict detection:** For bidirectional models, compares `updatedAt` + `lastMutatedBy` with configurable strategy (neon-wins default)
+- **Deny list sync:** Calls `syncDenyList()` fire-and-forget at end of each downstream cycle
+
+### 6.8 — Conflict Resolution Strategy
+
+**File:** `src/lib/sync/sync-config.ts` (enhanced)
+
+- New type: `ConflictStrategy = 'neon-wins' | 'local-wins' | 'latest-wins'`
+- All 6 bidirectional models default to `'neon-wins'`
+- Helper: `getConflictStrategy(model)` — returns model's strategy
+
+### 6.9 — ID Unification (In Progress)
+
+**Goal:** One canonical `locationId` everywhere. Kill `posLocationId` bridge field.
+
+- MC `CloudLocation.canonicalLocationId` added — stores Neon Location.id
+- `posLocationId` deprecated (kept for backward compat)
+- Fleet endpoints prefer `canonicalLocationId` when available
+- Heartbeat backfills `canonicalLocationId` from `posLocationId`
+- **POS endpoint:** `POST /api/internal/migrate-location-id` — transactional FK migration across all 143 tables with locationId
+
+### 6.10 — FulfillmentEvent Persistence
+
+- `send/route.ts` now persists FulfillmentAction[] as FulfillmentEvent rows after routing
+- Existing fire-and-forget dispatch preserved for backward compat
+- Bridge worker processes the durable queue
+
+### 6.11 — MC Monitoring Dashboard
+
+- **Sync Health Widget** — heartbeat age, sync lag, status per venue
+- **Bridge Health Widget** — HA primary/backup, pgRole, replication lag, VIP
+- **Outage Queue Widget** — pending/failed counts per venue
+- **ID Drift Alert** — flags venues where posLocationId != canonicalLocationId
+- Dashboard page at `/dashboard/monitoring`
+
+### Write Path (Cloud-Primary)
+
+**Normal operation (internet up):**
+1. LAN terminals → NUC local API → write to local PG (for speed) → upstream sync to Neon (5s)
+2. Cellular → Vercel → Neon (direct)
+3. NUC downstream sync pulls Neon changes (15s)
+
+**Outage (internet down):**
+1. Upstream sync detects 3 consecutive failures → outage mode
+2. LAN terminals → NUC local API → write to local PG + append OutageQueueEntry
+3. Cellular → local outbox on device → retry on reconnect
+4. Hardware continues locally (printers, KDS, drawers)
+
+**Recovery (internet returns):**
+1. Outage replay worker processes queue FIFO
+2. Each entry has idempotencyKey: `{locationId}:{tableName}:{recordId}:{localSeq}`
+3. Neon-wins on timestamp ties (cloud is canonical)
+4. Conflicts logged, visible in MC monitoring dashboard
+
+---
+
 ## Payment Reconciliation
 
 ### Problem
@@ -654,16 +797,25 @@ All cellular operations are logged to `CellularAuditEvent` in Mission Control:
 | `src/app/api/fence-check/route.ts` | gwi-pos | 1 | Fencing endpoint for split-brain prevention |
 | `src/app/api/auth/refresh-cellular/route.ts` | gwi-pos | 2 | Cellular token refresh endpoint |
 | `src/app/api/internal/sync-trigger/route.ts` | gwi-pos | 2 | SSE wake-up → immediate downstream sync |
+| `src/lib/fulfillment-bridge-worker.ts` | gwi-pos | 6 | Durable FulfillmentEvent poll + claim + execute |
+| `src/lib/bridge-checkpoint.ts` | gwi-pos | 6 | NUC bridge lease renewal + failover |
+| `src/lib/sync/outage-replay-worker.ts` | gwi-pos | 6 | FIFO outage queue replay to Neon |
+| `src/app/api/internal/migrate-location-id/route.ts` | gwi-pos | 6 | Transactional locationId FK migration |
+| `scripts/migrations/*.js` | gwi-pos | 6 | Individual migration files (12 files) |
+| `scripts/migration-helpers.js` | gwi-pos | 6 | Shared helpers (columnExists, tableExists, etc.) |
 | `src/app/api/fleet/failover-event/route.ts` | gwi-mission-control | 1 | Failover event recording |
-| `public/ha-check.sh` | gwi-pos | 1 | keepalived health check script |
-| `public/promote.sh` | gwi-pos | 1 | Backup → primary promotion script |
+| `src/components/monitoring/*.tsx` | gwi-mission-control | 6 | Dashboard monitoring widgets |
+| `src/app/api/admin/monitoring/*.ts` | gwi-mission-control | 6 | Monitoring API routes |
+| `public/ha-check.sh` | gwi-pos | 1 | keepalived health check script + MC lease renewal |
+| `public/promote.sh` | gwi-pos | 1 | Backup → primary promotion script + MC arbiter claim |
 | `public/rejoin-as-standby.sh` | gwi-pos | 1 | Old primary → standby rejoin script |
+| `src/app/api/internal/ha-lease/route.ts` | gwi-pos | 1 | Internal API: update/read in-memory MC lease state |
 
 ### Modified Files
 
 | File | Repo | Phase | Changes |
 |------|------|-------|---------|
-| `prisma/schema.prisma` | gwi-pos | 1–3 | FulfillmentType enum, lastMutatedBy, fulfillmentStationId, originTerminalId |
+| `prisma/schema.prisma` | gwi-pos | 1–3, 6 | FulfillmentType enum, lastMutatedBy, fulfillmentStationId, originTerminalId, FulfillmentEvent, BridgeCheckpoint, OutageQueueEntry |
 | `scripts/nuc-pre-migrate.js` | gwi-pos | 1–3 | DDL for new columns and enums |
 | `scripts/vercel-build.js` | gwi-pos | 1–3 | Mirror DDL for Neon |
 | `src/proxy.ts` | gwi-pos | 2 | Cellular auth path, route allowlist, rate limiting |
@@ -679,6 +831,13 @@ All cellular operations are logged to `CellularAuditEvent` in Mission Control:
 | `TokenProvider.kt` | gwi-android-register, gwi-pax-a6650 | 1 | backupUrl, vipUrl storage |
 | `DynamicBaseUrlInterceptor.kt` | gwi-android-register, gwi-pax-a6650 | 1 | URL switching on failover |
 | `PairingViewModel.kt` | gwi-android-register, gwi-pax-a6650 | 1 | Store backup/VIP URLs from pairing response |
+| `scripts/nuc-pre-migrate.js` | gwi-pos | 6 | Reduced to ~100 lines: PrismaClient init + migration runner |
+| `scripts/vercel-build.js` | gwi-pos | 6 | Reduced to ~110 lines: orchestrator calling migration runner |
+| `src/lib/sync/sync-config.ts` | gwi-pos | 6 | ConflictStrategy type, neon-wins default for bidirectional models |
+| `src/lib/sync/upstream-sync-worker.ts` | gwi-pos | 6 | Outage detection (3 consecutive failures), queueOutageWrite() |
+| `src/lib/sync/downstream-sync-worker.ts` | gwi-pos | 6 | Conflict detection with updatedAt + lastMutatedBy comparison |
+| `src/app/api/orders/send/route.ts` | gwi-pos | 6 | Persists FulfillmentAction[] as FulfillmentEvent rows |
+| `prisma/schema.prisma` | gwi-mission-control | 6 | CloudLocation.canonicalLocationId field |
 
 ---
 
@@ -697,7 +856,187 @@ All cellular operations are logged to `CellularAuditEvent` in Mission Control:
 
 ---
 
-## Appendix B — Future Considerations
+## Appendix B — MC Split-Brain Arbiter (API Contract)
+
+### Problem
+
+Two-node HA with no quorum. During a network partition, both NUCs can reach MC (via internet) but not each other (LAN down). Without an external witness, both may claim the VIP and accept writes, causing permanent data divergence.
+
+### Solution: Lease-Based Primary Claim via Mission Control
+
+MC acts as the external arbiter. The active primary acquires a "primary lease" from MC. The backup must obtain this lease before promoting. If the primary is still renewing its lease, MC denies the backup's claim.
+
+### Protocol Flow
+
+```
+NORMAL OPERATION:
+  Primary NUC ──(every 10s)──> POST /api/fleet/ha/renew-lease ──> MC
+                                MC returns { leaseExpiresAt: T+30s }
+
+FAILOVER (backup detects primary down):
+  Backup NUC ──> promote.sh
+    Step B.1: Peer fence-check (existing: curl http://peer:3005/api/fence-check)
+    Step B.2: POST /api/fleet/ha/claim-primary ──> MC
+      MC checks: active lease for this venue?
+        YES (not expired) → 409 { currentHolder, remainingSeconds }
+        NO (expired/none) → 200 { granted: true, leaseExpiresAt }
+    Step B.3: Decision matrix (see promote.sh comments)
+
+SPLIT-BRAIN DETECTION:
+  MC receives heartbeats from TWO nodes both claiming primary → P0 alert
+  MC can instruct one node to step down via fleet command
+```
+
+### MC Endpoints to Implement
+
+#### `POST /api/fleet/ha/claim-primary`
+
+Backup NUC requests to become the new primary. MC grants only if no active lease exists for another node.
+
+**Auth:** `Authorization: Bearer <SERVER_API_KEY>` + `X-Server-Node-Id`
+
+**Request:**
+```json
+{
+  "venueSlug": "fruita-grill",
+  "nodeId": "nuc-abc-123",
+  "requestedTTL": 30,
+  "reason": "promote.sh",
+  "peerReachable": false
+}
+```
+
+**Response (200 — granted):**
+```json
+{
+  "granted": true,
+  "leaseExpiresAt": "2026-03-09T12:00:30Z",
+  "previousHolder": "nuc-xyz-789",
+  "previousLeaseExpired": true
+}
+```
+
+**Response (409 — denied):**
+```json
+{
+  "granted": false,
+  "currentHolder": "nuc-xyz-789",
+  "leaseExpiresAt": "2026-03-09T12:00:30Z",
+  "remainingSeconds": 18,
+  "reason": "Active lease held by another node"
+}
+```
+
+**Implementation notes:**
+- Lookup by venueSlug (via CloudLocation.venueSlug or ServerNode relationship)
+- Atomic check-and-set: read lease, verify expired, write new lease — all in one transaction
+- If `currentHolder == requestor.nodeId`, grant (idempotent re-claim)
+- Log as FailoverEvent with `event: "primary_lease_claimed"`
+
+#### `POST /api/fleet/ha/renew-lease`
+
+Primary NUC renews its lease. Called every 10 seconds from `ha-check.sh`.
+
+**Auth:** `Authorization: Bearer <SERVER_API_KEY>` + `X-Server-Node-Id`
+
+**Request:**
+```json
+{
+  "venueSlug": "fruita-grill",
+  "nodeId": "nuc-abc-123",
+  "ttl": 30
+}
+```
+
+**Response (200 — renewed):**
+```json
+{
+  "renewed": true,
+  "leaseExpiresAt": "2026-03-09T12:00:30Z"
+}
+```
+
+**Response (409 — lease held by different node):**
+```json
+{
+  "renewed": false,
+  "currentHolder": "nuc-xyz-789",
+  "reason": "Lease held by another node — possible split-brain"
+}
+```
+
+**Implementation notes:**
+- Only renew if `nodeId` matches current lease holder
+- If a different node holds the lease, return 409 — the caller is a stale primary
+- On 409, the stale primary should trigger a P0 alert (split-brain detected)
+- Extend `leaseExpiresAt = now() + ttl` on success
+
+#### `GET /api/fleet/ha/lease-status`
+
+Informational endpoint for MC dashboard and debugging.
+
+**Auth:** Admin session or `Authorization: Bearer <SERVER_API_KEY>`
+
+**Query:** `?venueSlug=fruita-grill`
+
+**Response (200):**
+```json
+{
+  "venueSlug": "fruita-grill",
+  "currentHolder": "nuc-abc-123",
+  "leaseExpiresAt": "2026-03-09T12:00:30Z",
+  "remainingSeconds": 22,
+  "isExpired": false,
+  "lastRenewedAt": "2026-03-09T12:00:08Z",
+  "claimHistory": [
+    { "nodeId": "nuc-abc-123", "claimedAt": "2026-03-09T11:50:00Z", "reason": "promote.sh" }
+  ]
+}
+```
+
+### Split-Brain Detection Logic (MC-side)
+
+MC should detect split-brain when **both** of these are true simultaneously:
+1. A node holds an active (non-expired) primary lease
+2. MC receives a heartbeat from a **different** node at the same venue that reports `pgRole: "primary"` AND `stationRole: "server"`
+
+On detection:
+- Raise a **P0 alert** (highest severity)
+- Record a `FailoverEvent` with `event: "split_brain_detected"`
+- Optionally issue a `STEP_DOWN` fleet command to the node that does NOT hold the lease
+
+### MC Schema Additions
+
+```prisma
+// Add to ServerNode or create new model
+model HaPrimaryLease {
+  id              String   @id @default(cuid())
+  venueSlug       String   @unique
+  holderNodeId    String
+  leaseExpiresAt  DateTime
+  lastRenewedAt   DateTime @default(now())
+  claimedAt       DateTime @default(now())
+  claimReason     String?
+  @@index([venueSlug])
+}
+```
+
+### Degradation Behavior
+
+| MC reachable | Peer reachable | Behavior |
+|:---:|:---:|---|
+| Yes | Yes (alive) | ABORT — both witnesses agree primary is up |
+| Yes | Yes (fenced) | MC claim + proceed if granted |
+| Yes | No | MC claim + proceed if granted |
+| No | Yes (alive) | ABORT — peer is alive, existing behavior |
+| No | Yes (fenced) | PROCEED — peer is fenced, degrade to existing behavior |
+| No | No | PROCEED — both unreachable, degrade to existing behavior |
+
+The key safety property: **MC can only BLOCK promotion, never enable it**. If MC is unreachable, the system falls back to the existing peer-only fencing, which is the baseline behavior before this feature.
+
+---
+
+## Appendix C — Future Considerations
 
 ### Patroni (Deferred)
 
@@ -729,7 +1068,7 @@ Current design uses a single Vercel region for the cloud relay. For venues in di
 
 ---
 
-## Appendix C — Schema Changes Summary
+## Appendix D — Schema Changes Summary
 
 ### gwi-pos (Prisma)
 
@@ -763,6 +1102,86 @@ model OrderItem {
 // Payment additions
 model Payment {
   lastMutatedBy String?
+}
+
+// Phase 6 — New models
+
+enum FulfillmentEventType {
+  print_kitchen
+  print_bar
+  kds_update
+  drawer_kick
+}
+
+enum FulfillmentEventStatus {
+  pending
+  claimed
+  completed
+  failed
+  dead_letter
+}
+
+model FulfillmentEvent {
+  id          String                 @id @default(cuid())
+  locationId  String
+  orderId     String
+  stationId   String?
+  type        FulfillmentEventType
+  status      FulfillmentEventStatus @default(pending)
+  payload     Json
+  claimedBy   String?
+  claimedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  retryCount  Int                    @default(0)
+  createdAt   DateTime               @default(now())
+  @@index([locationId, status])
+  @@index([claimedBy, status])
+}
+
+enum BridgeRole {
+  primary
+  backup
+}
+
+model BridgeCheckpoint {
+  id                String    @id @default(cuid())
+  locationId        String
+  nodeId            String
+  role              BridgeRole
+  leaseExpiresAt    DateTime
+  lastHeartbeat     DateTime
+  lastFulfillmentAt DateTime?
+  fulfillmentLag    Float?
+  @@unique([locationId, nodeId])
+}
+
+enum OutageOperation {
+  INSERT
+  UPDATE
+  DELETE
+}
+
+enum OutageStatus {
+  pending
+  replayed
+  conflict
+  failed
+}
+
+model OutageQueueEntry {
+  id             String          @id @default(cuid())
+  locationId     String
+  tableName      String
+  recordId       String
+  operation      OutageOperation
+  payload        Json
+  localSeq       Int
+  idempotencyKey String          @unique
+  status         OutageStatus    @default(pending)
+  createdAt      DateTime        @default(now())
+  replayedAt     DateTime?
+  @@index([locationId, status])
 }
 ```
 
@@ -833,5 +1252,11 @@ model ServerNode {
   replicationLag Float?
   pgRole         String?
   isVipOwner     Boolean @default(false)
+}
+
+// Phase 6 — CloudLocation additions
+model CloudLocation {
+  canonicalLocationId String?  // Neon Location.id — kills posLocationId bridge field
+  // posLocationId deprecated (kept for backward compat)
 }
 ```

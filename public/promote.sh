@@ -60,6 +60,7 @@ HA_PEER_IP=""
 HA_SHARED_SECRET=""
 VIRTUAL_IP=""
 HA_IFACE=""
+LEASE_EXPIRY=""
 
 while IFS= read -r line; do
   [[ -z "$line" ]] && continue
@@ -97,12 +98,22 @@ systemctl stop thepasspos-sync 2>/dev/null || true
 log "Sync workers stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step B: Fencing check (MANDATORY)
+# Step B: Fencing check (MANDATORY) — Two-layer: peer + MC arbiter
 # ─────────────────────────────────────────────────────────────────────────────
-# If the old primary is still alive and serving, we MUST NOT promote.
-# Split-brain prevention: only promote if old primary is unreachable or fenced.
+# Layer 1 — Peer fencing: query the old primary directly.
+# Layer 2 — MC arbiter: ask Mission Control if a valid primary lease exists.
+#
+# Promotion is BLOCKED if:
+#   - Peer responds as primary (existing behavior), OR
+#   - MC reports an active (non-expired) primary lease for another node
+#
+# If MC is unreachable, we degrade to peer fencing only.
+# If BOTH MC and peer are unreachable, promotion proceeds (avoid deadlock).
 
 log "Performing fencing check against old primary..."
+
+PEER_ALIVE=false
+PEER_FENCED=false
 
 if [[ -n "$HA_PEER_IP" ]]; then
   FENCE_URL="http://${HA_PEER_IP}:3005/api/fence-check"
@@ -118,35 +129,148 @@ if [[ -n "$HA_PEER_IP" ]]; then
   if [[ "$FENCE_HTTP_CODE" == "200" ]]; then
     # Old primary responded — check if it thinks it's still primary
     PEER_ROLE=$(cat "$FENCE_RESP" 2>/dev/null | grep -o '"role":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "unknown")
+    PEER_HOLDS_LEASE=$(cat "$FENCE_RESP" 2>/dev/null | grep -o '"holdsMcLease":[a-z]*' | head -1 | cut -d: -f2 || echo "unknown")
     rm -f "$FENCE_RESP"
 
     if [[ "$PEER_ROLE" == "primary" ]] || [[ "$PEER_ROLE" == "server" ]]; then
-      log "ABORT: Old primary at $HA_PEER_IP is still alive (role=$PEER_ROLE, HTTP $FENCE_HTTP_CODE)"
-      log "Split-brain prevention: will NOT promote while old primary is reachable"
-
-      # Alert Mission Control
-      if [[ -n "$MISSION_CONTROL_URL" ]] && [[ -n "$SERVER_API_KEY" ]]; then
-        curl -sf --max-time 5 -X POST \
-          "${MISSION_CONTROL_URL}/api/fleet/failover-event" \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer $SERVER_API_KEY" \
-          -H "X-Server-Node-Id: ${SERVER_NODE_ID:-}" \
-          -d "{\"event\":\"promotion_aborted\",\"reason\":\"fencing_failed\",\"peerIp\":\"$HA_PEER_IP\",\"peerRole\":\"$PEER_ROLE\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
-          >/dev/null 2>&1 || true
-      fi
-
-      die 1 "Fencing check failed — old primary still active"
+      PEER_ALIVE=true
+      log "Peer fencing: old primary at $HA_PEER_IP is still alive (role=$PEER_ROLE, holdsMcLease=$PEER_HOLDS_LEASE)"
+    else
+      PEER_FENCED=true
+      log "Peer fencing OK: old primary responded but role=$PEER_ROLE (not primary)"
     fi
-
-    rm -f "$FENCE_RESP"
-    log "Fencing OK: old primary responded but role=$PEER_ROLE (not primary)"
   else
     rm -f "$FENCE_RESP" 2>/dev/null || true
-    log "Fencing OK: old primary unreachable (HTTP $FENCE_HTTP_CODE) — safe to promote"
+    PEER_FENCED=true
+    log "Peer fencing OK: old primary unreachable (HTTP $FENCE_HTTP_CODE) — safe to promote"
   fi
 else
-  log "WARN: HA_PEER_IP not configured — skipping fencing check (manual promotion assumed)"
+  log "WARN: HA_PEER_IP not configured — skipping peer fencing (manual promotion assumed)"
+  PEER_FENCED=true
 fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step B.2: MC Arbiter check — claim primary lease from Mission Control
+# ─────────────────────────────────────────────────────────────────────────────
+# The MC arbiter is an external witness that prevents split-brain when both
+# NUCs can reach the cloud but not each other (network partition).
+#
+# Protocol:
+#   1. POST /api/fleet/ha/claim-primary with our nodeId and venue slug
+#   2. MC checks if an active (non-expired) lease exists for another node
+#   3. If lease exists and is not expired → DENY (MC returns 409)
+#   4. If lease is expired or doesn't exist → GRANT (MC returns 200 + new lease)
+#   5. If MC is unreachable → degrade to peer fencing only
+
+MC_ARBITER_RESULT="unavailable"  # unavailable | granted | denied
+
+if [[ -n "$MISSION_CONTROL_URL" ]] && [[ -n "$SERVER_API_KEY" ]] && [[ -n "$SERVER_NODE_ID" ]]; then
+  log "Requesting primary lease from MC arbiter..."
+
+  # Resolve venue slug from .env or use nodeId as fallback identifier
+  VENUE_SLUG=""
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    key="${line%%=*}"; val="${line#*=}"
+    case "$key" in
+      POS_VENUE_SLUG) VENUE_SLUG="$val" ;;
+    esac
+  done < "$ENV_FILE"
+
+  CLAIM_BODY=$(printf '{"venueSlug":"%s","nodeId":"%s","requestedTTL":30,"reason":"promote.sh","peerReachable":%s}' \
+    "${VENUE_SLUG:-unknown}" \
+    "$SERVER_NODE_ID" \
+    "$PEER_ALIVE")
+
+  CLAIM_RESP=$(mktemp)
+  CLAIM_HTTP=$(curl -sf --max-time 5 --connect-timeout 3 \
+    -X POST "${MISSION_CONTROL_URL}/api/fleet/ha/claim-primary" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $SERVER_API_KEY" \
+    -H "X-Server-Node-Id: $SERVER_NODE_ID" \
+    -o "$CLAIM_RESP" \
+    -w "%{http_code}" 2>/dev/null) || CLAIM_HTTP="000"
+
+  if [[ "$CLAIM_HTTP" == "200" ]]; then
+    MC_ARBITER_RESULT="granted"
+    # Extract lease expiry from response for local caching
+    LEASE_EXPIRY=$(cat "$CLAIM_RESP" 2>/dev/null | grep -o '"leaseExpiresAt":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+    log "MC arbiter GRANTED primary lease (HTTP 200, expires=$LEASE_EXPIRY)"
+  elif [[ "$CLAIM_HTTP" == "409" ]]; then
+    MC_ARBITER_RESULT="denied"
+    CURRENT_HOLDER=$(cat "$CLAIM_RESP" 2>/dev/null | grep -o '"currentHolder":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "unknown")
+    LEASE_REMAINING=$(cat "$CLAIM_RESP" 2>/dev/null | grep -o '"remainingSeconds":[0-9]*' | head -1 | cut -d: -f2 || echo "?")
+    log "MC arbiter DENIED primary lease (HTTP 409, currentHolder=$CURRENT_HOLDER, remainingSeconds=$LEASE_REMAINING)"
+  elif [[ "$CLAIM_HTTP" == "000" ]]; then
+    MC_ARBITER_RESULT="unavailable"
+    log "MC arbiter UNREACHABLE (HTTP 000) — degrading to peer fencing only"
+  else
+    MC_ARBITER_RESULT="unavailable"
+    log "MC arbiter unexpected response (HTTP $CLAIM_HTTP) — degrading to peer fencing only"
+  fi
+
+  rm -f "$CLAIM_RESP" 2>/dev/null || true
+else
+  log "MC arbiter not configured (missing MISSION_CONTROL_URL, SERVER_API_KEY, or SERVER_NODE_ID) — peer fencing only"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step B.3: Fencing decision — combine peer + MC arbiter results
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Decision matrix:
+#   Peer alive + MC denied   → ABORT (strongest signal: both say no)
+#   Peer alive + MC granted  → ABORT (peer is still there; MC lease may be stale)
+#   Peer alive + MC unavail  → ABORT (existing behavior preserved)
+#   Peer fenced + MC denied  → ABORT (MC says another node holds lease)
+#   Peer fenced + MC granted → PROCEED (both agree: safe to promote)
+#   Peer fenced + MC unavail → PROCEED (degrade gracefully: peer fencing only)
+
+log "Fencing decision: peer_alive=$PEER_ALIVE, peer_fenced=$PEER_FENCED, mc_arbiter=$MC_ARBITER_RESULT"
+
+if [[ "$PEER_ALIVE" == "true" ]]; then
+  # Old primary is reachable and claims to be primary — NEVER promote
+  log "ABORT: Old primary at $HA_PEER_IP is still alive"
+  log "Split-brain prevention: will NOT promote while old primary is reachable"
+
+  # Alert Mission Control
+  if [[ -n "$MISSION_CONTROL_URL" ]] && [[ -n "$SERVER_API_KEY" ]]; then
+    curl -sf --max-time 5 -X POST \
+      "${MISSION_CONTROL_URL}/api/fleet/failover-event" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $SERVER_API_KEY" \
+      -H "X-Server-Node-Id: ${SERVER_NODE_ID:-}" \
+      -d "{\"event\":\"promotion_aborted\",\"reason\":\"fencing_failed\",\"peerIp\":\"$HA_PEER_IP\",\"peerRole\":\"primary\",\"mcArbiter\":\"$MC_ARBITER_RESULT\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+      >/dev/null 2>&1 || true
+  fi
+
+  die 1 "Fencing check failed — old primary still active"
+fi
+
+if [[ "$MC_ARBITER_RESULT" == "denied" ]]; then
+  # MC says another node holds a valid lease — even though peer is unreachable,
+  # this could be a network partition where the primary is still serving via VIP
+  log "ABORT: MC arbiter denies primary lease — another node holds an active lease"
+  log "Split-brain prevention: will NOT promote while MC lease is held by another node"
+
+  # Alert Mission Control
+  if [[ -n "$MISSION_CONTROL_URL" ]] && [[ -n "$SERVER_API_KEY" ]]; then
+    curl -sf --max-time 5 -X POST \
+      "${MISSION_CONTROL_URL}/api/fleet/failover-event" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $SERVER_API_KEY" \
+      -H "X-Server-Node-Id: ${SERVER_NODE_ID:-}" \
+      -d "{\"event\":\"promotion_aborted\",\"reason\":\"mc_lease_denied\",\"peerIp\":\"${HA_PEER_IP:-}\",\"mcArbiter\":\"denied\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" \
+      >/dev/null 2>&1 || true
+  fi
+
+  die 1 "Fencing check failed — MC arbiter denied primary lease"
+fi
+
+# If we get here: peer is fenced AND (MC granted OR MC unavailable)
+log "Fencing PASSED: peer is fenced ($PEER_FENCED), MC arbiter=$MC_ARBITER_RESULT — proceeding with promotion"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step C: Promote PostgreSQL
@@ -230,6 +354,34 @@ if [[ "$APP_READY" != "true" ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Step E.2: Update local POS with MC lease state (if we got one during claim)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ "$APP_READY" == "true" ]] && [[ -n "$LEASE_EXPIRY" ]]; then
+  log "Updating local POS app with MC lease expiry ($LEASE_EXPIRY)..."
+  INTERNAL_SECRET=""
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    key="${line%%=*}"; val="${line#*=}"
+    case "$key" in
+      INTERNAL_API_SECRET) INTERNAL_SECRET="$val" ;;
+      HA_SHARED_SECRET)    [[ -z "$INTERNAL_SECRET" ]] && INTERNAL_SECRET="$val" ;;
+    esac
+  done < "$ENV_FILE"
+
+  if [[ -n "$INTERNAL_SECRET" ]]; then
+    curl -sf --max-time 3 -X POST \
+      "http://localhost:3005/api/internal/ha-lease" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $INTERNAL_SECRET" \
+      -d "{\"leaseExpiresAt\":\"$LEASE_EXPIRY\"}" \
+      >/dev/null 2>&1 || log "WARN: Failed to update local POS with lease state"
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Step F: Gratuitous ARP (claim the VIP on the network)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -271,12 +423,14 @@ log "Sync workers started"
 
 if [[ -n "$MISSION_CONTROL_URL" ]] && [[ -n "$SERVER_API_KEY" ]]; then
   log "Reporting failover event to Mission Control..."
-  FAILOVER_BODY=$(printf '{"event":"promotion_complete","fromNodeId":"%s","toNodeId":"%s","peerIp":"%s","timestamp":"%s","appHealthy":%s}' \
+  FAILOVER_BODY=$(printf '{"event":"promotion_complete","fromNodeId":"%s","toNodeId":"%s","peerIp":"%s","timestamp":"%s","appHealthy":%s,"mcArbiter":"%s","leaseExpiry":"%s"}' \
     "${HA_PEER_IP:-unknown}" \
     "${SERVER_NODE_ID:-unknown}" \
     "${HA_PEER_IP:-unknown}" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    "$APP_READY")
+    "$APP_READY" \
+    "$MC_ARBITER_RESULT" \
+    "${LEASE_EXPIRY:-none}")
 
   MC_HTTP=$(curl -sf --max-time 10 -X POST \
     "${MISSION_CONTROL_URL}/api/fleet/failover-event" \

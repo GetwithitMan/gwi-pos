@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 
 // GET - List drawers at a location, with availability status
-export const GET = withVenue(async function GET(request: NextRequest) {
+// Auth: session-verified employee with POS_CASH_DRAWER permission
+export const GET = withVenue(withAuth('POS_CASH_DRAWER', async function GET(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
-    const searchParams = request.nextUrl.searchParams
-    const locationId = searchParams.get('locationId')
-
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
+    // Use verified locationId from session
+    const locationId = ctx.auth.locationId
 
     const drawers = await db.drawer.findMany({
       where: {
@@ -66,4 +64,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

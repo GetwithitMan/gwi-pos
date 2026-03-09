@@ -5,6 +5,9 @@
  * If this returns 200 + role="primary", the promotion script ABORTS
  * to avoid split-brain.
  *
+ * Also reports primary lease status from Mission Control arbiter,
+ * enabling the backup to make informed promotion decisions.
+ *
  * Access: internal network IPs only + x-ha-secret header.
  * NOT wrapped with withVenue() — this is infrastructure.
  *
@@ -21,6 +24,27 @@ interface FenceCheckResponse {
   term: number
   pgInRecovery: boolean
   healthy: boolean
+  /** ISO timestamp when the MC primary lease expires (null if no lease held) */
+  primaryLeaseExpiry: string | null
+  /** Whether this node currently holds a valid MC primary lease */
+  holdsMcLease: boolean
+}
+
+/**
+ * In-memory primary lease state.
+ * Updated by ha-check.sh via the MC arbiter renew-lease endpoint.
+ * The primary's health check loop renews the lease every 10 seconds.
+ */
+let mcLeaseExpiry: Date | null = null
+
+/** Called by ha-check.sh lease renewal (via health route) to update local lease cache */
+export function updateLocalLeaseExpiry(expiry: Date | null): void {
+  mcLeaseExpiry = expiry
+}
+
+/** Read the current local lease expiry (used by health route) */
+export function getLocalLeaseExpiry(): Date | null {
+  return mcLeaseExpiry
 }
 
 /** RFC-1918 + loopback ranges */
@@ -92,11 +116,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const stationRole = process.env.STATION_ROLE || 'unknown'
   const isPrimary = stationRole === 'server' && !pgInRecovery && healthy
 
+  // MC primary lease status
+  const now = new Date()
+  const holdsMcLease = mcLeaseExpiry !== null && mcLeaseExpiry > now
+  const primaryLeaseExpiry = mcLeaseExpiry ? mcLeaseExpiry.toISOString() : null
+
   const response: FenceCheckResponse = {
     role: isPrimary ? 'primary' : 'standby',
     term: Date.now(),
     pgInRecovery,
     healthy,
+    primaryLeaseExpiry,
+    holdsMcLease,
   }
 
   return NextResponse.json(response, { status: 200 })

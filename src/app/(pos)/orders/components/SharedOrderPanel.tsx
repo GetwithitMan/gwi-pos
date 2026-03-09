@@ -474,12 +474,13 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                 const capturedEmployeeId = employeeId
                 const capturedLocationId = capturedOrder.locationId || locationId
 
-                toast.success('Order sent to kitchen')
                 clearOrder()
                 setSavedOrderId(null)
                 setOrderSent(false)
                 setSelectedOrderType(null)
                 setOrderCustomFields({})
+
+                const sendingToastId = toast.info('Sending to kitchen...', 0)
 
                 void (async () => {
                   try {
@@ -510,7 +511,8 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
 
                     if (!res.ok) {
                       console.error('[onStartTab] Background create failed')
-                      toast.error('Tab may not have saved \u2014 check open orders')
+                      toast.dismiss(sendingToastId)
+                      toast.error('Failed to send — check open orders')
                       return
                     }
 
@@ -521,12 +523,17 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ employeeId: capturedEmployeeId }),
                     })
+                    toast.dismiss(sendingToastId)
                     if (!sendRes.ok) {
                       console.error('[onStartTab] Background send failed')
+                      toast.error('Failed to send — check open orders')
+                    } else {
+                      toast.success('Order sent to kitchen')
                     }
                   } catch (err) {
                     console.error('[onStartTab] Background tab creation failed:', err)
-                    toast.error('Tab may not have saved \u2014 check open orders')
+                    toast.dismiss(sendingToastId)
+                    toast.error('Failed to send — check open orders')
                   } finally {
                     setTabsRefreshTrigger(prev => prev + 1)
                   }

@@ -267,6 +267,10 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
           : item
       ))
     },
+    onOrderClosed: () => {
+      // Count management handled by onOpenOrdersChanged (trigger='paid'/'voided').
+      // This callback is for panel dismissal and floor plan cleanup only.
+    },
   })
 
   // Visibility-change fallback for entertainment status

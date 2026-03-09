@@ -33,6 +33,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { enableSyncReplication } from '@/lib/db-helpers'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -195,6 +196,11 @@ export const POST = withVenue(withTiming(async function POST(
     if (!lockedRow) {
       return { earlyReturn: NextResponse.json({ error: 'Order not found' }, { status: 404 }) }
     }
+
+    // PAYMENT-SAFETY: Synchronous replication for payment durability.
+    // Guarantees the standby has applied this transaction's WAL before commit returns.
+    // Prevents payment loss during HA failover (card charged but DB record lost).
+    await enableSyncReplication(tx)
 
     // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
     // Includes items/employee/table so we can build receipt data in the response (avoids second fetch)

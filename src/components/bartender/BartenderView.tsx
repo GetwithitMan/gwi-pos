@@ -36,6 +36,7 @@ import {
   HOT_MODIFIER_CONFIG,
 } from '@/components/bartender/bartender-settings'
 import { useBartenderPreferences } from '@/hooks/useBartenderPreferences'
+import { useSocket } from '@/hooks/useSocket'
 
 // ============================================================================
 // TYPES
@@ -158,6 +159,11 @@ export function BartenderView({
   // Tabs
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null)
   const [, startTabTransition] = useTransition()
+  const selectedTabIdRef = useRef<string | null>(null)
+  selectedTabIdRef.current = selectedTabId
+
+  // Socket (for cross-terminal events like order:closed)
+  const { socket, isConnected } = useSocket()
 
   // Multi-terminal editing awareness
   useOrderEditing(selectedTabId, locationId)
@@ -709,6 +715,31 @@ export function BartenderView({
       }
     }
   }, [selectedTabId, locationId])
+
+  // ---------------------------------------------------------------------------
+  // SOCKET: order:closed — dismiss stale panel when another terminal closes an order
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!socket || !isConnected) return
+
+    const onOrderClosed = (data: any) => {
+      const { orderId } = data || {}
+      if (!orderId) return
+
+      const currentTabId = selectedTabIdRef.current
+      const storeOrderId = useOrderStore.getState().currentOrder?.id
+      if (orderId === currentTabId || orderId === storeOrderId) {
+        setSelectedTabId(null)
+        loadedTabIdRef.current = null
+        useOrderStore.getState().clearOrder()
+        setTabRefreshTrigger(t => t + 1)
+        toast.info('Order was closed on another terminal')
+      }
+    }
+
+    socket.on('order:closed', onOrderClosed)
+    return () => { socket.off('order:closed', onOrderClosed) }
+  }, [socket, isConnected])
 
   // ---------------------------------------------------------------------------
   // HANDLERS

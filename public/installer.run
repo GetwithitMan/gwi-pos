@@ -1218,6 +1218,11 @@ $REPL_MARKER
 wal_level = replica
 max_wal_senders = 3
 wal_keep_size = '1GB'
+# Allow per-transaction synchronous_commit = 'remote_apply' for payment durability.
+# 'ANY 1 (*)' means: wait for ANY one standby to confirm. If no standby is
+# connected, PG falls back to async (no blocking). Only payment transactions
+# opt in via SET LOCAL — all other writes remain async by default.
+synchronous_standby_names = 'ANY 1 (*)'
 REPLEOF
     fi
 

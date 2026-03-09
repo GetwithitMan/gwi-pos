@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { CashHandlingMode } from '@prisma/client'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
-import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -16,6 +16,8 @@ function getPermissionsArray(permissions: unknown): string[] {
 }
 
 // GET - List all roles for a location
+// No auth check on read — role names/permissions are needed by employee dropdowns,
+// tip settings, and other admin pages. Write operations (POST) require STAFF_MANAGE_ROLES.
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -27,9 +29,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    // No auth check on read — role names/permissions are needed by employee dropdowns,
-    // tip settings, and other admin pages. Write operations (POST/PUT/DELETE) require STAFF_MANAGE_ROLES.
 
     const roles = await db.role.findMany({
       where: { locationId },
@@ -72,29 +71,30 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create a new role
-export const POST = withVenue(async function POST(request: NextRequest) {
+// Auth: session-verified employee with STAFF_MANAGE_ROLES permission
+export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const body = await request.json()
-    const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, requestingEmployeeId, roleType, accessLevel } = body as {
-      locationId: string
+    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, roleType, accessLevel } = body as {
       name: string
       permissions: string[]
       cashHandlingMode?: string
       trackLaborCost?: boolean
       isTipped?: boolean
       tipWeight?: number
-      requestingEmployeeId?: string
       roleType?: string
       accessLevel?: string
     }
 
-    // Auth check — require staff.manage_roles permission
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    // Use verified locationId from session — ignore client-supplied locationId
+    const locationId = ctx.auth.locationId
 
-    if (!locationId || !name) {
+    if (!name) {
       return NextResponse.json(
-        { error: 'Location ID and name are required' },
+        { error: 'Role name is required' },
         { status: 400 }
       )
     }
@@ -147,4 +147,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

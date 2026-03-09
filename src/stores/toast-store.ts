@@ -15,7 +15,7 @@ const MAX_TOASTS = 25
 
 interface ToastStore {
   toasts: Toast[]
-  addToast: (toast: Omit<Toast, 'id' | 'timeoutId'>) => void
+  addToast: (toast: Omit<Toast, 'id' | 'timeoutId'>) => string
   removeToast: (id: string) => void
   clearAll: () => void
 }
@@ -46,6 +46,8 @@ export const useToastStore = create<ToastStore>((set, get) => ({
       }
       return { toasts }
     })
+
+    return id
   },
 
   removeToast: (id) => {
@@ -75,4 +77,6 @@ export const toast = {
     useToastStore.getState().addToast({ type: 'warning', message, duration }),
   info: (message: string, duration?: number) =>
     useToastStore.getState().addToast({ type: 'info', message, duration }),
+  dismiss: (id: string) =>
+    useToastStore.getState().removeToast(id),
 }

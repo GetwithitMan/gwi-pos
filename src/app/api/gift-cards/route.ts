@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 
 // Generate a unique gift card number
 function generateCardNumber(): string {
@@ -16,19 +17,18 @@ function generateCardNumber(): string {
 }
 
 // GET - List gift cards
-export const GET = withVenue(async function GET(request: NextRequest) {
+// Auth: session-verified employee with CUSTOMERS_GIFT_CARDS permission
+export const GET = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function GET(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId')
     const status = searchParams.get('status')
     const search = searchParams.get('search')
 
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
+    // Use verified locationId from session
+    const locationId = ctx.auth.locationId
 
     const where: Record<string, unknown> = { locationId }
 
@@ -67,28 +67,34 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // POST - Create/purchase a new gift card
-export const POST = withVenue(async function POST(request: NextRequest) {
+// Auth: session-verified employee with CUSTOMERS_GIFT_CARDS permission
+export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function POST(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const body = await request.json()
     const {
-      locationId,
       amount,
       recipientName,
       recipientEmail,
       recipientPhone,
       purchaserName,
       message,
-      purchasedById,
       orderId,
       expiresAt,
     } = body
 
-    if (!locationId || !amount || amount <= 0) {
+    // Use verified locationId and employeeId from session
+    const locationId = ctx.auth.locationId
+    const purchasedById = ctx.auth.employeeId
+
+    if (!amount || amount <= 0) {
       return NextResponse.json(
-        { error: 'Location ID and positive amount are required' },
+        { error: 'A positive amount is required' },
         { status: 400 }
       )
     }
@@ -150,4 +156,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

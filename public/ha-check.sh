@@ -27,6 +27,9 @@ ENV_FILE="/opt/gwi-pos/.env"
 LOG_DIR="/var/log/gwi-pos"
 LOG_FILE="$LOG_DIR/ha-check.log"
 LAG_STATE_FILE="/tmp/gwi-ha-lag-count"
+LEASE_RENEW_STATE="/tmp/gwi-ha-lease-last-renew"
+LEASE_RENEW_INTERVAL=10  # seconds between MC lease renewals
+LEASE_TTL=30             # requested lease duration in seconds
 MAX_LAG_SECONDS=30
 MAX_LAG_CONSECUTIVE=3
 
@@ -58,6 +61,9 @@ DB_NAME=""
 MISSION_CONTROL_URL=""
 SERVER_NODE_ID=""
 SERVER_API_KEY=""
+POS_VENUE_SLUG=""
+INTERNAL_API_SECRET=""
+HA_SHARED_SECRET=""
 
 while IFS= read -r line; do
   [[ -z "$line" ]] && continue
@@ -72,6 +78,9 @@ while IFS= read -r line; do
     MISSION_CONTROL_URL) MISSION_CONTROL_URL="$val" ;;
     SERVER_NODE_ID)      SERVER_NODE_ID="$val" ;;
     SERVER_API_KEY)      SERVER_API_KEY="$val" ;;
+    POS_VENUE_SLUG)      POS_VENUE_SLUG="$val" ;;
+    INTERNAL_API_SECRET) INTERNAL_API_SECRET="$val" ;;
+    HA_SHARED_SECRET)    HA_SHARED_SECRET="$val" ;;
   esac
 done < "$ENV_FILE"
 
@@ -109,6 +118,73 @@ if [[ "$STATION_ROLE" == "server" ]]; then
     log "FAIL: POS app /api/health not responding"
     trim_log
     exit 1
+  fi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # MC Primary Lease Renewal (best-effort, non-blocking)
+  # ─────────────────────────────────────────────────────────────────────────
+  # keepalived calls this script every 2 seconds. We only renew the MC
+  # lease every LEASE_RENEW_INTERVAL seconds (10s) to avoid hammering MC.
+  # The lease TTL is 30s, so we have ~20s of safety margin.
+  #
+  # This runs AFTER the health checks so a failing primary never renews
+  # its lease — allowing the backup to claim it.
+
+  if [[ -n "$MISSION_CONTROL_URL" ]] && [[ -n "$SERVER_NODE_ID" ]] && [[ -n "$SERVER_API_KEY" ]]; then
+    SHOULD_RENEW=false
+    NOW_EPOCH=$(date +%s)
+
+    if [[ -f "$LEASE_RENEW_STATE" ]]; then
+      LAST_RENEW=$(cat "$LEASE_RENEW_STATE" 2>/dev/null || echo "0")
+      ELAPSED=$((NOW_EPOCH - LAST_RENEW))
+      if [[ "$ELAPSED" -ge "$LEASE_RENEW_INTERVAL" ]]; then
+        SHOULD_RENEW=true
+      fi
+    else
+      SHOULD_RENEW=true
+    fi
+
+    if [[ "$SHOULD_RENEW" == "true" ]]; then
+      RENEW_BODY=$(printf '{"venueSlug":"%s","nodeId":"%s","ttl":%d}' \
+        "${POS_VENUE_SLUG:-unknown}" \
+        "$SERVER_NODE_ID" \
+        "$LEASE_TTL")
+
+      RENEW_RESP=$(mktemp)
+      RENEW_HTTP=$(curl -sf --max-time 3 --connect-timeout 2 \
+        -X POST "${MISSION_CONTROL_URL}/api/fleet/ha/renew-lease" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $SERVER_API_KEY" \
+        -H "X-Server-Node-Id: $SERVER_NODE_ID" \
+        -o "$RENEW_RESP" \
+        -w "%{http_code}" 2>/dev/null) || RENEW_HTTP="000"
+
+      echo "$NOW_EPOCH" > "$LEASE_RENEW_STATE" 2>/dev/null || true
+
+      if [[ "$RENEW_HTTP" == "200" ]]; then
+        # Extract lease expiry and update local POS app
+        LEASE_EXP=$(cat "$RENEW_RESP" 2>/dev/null | grep -o '"leaseExpiresAt":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
+        if [[ -n "$LEASE_EXP" ]]; then
+          # Update local POS in-memory lease state (best-effort)
+          LOCAL_AUTH="${INTERNAL_API_SECRET:-${HA_SHARED_SECRET:-}}"
+          if [[ -n "$LOCAL_AUTH" ]]; then
+            curl -sf --max-time 1 -X POST \
+              "http://localhost:3005/api/internal/ha-lease" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $LOCAL_AUTH" \
+              -d "{\"leaseExpiresAt\":\"$LEASE_EXP\"}" \
+              >/dev/null 2>&1 || true
+          fi
+        fi
+        # Renewal succeeded — no log (too noisy at 2s intervals)
+      elif [[ "$RENEW_HTTP" == "000" ]]; then
+        log "WARN: MC lease renewal unreachable (HTTP 000) — lease may expire"
+      else
+        log "WARN: MC lease renewal failed (HTTP $RENEW_HTTP)"
+      fi
+
+      rm -f "$RENEW_RESP" 2>/dev/null || true
+    fi
   fi
 
   # All checks passed

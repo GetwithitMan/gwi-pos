@@ -17,7 +17,7 @@ type Socket = {
 interface UseOrderSocketsOptions {
   locationId: string | undefined
   enabled?: boolean
-  onOpenOrdersChanged?: (data: { locationId: string; trigger: string; orderId?: string }) => void
+  onOpenOrdersChanged?: (data: { locationId: string; trigger: string; orderId?: string; sourceTerminalId?: string }) => void
   onOrderTotalsUpdated?: (data: {
     orderId: string
     totals: {
@@ -32,6 +32,13 @@ interface UseOrderSocketsOptions {
     itemId: string
     entertainmentStatus: string
     currentOrderId: string | null
+  }) => void
+  onOrderClosed?: (data: {
+    orderId: string
+    status: string
+    closedAt: string
+    closedByEmployeeId: string | null
+    locationId: string
   }) => void
 }
 
@@ -74,7 +81,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
     }
 
     const onListChanged = (data: unknown) => {
-      const payload = data as { locationId: string; trigger: string; orderId?: string }
+      const payload = data as { locationId: string; trigger: string; orderId?: string; sourceTerminalId?: string }
       callbacksRef.current.onOpenOrdersChanged?.(payload)
     }
 
@@ -101,12 +108,24 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       callbacksRef.current.onEntertainmentStatusChanged?.(payload)
     }
 
+    const onOrderClosed = (data: unknown) => {
+      const payload = data as {
+        orderId: string
+        status: string
+        closedAt: string
+        closedByEmployeeId: string | null
+        locationId: string
+      }
+      callbacksRef.current.onOrderClosed?.(payload)
+    }
+
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
     socket.on('connect_error', onConnectError)
     socket.on('orders:list-changed', onListChanged)
     socket.on('order:totals-updated', onTotalsUpdated)
     socket.on('entertainment:status-changed', onEntertainmentChanged)
+    socket.on('order:closed', onOrderClosed)
 
     // If already connected (shared socket was created by another consumer), join immediately
     if (socket.connected) {
@@ -121,6 +140,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       socket.off('orders:list-changed', onListChanged)
       socket.off('order:totals-updated', onTotalsUpdated)
       socket.off('entertainment:status-changed', onEntertainmentChanged)
+      socket.off('order:closed', onOrderClosed)
       socketRef.current = null
       releaseSharedSocket()
     }

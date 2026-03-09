@@ -2,24 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { withVenue } from '@/lib/with-venue'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 
 // GET - List all discount rules for a location
-export const GET = withVenue(async function GET(request: NextRequest) {
+// Auth: session-verified employee with POS_ACCESS (read is needed by order screen)
+export const GET = withVenue(withAuth('POS_ACCESS', async function GET(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const locationId = searchParams.get('locationId')
     const activeOnly = searchParams.get('activeOnly') === 'true'
     const manualOnly = searchParams.get('manualOnly') === 'true'
     const employeeOnly = searchParams.get('employeeOnly') === 'true'
 
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
+    // Use verified locationId from session
+    const locationId = ctx.auth.locationId
 
     const where: {
       locationId: string
@@ -74,14 +72,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // POST - Create a new discount rule
-export const POST = withVenue(async function POST(request: NextRequest) {
+// Auth: session-verified employee with SETTINGS_MENU permission
+export const POST = withVenue(withAuth('SETTINGS_MENU', async function POST(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const body = await request.json()
     const {
-      locationId,
       name,
       displayText,
       description,
@@ -97,7 +98,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isAutomatic,
       isEmployeeDiscount,
     } = body as {
-      locationId: string
       name: string
       displayText: string
       description?: string
@@ -116,23 +116,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isActive?: boolean
       isAutomatic?: boolean
       isEmployeeDiscount?: boolean
-      requestingEmployeeId?: string
     }
 
-    if (!locationId || !name || !displayText || !discountType || !discountConfig) {
+    // Use verified locationId from session
+    const locationId = ctx.auth.locationId
+
+    if (!name || !displayText || !discountType || !discountConfig) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       )
-    }
-
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? body.requestingEmployeeId
-    if (resolvedEmployeeId) {
-      const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_MENU)
-      if (!auth.authorized) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status })
-      }
     }
 
     const discount = await db.discountRule.create({
@@ -170,4 +163,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

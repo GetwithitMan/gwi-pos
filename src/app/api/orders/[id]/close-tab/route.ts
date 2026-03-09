@@ -11,6 +11,7 @@ import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { enableSyncReplication } from '@/lib/db-helpers'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -44,6 +45,11 @@ export const POST = withVenue(async function POST(
     const txResult = await db.$transaction(async (tx) => {
       // Acquire row lock — blocks concurrent close-tab requests for this order
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
+
+      // PAYMENT-SAFETY: Synchronous replication for tab capture durability.
+      // Guarantees the standby has applied this transaction's WAL before commit returns.
+      // Prevents payment loss during HA failover (card captured but DB record lost).
+      await enableSyncReplication(tx)
 
       // Get order with cards
       const order = await tx.order.findFirst({

@@ -1,21 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 
 // GET - List house accounts
-export const GET = withVenue(async function GET(request: NextRequest) {
+// Auth: session-verified employee with CUSTOMERS_HOUSE_ACCOUNTS permission
+export const GET = withVenue(withAuth('CUSTOMERS_HOUSE_ACCOUNTS', async function GET(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId')
     const status = searchParams.get('status')
     const search = searchParams.get('search')
 
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
+    // Use verified locationId from session
+    const locationId = ctx.auth.locationId
 
     const where: Record<string, unknown> = { locationId }
 
@@ -62,14 +62,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // POST - Create a new house account
-export const POST = withVenue(async function POST(request: NextRequest) {
+// Auth: session-verified employee with CUSTOMERS_HOUSE_ACCOUNTS permission
+export const POST = withVenue(withAuth('CUSTOMERS_HOUSE_ACCOUNTS', async function POST(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const body = await request.json()
     const {
-      locationId,
       name,
       contactName,
       email,
@@ -83,9 +86,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       customerId,
     } = body
 
-    if (!locationId || !name) {
+    // Use verified locationId from session
+    const locationId = ctx.auth.locationId
+
+    if (!name) {
       return NextResponse.json(
-        { error: 'Location ID and account name are required' },
+        { error: 'Account name is required' },
         { status: 400 }
       )
     }
@@ -144,4 +150,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

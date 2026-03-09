@@ -298,6 +298,10 @@ export function FloorPlanHome({
   const [activeOrderType, setActiveOrderType] = useState<string | null>(null)
   const [showOrderPanel, setShowOrderPanel] = useState(false)
 
+  // Ref for activeOrderId — needed by socket effect to avoid stale closure
+  const activeOrderIdRef = useRef(activeOrderId)
+  useEffect(() => { activeOrderIdRef.current = activeOrderId })
+
   // Derived: does the current order type require a table?
   const activeOTConfig = orderTypes?.find(ot => ot.slug === (activeOrderType || 'dine_in'))
   const requiresTable = activeOTConfig?.workflowRules?.requireTableSelection ?? (activeOrderType === null || activeOrderType === 'dine_in')
@@ -909,6 +913,29 @@ export function FloorPlanHome({
       refreshAll()
     }
 
+    // Order closed (paid/voided/cancelled from another terminal) — close stale OrderPanel
+    const onOrderClosed = (data: any) => {
+      const { orderId } = data || {}
+      if (!orderId) return
+      logger.log(`[FloorPlanHome] order:closed orderId=${orderId}`)
+
+      // If this terminal has the closed order open, dismiss the panel
+      const currentActiveId = activeOrderIdRef.current
+      const storeOrderId = useOrderStore.getState().currentOrder?.id
+      if (orderId === currentActiveId || orderId === storeOrderId) {
+        logger.log(`[FloorPlanHome] order:closed — clearing active order panel (matched ${orderId})`)
+        clearOrderPanel()
+        toast.info('Order was closed on another terminal')
+      }
+
+      // Update floor plan: remove the order from its table
+      const currentTables = tablesRef.current
+      const table = currentTables.find(t => t.currentOrder?.id === orderId)
+      if (table) {
+        removeTableOrder(table.id)
+      }
+    }
+
     socket.on('floor-plan:updated', onFloorPlanUpdated)
     socket.on('orders:list-changed', onOrdersListChanged)
     socket.on('order:totals-updated', onTotalsUpdated)
@@ -916,6 +943,7 @@ export function FloorPlanHome({
     // payment:processed — already handled by orders:list-changed trigger='paid' (delta remove).
     socket.on('entertainment:session-update', onEntertainmentUpdate)
     socket.on('eod:reset-complete', onEodReset)
+    socket.on('order:closed', onOrderClosed)
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer)
@@ -925,6 +953,7 @@ export function FloorPlanHome({
       socket.off('table:status-changed', onTableStatusChanged)
       socket.off('entertainment:session-update', onEntertainmentUpdate)
       socket.off('eod:reset-complete', onEodReset)
+      socket.off('order:closed', onOrderClosed)
     }
      
   }, [socket, isConnected])
