@@ -245,6 +245,10 @@ export const POST = withVenue(withTiming(async function POST(
           ...(body.cardBrand !== undefined ? { cardBrand: body.cardBrand } : {}),
           ...(body.cardLast4 !== undefined ? { cardLast4: body.cardLast4 } : {}),
           ...(body.simulate !== undefined ? { simulate: body.simulate } : {}),
+          // Map Android PaymentReconciliationWorker fields
+          ...(body.authCode !== undefined ? { authCode: body.authCode } : {}),
+          ...(body.recordNo !== undefined ? { datacapRecordNo: body.recordNo } : {}),
+          ...(body.datacapRecordNo !== undefined ? { datacapRecordNo: body.datacapRecordNo } : {}),
         }],
         ...(body.employeeId ? { employeeId: body.employeeId } : {}),
         ...(body.terminalId ? { terminalId: body.terminalId } : {}),
@@ -288,6 +292,26 @@ export const POST = withVenue(withTiming(async function POST(
           orderStatus: order.status || 'unknown',
           remainingBalance: 0,
         } })
+      }
+    }
+
+    // RecordNo-based idempotency check — PaymentReconciliationWorker sends datacapRecordNo
+    // as a secondary idempotency key for offline-captured card payments.
+    // If a payment with the same recordNo already exists for this order, return 409.
+    const firstPaymentRecordNo = payments[0]?.datacapRecordNo
+    if (firstPaymentRecordNo) {
+      const existingByRecordNo = order.payments.find(
+        p => p.datacapRecordNo === firstPaymentRecordNo && p.status === 'completed'
+      )
+      if (existingByRecordNo) {
+        return NextResponse.json(
+          {
+            error: 'Payment with this recordNo already exists for this order',
+            code: 'DUPLICATE_RECORD_NO',
+            existingPaymentId: existingByRecordNo.id,
+          },
+          { status: 409 }
+        )
       }
     }
 
