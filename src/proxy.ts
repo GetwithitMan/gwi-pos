@@ -124,12 +124,14 @@ const PUBLIC_API_PATH_RE = /^\/api\/(online|public)\//
 const CELLULAR_ALLOWLIST: Array<string | RegExp> = [
   /^\/api\/orders(\/|$)/,       // create, update, send, close, pay
   /^\/api\/menu(\/|$)/,         // read-only menu access
-  /^\/api\/sync\/bootstrap(\/|$)/, // terminal bootstrap (menu, employees, tables)
+  /^\/api\/sync(\/|$)/,         // all sync endpoints (bootstrap, delta, events, floor-plan, outbox)
+  /^\/api\/order-events(\/|$)/, // event-sourced order mutations (batch)
   /^\/api\/auth\/login(\/|$)/,  // PIN login
   /^\/api\/session(\/|$)/,      // session bootstrap
   /^\/api\/employees(\/|$)/,    // employee list for display
   '/api/barcode/lookup',        // barcode scanning
   '/api/auth/refresh-cellular', // token refresh
+  /^\/api\/health(\/|$)/,       // health check
 ]
 
 /** Routes hard-blocked for CELLULAR_ROAMING (403 always) */
@@ -208,22 +210,31 @@ export async function proxy(request: NextRequest) {
   // ═══════════════════════════════════════════════════════════
   // CELLULAR TERMINAL AUTH
   //
-  // Cellular terminals (LTE/5G) authenticate via Bearer JWT
-  // with x-cellular-terminal header. This check runs BEFORE
-  // cloud/local auth so cellular requests never hit cookie checks.
-  // No DB queries — all checks are in-memory for speed.
+  // Cellular terminals (LTE/5G) authenticate via Bearer JWT.
+  // Detection: explicit x-cellular-terminal header OR Bearer token
+  // that verifies as a valid cellular JWT (auto-detect).
+  // This check runs BEFORE cloud/local auth so cellular requests
+  // never hit cookie checks. No DB queries — all in-memory.
   // ═══════════════════════════════════════════════════════════
-  const isCellularRequest = request.headers.get('x-cellular-terminal') === 'true'
+  const authHeader = request.headers.get('authorization')
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const explicitCellular = request.headers.get('x-cellular-terminal') === 'true'
+
+  // Auto-detect: if Bearer token is present, try verifying as cellular JWT
+  // This allows cellular terminals to work without x-cellular-terminal header
+  let cellularPayload: Awaited<ReturnType<typeof verifyCellularToken>> = null
+  if (bearerToken) {
+    cellularPayload = await verifyCellularToken(bearerToken)
+  }
+
+  const isCellularRequest = explicitCellular || cellularPayload !== null
 
   if (isCellularRequest) {
-    const authHeader = request.headers.get('authorization')
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-
-    if (!token) {
+    if (!bearerToken) {
       return NextResponse.json({ error: 'Missing cellular token' }, { status: 401 })
     }
 
-    const payload = await verifyCellularToken(token)
+    const payload = cellularPayload ?? await verifyCellularToken(bearerToken)
     if (!payload) {
       return NextResponse.json({ error: 'Invalid or expired cellular token' }, { status: 401 })
     }
