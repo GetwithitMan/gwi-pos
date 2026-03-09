@@ -11,3 +11,15 @@ const { AsyncLocalStorage } = require('node:async_hooks')
 if (!globalThis.AsyncLocalStorage) {
   globalThis.AsyncLocalStorage = AsyncLocalStorage
 }
+
+/**
+ * Load .env from both /opt/gwi-pos/.env (master) and the app-local copy.
+ * dotenv won't override existing process.env values, so systemd
+ * EnvironmentFile still takes precedence when it works.
+ */
+try {
+  require('dotenv').config({ path: '/opt/gwi-pos/.env' })
+  require('dotenv').config() // also loads $CWD/.env as fallback
+} catch (_) {
+  // dotenv not available — rely on systemd EnvironmentFile
+}
