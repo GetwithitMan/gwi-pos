@@ -452,9 +452,11 @@ async function runPrePushMigrations() {
   if (hasDupeItems) {
     console.log('[vercel-build]   Deduplicating MenuItem rows by (categoryId, name)...')
 
-    // Build keeper/dupe mapping in a temp table
+    // Neon serverless driver doesn't persist temp tables across calls,
+    // so we use a real table and clean up after.
+    await sql`DROP TABLE IF EXISTS "_mi_dupes"`
     await sql`
-      CREATE TEMP TABLE _mi_dupes AS
+      CREATE TABLE "_mi_dupes" AS
       WITH item_order_counts AS (
         SELECT mi.id, mi."categoryId", mi.name, mi."createdAt",
                COALESCE(oc.cnt, 0) AS order_count
@@ -481,21 +483,21 @@ async function runPrePushMigrations() {
     `
 
     // Reassign non-cascade FK references from dupe to keeper
-    await sql`UPDATE "OrderItem" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "OrderItem"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "InventoryTransaction" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "InventoryTransaction"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "StockAlert" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "StockAlert"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "TimedSession" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "TimedSession"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "ComboComponent" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "ComboComponent"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "ComboSlotItem" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "ComboSlotItem"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "ItemBarcode" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "ItemBarcode"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "BergPluMapping" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "BergPluMapping"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "OrderSnapshotItem" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "OrderSnapshotItem"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "OrderItem" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "OrderItem"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "InventoryTransaction" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "InventoryTransaction"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "StockAlert" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "StockAlert"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "TimedSession" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "TimedSession"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "ComboComponent" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ComboComponent"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "ComboSlotItem" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ComboSlotItem"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "ItemBarcode" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ItemBarcode"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "BergPluMapping" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "BergPluMapping"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "OrderSnapshotItem" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "OrderSnapshotItem"."menuItemId" = d.dupe_id`
     // ComboTemplate has unique(menuItemId) — delete dupe's template
-    await sql`DELETE FROM "ComboTemplate" ct USING _mi_dupes d WHERE ct."menuItemId" = d.dupe_id`
+    await sql`DELETE FROM "ComboTemplate" ct USING "_mi_dupes" d WHERE ct."menuItemId" = d.dupe_id`
     // MenuItemDailyMetrics has unique(locationId, menuItemId, businessDate) — delete conflicts first
     await sql`
       DELETE FROM "MenuItemDailyMetrics" mdm
-      USING _mi_dupes d
+      USING "_mi_dupes" d
       WHERE mdm."menuItemId" = d.dupe_id
         AND EXISTS (
           SELECT 1 FROM "MenuItemDailyMetrics" k
@@ -504,11 +506,11 @@ async function runPrePushMigrations() {
             AND k."businessDate" = mdm."businessDate"
         )
     `
-    await sql`UPDATE "MenuItemDailyMetrics" SET "menuItemId" = d.keeper_id FROM _mi_dupes d WHERE "MenuItemDailyMetrics"."menuItemId" = d.dupe_id`
+    await sql`UPDATE "MenuItemDailyMetrics" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "MenuItemDailyMetrics"."menuItemId" = d.dupe_id`
 
     // Delete duplicate MenuItems (cascade handles ModifierGroup, Recipe, PricingOptionGroup, etc.)
-    await sql`DELETE FROM "MenuItem" WHERE id IN (SELECT dupe_id FROM _mi_dupes)`
-    await sql`DROP TABLE _mi_dupes`
+    await sql`DELETE FROM "MenuItem" WHERE id IN (SELECT dupe_id FROM "_mi_dupes")`
+    await sql`DROP TABLE "_mi_dupes"`
 
     console.log('[vercel-build]   Done — MenuItem duplicates removed')
   }
