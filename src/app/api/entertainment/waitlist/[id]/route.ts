@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { EntertainmentWaitlistStatus } from '@prisma/client'
-import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get a specific waitlist entry
@@ -204,6 +204,37 @@ export const PATCH = withVenue(async function PATCH(
 
       return updated
     })
+
+    // Dispatch waitlist notification event when status changes
+    if (status && status !== entry.status) {
+      const actionMap: Record<string, 'notified' | 'seated' | 'cancelled' | 'expired'> = {
+        notified: 'notified',
+        seated: 'seated',
+        cancelled: 'cancelled',
+        expired: 'expired',
+      }
+
+      const action = actionMap[status]
+      if (action) {
+        const elementName = updatedEntry.element?.name || updatedEntry.element?.visualType || null
+        const messageMap: Record<string, string> = {
+          notified: `${updatedEntry.customerName || 'Customer'} notified — ${elementName || 'item'} is ready`,
+          seated: `${updatedEntry.customerName || 'Customer'} seated at ${elementName || 'item'}`,
+          cancelled: `${updatedEntry.customerName || 'Customer'} removed from waitlist`,
+          expired: `Waitlist entry for ${updatedEntry.customerName || 'customer'} expired`,
+        }
+
+        dispatchEntertainmentWaitlistNotify(locationId, {
+          entryId: updatedEntry.id,
+          customerName: updatedEntry.customerName,
+          elementId: updatedEntry.element?.id || null,
+          elementName,
+          partySize: updatedEntry.partySize,
+          action,
+          message: messageMap[action],
+        }, { async: true })
+      }
+    }
 
     // Dispatch real-time update
     dispatchFloorPlanUpdate(locationId, { async: true })

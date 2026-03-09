@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { EntertainmentWaitlistStatus } from '@prisma/client'
-import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List waitlist entries for floor plan elements
@@ -210,6 +210,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
     })
+
+    // Notify all terminals of new waitlist entry
+    dispatchEntertainmentWaitlistNotify(locationId, {
+      entryId: entry.id,
+      customerName: entry.customerName,
+      elementId: entry.elementId,
+      elementName: entry.element?.name || entry.element?.visualType || null,
+      partySize: entry.partySize,
+      action: 'added',
+      message: `${entry.customerName || 'Customer'} added to waitlist at position ${entry.position}`,
+    }, { async: true })
 
     // Dispatch real-time update
     dispatchFloorPlanUpdate(locationId, { async: true })

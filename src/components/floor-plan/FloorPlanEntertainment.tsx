@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { EntertainmentVisual } from './entertainment-visuals'
 import type { FloorPlanElement, ElementStatus } from './use-floor-plan'
@@ -38,18 +38,51 @@ export function FloorPlanEntertainment({
   const [isResizing, setIsResizing] = useState(false)
   const [isRotating, setIsRotating] = useState(false)
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0 })
+  const [timeRemaining, setTimeRemaining] = useState<string | null>(null)
+  const [timerUrgency, setTimerUrgency] = useState<'normal' | 'warning' | 'expired'>('normal')
 
-  // Calculate time remaining for sessions
-  const getTimeRemaining = useCallback(() => {
-    if (!element.sessionExpiresAt) return null
-    const expiresAt = new Date(element.sessionExpiresAt).getTime()
-    const now = Date.now()
-    const remaining = expiresAt - now
-    if (remaining <= 0) return 'EXPIRED'
-    const minutes = Math.floor(remaining / 60000)
-    const seconds = Math.floor((remaining % 60000) / 1000)
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`
-  }, [element.sessionExpiresAt])
+  // Live timer update every second
+  useEffect(() => {
+    if (element.status !== 'in_use') {
+      setTimeRemaining(null)
+      setTimerUrgency('normal')
+      return
+    }
+
+    const updateTimer = () => {
+      if (element.sessionExpiresAt) {
+        // Block time countdown
+        const expiresAt = new Date(element.sessionExpiresAt).getTime()
+        const now = Date.now()
+        const remaining = expiresAt - now
+
+        if (remaining <= 0) {
+          setTimeRemaining('EXPIRED')
+          setTimerUrgency('expired')
+          return
+        }
+
+        const minutes = Math.floor(remaining / 60000)
+        const seconds = Math.floor((remaining % 60000) / 1000)
+        setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`)
+        setTimerUrgency(minutes <= 5 ? 'warning' : 'normal')
+      } else if (element.sessionStartedAt) {
+        // Per-minute elapsed time
+        const startedAt = new Date(element.sessionStartedAt).getTime()
+        const elapsed = Date.now() - startedAt
+        const minutes = Math.floor(elapsed / 60000)
+        const seconds = Math.floor((elapsed % 60000) / 1000)
+        setTimeRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`)
+        setTimerUrgency('normal')
+      } else {
+        setTimeRemaining(null)
+      }
+    }
+
+    updateTimer()
+    const interval = setInterval(updateTimer, 1000)
+    return () => clearInterval(interval)
+  }, [element.status, element.sessionExpiresAt, element.sessionStartedAt])
 
   // Handle resize start
   const handleResizeStart = useCallback(
@@ -145,7 +178,6 @@ export function FloorPlanEntertainment({
 
   const status = element.status as ElementStatus
   const statusColor = STATUS_COLORS[status] || STATUS_COLORS.available
-  const timeRemaining = getTimeRemaining()
 
   return (
     <div
@@ -274,12 +306,13 @@ export function FloorPlanEntertainment({
             transform: 'translateX(-50%)',
             padding: '2px 8px',
             borderRadius: 8,
-            background: timeRemaining === 'EXPIRED' ? '#ef4444' : '#f59e0b',
+            background: timerUrgency === 'expired' ? '#ef4444' : timerUrgency === 'warning' ? '#f97316' : '#f59e0b',
             fontSize: 10,
             fontWeight: 700,
             color: '#fff',
             whiteSpace: 'nowrap',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+            animation: timerUrgency === 'expired' ? 'pulse 1s ease-in-out infinite' : undefined,
           }}
         >
           {timeRemaining}

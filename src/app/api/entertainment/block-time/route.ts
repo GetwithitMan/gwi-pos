@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { calculateCharge, getActiveRate, type EntertainmentPricing, type HappyHourConfig, type ChargeBreakdown } from '@/lib/entertainment-pricing'
+import { emitToLocation } from '@/lib/socket-server'
 
 // POST - Start block time for an order item
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -40,7 +42,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             id: true,
             name: true,
             itemType: true,
+            price: true,
+            timedPricing: true,
+            ratePerMinute: true,
+            minimumCharge: true,
+            incrementMinutes: true,
+            graceMinutes: true,
             blockTimeMinutes: true,
+            happyHourEnabled: true,
+            happyHourDiscount: true,
+            happyHourStart: true,
+            happyHourEnd: true,
+            happyHourDays: true,
+            prepaidPackages: true,
           },
         },
         order: {
@@ -86,13 +100,44 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const now = new Date()
     const expiresAt = new Date(now.getTime() + minutes * 60 * 1000)
 
-    // Update the order item with block time info
+    // Calculate initial block price based on selected duration
+    const mi = orderItem.menuItem
+    let initialPrice = Number(mi.price || 0)
+
+    // Check timedPricing JSON tiers first
+    if (mi.timedPricing && typeof mi.timedPricing === 'object') {
+      const tp = mi.timedPricing as Record<string, unknown>
+      if (minutes <= 15 && tp.per15Min) {
+        initialPrice = Number(tp.per15Min)
+      } else if (minutes <= 30 && tp.per30Min) {
+        initialPrice = Number(tp.per30Min)
+      } else if (minutes <= 60 && tp.perHour) {
+        initialPrice = Number(tp.perHour)
+      } else if (tp.perHour) {
+        // Proportional for durations > 60 min
+        initialPrice = (minutes / 60) * Number(tp.perHour)
+      }
+    } else if (Number(mi.ratePerMinute || 0) > 0) {
+      // Per-minute pricing: calculate expected charge for the block duration
+      const pricing: EntertainmentPricing = {
+        ratePerMinute: Number(mi.ratePerMinute),
+        minimumCharge: Number(mi.minimumCharge || 0),
+        incrementMinutes: mi.incrementMinutes || 15,
+        graceMinutes: mi.graceMinutes || 0,
+      }
+      const breakdown = calculateCharge(minutes, pricing)
+      initialPrice = breakdown.totalCharge
+    }
+    // Otherwise keep MenuItem.price as fallback
+
+    // Update the order item with block time info and initial price
     const updatedItem = await db.orderItem.update({
       where: { id: orderItemId },
       data: {
         blockTimeMinutes: minutes,
         blockTimeStartedAt: now,
         blockTimeExpiresAt: expiresAt,
+        price: initialPrice,
       },
       select: {
         id: true,
@@ -107,6 +152,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
       lineItemId: orderItemId,
+      price: initialPrice,
       blockTimeMinutes: minutes,
       blockTimeStartedAt: now.toISOString(),
       blockTimeExpiresAt: expiresAt.toISOString(),
@@ -324,6 +370,20 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
         menuItem: {
           select: {
             id: true,
+            name: true,
+            price: true,
+            timedPricing: true,
+            ratePerMinute: true,
+            minimumCharge: true,
+            incrementMinutes: true,
+            graceMinutes: true,
+            blockTimeMinutes: true,
+            happyHourEnabled: true,
+            happyHourDiscount: true,
+            happyHourStart: true,
+            happyHourEnd: true,
+            happyHourDays: true,
+            prepaidPackages: true,
           },
         },
         order: {
@@ -359,11 +419,62 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       actualMinutes = Math.ceil((now.getTime() - startedAt.getTime()) / 1000 / 60)
     }
 
-    // Update the order item - set expiration to now
+    // Calculate the charge based on actual usage
+    const itemName = orderItem.menuItem.name
+    const menuItem = orderItem.menuItem
+    let calculatedCharge = Number(menuItem.price || 0)
+    let breakdown: ChargeBreakdown | null = null
+
+    if (Number(menuItem.ratePerMinute || 0) > 0) {
+      // Per-minute pricing engine
+      const pricing: EntertainmentPricing = {
+        ratePerMinute: Number(menuItem.ratePerMinute),
+        minimumCharge: Number(menuItem.minimumCharge || 0),
+        incrementMinutes: menuItem.incrementMinutes || 15,
+        graceMinutes: menuItem.graceMinutes || 0,
+      }
+
+      // Check happy hour
+      let happyHour: HappyHourConfig | undefined
+      if (menuItem.happyHourEnabled) {
+        happyHour = {
+          enabled: true,
+          discount: menuItem.happyHourDiscount || 0,
+          start: menuItem.happyHourStart || '00:00',
+          end: menuItem.happyHourEnd || '23:59',
+          days: (Array.isArray(menuItem.happyHourDays) ? menuItem.happyHourDays : []) as string[],
+        }
+      }
+
+      // Apply happy hour rate if active (use session start time for consistency)
+      const sessionStart = orderItem.blockTimeStartedAt || now
+      const { rate: activeRate } = getActiveRate(pricing.ratePerMinute, happyHour, sessionStart)
+      const effectivePricing: EntertainmentPricing = { ...pricing, ratePerMinute: activeRate }
+
+      breakdown = calculateCharge(actualMinutes, effectivePricing)
+      calculatedCharge = breakdown.totalCharge
+    } else if (menuItem.timedPricing && typeof menuItem.timedPricing === 'object') {
+      // Tier-based pricing from timedPricing JSON
+      const tp = menuItem.timedPricing as Record<string, unknown>
+      const purchasedMinutes = orderItem.blockTimeMinutes || 0
+      if (purchasedMinutes <= 15 && tp.per15Min) {
+        calculatedCharge = Number(tp.per15Min)
+      } else if (purchasedMinutes <= 30 && tp.per30Min) {
+        calculatedCharge = Number(tp.per30Min)
+      } else if (purchasedMinutes <= 60 && tp.perHour) {
+        calculatedCharge = Number(tp.perHour)
+      } else if (tp.perHour) {
+        calculatedCharge = (purchasedMinutes / 60) * Number(tp.perHour)
+      }
+    }
+    // Otherwise keep MenuItem.price as flat-rate fallback
+
+    // Update the order item - set expiration to now and apply calculated charge
     await db.orderItem.update({
       where: { id: orderItemId },
       data: {
         blockTimeExpiresAt: now,
+        price: calculatedCharge,
       },
     })
 
@@ -398,11 +509,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       },
     })
 
-    // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync (stop)
+    // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync (stop) with new price
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
       lineItemId: orderItemId,
+      price: calculatedCharge,
       blockTimeMinutes: orderItem.blockTimeMinutes,
       blockTimeExpiresAt: now.toISOString(),
+      actualMinutesUsed: actualMinutes,
     })
 
     // Dispatch socket updates (fire-and-forget)
@@ -414,10 +527,55 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       expiresAt: null,
     }, { async: true }).catch(() => {})
 
+    // Auto-notify next waitlist entry for this entertainment item
+    void (async () => {
+      try {
+        const floorPlanElement = await db.floorPlanElement.findFirst({
+          where: { linkedMenuItemId: orderItem.menuItemId, deletedAt: null },
+          select: { id: true, visualType: true },
+        })
+
+        if (floorPlanElement) {
+          const nextWaiting = await db.entertainmentWaitlist.findFirst({
+            where: {
+              locationId: orderItem.order.locationId,
+              deletedAt: null,
+              status: 'waiting',
+              OR: [
+                { elementId: floorPlanElement.id },
+                { visualType: floorPlanElement.visualType },
+              ],
+            },
+            orderBy: { position: 'asc' },
+          })
+
+          if (nextWaiting) {
+            await db.entertainmentWaitlist.update({
+              where: { id: nextWaiting.id },
+              data: { status: 'notified', notifiedAt: new Date() },
+            })
+
+            // Emit waitlist notification to all terminals
+            void emitToLocation(orderItem.order.locationId, 'entertainment:waitlist-notify', {
+              entryId: nextWaiting.id,
+              customerName: nextWaiting.customerName,
+              elementId: floorPlanElement.id,
+              elementName: floorPlanElement.visualType,
+              message: `${nextWaiting.customerName || 'Next customer'} — your ${itemName || 'entertainment item'} is now available!`,
+            }).catch(() => {})
+          }
+        }
+      } catch (err) {
+        console.error('Failed to auto-notify waitlist:', err)
+      }
+    })()
+
     return NextResponse.json({ data: {
       success: true,
       actualMinutesUsed: actualMinutes,
-      message: `Stopped block time. ${actualMinutes} minutes used.`,
+      charge: calculatedCharge,
+      chargeBreakdown: breakdown || null,
+      message: `Stopped session. ${actualMinutes} minutes used. Charge: $${calculatedCharge.toFixed(2)}`,
       menuItem: updatedMenuItem,
     } })
   } catch (error) {

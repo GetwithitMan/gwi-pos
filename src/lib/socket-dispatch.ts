@@ -369,7 +369,16 @@ export async function dispatchInventoryAdjustment(
  * Dispatch single stock level change (for POS menu item badges)
  *
  * Used for real-time stock level updates on menu items.
- * No client listener wired yet — reserved for future 86'd badge display on POS terminals.
+ *
+ * TODO: Wire client-side listener for 86'd badge on POS terminals.
+ * The POS menu grid needs to subscribe to `inventory:stock-change` via useSocket()
+ * and overlay an "86'd" badge on items whose stockLevel transitions to 'critical'
+ * or when currentStock hits 0. This requires:
+ *   1. A menu item state layer (Zustand store or context) to hold per-item stock status
+ *   2. A socket listener in the POS layout or menu component that calls
+ *      socket.on('inventory:stock-change', (payload) => updateItemStockStatus(payload))
+ *   3. The menu grid component to read stock status and render the 86'd badge
+ * See also: src/app/(admin)/86/page.tsx for the admin 86 management UI.
  */
 export async function dispatchStockLevelChange(
   locationId: string,
@@ -597,6 +606,41 @@ export async function dispatchEntertainmentStatusChanged(
       return true
     } catch (error) {
       console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch entertainment waitlist notification
+ * Emitted when a waitlist customer is added, notified, seated, cancelled, or expired
+ */
+export async function dispatchEntertainmentWaitlistNotify(
+  locationId: string,
+  payload: {
+    entryId: string
+    customerName: string | null
+    elementId: string | null
+    elementName: string | null
+    partySize: number
+    action: 'added' | 'notified' | 'seated' | 'cancelled' | 'expired'
+    message: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'entertainment:waitlist-notify', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch waitlist notify:', error)
       return false
     }
   }
