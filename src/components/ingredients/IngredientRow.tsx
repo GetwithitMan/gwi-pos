@@ -71,13 +71,13 @@ export function IngredientRow({
 
             {/* Inventory link */}
             {(ingredient.inventoryItem || ingredient.prepItem) && (
-              <div className="mt-1 text-sm text-gray-500 flex items-center gap-1">
+              <div className="mt-1 text-sm text-gray-600 flex items-center gap-1">
                 <span>→</span>
                 <span>
                   {ingredient.inventoryItem?.name || ingredient.prepItem?.name}
                 </span>
                 {ingredient.standardQuantity && ingredient.standardUnit && (
-                  <span className="text-gray-400">
+                  <span className="text-gray-600">
                     ({ingredient.standardQuantity} {ingredient.standardUnit})
                   </span>
                 )}
@@ -86,7 +86,7 @@ export function IngredientRow({
 
             {/* Description if present */}
             {ingredient.description && (
-              <div className="mt-1 text-sm text-gray-500">
+              <div className="mt-1 text-sm text-gray-600">
                 {ingredient.description}
               </div>
             )}

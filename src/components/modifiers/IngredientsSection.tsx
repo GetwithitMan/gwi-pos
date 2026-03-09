@@ -65,7 +65,7 @@ export function IngredientsSection({
             </span>
           )}
           <svg
-            className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
+            className={`w-4 h-4 text-gray-700 transition-transform duration-200 ${
               isExpanded ? 'rotate-180' : ''
             }`}
             fill="none"
@@ -86,7 +86,7 @@ export function IngredientsSection({
       >
         <div className="space-y-2 mt-2">
           {loading ? (
-            <div className="text-center py-4 text-slate-400 text-sm">Loading ingredients...</div>
+            <div className="text-center py-4 text-gray-700 text-sm">Loading ingredients...</div>
           ) : (
             includedIngredients.map(ingredient => {
               const mod = ingredientMods[ingredient.ingredientId]

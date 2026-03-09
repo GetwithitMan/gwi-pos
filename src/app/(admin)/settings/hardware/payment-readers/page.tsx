@@ -204,7 +204,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
               {isEdit ? 'Edit Reader' : 'Register Reader'}
             </h2>
             {prefilled && (
-              <p className="text-sm text-gray-500 font-mono mt-0.5">
+              <p className="text-sm text-gray-700 font-mono mt-0.5">
                 SN: {isEdit ? existing?.serialNumber : scanned?.serialNumber}
               </p>
             )}
@@ -249,7 +249,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
               <label className="block text-sm font-medium text-gray-700 mb-1">Connection Type</label>
               <div className="flex items-center gap-2">
                 <ConnectionBadge type={form.connectionType} />
-                <span className="text-xs text-gray-500">(detected from scan)</span>
+                <span className="text-xs text-gray-700">(detected from scan)</span>
               </div>
             </div>
           ) : (
@@ -304,7 +304,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Assign to Terminals</label>
             {terminals.length === 0 ? (
-              <p className="text-sm text-gray-400 italic">No terminals configured yet</p>
+              <p className="text-sm text-gray-600 italic">No terminals configured yet</p>
             ) : (
               <div className="space-y-1.5 max-h-40 overflow-y-auto">
                 {terminals.map(t => (
@@ -324,7 +324,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
                     />
                     <div>
                       <span className="text-sm font-medium text-gray-900">{t.name}</span>
-                      <span className="text-xs text-gray-400 ml-1.5">{t.category.replace('_', ' ')}</span>
+                      <span className="text-xs text-gray-600 ml-1.5">{t.category.replace('_', ' ')}</span>
                       {t.paymentReaderId && t.paymentReaderId !== existing?.id && (
                         <span className="text-xs text-amber-600 ml-1.5">(has reader)</span>
                       )}
@@ -640,7 +640,7 @@ export default function PaymentReadersPage() {
 
                 {unregisteredScanned.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">New — Ready to Register</p>
+                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">New — Ready to Register</p>
                     <div className="space-y-2">
                       {unregisteredScanned.map(d => (
                         <div key={d.serialNumber} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
@@ -651,11 +651,11 @@ export default function PaymentReadersPage() {
                                 <span className="text-sm font-semibold text-gray-900">{d.model || 'Payment Reader'}</span>
                                 <ConnectionBadge type={d.connectionType} />
                               </div>
-                              <p className="text-xs text-gray-500 font-mono mt-0.5">
+                              <p className="text-xs text-gray-700 font-mono mt-0.5">
                                 SN: {d.serialNumber}
                                 {d.ipAddress && ` · ${d.ipAddress}:${d.port}`}
                               </p>
-                              {d.vendor && <p className="text-xs text-gray-400">{d.vendor}</p>}
+                              {d.vendor && <p className="text-xs text-gray-600">{d.vendor}</p>}
                             </div>
                           </div>
                           <button
@@ -673,14 +673,14 @@ export default function PaymentReadersPage() {
 
                 {alreadyRegisteredScanned.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Already Registered</p>
+                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Already Registered</p>
                     <div className="space-y-1">
                       {alreadyRegisteredScanned.map(d => (
                         <div key={d.serialNumber} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg">
                           <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />
                           <span className="text-sm text-gray-700 font-medium">{d.registeredAs}</span>
                           <ConnectionBadge type={d.connectionType} />
-                          <span className="text-xs text-gray-400 font-mono">...{d.serialNumber.slice(-8)}</span>
+                          <span className="text-xs text-gray-600 font-mono">...{d.serialNumber.slice(-8)}</span>
                         </div>
                       ))}
                     </div>
@@ -695,14 +695,14 @@ export default function PaymentReadersPage() {
         {readers.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border-2 border-dashed border-gray-200">
             <CreditCardIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500 font-medium mb-1">No readers registered</p>
-            <p className="text-sm text-gray-400">
+            <p className="text-gray-700 font-medium mb-1">No readers registered</p>
+            <p className="text-sm text-gray-600">
               Click <strong>Scan for Readers</strong> to find connected devices
             </p>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
               Registered Readers ({readers.length})
             </p>
             {readers.map(reader => (
@@ -733,14 +733,14 @@ export default function PaymentReadersPage() {
 
                     {/* Serial + connection details */}
                     <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                      <span className="text-xs text-gray-500 font-mono">
+                      <span className="text-xs text-gray-700 font-mono">
                         SN: ...{reader.serialNumber.slice(-8)}
                       </span>
                       {(reader.connectionType === 'IP' || reader.connectionType === 'WIFI') && (
-                        <span className="text-xs text-gray-400 font-mono">{reader.ipAddress}:{reader.port}</span>
+                        <span className="text-xs text-gray-600 font-mono">{reader.ipAddress}:{reader.port}</span>
                       )}
                       {reader.merchantId ? (
-                        <span className="text-xs font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded" title="Datacap Merchant ID — managed by GWI">
+                        <span className="text-xs font-mono text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded" title="Datacap Merchant ID — managed by GWI">
                           MID: {reader.merchantId}
                         </span>
                       ) : (
@@ -749,12 +749,12 @@ export default function PaymentReadersPage() {
                         </span>
                       )}
                       {reader.firmwareVersion && (
-                        <span className="text-xs text-gray-400">FW: {reader.firmwareVersion}</span>
+                        <span className="text-xs text-gray-600">FW: {reader.firmwareVersion}</span>
                       )}
                       {reader.avgResponseTime && (
-                        <span className="text-xs text-gray-400">{reader.avgResponseTime}ms</span>
+                        <span className="text-xs text-gray-600">{reader.avgResponseTime}ms</span>
                       )}
-                      <span className="text-xs text-gray-400">{formatLastSeen(reader.lastSeenAt)}</span>
+                      <span className="text-xs text-gray-600">{formatLastSeen(reader.lastSeenAt)}</span>
                     </div>
                   </div>
 
@@ -846,7 +846,7 @@ export default function PaymentReadersPage() {
 
                 {/* Terminal assignments */}
                 <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-3">
-                  <span className="text-xs text-gray-400 font-medium flex-shrink-0">
+                  <span className="text-xs text-gray-700 font-medium flex-shrink-0">
                     {reader.terminals.length > 0 ? 'Assigned to:' : 'Not assigned'}
                   </span>
                   {reader.terminals.length > 0 ? (

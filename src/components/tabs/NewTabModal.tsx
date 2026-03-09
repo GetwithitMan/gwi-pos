@@ -120,7 +120,7 @@ export function NewTabModal({
               className="mt-2"
             />
           )}
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-gray-600 mt-1">
             Leave blank to use &quot;Tab #{'{'}number{'}'}&quot;
           </p>
         </div>
@@ -136,7 +136,7 @@ export function NewTabModal({
             />
             <div>
               <span className="font-medium">Hold a Card</span>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-600">
                 Pre-authorize a card to secure the tab
               </p>
             </div>
@@ -188,7 +188,7 @@ export function NewTabModal({
                     className="mt-2"
                   />
                 )}
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   Simulated pre-auth (no real charge)
                 </p>
               </div>
@@ -208,7 +208,7 @@ export function NewTabModal({
                     className="w-32"
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-600 mt-1">
                   Amount to hold on the card
                 </p>
               </div>

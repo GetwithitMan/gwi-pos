@@ -340,14 +340,14 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
   ]
 
   const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-  const labelClass = 'block text-xs font-semibold text-gray-500 mb-1'
+  const labelClass = 'block text-xs font-semibold text-gray-700 mb-1'
 
   return (
     <Modal isOpen={true} onClose={onClose} title="Edit Item" size="2xl" variant="default">
       <div className="-m-5 bg-white rounded-b-2xl flex flex-col max-h-[75vh]">
 
         {loading ? (
-          <div className="p-12 text-center text-gray-400">Loading...</div>
+          <div className="p-12 text-center text-gray-600">Loading...</div>
         ) : (
           <>
             {/* Tabs */}
@@ -407,10 +407,10 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                             : 'Auto from cash discount'}
                       </div>
                       {isDualPricingEnabled && parseFloat(price) > 0 && priceCC == null && (
-                        <p className="text-xs text-gray-400 mt-0.5">Auto-calculated ({cashDiscountPct}% cash discount)</p>
+                        <p className="text-xs text-gray-600 mt-0.5">Auto-calculated ({cashDiscountPct}% cash discount)</p>
                       )}
                       {(!isDualPricingEnabled || !(parseFloat(price) > 0)) && (
-                        <p className="text-[11px] text-gray-400 mt-0.5">Auto-calculated from cash discount settings.</p>
+                        <p className="text-[11px] text-gray-600 mt-0.5">Auto-calculated from cash discount settings.</p>
                       )}
                     </div>
                   </div>
@@ -425,7 +425,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                         className="w-4 h-4 rounded"
                       />
                       <span className="text-sm font-medium text-gray-700">Sold by Weight</span>
-                      <span className="text-[11px] text-gray-400">(requires scale)</span>
+                      <span className="text-[11px] text-gray-600">(requires scale)</span>
                     </label>
                     {soldByWeight && (
                       <div className="grid grid-cols-2 gap-3">
@@ -454,7 +454,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                             className={inputClass}
                           />
                           {isDualPricingEnabled && parseFloat(pricePerWeightUnit) > 0 && (
-                            <p className="text-xs text-gray-400 mt-0.5">Card: ${calculateCardPrice(parseFloat(pricePerWeightUnit), cashDiscountPct).toFixed(2)}</p>
+                            <p className="text-xs text-gray-600 mt-0.5">Card: ${calculateCardPrice(parseFloat(pricePerWeightUnit), cashDiscountPct).toFixed(2)}</p>
                           )}
                         </div>
                       </div>
@@ -479,15 +479,15 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                       onClick={() => setCostExpanded(!costExpanded)}
                       className="w-full px-3 py-2 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors"
                     >
-                      <span className="text-xs font-semibold text-gray-500">INGREDIENT COSTS</span>
+                      <span className="text-xs font-semibold text-gray-700">INGREDIENT COSTS</span>
                       <span className="flex items-center gap-2">
                         {!costingLoading && ingredientCosts?.hasCostData && (
                           <span className="text-xs font-bold text-gray-700">${ingredientCosts.totalCost.toFixed(2)}</span>
                         )}
                         {!costingLoading && ingredientCosts && !ingredientCosts.hasCostData && ingredientCosts.ingredients.length > 0 && (
-                          <span className="text-[11px] text-gray-400">{ingredientCosts.ingredients.length} ingredients</span>
+                          <span className="text-[11px] text-gray-600">{ingredientCosts.ingredients.length} ingredients</span>
                         )}
-                        {costingLoading && <span className="text-[11px] text-gray-400">Loading...</span>}
+                        {costingLoading && <span className="text-[11px] text-gray-600">Loading...</span>}
                         <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${costExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
@@ -496,7 +496,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                     {costExpanded && (
                       <>
                         {costingLoading ? (
-                          <div className="px-3 py-4 text-xs text-gray-400 text-center border-t">Loading costs...</div>
+                          <div className="px-3 py-4 text-xs text-gray-600 text-center border-t">Loading costs...</div>
                         ) : ingredientCosts && ingredientCosts.ingredients.length > 0 ? (
                           <div>
                             <div className="divide-y divide-gray-100 border-t">
@@ -519,7 +519,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                                   {parseFloat(price) > 0 && (
                                     <>
                                       <div className="flex items-center justify-between">
-                                        <span className="text-xs text-gray-500">Food Cost %</span>
+                                        <span className="text-xs text-gray-700">Food Cost %</span>
                                         {(() => {
                                           const pct = (ingredientCosts.totalCost / parseFloat(price)) * 100
                                           return (
@@ -530,7 +530,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                                         })()}
                                       </div>
                                       <div className="flex items-center justify-between">
-                                        <span className="text-xs text-gray-500">Gross Profit</span>
+                                        <span className="text-xs text-gray-700">Gross Profit</span>
                                         <span className="text-xs font-semibold text-gray-700">
                                           ${(parseFloat(price) - ingredientCosts.totalCost).toFixed(2)}
                                         </span>
@@ -539,14 +539,14 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                                   )}
                                 </>
                               ) : (
-                                <p className="text-[11px] text-gray-400 text-center">
+                                <p className="text-[11px] text-gray-600 text-center">
                                   Costs appear once ingredients are linked to inventory items.
                                 </p>
                               )}
                             </div>
                           </div>
                         ) : (
-                          <div className="px-3 py-4 text-xs text-gray-400 text-center border-t">
+                          <div className="px-3 py-4 text-xs text-gray-600 text-center border-t">
                             No ingredients assigned. Add them in the Menu Builder.
                           </div>
                         )}
@@ -588,7 +588,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                           </button>
                         </div>
                       ) : (
-                        <label className={`${inputClass} flex items-center justify-center cursor-pointer text-gray-400 hover:text-gray-600 hover:border-blue-400 transition-colors`}>
+                        <label className={`${inputClass} flex items-center justify-center cursor-pointer text-gray-600 hover:text-gray-800 hover:border-blue-400 transition-colors`}>
                           <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
                           {uploading ? 'Uploading...' : 'Choose image...'}
                         </label>
@@ -616,7 +616,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                       placeholder="Name shown on kitchen tickets (defaults to item name)"
                       className={inputClass}
                     />
-                    <p className="text-[11px] text-gray-400 mt-1">Overrides item name on kitchen chits and KDS. Leave blank to use item name.</p>
+                    <p className="text-[11px] text-gray-600 mt-1">Overrides item name on kitchen chits and KDS. Leave blank to use item name.</p>
                   </div>
                   <div className="space-y-2">
                     <span className={labelClass}>Channels</span>
@@ -659,7 +659,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                       />
                     </div>
                   </div>
-                  <p className="text-[11px] text-gray-400">Kitchen chit name can be set in the Display &amp; Channels tab.</p>
+                  <p className="text-[11px] text-gray-600">Kitchen chit name can be set in the Display &amp; Channels tab.</p>
                 </>
               )}
 
@@ -670,7 +670,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                     <span className={labelClass}>Time Window</span>
                     <div className="grid grid-cols-2 gap-3 mt-1">
                       <div>
-                        <label className="text-[11px] text-gray-400">Available From</label>
+                        <label className="text-[11px] text-gray-600">Available From</label>
                         <input
                           type="time"
                           value={availableFrom}
@@ -679,7 +679,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                         />
                       </div>
                       <div>
-                        <label className="text-[11px] text-gray-400">Available Until</label>
+                        <label className="text-[11px] text-gray-600">Available Until</label>
                         <input
                           type="time"
                           value={availableTo}
@@ -688,7 +688,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                         />
                       </div>
                     </div>
-                    <p className="text-[11px] text-gray-400 mt-1">Leave blank for all-day availability.</p>
+                    <p className="text-[11px] text-gray-600 mt-1">Leave blank for all-day availability.</p>
                   </div>
                   <div>
                     <span className={labelClass}>Available Days</span>
@@ -708,7 +708,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                         </button>
                       ))}
                     </div>
-                    <p className="text-[11px] text-gray-400 mt-1">Select none for every day.</p>
+                    <p className="text-[11px] text-gray-600 mt-1">Select none for every day.</p>
                   </div>
 
                 </>
@@ -758,7 +758,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                           className="w-4 h-4 rounded"
                         />
                         <span className="text-xs font-semibold text-gray-600">Enable Commission</span>
-                        <span className="text-[11px] text-gray-400 ml-1">Employee earns a commission on each sale of this item</span>
+                        <span className="text-[11px] text-gray-600 ml-1">Employee earns a commission on each sale of this item</span>
                       </label>
                     </div>
                     {commissionType && (
@@ -796,7 +796,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                             className={inputClass}
                           />
                           {commissionType === 'percent' && commissionValue && parseFloat(price) > 0 && (
-                            <p className="text-[11px] text-gray-400 mt-0.5">
+                            <p className="text-[11px] text-gray-600 mt-0.5">
                               = ${((parseFloat(price) * parseFloat(commissionValue)) / 100).toFixed(2)} per item at current price
                             </p>
                           )}

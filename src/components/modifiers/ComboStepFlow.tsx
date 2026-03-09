@@ -256,11 +256,11 @@ export function ComboStepFlow({ item, template, onConfirm, onCancel }: ComboStep
 
                   return (
                     <div key={group.id}>
-                      <p className="text-sm text-slate-300 mb-3 font-medium">
+                      <p className="text-sm text-gray-900 mb-3 font-medium">
                         {group.displayName || group.name}
                         {group.isRequired && <span className="text-red-400 ml-1">*</span>}
                         {group.maxSelections > 1 && (
-                          <span className="text-xs text-slate-400 ml-2">
+                          <span className="text-xs text-gray-600 ml-2">
                             (choose up to {group.maxSelections})
                           </span>
                         )}
@@ -295,7 +295,7 @@ export function ComboStepFlow({ item, template, onConfirm, onCancel }: ComboStep
                   )
                 })
               ) : (
-                <p className="text-sm text-slate-400 italic text-center py-8">
+                <p className="text-sm text-gray-600 italic text-center py-8">
                   No customization options for this step
                 </p>
               )}
@@ -305,7 +305,7 @@ export function ComboStepFlow({ item, template, onConfirm, onCancel }: ComboStep
           {/* Legacy structure: options array */}
           {!currentComponent.menuItem && currentComponent.options && currentComponent.options.length > 0 && (
             <div>
-              <p className="text-sm text-slate-300 mb-3 font-medium">
+              <p className="text-sm text-gray-900 mb-3 font-medium">
                 {currentComponent.displayName}
                 {currentComponent.isRequired && <span className="text-red-400 ml-1">*</span>}
               </p>
@@ -343,7 +343,7 @@ export function ComboStepFlow({ item, template, onConfirm, onCancel }: ComboStep
 
         {/* Footer - Navigation */}
         <div className="p-4 border-t border-white/10 bg-white/5 flex items-center justify-between gap-3">
-          <div className="text-sm text-slate-300">
+          <div className="text-sm text-gray-900">
             Step {currentStep + 1} of {template.components.length}
           </div>
 

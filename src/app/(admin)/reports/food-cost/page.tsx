@@ -113,7 +113,7 @@ export default function FoodCostReportPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-400">Loading report...</div>
+        <div className="text-gray-600">Loading report...</div>
       </div>
     )
   }
@@ -121,7 +121,7 @@ export default function FoodCostReportPage() {
   if (!report) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-400">No data available</div>
+        <div className="text-gray-600">No data available</div>
       </div>
     )
   }

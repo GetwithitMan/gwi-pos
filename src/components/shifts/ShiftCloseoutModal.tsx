@@ -553,7 +553,7 @@ export function ShiftCloseoutModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Close Out Shift" size="2xl" variant="default">
-        <p className="text-sm text-gray-500 -mt-3 mb-4">
+        <p className="text-sm text-gray-600 -mt-3 mb-4">
           {shift.employee.name} • Started {formatTime(shift.startedAt)} ({formatDuration(shift.startedAt)})
         </p>
         <div>
@@ -564,7 +564,7 @@ export function ShiftCloseoutModal({
           )}
 
           {isLoading ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-gray-700">
               <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
               Loading...
             </div>
@@ -610,7 +610,7 @@ export function ShiftCloseoutModal({
                         Enter total cash in {mode === 'purse' ? 'purse' : 'drawer'}
                       </label>
                       <div className="relative">
-                        <span className="absolute left-3 top-3 text-gray-500 text-xl">$</span>
+                        <span className="absolute left-3 top-3 text-gray-700 text-xl">$</span>
                         <input
                           type="number"
                           value={manualTotal}
@@ -637,7 +637,7 @@ export function ShiftCloseoutModal({
                             className="w-20 px-2 py-1 border rounded text-center"
                             placeholder="0"
                           />
-                          <span className="text-gray-500 text-sm">
+                          <span className="text-gray-700 text-sm">
                             = {formatCurrency((counts[value] || 0) * value)}
                           </span>
                         </div>
@@ -648,7 +648,7 @@ export function ShiftCloseoutModal({
                   {/* Running total - blind mode doesn't show expected */}
                   <Card className="p-4 bg-gray-50">
                     <div className="text-center">
-                      <div className="text-sm text-gray-500">Total Counted</div>
+                      <div className="text-sm text-gray-700">Total Counted</div>
                       <div className="text-3xl font-bold">{formatCurrency(actualCash)}</div>
                     </div>
                   </Card>
@@ -658,7 +658,7 @@ export function ShiftCloseoutModal({
                       Tips to Declare
                     </label>
                     <div className="relative">
-                      <span className="absolute left-3 top-2 text-gray-500">$</span>
+                      <span className="absolute left-3 top-2 text-gray-700">$</span>
                       <input
                         type="number"
                         value={tipsDeclared}
@@ -710,11 +710,11 @@ export function ShiftCloseoutModal({
 
                   <div className="grid grid-cols-2 gap-4">
                     <Card className="p-4">
-                      <div className="text-sm text-gray-500">Total Sales</div>
+                      <div className="text-sm text-gray-700">Total Sales</div>
                       <div className="text-2xl font-bold">{formatCurrency(summary.totalSales)}</div>
                     </Card>
                     <Card className="p-4">
-                      <div className="text-sm text-gray-500">Orders</div>
+                      <div className="text-sm text-gray-700">Orders</div>
                       <div className="text-2xl font-bold">{summary.orderCount}</div>
                     </Card>
                   </div>
@@ -800,7 +800,7 @@ export function ShiftCloseoutModal({
                           </div>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">
+                      <p className="text-xs text-gray-600 mt-2">
                         {(summary.safFailedCount ?? 0) > 0
                           ? 'Failed uploads need manager attention before closing shift.'
                           : 'These payments were approved offline and will upload when internet returns.'}
@@ -851,15 +851,15 @@ export function ShiftCloseoutModal({
 
                     <div className="grid grid-cols-3 gap-4 text-center py-2">
                       <div>
-                        <div className="text-sm text-gray-500">Expected</div>
+                        <div className="text-sm text-gray-700">Expected</div>
                         <div className="text-lg font-bold">{formatCurrency(expectedCash)}</div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-500">Your Count</div>
+                        <div className="text-sm text-gray-700">Your Count</div>
                         <div className="text-lg font-bold">{formatCurrency(actualCash)}</div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-500">Variance</div>
+                        <div className="text-sm text-gray-700">Variance</div>
                         <div className={`text-lg font-bold ${variance === 0 ? 'text-green-600' : variance > 0 ? 'text-yellow-600' : 'text-red-600'}`}>
                           {variance >= 0 ? '+' : ''}{formatCurrency(variance)}
                         </div>
@@ -918,14 +918,14 @@ export function ShiftCloseoutModal({
                           {(summary.laborCost.totalWages / summary.totalSales * 100).toFixed(1)}%
                         </span>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-gray-600 mt-1">
                         {summary.laborCost.totalHours.toFixed(1)}h across {summary.laborCost.employeeCount} employee{summary.laborCost.employeeCount !== 1 ? 's' : ''}
                       </p>
                     </Card>
                   )}
                   {summary.laborCost && summary.totalSales === 0 && (
                     <Card className="p-4 bg-gray-50">
-                      <div className="text-sm text-gray-500">Labor Cost: No sales data</div>
+                      <div className="text-sm text-gray-700">Labor Cost: No sales data</div>
                     </Card>
                   )}
 
@@ -963,7 +963,7 @@ export function ShiftCloseoutModal({
                       <div className="flex justify-between items-center">
                         <div>
                           <span className="text-gray-700">Commission Earned</span>
-                          <p className="text-xs text-gray-500">Added to payroll</p>
+                          <p className="text-xs text-gray-600">Added to payroll</p>
                         </div>
                         <span className="text-2xl font-bold text-purple-600">
                           {formatCurrency(summary.totalCommission)}
@@ -995,9 +995,9 @@ export function ShiftCloseoutModal({
                               <div>
                                 <span className="font-medium">{tipOut.toRoleName}</span>
                                 {tipOut.basisType === 'tips_earned' ? (
-                                  <span className="text-sm text-gray-500 ml-2">({tipOut.percentage}%)</span>
+                                  <span className="text-sm text-gray-600 ml-2">({tipOut.percentage}%)</span>
                                 ) : (
-                                  <span className="text-sm text-gray-500 ml-2">
+                                  <span className="text-sm text-gray-600 ml-2">
                                     ({tipOut.percentage}% of {formatCurrency(tipOut.basisAmount)} {tipOut.basisLabel})
                                   </span>
                                 )}
@@ -1016,7 +1016,7 @@ export function ShiftCloseoutModal({
                   )}
 
                   {calculatedTipOuts.length === 0 && (
-                    <div className="text-sm text-gray-500 text-center py-2">
+                    <div className="text-sm text-gray-700 text-center py-2">
                       No automatic tip-out rules configured for your role.
                     </div>
                   )}
@@ -1052,7 +1052,7 @@ export function ShiftCloseoutModal({
                     {/* Add new custom share */}
                     <div className="flex gap-2 items-end">
                       <div className="flex-1">
-                        <label className="block text-xs text-gray-500 mb-1">Employee</label>
+                        <label className="block text-xs text-gray-700 mb-1">Employee</label>
                         <select
                           value={newShareEmployeeId}
                           onChange={(e) => setNewShareEmployeeId(e.target.value)}
@@ -1067,9 +1067,9 @@ export function ShiftCloseoutModal({
                         </select>
                       </div>
                       <div className="w-28">
-                        <label className="block text-xs text-gray-500 mb-1">Amount</label>
+                        <label className="block text-xs text-gray-700 mb-1">Amount</label>
                         <div className="relative">
-                          <span className="absolute left-2 top-2 text-gray-500">$</span>
+                          <span className="absolute left-2 top-2 text-gray-700">$</span>
                           <input
                             type="number"
                             value={newShareAmount}
@@ -1119,7 +1119,7 @@ export function ShiftCloseoutModal({
                     </div>
                   </Card>
 
-                  <p className="text-sm text-gray-500 text-center">
+                  <p className="text-sm text-gray-600 text-center">
                     Tip shares will be distributed to recipients. If a recipient is not on shift, their share will be banked.
                   </p>
 
@@ -1158,7 +1158,7 @@ export function ShiftCloseoutModal({
                     <div className="flex justify-between items-center">
                       <div>
                         <span className="text-gray-700 font-medium">Your Tip Bank Balance</span>
-                        <p className="text-xs text-gray-500">Available for payout (includes tonight&apos;s tips after shift close)</p>
+                        <p className="text-xs text-gray-600">Available for payout (includes tonight&apos;s tips after shift close)</p>
                       </div>
                       <span className="text-2xl font-bold text-green-600">
                         {formatCurrency(tipBankBalance / 100)}
@@ -1174,7 +1174,7 @@ export function ShiftCloseoutModal({
                         {formatCurrency(netTips)}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-600 mt-1">
                       This amount will be added to your tip bank when the shift closes.
                     </p>
                   </Card>
@@ -1195,7 +1195,7 @@ export function ShiftCloseoutModal({
                           <div className={`text-lg font-semibold ${payoutChoice === 'cash' ? 'text-green-700' : 'text-gray-700'}`}>
                             Cash Out
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-600 mt-1">
                             Take your tips in cash now. Balance goes to $0.
                           </p>
                           {tipBankSettings.requireManagerApprovalForCashOut && (
@@ -1213,7 +1213,7 @@ export function ShiftCloseoutModal({
                           <div className={`text-lg font-semibold ${payoutChoice === 'payroll' ? 'text-indigo-700' : 'text-gray-700'}`}>
                             Add to Payroll
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-xs text-gray-600 mt-1">
                             Tips stay in your bank and are paid on your next paycheck.
                           </p>
                         </button>

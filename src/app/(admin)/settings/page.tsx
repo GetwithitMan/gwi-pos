@@ -27,7 +27,7 @@ function SectionCard({ icon, title, description, href }: SectionCardProps) {
         <div className="flex-1 min-w-0">
           <div className="text-2xl mb-2">{icon}</div>
           <h3 className="font-semibold text-gray-900 mb-1">{title}</h3>
-          <p className="text-sm text-gray-500 leading-snug">{description}</p>
+          <p className="text-sm text-gray-600 leading-snug">{description}</p>
         </div>
         <svg
           className="w-5 h-5 text-gray-300 group-hover:text-gray-500 mt-1 ml-3 flex-shrink-0 transition-colors"
@@ -119,7 +119,7 @@ export default function SettingsPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-700">Loading...</p>
       </div>
     )
   }

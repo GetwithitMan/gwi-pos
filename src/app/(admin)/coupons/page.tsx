@@ -117,7 +117,7 @@ export default function CouponsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-400">Loading coupons...</div>
+        <div className="text-gray-600">Loading coupons...</div>
       </div>
     )
   }
@@ -203,13 +203,13 @@ export default function CouponsPage() {
                 <td className="p-4">
                   <div>{coupon.name}</div>
                   {coupon.description && (
-                    <div className="text-sm text-gray-400">{coupon.description}</div>
+                    <div className="text-sm text-gray-600">{coupon.description}</div>
                   )}
                 </td>
                 <td className="p-4">
                   <div className="font-medium">{formatDiscount(coupon)}</div>
                   {coupon.minimumOrder && (
-                    <div className="text-sm text-gray-400">
+                    <div className="text-sm text-gray-600">
                       Min. ${coupon.minimumOrder.toFixed(2)}
                     </div>
                   )}
@@ -220,7 +220,7 @@ export default function CouponsPage() {
                     {coupon.usageLimit && ` / ${coupon.usageLimit}`}
                   </div>
                   {coupon.perCustomerLimit && (
-                    <div className="text-sm text-gray-400">
+                    <div className="text-sm text-gray-600">
                       {coupon.perCustomerLimit}/customer
                     </div>
                   )}
@@ -233,7 +233,7 @@ export default function CouponsPage() {
                     <div>Until: {new Date(coupon.validUntil).toLocaleDateString()}</div>
                   )}
                   {!coupon.validFrom && !coupon.validUntil && (
-                    <span className="text-gray-400">No expiration</span>
+                    <span className="text-gray-600">No expiration</span>
                   )}
                 </td>
                 <td className="p-4">{getStatusBadge(coupon)}</td>
@@ -265,7 +265,7 @@ export default function CouponsPage() {
             ))}
             {filteredCoupons.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-8 text-center text-gray-400">
+                <td colSpan={7} className="p-8 text-center text-gray-600">
                   No coupons found
                 </td>
               </tr>
@@ -355,7 +355,7 @@ function CouponModal({
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Code *</label>
+            <label className="block text-sm text-gray-700 mb-1">Code *</label>
             <input
               type="text"
               value={form.code}
@@ -367,7 +367,7 @@ function CouponModal({
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Name *</label>
+            <label className="block text-sm text-gray-700 mb-1">Name *</label>
             <input
               type="text"
               value={form.name}
@@ -380,7 +380,7 @@ function CouponModal({
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Description</label>
+          <label className="block text-sm text-gray-700 mb-1">Description</label>
           <textarea
             value={form.description}
             onChange={e => setForm({ ...form, description: e.target.value })}
@@ -391,7 +391,7 @@ function CouponModal({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Discount Type *</label>
+            <label className="block text-sm text-gray-700 mb-1">Discount Type *</label>
             <select
               value={form.discountType}
               onChange={e => setForm({ ...form, discountType: e.target.value })}
@@ -403,7 +403,7 @@ function CouponModal({
             </select>
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">
+            <label className="block text-sm text-gray-700 mb-1">
               {form.discountType === 'percent' ? 'Percentage *' : 'Amount *'}
             </label>
             <input
@@ -420,7 +420,7 @@ function CouponModal({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Minimum Order</label>
+            <label className="block text-sm text-gray-700 mb-1">Minimum Order</label>
             <input
               type="number"
               value={form.minimumOrder}
@@ -432,7 +432,7 @@ function CouponModal({
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Maximum Discount</label>
+            <label className="block text-sm text-gray-700 mb-1">Maximum Discount</label>
             <input
               type="number"
               value={form.maximumDiscount}
@@ -447,7 +447,7 @@ function CouponModal({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Usage Limit</label>
+            <label className="block text-sm text-gray-700 mb-1">Usage Limit</label>
             <input
               type="number"
               value={form.usageLimit}
@@ -458,7 +458,7 @@ function CouponModal({
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Per Customer Limit</label>
+            <label className="block text-sm text-gray-700 mb-1">Per Customer Limit</label>
             <input
               type="number"
               value={form.perCustomerLimit}
@@ -472,7 +472,7 @@ function CouponModal({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Valid From</label>
+            <label className="block text-sm text-gray-700 mb-1">Valid From</label>
             <input
               type="date"
               value={form.validFrom}
@@ -481,7 +481,7 @@ function CouponModal({
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Valid Until</label>
+            <label className="block text-sm text-gray-700 mb-1">Valid Until</label>
             <input
               type="date"
               value={form.validUntil}

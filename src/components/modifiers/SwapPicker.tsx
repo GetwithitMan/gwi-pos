@@ -22,7 +22,7 @@ export function SwapPicker({ ingredient, currentSwap, onSelect, onCancel }: Swap
         <div className="-m-5 mm-glass-panel rounded-2xl p-6">
           <div className="text-center">
             <p className="text-white font-medium mb-2">No swap options available</p>
-            <p className="text-slate-400 text-sm mb-4">The modifier group has no active modifiers.</p>
+            <p className="text-gray-600 text-sm mb-4">The modifier group has no active modifiers.</p>
             <button
               onClick={onCancel}
               className="w-full bg-white/10 border border-white/20 text-slate-300 rounded-xl py-3 hover:bg-white/15 transition-colors"
@@ -61,7 +61,7 @@ export function SwapPicker({ ingredient, currentSwap, onSelect, onCancel }: Swap
             <span>Swap {ingredient.name}</span>
           </h3>
           {baseUpcharge > 0 && (
-            <p className="text-sm text-slate-300 mt-1">
+            <p className="text-sm text-gray-900 mt-1">
               Base upcharge: +{formatCurrency(baseUpcharge)}
             </p>
           )}

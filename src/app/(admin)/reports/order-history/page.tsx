@@ -711,7 +711,7 @@ function OrderDetailPanel({
                                 -{formatCurrency(ref.refundAmount)} &mdash; {ref.refundReason}
                                 {ref.employeeName && ` (${ref.employeeName})`}
                               </span>
-                              <span className="text-gray-400">{formatTime(ref.createdAt)}</span>
+                              <span className="text-gray-600">{formatTime(ref.createdAt)}</span>
                             </div>
                           ))}
                         </div>
@@ -747,7 +747,7 @@ function OrderDetailPanel({
                             {v.voidType === 'comp' ? 'COMP' : 'VOID'}
                           </span>
                           {v.itemName && ` ${v.itemName}`}
-                          <span className="text-gray-400">
+                          <span className="text-gray-600">
                             {' '}by {formatEmployeeName(v.employee)}
                             {v.approvedBy && ` (ok: ${formatEmployeeName(v.approvedBy)})`}
                             {v.wasMade && ' [made]'}
@@ -769,7 +769,7 @@ function OrderDetailPanel({
                         <span>
                           {d.name}
                           {d.percent ? ` (${Number(d.percent)}%)` : ''}
-                          {d.appliedBy && <span className="text-gray-400"> by {formatEmployeeName(d.appliedBy)}</span>}
+                          {d.appliedBy && <span className="text-gray-600"> by {formatEmployeeName(d.appliedBy)}</span>}
                         </span>
                         <span className="tabular-nums ml-2">-{formatCurrency(d.amount)}</span>
                       </div>
@@ -786,8 +786,8 @@ function OrderDetailPanel({
                       <div key={t.id} className="flex justify-between text-[11px]">
                         <span>
                           {t.kind === 'service_charge' ? 'Svc Charge' : t.kind === 'auto_gratuity' ? 'Auto Grat' : 'Tip'}
-                          <span className="text-gray-400"> ({t.sourceType})</span>
-                          {t.primaryEmployee && <span className="text-gray-400"> {formatEmployeeName(t.primaryEmployee)}</span>}
+                          <span className="text-gray-600"> ({t.sourceType})</span>
+                          {t.primaryEmployee && <span className="text-gray-600"> {formatEmployeeName(t.primaryEmployee)}</span>}
                         </span>
                         <span className="tabular-nums ml-2">{formatCurrency(t.amountCents)}</span>
                       </div>

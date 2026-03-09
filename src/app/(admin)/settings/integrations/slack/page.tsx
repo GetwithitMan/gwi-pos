@@ -79,12 +79,12 @@ export default function SlackIntegrationPage() {
                 <span><strong>Real-Time Error Alerts</strong> -- Critical system errors are posted to your Slack channel immediately.</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-gray-400 mt-0.5">&#8226;</span>
-                <span><strong>Order Notifications</strong> -- High-value orders, voids, and comps posted to Slack for manager visibility. <em className="text-gray-400">(Coming soon)</em></span>
+                <span className="text-gray-600 mt-0.5">&#8226;</span>
+                <span><strong>Order Notifications</strong> -- High-value orders, voids, and comps posted to Slack for manager visibility. <em className="text-gray-600">(Coming soon)</em></span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-gray-400 mt-0.5">&#8226;</span>
-                <span><strong>Low Stock Alerts</strong> -- Inventory items below threshold trigger Slack notifications. <em className="text-gray-400">(Coming soon)</em></span>
+                <span className="text-gray-600 mt-0.5">&#8226;</span>
+                <span><strong>Low Stock Alerts</strong> -- Inventory items below threshold trigger Slack notifications. <em className="text-gray-600">(Coming soon)</em></span>
               </li>
             </ul>
           </CardContent>

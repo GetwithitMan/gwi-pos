@@ -254,7 +254,7 @@ export function BarcodeImport({ locationId, onComplete }: BarcodeImportProps) {
               <tbody className="divide-y divide-gray-100">
                 {previewRows.map((row, i) => (
                   <tr key={i} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-xs text-gray-400">{i + 1}</td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{i + 1}</td>
                     {parsedHeaders.map((h) => (
                       <td key={h} className="px-3 py-2 text-sm text-gray-900 font-mono">
                         {row[h] || <span className="text-gray-300">—</span>}

@@ -52,7 +52,7 @@ const SUBTYPE_COLORS: Record<string, string> = {
   import: 'bg-teal-50 text-teal-600',
   craft: 'bg-orange-50 text-orange-600',
   seltzer: 'bg-cyan-50 text-cyan-600',
-  na: 'bg-gray-100 text-gray-500',
+  na: 'bg-gray-100 text-gray-600',
   // Wine
   red: 'bg-red-50 text-red-600',
   white: 'bg-yellow-50 text-yellow-700',
@@ -658,7 +658,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500">Loading liquor inventory...</div>
+        <div className="text-gray-700">Loading liquor inventory...</div>
       </div>
     )
   }
@@ -733,7 +733,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
         {(search || selectedCategoryId || selectedTier) && (
           <button
             onClick={() => { setSearch(''); setSelectedCategoryId(''); setSelectedTier('') }}
-            className="text-sm text-gray-500 hover:text-gray-700 whitespace-nowrap"
+            className="text-sm text-gray-600 hover:text-gray-800 whitespace-nowrap"
           >
             Clear filters
           </button>
@@ -741,7 +741,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
       </div>
 
       {/* Summary bar */}
-      <div className="flex items-center gap-4 text-sm text-gray-500">
+      <div className="flex items-center gap-4 text-sm text-gray-700">
         <span>{totalFilteredBottles} bottle{totalFilteredBottles !== 1 ? 's' : ''}</span>
         <span className="text-gray-300">|</span>
         <span>{categories.length} categor{categories.length !== 1 ? 'ies' : 'y'}</span>
@@ -755,7 +755,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
 
       {/* Category Sections */}
       {groupedBottles.length === 0 && activeBottles.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-gray-700">
           <p className="text-lg mb-2">No bottles in inventory</p>
           <p className="text-sm mb-4">Add spirit categories and bottles to get started.</p>
           <div className="flex gap-3 justify-center">
@@ -799,7 +799,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                       {isCollapsed ? '\u25B6' : '\u25BC'}
                     </span>
                     <span className="font-semibold text-gray-900">{catName}</span>
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-600">
                       ({group.bottles.length} bottle{group.bottles.length !== 1 ? 's' : ''})
                     </span>
                     {unverifiedCount > 0 && (
@@ -865,7 +865,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                 {!isCollapsed && (
                   <div className="p-3 space-y-2">
                     {group.bottles.length === 0 ? (
-                      <div className="px-4 py-6 text-center text-sm text-gray-400">
+                      <div className="px-4 py-6 text-center text-sm text-gray-600">
                         No bottles in this category
                         {(search || selectedTier) && ' matching current filters'}
                       </div>
@@ -899,7 +899,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                   {isExpanded ? '\u25BC' : '\u25B6'}
                                 </span>
                                 <span className="font-semibold text-gray-900 truncate">{product.label}</span>
-                                <span className="text-xs text-gray-500 flex-shrink-0">
+                                <span className="text-xs text-gray-600 flex-shrink-0">
                                   {product.bottles.length} bottle{product.bottles.length !== 1 ? 's' : ''}
                                 </span>
                                 {productUnverified && (
@@ -909,7 +909,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                 )}
                                 {stockOz != null && (
                                   <span className={`text-xs font-medium flex-shrink-0 ${
-                                    isOutInventory ? 'text-red-600' : isLowInventory ? 'text-amber-600' : 'text-gray-500'
+                                    isOutInventory ? 'text-red-600' : isLowInventory ? 'text-amber-600' : 'text-gray-700'
                                   }`}>
                                     {stockOz} {invItem?.storageUnit || 'oz'}
                                     {isOutInventory && <span className="ml-1 text-[10px] text-red-500 font-bold">OUT</span>}
@@ -926,13 +926,13 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                 return (
                                   <div className="flex items-center gap-3 text-sm" onClick={e => e.stopPropagation()}>
                                     <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${tc}`}>{tl}</span>
-                                    <span className="text-gray-500">{sz}</span>
-                                    <span className="text-gray-500">{formatCurrency(b.unitCost)}</span>
-                                    <span className="text-gray-500">{b.currentStock} btl</span>
+                                    <span className="text-gray-700">{sz}</span>
+                                    <span className="text-gray-700">{formatCurrency(b.unitCost)}</span>
+                                    <span className="text-gray-700">{b.currentStock} btl</span>
                                     {b.hasMenuItem && <span className="text-green-600 text-xs font-bold">POS</span>}
                                     <button
                                       onClick={() => handleEditBottle(b)}
-                                      className="px-2 py-0.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
+                                      className="px-2 py-0.5 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
                                     >
                                       Edit
                                     </button>
@@ -946,7 +946,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                               <div className="ml-6 mt-1 space-y-1 border-l-2 border-amber-200 pl-3">
                                 {/* BOTTLES section */}
                                 <div className="flex items-center justify-between px-1 pt-1">
-                                  <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">
+                                  <span className="text-[10px] font-bold uppercase text-gray-700 tracking-wider">
                                     Bottles
                                   </span>
                                   <button
@@ -964,7 +964,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                   const isLowStock = bottle.lowStockAlert != null && bottle.currentStock <= bottle.lowStockAlert
                                   const isOutOfStock = bottle.currentStock <= 0
                                   const subtypeColor = bottle.alcoholSubtype
-                                    ? SUBTYPE_COLORS[bottle.alcoholSubtype] || 'bg-gray-50 text-gray-500'
+                                    ? SUBTYPE_COLORS[bottle.alcoholSubtype] || 'bg-gray-50 text-gray-600'
                                     : ''
 
                                   return (
@@ -1000,14 +1000,14 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                           </span>
                                         )}
                                         {isWine && bottle.vintage && (
-                                          <span className="text-[10px] text-gray-400">{bottle.vintage}</span>
+                                          <span className="text-[10px] text-gray-600">{bottle.vintage}</span>
                                         )}
                                         <span className="text-gray-600 text-sm">{formatCurrency(bottle.unitCost)}</span>
                                         {!isBeer && poursPerBottle != null && (
-                                          <span className="text-gray-500 text-xs">{poursPerBottle} pours</span>
+                                          <span className="text-gray-700 text-xs">{poursPerBottle} pours</span>
                                         )}
                                         {pourCost != null && pourCost > 0 && (
-                                          <span className="text-gray-500 text-xs">{formatCurrency(pourCost)}/pour</span>
+                                          <span className="text-gray-700 text-xs">{formatCurrency(pourCost)}/pour</span>
                                         )}
                                         <span className={`text-sm font-medium ml-auto ${
                                           isOutOfStock ? 'text-red-600' : isLowStock ? 'text-amber-600' : 'text-gray-700'
@@ -1060,9 +1060,9 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                         {isLowInventory && !isOutInventory && <span className="ml-1 text-[10px] text-amber-500">LOW</span>}
                                       </span>
                                       {parOz != null && (
-                                        <span className="text-xs text-gray-500">Par: {parOz} {invItem.storageUnit || 'oz'}</span>
+                                        <span className="text-xs text-gray-700">Par: {parOz} {invItem.storageUnit || 'oz'}</span>
                                       )}
-                                      <span className="text-xs text-gray-500 ml-auto">
+                                      <span className="text-xs text-gray-700 ml-auto">
                                         {formatCurrency(invItem.costPerUnit)}/{invItem.storageUnit || 'oz'}
                                       </span>
                                     </div>
@@ -1088,7 +1088,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                           {Number(prep.batchYield)} {prep.outputUnit}
                                         </span>
                                         {prep.costPerUnit != null && (
-                                          <span className="text-xs text-gray-500">
+                                          <span className="text-xs text-gray-700">
                                             {formatCurrency(prep.costPerUnit)}/{prep.outputUnit}
                                           </span>
                                         )}
@@ -1097,7 +1097,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                             Daily Count
                                           </span>
                                         )}
-                                        <span className="text-xs text-gray-500 ml-auto">
+                                        <span className="text-xs text-gray-700 ml-auto">
                                           Stock: {Number(prep.currentPrepStock)} {prep.outputUnit}
                                         </span>
                                       </div>
@@ -1159,7 +1159,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                                       </button>
                                       <button
                                         onClick={handleCancelAddPrep}
-                                        className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+                                        className="px-2 py-1.5 text-xs text-gray-600 hover:text-gray-700"
                                       >
                                         Cancel
                                       </button>
@@ -1180,7 +1180,7 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
 
           {/* No results after filtering */}
           {groupedBottles.length > 0 && totalFilteredBottles === 0 && (search || selectedCategoryId || selectedTier) && (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-gray-700">
               <p>No bottles match the current filters.</p>
               <button
                 onClick={() => { setSearch(''); setSelectedCategoryId(''); setSelectedTier('') }}
@@ -1230,17 +1230,17 @@ export function LiquorInventory({ locationId }: LiquorInventoryProps) {
                       <div>
                         <span className="font-medium text-gray-700">{bottle.name}</span>
                         {bottle.brand && (
-                          <span className="text-xs text-gray-400 ml-2">{bottle.brand}</span>
+                          <span className="text-xs text-gray-600 ml-2">{bottle.brand}</span>
                         )}
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs text-gray-600">
                             {bottle.spiritCategory?.displayName || bottle.spiritCategory?.name || 'No category'}
                           </span>
                           <span className={`inline-block px-1.5 py-0 text-[10px] font-bold rounded ${tierColor}`}>
                             {tierLabel}
                           </span>
-                          <span className="text-xs text-gray-400">{sizeStr}</span>
-                          <span className="text-xs text-gray-400">{formatCurrency(bottle.unitCost)}</span>
+                          <span className="text-xs text-gray-600">{sizeStr}</span>
+                          <span className="text-xs text-gray-600">{formatCurrency(bottle.unitCost)}</span>
                         </div>
                       </div>
                     </div>

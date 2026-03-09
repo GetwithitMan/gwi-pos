@@ -223,7 +223,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-400">Loading...</div>
+        <div className="text-gray-600">Loading...</div>
       </div>
     )
   }
@@ -231,7 +231,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
   if (!event) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-400">Event not found</div>
+        <div className="text-gray-600">Event not found</div>
       </div>
     )
   }

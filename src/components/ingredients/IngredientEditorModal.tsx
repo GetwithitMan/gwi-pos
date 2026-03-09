@@ -173,7 +173,7 @@ export function IngredientEditorModal({
                 <p className="text-sm text-gray-600 mt-1">
                   Purchased from vendors
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-gray-600 mt-2">
                   Flour, cheese, raw chicken, tomatoes...
                 </p>
               </button>
@@ -191,7 +191,7 @@ export function IngredientEditorModal({
                 <p className="text-sm text-gray-600 mt-1">
                   Made from other ingredients
                 </p>
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-gray-600 mt-2">
                   Sliced cheese, dough balls, shredded chicken...
                 </p>
               </button>
@@ -218,7 +218,7 @@ export function IngredientEditorModal({
                       <h4 className="font-bold text-gray-700 group-hover:text-gray-900">
                         Move to Uncategorized
                       </h4>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-gray-600">
                         Remove classification - item will appear in Uncategorized section
                       </p>
                     </div>
@@ -281,10 +281,10 @@ export function IngredientEditorModal({
             </div>
 
             {loadingBases ? (
-              <div className="text-center py-8 text-gray-500">Loading inventory items...</div>
+              <div className="text-center py-8 text-gray-700">Loading inventory items...</div>
             ) : baseIngredients.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-gray-500 mb-4">No inventory items found</p>
+                <p className="text-gray-700 mb-4">No inventory items found</p>
                 <button
                   type="button"
                   onClick={handleCreateNewParent}
@@ -323,7 +323,7 @@ export function IngredientEditorModal({
                               {categoryName}
                             </span>
                             <span className="flex items-center gap-2">
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-gray-600">
                                 {ingredients.length} items
                               </span>
                               <span className="text-gray-400">
@@ -345,7 +345,7 @@ export function IngredientEditorModal({
                                   >
                                     <span className="font-medium text-gray-900">{ing.name}</span>
                                     {ing.standardQuantity && ing.standardUnit && (
-                                      <span className="text-xs text-gray-400">
+                                      <span className="text-xs text-gray-600">
                                         {ing.standardQuantity} {ing.standardUnit}
                                       </span>
                                     )}

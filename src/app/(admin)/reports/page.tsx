@@ -567,7 +567,7 @@ export default function ReportsHubPage() {
                   <div className="w-3 h-3 bg-green-500 rounded-full" />
                   <span className="text-sm text-gray-600">Cash</span>
                   <span className="font-semibold">{formatCurrency(stats.cashSales)}</span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-600">
                     ({stats.cashSales + stats.cardSales > 0
                       ? Math.round((stats.cashSales / (stats.cashSales + stats.cardSales)) * 100)
                       : 0}%)
@@ -577,7 +577,7 @@ export default function ReportsHubPage() {
                   <div className="w-3 h-3 bg-blue-500 rounded-full" />
                   <span className="text-sm text-gray-600">Card</span>
                   <span className="font-semibold">{formatCurrency(stats.cardSales)}</span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-600">
                     ({stats.cashSales + stats.cardSales > 0
                       ? Math.round((stats.cardSales / (stats.cashSales + stats.cardSales)) * 100)
                       : 0}%)

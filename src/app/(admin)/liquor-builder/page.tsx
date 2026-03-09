@@ -666,7 +666,7 @@ function LiquorBuilderContent() {
         </div>
         {/* Row 2: POS category pills (what shows on front-end bar tabs) */}
         <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto">
-          <span className="text-[10px] uppercase text-gray-400 font-medium shrink-0 mr-1">POS Tabs:</span>
+          <span className="text-[10px] uppercase text-gray-700 font-medium shrink-0 mr-1">POS Tabs:</span>
           <button
             onClick={() => {
               setSelectedMenuCategoryId('')
@@ -712,7 +712,7 @@ function LiquorBuilderContent() {
       </div>
 
       {isLoading ? (
-        <div className="text-center py-8 text-gray-500">Loading...</div>
+        <div className="text-center py-8 text-gray-700">Loading...</div>
       ) : isEmptySetup ? (
         /* Getting Started Guide */
         <div className="max-w-2xl mx-auto p-6">
@@ -737,8 +737,8 @@ function LiquorBuilderContent() {
               <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
                 <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">2</div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-500">Add Your Bottles</h3>
-                  <p className="text-sm text-gray-400">Go to <Link href="/liquor-inventory" className="text-purple-500 underline">Liquor Inventory</Link> to add bottles with cost, size, and tier</p>
+                  <h3 className="font-semibold text-gray-700">Add Your Bottles</h3>
+                  <p className="text-sm text-gray-600">Go to <Link href="/liquor-inventory" className="text-purple-500 underline">Liquor Inventory</Link> to add bottles with cost, size, and tier</p>
                 </div>
               </div>
 
@@ -746,8 +746,8 @@ function LiquorBuilderContent() {
               <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
                 <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">3</div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-500">Create Drink Items</h3>
-                  <p className="text-sm text-gray-400">Add drinks, set prices, build recipes, and configure spirit upgrades</p>
+                  <h3 className="font-semibold text-gray-700">Create Drink Items</h3>
+                  <p className="text-sm text-gray-600">Add drinks, set prices, build recipes, and configure spirit upgrades</p>
                 </div>
               </div>
             </div>
@@ -769,7 +769,7 @@ function LiquorBuilderContent() {
               {selectedMenuCategoryId && (
                 <button
                   onClick={() => { setSelectedMenuCategoryId(''); setSelectedDrink(null) }}
-                  className="text-xs text-gray-400 hover:text-gray-600"
+                  className="text-xs text-gray-600 hover:text-gray-800"
                 >
                   All
                 </button>
@@ -789,7 +789,7 @@ function LiquorBuilderContent() {
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-1">
               {filteredDrinks.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-4">No items in this category</p>
+                <p className="text-sm text-gray-600 text-center py-4">No items in this category</p>
               ) : (
                 filteredDrinks.map((drink: any) => (
                   <div
@@ -868,7 +868,7 @@ function LiquorBuilderContent() {
               <>
                 {/* Item Editor Card */}
                 <div className="bg-white rounded-lg border p-5">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Item Details</h3>
+                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Item Details</h3>
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
@@ -882,7 +882,7 @@ function LiquorBuilderContent() {
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Price</label>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-700 text-sm">$</span>
                         <input
                           type="number"
                           step="0.01"
@@ -931,7 +931,7 @@ function LiquorBuilderContent() {
                           await loadDrinks()
                           setSelectedDrink(null)
                         }}
-                        className="px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-500 hover:border-red-400 hover:text-red-600"
+                        className="px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-700 hover:border-red-400 hover:text-red-600"
                       >
                         ✕ Remove
                       </button>
@@ -975,7 +975,7 @@ function LiquorBuilderContent() {
                     <div className="flex items-center gap-3 mb-3">
                       <span className="font-semibold text-gray-900">{selectedDrink.linkedBottleProductName}</span>
                       {selectedDrink.linkedBottleSpiritCategory && (
-                        <span className="text-xs text-gray-500">{selectedDrink.linkedBottleSpiritCategory}</span>
+                        <span className="text-xs text-gray-700">{selectedDrink.linkedBottleSpiritCategory}</span>
                       )}
                       {selectedDrink.linkedBottleTier && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
@@ -988,7 +988,7 @@ function LiquorBuilderContent() {
                         </span>
                       )}
                       {selectedDrink.linkedBottleSizeMl && (
-                        <span className="text-xs text-gray-400">{selectedDrink.linkedBottleSizeMl}ml</span>
+                        <span className="text-xs text-gray-700">{selectedDrink.linkedBottleSizeMl}ml</span>
                       )}
                     </div>
 
@@ -996,7 +996,7 @@ function LiquorBuilderContent() {
                     <div className="bg-white/70 rounded-lg border border-green-200 p-3 mb-3">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-[10px] uppercase font-bold text-green-700 tracking-wide bg-green-200 px-1.5 py-0.5 rounded">POUR</span>
-                        <span className="text-xs text-gray-400">bottle default: {bottleDefaultPour}oz</span>
+                        <span className="text-xs text-gray-600">bottle default: {bottleDefaultPour}oz</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5">
@@ -1011,7 +1011,7 @@ function LiquorBuilderContent() {
                               className="w-20 px-2 py-1.5 text-sm border rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-green-400"
                               placeholder={String(bottleDefaultPour)}
                             />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">oz</span>
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-700">oz</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-600">
@@ -1044,7 +1044,7 @@ function LiquorBuilderContent() {
                 })() : (
                   <div className={`rounded-lg border-2 border-dashed p-5 transition-colors ${showBottleLinkPicker ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'}`}>
                     <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Linked Bottle</h3>
+                      <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Linked Bottle</h3>
                       {!showBottleLinkPicker && (
                         <button
                           onClick={() => { setShowBottleLinkPicker(true); setExpandedPickerCats(new Set()) }}
@@ -1055,7 +1055,7 @@ function LiquorBuilderContent() {
                       )}
                     </div>
                     {!showBottleLinkPicker ? (
-                      <p className="text-xs text-gray-400">Link this drink to a bottle from inventory for cost tracking and deductions.</p>
+                      <p className="text-xs text-gray-600">Link this drink to a bottle from inventory for cost tracking and deductions.</p>
                     ) : (
                       <div>
                         <div className="flex items-center gap-2 mb-3">
@@ -1089,7 +1089,7 @@ function LiquorBuilderContent() {
                               grouped.get(cat)!.push(b)
                             }
                             if (grouped.size === 0 && !showInlineBottleForm) {
-                              return <p className="text-xs text-gray-400 text-center py-4">No bottles found — create one below</p>
+                              return <p className="text-xs text-gray-600 text-center py-4">No bottles found — create one below</p>
                             }
                             return Array.from(grouped.entries()).map(([catName, catBottles]) => {
                               const isCatExpanded = expandedPickerCats.has(catName) || bottleLinkSearch.length > 0
@@ -1106,8 +1106,8 @@ function LiquorBuilderContent() {
                                     className="w-full flex items-center gap-2 px-1 py-1.5 hover:bg-gray-50 rounded transition-colors"
                                   >
                                     <span className="text-gray-400 text-[10px] select-none">{isCatExpanded ? '\u25BC' : '\u25B6'}</span>
-                                    <span className="text-[10px] uppercase text-gray-400 font-semibold tracking-wide">{catName}</span>
-                                    <span className="text-[10px] text-gray-300">{catBottles.length}</span>
+                                    <span className="text-[10px] uppercase text-gray-700 font-semibold tracking-wide">{catName}</span>
+                                    <span className="text-[10px] text-gray-600">{catBottles.length}</span>
                                   </button>
                                   {isCatExpanded && (
                                     <div className="space-y-0.5 ml-3">
@@ -1130,7 +1130,7 @@ function LiquorBuilderContent() {
                                                 {b.tier === 'top_shelf' ? 'TOP SHELF' : b.tier.toUpperCase()}
                                               </span>
                                               {b.pourCost && (
-                                                <span className="text-xs text-gray-500">{formatCurrency(Number(b.pourCost))}</span>
+                                                <span className="text-xs text-gray-700">{formatCurrency(Number(b.pourCost))}</span>
                                               )}
                                             </div>
                                           </div>
@@ -1263,7 +1263,7 @@ function LiquorBuilderContent() {
                   return (
                     <div className="bg-white rounded-lg border p-5">
                       <h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-                        Spirit Upgrades <span className="text-xs font-normal text-gray-400">(auto-detected from recipe)</span>
+                        Spirit Upgrades <span className="text-xs font-normal text-gray-600">(auto-detected from recipe)</span>
                       </h3>
                       <div className="space-y-4">
                         {Array.from(recipeCategories.entries()).map(([catName, { baseBottle }]) => {
@@ -1279,7 +1279,7 @@ function LiquorBuilderContent() {
                             <div key={catName} className="border rounded-lg p-3 bg-amber-50/50">
                               <div className="flex items-center gap-2 mb-2">
                                 <span className="text-sm font-medium text-gray-800">{catName}</span>
-                                <span className="text-xs text-gray-400">base: {baseBottle.bottleName} ({baseBottle.tier}) — {formatCurrency(baseBottle.pourCost)}/pour</span>
+                                <span className="text-xs text-gray-600">base: {baseBottle.bottleName} ({baseBottle.tier}) — {formatCurrency(baseBottle.pourCost)}/pour</span>
                               </div>
                               {tierOrder.map(tier => {
                                 const tierBottles = upgradeBottles.filter(b => b.tier === tier)
@@ -1334,13 +1334,13 @@ function LiquorBuilderContent() {
                       className="w-4 h-4 text-amber-600 rounded"
                     />
                     <span className="text-sm font-semibold text-gray-700">🥃 Spirit Upgrades</span>
-                    <span className="text-xs text-gray-400">(for cocktails — Well/Call/Prem/Top tiers)</span>
+                    <span className="text-xs text-gray-600">(for cocktails — Well/Call/Prem/Top tiers)</span>
                   </label>
 
                   {spiritMode ? (
                     /* Spirit Tier Editor */
                     <div className="space-y-3">
-                      <p className="text-xs text-gray-400">Assign bottles from your inventory to each tier. Guests pick their spirit on the POS.</p>
+                      <p className="text-xs text-gray-600">Assign bottles from your inventory to each tier. Guests pick their spirit on the POS.</p>
                       {savingSpirit && <p className="text-xs text-amber-600">Saving...</p>}
                       {(['well', 'call', 'premium', 'top_shelf'] as const).map(tier => {
                         const tierEntries = spiritEntries.filter(e => e.tier === tier)
@@ -1363,7 +1363,7 @@ function LiquorBuilderContent() {
                           <div key={tier} className={`rounded-lg border p-3 ${tierColors[tier]}`}>
                             <div className={`text-xs font-bold uppercase tracking-wide mb-2 ${tierTextColor[tier]}`}>{tierLabel}</div>
                             {tierEntries.length === 0 && (
-                              <p className="text-xs text-gray-400 mb-2">No bottles assigned yet</p>
+                              <p className="text-xs text-gray-600 mb-2">No bottles assigned yet</p>
                             )}
                             {tierEntries.map(entry => (
                               <div key={entry.id || entry.bottleProductId} className="flex items-center gap-2 mb-1.5">
@@ -1379,7 +1379,7 @@ function LiquorBuilderContent() {
                                   </button>
                                 )}
                                 <span className="flex-1 text-sm font-medium text-gray-800 truncate">{entry.bottleName}</span>
-                                <span className="text-xs text-gray-400">+$</span>
+                                <span className="text-xs text-gray-700">+$</span>
                                 <input
                                   type="number"
                                   step="0.25"
@@ -1422,7 +1422,7 @@ function LiquorBuilderContent() {
                               </select>
                             )}
                             {availableBottles.length === 0 && tierEntries.length === 0 && (
-                              <p className="text-xs text-gray-400 italic">No {tier.replace('_', ' ')} bottles in inventory</p>
+                              <p className="text-xs text-gray-600 italic">No {tier.replace('_', ' ')} bottles in inventory</p>
                             )}
                           </div>
                         )
@@ -1432,10 +1432,10 @@ function LiquorBuilderContent() {
                     /* Pour Size Buttons Editor */
                     <>
                       <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Pour Size Buttons</h3>
-                        <span className="text-xs text-gray-400">Shot / Tall / Short / Double</span>
+                        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Pour Size Buttons</h3>
+                        <span className="text-xs text-gray-600">Shot / Tall / Short / Double</span>
                       </div>
-                      <p className="text-xs text-gray-400 mb-3">Enable size variants for this item. Each multiplies the base price.</p>
+                      <p className="text-xs text-gray-600 mb-3">Enable size variants for this item. Each multiplies the base price.</p>
                       <div className="space-y-2 mb-3">
                         {Object.entries(DEFAULT_POUR_SIZES).map(([sizeKey, defaults]) => {
                           const isEnabled = enabledPourSizes[sizeKey] !== undefined
@@ -1485,7 +1485,7 @@ function LiquorBuilderContent() {
                                     )}
                                   </>
                                 ) : (
-                                  <div className="flex-1 flex items-center justify-between text-gray-400">
+                                  <div className="flex-1 flex items-center justify-between text-gray-600">
                                     <span className="text-sm">{defaults.label}</span>
                                     <span className="text-xs">{defaults.multiplier}×</span>
                                   </div>
@@ -1508,7 +1508,7 @@ function LiquorBuilderContent() {
                       )}
                       {Object.keys(enabledPourSizes).length > 0 && (
                         <>
-                          <p className="text-xs text-gray-400 mt-1 ml-6">
+                          <p className="text-xs text-gray-600 mt-1 ml-6">
                             Price on POS: base price × multiplier (e.g. ${(parseFloat(editingDrinkPrice) || 0).toFixed(2)} × 1.5 = ${((parseFloat(editingDrinkPrice) || 0) * 1.5).toFixed(2)} for Tall)
                           </p>
                           {isDualPricingEnabled && parseFloat(editingDrinkPrice) > 0 && (
@@ -1527,13 +1527,13 @@ function LiquorBuilderContent() {
                   <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
                     <div>
                       <h3 className="text-sm font-semibold text-gray-700">Modifier Groups</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">Tap a template in the right panel to attach, then edit modifiers inline below</p>
+                      <p className="text-xs text-gray-600 mt-0.5">Tap a template in the right panel to attach, then edit modifiers inline below</p>
                     </div>
                   </div>
 
                   {/* Group list — spirit groups are managed in the Spirit Tier Editor above */}
                   {drinkModifierGroups.filter((mg: any) => !mg.isSpiritGroup).length === 0 ? (
-                    <div className="px-4 py-6 text-center text-sm text-gray-400">
+                    <div className="px-4 py-6 text-center text-sm text-gray-600">
                       <p className="mb-1 font-medium">No modifier groups yet.</p>
                       <p className="text-xs">Tap a template in the Modifier Templates panel on the right →</p>
                     </div>
@@ -1555,7 +1555,7 @@ function LiquorBuilderContent() {
                                 <span className="font-medium">{mg.name}</span>
                                 {mg.isRequired && <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Required</span>}
                               </div>
-                              <div className="flex items-center gap-2 text-gray-400 text-xs">
+                              <div className="flex items-center gap-2 text-gray-600 text-xs">
                                 <span>{mg.modifiers?.length ?? 0} options</span>
                                 <span>{isExpanded ? '▲' : '▼'}</span>
                               </div>
@@ -1565,7 +1565,7 @@ function LiquorBuilderContent() {
                             {isExpanded && (
                               <div className="bg-gray-50 border-t px-4 py-3">
                                 {/* Column headers */}
-                                <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-400 px-1 mb-1.5">
+                                <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-700 px-1 mb-1.5">
                                   <div className="col-span-5">Name</div>
                                   <div className="col-span-3 text-right">+Charge</div>
                                   <div className="col-span-2 text-center">Active</div>
@@ -1604,7 +1604,7 @@ function LiquorBuilderContent() {
                                       {/* Price */}
                                       <div className="col-span-3">
                                         <div className="relative">
-                                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-700 text-xs">$</span>
                                           <input
                                             type="number"
                                             step="0.25"
@@ -1718,7 +1718,7 @@ function LiquorBuilderContent() {
 
               </>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-400">
+              <div className="flex items-center justify-center h-full text-gray-600">
                 <p>Select a drink to edit</p>
               </div>
             )}
@@ -1728,7 +1728,7 @@ function LiquorBuilderContent() {
           <div className="w-64 bg-white border-l flex flex-col shrink-0 overflow-hidden">
             <div className="px-3 py-2 border-b shrink-0">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] uppercase text-gray-500 font-semibold tracking-wide">Modifier Templates</span>
+                <span className="text-[10px] uppercase text-gray-700 font-semibold tracking-wide">Modifier Templates</span>
               </div>
               <Link href="/liquor-modifiers" className="text-[10px] text-purple-600 hover:text-purple-700 font-medium">
                 Manage Templates →
@@ -1737,9 +1737,9 @@ function LiquorBuilderContent() {
 
             <div className="flex-1 overflow-y-auto p-2">
               {modifierGroups.length === 0 ? (
-                <div className="text-center py-8 text-xs text-gray-400">
+                <div className="text-center py-8 text-xs text-gray-600">
                   <p className="mb-2">No modifier templates yet.</p>
-                  <p className="text-gray-400 mb-3">Create templates in the Modifier Templates page, then attach them here.</p>
+                  <p className="text-gray-600 mb-3">Create templates in the Modifier Templates page, then attach them here.</p>
                   <Link href="/liquor-modifiers" className="text-purple-600 hover:text-purple-700 font-medium">
                     Create templates →
                   </Link>
@@ -1795,7 +1795,7 @@ function LiquorBuilderContent() {
                           <span className="font-medium text-sm truncate">{group.name}</span>
                         </div>
                         <div className="flex items-center justify-between mt-0.5">
-                          <span className="text-xs text-gray-400">{group.modifiers?.length ?? 0} options</span>
+                          <span className="text-xs text-gray-600">{group.modifiers?.length ?? 0} options</span>
                           {isAlreadyAdded ? (
                             <span className="text-xs text-green-600">✓ Added</span>
                           ) : attachingGroupId === group.id ? (
@@ -1803,7 +1803,7 @@ function LiquorBuilderContent() {
                           ) : selectedDrink ? (
                             <span className="text-xs text-purple-500">+ Attach</span>
                           ) : (
-                            <span className="text-xs text-gray-400">{group.modifiers?.length ?? 0} opts</span>
+                            <span className="text-xs text-gray-600">{group.modifiers?.length ?? 0} opts</span>
                           )}
                         </div>
                       </button>

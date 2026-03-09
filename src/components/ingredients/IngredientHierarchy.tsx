@@ -356,7 +356,7 @@ function HierarchyNode({
 
               {/* Child count inline */}
               {hasChildren && (
-                <span className="text-[10px] text-gray-400">
+                <span className="text-[10px] text-gray-600">
                   ({childCount})
                 </span>
               )}
@@ -394,7 +394,7 @@ function HierarchyNode({
 
               {/* Portion info inline */}
               {ingredient.standardQuantity && ingredient.standardUnit && (
-                <span className="text-[10px] text-gray-400">
+                <span className="text-[10px] text-gray-600">
                   {ingredient.standardQuantity} {ingredient.standardUnit}
                 </span>
               )}
@@ -508,7 +508,7 @@ function HierarchyNode({
                                     {mi.name}
                                   </span>
                                 ))}
-                                <span className="text-[10px] text-gray-400">
+                                <span className="text-[10px] text-gray-600">
                                   ×{menuItemNames.length} {menuItemNames.length === 1 ? 'item' : 'items'}
                                 </span>
                               </>
@@ -580,7 +580,7 @@ function HierarchyNode({
                       {comp.component.name}
                     </span>
                     {comp.component.categoryRelation && (
-                      <span className="text-[10px] text-gray-400">
+                      <span className="text-[10px] text-gray-600">
                         ({comp.component.categoryRelation.name})
                       </span>
                     )}
@@ -866,7 +866,7 @@ function CategoryHierarchySection({
             <h3 className="font-semibold text-gray-900 text-sm">
               {category.name}
             </h3>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-600">
               {ingredients.length} inv / {totalCount - ingredients.length} prep
             </span>
             {category.needsVerification && (

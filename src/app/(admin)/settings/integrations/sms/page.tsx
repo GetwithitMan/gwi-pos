@@ -120,7 +120,7 @@ export default function SmsIntegrationPage() {
                   {testing ? 'Testing...' : 'Test Connection'}
                 </Button>
                 {!configured && (
-                  <p className="text-xs text-gray-400 mt-1">Configure your Twilio credentials in your server settings first.</p>
+                  <p className="text-xs text-gray-600 mt-1">Configure your Twilio credentials in your server settings first.</p>
                 )}
               </div>
             </div>

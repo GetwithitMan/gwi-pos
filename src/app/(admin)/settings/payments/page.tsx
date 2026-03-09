@@ -90,7 +90,7 @@ export default function PaymentSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading payment settings...</div>
+          <div className="text-gray-700 text-lg">Loading payment settings...</div>
         </div>
       </div>
     )
@@ -130,7 +130,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Payment Methods</h2>
-          <p className="text-sm text-gray-500 mb-5">Choose which payment methods are accepted at this location.</p>
+          <p className="text-sm text-gray-600 mb-5">Choose which payment methods are accepted at this location.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -184,7 +184,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Quick Pay</h2>
-          <p className="text-sm text-gray-500 mb-5">Configure single-transaction Quick Pay mode. Tip percentage and dollar suggestions are managed in <Link href="/settings/tips" className="text-indigo-600 hover:underline">Tips settings</Link>.</p>
+          <p className="text-sm text-gray-600 mb-5">Configure single-transaction Quick Pay mode. Tip percentage and dollar suggestions are managed in <Link href="/settings/tips" className="text-indigo-600 hover:underline">Tips settings</Link>.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -213,7 +213,7 @@ export default function PaymentSettingsPage() {
                 <h2 className="text-lg font-semibold text-gray-900">Pre-Authorization (Bar Tabs)</h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600">View only</span>
               </div>
-              <p className="text-sm text-gray-500">Managed in Tabs & Pre-Auth settings</p>
+              <p className="text-sm text-gray-600">Managed in Tabs & Pre-Auth settings</p>
             </div>
             <Link
               href="/settings/tabs"
@@ -230,19 +230,19 @@ export default function PaymentSettingsPage() {
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="bg-white rounded-xl p-3 border border-gray-100">
-              <div className="text-xs text-gray-400 mb-0.5">Pre-Auth</div>
+              <div className="text-xs text-gray-600 mb-0.5">Pre-Auth</div>
               <div className="font-medium text-gray-900">{form.enablePreAuth ? 'Enabled' : 'Disabled'}</div>
             </div>
             <div className="bg-white rounded-xl p-3 border border-gray-100">
-              <div className="text-xs text-gray-400 mb-0.5">Hold Amount</div>
+              <div className="text-xs text-gray-600 mb-0.5">Hold Amount</div>
               <div className="font-medium text-gray-900">${form.defaultPreAuthAmount}</div>
             </div>
             <div className="bg-white rounded-xl p-3 border border-gray-100">
-              <div className="text-xs text-gray-400 mb-0.5">Tip Buffer</div>
+              <div className="text-xs text-gray-600 mb-0.5">Tip Buffer</div>
               <div className="font-medium text-gray-900">{form.incrementTipBufferPercent}%</div>
             </div>
             <div className="bg-white rounded-xl p-3 border border-gray-100">
-              <div className="text-xs text-gray-400 mb-0.5">Auto-Increment</div>
+              <div className="text-xs text-gray-600 mb-0.5">Auto-Increment</div>
               <div className="font-medium text-gray-900">
                 {form.autoIncrementEnabled ? `At ${form.incrementThresholdPercent}%` : 'Off'}
               </div>
@@ -255,7 +255,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Signature & Receipts</h2>
-          <p className="text-sm text-gray-500 mb-5">Configure signature requirements and digital receipt retention.</p>
+          <p className="text-sm text-gray-600 mb-5">Configure signature requirements and digital receipt retention.</p>
 
           <div className="space-y-4">
             <NumberRow
@@ -284,7 +284,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Cash Rounding</h2>
-          <p className="text-sm text-gray-500 mb-5">Round cash totals to a standard increment to avoid awkward change. Card totals are unaffected by default.</p>
+          <p className="text-sm text-gray-600 mb-5">Round cash totals to a standard increment to avoid awkward change. Card totals are unaffected by default.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -341,7 +341,7 @@ export default function PaymentSettingsPage() {
                         }`}
                       >
                         <div className={`text-sm font-medium ${roundingForm.direction === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>{opt.label}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
+                        <div className="text-xs text-gray-600 mt-0.5">{opt.desc}</div>
                       </button>
                     ))}
                   </div>
@@ -373,7 +373,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Walkout Recovery</h2>
-          <p className="text-sm text-gray-500 mb-5">Automatically detect and attempt to recover unpaid walkout (a customer who left without paying) tabs.</p>
+          <p className="text-sm text-gray-600 mb-5">Automatically detect and attempt to recover unpaid walkout (a customer who left without paying) tabs.</p>
 
           <ToggleRow
             label="Enable Walkout Retry"
@@ -420,7 +420,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Card Recognition</h2>
-          <p className="text-sm text-gray-500 mb-5">Recognize repeat customers by their payment card. When a known card is used, the POS can greet them by name and speed up tab lookup.</p>
+          <p className="text-sm text-gray-600 mb-5">Recognize repeat customers by their payment card. When a known card is used, the POS can greet them by name and speed up tab lookup.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -446,7 +446,7 @@ export default function PaymentSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Bottle Service</h2>
-          <p className="text-sm text-gray-500 mb-5">Configure bottle service tab type, auto-gratuity, and minimum spend enforcement.</p>
+          <p className="text-sm text-gray-600 mb-5">Configure bottle service tab type, auto-gratuity, and minimum spend enforcement.</p>
 
           <div className="space-y-0">
             <ToggleRow

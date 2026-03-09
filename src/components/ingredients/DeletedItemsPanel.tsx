@@ -84,12 +84,12 @@ export function DeletedItemsPanel({
                     <div>
                       <span className="font-medium text-gray-700">{ingredient.name}</span>
                       {ingredient.parentIngredient && (
-                        <span className="text-xs text-gray-400 ml-2">
+                        <span className="text-xs text-gray-600 ml-2">
                           (was prep under {ingredient.parentIngredient.name})
                         </span>
                       )}
                       {ingredient.categoryRelation && !ingredient.parentIngredient && (
-                        <span className="text-xs text-gray-400 ml-2">
+                        <span className="text-xs text-gray-600 ml-2">
                           (was in {ingredient.categoryRelation.name})
                         </span>
                       )}

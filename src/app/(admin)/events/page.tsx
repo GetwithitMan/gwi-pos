@@ -100,7 +100,7 @@ export default function EventsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-gray-400">Loading events...</div>
+        <div className="text-gray-600">Loading events...</div>
       </div>
     )
   }

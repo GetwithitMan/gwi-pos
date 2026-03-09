@@ -300,7 +300,7 @@ export function PricingOptionInventoryLinker({
           </span>
         )}
         {totalCost > 0 && (
-          <span className="text-[10px] text-gray-500 font-normal ml-1">
+          <span className="text-[10px] text-gray-700 font-normal ml-1">
             (${totalCost.toFixed(2)})
           </span>
         )}
@@ -309,7 +309,7 @@ export function PricingOptionInventoryLinker({
       {expanded && (
         <div className="mt-1.5 ml-2 border-l-2 border-purple-200 pl-2 space-y-1.5">
           {loading ? (
-            <div className="text-[11px] text-gray-400 py-1">Loading...</div>
+            <div className="text-[11px] text-gray-600 py-1">Loading...</div>
           ) : (
             <>
               {/* Linked items list */}
@@ -325,13 +325,13 @@ export function PricingOptionInventoryLinker({
                   ))}
                   {totalCost > 0 && (
                     <div className="flex items-center justify-between pt-1 border-t border-purple-100">
-                      <span className="text-[10px] font-semibold text-gray-500">Total cost</span>
+                      <span className="text-[10px] font-semibold text-gray-700">Total cost</span>
                       <span className="text-[11px] font-bold text-gray-700">${totalCost.toFixed(2)}</span>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-[10px] text-gray-400 py-0.5">No inventory linked yet.</p>
+                <p className="text-[10px] text-gray-600 py-0.5">No inventory linked yet.</p>
               )}
 
               {/* Add button / picker toggle */}
@@ -474,7 +474,7 @@ function LinkedItemRow({
 
       {/* Cost display */}
       {link.calculatedCost != null && link.calculatedCost > 0 ? (
-        <span className="text-[10px] text-gray-500 shrink-0 w-12 text-right">
+        <span className="text-[10px] text-gray-700 shrink-0 w-12 text-right">
           ${link.calculatedCost.toFixed(2)}
         </span>
       ) : (

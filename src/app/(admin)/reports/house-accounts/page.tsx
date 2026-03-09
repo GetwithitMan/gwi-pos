@@ -362,7 +362,7 @@ export default function HouseAccountsReportPage() {
                                 )}
                               </div>
                             ) : (
-                              <span className="text-gray-400">Never</span>
+                              <span className="text-gray-600">Never</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-center">

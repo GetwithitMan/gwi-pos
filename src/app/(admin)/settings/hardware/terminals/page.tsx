@@ -246,7 +246,7 @@ export default function TerminalsPage() {
   if (loading) {
     return (
       <div className="p-6 flex items-center justify-center">
-        <div className="text-gray-600">Loading terminals...</div>
+        <div className="text-gray-700">Loading terminals...</div>
       </div>
     )
   }
@@ -283,7 +283,7 @@ export default function TerminalsPage() {
           </h2>
           {fixedStations.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow">
-              <p className="text-gray-500">No fixed stations configured</p>
+              <p className="text-gray-700">No fixed stations configured</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -312,7 +312,7 @@ export default function TerminalsPage() {
           </h2>
           {handhelds.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow">
-              <p className="text-gray-500">No handhelds configured</p>
+              <p className="text-gray-700">No handhelds configured</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -470,10 +470,10 @@ function TerminalCard({
             <div className="flex items-center gap-2 mt-0.5">
               <TerminalStatusBadge status={status} />
               {terminal.staticIp && (
-                <span className="text-xs text-gray-500 font-mono">{terminal.staticIp}</span>
+                <span className="text-xs text-gray-700 font-mono">{terminal.staticIp}</span>
               )}
               {terminal.appVersion && (
-                <span className="text-[10px] text-gray-400 font-mono">v{terminal.appVersion}</span>
+                <span className="text-[10px] text-gray-600 font-mono">v{terminal.appVersion}</span>
               )}
             </div>
           </div>
@@ -494,15 +494,15 @@ function TerminalCard({
       <div className="p-4 space-y-3">
         {/* Receipt Printer */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Receipt Printer</span>
+          <span className="text-gray-700">Receipt Printer</span>
           <span className="text-gray-900">
-            {terminal.receiptPrinter?.name || <span className="text-gray-500">None</span>}
+            {terminal.receiptPrinter?.name || <span className="text-gray-700">None</span>}
           </span>
         </div>
 
         {/* Scale */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Scale</span>
+          <span className="text-gray-700">Scale</span>
           <span className="text-gray-900">
             {terminal.scale ? (
               <span className="flex items-center gap-1.5">
@@ -510,7 +510,7 @@ function TerminalCard({
                 {terminal.scale.name}
               </span>
             ) : (
-              <span className="text-gray-500">None</span>
+              <span className="text-gray-700">None</span>
             )}
           </span>
         </div>
@@ -518,12 +518,12 @@ function TerminalCard({
         {/* Connected Hardware (Android terminals) */}
         {terminal.deviceInfo?.connectedHardware && (
           <div className="pt-2 border-t border-gray-100 space-y-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Connected Hardware</span>
-            <p className="text-[10px] text-gray-400 mt-0.5">Hardware automatically detected or configured for this terminal.</p>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">Connected Hardware</span>
+            <p className="text-[10px] text-gray-600 mt-0.5">Hardware automatically detected or configured for this terminal.</p>
 
             {/* Card Reader */}
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600 flex items-center gap-1.5">
+              <span className="text-gray-700 flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                 </svg>
@@ -535,18 +535,18 @@ function TerminalCard({
                   <span className="text-gray-900 text-xs">
                     {terminal.deviceInfo.connectedHardware.cardReader.deviceName}
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-mono uppercase">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono uppercase">
                     {terminal.deviceInfo.connectedHardware.cardReader.transport}
                   </span>
                 </span>
               ) : (
-                <span className="text-gray-400 text-xs">None</span>
+                <span className="text-gray-700 text-xs">None</span>
               )}
             </div>
 
             {/* Scale */}
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-600 flex items-center gap-1.5">
+              <span className="text-gray-700 flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
                 </svg>
@@ -567,7 +567,7 @@ function TerminalCard({
             {/* Printers */}
             {terminal.deviceInfo.connectedHardware.printerCount != null && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600 flex items-center gap-1.5">
+                <span className="text-gray-700 flex items-center gap-1.5">
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                   </svg>
@@ -582,8 +582,8 @@ function TerminalCard({
             {/* Platform/OS */}
             {terminal.deviceInfo.connectedHardware.osVersion && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">OS</span>
-                <span className="text-xs text-gray-500 font-mono">
+                <span className="text-gray-700">OS</span>
+                <span className="text-xs text-gray-700 font-mono">
                   {terminal.deviceInfo.connectedHardware.osVersion}
                 </span>
               </div>
@@ -591,7 +591,7 @@ function TerminalCard({
 
             {/* Last hardware report time */}
             {terminal.deviceInfo.lastHardwareReportAt && (
-              <div className="text-[10px] text-gray-400 text-right">
+              <div className="text-[10px] text-gray-600 text-right">
                 Hardware reported {new Date(terminal.deviceInfo.lastHardwareReportAt).toLocaleTimeString()}
               </div>
             )}
@@ -600,15 +600,15 @@ function TerminalCard({
 
         {/* Skip Rules Summary */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Skip Rules</span>
-          <span className={hasSkipRules ? 'text-amber-600' : 'text-gray-500'}>
+          <span className="text-gray-700">Skip Rules</span>
+          <span className={hasSkipRules ? 'text-amber-600' : 'text-gray-700'}>
             {hasSkipRules ? `${Object.keys(skipRules).filter(r => skipRules[r]?.length > 0).length} roles configured` : 'None'}
           </span>
         </div>
 
         {/* Force All Prints Toggle */}
         <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-200">
-          <span className="text-gray-600" title="Force ALL ticket types to print at this station, ignoring role-based skip rules. Use only for troubleshooting.">Emergency Override: Print All</span>
+          <span className="text-gray-700" title="Force ALL ticket types to print at this station, ignoring role-based skip rules. Use only for troubleshooting.">Emergency Override: Print All</span>
           <button
             onClick={onToggleForce}
             className={`relative w-10 h-5 rounded-full transition-colors ${
@@ -743,7 +743,7 @@ function HandheldTerminalCard({
             <div className="flex items-center gap-2 mt-0.5">
               <TerminalStatusBadge status={status} />
               {terminal.appVersion && (
-                <span className="text-[10px] text-gray-400 font-mono">v{terminal.appVersion}</span>
+                <span className="text-[10px] text-gray-600 font-mono">v{terminal.appVersion}</span>
               )}
             </div>
           </div>
@@ -764,7 +764,7 @@ function HandheldTerminalCard({
       <div className="p-4 space-y-3">
         {/* Default Mode */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Default Mode</span>
+          <span className="text-gray-700">Default Mode</span>
           <select
             value={terminal.defaultMode ?? ''}
             onChange={(e) => onModeChange(e.target.value ? (e.target.value as HandheldMode) : null)}
@@ -779,10 +779,10 @@ function HandheldTerminalCard({
 
         {/* Receipt Printer */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Receipt Printer</span>
+          <span className="text-gray-700">Receipt Printer</span>
           <div className="flex items-center gap-1.5">
             <span className="text-gray-900">
-              {terminal.receiptPrinter?.name || <span className="text-gray-500">None</span>}
+              {terminal.receiptPrinter?.name || <span className="text-gray-700">None</span>}
             </span>
             {terminal.receiptPrinterId && (
               <TestPrintButton printerId={terminal.receiptPrinterId} />
@@ -792,10 +792,10 @@ function HandheldTerminalCard({
 
         {/* Kitchen Printer */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Kitchen Printer</span>
+          <span className="text-gray-700">Kitchen Printer</span>
           <div className="flex items-center gap-1.5">
             <span className="text-gray-900">
-              {terminal.kitchenPrinter?.name || <span className="text-gray-500">None</span>}
+              {terminal.kitchenPrinter?.name || <span className="text-gray-700">None</span>}
             </span>
             {terminal.kitchenPrinterId && (
               <TestPrintButton printerId={terminal.kitchenPrinterId} />
@@ -805,10 +805,10 @@ function HandheldTerminalCard({
 
         {/* Bar Printer */}
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Bar Printer</span>
+          <span className="text-gray-700">Bar Printer</span>
           <div className="flex items-center gap-1.5">
             <span className="text-gray-900">
-              {terminal.barPrinter?.name || <span className="text-gray-500">None</span>}
+              {terminal.barPrinter?.name || <span className="text-gray-700">None</span>}
             </span>
             {terminal.barPrinterId && (
               <TestPrintButton printerId={terminal.barPrinterId} />
@@ -819,7 +819,7 @@ function HandheldTerminalCard({
         {/* Connected Hardware (Android terminals) */}
         {terminal.deviceInfo?.connectedHardware?.cardReader && (
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600 flex items-center gap-1.5">
+            <span className="text-gray-700 flex items-center gap-1.5">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
               </svg>
@@ -834,7 +834,7 @@ function HandheldTerminalCard({
 
         {/* Force All Prints Toggle */}
         <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-200">
-          <span className="text-gray-600">Emergency Override: Print All</span>
+          <span className="text-gray-700">Emergency Override: Print All</span>
           <button
             onClick={onToggleForce}
             className={`relative w-10 h-5 rounded-full transition-colors ${
@@ -1006,7 +1006,7 @@ function TerminalModal({
             {/* Left Column - Identity */}
             <div className="space-y-4">
               <div>
-                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                <label className="text-[10px] font-black text-gray-700 uppercase tracking-widest block mb-2">
                   Station Name *
                 </label>
                 <input
@@ -1019,7 +1019,7 @@ function TerminalModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                <label className="text-[10px] font-black text-gray-700 uppercase tracking-widest block mb-2">
                   Static IP Address
                 </label>
                 <input
@@ -1029,13 +1029,13 @@ function TerminalModal({
                   placeholder="192.168.1.XX"
                   className="w-full bg-white border border-gray-300 rounded-xl px-4 py-3 text-sm font-mono text-gray-900 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none"
                 />
-                <p className="text-[10px] text-gray-500 mt-1">
+                <p className="text-[10px] text-gray-600 mt-1">
                   Optional - helps identify this terminal on the network
                 </p>
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                <label className="text-[10px] font-black text-gray-700 uppercase tracking-widest block mb-2">
                   Local Receipt Printer
                 </label>
                 <select
@@ -1050,13 +1050,13 @@ function TerminalModal({
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-500 mt-1">
+                <p className="text-[10px] text-gray-600 mt-1">
                   The receipt printer physically connected to this terminal. Used for customer receipts printed at this station.
                 </p>
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                <label className="text-[10px] font-black text-gray-700 uppercase tracking-widest block mb-2">
                   Kitchen Printer
                 </label>
                 <select
@@ -1071,13 +1071,13 @@ function TerminalModal({
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-500 mt-1">
+                <p className="text-[10px] text-gray-600 mt-1">
                   Override kitchen printer for this terminal. Food orders placed here will print to this printer instead of the default.
                 </p>
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                <label className="text-[10px] font-black text-gray-700 uppercase tracking-widest block mb-2">
                   Bar Printer
                 </label>
                 <select
@@ -1092,13 +1092,13 @@ function TerminalModal({
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-500 mt-1">
+                <p className="text-[10px] text-gray-600 mt-1">
                   Override bar printer for this terminal. Drink orders placed here will print to this printer instead of the default.
                 </p>
               </div>
 
               <div>
-                <label className="text-[10px] font-black text-gray-600 uppercase tracking-widest block mb-2">
+                <label className="text-[10px] font-black text-gray-700 uppercase tracking-widest block mb-2">
                   Scale (Weight-Based Selling)
                 </label>
                 <select
@@ -1113,7 +1113,7 @@ function TerminalModal({
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-gray-500 mt-1">
+                <p className="text-[10px] text-gray-600 mt-1">
                   Connect a weight scale to this terminal for items priced by weight. The scale automatically measures and calculates the price.
                 </p>
               </div>
@@ -1127,10 +1127,10 @@ function TerminalModal({
                 </svg>
                 Auto-Skip Rules
               </h3>
-              <p className="text-[10px] text-gray-600 mb-2">
+              <p className="text-[10px] text-gray-700 mb-2">
                 When an employee with a specific role logs in at this station, skip printing certain ticket types. For example: Bartender role → skip Kitchen tickets (bartenders don&apos;t need kitchen print copies of drinks).
               </p>
-              <p className="text-[10px] text-gray-500 italic mb-4">
+              <p className="text-[10px] text-gray-600 italic mb-4">
                 Example: Set &ldquo;Bartender&rdquo; → Skip &ldquo;Kitchen&rdquo; so drink orders don&apos;t print in the kitchen.
               </p>
 
@@ -1162,7 +1162,7 @@ function TerminalModal({
               </div>
 
               {roles.length === 0 && (
-                <p className="text-xs text-gray-500 italic">No roles found</p>
+                <p className="text-xs text-gray-600 italic">No roles found</p>
               )}
             </div>
           </div>
@@ -1230,7 +1230,7 @@ function PairingCodeModal({
   return (
     <Modal isOpen={true} onClose={onClose} title="Pairing Code" size="md">
       <div className="text-center">
-        <p className="text-gray-600 text-sm mb-6">
+        <p className="text-gray-700 text-sm mb-6">
           Enter this code on the device to pair it
         </p>
 

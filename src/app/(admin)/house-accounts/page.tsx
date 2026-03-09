@@ -358,7 +358,7 @@ export default function HouseAccountsPage() {
                         Balance: {formatCurrency(account.currentBalance)}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-gray-600 mt-1">
                       Terms: Net {account.paymentTerms}
                     </div>
                   </div>
@@ -493,7 +493,7 @@ export default function HouseAccountsPage() {
                         {txn.referenceNumber && (
                           <div className="text-xs text-gray-500">Ref: {txn.referenceNumber}</div>
                         )}
-                        <div className="text-xs text-gray-400 flex justify-between">
+                        <div className="text-xs text-gray-600 flex justify-between">
                           <span>{formatDate(txn.createdAt)}</span>
                           <span>Bal: {formatCurrency(txn.balanceAfter)}</span>
                         </div>

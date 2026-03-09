@@ -81,7 +81,7 @@ export function ModifierGroupSection({
             {group.isRequired ? (
               <span className="text-red-400/70 text-[10px] flex-shrink-0">• Required</span>
             ) : (
-              <span className="text-gray-400/60 text-[10px] flex-shrink-0">• Optional</span>
+              <span className="text-gray-600 text-[10px] flex-shrink-0">• Optional</span>
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -126,7 +126,7 @@ export function ModifierGroupSection({
 
           {/* All options expandable */}
           <details className="mt-auto">
-            <summary className="text-[10px] text-slate-500 cursor-pointer">All {group.modifiers.length} options</summary>
+            <summary className="text-[10px] text-gray-700 cursor-pointer">All {group.modifiers.length} options</summary>
             <div className="flex flex-col gap-1 mt-1">
               {group.modifiers.map(mod => {
                 const isModSelected = currentSelection?.id === mod.id
@@ -176,7 +176,7 @@ export function ModifierGroupSection({
           {group.isRequired ? (
             <span className="text-red-400/70 text-[10px] flex-shrink-0">• Required</span>
           ) : (
-            <span className="text-gray-400/60 text-[10px] flex-shrink-0">• Optional</span>
+            <span className="text-gray-600 text-[10px] flex-shrink-0">• Optional</span>
           )}
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
@@ -267,7 +267,7 @@ export function ModifierGroupSection({
 
                   {/* Child group indicator */}
                   {!is86d && hasChildGroup && (
-                    <span className="text-slate-400 text-xs">›</span>
+                    <span className="text-gray-700 text-xs">›</span>
                   )}
                 </span>
               </button>

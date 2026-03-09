@@ -61,7 +61,7 @@ export function CreateMenuItemModal({
       size="md"
     >
         {bottle && (
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-gray-600 mb-4">
             Create a POS menu item for <strong>{bottle.name}</strong>
           </p>
         )}
@@ -139,7 +139,7 @@ export function CreateMenuItemModal({
           {/* Suggested Prices (only when bottle with pour cost) */}
           {bottle && pourCost > 0 && (
             <div>
-              <label className="block text-xs text-gray-500 mb-2">Suggested prices (by profit margin):</label>
+              <label className="block text-xs text-gray-700 mb-2">Suggested prices (by profit margin):</label>
               <div className="flex gap-2">
                 {suggestedPrices.map(({ margin, price: suggested }) => (
                   <button
@@ -151,7 +151,7 @@ export function CreateMenuItemModal({
                     }`}
                   >
                     <div className="font-medium">{formatCurrency(suggested)}</div>
-                    <div className="text-xs text-gray-500">{margin}% margin</div>
+                    <div className="text-xs text-gray-600">{margin}% margin</div>
                   </button>
                 ))}
               </div>

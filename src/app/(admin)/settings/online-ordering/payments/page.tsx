@@ -119,14 +119,14 @@ export default function PaymentsPage() {
         {/* Tip Suggestions */}
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
           <h2 className="text-lg font-semibold text-white mb-1">Tip Suggestions</h2>
-          <p className="text-sm text-gray-400 mb-5">
+          <p className="text-sm text-gray-300 mb-5">
             These percentages appear as quick-tap buttons on the customer checkout page.
           </p>
 
           <div className="space-y-4">
             {settings.tipSuggestions.map((tip, i) => (
               <div key={i} className="flex items-center gap-3">
-                <label className="text-sm text-gray-300 w-24">Tip Option {i + 1}</label>
+                <label className="text-sm text-white w-24">Tip Option {i + 1}</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -136,14 +136,14 @@ export default function PaymentsPage() {
                     onChange={e => handleTipChange(i, e.target.value)}
                     className="w-24 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm">%</span>
                 </div>
               </div>
             ))}
           </div>
 
           <div className="mt-6">
-            <label className="text-sm text-gray-300 block mb-2">Default Selection</label>
+            <label className="text-sm text-white block mb-2">Default Selection</label>
             <div className="flex flex-wrap gap-2">
               {settings.tipSuggestions.map((tip, i) => (
                 <button
@@ -180,7 +180,7 @@ export default function PaymentsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white">Require ZIP code for card payment</p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-xs text-gray-300 mt-0.5">
                   Some payment processors require ZIP for card-not-present transactions
                 </p>
               </div>
@@ -229,7 +229,7 @@ export default function PaymentsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white">Require contact info for pickup orders</p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-xs text-gray-300 mt-0.5">
                   Requires customers to provide phone or email when ordering takeout
                 </p>
               </div>

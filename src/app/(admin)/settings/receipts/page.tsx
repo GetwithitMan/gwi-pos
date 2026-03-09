@@ -22,7 +22,7 @@ function Toggle({ value, onChange, label, description }: {
     <div className="flex items-center justify-between py-2">
       <div className="flex-1 mr-4">
         <span className="text-sm font-medium text-gray-900">{label}</span>
-        {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
+        {description && <p className="text-xs text-gray-600 mt-0.5">{description}</p>}
       </div>
       <button
         onClick={() => onChange(!value)}
@@ -181,7 +181,7 @@ export default function ReceiptSettingsPage() {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <h1 className="text-2xl font-bold mb-2">Receipt Settings</h1>
-        <p className="text-gray-500 mb-6">Loading...</p>
+        <p className="text-gray-600 mb-6">Loading...</p>
       </div>
     )
   }
@@ -190,7 +190,7 @@ export default function ReceiptSettingsPage() {
     <div className="p-6 max-w-4xl mx-auto pb-24">
       <div className="mb-6">
         <h1 className="text-2xl font-bold mb-1">Receipt Settings</h1>
-        <p className="text-gray-500 text-sm">Receipt content, tip display, signature, kitchen and bar ticket formatting.</p>
+        <p className="text-gray-600 text-sm">Receipt content, tip display, signature, kitchen and bar ticket formatting.</p>
       </div>
 
       <div className="space-y-6">
@@ -271,11 +271,11 @@ export default function ReceiptSettingsPage() {
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="18, 20, 22"
                 />
-                <p className="text-xs text-gray-400 mt-1">Whole numbers only, separated by commas (e.g., 15, 18, 20, 25). Customers will see these as quick-select buttons on the printed tip line.</p>
+                <p className="text-xs text-gray-600 mt-1">Whole numbers only, separated by commas (e.g., 15, 18, 20, 25). Customers will see these as quick-select buttons on the printed tip line.</p>
               </div>
               <div className="mt-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Calculation basis</label>
-                <p className="text-xs text-gray-400 mb-2">Pre-Tax: suggested tip is based on the food/drink total before tax (standard in most US venues). Post-Tax: tip is based on the total including tax (slightly higher suggestions).</p>
+                <p className="text-xs text-gray-600 mb-2">Pre-Tax: suggested tip is based on the food/drink total before tax (standard in most US venues). Post-Tax: tip is based on the total including tax (slightly higher suggestions).</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => updateTips('calculation', 'pre-tax')}
@@ -314,7 +314,7 @@ export default function ReceiptSettingsPage() {
               <div className="mt-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Signature threshold</label>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">$</span>
+                  <span className="text-sm text-gray-700">$</span>
                   <input
                     type="number"
                     value={receiptDisplay.signature.threshold ?? ''}
@@ -328,7 +328,7 @@ export default function ReceiptSettingsPage() {
                     step={1}
                   />
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Require a signature for transactions over this amount. Leave blank to always require a signature.</p>
+                <p className="text-xs text-gray-600 mt-1">Require a signature for transactions over this amount. Leave blank to always require a signature.</p>
               </div>
             </>
           )}
@@ -369,7 +369,7 @@ export default function ReceiptSettingsPage() {
           <div className="border-t border-gray-100 my-2" />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Terms text</label>
-            <p className="text-xs text-gray-400 mb-1">Custom legal or courtesy text printed near the bottom (e.g., &apos;Gratuity is optional&apos; or &apos;All sales final&apos;).</p>
+            <p className="text-xs text-gray-600 mb-1">Custom legal or courtesy text printed near the bottom (e.g., &apos;Gratuity is optional&apos; or &apos;All sales final&apos;).</p>
             <input
               type="text"
               value={receiptDisplay.footer.termsText}
@@ -380,7 +380,7 @@ export default function ReceiptSettingsPage() {
           </div>
           <div className="mt-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Promo text</label>
-            <p className="text-xs text-gray-400 mb-1">Marketing message or promotion printed at the very end of the receipt (e.g., &apos;Follow us on Instagram&apos;).</p>
+            <p className="text-xs text-gray-600 mb-1">Marketing message or promotion printed at the very end of the receipt (e.g., &apos;Follow us on Instagram&apos;).</p>
             <input
               type="text"
               value={receiptDisplay.footer.promoText}
@@ -401,7 +401,7 @@ export default function ReceiptSettingsPage() {
               rows={3}
               placeholder="One line per entry"
             />
-            <p className="text-xs text-gray-400 mt-1">Each line will print as a separate footer line</p>
+            <p className="text-xs text-gray-600 mt-1">Each line will print as a separate footer line</p>
           </div>
         </SettingsCard>
 
@@ -428,7 +428,7 @@ export default function ReceiptSettingsPage() {
       {/* ─── Sticky Save Bar ─── */}
       {isDirty && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg px-6 py-3 flex items-center justify-between z-50">
-          <span className="text-sm text-gray-500">You have unsaved changes</span>
+          <span className="text-sm text-gray-700">You have unsaved changes</span>
           <button
             onClick={handleSave}
             disabled={isSaving}

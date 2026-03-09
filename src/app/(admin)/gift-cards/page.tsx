@@ -290,7 +290,7 @@ export default function GiftCardsPage() {
                         Balance: {formatCurrency(card.currentBalance)}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-gray-600 mt-1">
                       Created: {formatDate(card.createdAt)}
                     </div>
                   </div>
@@ -404,7 +404,7 @@ export default function GiftCardsPage() {
                         <div className="text-xs text-gray-500">
                           Balance: {formatCurrency(txn.balanceAfter)}
                         </div>
-                        <div className="text-xs text-gray-400">
+                        <div className="text-xs text-gray-600">
                           {formatDate(txn.createdAt)}
                         </div>
                       </div>

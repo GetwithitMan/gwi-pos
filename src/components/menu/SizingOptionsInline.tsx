@@ -75,7 +75,7 @@ export function SizingOptionsInline({
   if (loading) {
     return (
       <div className="border border-gray-200 rounded-xl p-3">
-        <div className="text-xs text-gray-400 text-center py-2">Loading...</div>
+        <div className="text-xs text-gray-600 text-center py-2">Loading...</div>
       </div>
     )
   }
@@ -115,7 +115,7 @@ export function SizingOptionsInline({
             className="w-4 h-4 rounded"
           />
           <span className="text-sm font-medium text-gray-700">Size Options</span>
-          <span className="text-[11px] text-gray-400">(S/M/L, Bowl/Cup)</span>
+          <span className="text-[11px] text-gray-600">(S/M/L, Bowl/Cup)</span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -126,7 +126,7 @@ export function SizingOptionsInline({
             className="w-4 h-4 rounded"
           />
           <span className="text-sm font-medium text-gray-700">Quick Pick</span>
-          <span className="text-[11px] text-gray-400">(Mild/Medium/Hot)</span>
+          <span className="text-[11px] text-gray-600">(Mild/Medium/Hot)</span>
         </label>
       </div>
 
@@ -165,7 +165,7 @@ export function SizingOptionsInline({
               ))}
             </div>
           ) : (
-            <p className="text-xs text-gray-400 text-center py-1">
+            <p className="text-xs text-gray-600 text-center py-1">
               No {hasSizes ? 'sizes' : 'quick picks'} yet. Add one below.
             </p>
           )}

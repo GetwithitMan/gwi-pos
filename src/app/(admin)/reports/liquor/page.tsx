@@ -300,9 +300,9 @@ export default function LiquorReportPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading report...</div>
+          <div className="text-center py-12 text-gray-700">Loading report...</div>
         ) : !report ? (
-          <div className="text-center py-12 text-gray-500">Failed to load report</div>
+          <div className="text-center py-12 text-gray-700">Failed to load report</div>
         ) : (
           <>
             {/* Overview Tab */}
@@ -312,13 +312,13 @@ export default function LiquorReportPage() {
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Total Pours</p>
+                      <p className="text-sm text-gray-700">Total Pours</p>
                       <p className="text-2xl font-bold text-blue-600">{report.summary.totalPours}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Pour Cost</p>
+                      <p className="text-sm text-gray-700">Pour Cost</p>
                       <p className="text-2xl font-bold text-red-600">
                         {formatCurrency(report.summary.totalPourCost)}
                       </p>
@@ -326,7 +326,7 @@ export default function LiquorReportPage() {
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Spirit Revenue</p>
+                      <p className="text-sm text-gray-700">Spirit Revenue</p>
                       <p className="text-2xl font-bold text-green-600">
                         {formatCurrency(report.summary.totalSpiritRevenue)}
                       </p>
@@ -334,19 +334,19 @@ export default function LiquorReportPage() {
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Gross Margin</p>
+                      <p className="text-sm text-gray-700">Gross Margin</p>
                       <p className="text-2xl font-bold text-purple-600">{report.summary.grossMargin}%</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Bottles Used</p>
+                      <p className="text-sm text-gray-700">Bottles Used</p>
                       <p className="text-2xl font-bold text-gray-700">{report.summary.uniqueBottlesUsed}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Spirit Selections</p>
+                      <p className="text-sm text-gray-700">Spirit Selections</p>
                       <p className="text-2xl font-bold text-gray-700">{report.summary.spiritSelectionCount}</p>
                     </CardContent>
                   </Card>
@@ -359,7 +359,7 @@ export default function LiquorReportPage() {
                   </CardHeader>
                   <CardContent>
                     {report.byTier.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No spirit tier data available</p>
+                      <p className="text-gray-600 text-center py-4">No spirit tier data available</p>
                     ) : (
                       <div className="space-y-4">
                         {report.byTier.map((tier) => {
@@ -380,7 +380,7 @@ export default function LiquorReportPage() {
                               </div>
                               <div className="text-right w-32">
                                 <p className="font-semibold">{formatCurrency(tier.revenue)}</p>
-                                <p className="text-xs text-gray-500">{tier.count} drinks</p>
+                                <p className="text-xs text-gray-600">{tier.count} drinks</p>
                               </div>
                             </div>
                           )
@@ -397,7 +397,7 @@ export default function LiquorReportPage() {
                   </CardHeader>
                   <CardContent>
                     {report.byCategory.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No category data available</p>
+                      <p className="text-gray-600 text-center py-4">No category data available</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full">
@@ -445,7 +445,7 @@ export default function LiquorReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.byTier.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">No tier data available for this period</p>
+                    <p className="text-gray-600 text-center py-8">No tier data available for this period</p>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                       {report.byTier.map((tier) => (
@@ -492,7 +492,7 @@ export default function LiquorReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.byBottle.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">No bottle usage data available</p>
+                    <p className="text-gray-600 text-center py-8">No bottle usage data available</p>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -535,7 +535,7 @@ export default function LiquorReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.pourCostAnalysis.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
+                    <div className="text-center py-8 text-gray-700">
                       <p className="mb-2">No cocktails with recipes found.</p>
                       <p className="text-sm">Add recipes in the Liquor Builder to see pour cost analysis.</p>
                     </div>
@@ -570,7 +570,7 @@ export default function LiquorReportPage() {
                                     {item.margin}%
                                   </span>
                                 </td>
-                                <td className="py-3 px-4 text-center text-gray-500">{item.ingredientCount}</td>
+                                <td className="py-3 px-4 text-center text-gray-700">{item.ingredientCount}</td>
                               </tr>
                             )
                           })}
@@ -589,25 +589,25 @@ export default function LiquorReportPage() {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Upsells Shown</p>
+                      <p className="text-sm text-gray-700">Upsells Shown</p>
                       <p className="text-2xl font-bold text-blue-600">{report.upsells.summary.totalShown}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Upsells Accepted</p>
+                      <p className="text-sm text-gray-700">Upsells Accepted</p>
                       <p className="text-2xl font-bold text-green-600">{report.upsells.summary.totalAccepted}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Acceptance Rate</p>
+                      <p className="text-sm text-gray-700">Acceptance Rate</p>
                       <p className="text-2xl font-bold text-purple-600">{report.upsells.summary.acceptanceRate}%</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Upsell Revenue</p>
+                      <p className="text-sm text-gray-700">Upsell Revenue</p>
                       <p className="text-2xl font-bold text-green-600">
                         {formatCurrency(report.upsells.summary.totalRevenue)}
                       </p>
@@ -622,7 +622,7 @@ export default function LiquorReportPage() {
                   </CardHeader>
                   <CardContent>
                     {report.upsells.byTier.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No upsell data by tier</p>
+                      <p className="text-gray-600 text-center py-4">No upsell data by tier</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full">
@@ -673,7 +673,7 @@ export default function LiquorReportPage() {
                   </CardHeader>
                   <CardContent>
                     {report.upsells.byEmployee.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No upsell data by employee</p>
+                      <p className="text-gray-600 text-center py-4">No upsell data by employee</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full">

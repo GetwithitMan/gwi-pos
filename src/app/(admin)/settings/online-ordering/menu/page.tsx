@@ -249,7 +249,7 @@ export default function OnlineMenuPage() {
       {/* Category list */}
       <div className="max-w-5xl mx-auto space-y-3">
         {categories.length === 0 ? (
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 text-center text-gray-400">
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-8 text-center text-gray-300">
             No categories found. Create categories in Menu Builder first.
           </div>
         ) : (
@@ -283,12 +283,12 @@ export default function OnlineMenuPage() {
                       />
                     )}
                     <span className="font-semibold text-white truncate">{cat.name}</span>
-                    <span className="text-sm text-gray-500 flex-shrink-0">
+                    <span className="text-sm text-gray-300 flex-shrink-0">
                       ({catItems.length} items)
                     </span>
                   </button>
                   <div className="flex items-center gap-2 ml-4">
-                    <span className="text-xs text-gray-500">Online</span>
+                    <span className="text-xs text-gray-300">Online</span>
                     <Toggle
                       checked={cat.showOnline}
                       onChange={() => toggleCategoryOnline(cat)}
@@ -306,7 +306,7 @@ export default function OnlineMenuPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3">
                               <span className="text-white text-sm font-medium truncate">{item.name}</span>
-                              <span className="text-gray-500 text-xs flex-shrink-0">
+                              <span className="text-gray-300 text-xs flex-shrink-0">
                                 POS: ${item.price.toFixed(2)}
                               </span>
                             </div>
@@ -314,7 +314,7 @@ export default function OnlineMenuPage() {
                           <div className="flex items-center gap-4 ml-4">
                             {/* Online price input */}
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-500 whitespace-nowrap">Online price:</span>
+                              <span className="text-xs text-gray-300 whitespace-nowrap">Online price:</span>
                               <OnlinePriceInput
                                 value={item.onlinePrice}
                                 posPrice={item.price}
@@ -339,11 +339,11 @@ export default function OnlineMenuPage() {
                                   className="flex items-center justify-between py-1.5"
                                 >
                                   <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-600">mod</span>
-                                    <span className="text-gray-400 text-xs">{mg.name}</span>
+                                    <span className="text-xs text-gray-400">mod</span>
+                                    <span className="text-gray-300 text-xs">{mg.name}</span>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    <span className="text-xs text-gray-600">Online</span>
+                                    <span className="text-xs text-gray-400">Online</span>
                                     <Toggle
                                       checked={mg.showOnline}
                                       onChange={() => toggleModGroupOnline(item.id, mg)}
@@ -361,7 +361,7 @@ export default function OnlineMenuPage() {
 
                 {/* No items message */}
                 {isExpanded && catItems.length === 0 && (
-                  <div className="border-t border-gray-800 px-4 py-4 text-center text-gray-500 text-sm">
+                  <div className="border-t border-gray-800 px-4 py-4 text-center text-gray-300 text-sm">
                     No items in this category.
                   </div>
                 )}
@@ -415,7 +415,7 @@ function OnlinePriceInput({
 
   return (
     <div className="relative">
-      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs pointer-events-none">$</span>
+      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-300 text-xs pointer-events-none">$</span>
       <input
         ref={inputRef}
         type="text"

@@ -79,12 +79,12 @@ export default function EmailIntegrationPage() {
                 <span><strong>Error Alert Emails</strong> -- Critical system errors are emailed to the configured admin address for fast response.</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-gray-400 mt-0.5">&#8226;</span>
-                <span><strong>Automated Report Delivery</strong> -- Daily store reports and sales summaries delivered by email. <em className="text-gray-400">(Coming soon)</em></span>
+                <span className="text-gray-600 mt-0.5">&#8226;</span>
+                <span><strong>Automated Report Delivery</strong> -- Daily store reports and sales summaries delivered by email. <em className="text-gray-600">(Coming soon)</em></span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-gray-400 mt-0.5">&#8226;</span>
-                <span><strong>Digital Receipt Emails</strong> -- Email receipts to customers after payment. <em className="text-gray-400">(Coming soon)</em></span>
+                <span className="text-gray-600 mt-0.5">&#8226;</span>
+                <span><strong>Digital Receipt Emails</strong> -- Email receipts to customers after payment. <em className="text-gray-600">(Coming soon)</em></span>
               </li>
             </ul>
           </CardContent>

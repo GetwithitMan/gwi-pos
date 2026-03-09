@@ -232,7 +232,7 @@ export default function MissionControlSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading...</div>
+          <div className="text-gray-700 text-lg">Loading...</div>
         </div>
       </div>
     )
@@ -270,9 +270,9 @@ export default function MissionControlSettingsPage() {
         {/* Card Processing */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Card Processing</h2>
-          <p className="text-sm text-gray-500 mb-5">Configure the card payment processor and reader behavior.</p>
+          <p className="text-sm text-gray-600 mb-5">Configure the card payment processor and reader behavior.</p>
 
-          <label className="block text-sm font-medium text-gray-600 mb-2">Processor</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Processor</label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
             {PROCESSOR_OPTIONS.map(opt => (
               <button
@@ -288,7 +288,7 @@ export default function MissionControlSettingsPage() {
                 <div className={`text-sm font-medium ${form.processor === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
                   {opt.label}
                 </div>
-                <div className="text-xs text-gray-400 mt-0.5">{opt.description}</div>
+                <div className="text-xs text-gray-600 mt-0.5">{opt.description}</div>
               </button>
             ))}
           </div>
@@ -341,12 +341,12 @@ export default function MissionControlSettingsPage() {
                 </span>
               )}
             </div>
-            <p className="text-sm text-gray-500 mb-5">Enter the Datacap credentials provided for this venue.</p>
+            <p className="text-sm text-gray-600 mb-5">Enter the Datacap credentials provided for this venue.</p>
 
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Merchant ID (MID)</label>
-                <p className="text-xs text-gray-400 mb-1">Your unique account number from Datacap.</p>
+                <p className="text-xs text-gray-600 mb-1">Your unique account number from Datacap.</p>
                 <input
                   type="text"
                   value={form.datacapMerchantId || ''}
@@ -401,7 +401,7 @@ export default function MissionControlSettingsPage() {
                     <div className={`text-sm font-medium ${(form.datacapEnvironment || 'cert') === 'cert' ? 'text-indigo-600' : 'text-gray-700'}`}>
                       Test Mode (no real charges)
                     </div>
-                    <div className="text-xs text-gray-400 mt-0.5">Transactions processed in test mode</div>
+                    <div className="text-xs text-gray-600 mt-0.5">Transactions processed in test mode</div>
                   </button>
                   <button
                     type="button"
@@ -415,7 +415,7 @@ export default function MissionControlSettingsPage() {
                     <div className={`text-sm font-medium ${form.datacapEnvironment === 'production' ? 'text-indigo-600' : 'text-gray-700'}`}>
                       Production (Live)
                     </div>
-                    <div className="text-xs text-gray-400 mt-0.5">Real card charges</div>
+                    <div className="text-xs text-gray-600 mt-0.5">Real card charges</div>
                   </button>
                 </div>
                 {form.datacapEnvironment === 'production' && (
@@ -432,10 +432,10 @@ export default function MissionControlSettingsPage() {
         {form.processor === 'datacap' && (
           <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-1">Batch Management</h2>
-            <p className="text-sm text-gray-500 mb-5">Close the current batch to settle card transactions.</p>
+            <p className="text-sm text-gray-600 mb-5">Close the current batch to settle card transactions.</p>
 
             {batchLoading ? (
-              <div className="text-sm text-gray-400 py-4">Loading batch status...</div>
+              <div className="text-sm text-gray-700 py-4">Loading batch status...</div>
             ) : batchInfo ? (
               <div className="space-y-3 mb-5">
                 <div className="flex items-center justify-between py-2 border-b border-gray-100">
@@ -448,8 +448,8 @@ export default function MissionControlSettingsPage() {
                 </div>
                 <div className="flex items-center justify-between py-2 border-b border-gray-100">
                   <div>
-                    <span className="text-sm text-gray-600">SAF (Store and Forward)</span>
-                    <p className="text-xs text-gray-400">Payments saved offline, waiting to be sent to the bank.</p>
+                    <span className="text-sm text-gray-700">SAF (Store and Forward)</span>
+                    <p className="text-xs text-gray-600">Payments saved offline, waiting to be sent to the bank.</p>
                   </div>
                   <span className={`text-sm font-medium flex-shrink-0 ml-4 ${batchInfo.hasSAFPending ? 'text-amber-600' : 'text-gray-900'}`}>
                     {batchInfo.hasSAFPending
@@ -467,9 +467,9 @@ export default function MissionControlSettingsPage() {
                 )}
               </div>
             ) : !activeReaderId ? (
-              <div className="text-sm text-gray-400 py-4">No payment reader configured.</div>
+              <div className="text-sm text-gray-700 py-4">No payment reader configured.</div>
             ) : (
-              <div className="text-sm text-gray-400 py-4">Unable to load batch status.</div>
+              <div className="text-sm text-gray-700 py-4">Unable to load batch status.</div>
             )}
 
             {activeReaderId && (
@@ -528,7 +528,7 @@ export default function MissionControlSettingsPage() {
                'No Code'}
             </span>
           </div>
-          <p className="text-sm text-gray-500 mb-5">Generate a code for NUC installation. Used by IT / support only.</p>
+          <p className="text-sm text-gray-600 mb-5">Generate a code for NUC installation. Used by IT / support only.</p>
 
           <div className="space-y-4">
             <div className="flex items-center gap-3">
@@ -543,7 +543,7 @@ export default function MissionControlSettingsPage() {
             </div>
 
             {regExpiresAt && regStatus === 'active' && (
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-600">
                 Expires in {formatExpiry(regExpiresAt)}
               </p>
             )}
@@ -562,11 +562,11 @@ export default function MissionControlSettingsPage() {
                regStatus === 'active' ? 'Regenerate Code' : 'Generate Code'}
             </Button>
 
-            <details className="text-xs text-gray-400">
-              <summary className="cursor-pointer hover:text-gray-500">Show for IT</summary>
+            <details className="text-xs text-gray-600">
+              <summary className="cursor-pointer hover:text-gray-700">Show for IT</summary>
               <p className="mt-2">
                 Use this code during NUC installation:{' '}
-                <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-500">
+                <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-700">
                   curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
                 </code>
               </p>

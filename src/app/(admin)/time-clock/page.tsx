@@ -296,7 +296,7 @@ export default function TimeClockPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap items-end gap-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Start Date</label>
+                <label className="block text-xs text-gray-700 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -305,7 +305,7 @@ export default function TimeClockPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">End Date</label>
+                <label className="block text-xs text-gray-700 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -314,7 +314,7 @@ export default function TimeClockPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Employee</label>
+                <label className="block text-xs text-gray-700 mb-1">Employee</label>
                 <select
                   value={filterEmployeeId}
                   onChange={e => setFilterEmployeeId(e.target.value)}
@@ -329,7 +329,7 @@ export default function TimeClockPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Status</label>
+                <label className="block text-xs text-gray-700 mb-1">Status</label>
                 <select
                   value={statusFilter}
                   onChange={e => setStatusFilter(e.target.value as StatusFilter)}
@@ -494,7 +494,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Clock In</label>
+              <label className="block text-xs text-gray-700 mb-1">Clock In</label>
               <input
                 type="datetime-local"
                 value={editForm.clockIn}
@@ -504,7 +504,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Clock Out</label>
+              <label className="block text-xs text-gray-700 mb-1">Clock Out</label>
               <input
                 type="datetime-local"
                 value={editForm.clockOut}
@@ -514,7 +514,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Break Minutes</label>
+              <label className="block text-xs text-gray-700 mb-1">Break Minutes</label>
               <input
                 type="number"
                 value={editForm.breakMinutes}
@@ -525,7 +525,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Notes</label>
+              <label className="block text-xs text-gray-700 mb-1">Notes</label>
               <textarea
                 value={editForm.notes}
                 onChange={e => setEditForm({ ...editForm, notes: e.target.value })}
@@ -535,7 +535,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Reason for Edit *</label>
+              <label className="block text-xs text-gray-700 mb-1">Reason for Edit *</label>
               <textarea
                 value={editForm.reason}
                 onChange={e => setEditForm({ ...editForm, reason: e.target.value })}

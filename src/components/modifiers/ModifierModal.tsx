@@ -230,7 +230,7 @@ export function ModifierModal({
               ) : group.isRequired ? (
                 <span className="mm-step-box-badge bg-red-500/20 text-red-400">REQ</span>
               ) : groupSelections.length > 0 ? (
-                <span className="mm-step-box-badge bg-white/10 text-slate-300">{groupSelections.length}</span>
+                <span className="mm-step-box-badge bg-white/10 text-gray-900">{groupSelections.length}</span>
               ) : null}
             </button>
           )
@@ -328,7 +328,7 @@ export function ModifierModal({
         <div className="p-3 border-b border-white/10 bg-gradient-to-r from-indigo-600/30 to-purple-600/20 flex items-center justify-between">
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-white truncate">{item.name}</h2>
-            <p className="text-slate-300 text-sm">
+            <p className="text-gray-900 text-sm">
               Base: {formatCurrency(item.price * cpm)}
               {pourMultiplier !== 1 && (
                 <span className="ml-2 text-purple-300">
@@ -371,7 +371,7 @@ export function ModifierModal({
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-3" style={{ background: 'var(--mm-bg-primary)' }}>
           {loading ? (
-            <div className="text-center py-8 text-slate-400">Loading...</div>
+            <div className="text-center py-8 text-gray-700">Loading...</div>
           ) : (
             <>
               {/* Pour Size Buttons */}
@@ -393,9 +393,9 @@ export function ModifierModal({
               {viewMode === 'steps' && (
                 <>
                   {modifierGroups.length === 0 ? (
-                    <div className="text-center py-4 text-slate-400 text-sm">No modifiers</div>
+                    <div className="text-center py-4 text-gray-700 text-sm">No modifiers</div>
                   ) : topLevelGroups.length === 0 ? (
-                    <div className="text-center py-4 text-slate-400 text-sm">No modifiers</div>
+                    <div className="text-center py-4 text-gray-700 text-sm">No modifiers</div>
                   ) : (
                     renderGroupWithChildren(topLevelGroups[activeGroupIndex] || topLevelGroups[0])
                   )}
@@ -406,7 +406,7 @@ export function ModifierModal({
               {viewMode === 'grid' && (
                 <>
                   {modifierGroups.length === 0 ? (
-                    <div className="text-center py-4 text-slate-400 text-sm">No modifiers</div>
+                    <div className="text-center py-4 text-gray-700 text-sm">No modifiers</div>
                   ) : (
                     <div className="mm-groups-grid">
                       {topLevelGroups.map(group => (
@@ -469,7 +469,7 @@ export function ModifierModal({
               {/* Special Notes */}
               <div className="mt-3 pt-3 border-t border-white/10">
                 <label className="block font-medium text-slate-200 mb-1" style={{ fontSize: '13px', letterSpacing: '0.02em' }}>
-                  📝 Special Instructions <span className="text-slate-500 font-normal">(optional)</span>
+                  📝 Special Instructions <span className="text-gray-600 font-normal">(optional)</span>
                 </label>
                 <textarea
                   value={specialNotes}
@@ -490,7 +490,7 @@ export function ModifierModal({
         {/* Footer */}
         <div className="p-3 border-t border-white/10" style={{ background: 'rgba(30, 30, 50, 0.9)', backdropFilter: 'blur(12px)' }}>
           <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold text-sm text-slate-300">Total</span>
+            <span className="font-semibold text-sm text-gray-900">Total</span>
             <span className="text-xl font-bold text-emerald-400">{formatCurrency(totalPrice * cpm)}</span>
           </div>
           <div className="flex gap-2">

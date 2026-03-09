@@ -357,9 +357,9 @@ export default function TipPayoutsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Employee Balances</CardTitle>
-                <p className="text-sm text-gray-500 mt-0.5">Tip bank balances owed to employees</p>
+                <p className="text-sm text-gray-600 mt-0.5">Tip bank balances owed to employees</p>
               </div>
-              <label className="flex items-center gap-2 text-sm text-gray-500 cursor-pointer select-none">
+              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={showZeroBalances}
@@ -507,7 +507,7 @@ export default function TipPayoutsPage() {
               {/* Date range filter */}
               <div className="flex flex-wrap items-end gap-3 mt-4 mb-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">From</label>
                   <input
                     type="date"
                     value={historyDateFrom}
@@ -516,7 +516,7 @@ export default function TipPayoutsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">To</label>
                   <input
                     type="date"
                     value={historyDateTo}

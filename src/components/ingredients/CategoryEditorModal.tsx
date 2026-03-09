@@ -74,7 +74,7 @@ export function CategoryEditorModal({
   return (
     <Modal isOpen={true} onClose={onClose} title={category ? 'Edit Category' : 'Add Category'} size="md" variant="default">
       {category && (
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-600 mb-4">
           ID: {category.code} (immutable)
         </p>
       )}
@@ -129,7 +129,7 @@ export function CategoryEditorModal({
               ))}
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-sm text-gray-500">Custom:</span>
+              <span className="text-sm text-gray-700">Custom:</span>
               <input
                 type="text"
                 value={formData.icon}
@@ -159,7 +159,7 @@ export function CategoryEditorModal({
               ))}
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-sm text-gray-500">Custom:</span>
+              <span className="text-sm text-gray-700">Custom:</span>
               <input
                 type="color"
                 value={formData.color}

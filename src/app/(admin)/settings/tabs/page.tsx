@@ -80,7 +80,7 @@ export default function TabSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading tab settings...</div>
+          <div className="text-gray-700 text-lg">Loading tab settings...</div>
         </div>
       </div>
     )
@@ -120,7 +120,7 @@ export default function TabSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Bar Tab Policies</h2>
-          <p className="text-sm text-gray-500 mb-5">Control how tabs are opened and what&apos;s required from customers and staff.</p>
+          <p className="text-sm text-gray-600 mb-5">Control how tabs are opened and what&apos;s required from customers and staff.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -165,7 +165,7 @@ export default function TabSettingsPage() {
             <div className="flex items-center justify-between py-3 border-t border-gray-100">
               <div>
                 <div className="text-sm text-gray-700">Inactivity Warning After</div>
-                <div className="text-xs text-gray-400">Show a reminder when a tab hasn&apos;t had any activity for this long. This is a visual warning only — tabs are never automatically closed.</div>
+                <div className="text-xs text-gray-600">Show a reminder when a tab hasn&apos;t had any activity for this long. This is a visual warning only — tabs are never automatically closed.</div>
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -177,7 +177,7 @@ export default function TabSettingsPage() {
                   aria-label="Inactivity warning minutes"
                   className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
-                <span className="text-sm text-gray-500">min</span>
+                <span className="text-sm text-gray-700">min</span>
               </div>
             </div>
           </div>
@@ -188,7 +188,7 @@ export default function TabSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Pre-Authorization</h2>
-          <p className="text-sm text-gray-500 mb-5">Pre-authorization temporarily holds an amount on the customer&apos;s card when they open a tab. This reserve is released or converted to a real charge when the tab is closed.</p>
+          <p className="text-sm text-gray-600 mb-5">Pre-authorization temporarily holds an amount on the customer&apos;s card when they open a tab. This reserve is released or converted to a real charge when the tab is closed.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -269,7 +269,7 @@ export default function TabSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Walkout & Capture Retries</h2>
-          <p className="text-sm text-gray-500 mb-5">What happens when a tab&apos;s card charge fails — for example, if a customer&apos;s card declines when you try to close their tab.</p>
+          <p className="text-sm text-gray-600 mb-5">What happens when a tab&apos;s card charge fails — for example, if a customer&apos;s card declines when you try to close their tab.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -284,7 +284,7 @@ export default function TabSettingsPage() {
             <div className="flex items-center justify-between py-2">
               <div>
                 <div className="text-sm text-gray-700">Max Capture Retries</div>
-                <div className="text-xs text-gray-400">How many times to retry a failed card charge before giving up and flagging the tab as a walkout.</div>
+                <div className="text-xs text-gray-600">How many times to retry a failed card charge before giving up and flagging the tab as a walkout.</div>
               </div>
               <input
                 type="number"

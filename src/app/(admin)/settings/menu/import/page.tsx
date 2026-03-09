@@ -297,7 +297,7 @@ export default function MenuImportPage() {
                   <p className="mt-2 text-sm font-medium text-gray-700">
                     Drop a CSV file here or click to browse
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-600 mt-1">
                     Required columns: name, price. Optional: category, cost, sku, description
                   </p>
                 </div>
@@ -307,7 +307,7 @@ export default function MenuImportPage() {
             {/* Column Detection */}
             {headers.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
-                <span className="text-xs text-gray-500 leading-6">Detected columns:</span>
+                <span className="text-xs text-gray-700 leading-6">Detected columns:</span>
                 {headers.map((h) => {
                   const recognized = ['name', 'price', 'category', 'cost', 'sku', 'description'].includes(h)
                   return (
@@ -316,7 +316,7 @@ export default function MenuImportPage() {
                       className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
                         recognized
                           ? 'bg-blue-100 text-blue-700'
-                          : 'bg-gray-100 text-gray-500'
+                          : 'bg-gray-100 text-gray-600'
                       }`}
                     >
                       {h}
@@ -348,7 +348,7 @@ export default function MenuImportPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
                     <th className="px-4 py-3">#</th>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Price</th>
@@ -361,7 +361,7 @@ export default function MenuImportPage() {
                 <tbody className="divide-y divide-gray-50">
                   {previewRows.map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-2 text-gray-600">{i + 1}</td>
                       <td className="px-4 py-2 font-medium text-gray-900">{row.name || <span className="text-red-400 italic">empty</span>}</td>
                       <td className="px-4 py-2 text-gray-700">{row.price || <span className="text-red-400 italic">empty</span>}</td>
                       <td className="px-4 py-2 text-gray-600">{row.category || <span className="text-gray-300">-</span>}</td>
@@ -378,7 +378,7 @@ export default function MenuImportPage() {
             <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
               <button
                 onClick={handleReset}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="text-sm text-gray-600 hover:text-gray-800"
               >
                 Choose different file
               </button>
@@ -405,7 +405,7 @@ export default function MenuImportPage() {
               </div>
               <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 text-center">
                 <p className="text-2xl font-bold text-gray-600">{result.skipped}</p>
-                <p className="text-xs font-medium text-gray-500 mt-1">Skipped (duplicates)</p>
+                <p className="text-xs font-medium text-gray-600 mt-1">Skipped (duplicates)</p>
               </div>
               <div className={`rounded-lg p-4 text-center border ${
                 result.errors.length > 0
@@ -415,7 +415,7 @@ export default function MenuImportPage() {
                 <p className={`text-2xl font-bold ${result.errors.length > 0 ? 'text-red-700' : 'text-gray-600'}`}>
                   {result.errors.length}
                 </p>
-                <p className={`text-xs font-medium mt-1 ${result.errors.length > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                <p className={`text-xs font-medium mt-1 ${result.errors.length > 0 ? 'text-red-600' : 'text-gray-600'}`}>
                   Errors
                 </p>
               </div>

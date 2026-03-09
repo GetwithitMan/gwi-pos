@@ -80,7 +80,7 @@ export default function StaffShiftsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading settings...</div>
+          <div className="text-gray-700 text-lg">Loading settings...</div>
         </div>
       </div>
     )
@@ -120,7 +120,7 @@ export default function StaffShiftsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Clock-Out Requirements</h2>
-          <p className="text-sm text-gray-500 mb-5">Requirements employees must meet before clocking out at any time.</p>
+          <p className="text-sm text-gray-600 mb-5">Requirements employees must meet before clocking out at any time.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -147,7 +147,7 @@ export default function StaffShiftsPage() {
             />
           </div>
 
-          <p className="mt-4 text-xs text-gray-400 border-t border-gray-100 pt-4">
+          <p className="mt-4 text-xs text-gray-600 border-t border-gray-100 pt-4">
             These rules apply whenever an employee clocks out. They are independent of — and additive with — the business day boundary rules below.
           </p>
         </section>
@@ -157,7 +157,7 @@ export default function StaffShiftsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">End-of-Day Automatic Rules</h2>
-          <p className="text-sm text-gray-500 mb-5">These rules run automatically at a set time each day — separate from the per-shift rules above.</p>
+          <p className="text-sm text-gray-600 mb-5">These rules run automatically at a set time each day — separate from the per-shift rules above.</p>
 
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-5">
             <p className="text-xs text-amber-800">The rules above (Clock-Out Requirements) run every time an employee manually clocks out. The rules below run automatically at the end of each business day. Both sets of rules can be active at the same time.</p>
@@ -167,7 +167,7 @@ export default function StaffShiftsPage() {
           <div className="flex items-center justify-between py-3 border-b border-gray-100">
             <div>
               <div className="text-sm text-gray-700">Day Start Time</div>
-              <div className="text-xs text-gray-400">The time your business day resets. Orders and reports before this time are counted as the previous day. For venues open past midnight, use 4:00 AM. For day-only venues, midnight is fine.</div>
+              <div className="text-xs text-gray-600">The time your business day resets. Orders and reports before this time are counted as the previous day. For venues open past midnight, use 4:00 AM. For day-only venues, midnight is fine.</div>
             </div>
             <input
               type="time"
@@ -207,7 +207,7 @@ export default function StaffShiftsPage() {
           <div className="flex items-center justify-between py-3 mt-2 border-t border-gray-100">
             <div>
               <div className="text-sm text-gray-700">Grace Period</div>
-              <div className="text-xs text-gray-400">Extra minutes after the day-end time before rules are enforced. Use 5–15 minutes to give staff time to close out last-minute tabs. Set to 0 for immediate enforcement.</div>
+              <div className="text-xs text-gray-600">Extra minutes after the day-end time before rules are enforced. Use 5–15 minutes to give staff time to close out last-minute tabs. Set to 0 for immediate enforcement.</div>
             </div>
             <input
               type="number"
@@ -221,7 +221,7 @@ export default function StaffShiftsPage() {
             />
           </div>
 
-          <p className="mt-4 text-xs text-gray-400 border-t border-gray-100 pt-4">
+          <p className="mt-4 text-xs text-gray-600 border-t border-gray-100 pt-4">
             These rules apply specifically at the business day boundary — not at individual clock-out time. Both rule sets are additive: a bartender with open tabs will be blocked at clock-out (above) AND force-closed when the day resets.
           </p>
         </section>

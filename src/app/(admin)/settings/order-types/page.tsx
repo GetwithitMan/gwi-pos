@@ -237,7 +237,7 @@ export default function OrderTypesPage() {
                           </span>
                         )}
                       </div>
-                      <div className="text-sm text-gray-500">
+                      <div className="text-sm text-gray-600">
                         <span className="font-mono">{orderType.slug}</span>
                         {orderType.description && ` • ${orderType.description}`}
                       </div>
@@ -505,7 +505,7 @@ function OrderTypeEditModal({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
                 disabled={orderType.isSystem}
               />
-              <p className="text-xs text-gray-400 mt-1">Used by integrations. Lowercase letters and underscores only, no spaces. Auto-generated from the name.</p>
+              <p className="text-xs text-gray-600 mt-1">Used by integrations. Lowercase letters and underscores only, no spaces. Auto-generated from the name.</p>
             </div>
           </div>
 
@@ -525,7 +525,7 @@ function OrderTypeEditModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Badge Color
             </label>
-            <p className="text-xs text-gray-400 mb-1">This color appears on this order type&apos;s label throughout the POS and kitchen screens.</p>
+            <p className="text-xs text-gray-600 mb-1">This color appears on this order type&apos;s label throughout the POS and kitchen screens.</p>
             <div className="flex gap-2">
               <input
                 type="color"
@@ -556,7 +556,7 @@ function OrderTypeEditModal({
                 />
                 <span className="text-sm">
                   Require table selection
-                  <span className="block text-xs text-gray-400">If enabled and no table is selected, the order cannot be sent to the kitchen.</span>
+                  <span className="block text-xs text-gray-600">If enabled and no table is selected, the order cannot be sent to the kitchen.</span>
                 </span>
               </label>
               <label className="flex items-center gap-2">
@@ -578,7 +578,7 @@ function OrderTypeEditModal({
                 />
                 <span className="text-sm">
                   Require payment before sending to kitchen
-                  <span className="block text-xs text-gray-400">Customer pays upfront before the order is sent to the kitchen. Useful for takeout, delivery, or self-service kiosks.</span>
+                  <span className="block text-xs text-gray-600">Customer pays upfront before the order is sent to the kitchen. Useful for takeout, delivery, or self-service kiosks.</span>
                 </span>
               </label>
               <label className="flex items-start gap-2">
@@ -590,7 +590,7 @@ function OrderTypeEditModal({
                 />
                 <span className="text-sm">
                   Require card on file (chip read to open tab)
-                  <span className="block text-xs text-gray-400">Customer must insert or tap their card to open this order type. This card is saved to authorize the final charge (including tip) at close.</span>
+                  <span className="block text-xs text-gray-600">Customer must insert or tap their card to open this order type. This card is saved to authorize the final charge (including tip) at close.</span>
                 </span>
               </label>
               {formData.requireCardOnFile && (
@@ -603,7 +603,7 @@ function OrderTypeEditModal({
                   />
                   <span className="text-sm">
                     Enable pre-authorization &amp; incremental auth
-                    <span className="block text-xs text-gray-400">Pre-authorization = temporary hold on customer&apos;s card when the tab opens, settled to the real amount when it closes.</span>
+                    <span className="block text-xs text-gray-600">Pre-authorization = temporary hold on customer&apos;s card when the tab opens, settled to the real amount when it closes.</span>
                   </span>
                 </label>
               )}
@@ -614,7 +614,7 @@ function OrderTypeEditModal({
           {!orderType.isSystem && (
             <div className="border-t border-gray-200 pt-4">
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Required Fields</h3>
-              <p className="text-xs text-gray-400 mb-3">Required fields must be filled in before the order can be sent to the kitchen. Optional fields can be skipped.</p>
+              <p className="text-xs text-gray-600 mb-3">Required fields must be filled in before the order can be sent to the kitchen. Optional fields can be skipped.</p>
               <div className="space-y-2">
                 <label className="flex items-center gap-2">
                   <input

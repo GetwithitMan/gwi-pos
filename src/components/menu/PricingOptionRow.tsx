@@ -87,7 +87,7 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
       {/* Price */}
       <div className="shrink-0">
         <div className="relative w-20">
-          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">$</span>
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-700">$</span>
           <input
             type="number"
             value={price}
@@ -100,7 +100,7 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
           />
         </div>
         {isDualPricingEnabled && parseFloat(price) > 0 && (
-          <div className="text-xs text-gray-400 text-right mt-0.5">
+          <div className="text-xs text-gray-600 text-right mt-0.5">
             Card: ${calculateCardPrice(parseFloat(price), cashDiscountPct).toFixed(2)}
           </div>
         )}
@@ -140,7 +140,7 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
                   onUpdate({ color: null })
                   setShowColors(false)
                 }}
-                className="col-span-4 text-xs text-gray-500 hover:text-gray-700 py-1"
+                className="col-span-4 text-xs text-gray-700 hover:text-gray-900 py-1"
               >
                 Remove color
               </button>
