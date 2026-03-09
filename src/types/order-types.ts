@@ -44,6 +44,7 @@ export interface WorkflowRules {
   autoCloseOnPayment?: boolean
   printTicketOnSend?: boolean
   showOnKDS?: boolean
+  promptForCustomer?: boolean
 }
 
 // KDS display configuration

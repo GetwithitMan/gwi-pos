@@ -1212,8 +1212,11 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Pre-compute averageTicket using already-fetched customer data (no extra query needed)
+    // Customer stats (totalSpent, totalOrders, lastVisit, averageTicket) update whenever
+    // a linked customer's order is fully paid — regardless of loyalty being enabled.
     let newAverageTicket: number | null = null
-    if (pointsEarned > 0 && order.customer) {
+    const shouldUpdateCustomerStats = updateData.status === 'paid' && !!order.customer
+    if (shouldUpdateCustomerStats) {
       const currentTotalSpent = Number((order.customer as any).totalSpent ?? 0)
       const currentTotalOrders = (order.customer as any).totalOrders ?? 0
       const newTotal = currentTotalSpent + Number(order.total)
@@ -1326,6 +1329,7 @@ export const POST = withVenue(withTiming(async function POST(
       pointsEarned,
       newAverageTicket,
       loyaltyEarningBase,
+      shouldUpdateCustomerStats,
       pmsAttemptId,
       pmsTransactionNo,
       unsentItems,
@@ -1358,6 +1362,7 @@ export const POST = withVenue(withTiming(async function POST(
       pointsEarned,
       newAverageTicket,
       loyaltyEarningBase,
+      shouldUpdateCustomerStats,
       pmsAttemptId,
       pmsTransactionNo,
       unsentItems,
@@ -1427,18 +1432,20 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // Post-ingestion: loyalty points earning (fire-and-forget)
-    if (orderIsPaid && pointsEarned > 0 && order.customer) {
+    // Post-ingestion: customer stats + loyalty points earning (fire-and-forget)
+    // Customer stats (totalSpent, totalOrders, lastVisit, averageTicket) update whenever
+    // a linked customer's order is fully paid. Loyalty points only increment if earned.
+    if (orderIsPaid && shouldUpdateCustomerStats && order.customer) {
       void db.customer.update({
         where: { id: order.customer.id },
         data: {
-          loyaltyPoints: { increment: pointsEarned },
+          ...(pointsEarned > 0 ? { loyaltyPoints: { increment: pointsEarned } } : {}),
           totalSpent: { increment: Number(order.total) },
           totalOrders: { increment: 1 },
           lastVisit: new Date(),
           averageTicket: newAverageTicket!,
         },
-      }).catch(err => console.error('Post-ingestion loyalty update failed:', err))
+      }).catch(err => console.error('Post-ingestion customer/loyalty update failed:', err))
     }
 
     // Post-ingestion: audit logs (fire-and-forget)

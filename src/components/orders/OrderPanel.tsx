@@ -10,6 +10,7 @@ import { roundToCents } from '@/lib/pricing'
 import { OrderDelayBanner } from './OrderDelayBanner'
 import { ConflictBanner } from './ConflictBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
+import { CustomerLookupModal } from '@/components/customers/CustomerLookupModal'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
 export type { OrderPanelItemData }
@@ -291,6 +292,90 @@ export const OrderPanel = memo(function OrderPanel({
 
   // Shared ownership modal
   const [showShareOwnership, setShowShareOwnership] = useState(false)
+
+  // Customer modal + linked customer state
+  const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [linkedCustomer, setLinkedCustomer] = useState<{
+    id: string
+    firstName: string
+    lastName: string
+    loyaltyPoints: number
+  } | null>(null)
+  const [loyaltyEnabled, setLoyaltyEnabled] = useState(false)
+  const customerFetchedForRef = useRef<string | null>(null)
+
+  // Fetch customer data when order changes
+  useEffect(() => {
+    if (!orderId || orderId.startsWith('temp-')) {
+      setLinkedCustomer(null)
+      setLoyaltyEnabled(false)
+      customerFetchedForRef.current = null
+      return
+    }
+    if (customerFetchedForRef.current === orderId) return
+    customerFetchedForRef.current = orderId
+
+    void fetch(`/api/orders/${orderId}/customer`)
+      .then(r => r.ok ? r.json() : null)
+      .then(raw => {
+        const data = raw?.data ?? raw
+        if (data?.customer) {
+          setLinkedCustomer({
+            id: data.customer.id,
+            firstName: data.customer.firstName,
+            lastName: data.customer.lastName,
+            loyaltyPoints: data.customer.loyaltyPoints ?? 0,
+          })
+        } else {
+          setLinkedCustomer(null)
+        }
+        setLoyaltyEnabled(!!data?.loyaltyEnabled)
+      })
+      .catch(() => {
+        setLinkedCustomer(null)
+        customerFetchedForRef.current = null
+      })
+  }, [orderId])
+
+  // Handle customer selection from modal
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleSelectCustomer = useCallback((customer: any) => {
+    if (!orderId) return
+    const customerId = customer?.id ?? null
+
+    // Optimistic local update
+    if (customer) {
+      setLinkedCustomer({
+        id: customer.id,
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        loyaltyPoints: customer.loyaltyPoints ?? 0,
+      })
+    } else {
+      setLinkedCustomer(null)
+    }
+
+    // Fire-and-forget API call
+    void fetch(`/api/orders/${orderId}/customer`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId }),
+    })
+      .then(r => {
+        if (!r.ok) {
+          // Revert on failure
+          setLinkedCustomer(null)
+          customerFetchedForRef.current = null
+          console.error('Failed to link customer')
+        } else {
+          return r.json().then(raw => {
+            const data = raw?.data ?? raw
+            setLoyaltyEnabled(!!data?.loyaltyEnabled)
+          })
+        }
+      })
+      .catch(console.error)
+  }, [orderId])
 
   // Sort direction: 'newest-bottom' (default, newest appended at bottom) or 'newest-top' (newest at top)
   const [sortDirection, setSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
@@ -1194,30 +1279,100 @@ export const OrderPanel = memo(function OrderPanel({
                     {orderType.replace('_', ' ')}
                   </p>
                 )}
-                {/* Share Table/Tab button */}
+                {/* Share Table/Tab button + Customer button */}
                 {orderId && (
-                  <button
-                    onClick={() => setShowShareOwnership(true)}
-                    style={{
-                      marginTop: '4px',
-                      fontSize: '11px',
-                      fontWeight: 500,
-                      color: '#a78bfa',
-                      padding: '2px 8px',
-                      background: 'rgba(167, 139, 250, 0.15)',
-                      border: '1px solid rgba(167, 139, 250, 0.3)',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                  >
-                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Share
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => setShowShareOwnership(true)}
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        color: '#a78bfa',
+                        padding: '2px 8px',
+                        background: 'rgba(167, 139, 250, 0.15)',
+                        border: '1px solid rgba(167, 139, 250, 0.3)',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Share
+                    </button>
+                    {/* Customer button */}
+                    {linkedCustomer ? (
+                      <button
+                        onClick={() => setShowCustomerModal(true)}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: '#f1f5f9',
+                          padding: '2px 8px',
+                          background: 'rgba(51, 65, 85, 0.9)',
+                          border: '1px solid rgba(100, 116, 139, 0.4)',
+                          borderRadius: '9999px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        <span>{linkedCustomer.firstName} {linkedCustomer.lastName.charAt(0)}.</span>
+                        {loyaltyEnabled && (
+                          <>
+                            <span style={{ color: '#475569' }}>|</span>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '2px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                              color: '#67e8f9',
+                              background: 'rgba(103, 232, 249, 0.12)',
+                              padding: '0px 5px',
+                              borderRadius: '9999px',
+                            }}>
+                              <svg width="9" height="9" fill="#67e8f9" viewBox="0 0 24 24">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                              </svg>
+                              {linkedCustomer.loyaltyPoints} pts
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowCustomerModal(true)}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 500,
+                          color: '#94a3b8',
+                          padding: '2px 8px',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          border: '1px solid rgba(100, 116, 139, 0.3)',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        Add Customer
+                      </button>
+                    )}
+                  </div>
                 )}
                 {/* Card status */}
                 {hasCard !== undefined && (
@@ -1599,6 +1754,16 @@ export const OrderPanel = memo(function OrderPanel({
           onClose={() => setShowShareOwnership(false)}
         />
       )}
+
+      {/* Customer Lookup Modal */}
+      <CustomerLookupModal
+        isOpen={showCustomerModal}
+        onClose={() => setShowCustomerModal(false)}
+        locationId={locationId || ''}
+        currentCustomerId={linkedCustomer?.id ?? null}
+        onSelectCustomer={handleSelectCustomer}
+        loyaltyEnabled={loyaltyEnabled}
+      />
     </div>
   )
 })

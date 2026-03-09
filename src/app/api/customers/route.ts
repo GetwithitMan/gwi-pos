@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List customers with optional search
@@ -154,6 +155,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
+    // Load location settings to check for loyalty welcome bonus
+    const location = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const settings = parseSettings(location?.settings)
+    const welcomeBonus = (settings.loyalty.enabled && settings.loyalty.welcomeBonus > 0)
+      ? settings.loyalty.welcomeBonus
+      : 0
+
     const customer = await db.customer.create({
       data: {
         locationId,
@@ -166,6 +177,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         tags: tags || [],
         marketingOptIn: marketingOptIn || false,
         birthday: birthday ? new Date(birthday) : null,
+        ...(welcomeBonus > 0 ? { loyaltyPoints: welcomeBonus } : {}),
       },
     })
 

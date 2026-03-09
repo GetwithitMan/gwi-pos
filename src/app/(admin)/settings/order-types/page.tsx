@@ -268,6 +268,11 @@ export default function OrderTypesPage() {
                             Pre-Auth
                           </span>
                         )}
+                        {(orderType.workflowRules as WorkflowRules)?.promptForCustomer && (
+                          <span className="px-2 py-0.5 text-xs bg-cyan-100 text-cyan-700 rounded">
+                            Prompt Customer
+                          </span>
+                        )}
                         {Object.keys(orderType.requiredFields || {}).length > 0 && (
                           <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">
                             {Object.keys(orderType.requiredFields).length} Required Fields
@@ -351,6 +356,7 @@ function OrderTypeEditModal({
     requirePaymentBeforeSend: (orderType.workflowRules as WorkflowRules)?.requirePaymentBeforeSend || false,
     requireCardOnFile: (orderType.workflowRules as WorkflowRules)?.requireCardOnFile || false,
     enablePreAuth: (orderType.workflowRules as WorkflowRules)?.enablePreAuth || false,
+    promptForCustomer: (orderType.workflowRules as WorkflowRules)?.promptForCustomer || false,
     requirePhone: false,
     requireAddress: false,
     requirePickupTime: false,
@@ -389,6 +395,9 @@ function OrderTypeEditModal({
     }
     if (formData.enablePreAuth) {
       workflowRules.enablePreAuth = true
+    }
+    if (formData.promptForCustomer) {
+      workflowRules.promptForCustomer = true
     }
     if (formData.requirePhone) {
       requiredFields.phone = true
@@ -607,6 +616,18 @@ function OrderTypeEditModal({
                   </span>
                 </label>
               )}
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.promptForCustomer}
+                  onChange={(e) => setFormData(prev => ({ ...prev, promptForCustomer: e.target.checked }))}
+                  className="rounded border-gray-300 mt-0.5"
+                />
+                <span className="text-sm">
+                  Prompt for customer
+                  <span className="block text-xs text-gray-600">Show customer lookup when creating orders of this type</span>
+                </span>
+              </label>
             </div>
           </div>
 
