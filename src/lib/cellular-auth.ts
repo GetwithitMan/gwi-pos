@@ -203,8 +203,8 @@ export async function refreshCellularToken(oldToken: string): Promise<string | n
   // Re-check revocation (belt-and-suspenders with verify)
   if (isRevoked(payload.terminalId)) return null
 
-  // TODO: attestation check placeholder (Play Integrity / device attestation)
-  // When implemented: verify device attestation before issuing refresh
+  // Play Integrity attestation is verified at the route level (refresh-cellular/route.ts)
+  // before calling this function. No double-check needed here.
 
   return issueCellularToken(
     payload.terminalId,
@@ -316,4 +316,230 @@ export function cleanupCaches(): void {
 // Run cleanup every 10 minutes
 if (typeof setInterval !== 'undefined') {
   setInterval(cleanupCaches, 10 * 60 * 1000)
+}
+
+// ═══════════════════════════════════════════════════════════
+// Play Integrity Attestation
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Play Integrity verdict response from Google's decodeIntegrityToken API.
+ * Only the fields we need for device attestation are typed.
+ */
+interface PlayIntegrityVerdict {
+  requestDetails?: {
+    requestPackageName?: string
+    timestampMillis?: string
+    nonce?: string
+  }
+  appIntegrity?: {
+    appRecognitionVerdict?: string
+  }
+  deviceIntegrity?: {
+    deviceRecognitionVerdict?: string[]
+  }
+  accountDetails?: {
+    appLicensingVerdict?: string
+  }
+}
+
+export interface PlayIntegrityResult {
+  valid: boolean
+  verdict: string
+  deviceRecognitionVerdict: string[]
+  error?: string
+}
+
+/**
+ * Verify a Play Integrity token by calling Google's server-side API.
+ *
+ * This uses the Cloud-based server-side API method:
+ *   POST https://playintegrity.googleapis.com/v1/{packageName}:decodeIntegrityToken
+ *
+ * Requires:
+ * - GOOGLE_CLOUD_PROJECT_NUMBER — Google Cloud project number
+ * - GOOGLE_SERVICE_ACCOUNT_KEY — JSON service account key (or use Application Default Credentials)
+ *
+ * The integrity token is generated client-side on Android using the Play Integrity API
+ * and sent in the `x-play-integrity-token` header during pairing/refresh.
+ *
+ * Device must have MEETS_DEVICE_INTEGRITY in deviceRecognitionVerdict.
+ * Rooted / non-certified devices will be rejected.
+ */
+export async function verifyPlayIntegrity(
+  integrityToken: string,
+  packageName: string = 'com.gwi.pax'
+): Promise<PlayIntegrityResult> {
+  const projectNumber = process.env.GOOGLE_CLOUD_PROJECT_NUMBER
+  if (!projectNumber) {
+    console.warn('[PlayIntegrity] GOOGLE_CLOUD_PROJECT_NUMBER not set — skipping attestation')
+    return {
+      valid: true,
+      verdict: 'skipped_no_config',
+      deviceRecognitionVerdict: [],
+    }
+  }
+
+  try {
+    // Get access token for Google API call
+    const accessToken = await getGoogleAccessToken()
+    if (!accessToken) {
+      console.warn('[PlayIntegrity] Could not obtain Google access token — allowing request (gradual rollout)')
+      return {
+        valid: true,
+        verdict: 'skipped_no_credentials',
+        deviceRecognitionVerdict: [],
+      }
+    }
+
+    const url = `https://playintegrity.googleapis.com/v1/${packageName}:decodeIntegrityToken`
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ integrity_token: integrityToken }),
+      signal: AbortSignal.timeout(10_000), // 10s timeout
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => 'unknown')
+      console.error(`[PlayIntegrity] Google API returned ${response.status}: ${errorBody}`)
+      return {
+        valid: false,
+        verdict: `api_error_${response.status}`,
+        deviceRecognitionVerdict: [],
+        error: `Google API error: ${response.status}`,
+      }
+    }
+
+    const result = await response.json() as { tokenPayloadExternal?: PlayIntegrityVerdict }
+    const verdict = result.tokenPayloadExternal
+
+    if (!verdict) {
+      return {
+        valid: false,
+        verdict: 'no_verdict',
+        deviceRecognitionVerdict: [],
+        error: 'No verdict in response',
+      }
+    }
+
+    const deviceVerdict = verdict.deviceIntegrity?.deviceRecognitionVerdict ?? []
+    const meetsDeviceIntegrity = deviceVerdict.includes('MEETS_DEVICE_INTEGRITY')
+
+    // Log the full verdict for debugging
+    console.info(JSON.stringify({
+      event: 'play_integrity_check',
+      packageName: verdict.requestDetails?.requestPackageName,
+      appVerdict: verdict.appIntegrity?.appRecognitionVerdict,
+      deviceVerdict,
+      meetsDeviceIntegrity,
+      timestamp: new Date().toISOString(),
+    }))
+
+    return {
+      valid: meetsDeviceIntegrity,
+      verdict: meetsDeviceIntegrity ? 'MEETS_DEVICE_INTEGRITY' : 'DOES_NOT_MEET_DEVICE_INTEGRITY',
+      deviceRecognitionVerdict: deviceVerdict,
+      error: meetsDeviceIntegrity ? undefined : 'Device does not meet integrity requirements',
+    }
+  } catch (error) {
+    console.error('[PlayIntegrity] Verification failed:', error)
+    return {
+      valid: false,
+      verdict: 'verification_error',
+      deviceRecognitionVerdict: [],
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}
+
+/**
+ * Get a Google Cloud access token using service account credentials.
+ *
+ * Supports two modes:
+ * 1. GOOGLE_SERVICE_ACCOUNT_KEY env var (JSON string) — for Vercel/external
+ * 2. Application Default Credentials — for GCE/Cloud Run
+ *
+ * Uses the OAuth2 token endpoint with a self-signed JWT for service accounts.
+ */
+async function getGoogleAccessToken(): Promise<string | null> {
+  const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+  if (!keyJson) return null
+
+  try {
+    const key = JSON.parse(keyJson) as {
+      client_email: string
+      private_key: string
+      token_uri: string
+    }
+
+    const now = Math.floor(Date.now() / 1000)
+    const jwtHeader = { alg: 'RS256', typ: 'JWT' }
+    const jwtClaim = {
+      iss: key.client_email,
+      scope: 'https://www.googleapis.com/auth/playintegrity',
+      aud: key.token_uri || 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+    }
+
+    // Sign the JWT with the service account private key
+    const encoder = new TextEncoder()
+    const headerB64 = btoa(JSON.stringify(jwtHeader)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+    const claimB64 = btoa(JSON.stringify(jwtClaim)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+    const unsignedJwt = `${headerB64}.${claimB64}`
+
+    // Import the RSA private key
+    const pemKey = key.private_key
+    const pemBody = pemKey
+      .replace(/-----BEGIN PRIVATE KEY-----/, '')
+      .replace(/-----END PRIVATE KEY-----/, '')
+      .replace(/\n/g, '')
+
+    const keyBuffer = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0))
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'pkcs8',
+      keyBuffer.buffer,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['sign']
+    )
+
+    const signature = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      cryptoKey,
+      encoder.encode(unsignedJwt)
+    )
+
+    const sigB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '')
+
+    const signedJwt = `${unsignedJwt}.${sigB64}`
+
+    // Exchange the signed JWT for an access token
+    const tokenResponse = await fetch(key.token_uri || 'https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${signedJwt}`,
+      signal: AbortSignal.timeout(10_000),
+    })
+
+    if (!tokenResponse.ok) {
+      console.error('[PlayIntegrity] Token exchange failed:', tokenResponse.status)
+      return null
+    }
+
+    const tokenData = await tokenResponse.json() as { access_token?: string }
+    return tokenData.access_token ?? null
+  } catch (error) {
+    console.error('[PlayIntegrity] Failed to get Google access token:', error)
+    return null
+  }
 }

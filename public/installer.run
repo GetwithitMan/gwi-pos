@@ -1821,8 +1821,37 @@ BKEOF
     ( crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" || true ; echo "$CRON_LINE" ) | crontab -u "$POSUSER" -
 
     log "Daily backup configured (4 AM, 7-day retention)."
+
+    # ── Cloud Backup Upload (encrypted → S3) ──
+    UPLOAD_SCRIPT="$APP_BASE/scripts/nuc-backup-upload.sh"
+    if [[ -f "$APP_DIR/public/nuc-backup-upload.sh" ]]; then
+      mkdir -p "$APP_BASE/scripts"
+      cp "$APP_DIR/public/nuc-backup-upload.sh" "$UPLOAD_SCRIPT"
+      chmod +x "$UPLOAD_SCRIPT"
+      chown "$POSUSER":"$POSUSER" "$UPLOAD_SCRIPT"
+
+      # Add cron entry: 4:15 AM daily (15 min after pg_dump)
+      UPLOAD_CRON="15 4 * * * $UPLOAD_SCRIPT"
+      ( crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$UPLOAD_SCRIPT" || true ; echo "$UPLOAD_CRON" ) | crontab -u "$POSUSER" -
+
+      log "Cloud backup upload configured (4:15 AM daily → S3)."
+    else
+      track_warn "nuc-backup-upload.sh not found in repo — cloud backup upload not configured."
+    fi
   else
     log "Cloud database (Neon) — backups managed by provider. Skipping local backup."
+  fi
+
+  # ── Restore Script ──
+  RESTORE_SCRIPT="$APP_BASE/scripts/nuc-restore.sh"
+  if [[ -f "$APP_DIR/public/nuc-restore.sh" ]]; then
+    mkdir -p "$APP_BASE/scripts"
+    cp "$APP_DIR/public/nuc-restore.sh" "$RESTORE_SCRIPT"
+    chmod +x "$RESTORE_SCRIPT"
+    chown root:root "$RESTORE_SCRIPT"
+    log "Restore script installed: $RESTORE_SCRIPT"
+  else
+    track_warn "nuc-restore.sh not found in repo — restore script not installed."
   fi
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -1860,6 +1889,7 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/promote.sh
 $POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/rejoin-as-standby.sh
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/nuc-restore.sh
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart keepalived
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop keepalived
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start keepalived
@@ -2331,7 +2361,7 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   echo -e "  ${GREEN}POS URL:${NC}  http://localhost:3005"
   if [[ "$USE_LOCAL_PG" == "true" ]]; then
     echo -e "  ${GREEN}Database:${NC} PostgreSQL (local primary)"
-    echo -e "  ${GREEN}Backups:${NC}  $BACKUP_DIR (daily 4 AM, 7-day retention)"
+    echo -e "  ${GREEN}Backups:${NC}  $BACKUP_DIR (daily 4 AM, 7-day retention + S3 upload 4:15 AM)"
   else
     echo -e "  ${GREEN}Database:${NC} Neon (cloud)"
   fi
@@ -2413,6 +2443,8 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   echo "    sudo systemctl restart thepasspos       — Restart POS"
   if [[ "$USE_LOCAL_PG" == "true" ]]; then
     echo "    sudo bash $BACKUP_SCRIPT               — Run manual backup"
+    echo "    sudo /opt/gwi-pos/scripts/nuc-backup-upload.sh — Upload backup to S3"
+    echo "    sudo /opt/gwi-pos/scripts/nuc-restore.sh       — Restore from backup"
   fi
   if [[ -n "${VIRTUAL_IP:-}" ]]; then
     echo "    sudo systemctl status keepalived        — Check HA status"
@@ -2425,6 +2457,7 @@ elif [[ "$STATION_ROLE" == "backup" ]]; then
   echo "    sudo -u postgres psql -c 'SELECT pg_is_in_recovery();'  — Verify standby mode"
   echo "    ip addr show | grep ${VIRTUAL_IP:-VIP}   — Check if VIP is on this node"
   echo "    sudo /opt/gwi-pos/scripts/promote.sh     — Promote to primary (failover)"
+  echo "    sudo /opt/gwi-pos/scripts/nuc-restore.sh — Restore from backup"
   echo "    cat /opt/gwi-pos/heartbeat.log           — View heartbeat log"
 else
   echo "    sudo systemctl status thepasspos-kiosk  — Check kiosk status"

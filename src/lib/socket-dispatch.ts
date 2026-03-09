@@ -1111,6 +1111,71 @@ export async function dispatchOrderClosed(
   return doEmit()
 }
 
+// ==================== HA Failover Events ====================
+
+/**
+ * Dispatch server:failover-active event to all connected clients.
+ *
+ * Emitted when the health API detects this NUC is running as a promoted backup
+ * (pgRole === 'primary' but STATION_ROLE === 'backup'). All web POS terminals
+ * show a yellow "Backup Server Active" banner.
+ */
+export async function dispatchFailoverActive(
+  locationId: string,
+  payload: {
+    message: string
+    since: string  // ISO timestamp of when failover was detected
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'server:failover-active', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch server:failover-active:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async failover-active failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch server:failover-resolved event to all connected clients.
+ *
+ * Emitted when the original primary comes back and this node returns to backup role.
+ * Clears the "Backup Server Active" banner on all web POS terminals.
+ */
+export async function dispatchFailoverResolved(
+  locationId: string,
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'server:failover-resolved', {
+        resolvedAt: new Date().toISOString(),
+      })
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch server:failover-resolved:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async failover-resolved failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
 // ==================== Scale Events ====================
 
 /**

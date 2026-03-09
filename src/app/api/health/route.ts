@@ -10,6 +10,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchFailoverActive, dispatchFailoverResolved } from '@/lib/socket-dispatch'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,11 +29,17 @@ interface HealthResponse {
   virtualIp: string | null
   replicationLag: number | null
   isVipOwner: boolean | null
+  /** True when this node is a backup that has been promoted to primary */
+  isPromotedBackup: boolean
   error?: string
 }
 
 // Track server start time for uptime
 const startTime = Date.now()
+
+/** Track failover state to emit socket events on transitions */
+let lastKnownPromotedBackup = false
+let failoverSince: string | null = null
 
 export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: HealthResponse }>> {
   const timestamp = new Date().toISOString()
@@ -84,6 +91,31 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   const stationRole = process.env.STATION_ROLE || 'unknown'
   const virtualIp = process.env.VIRTUAL_IP || null
 
+  // Detect promoted backup: STATION_ROLE is 'backup' but PG is running as primary
+  // This happens after promote.sh runs on the backup node
+  const isPromotedBackup = stationRole === 'backup' && pgRole === 'primary'
+
+  // Emit socket events on failover state transitions
+  // We need a locationId — try to extract from DB or env
+  const locationId = process.env.LOCATION_ID
+  if (locationId) {
+    if (isPromotedBackup && !lastKnownPromotedBackup) {
+      // Transition: normal -> promoted backup
+      failoverSince = timestamp
+      void dispatchFailoverActive(locationId, {
+        message: 'Backup server active',
+        since: failoverSince,
+      }).catch(console.error)
+      console.warn('[Health] Failover detected — backup promoted to primary. Emitting server:failover-active.')
+    } else if (!isPromotedBackup && lastKnownPromotedBackup) {
+      // Transition: promoted backup -> back to normal (primary restored)
+      failoverSince = null
+      void dispatchFailoverResolved(locationId).catch(console.error)
+      console.info('[Health] Failover resolved — original primary restored. Emitting server:failover-resolved.')
+    }
+  }
+  lastKnownPromotedBackup = isPromotedBackup
+
   const response: HealthResponse = {
     status,
     timestamp,
@@ -100,6 +132,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     virtualIp,
     replicationLag,
     isVipOwner: virtualIp ? stationRole === 'server' : null,
+    isPromotedBackup,
   }
 
   // Return appropriate HTTP status
