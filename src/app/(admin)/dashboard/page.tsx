@@ -334,6 +334,8 @@ export default function ManagerDashboardPage() {
   refreshRef.current = refreshData
   const liveMetricsRef = useRef(refreshLiveMetrics)
   liveMetricsRef.current = refreshLiveMetrics
+  const employeeStatsRef = useRef(refreshEmployeeStats)
+  employeeStatsRef.current = refreshEmployeeStats
 
   useEffect(() => {
     if (!locationId) return
@@ -367,7 +369,11 @@ export default function ManagerDashboardPage() {
       setAlerts(prev => [newAlert, ...prev].slice(0, 50))
     }
 
-    const onConnect = () => refreshRef.current()
+    const onConnect = () => {
+      refreshRef.current()
+      liveMetricsRef.current()
+      employeeStatsRef.current()
+    }
 
     socket.on('orders:list-changed', debouncedRefresh)
     socket.on('order:totals-updated', debouncedRefresh)

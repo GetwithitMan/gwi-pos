@@ -6,6 +6,8 @@ import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { requireDatacapClient } from '@/lib/datacap/helpers'
+import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 
@@ -54,29 +56,82 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const dispatchInfos: { locationId: string; orderId: string; subtotal: number; taxTotal: number; tipTotal: number; discountTotal: number; total: number; commissionTotal: number }[] = []
     const allocationInfos: { locationId: string; orderId: string; employeeId: string; paymentId: string; paymentMethod: string; tipAmount: number }[] = []
 
-    // Process each adjustment in a transaction
-    await db.$transaction(async (tx) => {
-      for (const adj of adjustments) {
-        const order = await tx.order.findUnique({
-          where: { id: adj.orderId },
-          include: {
-            payments: {
-              where: { id: adj.paymentId, deletedAt: null },
-            },
-          },
-        })
+    // Phase 1: Pre-fetch orders and call Datacap for card payments (before DB transaction)
+    // Datacap calls are network I/O to hardware — must happen outside the transaction.
+    const datacapApproved = new Set<string>() // paymentIds that passed Datacap
+    const datacapSkipped = new Set<string>()  // paymentIds that are non-card (no Datacap needed)
+    const datacapFailed = new Map<string, string>() // paymentId → error message
 
-        if (!order) {
-          results.push({ orderId: adj.orderId, success: false, error: 'Order not found' })
-          continue
+    // Pre-fetch all orders+payments for validation and Datacap calls
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prefetched = new Map<string, { order: any; adj: TipAdjustment }>()
+
+    for (const adj of adjustments) {
+      const order = await db.order.findUnique({
+        where: { id: adj.orderId },
+        include: {
+          payments: {
+            where: { id: adj.paymentId, deletedAt: null },
+          },
+        },
+      })
+
+      if (!order) {
+        results.push({ orderId: adj.orderId, success: false, error: 'Order not found' })
+        continue
+      }
+
+      const payment = order.payments[0]
+      if (!payment) {
+        results.push({ orderId: adj.orderId, success: false, error: 'Payment not found' })
+        continue
+      }
+
+      // Tip cap: newTipAmount must not exceed 100% of base amount
+      const baseAmount = Number(payment.amount) - Number(payment.tipAmount)
+      if (baseAmount > 0 && adj.tipAmount > baseAmount) {
+        results.push({ orderId: adj.orderId, success: false, error: `Tip $${adj.tipAmount.toFixed(2)} exceeds 100% of base amount $${baseAmount.toFixed(2)}` })
+        continue
+      }
+
+      prefetched.set(adj.paymentId, { order, adj })
+
+      // Call Datacap for card payments
+      if (payment.datacapRecordNo && payment.paymentReaderId) {
+        try {
+          const datacapClient = await requireDatacapClient(order.locationId)
+          const datacapResponse = await datacapClient.adjustGratuity(payment.paymentReaderId, {
+            recordNo: payment.datacapRecordNo,
+            purchaseAmount: Number(payment.amount),
+            gratuityAmount: adj.tipAmount,
+          })
+          const datacapError = parseError(datacapResponse)
+          if (datacapError || datacapResponse.cmdStatus !== 'Approved') {
+            datacapFailed.set(adj.paymentId, datacapError?.text ?? 'Datacap declined the tip adjustment')
+            results.push({ orderId: adj.orderId, success: false, error: datacapError?.text ?? 'Datacap declined the tip adjustment' })
+          } else {
+            datacapApproved.add(adj.paymentId)
+          }
+        } catch (datacapErr) {
+          console.error(`Datacap adjustGratuity failed for payment ${adj.paymentId}:`, datacapErr)
+          datacapFailed.set(adj.paymentId, 'Could not reach card reader to adjust tip')
+          results.push({ orderId: adj.orderId, success: false, error: 'Could not reach card reader to adjust tip' })
         }
+      } else {
+        // Non-card payment — no Datacap call needed
+        datacapSkipped.add(adj.paymentId)
+      }
+    }
+
+    // Phase 2: DB transaction — only update payments that passed Datacap (or don't need it)
+    await db.$transaction(async (tx) => {
+      for (const [paymentId, { order, adj }] of prefetched) {
+        // Skip if Datacap failed for this payment
+        if (datacapFailed.has(paymentId)) continue
+        // Only proceed if Datacap approved or was not needed
+        if (!datacapApproved.has(paymentId) && !datacapSkipped.has(paymentId)) continue
 
         const payment = order.payments[0]
-        if (!payment) {
-          results.push({ orderId: adj.orderId, success: false, error: 'Payment not found' })
-          continue
-        }
-
         const oldTipAmount = Number(payment.tipAmount)
         const newTotalAmount = Number(payment.amount) + adj.tipAmount
 
@@ -132,6 +187,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               difference: adj.tipAmount - oldTipAmount,
               reason: 'Batch tip adjustment',
               batchSize: adjustments.length,
+              datacapAdjusted: datacapApproved.has(paymentId),
             },
           },
         })

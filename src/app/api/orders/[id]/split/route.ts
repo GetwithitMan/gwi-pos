@@ -170,59 +170,64 @@ export const POST = withVenue(async function POST(
       const orderTotal = Number(order.total)
       const perSplit = Math.floor((orderTotal / numWays) * 100) / 100
 
-      // Get current max split index for this parent
-      const existingSplits = await db.order.count({
-        where: { parentOrderId: order.id },
-      })
+      // === TRANSACTION: create all split children + update parent atomically ===
+      const splitOrders = await db.$transaction(async (tx) => {
+        // Get current max split index for this parent
+        const existingSplits = await tx.order.count({
+          where: { parentOrderId: order.id },
+        })
 
-      // Create split orders
-      const splitOrders = []
-      for (let i = 0; i < numWays; i++) {
-        const splitIndex = existingSplits + i + 1
-        // Last split gets any remaining cents
-        const splitTotal = i === numWays - 1
-          ? Math.round((orderTotal - perSplit * (numWays - 1)) * 100) / 100
-          : perSplit
+        // Create split orders
+        const createdSplits = []
+        for (let i = 0; i < numWays; i++) {
+          const splitIndex = existingSplits + i + 1
+          // Last split gets any remaining cents
+          const splitTotal = i === numWays - 1
+            ? Math.round((orderTotal - perSplit * (numWays - 1)) * 100) / 100
+            : perSplit
 
-        const splitSubtotal = Math.round((splitTotal / (1 + taxRate)) * 100) / 100
-        const splitTax = Math.round((splitTotal - splitSubtotal) * 100) / 100
+          const splitSubtotal = Math.round((splitTotal / (1 + taxRate)) * 100) / 100
+          const splitTax = Math.round((splitTotal - splitSubtotal) * 100) / 100
 
-        const splitOrder = await db.order.create({
+          const splitOrder = await tx.order.create({
+            data: {
+              orderNumber: order.orderNumber, // Same base number
+              displayNumber: `${order.orderNumber}-${splitIndex}`,
+              locationId: order.locationId,
+              employeeId: order.employeeId,
+              customerId: order.customerId,
+              orderType: order.orderType,
+              status: 'open',
+              tableId: order.tableId,
+              tabName: order.tabName,
+              guestCount: 1,
+              subtotal: splitSubtotal,
+              discountTotal: 0,
+              taxTotal: splitTax,
+              tipTotal: 0,
+              total: splitTotal,
+              parentOrderId: order.id,
+              splitIndex,
+              notes: `Split ${splitIndex} of ${numWays} from order #${order.orderNumber}`,
+            },
+          })
+          createdSplits.push(splitOrder)
+        }
+
+        // Mark parent order as 'split' so children become payable
+        await tx.order.update({
+          where: { id: order.id },
           data: {
-            orderNumber: order.orderNumber, // Same base number
-            displayNumber: `${order.orderNumber}-${splitIndex}`,
-            locationId: order.locationId,
-            employeeId: order.employeeId,
-            customerId: order.customerId,
-            orderType: order.orderType,
-            status: 'open',
-            tableId: order.tableId,
-            tabName: order.tabName,
-            guestCount: 1,
-            subtotal: splitSubtotal,
-            discountTotal: 0,
-            taxTotal: splitTax,
-            tipTotal: 0,
-            total: splitTotal,
-            parentOrderId: order.id,
-            splitIndex,
-            notes: `Split ${splitIndex} of ${numWays} from order #${order.orderNumber}`,
+            status: 'split',
+            notes: order.notes
+              ? `${order.notes}\n[Split ${numWays} ways]`
+              : `[Split ${numWays} ways]`,
+            version: { increment: 1 },
           },
         })
-        splitOrders.push(splitOrder)
-      }
 
-      // Mark parent order as 'split' so children become payable
-      await db.order.update({
-        where: { id: order.id },
-        data: {
-          status: 'split',
-          notes: order.notes
-            ? `${order.notes}\n[Split ${numWays} ways]`
-            : `[Split ${numWays} ways]`,
-          version: { increment: 1 },
-        },
-      })
+        return createdSplits
+      }, { timeout: 15000 })
 
       // Dispatch socket events for new split orders (fire-and-forget)
       for (const s of splitOrders) {
@@ -329,91 +334,104 @@ export const POST = withVenue(async function POST(
       const newTax = calculateTax(newSubtotal, taxRate)
       const newTotal = Math.round((newSubtotal + newTax) * 100) / 100
 
-      // Get the next split index
-      const maxSplit = await db.order.aggregate({
-        where: { parentOrderId: order.parentOrderId || order.id },
-        _max: { splitIndex: true },
-      })
-      const nextSplitIndex = (maxSplit._max.splitIndex || 0) + 1
-      const baseOrderNumber = order.parentOrderId
-        ? (await db.order.findUnique({ where: { id: order.parentOrderId }, select: { orderNumber: true } }))?.orderNumber || order.orderNumber
-        : order.orderNumber
+      // === TRANSACTION: create child order + soft-delete items from parent + recalc parent atomically ===
+      const { newOrder, remainingSubtotal, remainingTax, remainingTotal, remainingItems, baseOrderNumber, nextSplitIndex } = await db.$transaction(async (tx) => {
+        // Get the next split index
+        const maxSplit = await tx.order.aggregate({
+          where: { parentOrderId: order.parentOrderId || order.id },
+          _max: { splitIndex: true },
+        })
+        const _nextSplitIndex = (maxSplit._max.splitIndex || 0) + 1
+        const _baseOrderNumber = order.parentOrderId
+          ? (await tx.order.findUnique({ where: { id: order.parentOrderId }, select: { orderNumber: true } }))?.orderNumber || order.orderNumber
+          : order.orderNumber
 
-      // Create new split order with the selected items
-      const newOrder = await db.order.create({
-        data: {
-          orderNumber: baseOrderNumber,
-          displayNumber: `${baseOrderNumber}-${nextSplitIndex}`,
-          locationId: order.locationId,
-          employeeId: order.employeeId,
-          customerId: order.customerId,
-          orderType: order.orderType,
-          status: 'open',
-          tableId: order.tableId,
-          tabName: order.tabName,
-          guestCount: 1,
-          subtotal: newSubtotal,
-          discountTotal: 0,
-          taxTotal: newTax,
-          tipTotal: 0,
-          total: newTotal,
-          itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
-          parentOrderId: order.parentOrderId || order.id,
-          splitIndex: nextSplitIndex,
-          notes: `Split from order #${order.orderNumber}`,
-          items: {
-            create: newItems,
-          },
-        },
-        include: {
-          items: {
-            include: {
-              modifiers: true,
+        // Create new split order with the selected items
+        const _newOrder = await tx.order.create({
+          data: {
+            orderNumber: _baseOrderNumber,
+            displayNumber: `${_baseOrderNumber}-${_nextSplitIndex}`,
+            locationId: order.locationId,
+            employeeId: order.employeeId,
+            customerId: order.customerId,
+            orderType: order.orderType,
+            status: 'open',
+            tableId: order.tableId,
+            tabName: order.tabName,
+            guestCount: 1,
+            subtotal: newSubtotal,
+            discountTotal: 0,
+            taxTotal: newTax,
+            tipTotal: 0,
+            total: newTotal,
+            itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
+            parentOrderId: order.parentOrderId || order.id,
+            splitIndex: _nextSplitIndex,
+            notes: `Split from order #${order.orderNumber}`,
+            items: {
+              create: newItems,
             },
           },
-        },
-      })
+          include: {
+            items: {
+              include: {
+                modifiers: true,
+              },
+            },
+          },
+        })
 
-      // Remove items from original order
-      await db.orderItemModifier.updateMany({
-        where: {
-          orderItem: {
+        // Remove items from original order
+        await tx.orderItemModifier.updateMany({
+          where: {
+            orderItem: {
+              id: { in: itemIds },
+            },
+          },
+          data: { deletedAt: new Date() },
+        })
+        await tx.orderItem.updateMany({
+          where: {
             id: { in: itemIds },
           },
-        },
-        data: { deletedAt: new Date() },
-      })
-      await db.orderItem.updateMany({
-        where: {
-          id: { in: itemIds },
-        },
-        data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
-      })
+          data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
+        })
 
-      // Recalculate original order totals
-      const remainingItems = order.items.filter(item => !itemIds.includes(item.id))
-      let remainingSubtotal = 0
-      remainingItems.forEach(item => {
-        const itemTotal = Number(item.price) * item.quantity
-        const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
-        remainingSubtotal += itemTotal + modifiersTotal
-      })
+        // Recalculate original order totals
+        const _remainingItems = order.items.filter(item => !itemIds.includes(item.id))
+        let _remainingSubtotal = 0
+        _remainingItems.forEach(item => {
+          const itemTotal = Number(item.price) * item.quantity
+          const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+          _remainingSubtotal += itemTotal + modifiersTotal
+        })
 
-      const remainingTax = calculateTax(remainingSubtotal, taxRate)
-      const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
+        const _remainingTax = calculateTax(_remainingSubtotal, taxRate)
+        const _remainingTotal = Math.round((_remainingSubtotal + _remainingTax) * 100) / 100
 
-      // Update original order totals and mark as 'split' so children become payable
-      await db.order.update({
-        where: { id: order.id },
-        data: {
-          status: 'split',
-          subtotal: remainingSubtotal,
-          taxTotal: remainingTax,
-          total: remainingTotal,
-          itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
-          version: { increment: 1 },
-        },
-      })
+        // Update original order totals and mark as 'split' so children become payable
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            status: 'split',
+            subtotal: _remainingSubtotal,
+            taxTotal: _remainingTax,
+            total: _remainingTotal,
+            itemCount: _remainingItems.reduce((sum, i) => sum + i.quantity, 0),
+            version: { increment: 1 },
+          },
+        })
+
+        return {
+          newOrder: _newOrder,
+          remainingSubtotal: _remainingSubtotal,
+          remainingTax: _remainingTax,
+          remainingTotal: _remainingTotal,
+          remainingItems: _remainingItems,
+          baseOrderNumber: _baseOrderNumber,
+          nextSplitIndex: _nextSplitIndex,
+        }
+      }, { timeout: 15000 })
 
       // Dispatch socket events for split (fire-and-forget)
       void dispatchOpenOrdersChanged(order.locationId, {
@@ -523,148 +541,168 @@ export const POST = withVenue(async function POST(
       // Get base order number
       const baseOrderNumber = order.orderNumber
 
-      // Get current max split index
-      const existingSplits = await db.order.count({
-        where: { parentOrderId: order.id },
-      })
-
-      // Create a split order for each seat
-      const splitOrders = []
-      let splitIndex = existingSplits
-
       // Sort seats numerically
       const sortedSeats = seatsWithItems.sort((a, b) => (a ?? 0) - (b ?? 0))
 
-      for (const seatNumber of sortedSeats) {
-        const seatItems = itemsBySeat.get(seatNumber) || []
-        if (seatItems.length === 0) continue
+      // === TRANSACTION: create all seat children + soft-delete items + update parent atomically ===
+      const { splitOrders, itemIdsToRemove, remainingItems, remainingTotal } = await db.$transaction(async (tx) => {
+        // Get current max split index
+        const existingSplits = await tx.order.count({
+          where: { parentOrderId: order.id },
+        })
 
-        splitIndex++
+        // Create a split order for each seat
+        const _splitOrders: Array<{
+          id: string
+          orderNumber: number
+          splitIndex: number | null
+          displayNumber: string
+          seatNumber: number | null
+          total: number
+          itemCount: number
+          paidAmount: number
+          isPaid: boolean
+        }> = []
+        let splitIndex = existingSplits
 
-        // Calculate totals for this seat's items
-        let seatSubtotal = 0
-        const newItems = seatItems.map(item => {
+        for (const seatNumber of sortedSeats) {
+          const seatItems = itemsBySeat.get(seatNumber) || []
+          if (seatItems.length === 0) continue
+
+          splitIndex++
+
+          // Calculate totals for this seat's items
+          let seatSubtotal = 0
+          const newItems = seatItems.map(item => {
+            const itemTotal = Number(item.price) * item.quantity
+            const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+            seatSubtotal += itemTotal + modifiersTotal
+
+            return {
+              locationId: order.locationId,
+              menuItemId: item.menuItemId,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+              itemTotal: item.itemTotal,
+              specialNotes: item.specialNotes,
+              seatNumber: item.seatNumber,
+              courseNumber: item.courseNumber,
+              modifiers: {
+                create: item.modifiers.map(mod => ({
+                  locationId: order.locationId,
+                  modifierId: mod.modifierId,
+                  name: mod.name,
+                  price: mod.price,
+                  quantity: mod.quantity,
+                  preModifier: mod.preModifier,
+                  spiritTier: mod.spiritTier,
+                  linkedBottleProductId: mod.linkedBottleProductId,
+                })),
+              },
+            }
+          })
+
+          const seatTax = calculateTax(seatSubtotal, taxRate)
+          const seatTotal = Math.round((seatSubtotal + seatTax) * 100) / 100
+
+          // Create split order for this seat
+          const splitOrder = await tx.order.create({
+            data: {
+              orderNumber: baseOrderNumber,
+              displayNumber: `${baseOrderNumber}-${splitIndex}`,
+              locationId: order.locationId,
+              employeeId: order.employeeId,
+              customerId: order.customerId,
+              orderType: order.orderType,
+              status: 'open',
+              tableId: order.tableId,
+              tabName: order.tabName,
+              guestCount: 1,
+              subtotal: seatSubtotal,
+              discountTotal: 0,
+              taxTotal: seatTax,
+              tipTotal: 0,
+              total: seatTotal,
+              itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
+              parentOrderId: order.id,
+              splitIndex,
+              notes: `Seat ${seatNumber} from order #${baseOrderNumber}`,
+              items: {
+                create: newItems,
+              },
+            },
+            include: {
+              items: {
+                include: { modifiers: true },
+              },
+            },
+          })
+
+          _splitOrders.push({
+            id: splitOrder.id,
+            orderNumber: splitOrder.orderNumber,
+            splitIndex: splitOrder.splitIndex,
+            displayNumber: `${baseOrderNumber}-${splitIndex}`,
+            seatNumber,
+            total: Number(splitOrder.total),
+            itemCount: splitOrder.items.length,
+            paidAmount: 0,
+            isPaid: false,
+          })
+        }
+
+        // Delete items from original order (they've been copied to split orders)
+        const _itemIdsToRemove = seatsWithItems.flatMap(seat =>
+          itemsBySeat.get(seat)?.map(item => item.id) || []
+        )
+
+        await tx.orderItemModifier.updateMany({
+          where: {
+            orderItem: { id: { in: _itemIdsToRemove } },
+          },
+          data: { deletedAt: new Date() },
+        })
+        await tx.orderItem.updateMany({
+          where: { id: { in: _itemIdsToRemove } },
+          data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
+        })
+
+        // Recalculate original order totals (for items without seat assignment)
+        const _remainingItems = itemsBySeat.get(null) || []
+        let _remainingSubtotal = 0
+        _remainingItems.forEach(item => {
           const itemTotal = Number(item.price) * item.quantity
           const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
-          seatSubtotal += itemTotal + modifiersTotal
-
-          return {
-            locationId: order.locationId,
-            menuItemId: item.menuItemId,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            itemTotal: item.itemTotal,
-            specialNotes: item.specialNotes,
-            seatNumber: item.seatNumber,
-            courseNumber: item.courseNumber,
-            modifiers: {
-              create: item.modifiers.map(mod => ({
-                locationId: order.locationId,
-                modifierId: mod.modifierId,
-                name: mod.name,
-                price: mod.price,
-                quantity: mod.quantity,
-                preModifier: mod.preModifier,
-                spiritTier: mod.spiritTier,
-                linkedBottleProductId: mod.linkedBottleProductId,
-              })),
-            },
-          }
+          _remainingSubtotal += itemTotal + modifiersTotal
         })
 
-        const seatTax = calculateTax(seatSubtotal, taxRate)
-        const seatTotal = Math.round((seatSubtotal + seatTax) * 100) / 100
+        const _remainingTax = calculateTax(_remainingSubtotal, taxRate)
+        const _remainingTotal = Math.round((_remainingSubtotal + _remainingTax) * 100) / 100
 
-        // Create split order for this seat
-        const splitOrder = await db.order.create({
+        // Update original order totals and mark as 'split' so children become payable
+        await tx.order.update({
+          where: { id: order.id },
           data: {
-            orderNumber: baseOrderNumber,
-            displayNumber: `${baseOrderNumber}-${splitIndex}`,
-            locationId: order.locationId,
-            employeeId: order.employeeId,
-            customerId: order.customerId,
-            orderType: order.orderType,
-            status: 'open',
-            tableId: order.tableId,
-            tabName: order.tabName,
-            guestCount: 1,
-            subtotal: seatSubtotal,
-            discountTotal: 0,
-            taxTotal: seatTax,
-            tipTotal: 0,
-            total: seatTotal,
-            itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
-            parentOrderId: order.id,
-            splitIndex,
-            notes: `Seat ${seatNumber} from order #${baseOrderNumber}`,
-            items: {
-              create: newItems,
-            },
-          },
-          include: {
-            items: {
-              include: { modifiers: true },
-            },
+            status: 'split',
+            subtotal: _remainingSubtotal,
+            taxTotal: _remainingTax,
+            total: _remainingTotal,
+            itemCount: _remainingItems.reduce((sum, i) => sum + i.quantity, 0),
+            notes: order.notes
+              ? `${order.notes}\n[Split by seat: ${sortedSeats.length} seats]`
+              : `[Split by seat: ${sortedSeats.length} seats]`,
+            version: { increment: 1 },
           },
         })
 
-        splitOrders.push({
-          id: splitOrder.id,
-          orderNumber: splitOrder.orderNumber,
-          splitIndex: splitOrder.splitIndex,
-          displayNumber: `${baseOrderNumber}-${splitIndex}`,
-          seatNumber,
-          total: Number(splitOrder.total),
-          itemCount: splitOrder.items.length,
-          paidAmount: 0,
-          isPaid: false,
-        })
-      }
-
-      // Delete items from original order (they've been copied to split orders)
-      const itemIdsToRemove = seatsWithItems.flatMap(seat =>
-        itemsBySeat.get(seat)?.map(item => item.id) || []
-      )
-
-      await db.orderItemModifier.updateMany({
-        where: {
-          orderItem: { id: { in: itemIdsToRemove } },
-        },
-        data: { deletedAt: new Date() },
-      })
-      await db.orderItem.updateMany({
-        where: { id: { in: itemIdsToRemove } },
-        data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
-      })
-
-      // Recalculate original order totals (for items without seat assignment)
-      const remainingItems = itemsBySeat.get(null) || []
-      let remainingSubtotal = 0
-      remainingItems.forEach(item => {
-        const itemTotal = Number(item.price) * item.quantity
-        const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
-        remainingSubtotal += itemTotal + modifiersTotal
-      })
-
-      const remainingTax = calculateTax(remainingSubtotal, taxRate)
-      const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
-
-      // Update original order totals and mark as 'split' so children become payable
-      await db.order.update({
-        where: { id: order.id },
-        data: {
-          status: 'split',
-          subtotal: remainingSubtotal,
-          taxTotal: remainingTax,
-          total: remainingTotal,
-          itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
-          notes: order.notes
-            ? `${order.notes}\n[Split by seat: ${sortedSeats.length} seats]`
-            : `[Split by seat: ${sortedSeats.length} seats]`,
-          version: { increment: 1 },
-        },
-      })
+        return {
+          splitOrders: _splitOrders,
+          itemIdsToRemove: _itemIdsToRemove,
+          remainingItems: _remainingItems,
+          remainingTotal: _remainingTotal,
+        }
+      }, { timeout: 20000 })
 
       // Dispatch socket events for seat splits (fire-and-forget)
       for (const s of splitOrders) {
@@ -767,7 +805,7 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      // Get table names for better labeling
+      // Get table names for better labeling (read-only query, safe outside transaction)
       const tableRecords = await db.table.findMany({
         where: { id: { in: tablesWithItems } },
         select: { id: true, name: true, abbreviation: true },
@@ -777,148 +815,169 @@ export const POST = withVenue(async function POST(
       // Get base order number
       const baseOrderNumber = order.orderNumber
 
-      // Get current max split index
-      const existingSplits = await db.order.count({
-        where: { parentOrderId: order.id },
-      })
+      // === TRANSACTION: create all table children + soft-delete items + update parent atomically ===
+      const { splitOrders, itemIdsToRemove, remainingItems, remainingTotal } = await db.$transaction(async (tx) => {
+        // Get current max split index
+        const existingSplits = await tx.order.count({
+          where: { parentOrderId: order.id },
+        })
 
-      // Create a split order for each table
-      const splitOrders = []
-      let splitIndex = existingSplits
+        // Create a split order for each table
+        const _splitOrders: Array<{
+          id: string
+          orderNumber: number
+          splitIndex: number | null
+          displayNumber: string
+          tableId: string
+          tableName: string
+          total: number
+          itemCount: number
+          paidAmount: number
+          isPaid: boolean
+        }> = []
+        let splitIndex = existingSplits
 
-      for (const tableId of tablesWithItems) {
-        const tableItems = itemsByTable.get(tableId) || []
-        if (tableItems.length === 0) continue
+        for (const tableId of tablesWithItems) {
+          const tableItems = itemsByTable.get(tableId) || []
+          if (tableItems.length === 0) continue
 
-        splitIndex++
-        const tableName = tableNameMap.get(tableId) || `Table ${tableId.slice(0, 4)}`
+          splitIndex++
+          const tableName = tableNameMap.get(tableId) || `Table ${tableId.slice(0, 4)}`
 
-        // Calculate totals for this table's items
-        let tableSubtotal = 0
-        const newItems = tableItems.map(item => {
+          // Calculate totals for this table's items
+          let tableSubtotal = 0
+          const newItems = tableItems.map(item => {
+            const itemTotal = Number(item.price) * item.quantity
+            const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+            tableSubtotal += itemTotal + modifiersTotal
+
+            return {
+              locationId: order.locationId,
+              menuItemId: item.menuItemId,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+              itemTotal: item.itemTotal,
+              specialNotes: item.specialNotes,
+              seatNumber: item.seatNumber,
+              courseNumber: item.courseNumber,
+              sourceTableId: item.sourceTableId, // Preserve source table reference
+              modifiers: {
+                create: item.modifiers.map(mod => ({
+                  locationId: order.locationId,
+                  modifierId: mod.modifierId,
+                  name: mod.name,
+                  price: mod.price,
+                  quantity: mod.quantity,
+                  preModifier: mod.preModifier,
+                  spiritTier: mod.spiritTier,
+                  linkedBottleProductId: mod.linkedBottleProductId,
+                })),
+              },
+            }
+          })
+
+          const tableTax = calculateTax(tableSubtotal, taxRate)
+          const tableTotal = Math.round((tableSubtotal + tableTax) * 100) / 100
+
+          // Create split order for this table
+          const splitOrder = await tx.order.create({
+            data: {
+              orderNumber: baseOrderNumber,
+              displayNumber: `${baseOrderNumber}-${splitIndex}`,
+              locationId: order.locationId,
+              employeeId: order.employeeId,
+              customerId: order.customerId,
+              orderType: order.orderType,
+              status: 'open',
+              tableId: tableId, // Associate with the source table
+              tabName: order.tabName,
+              guestCount: 1,
+              subtotal: tableSubtotal,
+              discountTotal: 0,
+              taxTotal: tableTax,
+              tipTotal: 0,
+              total: tableTotal,
+              itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
+              parentOrderId: order.id,
+              splitIndex,
+              notes: `${tableName} from order #${baseOrderNumber}`,
+              items: {
+                create: newItems,
+              },
+            },
+            include: {
+              items: {
+                include: { modifiers: true },
+              },
+            },
+          })
+
+          _splitOrders.push({
+            id: splitOrder.id,
+            orderNumber: splitOrder.orderNumber,
+            splitIndex: splitOrder.splitIndex,
+            displayNumber: `${baseOrderNumber}-${splitIndex}`,
+            tableId,
+            tableName,
+            total: Number(splitOrder.total),
+            itemCount: splitOrder.items.length,
+            paidAmount: 0,
+            isPaid: false,
+          })
+        }
+
+        // Delete items from original order (they've been copied to split orders)
+        const _itemIdsToRemove = tablesWithItems.flatMap(tableId =>
+          itemsByTable.get(tableId)?.map(item => item.id) || []
+        )
+
+        await tx.orderItemModifier.updateMany({
+          where: {
+            orderItem: { id: { in: _itemIdsToRemove } },
+          },
+          data: { deletedAt: new Date() },
+        })
+        await tx.orderItem.updateMany({
+          where: { id: { in: _itemIdsToRemove } },
+          data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
+        })
+
+        // Recalculate original order totals (for items without table assignment)
+        const _remainingItems = itemsByTable.get(null) || []
+        let _remainingSubtotal = 0
+        _remainingItems.forEach(item => {
           const itemTotal = Number(item.price) * item.quantity
           const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
-          tableSubtotal += itemTotal + modifiersTotal
-
-          return {
-            locationId: order.locationId,
-            menuItemId: item.menuItemId,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            itemTotal: item.itemTotal,
-            specialNotes: item.specialNotes,
-            seatNumber: item.seatNumber,
-            courseNumber: item.courseNumber,
-            sourceTableId: item.sourceTableId, // Preserve source table reference
-            modifiers: {
-              create: item.modifiers.map(mod => ({
-                locationId: order.locationId,
-                modifierId: mod.modifierId,
-                name: mod.name,
-                price: mod.price,
-                quantity: mod.quantity,
-                preModifier: mod.preModifier,
-                spiritTier: mod.spiritTier,
-                linkedBottleProductId: mod.linkedBottleProductId,
-              })),
-            },
-          }
+          _remainingSubtotal += itemTotal + modifiersTotal
         })
 
-        const tableTax = calculateTax(tableSubtotal, taxRate)
-        const tableTotal = Math.round((tableSubtotal + tableTax) * 100) / 100
+        const _remainingTax = calculateTax(_remainingSubtotal, taxRate)
+        const _remainingTotal = Math.round((_remainingSubtotal + _remainingTax) * 100) / 100
 
-        // Create split order for this table
-        const splitOrder = await db.order.create({
+        // Update original order totals and mark as 'split' so children become payable
+        await tx.order.update({
+          where: { id: order.id },
           data: {
-            orderNumber: baseOrderNumber,
-            displayNumber: `${baseOrderNumber}-${splitIndex}`,
-            locationId: order.locationId,
-            employeeId: order.employeeId,
-            customerId: order.customerId,
-            orderType: order.orderType,
-            status: 'open',
-            tableId: tableId, // Associate with the source table
-            tabName: order.tabName,
-            guestCount: 1,
-            subtotal: tableSubtotal,
-            discountTotal: 0,
-            taxTotal: tableTax,
-            tipTotal: 0,
-            total: tableTotal,
-            itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
-            parentOrderId: order.id,
-            splitIndex,
-            notes: `${tableName} from order #${baseOrderNumber}`,
-            items: {
-              create: newItems,
-            },
-          },
-          include: {
-            items: {
-              include: { modifiers: true },
-            },
+            status: 'split',
+            subtotal: _remainingSubtotal,
+            taxTotal: _remainingTax,
+            total: _remainingTotal,
+            itemCount: _remainingItems.reduce((sum, i) => sum + i.quantity, 0),
+            notes: order.notes
+              ? `${order.notes}\n[Split by table: ${tablesWithItems.length} tables]`
+              : `[Split by table: ${tablesWithItems.length} tables]`,
+            version: { increment: 1 },
           },
         })
 
-        splitOrders.push({
-          id: splitOrder.id,
-          orderNumber: splitOrder.orderNumber,
-          splitIndex: splitOrder.splitIndex,
-          displayNumber: `${baseOrderNumber}-${splitIndex}`,
-          tableId,
-          tableName,
-          total: Number(splitOrder.total),
-          itemCount: splitOrder.items.length,
-          paidAmount: 0,
-          isPaid: false,
-        })
-      }
-
-      // Delete items from original order (they've been copied to split orders)
-      const itemIdsToRemove = tablesWithItems.flatMap(tableId =>
-        itemsByTable.get(tableId)?.map(item => item.id) || []
-      )
-
-      await db.orderItemModifier.updateMany({
-        where: {
-          orderItem: { id: { in: itemIdsToRemove } },
-        },
-        data: { deletedAt: new Date() },
-      })
-      await db.orderItem.updateMany({
-        where: { id: { in: itemIdsToRemove } },
-        data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
-      })
-
-      // Recalculate original order totals (for items without table assignment)
-      const remainingItems = itemsByTable.get(null) || []
-      let remainingSubtotal = 0
-      remainingItems.forEach(item => {
-        const itemTotal = Number(item.price) * item.quantity
-        const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
-        remainingSubtotal += itemTotal + modifiersTotal
-      })
-
-      const remainingTax = calculateTax(remainingSubtotal, taxRate)
-      const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
-
-      // Update original order totals and mark as 'split' so children become payable
-      await db.order.update({
-        where: { id: order.id },
-        data: {
-          status: 'split',
-          subtotal: remainingSubtotal,
-          taxTotal: remainingTax,
-          total: remainingTotal,
-          itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
-          notes: order.notes
-            ? `${order.notes}\n[Split by table: ${tablesWithItems.length} tables]`
-            : `[Split by table: ${tablesWithItems.length} tables]`,
-          version: { increment: 1 },
-        },
-      })
+        return {
+          splitOrders: _splitOrders,
+          itemIdsToRemove: _itemIdsToRemove,
+          remainingItems: _remainingItems,
+          remainingTotal: _remainingTotal,
+        }
+      }, { timeout: 20000 })
 
       // Dispatch socket events for table splits (fire-and-forget)
       for (const s of splitOrders) {

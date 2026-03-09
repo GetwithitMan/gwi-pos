@@ -34,6 +34,8 @@ export const PATCH = withVenue(async function PATCH(
       )
     }
 
+    // Tip cap validated after payment lookup (needs payment.amount)
+
     // Get the order with payment
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -61,6 +63,15 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json(
         { error: 'Payment not found' },
         { status: 404 }
+      )
+    }
+
+    // Tip cap: newTipAmount must not exceed 100% of the payment's base amount
+    const baseAmount = Number(payment.amount) - Number(payment.tipAmount)
+    if (baseAmount > 0 && newTipAmount > baseAmount) {
+      return NextResponse.json(
+        { error: `Tip amount $${newTipAmount.toFixed(2)} exceeds 100% of the payment base amount $${baseAmount.toFixed(2)}` },
+        { status: 400 }
       )
     }
 

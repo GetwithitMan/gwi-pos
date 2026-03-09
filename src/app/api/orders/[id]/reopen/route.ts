@@ -6,6 +6,8 @@ import { calculateSimpleOrderTotals } from '@/lib/order-calculations'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { requireDatacapClient } from '@/lib/datacap/helpers'
+import { parseError } from '@/lib/datacap/xml-parser'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -48,6 +50,7 @@ export const POST = withVenue(async function POST(
             amount: true,
             totalAmount: true,
             datacapRecordNo: true,
+            paymentReaderId: true,
             cardLast4: true,
           },
         },
@@ -127,6 +130,75 @@ export const POST = withVenue(async function POST(
           status: 'voided',
         },
       })
+
+      // Reverse card charges at Datacap for each card payment (fire-and-forget).
+      // DB is already updated above — Datacap voids are best-effort so the reopen
+      // is never blocked by processor unreachability.
+      if (cardPayments.length > 0) {
+        void (async () => {
+          let client: Awaited<ReturnType<typeof requireDatacapClient>> | null = null
+          try {
+            client = await requireDatacapClient(order.locationId)
+          } catch (err) {
+            console.error(
+              `[reopen] Failed to create Datacap client for location ${order.locationId}. ` +
+              `${cardPayments.length} card payment(s) were NOT reversed at the processor. ` +
+              `Void manually via Datacap portal.`,
+              err
+            )
+            return
+          }
+
+          for (const cp of cardPayments) {
+            const recordNo = cp.datacapRecordNo
+            const readerId = cp.paymentReaderId
+
+            if (!recordNo) {
+              console.warn(
+                `[reopen] Skipping Datacap void for payment ${cp.id} — no datacapRecordNo. ` +
+                `amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
+                `Void manually via Datacap portal.`
+              )
+              continue
+            }
+
+            if (!readerId) {
+              console.warn(
+                `[reopen] Skipping Datacap void for payment ${cp.id} — no paymentReaderId. ` +
+                `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
+                `Void manually via Datacap portal.`
+              )
+              continue
+            }
+
+            try {
+              const datacapResponse = await client.voidSale(readerId, { recordNo })
+              const datacapError = parseError(datacapResponse)
+
+              if (datacapResponse.cmdStatus === 'Approved' && !datacapError) {
+                console.log(
+                  `[reopen] Datacap void succeeded for payment ${cp.id}. ` +
+                  `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}`
+                )
+              } else {
+                console.error(
+                  `[reopen] Datacap void FAILED for payment ${cp.id}. ` +
+                  `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
+                  `error=${datacapError?.text || datacapResponse.textResponse || 'Unknown'}. ` +
+                  `Void manually via Datacap portal.`
+                )
+              }
+            } catch (voidErr) {
+              console.error(
+                `[reopen] Datacap void EXCEPTION for payment ${cp.id}. ` +
+                `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
+                `Void manually via Datacap portal.`,
+                voidErr
+              )
+            }
+          }
+        })().catch(console.error)
+      }
     }
 
     // W2-R2: Recalculate order totals from active items (payments were voided, totals are stale)

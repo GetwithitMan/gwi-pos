@@ -18,7 +18,7 @@
 
 import type { Server as HTTPServer } from 'http'
 import type { Server as SocketServer, Socket } from 'socket.io'
-import { MOBILE_EVENTS } from '@/types/multi-surface'
+import { MOBILE_EVENTS, PAT_EVENTS } from '@/types/multi-surface'
 import { db } from '@/lib/db'
 import { verifySessionToken, POS_SESSION_COOKIE } from '@/lib/auth-session'
 
@@ -475,6 +475,46 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       }
     })
 
+    // ==================== Pay-at-Table Relay ====================
+
+    /**
+     * iPad → POS: Relay pay-at-table payment request to all terminals in the location.
+     * Any POS terminal with the order open can pick it up.
+     */
+    socket.on(PAT_EVENTS.PAY_REQUEST, (data: { orderId: string; readerId: string; tipMode: string; employeeId: string }) => {
+      try {
+        const locationId = socket.data.locationId
+        if (!locationId) {
+          console.warn(`[Socket] pat:pay-request rejected — no authenticated locationId on socket ${socket.id}`)
+          return
+        }
+        if (typeof data.orderId !== 'string' || !data.orderId) return
+        if (process.env.DEBUG_SOCKETS) console.log(`[Socket] pat:pay-request relay: order ${data.orderId} → location:${locationId}`)
+        socketServer.to(`location:${locationId}`).except(socket.id).emit(PAT_EVENTS.PAY_REQUEST, data)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'pat:pay-request', socketId: socket.id, error: String(err) }))
+      }
+    })
+
+    /**
+     * POS → iPad: Relay payment result back to all clients in the location.
+     * The iPad filters by orderId on the client side.
+     */
+    socket.on(PAT_EVENTS.PAY_RESULT, (data: { orderId: string; success: boolean; amount: number; tipAmount?: number; cardLast4?: string; error?: string }) => {
+      try {
+        const locationId = socket.data.locationId
+        if (!locationId) {
+          console.warn(`[Socket] pat:pay-result rejected — no authenticated locationId on socket ${socket.id}`)
+          return
+        }
+        if (typeof data.orderId !== 'string' || !data.orderId) return
+        if (process.env.DEBUG_SOCKETS) console.log(`[Socket] pat:pay-result relay: order ${data.orderId} success=${data.success} → location:${locationId}`)
+        socketServer.to(`location:${locationId}`).except(socket.id).emit(PAT_EVENTS.PAY_RESULT, data)
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'pat:pay-result', socketId: socket.id, error: String(err) }))
+      }
+    })
+
     // ==================== Direct Terminal Messages ====================
 
     /**
@@ -705,33 +745,11 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     }
   }, 5 * 60 * 1000) // Every 5 minutes
 
-  // 60s sweep: mark stale terminals offline (no heartbeat for >2 min)
-  setInterval(async () => {
-    try {
-      const stale = await db.terminal.findMany({
-        where: {
-          isOnline: true,
-          lastSeenAt: { lt: new Date(Date.now() - 120_000) },
-          deletedAt: null,
-        },
-        select: { id: true, locationId: true },
-      })
-      for (const t of stale) {
-        await db.terminal.update({ where: { id: t.id }, data: { isOnline: false } })
-        void emitToLocation(t.locationId, 'terminal:status_changed', {
-          terminalId: t.id,
-          isOnline: false,
-          lastSeenAt: null,
-          source: 'heartbeat_timeout',
-        })
-      }
-      if (stale.length > 0 && process.env.DEBUG_SOCKETS) {
-        console.log(`[Socket] Stale sweep: marked ${stale.length} terminal(s) offline`)
-      }
-    } catch (err) {
-      console.error('[Socket] Stale heartbeat sweep failed:', err)
-    }
-  }, 60_000)
+  // NOTE: Redundant 60s stale-terminal sweep removed (2026-03-09).
+  // Socket disconnect events (line ~653) already mark terminals offline immediately
+  // via markTerminalOffline(). The DB-polling sweep was a slower, redundant fallback
+  // that added unnecessary DB queries every 60s and delayed offline detection vs
+  // the authoritative socket disconnect handler.
 
   // Store in global so API routes can emit events (survives HMR)
   setSocketServer(socketServer)
