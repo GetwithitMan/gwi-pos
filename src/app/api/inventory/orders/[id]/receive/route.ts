@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { cascadeCostUpdate } from '@/lib/cost-cascade'
 import { convertUnits } from '@/lib/inventory/unit-conversion'
+import { autoClear86ForRestockedItems } from '@/lib/inventory'
 
 // POST - Receive items against PO
 export const POST = withVenue(async function POST(
@@ -31,6 +32,7 @@ export const POST = withVenue(async function POST(
 
     // Track items with cost for post-transaction cascade
     const itemsWithCost: Array<{ inventoryItemId: string; actualCost: number }> = []
+    const restockedFromZeroIds: string[] = []
 
     const result = await db.$transaction(async (tx) => {
       // 1. Load PO
@@ -107,6 +109,11 @@ export const POST = withVenue(async function POST(
           where: { id: invItem.id },
           data: { currentStock: { increment: normalizedQty } },
         })
+
+        // Track items restocked from zero for auto-un-86
+        if (quantityBefore <= 0 && quantityBefore + normalizedQty > 0) {
+          restockedFromZeroIds.push(invItem.id)
+        }
 
         // Create transaction record
         const unitCost = actualCost ?? (lineItem.estimatedCost ? Number(lineItem.estimatedCost) : null)
@@ -246,6 +253,13 @@ export const POST = withVenue(async function POST(
       } catch (err) {
         console.error('[orders/receive] cascade failed (stock updated, costs may be stale):', err)
       }
+    }
+
+    // Auto-un-86 ingredients restocked from zero (fire-and-forget)
+    if (restockedFromZeroIds.length > 0) {
+      void autoClear86ForRestockedItems(restockedFromZeroIds).catch(err =>
+        console.error('[orders/receive] auto-un-86 failed:', err)
+      )
     }
 
     return NextResponse.json({ data: result })

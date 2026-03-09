@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface HourData {
   hour: number
@@ -100,6 +101,8 @@ export default function HourlySalesPage() {
       setIsLoading(false)
     }
   }, [employee?.location?.id, employee?.id, date, compareDate])
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   useEffect(() => {
     if (employee?.location?.id) {

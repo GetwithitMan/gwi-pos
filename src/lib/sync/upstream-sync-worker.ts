@@ -2,7 +2,7 @@
  * Upstream Sync Worker (NUC → Neon)
  *
  * Pushes NUC-authoritative data (orders, payments, shifts, tips, etc.)
- * to the Neon cloud database every 5 seconds. Each row is individually
+ * to the Neon cloud database every 1 second. Each row is individually
  * upserted so a single failure doesn't block the batch.
  *
  * Only runs when SYNC_ENABLED=true and NEON_DATABASE_URL is configured.

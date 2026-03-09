@@ -100,6 +100,10 @@ export async function processNextDeduction(): Promise<{
         },
       })
 
+      if (isDead) {
+        console.error(`[DEDUCTION] CRITICAL: Deduction dead-lettered for order ${job.orderId}. Inventory NOT deducted. Manual adjustment required. Last error: ${errorMessage}`)
+      }
+
       console.error(`[deduction-processor] Order ${job.orderId} deduction failed (attempt ${job.attempts}):`, errorMessage)
       return { processed: true, orderId: job.orderId, success: false }
     }
@@ -155,6 +159,10 @@ export async function processNextDeduction(): Promise<{
         durationMs,
       },
     })
+
+    if (isDead) {
+      console.error(`[DEDUCTION] CRITICAL: Deduction dead-lettered for order ${job.orderId}. Inventory NOT deducted. Manual adjustment required. Last error: ${errorMessage}`)
+    }
 
     console.error(`[deduction-processor] Order ${job.orderId} failed (attempt ${job.attempts}):`, errorMessage)
     return { processed: true, orderId: job.orderId, success: false }

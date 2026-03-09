@@ -11,6 +11,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 function exportDailyCSV(report: DailyReport) {
   const rows: string[][] = []
@@ -203,12 +204,6 @@ export default function DailyReportPage() {
   const [showEmailPrompt, setShowEmailPrompt] = useState(false)
   const [emailAddress, setEmailAddress] = useState('')
 
-  useEffect(() => {
-    if (employee?.location?.id) {
-      loadReport()
-    }
-  }, [employee?.location?.id, selectedDate])
-
   const loadReport = async () => {
     if (!employee?.location?.id) return
 
@@ -227,6 +222,14 @@ export default function DailyReportPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
+
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadReport()
+    }
+  }, [employee?.location?.id, selectedDate])
 
   const formatTime = (minutes: number) => {
     const mins = Math.floor(minutes)

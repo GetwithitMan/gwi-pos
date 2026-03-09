@@ -76,7 +76,7 @@ For each feature in Step 3:
 | Does this change need new socket events? | `docs/guides/SOCKET-REALTIME.md` |
 | Does this touch an Order or OrderItem? | `docs/guides/ORDER-LIFECYCLE.md` — events MANDATORY |
 | Does this touch Payments? | `docs/guides/PAYMENTS-RULES.md` — Datacap only |
-| Does this change schema? | Requires migration + `nuc-pre-migrate.js` update |
+| Does this change schema? | Add migration to `scripts/migrations/NNN-*.js` — single runner, never edit `nuc-pre-migrate.js` directly |
 | Does this affect Android? | `docs/guides/ANDROID-INTEGRATION.md` |
 | Does this affect the CFD? | `docs/features/cfd.md` — socket event changes ripple |
 
@@ -104,6 +104,7 @@ Only after Steps 1–5:
 - NEVER make POS startup/login/orders/payments depend on cloud
 - NEVER set NUC `DATABASE_URL` to neon.tech
 - Clock discipline: DB-generated `NOW()` only, never client timestamps
+- **Cloud-primary architecture:** Neon is the canonical SOR. NUC writes replicate upstream (5s). During outage, NUC queues writes in OutageQueueEntry for FIFO replay. Conflict resolution: neon-wins (default). See `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6.
 - **Full rules:** `docs/guides/ARCHITECTURE-RULES.md`
 
 ### Event-Sourced Orders
@@ -122,6 +123,8 @@ Only after Steps 1–5:
 - Socket-first: `emitToLocation()` / `getSharedSocket()` — never `io()` or polling
 - Delta updates: removal → local state, addition → debounced refresh
 - Fire-and-forget: `void doWork().catch(console.error)` for side effects
+- **Socket events are instant:** NEVER add debounce/setTimeout to socket event dispatch. SocketEventProvider fires immediately. Only consumers (like KDS) may debounce locally if needed. KDS debounce is 50ms max.
+- **Every mutation emits socket events:** Comp/void, discount, payment, order send MUST emit `orders:list-changed` + `order:totals-updated` + `order:summary-updated` for cross-terminal awareness.
 - **Full rules:** `docs/guides/CODING-STANDARDS.md`
 
 ### Multi-Tenancy
@@ -129,6 +132,9 @@ Only after Steps 1–5:
 - Always filter: `locationId` + `deletedAt: null`
 - Soft deletes only: `deletedAt: new Date()`
 - **Full rules:** `docs/guides/ARCHITECTURE-RULES.md`
+
+### Migrations (dual-script unified)
+- Add new migrations to `scripts/migrations/NNN-*.js` ONLY. Use `prisma.$executeRawUnsafe()`. Include `columnExists`/`tableExists` guards. NEVER add SQL to `vercel-build.js` or `nuc-pre-migrate.js` directly — they are orchestrators only.
 
 ### Android
 - Android is PRIMARY client, web is secondary fallback
@@ -154,6 +160,13 @@ npm run build        # Production build
 npm run lint         # Lint
 npx tsc --noEmit     # Type check
 npm run db:studio    # Prisma Studio
+```
+
+```bash
+# Migrations
+node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migrations/
+# Migration tracking: _gwi_migrations table — never re-runs applied migrations
+# New migration: create scripts/migrations/NNN-description.js exporting async function up(prisma)
 ```
 
 ### Custom Server
@@ -258,6 +271,7 @@ npm run db:studio    # Prisma Studio
 | 7shifts labor integration | `docs/features/7shifts-integration.md` | `docs/skills/SPEC-485-7SHIFTS-INTEGRATION.md` | `src/lib/7shifts-client.ts`, `src/app/api/integrations/7shifts/`, `src/app/api/webhooks/7shifts/`, `src/app/(admin)/settings/integrations/7shifts/` |
 | MarginEdge COGS integration | `docs/features/marginedge-integration.md` | `docs/skills/SPEC-490-MARGINEDGE-INTEGRATION.md` | `src/lib/marginedge-client.ts`, `src/app/api/integrations/marginedge/`, `src/app/api/cron/marginedge-sync/` |
 | Printer settings | `docs/features/printer-settings.md` | — | *(Planned — not built)* |
+| Cloud-Primary Sync | `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6 | Sync + Bridge | outage-replay-worker.ts, fulfillment-bridge-worker.ts, bridge-checkpoint.ts |
 
 ### Flow Docs (read when your change crosses feature boundaries)
 
@@ -293,6 +307,8 @@ npm run db:studio    # Prisma Studio
 | Code review | `docs/CODE-REVIEW-CHECKLIST.md` | — |
 | Error handling | `docs/development/ERROR-HANDLING-STANDARDS.md` | — |
 | Pre-launch testing | `docs/planning/PRE-LAUNCH-CHECKLIST.md` | — |
+| Migration Architecture | `scripts/migrations/` + `scripts/nuc-pre-migrate.js` | 12 migration files, tracking table, shared helpers |
+| Socket Events Catalog | `src/lib/socket-dispatch.ts` + `src/lib/socket-server.ts` | 32+ events, room-based isolation, 50ms KDS latency |
 
 ## Living Log & Documentation
 

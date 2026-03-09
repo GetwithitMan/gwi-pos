@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 import Link from 'next/link'
 
 interface TierData {
@@ -194,6 +195,8 @@ export default function LiquorReportPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   if (!hydrated) return null
 

@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface LaborRow {
   key: string
@@ -71,6 +72,8 @@ export default function LaborCostReportPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   if (!hydrated) return null
 

@@ -474,6 +474,15 @@ export async function deductInventoryForOrder(
         }
       }
 
+      // C9: Warn if recipe may have changed since order was placed
+      if (orderItem.menuItem?.updatedAt && orderItem.createdAt) {
+        const menuUpdated = new Date(orderItem.menuItem.updatedAt)
+        const itemCreated = new Date(orderItem.createdAt)
+        if (menuUpdated > itemCreated) {
+          console.warn(`[DEDUCTION] Recipe may have changed for ${orderItem.menuItem.name} since order was placed (menu updated ${menuUpdated.toISOString()}, item ordered ${itemCreated.toISOString()}). Using current recipe.`)
+        }
+      }
+
       // Process recipe ingredients (MenuItemRecipe system)
       if (orderItem.menuItem?.recipe) {
         // T-006: apply pour size multiplier once per order item
@@ -706,6 +715,8 @@ export async function deductInventoryForOrder(
 
     // Execute all deductions atomically in an interactive transaction.
     // Read currentStock INSIDE the transaction (after decrement) for accurate snapshots.
+    const depletedInventoryItemIds: string[] = []
+
     await db.$transaction(async (tx) => {
       for (const item of usageItems) {
         const totalCost = item.quantity * item.costPerUnit
@@ -722,6 +733,11 @@ export async function deductInventoryForOrder(
         // Post-decrement stock is the authoritative "after" value
         const quantityAfter = toNumber(updated.currentStock)
         const quantityBefore = quantityAfter + item.quantity
+
+        // Track items that hit zero for auto-86
+        if (quantityAfter <= 0 && quantityBefore > 0) {
+          depletedInventoryItemIds.push(item.inventoryItemId)
+        }
 
         // Create transaction record with accurate snapshot
         await tx.inventoryItemTransaction.create({
@@ -742,6 +758,13 @@ export async function deductInventoryForOrder(
       }
     })
 
+    // Auto-86 ingredients linked to depleted inventory items (fire-and-forget)
+    if (depletedInventoryItemIds.length > 0) {
+      void autoSet86ForDepletedItems(depletedInventoryItemIds).catch(err =>
+        console.error('[inventory] auto-86 failed:', err)
+      )
+    }
+
     const totalCost = usageItems.reduce((sum, item) => sum + item.quantity * item.costPerUnit, 0)
 
     return {
@@ -758,4 +781,68 @@ export async function deductInventoryForOrder(
       errors: [error instanceof Error ? error.message : 'Unknown error'],
     }
   }
+}
+
+/**
+ * Auto-86 ingredients linked to depleted inventory items.
+ * Only sets is86d on ingredients that were NOT manually 86'd (last86dBy IS NULL).
+ * Convention: last86dBy=null means auto-86'd by system, non-null means manual.
+ */
+async function autoSet86ForDepletedItems(inventoryItemIds: string[]): Promise<void> {
+  // Find ingredients linked to these depleted inventory items that aren't already 86'd
+  const ingredients = await db.ingredient.findMany({
+    where: {
+      inventoryItemId: { in: inventoryItemIds },
+      deletedAt: null,
+      is86d: false,
+    },
+    select: { id: true },
+  })
+
+  if (ingredients.length === 0) return
+
+  await db.ingredient.updateMany({
+    where: {
+      id: { in: ingredients.map(i => i.id) },
+    },
+    data: {
+      is86d: true,
+      last86dAt: new Date(),
+      last86dBy: null, // null = auto-86'd by system
+    },
+  })
+
+  console.log(`[inventory] auto-86'd ${ingredients.length} ingredient(s) due to zero stock`)
+}
+
+/**
+ * Auto-un-86 ingredients linked to restocked inventory items.
+ * Only clears is86d on ingredients that were auto-86'd (last86dBy IS NULL).
+ * Does NOT override manual 86 (where last86dBy is set to an employee ID).
+ */
+export async function autoClear86ForRestockedItems(inventoryItemIds: string[]): Promise<void> {
+  const ingredients = await db.ingredient.findMany({
+    where: {
+      inventoryItemId: { in: inventoryItemIds },
+      deletedAt: null,
+      is86d: true,
+      last86dBy: null, // only auto-86'd items
+    },
+    select: { id: true },
+  })
+
+  if (ingredients.length === 0) return
+
+  await db.ingredient.updateMany({
+    where: {
+      id: { in: ingredients.map(i => i.id) },
+    },
+    data: {
+      is86d: false,
+      last86dAt: null,
+      last86dBy: null,
+    },
+  })
+
+  console.log(`[inventory] auto-un-86'd ${ingredients.length} ingredient(s) after restock`)
 }

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface ComplianceRow {
   employeeId: string
@@ -78,6 +79,8 @@ export default function ScheduleCompliancePage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   const formatTime = (iso: string) => {
     return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })

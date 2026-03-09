@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface ShiftTipGroupSummary {
   hasGroup: boolean
@@ -51,7 +52,7 @@ export default function CrewShiftReportPage() {
     }
   }, [hydrated, employee, isAuthenticated, router])
 
-  useEffect(() => {
+  const fetchShiftData = useCallback(() => {
     if (!employee) return
     setLoading(true)
     setError(null)
@@ -78,6 +79,12 @@ export default function CrewShiftReportPage() {
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
   }, [employee, selectedDate])
+
+  useEffect(() => {
+    fetchShiftData()
+  }, [fetchShiftData])
+
+  useReportAutoRefresh({ onRefresh: fetchShiftData })
 
   if (!hydrated || !employee || !isAuthenticated) return null
 

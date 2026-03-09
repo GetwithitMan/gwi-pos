@@ -8,6 +8,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest } from '@/lib/api-auth'
 
 // Category types that map to liquor/food tax-inclusive flags
 const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
@@ -155,7 +156,7 @@ export const GET = withVenue(async function GET() {
 export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { settings, employeeId } = body as { settings: Partial<LocationSettings>; employeeId?: string }
+    const { settings, employeeId: bodyEmployeeId } = body as { settings: Partial<LocationSettings>; employeeId?: string }
 
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
       return NextResponse.json({ error: 'Invalid settings payload' }, { status: 400 })
@@ -168,6 +169,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         { status: 404 }
       )
     }
+
+    // H16: Prefer session-based employeeId over body-supplied value
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId || bodyEmployeeId
 
     // Auth: editing settings requires settings.edit permission (or admin/all)
     const auth = await requirePermission(employeeId, location.id, PERMISSIONS.SETTINGS_EDIT)

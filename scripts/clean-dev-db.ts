@@ -14,7 +14,7 @@
  *   - Pizza config (PizzaConfig, PizzaSize, PizzaCrust, PizzaSauce, PizzaCheese, PizzaTopping, PizzaSpecialty)
  *   - Location config (Organization, Location, Employee, EmployeeRole, Role, Section, Table, Seat,
  *     FloorPlanElement, TaxRule, DiscountRule, VoidReason, Terminal, PaymentReader,
- *     Printer, PrintRoute, PrintRule, UpsellConfig, InventorySettings, Scale,
+ *     Printer, PrintRoute, PrintRule, InventorySettings, Scale,
  *     CfdSettings, RegisteredDevice, PayrollSettings)
  *
  * WIPED (all transactional / session / event data):
@@ -155,7 +155,6 @@ async function main() {
   await prisma.printJob.deleteMany({})
   await prisma.hardwareCommand.deleteMany({})
   await prisma.healthCheck.deleteMany({})
-  await prisma.performanceLog.deleteMany({})
 
   // --- Sync & audit ---
   console.log('  Wiping sync / audit / error tables...')
@@ -172,9 +171,8 @@ async function main() {
   await prisma.timedSession.deleteMany({})
   await prisma.entertainmentWaitlist.deleteMany({})
 
-  // --- Upsell / spirit events ---
-  console.log('  Wiping upsell event tables...')
-  await prisma.upsellEvent.deleteMany({})
+  // --- Spirit upsell events ---
+  console.log('  Wiping spirit upsell event tables...')
   await prisma.spiritUpsellEvent.deleteMany({})
 
   // --- Reservations ---
@@ -228,7 +226,7 @@ async function main() {
   console.log('  • Section, Table, Seat, FloorPlanElement')
   console.log('  • TaxRule, DiscountRule, VoidReason')
   console.log('  • Terminal, PaymentReader, Printer, PrintRoute, PrintRule')
-  console.log('  • UpsellConfig, UpsellConfig, InventorySettings, Scale, CfdSettings')
+  console.log('  • InventorySettings, Scale, CfdSettings')
   console.log('  • Coupon (definitions only — redemptions wiped)')
   console.log('  • KDSScreen, KDSScreenStation, PrepStation, Station')
   console.log('\nWhat was WIPED:')

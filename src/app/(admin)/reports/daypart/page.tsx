@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface DaypartData {
   name: string
@@ -84,12 +85,6 @@ export default function DaypartReportPage() {
   })
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
 
-  useEffect(() => {
-    if (employee?.location?.id) {
-      loadReport()
-    }
-  }, [employee?.location?.id])
-
   const loadReport = async () => {
     if (!employee?.location?.id) return
     setIsLoading(true)
@@ -110,6 +105,14 @@ export default function DaypartReportPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
+
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadReport()
+    }
+  }, [employee?.location?.id])
 
   if (!hydrated) return null
 

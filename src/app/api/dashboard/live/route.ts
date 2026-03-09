@@ -6,6 +6,7 @@ import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -20,6 +21,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
+    if (!rateCheck.allowed) {
+      return NextResponse.json({ error: 'Rate limited', retryAfter: rateCheck.retryAfterSeconds }, { status: 429 })
     }
 
     const locationSettings = parseSettings(await getLocationSettings(locationId))
@@ -54,12 +60,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       pendingDeductionsFailed,
     ] = await Promise.all([
       // Today's closed/paid orders for sales metrics
+      // Use businessDayDate as primary boundary, fall back to createdAt
       db.order.findMany({
         where: {
           locationId,
           deletedAt: null,
           status: { in: ['closed', 'paid'] },
-          closedAt: { gte: startOfDay, lte: endOfDay },
+          OR: [
+            { businessDayDate: { gte: startOfDay, lte: endOfDay } },
+            { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
+          ],
         },
         select: {
           id: true,
@@ -71,15 +81,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
 
       // Last week same day - orders closed up to the equivalent time of day
+      // Use businessDayDate as primary boundary, fall back to createdAt
       db.order.findMany({
         where: {
           locationId,
           deletedAt: null,
           status: { in: ['closed', 'paid'] },
-          closedAt: {
-            gte: lastWeekRange.start,
-            lte: new Date(lastWeekRange.start.getTime() + elapsedMs),
-          },
+          OR: [
+            { businessDayDate: { gte: lastWeekRange.start, lte: new Date(lastWeekRange.start.getTime() + elapsedMs) } },
+            { businessDayDate: null, createdAt: { gte: lastWeekRange.start, lte: new Date(lastWeekRange.start.getTime() + elapsedMs) } },
+          ],
         },
         select: {
           id: true,
@@ -125,11 +136,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
 
       // Discount totals from orders today
+      // Use businessDayDate as primary boundary, fall back to createdAt
       db.order.aggregate({
         where: {
           locationId,
           deletedAt: null,
-          closedAt: { gte: startOfDay, lte: endOfDay },
+          OR: [
+            { businessDayDate: { gte: startOfDay, lte: endOfDay } },
+            { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
+          ],
           discountTotal: { gt: 0 },
         },
         _sum: { discountTotal: true },

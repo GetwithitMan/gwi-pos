@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface CommissionOrder {
   orderId: string
@@ -84,6 +85,8 @@ export default function CommissionReportPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {

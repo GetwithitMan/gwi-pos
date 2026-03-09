@@ -305,6 +305,7 @@ enum OrderCardStatus {
   declined
   captured
   voided
+  released
 }
 
 enum ChargebackStatus {
@@ -478,6 +479,7 @@ enum DeductionStatus {
   succeeded
   failed
   dead
+  cancelled
 }
 
 enum DeductionType {

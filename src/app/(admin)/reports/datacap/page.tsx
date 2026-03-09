@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface LocalPayment {
   id: string
@@ -135,12 +136,6 @@ export default function DatacapTransactionReportPage() {
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
 
-  useEffect(() => {
-    if (employee?.location?.id) {
-      loadReport()
-    }
-  }, [employee?.location?.id, startDate, endDate])
-
   const loadReport = async () => {
     if (!employee?.location?.id) return
     setIsLoading(true)
@@ -170,6 +165,14 @@ export default function DatacapTransactionReportPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
+
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadReport()
+    }
+  }, [employee?.location?.id, startDate, endDate])
 
   const setQuickRange = (range: 'today' | 'yesterday' | 'week') => {
     const today = new Date()

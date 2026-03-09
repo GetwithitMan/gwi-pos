@@ -43,6 +43,8 @@ interface Employee {
 
 type StatusFilter = 'all' | 'active' | 'break' | 'completed'
 
+const OVERTIME_THRESHOLD_HOURS = 8 // Standard overtime threshold
+
 export default function TimeClockPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/time-clock' })
   const employee = useAuthStore(s => s.employee)
@@ -54,6 +56,8 @@ export default function TimeClockPage() {
   const [entries, setEntries] = useState<TimeClockEntry[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [overtimeWarningMinutes, setOvertimeWarningMinutes] = useState(30)
+  const [now, setNow] = useState(() => new Date())
 
   // Filters
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0])

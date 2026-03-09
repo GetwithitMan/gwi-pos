@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
+import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -21,6 +22,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
+    if (!rateCheck.allowed) {
+      return NextResponse.json({ error: 'Rate limited', retryAfter: rateCheck.retryAfterSeconds }, { status: 429 })
     }
 
     const loc = await db.location.findFirst({

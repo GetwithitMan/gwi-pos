@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface Deduction {
   id: string
@@ -70,11 +71,13 @@ export default function DeductionQueuePage() {
     }
   }, [locationId, employee?.id, filter])
 
+  useReportAutoRefresh({ onRefresh: fetchData })
+
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
-  // Auto-refresh every 30 seconds
+  // Auto-refresh every 30 seconds (fallback — kept alongside socket-driven refresh)
   useEffect(() => {
     const interval = setInterval(fetchData, 30000)
     return () => clearInterval(interval)

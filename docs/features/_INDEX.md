@@ -121,6 +121,8 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **HA Failover (Backup NUC)** | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-1--backup-nuc--ha-failover) | In Progress | pos, mission-control, android | Offline Sync, Hardware, Mission Control |
 | **Cellular Edge Path** | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-2--cellular-edge-path) | In Progress | pos, mission-control, android | Orders, Payments, Offline Sync, Security |
 | **Fulfillment Routing** | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-3--fulfillment-routing) | In Progress | pos | Orders, KDS, Hardware, Menu, Print Routing |
+| **Cloud-Primary Sync** | Neon-canonical SOR, outage queue, conflict resolution, bridge worker | `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6 | Active | pos, mission-control | Offline Sync, Orders, Payments, Mission Control |
+| **Migration Architecture** | Unified migration runner, tracking table, 12 extracted migrations | `scripts/migrations/`, `scripts/nuc-pre-migrate.js` | Active | pos | Settings, Offline Sync |
 
 ### Guest & Ordering Channels
 

@@ -1039,6 +1039,75 @@ export function dispatchCFDReceiptSent(locationId: string, cfdTerminalId: string
   }
 }
 
+/**
+ * Dispatch CFD processing event
+ *
+ * Called when the card authorization starts (waiting for processor response).
+ * Transitions the CFD to the processing spinner screen.
+ */
+export function dispatchCFDProcessing(locationId: string, cfdTerminalId: string | null, data: {
+  terminalId?: string
+  orderId: string
+}): void {
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PROCESSING, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.PROCESSING, data).catch(console.error)
+  }
+}
+
+/**
+ * Dispatch CFD approved event
+ *
+ * Called when the card payment is approved.
+ * Transitions the CFD to the approved/thank-you screen.
+ */
+export function dispatchCFDApproved(locationId: string, cfdTerminalId: string | null, data: {
+  terminalId?: string
+  orderId: string
+  last4?: string
+  cardType?: string
+  tipAmount?: number
+  total?: number
+}): void {
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.APPROVED, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.APPROVED, data).catch(console.error)
+  }
+}
+
+/**
+ * Dispatch CFD declined event
+ *
+ * Called when the card payment is declined.
+ * Transitions the CFD to the declined screen with reason text.
+ */
+export function dispatchCFDDeclined(locationId: string, cfdTerminalId: string | null, data: {
+  terminalId?: string
+  orderId: string
+  reason: string
+}): void {
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.DECLINED, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.DECLINED, data).catch(console.error)
+  }
+}
+
+/**
+ * Dispatch CFD idle event
+ *
+ * Called after payment completes (success or cancel) to return CFD to idle screen.
+ */
+export function dispatchCFDIdle(locationId: string, cfdTerminalId: string | null): void {
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.IDLE, {}).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.IDLE, {}).catch(console.error)
+  }
+}
+
 // ==================== Order Summary Events (Android cross-terminal sync) ====================
 
 /**

@@ -16,6 +16,10 @@ import {
   dispatchCFDPaymentStarted,
   dispatchCFDTipPrompt,
   dispatchCFDSignatureRequest,
+  dispatchCFDProcessing,
+  dispatchCFDApproved,
+  dispatchCFDDeclined,
+  dispatchCFDIdle,
   dispatchCFDReceiptSent,
 } from '@/lib/socket-dispatch'
 
@@ -40,6 +44,18 @@ export const POST = withVenue(async (request: Request) => {
         break
       case 'signature-request':
         dispatchCFDSignatureRequest(locationId, cfdTerminalId, payload)
+        break
+      case 'processing':
+        dispatchCFDProcessing(locationId, cfdTerminalId, payload)
+        break
+      case 'approved':
+        dispatchCFDApproved(locationId, cfdTerminalId, payload)
+        break
+      case 'declined':
+        dispatchCFDDeclined(locationId, cfdTerminalId, payload)
+        break
+      case 'idle':
+        dispatchCFDIdle(locationId, cfdTerminalId)
         break
       case 'receipt-sent':
         dispatchCFDReceiptSent(locationId, cfdTerminalId, payload)

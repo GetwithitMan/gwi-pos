@@ -8,6 +8,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { toast } from '@/stores/toast-store'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,8 +100,10 @@ export default function TipAdjustmentReportPage() {
     if (employee?.location?.id) {
       loadReport()
     }
-   
+
   }, [employee?.location?.id])
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   // ---------------------------------------------------------------------------
   // Tip adjustment handler

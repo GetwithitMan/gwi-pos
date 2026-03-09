@@ -10,6 +10,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface SalesReport {
   summary: {
@@ -92,12 +93,6 @@ export default function SalesReportPage() {
     return new Date().toISOString().split('T')[0]
   })
 
-  useEffect(() => {
-    if (employee?.location?.id) {
-      loadReport()
-    }
-  }, [employee?.location?.id])
-
   const loadReport = async () => {
     if (!employee?.location?.id) return
     setIsLoading(true)
@@ -120,6 +115,14 @@ export default function SalesReportPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
+
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadReport()
+    }
+  }, [employee?.location?.id])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString + 'T12:00:00').toLocaleDateString('en-US', {

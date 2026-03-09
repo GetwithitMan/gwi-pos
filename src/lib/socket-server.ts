@@ -61,6 +61,10 @@ const connectedTerminals = new Map<string, {
   connectedAt: Date
 }>()
 
+// Reverse mapping: cfdTerminalId → registerTerminalId (cached from auth middleware)
+// Used by CFD-to-register relay to avoid DB lookups during payment flow
+const cfdToRegisterMap = new Map<string, string>()
+
 async function markTerminalOffline(terminalId: string, locationId: string, reason: string, socketId: string): Promise<void> {
   try {
     await db.terminal.update({
@@ -222,6 +226,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     // If device token auth happened in middleware, join location room
     if (socket.data.terminalId && socket.data.locationId) {
       socket.join(`location:${socket.data.locationId}`)
+      // Cache CFD→register reverse mapping for relay without DB lookups
+      if (socket.data.cfdTerminalId) {
+        cfdToRegisterMap.set(socket.data.cfdTerminalId, socket.data.terminalId)
+      }
       if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Native client authenticated: ${socket.data.terminalName} (${socket.data.platform})`)
     }
 

@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import type { BergDispenseLogResponse } from '@/lib/berg/report-types'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 function fmtMoney(n: number) {
   return '$' + n.toFixed(2)
@@ -92,6 +93,8 @@ export default function BergDispenseReportPage() {
     } catch { /* ignore */ }
     setDevicesLoaded(true)
   }
+
+  useReportAutoRefresh({ onRefresh: () => runReport() })
 
   async function runReport(p = 1) {
     if (!locationId || !employee?.id) return

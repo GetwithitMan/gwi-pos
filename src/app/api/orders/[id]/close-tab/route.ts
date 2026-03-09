@@ -97,14 +97,37 @@ export const POST = withVenue(async function POST(
         }
       }
 
-      // Idempotency: If another terminal already started closing this tab (tabStatus = 'closing'),
-      // reject with a clear error. This prevents two terminals from both calling Datacap.
+      // H6 FIX: Recover zombie "closing" state — if tab has been stuck in 'closing' for >60s,
+      // the previous close attempt likely hung (e.g., device tip timeout). Reset to 'open' and
+      // allow this retry instead of permanently blocking the tab.
       if (order.tabStatus === 'closing') {
-        return {
-          earlyReturn: NextResponse.json({
-            error: 'Tab is already being closed by another terminal',
-            tabStatus: 'closing',
-          }, { status: 409 }),
+        const lastUpdated = order.updatedAt ? new Date(order.updatedAt).getTime() : 0
+        const stuckThresholdMs = 60_000 // 60 seconds
+        const isZombie = Date.now() - lastUpdated > stuckThresholdMs
+
+        if (isZombie) {
+          console.warn('[Tab Close] Recovering zombie closing state', {
+            orderId,
+            lastUpdated: order.updatedAt,
+            stuckForMs: Date.now() - lastUpdated,
+          })
+          // Reset to open — fall through to normal close flow below
+          await tx.order.update({
+            where: { id: orderId },
+            data: {
+              tabStatus: 'open',
+              version: { increment: 1 },
+            },
+          })
+          // Re-read the order so downstream sees 'open' status
+          order.tabStatus = 'open'
+        } else {
+          return {
+            earlyReturn: NextResponse.json({
+              error: 'Tab is already being closed by another terminal',
+              tabStatus: 'closing',
+            }, { status: 409 }),
+          }
         }
       }
 
@@ -173,19 +196,24 @@ export const POST = withVenue(async function POST(
     // ═══════════════════════════════════════════════════════════════════════════
     // BUG 5: Zero-tab handling — release pre-auth instead of $0 capture
     // Datacap calls happen OUTSIDE any transaction lock.
+    // C6 FIX: Track per-card release status. On partial failure, mark released cards
+    // as 'released' and only leave failed cards as 'authorized'. Return 207 partial
+    // success so the client knows which cards still need manual voiding. Never revert
+    // the entire tab to OPEN when some cards are already released (prevents orphaned holds).
     // ═══════════════════════════════════════════════════════════════════════════
     if (purchaseAmount <= 0) {
-      // Release all authorized cards via voidSale (fire-and-forget per card)
-      const releaseResults: Array<{ cardLast4: string; released: boolean; error?: string }> = []
+      // Release all authorized cards via voidSale (per card, sequential)
+      const releaseResults: Array<{ cardId: string; cardLast4: string; released: boolean; error?: string }> = []
       for (const card of order.cards) {
         try {
           await validateReader(card.readerId, locationId)
           const client = await requireDatacapClient(locationId)
           const voidResp = await client.voidSale(card.readerId, { recordNo: card.recordNo })
           const released = voidResp.cmdStatus === 'Approved' || voidResp.cmdStatus === 'Success'
-          releaseResults.push({ cardLast4: card.cardLast4, released })
+          releaseResults.push({ cardId: card.id, cardLast4: card.cardLast4, released })
         } catch (releaseErr) {
           releaseResults.push({
+            cardId: card.id,
             cardLast4: card.cardLast4,
             released: false,
             error: releaseErr instanceof Error ? releaseErr.message : 'Release failed',
@@ -195,22 +223,26 @@ export const POST = withVenue(async function POST(
 
       // Short transaction to record the zero-tab result
       const allReleased = releaseResults.every(r => r.released)
+      const anyReleased = releaseResults.some(r => r.released)
+      const failedCards = releaseResults.filter(r => !r.released)
+
       await db.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
         await enableSyncReplication(tx)
 
-        // Update card statuses
-        for (const card of order.cards) {
-          const result = releaseResults.find(r => r.cardLast4 === card.cardLast4)
-          if (result?.released) {
+        // C6 FIX: Update each card individually based on its release result
+        for (const result of releaseResults) {
+          if (result.released) {
             await tx.orderCard.update({
-              where: { id: card.id },
-              data: { status: 'voided' },
+              where: { id: result.cardId },
+              data: { status: 'released' },
             })
           }
+          // Failed cards stay as 'authorized' — they can be retried or manually voided
         }
 
         if (allReleased) {
+          // All cards released — close the tab completely
           await tx.order.update({
             where: { id: orderId },
             data: {
@@ -221,8 +253,19 @@ export const POST = withVenue(async function POST(
               version: { increment: 1 },
             },
           })
+        } else if (anyReleased) {
+          // C6 FIX: Partial release — do NOT revert to 'open' because released cards are
+          // already gone. Move to 'open' so the tab can be retried, but the already-released
+          // cards won't be re-fetched (query filters status: 'authorized' only).
+          await tx.order.update({
+            where: { id: orderId },
+            data: {
+              tabStatus: 'open',
+              version: { increment: 1 },
+            },
+          })
         } else {
-          // Revert tabStatus from 'closing' back to 'open' so the tab can be retried
+          // No cards released at all — safe to revert to open for full retry
           await tx.order.update({
             where: { id: orderId },
             data: {
@@ -233,16 +276,31 @@ export const POST = withVenue(async function POST(
         }
       })
 
+      // C6 FIX: Log warning for partial failures so ops can investigate
+      if (failedCards.length > 0 && anyReleased) {
+        console.warn('[Tab Close] Partial $0 tab release — some cards could not be released', {
+          orderId,
+          releasedCount: releaseResults.filter(r => r.released).length,
+          failedCount: failedCards.length,
+          failedCards: failedCards.map(f => ({ cardLast4: f.cardLast4, error: f.error })),
+        })
+      }
+
+      // C6 FIX: Return 207 Multi-Status for partial success so client knows exactly what happened
+      const httpStatus = allReleased ? 200 : (anyReleased ? 207 : 400)
       return NextResponse.json({
         data: {
           success: allReleased,
+          partialSuccess: anyReleased && !allReleased,
           zeroTab: true,
           message: allReleased
             ? 'Tab had no charges. Pre-auth released.'
-            : 'Tab had no charges. Some cards could not be released — void the tab manually.',
+            : anyReleased
+              ? 'Tab had no charges. Some cards released, others failed — void remaining cards manually.'
+              : 'Tab had no charges. All card releases failed — void the tab manually.',
           releaseResults,
         },
-      }, { status: allReleased ? 200 : 400 })
+      }, { status: httpStatus })
     }
 
     // Bottle service auto-gratuity: apply if no explicit tip was provided
@@ -294,9 +352,20 @@ export const POST = withVenue(async function POST(
         const client = await requireDatacapClient(locationId)
 
         // If device tip mode, fire GetSuggestiveTip first
+        // H6 FIX: 30s timeout prevents tab stuck in "closing" forever if reader is unresponsive
         if (tipMode === 'device') {
           try {
-            const tipResponse = await client.getSuggestiveTip(card.readerId, tipSuggestions)
+            const tipAbort = AbortSignal.timeout(30_000)
+            const tipPromise = client.getSuggestiveTip(card.readerId, tipSuggestions)
+            // Race the tip prompt against a 30s deadline
+            const tipResponse = await Promise.race([
+              tipPromise,
+              new Promise<never>((_, reject) => {
+                tipAbort.addEventListener('abort', () =>
+                  reject(new Error('Device tip prompt timed out after 30s'))
+                )
+              }),
+            ])
             if (tipResponse.gratuityAmount) {
               // Use device-selected tip
               const deviceTip = roundToCents(parseFloat(tipResponse.gratuityAmount) || 0)
@@ -310,7 +379,9 @@ export const POST = withVenue(async function POST(
               break
             }
           } catch (tipErr) {
-            console.warn(`[Tab Close] Device tip prompt failed, falling back:`, tipErr)
+            // H6 FIX: On timeout or any device error, fall back to $0 tip and proceed with capture
+            // instead of hanging forever. The bartender can adjust tip later via /api/datacap/adjust.
+            console.warn(`[Tab Close] Device tip prompt failed or timed out, falling back to $0 tip:`, tipErr)
           }
         }
 

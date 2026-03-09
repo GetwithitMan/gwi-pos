@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface EmployeeRow {
   employeeId: string | null
@@ -48,6 +49,8 @@ export default function BergEmployeeReportPage() {
   const [endDate, setEndDate] = useState(today)
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<BergEmployeeReport | null>(null)
+
+  useReportAutoRefresh({ onRefresh: runReport })
 
   async function runReport() {
     if (!locationId || !employee?.id) return

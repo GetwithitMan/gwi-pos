@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 import { Modal } from '@/components/ui/modal'
@@ -57,15 +57,18 @@ export function CustomerLookupModal({
   })
   const [isAdding, setIsAdding] = useState(false)
   const [focusedField, setFocusedField] = useState<string | null>('search')
+  const searchAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (isOpen && searchTerm.length >= 2) {
       searchCustomers()
     }
+    return () => { searchAbortRef.current?.abort() }
   }, [isOpen, searchTerm])
 
   useEffect(() => {
     if (!isOpen) {
+      searchAbortRef.current?.abort()
       setSearchTerm('')
       setCustomers([])
       setShowQuickAdd(false)
@@ -75,6 +78,9 @@ export function CustomerLookupModal({
   const searchCustomers = async () => {
     if (!locationId || searchTerm.length < 2) return
 
+    searchAbortRef.current?.abort()
+    searchAbortRef.current = new AbortController()
+
     setIsLoading(true)
     try {
       const params = new URLSearchParams({
@@ -83,13 +89,14 @@ export function CustomerLookupModal({
         limit: '10',
       })
 
-      const response = await fetch(`/api/customers?${params}`)
+      const response = await fetch(`/api/customers?${params}`, { signal: searchAbortRef.current.signal })
       if (response.ok) {
         const raw = await response.json()
         const data = raw.data ?? raw
         setCustomers(data.customers)
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       console.error('Failed to search customers:', err)
     } finally {
       setIsLoading(false)

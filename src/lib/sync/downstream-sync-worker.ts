@@ -63,10 +63,46 @@ function serializeValue(val: unknown): unknown {
   return val
 }
 
-/** Initialize high-water marks from MAX(updatedAt) in local PG */
+/** Ensure the _gwi_sync_state table exists for persisted high-water marks */
+async function ensureSyncStateTable(): Promise<void> {
+  try {
+    await masterClient.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "_gwi_sync_state" (
+        table_name TEXT PRIMARY KEY,
+        high_water_mark TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )`
+    )
+  } catch (err) {
+    console.error('[DownstreamSync] Failed to create _gwi_sync_state table:', err instanceof Error ? err.message : err)
+  }
+}
+
+/** Initialize high-water marks — prefer persisted DB state, fall back to MAX(updatedAt) */
 async function initHighWaterMarks(): Promise<void> {
+  await ensureSyncStateTable()
+
+  // Load persisted HWMs from _gwi_sync_state
+  const persistedHwms = new Map<string, Date>()
+  try {
+    const rows = await masterClient.$queryRawUnsafe<{ table_name: string; high_water_mark: string }[]>(
+      `SELECT table_name, high_water_mark FROM "_gwi_sync_state"`
+    )
+    for (const row of rows) {
+      persistedHwms.set(row.table_name, new Date(row.high_water_mark))
+    }
+  } catch {
+    // Table may not exist yet or be empty — fall through to MAX(updatedAt)
+  }
+
   const models = getDownstreamModels()
   for (const [tableName] of models) {
+    // Use persisted HWM if available
+    if (persistedHwms.has(tableName)) {
+      highWaterMarks.set(tableName, persistedHwms.get(tableName)!)
+      continue
+    }
+
     try {
       const [row] = await masterClient.$queryRawUnsafe<{ max_updated: Date | null }[]>(
         `SELECT MAX("updatedAt") as max_updated FROM "${tableName}"`
@@ -251,9 +287,20 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
     }
   }
 
-  // Advance high-water mark
+  // Advance high-water mark (in-memory + persisted to DB)
   if (synced > 0) {
     highWaterMarks.set(tableName, maxUpdatedAt)
+
+    // Persist HWM to DB so it survives process restarts
+    try {
+      await masterClient.$executeRawUnsafe(
+        `INSERT INTO "_gwi_sync_state" (table_name, high_water_mark, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (table_name) DO UPDATE SET high_water_mark = $2, updated_at = NOW()`,
+        tableName, maxUpdatedAt.toISOString()
+      )
+    } catch (err) {
+      console.error(`[DownstreamSync] Failed to persist HWM for ${tableName}:`, err instanceof Error ? err.message : err)
+    }
   }
 
   return synced
@@ -491,6 +538,14 @@ async function detectBidirectionalConflict(
     // If local row was NOT locally mutated, always accept Neon version
     if (!local.lastMutatedBy || local.lastMutatedBy === 'cloud') {
       return 'apply'
+    }
+
+    // NTP drift tolerance: if timestamps are within 2 seconds and local row was
+    // locally mutated, prefer local version — too close to call with NTP uncertainty.
+    const timeDiffMs = Math.abs(localUpdatedAt.getTime() - neonUpdatedAt.getTime())
+    if (timeDiffMs < 2000 && local.lastMutatedBy && local.lastMutatedBy !== 'cloud') {
+      // Too close to call with NTP uncertainty — prefer local version
+      return 'skip'
     }
 
     // Local row was mutated locally (lastMutatedBy = 'local' or a terminalId)

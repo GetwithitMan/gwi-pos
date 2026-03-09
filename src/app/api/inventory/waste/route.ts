@@ -89,65 +89,72 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const currentStock = Number(item.currentStock)
     const businessDate = body.businessDate ? new Date(body.businessDate) : new Date()
 
-    // Create waste log entry (legacy model)
-    const entry = await db.wasteLogEntry.create({
-      data: {
-        locationId,
-        inventoryItemId,
-        employeeId,
-        reason,
-        quantity: qtyNum,
-        unit: unit || item.storageUnit,
-        costImpact,
-        notes,
-        wasteDate: businessDate,
-      },
-      include: {
-        inventoryItem: {
-          select: { id: true, name: true, sku: true },
+    // H17: Create all waste records atomically in a single transaction
+    const entry = await db.$transaction(async (tx) => {
+      // Create waste log entry (legacy model)
+      const wasteEntry = await tx.wasteLogEntry.create({
+        data: {
+          locationId,
+          inventoryItemId,
+          employeeId,
+          reason,
+          quantity: qtyNum,
+          unit: unit || item.storageUnit,
+          costImpact,
+          notes,
+          wasteDate: businessDate,
         },
-      },
-    })
+        include: {
+          inventoryItem: {
+            select: { id: true, name: true, sku: true },
+          },
+        },
+      })
 
-    // Also create COGS-style WasteLog record for reporting
-    await db.wasteLog.create({
-      data: {
-        locationId,
-        inventoryItemId,
-        bottleProductId: body.bottleProductId || null,
-        quantity: qtyNum,
-        unit: unit || item.storageUnit,
-        cost: costImpact,
-        reason: reason as 'spoilage' | 'over_pour' | 'spill' | 'breakage' | 'expired' | 'void_comped' | 'other',
-        notes,
-        recordedById: employeeId,
-        businessDate,
-      },
-    }).catch(() => {
-      // WasteLog model may not have all reason enum values — don't fail the whole request
-    })
+      // Also create COGS-style WasteLog record for reporting
+      try {
+        await tx.wasteLog.create({
+          data: {
+            locationId,
+            inventoryItemId,
+            bottleProductId: body.bottleProductId || null,
+            quantity: qtyNum,
+            unit: unit || item.storageUnit,
+            cost: costImpact,
+            reason: reason as 'spoilage' | 'over_pour' | 'spill' | 'breakage' | 'expired' | 'void_comped' | 'other',
+            notes,
+            recordedById: employeeId,
+            businessDate,
+          },
+        })
+      } catch {
+        // WasteLog model may not have all reason enum values — don't fail the whole transaction
+      }
 
-    // Deduct from inventory
-    await db.inventoryItem.update({
-      where: { id: inventoryItemId },
-      data: {
-        currentStock: { decrement: qtyNum },
-      },
-    })
+      // Deduct from inventory
+      await tx.inventoryItem.update({
+        where: { id: inventoryItemId },
+        data: {
+          currentStock: { decrement: qtyNum },
+        },
+      })
 
-    // Create transaction record
-    await db.inventoryItemTransaction.create({
-      data: {
-        locationId,
-        inventoryItemId,
-        type: 'waste',
-        quantityBefore: currentStock,
-        quantityChange: -qtyNum,
-        quantityAfter: currentStock - qtyNum,
-        unitCost: costPerUnit,
-        totalCost: costImpact,
-        reason: notes || `Waste: ${reason}`,
-      },
+      // Create transaction record
+      await tx.inventoryItemTransaction.create({
+        data: {
+          locationId,
+          inventoryItemId,
+          type: 'waste',
+          quantityBefore: currentStock,
+          quantityChange: -qtyNum,
+          quantityAfter: currentStock - qtyNum,
+          unitCost: costPerUnit,
+          totalCost: costImpact,
+          reason: notes || `Waste: ${reason}`,
+        },
+      })
+
+      return wasteEntry
     })
 
     return NextResponse.json({ data: {

@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import type { BergHealthReportResponse } from '@/lib/berg/report-types'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -59,7 +60,9 @@ export default function BergHealthPage() {
     }
   }, [locationId, employee?.id, startDate, endDate])
 
-  // Auto-refresh every 60 seconds
+  useReportAutoRefresh({ onRefresh: runReport })
+
+  // Auto-refresh every 60 seconds (fallback — kept alongside socket-driven refresh)
   useEffect(() => {
     if (report) {
       intervalRef.current = setInterval(runReport, 60_000)

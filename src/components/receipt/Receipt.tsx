@@ -78,6 +78,8 @@ export interface ReceiptData {
   cashSubtotal?: number
   cashTax?: number
   cashTotal?: number
+  // Surcharge disclosure (present when pricing program is 'surcharge')
+  surchargeDisclosure?: string | null
 }
 
 interface ReceiptProps {
@@ -328,6 +330,13 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* Surcharge Disclosure */}
+      {showPrices && data.surchargeDisclosure && (
+        <div className="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs text-center text-gray-600 italic">
+          {data.surchargeDisclosure}
         </div>
       )}
 

@@ -270,6 +270,11 @@ if [[ "$MC_ARBITER_RESULT" == "denied" ]]; then
 fi
 
 # If we get here: peer is fenced AND (MC granted OR MC unavailable)
+if [[ "$MC_ARBITER_RESULT" == "unavailable" ]] && [[ "$PEER_FENCED" == "true" ]]; then
+  log "WARNING: Both MC and peer are unreachable. Split-brain risk is HIGH."
+  log "Proceeding with promotion based on local health checks only."
+  # Don't block — this is automated failover. But log strongly.
+fi
 log "Fencing PASSED: peer is fenced ($PEER_FENCED), MC arbiter=$MC_ARBITER_RESULT — proceeding with promotion"
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -374,6 +374,12 @@ export const POST = withVenue(async function POST(
       })
       const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
 
+      // H9: Check if order already has sent items — explicitly set kitchenStatus on new items
+      // so they're visible on KDS (default is 'pending' but can be null in edge cases)
+      const hasSentItems = existingOrder.items.some(
+        i => i.kitchenStatus === 'sent' || i.kitchenStatus === 'cooking' || i.kitchenStatus === 'ready'
+      )
+
       // Validate menu item availability (86 check)
       for (const mi of menuItemsWithCommission) {
         if (mi.deletedAt) {
@@ -505,6 +511,8 @@ export const POST = withVenue(async function POST(
               courseNumber: item.courseNumber || null,
               isHeld: item.isHeld || false,
               delayMinutes: item.delayMinutes || null,
+              // H9: Explicitly set kitchenStatus — 'pending' when order already sent so KDS can pick it up
+              kitchenStatus: hasSentItems ? 'pending' : undefined,
               // Entertainment/timed rental fields
               blockTimeMinutes: item.blockTimeMinutes || null,
               // Idempotency key for duplicate prevention

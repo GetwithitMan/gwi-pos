@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface EmployeeData {
   id: string
@@ -135,6 +136,8 @@ export default function EmployeeReportsPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   if (!hydrated) return null
 

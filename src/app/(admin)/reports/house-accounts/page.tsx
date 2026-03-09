@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,8 @@ export default function HouseAccountsReportPage() {
       setIsLoading(false)
     }
   }, [locationId, statusFilter, includeZeroBalance])
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   useEffect(() => {
     if (locationId) loadReport()

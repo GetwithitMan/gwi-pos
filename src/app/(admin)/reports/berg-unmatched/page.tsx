@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import type { BergUnmatchedReportResponse } from '@/lib/berg/report-types'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 const TYPE_COLORS: Record<string, string> = {
   NO_ORDER_ACKED: 'bg-orange-100 text-orange-800',
@@ -37,6 +38,8 @@ export default function BergUnmatchedReportPage() {
   const [endDate, setEndDate] = useState(today)
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<BergUnmatchedReportResponse | null>(null)
+
+  useReportAutoRefresh({ onRefresh: runReport })
 
   async function runReport() {
     if (!locationId || !employee?.id) return

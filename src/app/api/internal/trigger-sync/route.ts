@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server'
 import { triggerImmediateDownstreamSync } from '@/lib/sync/downstream-sync-worker'
 
 export async function POST(request: Request) {
-  // Only allow from localhost (sync-agent runs on the same machine)
-  const forwarded = request.headers.get('x-forwarded-for')
-  const ip = forwarded?.split(',')[0]?.trim()
-  if (ip && ip !== '127.0.0.1' && ip !== '::1' && ip !== 'localhost') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // C16: API key validation + localhost fallback for backward compatibility
+  const apiKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '')
+  if (!apiKey || apiKey !== process.env.INTERNAL_API_SECRET) {
+    // Still allow localhost for backward compatibility
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
+    const isLocal = ['127.0.0.1', '::1', 'localhost'].includes(ip)
+    if (!isLocal) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
   }
 
   try {

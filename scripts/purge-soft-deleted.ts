@@ -66,7 +66,6 @@ async function main() {
     { label: 'TimeClockEntry', run: () => prisma.timeClockEntry.deleteMany(w) },
     { label: 'ScheduledShift', run: () => prisma.scheduledShift.deleteMany(w) },
     { label: 'SyncAuditEntry', run: () => prisma.syncAuditEntry.deleteMany(w) },
-    { label: 'UpsellEvent', run: () => prisma.upsellEvent.deleteMany(w) },
     { label: 'SpiritUpsellEvent', run: () => prisma.spiritUpsellEvent.deleteMany(w) },
     { label: 'VoidLog', run: () => prisma.voidLog.deleteMany(w) },
     { label: 'WasteLogEntry', run: () => prisma.wasteLogEntry.deleteMany(w) },
@@ -109,7 +108,6 @@ async function main() {
     { label: 'Customer', run: () => prisma.customer.deleteMany(w) },
     { label: 'Reservation', run: () => prisma.reservation.deleteMany(w) },
     { label: 'Event', run: () => prisma.event.deleteMany(w) },
-    { label: 'UpsellConfig', run: () => prisma.upsellConfig.deleteMany(w) },
     // Infrastructure tables
     { label: 'FloorPlanElement', run: () => prisma.floorPlanElement.deleteMany(w) },
     { label: 'Seat', run: () => prisma.seat.deleteMany(w) },

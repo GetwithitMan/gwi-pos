@@ -138,6 +138,38 @@ export function DatacapPaymentProcessor({
   const totalToCharge = amount + tipAmount
   const tipBasis = subtotal || amount
 
+  // Dispatch CFD events based on processing status changes (fire-and-forget)
+  const prevStatusRef = useRef<string>('idle')
+  useEffect(() => {
+    if (processingStatus === prevStatusRef.current) return
+    prevStatusRef.current = processingStatus
+
+    const notifyCFD = (event: string, payload: Record<string, unknown> = {}) => {
+      void fetch('/api/cfd/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event, locationId, payload: { orderId, ...payload } }),
+      }).catch(() => {})
+    }
+
+    switch (processingStatus) {
+      case 'waiting_card':
+      case 'authorizing':
+        notifyCFD('processing')
+        break
+      case 'approved':
+      case 'approved_saf':
+        notifyCFD('approved', { total: totalToCharge })
+        break
+      case 'declined':
+        notifyCFD('declined', { reason: error || 'Card was declined' })
+        break
+      case 'idle':
+        notifyCFD('idle')
+        break
+    }
+  }, [processingStatus, locationId, orderId, error, totalToCharge])
+
   // Suggested tip percentages
   const suggestedPercentages = tipSettings?.suggestedPercentages || [15, 18, 20, 25]
 

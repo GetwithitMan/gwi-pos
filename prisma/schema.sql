@@ -1,5 +1,5 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -10,7 +10,7 @@ CREATE TYPE "OrderStatus" AS ENUM ('draft', 'open', 'in_progress', 'sent', 'rece
 CREATE TYPE "OrderCourseMode" AS ENUM ('off', 'manual', 'auto');
 
 -- CreateEnum
-CREATE TYPE "TabStatus" AS ENUM ('pending_auth', 'open', 'no_card', 'closed', 'declined_capture', 'auth_failed');
+CREATE TYPE "TabStatus" AS ENUM ('pending_auth', 'open', 'no_card', 'closed', 'closing', 'declined_capture', 'auth_failed');
 
 -- CreateEnum
 CREATE TYPE "OrderItemStatus" AS ENUM ('active', 'voided', 'comped', 'removed');
@@ -230,6 +230,9 @@ CREATE TYPE "BergResolutionStatus" AS ENUM ('NONE', 'PARTIAL', 'FULL');
 
 -- CreateEnum
 CREATE TYPE "BergPostProcessStatus" AS ENUM ('PENDING', 'DONE', 'FAILED');
+
+-- CreateEnum
+CREATE TYPE "FulfillmentType" AS ENUM ('SELF_FULFILL', 'KITCHEN_STATION', 'BAR_STATION', 'PREP_STATION', 'NO_ACTION');
 
 -- CreateEnum
 CREATE TYPE "RegistrationTokenStatus" AS ENUM ('PENDING', 'USED', 'EXPIRED', 'REVOKED');
@@ -618,6 +621,8 @@ CREATE TABLE "MenuItem" (
     "weightUnit" TEXT,
     "pricePerWeightUnit" DECIMAL(65,30),
     "isFeaturedCfd" BOOLEAN NOT NULL DEFAULT false,
+    "fulfillmentType" "FulfillmentType" NOT NULL DEFAULT 'KITCHEN_STATION',
+    "fulfillmentStationId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -986,6 +991,8 @@ CREATE TABLE "Order" (
     "businessDayDate" TIMESTAMP(3),
     "source" TEXT,
     "isTaxExempt" BOOLEAN NOT NULL DEFAULT false,
+    "lastMutatedBy" TEXT,
+    "originTerminalId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -1044,6 +1051,7 @@ CREATE TABLE "OrderItem" (
     "pricingOptionLabel" TEXT,
     "costAtSale" DECIMAL(65,30),
     "addedByEmployeeId" TEXT,
+    "lastMutatedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -1073,6 +1081,7 @@ CREATE TABLE "OrderItemModifier" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "lastMutatedBy" TEXT,
 
     CONSTRAINT "OrderItemModifier_pkey" PRIMARY KEY ("id")
 );
@@ -1129,6 +1138,7 @@ CREATE TABLE "Payment" (
     "reconciledBy" TEXT,
     "syncAttempts" INTEGER NOT NULL DEFAULT 0,
     "wasDuplicateBlocked" BOOLEAN NOT NULL DEFAULT false,
+    "lastMutatedBy" TEXT,
     "processedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -1287,54 +1297,9 @@ CREATE TABLE "OrderDiscount" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "lastMutatedBy" TEXT,
 
     CONSTRAINT "OrderDiscount_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "UpsellConfig" (
-    "id" TEXT NOT NULL,
-    "locationId" TEXT NOT NULL,
-    "triggerType" TEXT NOT NULL,
-    "triggerItemId" TEXT,
-    "triggerCategoryId" TEXT,
-    "triggerCondition" JSONB,
-    "suggestionType" TEXT NOT NULL,
-    "suggestionItemId" TEXT,
-    "suggestionCategoryId" TEXT,
-    "promptText" TEXT NOT NULL,
-    "displayMode" TEXT NOT NULL DEFAULT 'inline',
-    "showPrice" BOOLEAN NOT NULL DEFAULT true,
-    "triggerOnAdd" BOOLEAN NOT NULL DEFAULT true,
-    "triggerBeforeSend" BOOLEAN NOT NULL DEFAULT false,
-    "triggerAtPayment" BOOLEAN NOT NULL DEFAULT false,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "priority" INTEGER NOT NULL DEFAULT 0,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-    "syncedAt" TIMESTAMP(3),
-
-    CONSTRAINT "UpsellConfig_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "UpsellEvent" (
-    "id" TEXT NOT NULL,
-    "locationId" TEXT NOT NULL,
-    "upsellConfigId" TEXT NOT NULL,
-    "orderId" TEXT NOT NULL,
-    "employeeId" TEXT NOT NULL,
-    "wasShown" BOOLEAN NOT NULL DEFAULT true,
-    "wasAccepted" BOOLEAN NOT NULL DEFAULT false,
-    "wasDismissed" BOOLEAN NOT NULL DEFAULT false,
-    "addedAmount" DECIMAL(65,30),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-    "syncedAt" TIMESTAMP(3),
-
-    CONSTRAINT "UpsellEvent_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -3745,6 +3710,7 @@ CREATE TABLE "OrderCard" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "lastMutatedBy" TEXT,
 
     CONSTRAINT "OrderCard_pkey" PRIMARY KEY ("id")
 );
@@ -3898,25 +3864,6 @@ CREATE TABLE "ErrorLog" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "ErrorLog_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "PerformanceLog" (
-    "id" TEXT NOT NULL,
-    "locationId" TEXT NOT NULL,
-    "operation" TEXT NOT NULL,
-    "duration" INTEGER NOT NULL,
-    "threshold" INTEGER NOT NULL,
-    "context" TEXT,
-    "stackTrace" TEXT,
-    "path" TEXT,
-    "employeeId" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-    "syncedAt" TIMESTAMP(3),
-
-    CONSTRAINT "PerformanceLog_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -4409,23 +4356,6 @@ CREATE TABLE "MarginEdgeProductMapping" (
 );
 
 -- CreateTable
-CREATE TABLE "MenuItemDailyMetrics" (
-    "id" TEXT NOT NULL,
-    "locationId" TEXT NOT NULL,
-    "menuItemId" TEXT NOT NULL,
-    "businessDate" TIMESTAMP(3) NOT NULL,
-    "quantitySold" INTEGER NOT NULL DEFAULT 0,
-    "totalRevenue" DECIMAL(10,2) NOT NULL DEFAULT 0,
-    "totalCost" DECIMAL(10,2) NOT NULL DEFAULT 0,
-    "foodCostPct" DECIMAL(6,2),
-    "contributionMargin" DECIMAL(10,2),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "MenuItemDailyMetrics_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "PendingDeduction" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
@@ -4545,6 +4475,77 @@ CREATE TABLE "BergDispenseEvent" (
     "postProcessError" TEXT,
 
     CONSTRAINT "BergDispenseEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ItemBarcode" (
+    "id" TEXT NOT NULL,
+    "barcode" TEXT NOT NULL,
+    "label" TEXT,
+    "packSize" INTEGER NOT NULL DEFAULT 1,
+    "price" DECIMAL(65,30),
+    "menuItemId" TEXT,
+    "inventoryItemId" TEXT,
+    "locationId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ItemBarcode_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "FulfillmentEvent" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderId" TEXT NOT NULL,
+    "stationId" TEXT,
+    "type" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "payload" JSONB,
+    "claimedBy" TEXT,
+    "claimedAt" TIMESTAMP(3),
+    "completedAt" TIMESTAMP(3),
+    "failedAt" TIMESTAMP(3),
+    "retryCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "FulfillmentEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "BridgeCheckpoint" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "nodeId" TEXT NOT NULL,
+    "role" TEXT NOT NULL,
+    "leaseExpiresAt" TIMESTAMP(3) NOT NULL,
+    "lastHeartbeat" TIMESTAMP(3) NOT NULL,
+    "lastFulfillmentAt" TIMESTAMP(3),
+    "fulfillmentLag" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "BridgeCheckpoint_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OutageQueueEntry" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "tableName" TEXT NOT NULL,
+    "recordId" TEXT NOT NULL,
+    "operation" TEXT NOT NULL,
+    "payload" JSONB NOT NULL,
+    "localSeq" INTEGER NOT NULL,
+    "idempotencyKey" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "replayedAt" TIMESTAMP(3),
+
+    CONSTRAINT "OutageQueueEntry_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -4680,6 +4681,9 @@ CREATE INDEX "Category_locationId_isActive_deletedAt_idx" ON "Category"("locatio
 CREATE INDEX "Category_locationId_sortOrder_idx" ON "Category"("locationId", "sortOrder");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Category_locationId_name_key" ON "Category"("locationId", "name");
+
+-- CreateIndex
 CREATE INDEX "MenuItem_categoryId_idx" ON "MenuItem"("categoryId");
 
 -- CreateIndex
@@ -4693,6 +4697,9 @@ CREATE INDEX "MenuItem_locationId_isActive_deletedAt_idx" ON "MenuItem"("locatio
 
 -- CreateIndex
 CREATE INDEX "MenuItem_locationId_isActive_idx" ON "MenuItem"("locationId", "isActive");
+
+-- CreateIndex
+CREATE INDEX "MenuItem_locationId_categoryId_idx" ON "MenuItem"("locationId", "categoryId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MenuItem_locationId_sku_key" ON "MenuItem"("locationId", "sku");
@@ -4869,6 +4876,9 @@ CREATE INDEX "Order_locationId_createdAt_status_idx" ON "Order"("locationId", "c
 CREATE INDEX "Order_locationId_businessDayDate_idx" ON "Order"("locationId", "businessDayDate");
 
 -- CreateIndex
+CREATE INDEX "Order_locationId_status_businessDayDate_idx" ON "Order"("locationId", "status", "businessDayDate");
+
+-- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
 
 -- CreateIndex
@@ -4900,6 +4910,9 @@ CREATE INDEX "OrderItem_pricingOptionId_idx" ON "OrderItem"("pricingOptionId");
 
 -- CreateIndex
 CREATE INDEX "OrderItem_menuItemId_pricingOptionId_idx" ON "OrderItem"("menuItemId", "pricingOptionId");
+
+-- CreateIndex
+CREATE INDEX "OrderItem_locationId_status_updatedAt_idx" ON "OrderItem"("locationId", "status", "updatedAt");
 
 -- CreateIndex
 CREATE INDEX "OrderItemModifier_locationId_idx" ON "OrderItemModifier"("locationId");
@@ -4957,6 +4970,12 @@ CREATE INDEX "Payment_idempotencyKey_idx" ON "Payment"("idempotencyKey");
 
 -- CreateIndex
 CREATE INDEX "Payment_offlineIntentId_idx" ON "Payment"("offlineIntentId");
+
+-- CreateIndex
+CREATE INDEX "Payment_orderId_status_idx" ON "Payment"("orderId", "status");
+
+-- CreateIndex
+CREATE INDEX "Payment_employeeId_processedAt_idx" ON "Payment"("employeeId", "processedAt");
 
 -- CreateIndex
 CREATE INDEX "SyncAuditEntry_orderId_idx" ON "SyncAuditEntry"("orderId");
@@ -5032,18 +5051,6 @@ CREATE INDEX "OrderDiscount_locationId_idx" ON "OrderDiscount"("locationId");
 
 -- CreateIndex
 CREATE INDEX "OrderDiscount_orderId_idx" ON "OrderDiscount"("orderId");
-
--- CreateIndex
-CREATE INDEX "UpsellConfig_locationId_idx" ON "UpsellConfig"("locationId");
-
--- CreateIndex
-CREATE INDEX "UpsellEvent_locationId_idx" ON "UpsellEvent"("locationId");
-
--- CreateIndex
-CREATE INDEX "UpsellEvent_upsellConfigId_idx" ON "UpsellEvent"("upsellConfigId");
-
--- CreateIndex
-CREATE INDEX "UpsellEvent_createdAt_idx" ON "UpsellEvent"("createdAt");
 
 -- CreateIndex
 CREATE INDEX "VoidLog_locationId_idx" ON "VoidLog"("locationId");
@@ -5173,6 +5180,9 @@ CREATE INDEX "TipLedgerEntry_locationId_sourceType_createdAt_idx" ON "TipLedgerE
 
 -- CreateIndex
 CREATE INDEX "TipLedgerEntry_locationId_employeeId_createdAt_idx" ON "TipLedgerEntry"("locationId", "employeeId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "TipLedgerEntry_locationId_type_sourceType_createdAt_idx" ON "TipLedgerEntry"("locationId", "type", "sourceType", "createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "TipTransaction_idempotencyKey_key" ON "TipTransaction"("idempotencyKey");
@@ -6318,18 +6328,6 @@ CREATE INDEX "ErrorLog_locationId_status_createdAt_idx" ON "ErrorLog"("locationI
 CREATE INDEX "ErrorLog_locationId_category_createdAt_idx" ON "ErrorLog"("locationId", "category", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "PerformanceLog_locationId_idx" ON "PerformanceLog"("locationId");
-
--- CreateIndex
-CREATE INDEX "PerformanceLog_operation_idx" ON "PerformanceLog"("operation");
-
--- CreateIndex
-CREATE INDEX "PerformanceLog_duration_idx" ON "PerformanceLog"("duration");
-
--- CreateIndex
-CREATE INDEX "PerformanceLog_createdAt_idx" ON "PerformanceLog"("createdAt");
-
--- CreateIndex
 CREATE INDEX "HealthCheck_locationId_idx" ON "HealthCheck"("locationId");
 
 -- CreateIndex
@@ -6567,15 +6565,6 @@ CREATE INDEX "MarginEdgeProductMapping_locationId_inventoryItemId_idx" ON "Margi
 CREATE UNIQUE INDEX "MarginEdgeProductMapping_locationId_marginEdgeProductId_key" ON "MarginEdgeProductMapping"("locationId", "marginEdgeProductId");
 
 -- CreateIndex
-CREATE INDEX "MenuItemDailyMetrics_locationId_businessDate_idx" ON "MenuItemDailyMetrics"("locationId", "businessDate");
-
--- CreateIndex
-CREATE INDEX "MenuItemDailyMetrics_locationId_menuItemId_idx" ON "MenuItemDailyMetrics"("locationId", "menuItemId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "MenuItemDailyMetrics_locationId_menuItemId_businessDate_key" ON "MenuItemDailyMetrics"("locationId", "menuItemId", "businessDate");
-
--- CreateIndex
 CREATE UNIQUE INDEX "PendingDeduction_orderId_key" ON "PendingDeduction"("orderId");
 
 -- CreateIndex
@@ -6631,6 +6620,36 @@ CREATE INDEX "BergDispenseEvent_deviceId_receivedAt_idx" ON "BergDispenseEvent"(
 
 -- CreateIndex
 CREATE INDEX "BergDispenseEvent_deviceId_businessDate_idx" ON "BergDispenseEvent"("deviceId", "businessDate");
+
+-- CreateIndex
+CREATE INDEX "ItemBarcode_barcode_idx" ON "ItemBarcode"("barcode");
+
+-- CreateIndex
+CREATE INDEX "ItemBarcode_menuItemId_idx" ON "ItemBarcode"("menuItemId");
+
+-- CreateIndex
+CREATE INDEX "ItemBarcode_inventoryItemId_idx" ON "ItemBarcode"("inventoryItemId");
+
+-- CreateIndex
+CREATE INDEX "ItemBarcode_locationId_idx" ON "ItemBarcode"("locationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ItemBarcode_locationId_barcode_key" ON "ItemBarcode"("locationId", "barcode");
+
+-- CreateIndex
+CREATE INDEX "FulfillmentEvent_locationId_status_idx" ON "FulfillmentEvent"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "FulfillmentEvent_claimedBy_status_idx" ON "FulfillmentEvent"("claimedBy", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "BridgeCheckpoint_locationId_nodeId_key" ON "BridgeCheckpoint"("locationId", "nodeId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OutageQueueEntry_idempotencyKey_key" ON "OutageQueueEntry"("idempotencyKey");
+
+-- CreateIndex
+CREATE INDEX "OutageQueueEntry_locationId_status_idx" ON "OutageQueueEntry"("locationId", "status");
 
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -6961,33 +6980,6 @@ ALTER TABLE "OrderDiscount" ADD CONSTRAINT "OrderDiscount_orderId_fkey" FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE "OrderDiscount" ADD CONSTRAINT "OrderDiscount_discountRuleId_fkey" FOREIGN KEY ("discountRuleId") REFERENCES "DiscountRule"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellConfig" ADD CONSTRAINT "UpsellConfig_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellConfig" ADD CONSTRAINT "UpsellConfig_triggerItemId_fkey" FOREIGN KEY ("triggerItemId") REFERENCES "MenuItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellConfig" ADD CONSTRAINT "UpsellConfig_triggerCategoryId_fkey" FOREIGN KEY ("triggerCategoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellConfig" ADD CONSTRAINT "UpsellConfig_suggestionItemId_fkey" FOREIGN KEY ("suggestionItemId") REFERENCES "MenuItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellConfig" ADD CONSTRAINT "UpsellConfig_suggestionCategoryId_fkey" FOREIGN KEY ("suggestionCategoryId") REFERENCES "Category"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellEvent" ADD CONSTRAINT "UpsellEvent_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellEvent" ADD CONSTRAINT "UpsellEvent_upsellConfigId_fkey" FOREIGN KEY ("upsellConfigId") REFERENCES "UpsellConfig"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellEvent" ADD CONSTRAINT "UpsellEvent_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "UpsellEvent" ADD CONSTRAINT "UpsellEvent_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "VoidLog" ADD CONSTRAINT "VoidLog_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -7929,12 +7921,6 @@ ALTER TABLE "ErrorLog" ADD CONSTRAINT "ErrorLog_paymentId_fkey" FOREIGN KEY ("pa
 ALTER TABLE "ErrorLog" ADD CONSTRAINT "ErrorLog_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "PerformanceLog" ADD CONSTRAINT "PerformanceLog_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "PerformanceLog" ADD CONSTRAINT "PerformanceLog_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "HealthCheck" ADD CONSTRAINT "HealthCheck_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -8052,12 +8038,6 @@ ALTER TABLE "MarginEdgeProductMapping" ADD CONSTRAINT "MarginEdgeProductMapping_
 ALTER TABLE "MarginEdgeProductMapping" ADD CONSTRAINT "MarginEdgeProductMapping_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "MenuItemDailyMetrics" ADD CONSTRAINT "MenuItemDailyMetrics_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "MenuItemDailyMetrics" ADD CONSTRAINT "MenuItemDailyMetrics_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "PendingDeduction" ADD CONSTRAINT "PendingDeduction_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -8086,4 +8066,22 @@ ALTER TABLE "BergDispenseEvent" ADD CONSTRAINT "BergDispenseEvent_orderId_fkey" 
 
 -- AddForeignKey
 ALTER TABLE "BergDispenseEvent" ADD CONSTRAINT "BergDispenseEvent_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ItemBarcode" ADD CONSTRAINT "ItemBarcode_menuItemId_fkey" FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ItemBarcode" ADD CONSTRAINT "ItemBarcode_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ItemBarcode" ADD CONSTRAINT "ItemBarcode_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "FulfillmentEvent" ADD CONSTRAINT "FulfillmentEvent_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BridgeCheckpoint" ADD CONSTRAINT "BridgeCheckpoint_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OutageQueueEntry" ADD CONSTRAINT "OutageQueueEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

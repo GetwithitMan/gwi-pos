@@ -6,6 +6,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface WalkoutRetryRow {
   id: string
@@ -57,6 +58,8 @@ export default function WalkoutRetriesPage() {
       setLoading(false)
     }
   }, [locationId, statusFilter])
+
+  useReportAutoRefresh({ onRefresh: fetchRetries })
 
   useEffect(() => { fetchRetries() }, [fetchRetries])
 

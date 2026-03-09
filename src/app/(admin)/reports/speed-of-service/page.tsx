@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface TimingMetrics {
   avgOrderToSend: number | null
@@ -111,6 +112,8 @@ export default function SpeedOfServicePage() {
       setIsLoading(false)
     }
   }, [employee?.location?.id, employee?.id, startDate, endDate])
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   useEffect(() => {
     if (employee?.location?.id) {

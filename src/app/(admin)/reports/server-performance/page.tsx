@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface ServerRow {
   employeeId: string
@@ -98,8 +99,10 @@ export default function ServerPerformancePage() {
     if (employee?.location?.id) {
       loadReport()
     }
-   
+
   }, [employee?.location?.id])
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   if (!hydrated) return null
 

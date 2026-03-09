@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import type { BergVarianceReportResponse } from '@/lib/berg/report-types'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 function fmtMoney(n: number) {
   return '$' + n.toFixed(2)
@@ -38,6 +39,8 @@ export default function BergVarianceReportPage() {
   const [threshold, setThreshold] = useState('5')
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<BergVarianceReportResponse | null>(null)
+
+  useReportAutoRefresh({ onRefresh: runReport })
 
   async function runReport() {
     if (!locationId || !employee?.id) return

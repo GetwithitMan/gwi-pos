@@ -170,7 +170,7 @@ export function getConflictStrategy(model: string): ConflictStrategy {
 }
 
 export const UPSTREAM_INTERVAL_MS = parseInt(
-  process.env.SYNC_UPSTREAM_INTERVAL_MS || '5000',
+  process.env.SYNC_UPSTREAM_INTERVAL_MS || '1000',
   10
 )
 

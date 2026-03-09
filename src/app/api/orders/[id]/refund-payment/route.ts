@@ -237,48 +237,79 @@ export const POST = withVenue(async function POST(
       }, order.locationId).catch(console.error)
     }
 
-    // Bug 8: Proportional tip reduction on partial/full refund (fire-and-forget)
-    const paymentTipAmount = Number(payment.tipAmount)
-    const paymentOriginalAmount = Number(payment.amount)
-    if (paymentTipAmount > 0 && paymentOriginalAmount > 0) {
-      const tipReduction = Math.round(paymentTipAmount * (refundAmount / paymentOriginalAmount) * 100) / 100
-      if (tipReduction > 0) {
-        // Update Payment.tipAmount and Order.tipTotal proportionally
-        const newTipAmount = Math.max(0, paymentTipAmount - tipReduction)
-        void (async () => {
-          try {
-            await db.payment.update({
-              where: { id: paymentId },
-              data: { tipAmount: newTipAmount, totalAmount: Number(payment.amount) - (totalAlreadyRefunded + refundAmount) + newTipAmount },
-            })
-            // Update Order.tipTotal
-            const allPayments = await db.payment.findMany({
-              where: { orderId: id, deletedAt: null, status: { not: 'voided' } },
-            })
-            const newOrderTipTotal = allPayments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
-            await db.order.update({
-              where: { id },
-              data: { tipTotal: newOrderTipTotal },
-            })
-            // Fire-and-forget event emission for tip update
-            void emitOrderEvent(order.locationId, id, 'ORDER_METADATA_UPDATED', {
-              tipTotalCents: Math.round(newOrderTipTotal * 100),
-            }).catch(console.error)
-          } catch (err) {
-            console.error('[refund-payment] Failed to adjust tip proportionally:', err)
-          }
-        })()
+    // Bug 8 + C5 fix: Proportional tip reduction on partial/full refund (fire-and-forget)
+    // Uses FOR UPDATE lock to prevent concurrent refund races on stale tip/amount values
+    void (async () => {
+      try {
+        const tipReductionResult = await db.$transaction(async (tx) => {
+          // Lock the payment row to prevent concurrent refund races
+          await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`
+          const freshPayment = await tx.payment.findUniqueOrThrow({ where: { id: paymentId } })
 
-        // Trigger tip chargeback for the proportional amount
-        void handleTipChargeback({
-          locationId: order.locationId,
-          paymentId,
-          memo: `Partial refund ($${refundAmount.toFixed(2)}): proportional tip reduction of $${tipReduction.toFixed(2)}`,
-        }).catch(err => {
-          console.warn('[refund-payment] Tip chargeback skipped or failed:', err.message)
-        })
+          const paymentTipAmount = Number(freshPayment.tipAmount)
+          const paymentOriginalAmount = Number(freshPayment.amount)
+
+          if (paymentTipAmount <= 0 || paymentOriginalAmount <= 0) {
+            return null // No tip to reduce
+          }
+
+          // Check cumulative refunds inside the lock to prevent over-refund of tip
+          const cumulativeRefunds = await tx.refundLog.aggregate({
+            where: { paymentId },
+            _sum: { refundAmount: true },
+          })
+          const totalRefunded = Number(cumulativeRefunds._sum.refundAmount ?? 0)
+          if (totalRefunded > paymentOriginalAmount) {
+            return null // Over-refund guard
+          }
+
+          const tipReduction = Math.round(paymentTipAmount * (refundAmount / paymentOriginalAmount) * 100) / 100
+          if (tipReduction <= 0) {
+            return null
+          }
+
+          // Update Payment.tipAmount and totalAmount with fresh locked values
+          const newTipAmount = Math.max(0, paymentTipAmount - tipReduction)
+          await tx.payment.update({
+            where: { id: paymentId },
+            data: {
+              tipAmount: newTipAmount,
+              totalAmount: Number(freshPayment.amount) - totalRefunded + newTipAmount,
+            },
+          })
+
+          // Update Order.tipTotal from all non-voided payments (inside lock)
+          const allPayments = await tx.payment.findMany({
+            where: { orderId: id, deletedAt: null, status: { not: 'voided' } },
+          })
+          const newOrderTipTotal = allPayments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
+          await tx.order.update({
+            where: { id },
+            data: { tipTotal: newOrderTipTotal },
+          })
+
+          return { tipReduction, newOrderTipTotal }
+        }, { timeout: 15000 })
+
+        if (tipReductionResult) {
+          // Fire-and-forget event emission for tip update
+          void emitOrderEvent(order.locationId, id, 'ORDER_METADATA_UPDATED', {
+            tipTotalCents: Math.round(tipReductionResult.newOrderTipTotal * 100),
+          }).catch(console.error)
+
+          // Trigger tip chargeback for the proportional amount
+          void handleTipChargeback({
+            locationId: order.locationId,
+            paymentId,
+            memo: `Partial refund ($${refundAmount.toFixed(2)}): proportional tip reduction of $${tipReductionResult.tipReduction.toFixed(2)}`,
+          }).catch(err => {
+            console.warn('[refund-payment] Tip chargeback skipped or failed:', err.message)
+          })
+        }
+      } catch (err) {
+        console.error('[refund-payment] Failed to adjust tip proportionally:', err)
       }
-    }
+    })()
 
     // Restore inventory deductions when a FULL refund leaves no active payments.
     // Check all payments on the order: if every one is now voided or fully refunded,

@@ -204,7 +204,8 @@ async function processOutageQueue(): Promise<void> {
       MAX_RETRY_ATTEMPTS
     ) as number
     if (deadLettered > 0) {
-      console.warn(`[OutageReplay] Dead-lettered ${deadLettered} entries after ${MAX_RETRY_ATTEMPTS} retries`)
+      console.error(`[OUTAGE-REPLAY] CRITICAL: ${deadLettered} entries dead-lettered after ${MAX_RETRY_ATTEMPTS} retries. Orders may be lost. Check OutageQueueEntry table.`)
+      // If MC health endpoint exists, report it
     }
 
     // Reset failed entries < 24h old back to pending for retry, incrementing retry count

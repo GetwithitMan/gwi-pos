@@ -190,14 +190,20 @@ export const PUT = withVenue(async function PUT(
       const reviewInvItemMap = new Map(reviewInvItems.map(i => [i.id, i]))
 
       for (const item of countedItems) {
+        // C10: Skip uncounted items — don't wipe their stock to 0
+        if (item.countedQty === null || item.countedQty === undefined) {
+          continue
+        }
+
         const invItem = reviewInvItemMap.get(item.inventoryItemId)
         const currentStock = invItem ? Number(invItem.currentStock) : 0
         const countedQty = Number(item.countedQty)
 
+        // Only update items that were actually counted
         await db.inventoryItem.update({
           where: { id: item.inventoryItemId },
           data: {
-            currentStock: item.countedQty ?? 0,
+            currentStock: countedQty,
           },
         })
 

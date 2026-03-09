@@ -12,6 +12,7 @@ import type { PrismaClient } from '@prisma/client'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
+import { autoClear86ForRestockedItems } from './order-deduction'
 
 /**
  * Reverse inventory deductions when a voided/comped item is restored to active.
@@ -103,6 +104,20 @@ export async function restoreInventoryForOrder(
 ): Promise<{ success: boolean; itemsRestored: number; totalCostRestored: number }> {
   const client = prisma ?? db
   try {
+    // Check if deduction has actually run — if still pending, cancel it instead of restoring
+    const pendingDeduction = await (client as any).pendingDeduction.findUnique({
+      where: { orderId },
+    })
+    if (pendingDeduction && (pendingDeduction.status === 'pending' || pendingDeduction.status === 'processing')) {
+      // Deduction hasn't completed yet — cancel it instead of restoring
+      await (client as any).pendingDeduction.update({
+        where: { orderId },
+        data: { status: 'cancelled', lastError: 'Order voided/refunded before deduction ran' },
+      })
+      console.log(`[Inventory] Cancelled pending deduction for order ${orderId} — order voided before deduction ran`)
+      return { success: true, itemsRestored: 0, totalCostRestored: 0 }
+    }
+
     // Idempotency: check if we already restored for this order
     const existingReversal = await (client as any).inventoryItemTransaction.findFirst({
       where: {
@@ -180,6 +195,14 @@ export async function restoreInventoryForOrder(
       `[Inventory] Restored ${saleTransactions.length} deductions for order ${orderId}, ` +
       `total cost restored: $${totalCostRestored.toFixed(2)}`
     )
+
+    // Auto-un-86 ingredients that were restocked above zero (fire-and-forget)
+    const restockedIds = saleTransactions.map((tx: any) => tx.inventoryItemId as string)
+    if (restockedIds.length > 0) {
+      void autoClear86ForRestockedItems(restockedIds).catch(err =>
+        console.error('[inventory] auto-un-86 after order restore failed:', err)
+      )
+    }
 
     return { success: true, itemsRestored: saleTransactions.length, totalCostRestored }
   } catch (error) {

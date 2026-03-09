@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface VoidLog {
   id: string
@@ -160,6 +161,8 @@ export default function VoidReportsPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   const formatDateTime = (dateString: string) => {
     return new Date(dateString).toLocaleString([], {

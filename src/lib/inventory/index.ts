@@ -49,7 +49,7 @@ export { calculateTheoreticalUsage } from './theoretical-usage'
 export { calculateRecipeCosting, calculateIngredientCosts } from './recipe-costing'
 
 // Order Deduction
-export { ORDER_INVENTORY_INCLUDE, deductInventoryForOrder } from './order-deduction'
+export { ORDER_INVENTORY_INCLUDE, deductInventoryForOrder, autoClear86ForRestockedItems } from './order-deduction'
 
 // Void/Waste
 export { WASTE_VOID_REASONS, deductInventoryForVoidedItem, restoreInventoryForRestoredItem } from './void-waste'

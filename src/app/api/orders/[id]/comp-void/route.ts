@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { recalculatePercentDiscounts, getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { getDatacapClient } from '@/lib/datacap/helpers'
@@ -639,6 +639,12 @@ export const POST = withVenue(async function POST(
 
     // Clean up temporary seats if order auto-closed, then refresh floor plan
     if (shouldAutoClose) {
+      // C12: Release the table when all items are voided/comped (prevent zombie tables)
+      if (order.tableId) {
+        await db.table.update({ where: { id: order.tableId }, data: { status: 'available' } })
+        void dispatchFloorPlanUpdate(order.locationId).catch(console.error)
+      }
+
       void cleanupTemporarySeats(orderId)
         .then(() => {
           if (order.tableId) {
@@ -681,6 +687,12 @@ export const POST = withVenue(async function POST(
       total: totals.total,
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch order totals update:', err)
+    })
+
+    // M6: Notify mobile tab clients that items changed (comp/void updates item count)
+    dispatchTabItemsUpdated(order.locationId, {
+      orderId,
+      itemCount: activeItems.reduce((sum, i) => sum + i.quantity, 0),
     })
 
     // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)

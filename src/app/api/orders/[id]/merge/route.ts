@@ -4,7 +4,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -179,6 +179,13 @@ export const POST = withVenue(async function POST(
 
       return { movedItems: moved, movedDiscounts: movedDisc }
     })
+
+    // C12: Release the source order's table after merge (prevent zombie tables)
+    const locationId = targetOrder.locationId
+    if (sourceOrder.tableId && sourceOrder.tableId !== targetOrder.tableId) {
+      await db.table.update({ where: { id: sourceOrder.tableId }, data: { status: 'available' } })
+      void dispatchFloorPlanUpdate(locationId).catch(console.error)
+    }
 
     // Dispatch socket events for both orders (fire-and-forget)
     void dispatchOpenOrdersChanged(targetOrder.locationId, {

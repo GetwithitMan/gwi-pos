@@ -116,6 +116,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               select: {
                 id: true,
                 name: true,
+                itemType: true,
                 categoryId: true,
                 prepStationId: true,
                 category: {
@@ -178,6 +179,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           }
           return false
         })
+      }
+
+      // M3: Exclude entertainment/timed_rental items from regular KDS stations.
+      // Entertainment items should only appear on entertainment-type stations.
+      if (!station || station.stationType !== 'entertainment') {
+        filteredItems = filteredItems.filter(item => item.menuItem.itemType !== 'timed_rental')
       }
 
       // Skip orders with no items for this station
@@ -338,12 +345,17 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       })
 
       if (firstItem?.orderId) {
-        // W2-O2: Print resend items with retry + audit trail
-        void dispatchPrintWithRetry(
-          `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`,
-          { orderId: firstItem.orderId, itemIds },
-          { locationId: firstItem.order!.locationId, employeeId: body.employeeId || null, orderId: firstItem.orderId }
-        )
+        // M1: Print resend with try/catch — DB is source of truth, print is best-effort.
+        // If print fails, KDS shows RESEND badge but no physical ticket prints.
+        try {
+          void dispatchPrintWithRetry(
+            `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`,
+            { orderId: firstItem.orderId, itemIds },
+            { locationId: firstItem.order!.locationId, employeeId: body.employeeId || null, orderId: firstItem.orderId }
+          )
+        } catch (printErr) {
+          console.warn(`[KDS] Resend print failed for order ${firstItem.orderId} — KDS shows RESEND badge but no physical ticket:`, printErr)
+        }
       }
     }
 

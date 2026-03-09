@@ -6,6 +6,7 @@ import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface ProductMixItem {
   menuItemId: string
@@ -124,6 +125,8 @@ export default function ProductMixReportPage() {
   })
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
   const [view, setView] = useState<'items' | 'categories' | 'hourly' | 'pairings'>('items')
+
+  useReportAutoRefresh({ onRefresh: fetchReport })
 
   useEffect(() => {
     if (locationId) {

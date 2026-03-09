@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
-import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
@@ -198,13 +198,25 @@ export const POST = withVenue(async function POST(
     } catch (dbError) {
       // CRITICAL: Datacap voided but DB update failed
       if (isCardPayment) {
-        console.error(
+        const recordNo = payment.datacapRecordNo
+        const criticalMsg =
           `[PAYMENT-SAFETY] CRITICAL: Datacap voided but DB update failed. ` +
-          `orderId=${orderId}, paymentId=${paymentId}, amount=${Number(payment.totalAmount)}, ` +
+          `orderId=${orderId}, paymentId=${paymentId}, recordNo=${recordNo}, ` +
+          `amount=${Number(payment.totalAmount)}, ` +
           `method=${payment.paymentMethod}, reason=${reason}. ` +
-          `Reconcile manually via Datacap portal.`,
-          dbError
-        )
+          `Reconcile manually via Datacap portal.`
+        console.error(criticalMsg, dbError)
+
+        // Report to Sentry if available
+        try {
+          const Sentry = await import('@sentry/nextjs')
+          Sentry.captureException(dbError, {
+            tags: { handler: 'void-payment-db-failure', paymentId, orderId },
+            extra: { recordNo, amount: Number(payment.totalAmount), method: payment.paymentMethod },
+          })
+        } catch {
+          // Sentry not available — already logged above
+        }
 
         // Bug 7: Still attempt tip chargeback even when DB update failed — the Datacap
         // void succeeded so the customer won't be charged. Best effort.
@@ -221,6 +233,17 @@ export const POST = withVenue(async function POST(
             )
           })
         }
+
+        // Do NOT re-throw — return error response so the client can warn the manager
+        return NextResponse.json(
+          {
+            error: `CRITICAL: Card voided at processor but database update failed. Record number: ${recordNo}. Manual reconciliation required.`,
+            critical: true,
+            recordNo,
+            paymentId,
+          },
+          { status: 500 }
+        )
       }
       throw dbError
     }
@@ -261,11 +284,22 @@ export const POST = withVenue(async function POST(
       })
     }
 
+    // Release the table when the full order is voided (C12: prevent zombie tables)
+    if (newOrderStatus === 'voided' && order.tableId) {
+      await db.table.update({ where: { id: order.tableId }, data: { status: 'available' } })
+      void dispatchFloorPlanUpdate(order.locationId).catch(console.error)
+    }
+
     // Restore inventory deductions when ALL payments on the order are voided.
     // The original sale deductions from deductInventoryForOrder() are reversed
-    // so stock levels reflect the fully-reversed sale. Fire-and-forget.
+    // so stock levels reflect the fully-reversed sale.
+    // Inventory restore is best-effort — payment void takes priority
     if (newOrderStatus === 'voided') {
-      void restoreInventoryForOrder(orderId, order.locationId).catch(console.error)
+      try {
+        await restoreInventoryForOrder(orderId, order.locationId)
+      } catch (err) {
+        console.error('[VOID] Inventory restoration failed — manual stock adjustment may be needed:', err)
+      }
     }
 
     return NextResponse.json({

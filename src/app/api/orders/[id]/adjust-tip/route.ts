@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -148,6 +148,26 @@ export const PATCH = withVenue(async function PATCH(
       discountTotal: Number(order.discountTotal),
       total: newOrderTotal,
       commissionTotal: Number(order.commissionTotal || 0),
+    }, { async: true }).catch(() => {})
+
+    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    void dispatchOrderSummaryUpdated(order.locationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      tableId: order.tableId || null,
+      tableName: null,
+      tabName: order.tabName || null,
+      guestCount: order.guestCount ?? 0,
+      employeeId: order.employeeId || null,
+      subtotalCents: Math.round(Number(order.subtotal) * 100),
+      taxTotalCents: Math.round(Number(order.taxTotal) * 100),
+      discountTotalCents: Math.round(Number(order.discountTotal) * 100),
+      tipTotalCents: Math.round(newOrderTipTotal * 100),
+      totalCents: Math.round(newOrderTotal * 100),
+      itemCount: order.itemCount ?? 0,
+      updatedAt: new Date().toISOString(),
+      locationId: order.locationId,
     }, { async: true }).catch(() => {})
 
     // Emit order event for tip adjustment (fire-and-forget)

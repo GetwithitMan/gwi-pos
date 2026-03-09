@@ -9,7 +9,7 @@ import {
   calculateRoundingAdjustment,
   roundAmount,
 } from '@/lib/payment'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { errorCapture } from '@/lib/error-capture'
@@ -1078,6 +1078,17 @@ export const POST = withVenue(withTiming(async function POST(
           ) }
         }
 
+        // C3: Acquire row lock on gift card to prevent balance race condition.
+        // Two terminals checking balance concurrently could both pass the check
+        // and drive balance negative. FOR UPDATE serializes the reads.
+        await tx.$queryRawUnsafe(
+          `SELECT id FROM "GiftCard" WHERE id = $1 FOR UPDATE`,
+          giftCard.id,
+        )
+        // Re-read with fresh balance after acquiring lock
+        const freshGiftCard = await tx.giftCard.findUniqueOrThrow({ where: { id: giftCard.id } })
+        giftCard = freshGiftCard
+
         if (giftCard.status !== 'active') {
           return { earlyReturn: NextResponse.json(
             { error: `Gift card is ${giftCard.status}` },
@@ -1153,6 +1164,13 @@ export const POST = withVenue(withTiming(async function POST(
         }
 
         const haPaymentAmount = payment.amount + (payment.tipAmount || 0)
+
+        // C3: Acquire row lock on house account to prevent balance race condition.
+        // Same pattern as gift card — FOR UPDATE serializes concurrent balance checks.
+        await tx.$queryRawUnsafe(
+          `SELECT id FROM "HouseAccount" WHERE id = $1 FOR UPDATE`,
+          payment.houseAccountId!,
+        )
 
         const freshAccount = await tx.houseAccount.findUnique({
           where: { id: payment.houseAccountId! }
@@ -1287,7 +1305,13 @@ export const POST = withVenue(withTiming(async function POST(
       updateData.paidAt = new Date()
       updateData.closedAt = new Date()
     } else if (newPaidTotal > 0) {
-      // Partial payment received — lock order from silent abandonment
+      // H8: Partial payment received — lock order from silent abandonment.
+      // Orders in 'in_progress' status remain in the open orders list and are
+      // visible on all terminals. Recovery paths:
+      //   1. Additional payment(s) to reach full balance
+      //   2. Manager void of the partial payment (returns order to 'open')
+      //   3. Shift-close reconciliation — manager must resolve open partials
+      // There is no automatic timeout or expiry — manual resolution is required.
       if (order.status === 'open' || order.status === 'draft') {
         updateData.status = 'in_progress'
       }
@@ -1511,6 +1535,12 @@ export const POST = withVenue(withTiming(async function POST(
       try {
         await db.$transaction(async (ptx) => {
           await ptx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.parentOrderId} FOR UPDATE`
+          // H7: Lock all sibling orders too — prevents two concurrent child payments
+          // from both reading siblings as unpaid and both skipping parent closure.
+          await ptx.$queryRawUnsafe(
+            `SELECT id FROM "Order" WHERE "parentOrderId" = $1 FOR UPDATE`,
+            order.parentOrderId!,
+          )
           const allSiblings = await ptx.order.findMany({
             where: { parentOrderId: order.parentOrderId! },
             select: { id: true, status: true },
@@ -1625,6 +1655,8 @@ export const POST = withVenue(withTiming(async function POST(
           data: { status: 'available' },
         }).then(() => {
           invalidateSnapshotCache(order.locationId)
+          // M5: Emit table:status-changed for parent table too
+          void dispatchTableStatusChanged(order.locationId, { tableId: parentTableId!, status: 'available' }).catch(console.error)
         }).catch(err => {
           console.error('[Pay] Parent table status reset failed:', err)
         })
@@ -1782,6 +1814,8 @@ export const POST = withVenue(withTiming(async function POST(
         }).then(() => {
           // Invalidate snapshot cache after table update completes so floor plan gets fresh data
           invalidateSnapshotCache(order.locationId)
+          // M5: Emit table:status-changed so all terminals update floor plan indicators
+          void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId!, status: 'available' }).catch(console.error)
         }).catch(err => {
           console.error('[Pay] Table status reset failed:', err)
         })
@@ -1935,6 +1969,13 @@ export const POST = withVenue(withTiming(async function POST(
       } : null,
       loyaltyPointsRedeemed: null,
       loyaltyPointsEarned: pointsEarned || null,
+      // Surcharge disclosure — include when pricing program is 'surcharge' and disclosure text is set
+      surchargeDisclosure: (() => {
+        const pp = getPricingProgram(settings)
+        return pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
+          ? pp.surchargeDisclosure
+          : null
+      })(),
     }
 
     // Return response — includes flat fields for Android's PayOrderData DTO

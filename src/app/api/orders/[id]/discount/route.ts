@@ -169,6 +169,32 @@ export const POST = withVenue(async function POST(
         } })
       }
 
+      // Employee discount guard: if this rule is employee-only, enforce on-clock validation
+      if (rule.isEmployeeDiscount) {
+        if (!body.employeeId) {
+          return NextResponse.json(
+            { error: 'Employee ID is required for employee discounts' },
+            { status: 400 }
+          )
+        }
+
+        // Verify the applying employee is currently clocked in
+        const activeClockEntry = await db.timeClockEntry.findFirst({
+          where: {
+            employeeId: body.employeeId,
+            locationId: order.locationId,
+            clockOut: null,
+          },
+        })
+
+        if (!activeClockEntry) {
+          return NextResponse.json(
+            { error: 'Employee must be clocked in to use an employee discount' },
+            { status: 403 }
+          )
+        }
+      }
+
       // Check max per order
       if (rule.maxPerOrder) {
         const existingCount = order.discounts.filter(

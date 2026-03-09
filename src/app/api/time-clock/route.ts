@@ -124,6 +124,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    // 60-second cooldown: prevent instant clock-out/clock-in cycling
+    const lastClockOut = await db.timeClockEntry.findFirst({
+      where: {
+        employeeId,
+        clockOut: { not: null },
+      },
+      orderBy: { clockOut: 'desc' },
+      select: { clockOut: true },
+    })
+
+    if (lastClockOut?.clockOut) {
+      const secondsSinceClockOut = (Date.now() - lastClockOut.clockOut.getTime()) / 1000
+      if (secondsSinceClockOut < 60) {
+        const waitSeconds = Math.ceil(60 - secondsSinceClockOut)
+        return NextResponse.json(
+          { error: `Please wait ${waitSeconds} seconds before clocking back in` },
+          { status: 400 }
+        )
+      }
+    }
+
     const entry = await db.timeClockEntry.create({
       data: {
         locationId,

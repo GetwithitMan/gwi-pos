@@ -7,6 +7,7 @@ import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 
 // ============================================================
 // SQL-AGGREGATE DAILY REPORT (replaces in-memory iteration)
@@ -34,6 +35,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
+    if (!rateCheck.allowed) {
+      return NextResponse.json({ error: 'Rate limited', retryAfter: rateCheck.retryAfterSeconds }, { status: 429 })
     }
 
     // Fetch location settings from cache for business day boundaries
@@ -1445,7 +1451,8 @@ async function legacyReport(
     salesByOrderType[orderTypeName].net += orderSubtotal - orderDiscount
 
     // Track by category + weight-based sales
-    order.items.forEach(item => {
+    // Skip voided and comped items — they should not count toward category revenue
+    order.items.filter(item => item.status !== 'voided' && item.status !== 'comped').forEach(item => {
       const itemBaseTotal = Number(item.price) * item.quantity
       const modifierTotal = (item.modifiers || []).reduce(
         (sum: number, mod: { price: any }) => sum + (Number(mod.price) || 0), 0
@@ -1468,8 +1475,9 @@ async function legacyReport(
     })
 
     // Distribute discounts to categories (proportionally)
+    // Skip voided and comped items — consistent with category gross above
     if (orderDiscount > 0 && orderSubtotal > 0) {
-      order.items.forEach(item => {
+      order.items.filter(item => item.status !== 'voided' && item.status !== 'comped').forEach(item => {
         const itemTotal = Number(item.price) * item.quantity
         const itemDiscountShare = (itemTotal / orderSubtotal) * orderDiscount
         const categoryId = item.menuItem?.category?.id

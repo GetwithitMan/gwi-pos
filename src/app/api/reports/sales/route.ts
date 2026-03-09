@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
+import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 
 // GET sales report with comprehensive groupings
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -26,6 +29,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    const rateCheck = checkReportRateLimit(requestingEmployeeId || 'anonymous')
+    if (!rateCheck.allowed) {
+      return NextResponse.json({ error: 'Rate limited', retryAfter: rateCheck.retryAfterSeconds }, { status: 429 })
     }
 
     // Build date filter with businessDayDate OR-fallback
@@ -105,6 +113,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const tableMap = new Map(tables.map(t => [t.id, t.name]))
     const sectionMap = new Map(sections.map(s => [s.id, s.name]))
 
+    // Fetch location settings for surcharge pricing
+    const locationSettings = parseSettings(await getLocationSettings(locationId))
+    const pricingProgram = getPricingProgram(locationSettings)
+
     // Initialize summary stats
     let totalGrossSales = 0
     let totalTax = 0
@@ -112,6 +124,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let totalTaxFromExclusive = 0
     let totalDiscounts = 0
     let totalTips = 0
+    let totalSurcharge = 0
     let cashSales = 0
     let cardSales = 0
     let orderCount = 0
@@ -163,6 +176,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           cardSales += amount
         }
       })
+
+      // Surcharge calculation (dual pricing: surcharge on card-paid orders)
+      if (pricingProgram.model === 'surcharge' && pricingProgram.enabled && pricingProgram.surchargePercent) {
+        const hasCardPayment = order.payments.some(p => {
+          const method = (p.paymentMethod || '').toLowerCase()
+          return method === 'credit' || method === 'card'
+        })
+        if (hasCardPayment) {
+          totalSurcharge += Math.round(orderSubtotal * pricingProgram.surchargePercent) / 100
+        }
+      }
 
       // Daily grouping
       const dateKey = order.createdAt.toISOString().split('T')[0]
@@ -390,8 +414,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         tax: Math.round(totalTax * 100) / 100,
         taxFromInclusive: Math.round(totalTaxFromInclusive * 100) / 100,
         taxFromExclusive: Math.round(totalTaxFromExclusive * 100) / 100,
+        surcharge: Math.round(totalSurcharge * 100) / 100,
         tips: Math.round(totalTips * 100) / 100,
-        total: Math.round((totalGrossSales - totalTaxFromInclusive - totalDiscounts + totalTax) * 100) / 100,
+        total: Math.round((totalGrossSales - totalTaxFromInclusive - totalDiscounts + totalTax + totalSurcharge) * 100) / 100,
         cashSales: Math.round(cashSales * 100) / 100,
         cardSales: Math.round(cardSales * 100) / 100,
         averageOrderValue: orderCount > 0 ? Math.round(((totalGrossSales - totalTaxFromInclusive) / orderCount) * 100) / 100 : 0,

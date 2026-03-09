@@ -22,7 +22,12 @@ export default function LoyaltySettingsPage() {
       const response = await fetch('/api/settings')
       if (response.ok) {
         const data = await response.json()
-        setSettings(data.data.settings)
+        const fetched = data.data.settings || {}
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...fetched,
+          loyalty: { ...DEFAULT_SETTINGS.loyalty, ...(fetched.loyalty || {}) },
+        })
       }
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -105,7 +110,7 @@ export default function LoyaltySettingsPage() {
               min="0"
               step="1"
               value={loyalty.pointsPerDollar}
-              onChange={(e) => updateLoyalty({ pointsPerDollar: parseInt(e.target.value) || 0 })}
+              onChange={(e) => updateLoyalty({ pointsPerDollar: Math.max(0, parseInt(e.target.value) || 0) })}
               className="w-full px-3 py-2 border rounded-lg text-sm"
               disabled={disabled}
             />
@@ -205,7 +210,7 @@ export default function LoyaltySettingsPage() {
                 max="100"
                 step="1"
                 value={loyalty.maximumRedemptionPercent}
-                onChange={(e) => updateLoyalty({ maximumRedemptionPercent: parseInt(e.target.value) || 1 })}
+                onChange={(e) => updateLoyalty({ maximumRedemptionPercent: Math.min(100, Math.max(1, parseInt(e.target.value) || 1)) })}
                 className="w-full px-3 py-2 border rounded-lg text-sm pr-7"
                 disabled={disabled || !loyalty.redemptionEnabled}
               />

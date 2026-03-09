@@ -79,6 +79,11 @@ export const POST = withVenue(withTiming(async function POST(
       expectedStatus: 'pending',
     })
 
+    // M2: Count held items so the client can warn "X items held back"
+    const heldItemCount = await db.orderItem.count({
+      where: { orderId: id, isHeld: true, deletedAt: null, status: { not: 'voided' } },
+    })
+
     // Identify delayed items that need their timer started.
     // Bug 19 fix: Only stamp delayStartedAt on items that are part of this send request.
     // When filterItemIds is provided, only those items are being sent — don't stamp unrelated
@@ -109,6 +114,7 @@ export const POST = withVenue(withTiming(async function POST(
         sentItemIds: [],
         alreadySent: true,
         delayedItemCount: delayedItems.length,
+        heldItemCount,
         routing: { stations: [], unroutedCount: 0 },
       } })
     }
@@ -185,7 +191,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     if (isInOutageMode()) {
-      void queueOutageWrite('Order', order.id, 'UPDATE', { id: order.id, status: order.status === 'draft' ? 'open' : order.status, kitchenStatus: 'sent' }, order.locationId).catch(console.error)
+      void queueOutageWrite('Order', order.id, 'UPDATE', { id: order.id, status: order.status === 'draft' ? 'open' : order.status, kitchenStatus: 'sent', originTerminalId: order.originTerminalId || null }, order.locationId).catch(console.error)
     }
 
     // Route order to stations using tag-based routing engine
@@ -382,6 +388,7 @@ export const POST = withVenue(withTiming(async function POST(
       success: true,
       sentItemCount: updatedItemIds.length,
       sentItemIds: updatedItemIds,
+      heldItemCount,
       routing: {
         stations: routingResult.manifests.map(m => ({
           id: m.stationId,

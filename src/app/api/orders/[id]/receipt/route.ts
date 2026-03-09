@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice } from '@/lib/pricing'
 
 // GET - Get receipt data for an order
@@ -192,6 +192,13 @@ export const GET = withVenue(async function GET(
       // Loyalty points earned requires Customer loyalty system implementation
       // Would calculate based on order total and loyalty program rules
       loyaltyPointsEarned: order.customer?.loyaltyPoints ? Math.floor(Number(order.total)) : null,
+      // Surcharge disclosure — include when pricing program is 'surcharge' and disclosure text is set
+      surchargeDisclosure: (() => {
+        const pp = getPricingProgram(settings)
+        return pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
+          ? pp.surchargeDisclosure
+          : null
+      })(),
     }
 
     return NextResponse.json({ data: receiptData })

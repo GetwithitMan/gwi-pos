@@ -51,13 +51,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   let locationName: string
 
   try {
-    let location: { id: string; name: string } | null = null
+    let location: { id: string; name: string; organizationId: string | null } | null = null
 
     // 1. JWT has posLocationId from provisioning — use it directly
     if (payload.posLocationId) {
       location = await db.location.findUnique({
         where: { id: payload.posLocationId },
-        select: { id: true, name: true },
+        select: { id: true, name: true, organizationId: true },
       })
       if (!location) {
         console.warn(`[cloud-auth] JWT posLocationId "${payload.posLocationId}" not found in DB, falling back`)
@@ -67,16 +67,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // 2. Fallback: find first Location (dev/unprovisioned scenario)
     if (!location) {
       location = await db.location.findFirst({
-        select: { id: true, name: true },
+        select: { id: true, name: true, organizationId: true },
         orderBy: { createdAt: 'asc' },
       })
     }
 
+    // M9: Capture organizationId from resolved location before null check
+    const resolvedOrgId = location?.organizationId
+
     // 3. No Location at all — auto-create (empty database)
     if (!location) {
-      let org = await db.organization.findFirst({
-        select: { id: true },
-      })
+      // Use resolved org if available (defensive), otherwise findFirst
+      let org = resolvedOrgId
+        ? await db.organization.findUnique({ where: { id: resolvedOrgId }, select: { id: true } })
+        : await db.organization.findFirst({ select: { id: true } })
       if (!org) {
         org = await db.organization.create({
           data: { name: payload.name ? `${payload.name}'s Organization` : 'Cloud Organization' },
@@ -89,7 +93,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           organizationId: org.id,
           timezone: 'America/New_York',
         },
-        select: { id: true, name: true },
+        select: { id: true, name: true, organizationId: true },
       })
       if (process.env.NODE_ENV !== 'production') console.log('[cloud-auth] Auto-created Location:', location.id, location.name)
     }

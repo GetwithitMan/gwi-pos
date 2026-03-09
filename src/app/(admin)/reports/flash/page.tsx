@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface DailyData {
   reportDate: string
@@ -81,12 +82,6 @@ export default function FlashReportPage() {
   const [previous, setPrevious] = useState<DailyData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    if (employee?.location?.id) {
-      loadFlashData()
-    }
-  }, [employee?.location?.id, selectedDate])
-
   const loadFlashData = async () => {
     if (!employee?.location?.id) return
     setIsLoading(true)
@@ -114,6 +109,14 @@ export default function FlashReportPage() {
       setIsLoading(false)
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadFlashData })
+
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadFlashData()
+    }
+  }, [employee?.location?.id, selectedDate])
 
   if (!hydrated) return null
 

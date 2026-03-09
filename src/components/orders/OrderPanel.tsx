@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect, useMemo, useCallback, memo } from 'react'
+import { useRef, useState, useEffect, useMemo, useCallback, memo, type MutableRefObject } from 'react'
 import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
 import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
@@ -11,6 +11,7 @@ import { OrderDelayBanner } from './OrderDelayBanner'
 import { ConflictBanner } from './ConflictBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import { CustomerLookupModal } from '@/components/customers/CustomerLookupModal'
+import { getSharedSocket } from '@/lib/shared-socket'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
 export type { OrderPanelItemData }
@@ -315,7 +316,8 @@ export const OrderPanel = memo(function OrderPanel({
     if (customerFetchedForRef.current === orderId) return
     customerFetchedForRef.current = orderId
 
-    void fetch(`/api/orders/${orderId}/customer`)
+    const controller = new AbortController()
+    void fetch(`/api/orders/${orderId}/customer`, { signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
       .then(raw => {
         const data = raw?.data ?? raw
@@ -331,10 +333,43 @@ export const OrderPanel = memo(function OrderPanel({
         }
         setLoyaltyEnabled(!!data?.loyaltyEnabled)
       })
-      .catch(() => {
+      .catch(err => {
+        if (err?.name === 'AbortError') return
         setLinkedCustomer(null)
         customerFetchedForRef.current = null
       })
+    return () => controller.abort()
+  }, [orderId])
+
+  // Cross-terminal customer sync: re-fetch when another terminal links/unlinks a customer
+  useEffect(() => {
+    if (!orderId || orderId.startsWith('temp-')) return
+    const socket = getSharedSocket()
+    const handler = (data: { orderId: string; changes?: string[] }) => {
+      if (data.orderId === orderId && data.changes?.includes('customer')) {
+        customerFetchedForRef.current = null // force re-fetch
+        void fetch(`/api/orders/${orderId}/customer`)
+          .then(r => r.ok ? r.json() : null)
+          .then(raw => {
+            const d = raw?.data ?? raw
+            if (d?.customer) {
+              setLinkedCustomer({
+                id: d.customer.id,
+                firstName: d.customer.firstName,
+                lastName: d.customer.lastName,
+                loyaltyPoints: d.customer.loyaltyPoints ?? 0,
+              })
+            } else {
+              setLinkedCustomer(null)
+            }
+            setLoyaltyEnabled(!!d?.loyaltyEnabled)
+            customerFetchedForRef.current = orderId
+          })
+          .catch(() => {})
+      }
+    }
+    socket.on('order:updated', handler)
+    return () => { socket.off('order:updated', handler) }
   }, [orderId])
 
   // Handle customer selection from modal
@@ -1325,7 +1360,7 @@ export const OrderPanel = memo(function OrderPanel({
                         <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                         </svg>
-                        <span>{linkedCustomer.firstName} {linkedCustomer.lastName.charAt(0)}.</span>
+                        <span style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{linkedCustomer.firstName} {(linkedCustomer.lastName || '').charAt(0)}.</span>
                         {loyaltyEnabled && (
                           <>
                             <span style={{ color: '#475569' }}>|</span>

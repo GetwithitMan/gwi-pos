@@ -9,6 +9,7 @@ import { formatCurrency, formatDateTime } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
+import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
 
 interface CouponStat {
   id: string
@@ -116,6 +117,8 @@ export default function CouponReportsPage() {
       default: return type
     }
   }
+
+  useReportAutoRefresh({ onRefresh: loadReport })
 
   if (!hydrated) return null
 
