@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabStatusUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOrderClosed } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -110,6 +110,14 @@ export const POST = withVenue(async function POST(
         status: 'voided',
       }).catch(() => {})
       dispatchTabStatusUpdate(locationId, { orderId, status: 'voided' })
+      // BUG 3: Dispatch order:closed so Android clients listening for the event learn about voided tabs
+      void dispatchOrderClosed(locationId, {
+        orderId,
+        status: 'voided',
+        closedAt: new Date().toISOString(),
+        closedByEmployeeId: employeeId,
+        locationId,
+      }, { async: true }).catch(() => {})
       if (order.tableId) {
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
       }

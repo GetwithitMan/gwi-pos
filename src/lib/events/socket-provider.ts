@@ -39,8 +39,6 @@ export class SocketEventProvider implements EventProvider {
   private connectionCallbacks: Array<(state: ConnectionState) => void> = []
   private config: ProviderConfig
   private eventListeners: Map<string, Set<EventCallback<EventName>>> = new Map()
-  private pendingEvents: Map<string, { data: unknown; timer: ReturnType<typeof setTimeout> }> = new Map()
-  private readonly DEBOUNCE_MS = 150
 
   // Named handler references for proper cleanup
   private onConnectHandler: (() => void) | null = null
@@ -124,31 +122,19 @@ export class SocketEventProvider implements EventProvider {
       this.setConnectionStatus('error', 'Reconnection failed')
     }
 
-    // Event forwarding with debouncing
+    // Event forwarding — immediate dispatch (no artificial delay)
+    // Individual consumers can debounce on their end if needed.
     this.onAnyHandler = (eventName: string, data: EventMap[EventName]) => {
       const listeners = this.eventListeners.get(eventName)
       if (!listeners || listeners.size === 0) return
 
-      const pending = this.pendingEvents.get(eventName)
-      if (pending) {
-        clearTimeout(pending.timer)
-      }
-
-      const timer = setTimeout(() => {
-        this.pendingEvents.delete(eventName)
-        const currentListeners = this.eventListeners.get(eventName)
-        if (currentListeners) {
-          currentListeners.forEach((callback) => {
-            try {
-              callback(data)
-            } catch (error) {
-              console.error(`[SocketEvents] Error in listener for ${eventName}:`, error)
-            }
-          })
+      listeners.forEach((callback) => {
+        try {
+          callback(data)
+        } catch (error) {
+          console.error(`[SocketEvents] Error in listener for ${eventName}:`, error)
         }
-      }, this.DEBOUNCE_MS)
-
-      this.pendingEvents.set(eventName, { data, timer })
+      })
     }
 
     // Register handlers on shared socket
@@ -221,11 +207,6 @@ export class SocketEventProvider implements EventProvider {
     this.onAnyHandler = null
 
     this.eventListeners.clear()
-    // Clear pending debounce timers
-    for (const pending of this.pendingEvents.values()) {
-      clearTimeout(pending.timer)
-    }
-    this.pendingEvents.clear()
     this.subscribedChannels.clear()
     this.locationId = null
     this.setConnectionStatus('disconnected')

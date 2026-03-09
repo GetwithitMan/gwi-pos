@@ -32,6 +32,48 @@ const metrics: SyncMetrics = {
   errorCount: 0,
 }
 
+// ── Outage Detection ──────────────────────────────────────────────────────────
+
+/** Number of consecutive sync failures before declaring outage */
+const OUTAGE_THRESHOLD = 3
+
+let consecutiveFailures = 0
+let isInOutage = false
+
+/**
+ * Check whether the upstream sync is currently in outage mode.
+ * When true, Neon is unreachable and writes should be queued locally.
+ */
+export function isInOutageMode(): boolean {
+  return isInOutage
+}
+
+/**
+ * Queue a write to the OutageQueueEntry table for later replay.
+ * Called by API routes when isInOutageMode() is true to avoid losing data.
+ */
+export async function queueOutageWrite(
+  tableName: string,
+  recordId: string,
+  operation: 'INSERT' | 'UPDATE' | 'DELETE',
+  payload: Record<string, unknown>,
+  locationId: string,
+): Promise<void> {
+  try {
+    await masterClient.$executeRawUnsafe(
+      `INSERT INTO "OutageQueueEntry" (id, "tableName", "recordId", operation, payload, "locationId", status, "localSeq", "createdAt")
+       VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, 'pending', EXTRACT(EPOCH FROM NOW())::bigint, NOW())`,
+      tableName,
+      recordId,
+      operation,
+      JSON.stringify(payload),
+      locationId,
+    )
+  } catch (err) {
+    console.error(`[UpstreamSync] Failed to queue outage write for ${tableName}:${recordId}:`, err)
+  }
+}
+
 /** Cached column names per table (loaded once at startup) */
 const columnCache = new Map<string, string[]>()
 /** Cached column PG casts: tableName → columnName → cast expression (e.g., '::timestamptz') */
@@ -165,6 +207,26 @@ async function runSyncCycle(): Promise<void> {
   if (!hasNeonConnection()) return
 
   try {
+    // Quick connectivity check — if Neon is unreachable, bail early
+    try {
+      await neonClient!.$queryRawUnsafe<unknown[]>(`SELECT 1`)
+    } catch (connErr) {
+      consecutiveFailures++
+      metrics.errorCount++
+      if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
+        isInOutage = true
+        console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)
+      }
+      return
+    }
+
+    // Connectivity restored — clear outage if active
+    if (isInOutage) {
+      console.log(`[UpstreamSync] Connectivity restored after ${consecutiveFailures} failures — exiting outage mode`)
+      isInOutage = false
+    }
+    consecutiveFailures = 0
+
     const models = getUpstreamModels()
     let totalSynced = 0
     let totalPending = 0
@@ -214,6 +276,11 @@ async function runSyncCycle(): Promise<void> {
   } catch (err) {
     console.error('[UpstreamSync] Cycle error:', err)
     metrics.errorCount++
+    consecutiveFailures++
+    if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
+      isInOutage = true
+      console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)
+    }
   }
 }
 

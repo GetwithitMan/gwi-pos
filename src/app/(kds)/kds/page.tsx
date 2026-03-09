@@ -294,13 +294,14 @@ function KDSContent() {
       if (loadOrdersDebounceRef.current) clearTimeout(loadOrdersDebounceRef.current)
       loadOrdersDebounceRef.current = setTimeout(() => {
         loadOrders()
-      }, 200)
+      }, 50)
     }
 
     const onOrderReceived = () => debouncedLoadOrders()
     const onItemStatus = () => debouncedLoadOrders()
     const onOrderBumped = () => debouncedLoadOrders()
     const onOrderCreated = () => debouncedLoadOrders()
+    const onOrderClosed = () => debouncedLoadOrders()
     const onDisconnect = () => setSocketConnected(false)
 
     socket.on('connect', onConnect)
@@ -308,6 +309,7 @@ function KDSContent() {
     socket.on('kds:item-status', onItemStatus)
     socket.on('kds:order-bumped', onOrderBumped)
     socket.on('order:created', onOrderCreated)
+    socket.on('order:closed', onOrderClosed)
     socket.on('disconnect', onDisconnect)
 
     if (socket.connected) {
@@ -322,6 +324,7 @@ function KDSContent() {
       socket.off('kds:item-status', onItemStatus)
       socket.off('kds:order-bumped', onOrderBumped)
       socket.off('order:created', onOrderCreated)
+      socket.off('order:closed', onOrderClosed)
       socket.off('disconnect', onDisconnect)
       socketRef.current = null
       releaseSharedSocket()

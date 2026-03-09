@@ -21,9 +21,10 @@ const NO_SOFT_DELETE_MODELS = new Set([
   'BergDevice', 'BergPluMapping', 'BergDispenseEvent',
   'QuickBarPreference', 'QuickBarDefault',
   'DeductionRun', 'PendingDeduction', 'IngredientCostHistory',
-  'InventoryCountEntry', 'MarginEdgeProductMapping', 'MenuItemDailyMetrics',
+  'InventoryCountEntry', 'MarginEdgeProductMapping',
   'PmsChargeAttempt', 'SevenShiftsDailySalesPush', 'WasteLog',
   'ReasonAccess',
+  'OutageQueueEntry', 'FulfillmentEvent', 'BridgeCheckpoint',
 ])
 
 function createPrismaClient(url?: string) {

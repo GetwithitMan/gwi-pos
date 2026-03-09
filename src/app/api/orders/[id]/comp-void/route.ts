@@ -13,6 +13,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -664,10 +665,10 @@ export const POST = withVenue(async function POST(
     }).catch(console.error)
 
     // Dispatch real-time updates (fire-and-forget)
-    dispatchOpenOrdersChanged(order.locationId, {
-      trigger: 'voided',
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'item_updated',
       orderId,
-      tableId: order.tableId || undefined,
+      status: shouldAutoClose ? 'cancelled' : order.status,
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch open orders changed:', err)
     })
@@ -713,6 +714,40 @@ export const POST = withVenue(async function POST(
       }, { async: true }).catch(() => {})
     }
 
+    // BUG 1: If this split child was auto-closed, check if ALL siblings are in terminal states.
+    // If so, the parent order is orphaned in 'split' status — close it too.
+    if (shouldAutoClose && order.parentOrderId) {
+      void (async () => {
+        try {
+          const TERMINAL_STATUSES = ['paid', 'closed', 'cancelled', 'voided']
+          const siblings = await db.order.findMany({
+            where: { parentOrderId: order.parentOrderId!, deletedAt: null },
+            select: { id: true, status: true },
+          })
+          const allTerminal = siblings.length > 0 && siblings.every(s => TERMINAL_STATUSES.includes(s.status))
+          if (allTerminal) {
+            await db.order.update({
+              where: { id: order.parentOrderId! },
+              data: { status: 'cancelled', paidAt: new Date() },
+            })
+            void dispatchOrderClosed(order.locationId, {
+              orderId: order.parentOrderId!,
+              status: 'cancelled',
+              closedAt: new Date().toISOString(),
+              closedByEmployeeId: employeeId,
+              locationId: order.locationId,
+            }, { async: true }).catch(() => {})
+            void dispatchOpenOrdersChanged(order.locationId, {
+              trigger: 'voided',
+              orderId: order.parentOrderId!,
+            }, { async: true }).catch(() => {})
+          }
+        } catch (err) {
+          console.error('[CompVoid] Failed to resolve parent order after all children cancelled:', err)
+        }
+      })()
+    }
+
     // If this was a split child, also dispatch parent order totals update
     if (order.parentOrderId && parentTotals) {
       void dispatchOrderTotalsUpdate(order.locationId, order.parentOrderId, {
@@ -722,6 +757,18 @@ export const POST = withVenue(async function POST(
         discountTotal: parentTotals.discountTotal,
         total: parentTotals.total,
       }, { async: true }).catch(() => {})
+
+      // Queue outage write for parent order totals if Neon is unreachable
+      if (isInOutageMode()) {
+        void queueOutageWrite('Order', order.parentOrderId, 'UPDATE', {
+          id: order.parentOrderId,
+          subtotal: parentTotals.subtotal,
+          taxTotal: parentTotals.taxTotal,
+          total: parentTotals.total,
+          discountTotal: parentTotals.discountTotal,
+          itemCount: parentTotals.itemCount,
+        }, order.locationId).catch(console.error)
+      }
     }
 
     return NextResponse.json({ data: {

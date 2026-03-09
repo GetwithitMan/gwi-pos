@@ -127,7 +127,7 @@ export const POST = withVenue(async function POST(
           commissionTotal: Number(order.commissionTotal || 0),
         }, { async: true }).catch(() => {})
         void dispatchOpenOrdersChanged(order.locationId, {
-          trigger: 'created',
+          trigger: 'item_updated',
           orderId,
         }, { async: true }).catch(() => {})
 
@@ -369,7 +369,7 @@ export const POST = withVenue(async function POST(
       commissionTotal: Number(order.commissionTotal || 0),
     }, { async: true }).catch(() => {})
     void dispatchOpenOrdersChanged(order.locationId, {
-      trigger: 'created',
+      trigger: 'item_updated',
       orderId,
     }, { async: true }).catch(() => {})
 
@@ -578,7 +578,7 @@ export const DELETE = withVenue(async function DELETE(
       commissionTotal: Number(order.commissionTotal || 0),
     }, { async: true }).catch(() => {})
     void dispatchOpenOrdersChanged(order.locationId, {
-      trigger: 'created',
+      trigger: 'item_updated',
       orderId,
     }, { async: true }).catch(() => {})
 

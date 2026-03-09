@@ -2,7 +2,56 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
-import { checkLoginRateLimit, recordLoginFailure } from '@/lib/auth-rate-limiter'
+
+// ── Dedicated rate limiter for PIN verification ────────────────────────────
+// Stricter than login: 5 failed attempts per IP → 5-minute lockout.
+// A 4-digit PIN has only 10,000 combinations — must limit brute-force.
+const PIN_MAX_FAILURES = 5
+const PIN_WINDOW_MS = 5 * 60 * 1000 // 5 minutes
+
+const pinRateMap = new Map<string, { count: number; windowStart: number }>()
+
+function checkPinRateLimit(ip: string): { allowed: boolean; retryAfterSeconds?: number } {
+  const now = Date.now()
+  const entry = pinRateMap.get(ip)
+
+  if (!entry || now - entry.windowStart > PIN_WINDOW_MS) {
+    // Window expired or first attempt — allow
+    return { allowed: true }
+  }
+
+  if (entry.count >= PIN_MAX_FAILURES) {
+    const retryAfterSeconds = Math.ceil((entry.windowStart + PIN_WINDOW_MS - now) / 1000)
+    return { allowed: false, retryAfterSeconds }
+  }
+
+  return { allowed: true }
+}
+
+function recordPinFailure(ip: string): void {
+  const now = Date.now()
+  const entry = pinRateMap.get(ip)
+
+  if (!entry || now - entry.windowStart > PIN_WINDOW_MS) {
+    // Start a new window
+    pinRateMap.set(ip, { count: 1, windowStart: now })
+  } else {
+    entry.count++
+  }
+}
+
+// Clean up stale entries every 60 seconds to prevent memory leaks
+const PIN_CLEANUP_INTERVAL = setInterval(() => {
+  const now = Date.now()
+  for (const [key, entry] of pinRateMap) {
+    if (now - entry.windowStart > PIN_WINDOW_MS) {
+      pinRateMap.delete(key)
+    }
+  }
+}, 60_000)
+if (PIN_CLEANUP_INTERVAL && typeof PIN_CLEANUP_INTERVAL === 'object' && 'unref' in PIN_CLEANUP_INTERVAL) {
+  PIN_CLEANUP_INTERVAL.unref()
+}
 
 /**
  * POST /api/auth/verify-pin
@@ -12,17 +61,19 @@ import { checkLoginRateLimit, recordLoginFailure } from '@/lib/auth-rate-limiter
  *
  * Does NOT create an audit log entry for login - the calling operation
  * should log its own audit entry with the verified employee ID.
+ *
+ * Rate limited: 5 failed attempts per IP per 5 minutes → 429.
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    // Rate limiting (shares limits with login route)
+    // Rate limiting — dedicated to verify-pin (stricter than login)
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       || request.headers.get('x-real-ip')
       || 'unknown'
-    const rateCheck = checkLoginRateLimit(ip)
+    const rateCheck = checkPinRateLimit(ip)
     if (!rateCheck.allowed) {
       return NextResponse.json(
-        { error: rateCheck.reason },
+        { error: 'Too many attempts, try again later' },
         {
           status: 429,
           headers: rateCheck.retryAfterSeconds
@@ -64,7 +115,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
       if (!employee || !employee.isActive || employee.locationId !== locationId) {
-        recordLoginFailure(ip)
+        recordPinFailure(ip)
         return NextResponse.json(
           { error: 'Invalid PIN' },
           { status: 401 }
@@ -72,7 +123,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
       const pinMatch = await compare(pin, employee.pin)
       if (!pinMatch) {
-        recordLoginFailure(ip)
+        recordPinFailure(ip)
         return NextResponse.json(
           { error: 'Invalid PIN' },
           { status: 401 }
@@ -123,7 +174,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (!matchedEmployee) {
-      recordLoginFailure(ip)
+      recordPinFailure(ip)
       return NextResponse.json(
         { error: 'Invalid PIN' },
         { status: 401 }

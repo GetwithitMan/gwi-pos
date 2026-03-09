@@ -43,6 +43,14 @@ const cache = new Map<string, CacheEntry>()
  */
 const CACHE_TTL = 5 * 60 * 1000
 
+/**
+ * Inflight promise maps for request coalescing.
+ * Prevents cache stampede: when TTL expires, only the first request hits the DB;
+ * concurrent requests await the same promise.
+ */
+const inflightLocationId = new Map<string, Promise<string | null>>()
+const inflightSettings = new Map<string, Promise<LocationSettings | null>>()
+
 // ============================================================================
 // LOCATION ID CACHE
 // ============================================================================
@@ -89,18 +97,29 @@ export async function getLocationId(): Promise<string | null> {
     return cached.id
   }
 
-  // Use deterministic ordering so seed data (e.g. 'loc-1') is preferred
-  // over auto-generated cuid IDs if multiple locations somehow exist.
-  // Also prefer locations that have menu items (active venue vs stale shell).
-  const location = await db.location.findFirst({
-    select: { id: true },
-    orderBy: { id: 'asc' },
+  // Coalesce concurrent requests: return the same inflight promise
+  const inflight = inflightLocationId.get(cacheKey)
+  if (inflight) return inflight
+
+  const promise = (async () => {
+    // Use deterministic ordering so seed data (e.g. 'loc-1') is preferred
+    // over auto-generated cuid IDs if multiple locations somehow exist.
+    // Also prefer locations that have menu items (active venue vs stale shell).
+    const location = await db.location.findFirst({
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    })
+
+    const id = location?.id ?? null
+    locationIdCache.set(cacheKey, { id, timestamp: Date.now() })
+
+    return id
+  })().finally(() => {
+    inflightLocationId.delete(cacheKey)
   })
 
-  const id = location?.id ?? null
-  locationIdCache.set(cacheKey, { id, timestamp: now })
-
-  return id
+  inflightLocationId.set(cacheKey, promise)
+  return promise
 }
 
 // ============================================================================
@@ -129,39 +148,51 @@ export async function getLocationSettings(
     return cached.settings
   }
 
-  // Cache miss or expired - fetch from database
-  const location = await db.location.findUnique({
-    where: { id: locationId },
-    select: { settings: true },
-  })
+  // Coalesce concurrent requests: return the same inflight promise
+  const inflight = inflightSettings.get(locationId)
+  if (inflight) return inflight
 
-  const settings = (location?.settings || null) as LocationSettings | null
-
-  // Safety net: if settings.tax.defaultRate is missing, compute live from TaxRule records.
-  // This handles locations where TaxRules exist but settings.tax.defaultRate was never synced.
-  if (location && !settings?.tax?.defaultRate) {
-    const rules = await db.taxRule.findMany({
-      where: { locationId, deletedAt: null, isActive: true },
-      select: { rate: true },
+  const promise = (async () => {
+    // Cache miss or expired - fetch from database
+    const location = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
     })
-    if (rules.length > 0) {
-      const effectiveRate = rules.reduce((sum, rule) => sum + Number(rule.rate), 0)
-      const enriched: LocationSettings = {
-        ...(settings || {}),
-        tax: { ...(settings?.tax || {}), defaultRate: Math.round(effectiveRate * 100 * 10000) / 10000 },
-      }
-      cache.set(locationId, { settings: enriched, timestamp: now })
-      return enriched
-    }
-  }
 
-  // Store in cache
-  cache.set(locationId, {
-    settings,
-    timestamp: now,
+    const settings = (location?.settings || null) as LocationSettings | null
+    const fetchTime = Date.now()
+
+    // Safety net: if settings.tax.defaultRate is missing, compute live from TaxRule records.
+    // This handles locations where TaxRules exist but settings.tax.defaultRate was never synced.
+    if (location && !settings?.tax?.defaultRate) {
+      const rules = await db.taxRule.findMany({
+        where: { locationId, deletedAt: null, isActive: true },
+        select: { rate: true },
+      })
+      if (rules.length > 0) {
+        const effectiveRate = rules.reduce((sum, rule) => sum + Number(rule.rate), 0)
+        const enriched: LocationSettings = {
+          ...(settings || {}),
+          tax: { ...(settings?.tax || {}), defaultRate: Math.round(effectiveRate * 100 * 10000) / 10000 },
+        }
+        cache.set(locationId, { settings: enriched, timestamp: fetchTime })
+        return enriched
+      }
+    }
+
+    // Store in cache
+    cache.set(locationId, {
+      settings,
+      timestamp: fetchTime,
+    })
+
+    return settings
+  })().finally(() => {
+    inflightSettings.delete(locationId)
   })
 
-  return settings
+  inflightSettings.set(locationId, promise)
+  return promise
 }
 
 /**

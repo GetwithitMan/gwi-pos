@@ -4,7 +4,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -98,9 +98,9 @@ export const POST = withVenue(async function POST(
 
     // Move items, recalculate totals, void source, and audit log atomically
     const { movedItems, movedDiscounts } = await db.$transaction(async (tx) => {
-      // Move all items from source to target
+      // Move all active (non-soft-deleted) items from source to target
       const moved = await tx.orderItem.updateMany({
-        where: { orderId: sourceOrderId },
+        where: { orderId: sourceOrderId, deletedAt: null },
         data: { orderId: targetOrderId },
       })
 
@@ -203,7 +203,7 @@ export const POST = withVenue(async function POST(
       reason: `Merged into order #${targetOrder.orderNumber}`,
     }).catch(console.error)
 
-    // Return updated target order
+    // Fetch updated target order for response and totals dispatch
     const updatedOrder = await db.order.findUnique({
       where: { id: targetOrderId },
       include: {
@@ -219,6 +219,15 @@ export const POST = withVenue(async function POST(
         },
       },
     })
+
+    // BUG 4: Dispatch totals update for the target order so terminals showing it get fresh totals
+    void dispatchOrderTotalsUpdate(targetOrder.locationId, targetOrderId, {
+      subtotal: Number(updatedOrder!.subtotal),
+      taxTotal: Number(updatedOrder!.taxTotal),
+      tipTotal: Number(updatedOrder!.tipTotal),
+      discountTotal: Number(updatedOrder!.discountTotal),
+      total: Number(updatedOrder!.total),
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

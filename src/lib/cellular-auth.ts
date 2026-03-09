@@ -77,14 +77,17 @@ function base64urlDecode(str: string): Uint8Array {
 /** Cached secret so we only read from disk once per process lifetime */
 let _cachedSecret: string | null = null
 
+/** Path to persist a generated secret so it survives server restarts */
+const CELLULAR_SECRET_FILE = '/opt/gwi-pos/.cellular-secret'
+
 function getCellularSecret(): string {
   // Fast path: already cached
   if (_cachedSecret) return _cachedSecret
 
-  // Try process.env first (works when systemd EnvironmentFile loads correctly)
+  // Priority 1: Try process.env first (works when systemd EnvironmentFile loads correctly)
   let secret = process.env.CELLULAR_TOKEN_SECRET
 
-  // Fallback: read directly from .env files on disk.
+  // Priority 2: Read directly from .env files on disk.
   // Next.js 16 may sandbox process.env in API routes, so preload.js-set
   // vars can be invisible here. Reading from disk bypasses this entirely.
   if (!secret) {
@@ -104,7 +107,39 @@ function getCellularSecret(): string {
     } catch { /* fs not available (edge runtime) */ }
   }
 
-  if (!secret) throw new Error('[cellular-auth] CELLULAR_TOKEN_SECRET is not set')
+  // Priority 3: Read from persisted secret file (survives restarts)
+  if (!secret) {
+    try {
+      const fs = require('node:fs')
+      secret = (fs.readFileSync(CELLULAR_SECRET_FILE, 'utf8') as string).trim()
+      if (secret) {
+        console.info('[cellular-auth] Loaded secret from persisted file')
+      }
+    } catch { /* file doesn't exist yet */ }
+  }
+
+  // Priority 4: Generate a new secret and persist it to disk
+  if (!secret) {
+    try {
+      const crypto = require('node:crypto')
+      const fs = require('node:fs')
+      secret = (crypto.randomBytes(48) as Buffer).toString('hex')
+      console.warn(
+        '[cellular-auth] CELLULAR_TOKEN_SECRET not set — generated new secret and persisting to',
+        CELLULAR_SECRET_FILE,
+        '(set the env var to avoid this warning)'
+      )
+      try {
+        fs.writeFileSync(CELLULAR_SECRET_FILE, secret, { mode: 0o600 })
+      } catch (writeErr) {
+        console.warn('[cellular-auth] Could not persist secret to file:', writeErr instanceof Error ? writeErr.message : writeErr)
+      }
+    } catch {
+      // crypto/fs not available (edge runtime) — cannot generate
+      throw new Error('[cellular-auth] CELLULAR_TOKEN_SECRET is not set and cannot generate secret in this runtime')
+    }
+  }
+
   _cachedSecret = secret
   return secret
 }

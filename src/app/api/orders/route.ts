@@ -16,6 +16,7 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -545,6 +546,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         },
       },
     })
+
+    // Queue for Neon replay if in outage mode (fire-and-forget)
+    if (isInOutageMode()) {
+      void queueOutageWrite('Order', order.id, 'INSERT', order, locationId).catch(console.error)
+    }
 
     // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
     void emitOrderEvents(locationId, order.id, [

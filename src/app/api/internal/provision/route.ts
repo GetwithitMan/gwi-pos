@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { db, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
 import { PrismaClient, CashHandlingMode, CategoryType } from '@prisma/client'
 import { hash } from 'bcryptjs'
+import { randomInt } from 'crypto'
 import { neon, Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
 import path from 'path'
@@ -110,10 +111,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       datasources: { db: { url: venueDbUrl } },
     })
 
-    let posLocationId: string
+    let seedResult: { locationId: string; ownerPin: string }
     try {
-      posLocationId = await seedVenueDefaults(venueDb, name)
-      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Seeded defaults for ${slug} (locationId: ${posLocationId})`)
+      seedResult = await seedVenueDefaults(venueDb, name)
+      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Seeded defaults for ${slug} (locationId: ${seedResult.locationId})`)
     } finally {
       await venueDb.$disconnect()
     }
@@ -121,7 +122,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return Response.json({
       success: true,
       databaseName: dbName,
-      posLocationId,
+      posLocationId: seedResult.locationId,
+      ownerPin: seedResult.ownerPin,
       slug,
       posUrl: `https://${slug}.ordercontrolcenter.com`,
     })
@@ -138,7 +140,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 // Default venue seed (minimal — just enough to log in and start building)
 // ============================================================================
 
-async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Promise<string> {
+/**
+ * Generate a cryptographically random 4-digit PIN, avoiding easily guessable patterns:
+ * - All same digit (0000, 1111, ..., 9999)
+ * - Sequential ascending (1234, 2345, ..., 6789)
+ * - Sequential descending (9876, 8765, ..., 3210)
+ */
+function generateSecurePin(): string {
+  const BANNED = new Set([
+    '0000', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999',
+    '0123', '1234', '2345', '3456', '4567', '5678', '6789',
+    '9876', '8765', '7654', '6543', '5432', '4321', '3210',
+  ])
+  let pin: string
+  do {
+    pin = String(randomInt(0, 10000)).padStart(4, '0')
+  } while (BANNED.has(pin))
+  return pin
+}
+
+async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Promise<{ locationId: string; ownerPin: string }> {
   // Organization
   const org = await venueDb.organization.create({
     data: { name: venueName },
@@ -217,8 +238,9 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
     createdRoles[r.name] = role.id
   }
 
-  // Owner employee (PIN: 1234)
-  const pinHash = await hash('1234', 10)
+  // Owner employee — random secure PIN (returned to MC for merchant display)
+  const ownerPin = generateSecurePin()
+  const pinHash = await hash(ownerPin, 10)
   const owner = await venueDb.employee.create({
     data: {
       locationId,
@@ -313,5 +335,5 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
     })
   }
 
-  return locationId
+  return { locationId, ownerPin }
 }

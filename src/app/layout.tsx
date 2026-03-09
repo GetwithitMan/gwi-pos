@@ -11,6 +11,8 @@ import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistratio
 import { OfflineDisconnectBanner } from "@/components/OfflineDisconnectBanner";
 import { FailoverBanner } from "@/components/FailoverBanner";
 import { CellularModeBanner } from "@/components/CellularModeBanner";
+import { ManagerAlertListener } from "@/components/ManagerAlertListener";
+import { StockChangeListener } from "@/components/StockChangeListener";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,6 +46,8 @@ export default function RootLayout({
         <KioskExitZone />
         <SystemReloadListener />
         <LocationAlertListener />
+        <ManagerAlertListener />
+        <StockChangeListener />
         <IdleTimerProvider />
         <ServiceWorkerRegistration />
         <OfflineDisconnectBanner />

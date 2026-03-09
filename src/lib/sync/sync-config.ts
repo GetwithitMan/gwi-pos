@@ -7,6 +7,7 @@
 
 export type SyncDirection = 'upstream' | 'downstream' | 'bidirectional' | 'none'
 export type SyncOwner = 'nuc' | 'cloud' | 'both' | 'none'
+export type ConflictStrategy = 'neon-wins' | 'local-wins' | 'latest-wins'
 
 export interface SyncModelConfig {
   direction: SyncDirection
@@ -15,6 +16,8 @@ export interface SyncModelConfig {
   priority: number
   /** Max rows per sync cycle */
   batchSize: number
+  /** Conflict resolution strategy for bidirectional models (default: 'neon-wins') */
+  conflictStrategy?: ConflictStrategy
 }
 
 /**
@@ -29,12 +32,12 @@ export interface SyncModelConfig {
  */
 export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   // ── Bidirectional (NUC ↔ Neon, filtered by lastMutatedBy) ─────────────
-  Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 50 },
-  OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 50 },
-  OrderDiscount:          { direction: 'bidirectional', owner: 'both', priority: 22, batchSize: 100 },
-  OrderCard:              { direction: 'bidirectional', owner: 'both', priority: 24, batchSize: 100 },
-  OrderItemModifier:      { direction: 'bidirectional', owner: 'both', priority: 25, batchSize: 100 },
-  Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 50 },
+  Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 50, conflictStrategy: 'neon-wins' },
+  OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 50, conflictStrategy: 'neon-wins' },
+  OrderDiscount:          { direction: 'bidirectional', owner: 'both', priority: 22, batchSize: 100, conflictStrategy: 'neon-wins' },
+  OrderCard:              { direction: 'bidirectional', owner: 'both', priority: 24, batchSize: 100, conflictStrategy: 'neon-wins' },
+  OrderItemModifier:      { direction: 'bidirectional', owner: 'both', priority: 25, batchSize: 100, conflictStrategy: 'neon-wins' },
+  Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 50, conflictStrategy: 'neon-wins' },
 
   // ── NUC-owned (upstream: NUC → Neon) ──────────────────────────────────
   OrderOwnership:         { direction: 'upstream', owner: 'nuc', priority: 12, batchSize: 100 },
@@ -55,6 +58,16 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   VoidLog:                { direction: 'upstream', owner: 'nuc', priority: 60, batchSize: 100 },
   AuditLog:               { direction: 'upstream', owner: 'nuc', priority: 65, batchSize: 100 },
   ErrorLog:               { direction: 'upstream', owner: 'nuc', priority: 66, batchSize: 100 },
+  TipShare:                  { direction: 'upstream', owner: 'nuc', priority: 67, batchSize: 100 },
+  TipOutRule:                 { direction: 'upstream', owner: 'nuc', priority: 68, batchSize: 50 },
+  TipPool:                    { direction: 'upstream', owner: 'nuc', priority: 69, batchSize: 50 },
+  GiftCardTransaction:        { direction: 'upstream', owner: 'nuc', priority: 70, batchSize: 100 },
+  HouseAccountTransaction:    { direction: 'upstream', owner: 'nuc', priority: 71, batchSize: 100 },
+  RemoteVoidApproval:         { direction: 'upstream', owner: 'nuc', priority: 72, batchSize: 100 },
+  DailyPrepCountTransaction:  { direction: 'upstream', owner: 'nuc', priority: 73, batchSize: 100 },
+  DigitalReceipt:             { direction: 'upstream', owner: 'nuc', priority: 74, batchSize: 100 },
+  BergDispenseEvent:          { direction: 'upstream', owner: 'nuc', priority: 75, batchSize: 100 },
+  CouponRedemption:           { direction: 'upstream', owner: 'nuc', priority: 76, batchSize: 100 },
 
   // ── Cloud-owned (downstream: Neon → NUC) ──────────────────────────────
   Organization:           { direction: 'downstream', owner: 'cloud', priority: 1, batchSize: 10 },
@@ -78,6 +91,9 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   PaymentReader:          { direction: 'downstream', owner: 'cloud', priority: 19, batchSize: 50 },
   Scale:                  { direction: 'downstream', owner: 'cloud', priority: 20, batchSize: 10 },
   Station:                { direction: 'downstream', owner: 'cloud', priority: 21, batchSize: 50 },
+  PricingOptionGroup:     { direction: 'downstream', owner: 'cloud', priority: 22, batchSize: 100 },
+  PricingOption:          { direction: 'downstream', owner: 'cloud', priority: 23, batchSize: 100 },
+  CourseConfig:           { direction: 'downstream', owner: 'cloud', priority: 24, batchSize: 50 },
   Customer:               { direction: 'downstream', owner: 'cloud', priority: 25, batchSize: 100 },
   Coupon:                 { direction: 'downstream', owner: 'cloud', priority: 26, batchSize: 50 },
   DiscountRule:           { direction: 'downstream', owner: 'cloud', priority: 27, batchSize: 50 },
@@ -99,13 +115,28 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   PrepTrayConfig:         { direction: 'downstream', owner: 'cloud', priority: 43, batchSize: 50 },
   TaxRule:                { direction: 'downstream', owner: 'cloud', priority: 44, batchSize: 50 },
   SectionAssignment:      { direction: 'downstream', owner: 'cloud', priority: 45, batchSize: 50 },
+  BergDevice:             { direction: 'downstream', owner: 'cloud', priority: 46, batchSize: 50 },
+  BergPluMapping:         { direction: 'downstream', owner: 'cloud', priority: 47, batchSize: 100 },
+  BottleProduct:          { direction: 'downstream', owner: 'cloud', priority: 48, batchSize: 100 },
+  Invoice:                { direction: 'downstream', owner: 'cloud', priority: 49, batchSize: 100 },
+  InvoiceLineItem:        { direction: 'downstream', owner: 'cloud', priority: 50, batchSize: 100 },
+  Schedule:               { direction: 'downstream', owner: 'cloud', priority: 51, batchSize: 50 },
+  ScheduledShift:         { direction: 'downstream', owner: 'cloud', priority: 52, batchSize: 100 },
+  Event:                  { direction: 'downstream', owner: 'cloud', priority: 53, batchSize: 100 },
+  EventPricingTier:       { direction: 'downstream', owner: 'cloud', priority: 54, batchSize: 50 },
+  EventTableConfig:       { direction: 'downstream', owner: 'cloud', priority: 55, batchSize: 50 },
+  Reservation:            { direction: 'downstream', owner: 'cloud', priority: 56, batchSize: 100 },
 
   // ── Special / None ────────────────────────────────────────────────────
   HardwareCommand:        { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
   CloudEventQueue:        { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
   SyncAuditEntry:         { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
   HealthCheck:            { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
-  PerformanceLog:         { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
+
+  // ── NUC-local operational tables (not synced to Neon) ───────────────
+  FulfillmentEvent:       { direction: 'none', owner: 'nuc', priority: 80, batchSize: 100 },
+  BridgeCheckpoint:       { direction: 'none', owner: 'nuc', priority: 81, batchSize: 10 },
+  OutageQueueEntry:       { direction: 'none', owner: 'nuc', priority: 82, batchSize: 100 },
 }
 
 /** Return upstream models sorted by FK-dependency priority (lowest first).
@@ -131,6 +162,11 @@ export function getBidirectionalModelNames(): Set<string> {
       .filter(([, c]) => c.direction === 'bidirectional')
       .map(([name]) => name)
   )
+}
+
+/** Get the conflict resolution strategy for a model (default: 'neon-wins') */
+export function getConflictStrategy(model: string): ConflictStrategy {
+  return SYNC_MODELS[model]?.conflictStrategy ?? 'neon-wins'
 }
 
 export const UPSTREAM_INTERVAL_MS = parseInt(
