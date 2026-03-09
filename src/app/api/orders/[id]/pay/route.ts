@@ -1269,6 +1269,10 @@ export const POST = withVenue(withTiming(async function POST(
     const paymentEvents: IngestEvent[] = []
     const bridgeOverrides: Record<string, Record<string, unknown>> = {}
 
+    // HA cellular sync — detect mutation origin for Payment stamping
+    const isCellularPayment = request.headers.get('x-cellular-authenticated') === '1'
+    const paymentMutationOrigin = isCellularPayment ? 'cloud' : 'local'
+
     for (const record of allPendingPayments) {
       const rec = record as any
       const paymentId = rec.id || crypto.randomUUID()
@@ -1291,7 +1295,7 @@ export const POST = withVenue(withTiming(async function POST(
       })
 
       // All the extra Payment fields that aren't in the domain event
-      bridgeOverrides[paymentId] = { ...rec }
+      bridgeOverrides[paymentId] = { ...rec, lastMutatedBy: paymentMutationOrigin }
       // Remove fields already in the event payload to avoid conflicts
       delete bridgeOverrides[paymentId].amount
       delete bridgeOverrides[paymentId].tipAmount

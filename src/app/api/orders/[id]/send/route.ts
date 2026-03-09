@@ -9,6 +9,7 @@ import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig, type OriginDevice } from '@/lib/fulfillment-router'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -49,7 +50,7 @@ export const POST = withVenue(withTiming(async function POST(
             where: { deletedAt: null, kitchenStatus: 'pending', isHeld: false },
             include: {
               menuItem: {
-                select: { id: true, name: true, itemType: true, blockTimeMinutes: true }
+                select: { id: true, name: true, itemType: true, blockTimeMinutes: true, fulfillmentType: true, fulfillmentStationId: true }
               }
             }
           }
@@ -181,6 +182,52 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Route order to stations using tag-based routing engine
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)
+
+    // Fulfillment routing — item-level station dispatch for HA cellular architecture (fire-and-forget)
+    void (async () => {
+      try {
+        // Build FulfillmentItem[] from items that were just sent
+        const fulfillmentItems: FulfillmentItem[] = itemsToProcess.map(item => ({
+          id: item.id,
+          menuItemId: item.menuItem?.id || item.menuItemId,
+          name: item.name,
+          quantity: item.quantity,
+          modifiers: [],
+          fulfillmentType: (item.menuItem as any)?.fulfillmentType ?? 'KITCHEN_STATION',
+          fulfillmentStationId: (item.menuItem as any)?.fulfillmentStationId ?? null,
+        }))
+
+        // Build FulfillmentStationConfig[] from location's active stations
+        const stations = await db.station.findMany({
+          where: { locationId: order.locationId, isActive: true, deletedAt: null },
+          select: { id: true, name: true, type: true, tags: true, isDefault: true, isActive: true },
+        })
+        const stationConfigs: FulfillmentStationConfig[] = stations.map(s => ({
+          id: s.id,
+          name: s.name,
+          type: s.type as 'PRINTER' | 'KDS',
+          tags: Array.isArray(s.tags) ? (s.tags as string[]) : [],
+          isDefault: s.isDefault,
+          isActive: s.isActive,
+        }))
+
+        // Determine origin device from cellular header
+        const isCellular = request.headers.get('x-cellular-authenticated') === '1'
+        const originDevice: OriginDevice | undefined = isCellular
+          ? { terminalId: request.headers.get('x-terminal-id') || undefined, type: 'cellular' }
+          : undefined
+
+        await routeOrderFulfillment(
+          { id: order.id, locationId: order.locationId },
+          fulfillmentItems,
+          stationConfigs,
+          new Date().toISOString(),
+          originDevice,
+        )
+      } catch (err) {
+        console.error('[API /orders/[id]/send] Fulfillment routing failed:', err)
+      }
+    })()
 
     // Dispatch real-time socket events to KDS screens (fire and forget)
     void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {

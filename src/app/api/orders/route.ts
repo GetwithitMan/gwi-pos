@@ -34,6 +34,12 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
 
+    // HA cellular sync — detect mutation origin
+    const isCellularOrigin = request.headers.get('x-cellular-authenticated') === '1'
+    const cellularMutationFields = isCellularOrigin
+      ? { lastMutatedBy: 'cloud', originTerminalId: request.headers.get('x-terminal-id') || null }
+      : { lastMutatedBy: 'local', originTerminalId: null as string | null }
+
     // Auth check — require POS access
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
@@ -108,6 +114,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
               notes: notes || null,
               customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
               businessDayDate: businessDayStart,
+              ...cellularMutationFields,
             },
           })
         })
@@ -451,6 +458,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             notes: notes || null,
             customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
             businessDayDate: businessDayStart,
+            ...cellularMutationFields,
             items: {
               create: orderItems,
             },

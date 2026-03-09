@@ -14,6 +14,7 @@
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
 import { getDownstreamModels, getBidirectionalModelNames, DOWNSTREAM_INTERVAL_MS } from './sync-config'
+import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig } from '../fulfillment-router'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -188,9 +189,13 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
         )
       }
 
-      // TODO: Fulfillment routing hook — when a cloud-originated Order arrives
-      // with status change (e.g., 'sent'), trigger fulfillment router.
-      // Task #7 will implement: if (tableName === 'Order') routeToFulfillment(row)
+      // Fulfillment routing hook — when a cloud-originated Order arrives
+      // with status 'sent', trigger fulfillment router on the NUC (fire-and-forget)
+      if (tableName === 'Order' && row.lastMutatedBy === 'cloud' && row.status === 'sent') {
+        void handleCloudFulfillment(row).catch((err) => {
+          console.error('[DownstreamSync] Cloud fulfillment routing failed:', err)
+        })
+      }
 
       // Track max updatedAt for high-water mark
       const rowUpdatedAt = row.updatedAt instanceof Date
@@ -216,6 +221,77 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   }
 
   return synced
+}
+
+/**
+ * Handle fulfillment routing for a cloud-originated order that arrived via downstream sync.
+ * Fetches order items + station config from local PG, then calls routeOrderFulfillment.
+ */
+async function handleCloudFulfillment(row: Record<string, unknown>): Promise<void> {
+  const orderId = row.id as string
+  const locationId = row.locationId as string
+
+  // Fetch order items with fulfillment metadata from local PG
+  const items = await masterClient.$queryRawUnsafe<Array<{
+    id: string
+    menuItemId: string
+    name: string
+    quantity: number
+    fulfillmentType: string | null
+    fulfillmentStationId: string | null
+  }>>(
+    `SELECT oi.id, oi."menuItemId", oi.name, oi.quantity, mi."fulfillmentType", mi."fulfillmentStationId"
+     FROM "OrderItem" oi
+     LEFT JOIN "MenuItem" mi ON mi.id = oi."menuItemId"
+     WHERE oi."orderId" = $1 AND oi."deletedAt" IS NULL AND oi."kitchenStatus" = 'sent'`,
+    orderId
+  )
+
+  if (items.length === 0) return
+
+  // Build FulfillmentItem[]
+  const fulfillmentItems: FulfillmentItem[] = items.map(item => ({
+    id: item.id,
+    menuItemId: item.menuItemId,
+    name: item.name,
+    quantity: item.quantity,
+    modifiers: [],
+    fulfillmentType: (item.fulfillmentType as FulfillmentItem['fulfillmentType']) ?? 'KITCHEN_STATION',
+    fulfillmentStationId: item.fulfillmentStationId ?? null,
+  }))
+
+  // Fetch station config from local PG
+  const stations = await masterClient.$queryRawUnsafe<Array<{
+    id: string
+    name: string
+    type: string
+    tags: unknown
+    isDefault: boolean
+    isActive: boolean
+  }>>(
+    `SELECT id, name, type, tags, "isDefault", "isActive" FROM "Station" WHERE "locationId" = $1 AND "isActive" = true AND "deletedAt" IS NULL`,
+    locationId
+  )
+
+  const stationConfigs: FulfillmentStationConfig[] = stations.map(s => ({
+    id: s.id,
+    name: s.name,
+    type: s.type as 'PRINTER' | 'KDS',
+    tags: Array.isArray(s.tags) ? (s.tags as string[]) : [],
+    isDefault: s.isDefault,
+    isActive: s.isActive,
+  }))
+
+  // Route with cellular origin device type
+  await routeOrderFulfillment(
+    { id: orderId, locationId },
+    fulfillmentItems,
+    stationConfigs,
+    new Date().toISOString(),
+    { terminalId: (row.originTerminalId as string) || undefined, type: 'cellular' },
+  )
+
+  console.log(`[DownstreamSync] Fulfillment routed for cloud order ${orderId} (${items.length} items)`)
 }
 
 async function runDownstreamCycle(): Promise<void> {
