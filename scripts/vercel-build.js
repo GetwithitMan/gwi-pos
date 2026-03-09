@@ -482,31 +482,61 @@ async function runPrePushMigrations() {
       WHERE r.rn > 1
     `
 
+    // Helper: check if a table exists before running a query against it
+    const tableExists = async (tableName) => {
+      const [row] = await sql`
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = ${tableName}
+        LIMIT 1
+      `
+      return !!row
+    }
+
     // Reassign non-cascade FK references from dupe to keeper
+    // These tables always exist:
     await sql`UPDATE "OrderItem" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "OrderItem"."menuItemId" = d.dupe_id`
     await sql`UPDATE "InventoryTransaction" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "InventoryTransaction"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "StockAlert" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "StockAlert"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "TimedSession" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "TimedSession"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "ComboComponent" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ComboComponent"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "ComboSlotItem" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ComboSlotItem"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "ItemBarcode" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ItemBarcode"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "BergPluMapping" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "BergPluMapping"."menuItemId" = d.dupe_id`
-    await sql`UPDATE "OrderSnapshotItem" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "OrderSnapshotItem"."menuItemId" = d.dupe_id`
+    // These tables may not exist in all venue DBs — check first:
+    if (await tableExists('StockAlert')) {
+      await sql`UPDATE "StockAlert" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "StockAlert"."menuItemId" = d.dupe_id`
+    }
+    if (await tableExists('TimedSession')) {
+      await sql`UPDATE "TimedSession" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "TimedSession"."menuItemId" = d.dupe_id`
+    }
+    if (await tableExists('ComboComponent')) {
+      await sql`UPDATE "ComboComponent" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ComboComponent"."menuItemId" = d.dupe_id`
+    }
+    if (await tableExists('ComboSlotItem')) {
+      await sql`UPDATE "ComboSlotItem" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ComboSlotItem"."menuItemId" = d.dupe_id`
+    }
+    if (await tableExists('ItemBarcode')) {
+      await sql`UPDATE "ItemBarcode" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "ItemBarcode"."menuItemId" = d.dupe_id`
+    }
+    if (await tableExists('BergPluMapping')) {
+      await sql`UPDATE "BergPluMapping" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "BergPluMapping"."menuItemId" = d.dupe_id`
+    }
+    if (await tableExists('OrderSnapshotItem')) {
+      await sql`UPDATE "OrderSnapshotItem" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "OrderSnapshotItem"."menuItemId" = d.dupe_id`
+    }
     // ComboTemplate has unique(menuItemId) — delete dupe's template
-    await sql`DELETE FROM "ComboTemplate" ct USING "_mi_dupes" d WHERE ct."menuItemId" = d.dupe_id`
+    if (await tableExists('ComboTemplate')) {
+      await sql`DELETE FROM "ComboTemplate" ct USING "_mi_dupes" d WHERE ct."menuItemId" = d.dupe_id`
+    }
     // MenuItemDailyMetrics has unique(locationId, menuItemId, businessDate) — delete conflicts first
-    await sql`
-      DELETE FROM "MenuItemDailyMetrics" mdm
-      USING "_mi_dupes" d
-      WHERE mdm."menuItemId" = d.dupe_id
-        AND EXISTS (
-          SELECT 1 FROM "MenuItemDailyMetrics" k
-          WHERE k."menuItemId" = d.keeper_id
-            AND k."locationId" = mdm."locationId"
-            AND k."businessDate" = mdm."businessDate"
-        )
-    `
-    await sql`UPDATE "MenuItemDailyMetrics" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "MenuItemDailyMetrics"."menuItemId" = d.dupe_id`
+    if (await tableExists('MenuItemDailyMetrics')) {
+      await sql`
+        DELETE FROM "MenuItemDailyMetrics" mdm
+        USING "_mi_dupes" d
+        WHERE mdm."menuItemId" = d.dupe_id
+          AND EXISTS (
+            SELECT 1 FROM "MenuItemDailyMetrics" k
+            WHERE k."menuItemId" = d.keeper_id
+              AND k."locationId" = mdm."locationId"
+              AND k."businessDate" = mdm."businessDate"
+          )
+      `
+      await sql`UPDATE "MenuItemDailyMetrics" SET "menuItemId" = d.keeper_id FROM "_mi_dupes" d WHERE "MenuItemDailyMetrics"."menuItemId" = d.dupe_id`
+    }
 
     // Delete duplicate MenuItems (cascade handles ModifierGroup, Recipe, PricingOptionGroup, etc.)
     await sql`DELETE FROM "MenuItem" WHERE id IN (SELECT dupe_id FROM "_mi_dupes")`
