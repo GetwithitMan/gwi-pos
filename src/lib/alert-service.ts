@@ -302,6 +302,7 @@ async function sendSlackAlert(payload: AlertPayload): Promise<void> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(slackPayload),
+      signal: AbortSignal.timeout(5000),
     })
 
     if (!response.ok) {

@@ -34,16 +34,27 @@ export interface ApiError extends Error {
 // Base Fetch Wrapper
 // ============================================
 
+/** Default timeout for API requests (30 seconds) */
+const DEFAULT_TIMEOUT_MS = 30_000
+
+interface FetchApiOptions extends RequestInit {
+  /** Request timeout in milliseconds (default: 30000) */
+  timeout?: number
+}
+
 async function fetchApi<T>(
   url: string,
-  options?: RequestInit
+  options?: FetchApiOptions
 ): Promise<T> {
+  const { timeout = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options || {}
+
   const response = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
-      ...options?.headers,
+      ...fetchOptions?.headers,
     },
-    ...options,
+    ...fetchOptions,
+    signal: fetchOptions?.signal ?? AbortSignal.timeout(timeout),
   })
 
   if (!response.ok) {

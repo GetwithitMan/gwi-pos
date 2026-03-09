@@ -194,13 +194,22 @@ async function main() {
       console.log('[Server] Socket.io closed')
     }
 
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => {
-        console.log('[Server] HTTP server closed')
-        resolve()
-      })
+    // Stop accepting new connections. Existing connections stay alive
+    // until they finish or the drain timeout fires.
+    httpServer.close(() => {
+      console.log('[Server] HTTP server closed — all connections drained')
     })
+    console.log('[Server] HTTP server draining in-flight requests (10s max)...')
 
+    // Allow up to 10 seconds for in-flight requests to complete.
+    // If connections don't close naturally, we exit anyway.
+    const drainTimeout = setTimeout(() => {
+      console.warn('[Server] Drain timeout reached — forcing exit')
+      process.exit(0)
+    }, 10_000)
+    drainTimeout.unref()
+
+    // While draining, disconnect background services in parallel
     await masterClient.$disconnect()
     console.log('[Server] Prisma disconnected')
 
@@ -214,6 +223,14 @@ async function main() {
     await disconnectNeon()
     console.log('[Server] Neon client disconnected')
 
+    // If we get here before drain timeout, all services are cleaned up.
+    // Wait for the HTTP server to fully close (connections drained) or
+    // the drain timeout — whichever comes first.
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => resolve())
+    })
+    clearTimeout(drainTimeout)
+    console.log('[Server] Clean shutdown complete')
     process.exit(0)
   }
 

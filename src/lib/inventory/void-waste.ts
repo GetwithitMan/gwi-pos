@@ -2,11 +2,13 @@
  * Waste Path: Voided Items That Were Made
  *
  * Deducts inventory for voided order items when the food was actually prepared.
- * Also includes restore logic for reversing deductions when items are un-voided.
+ * Also includes restore logic for reversing deductions when items are un-voided,
+ * and full-order inventory restoration when all payments are voided/refunded.
  */
 
 import { Decimal } from '@prisma/client/runtime/library'
 import { db } from '@/lib/db'
+import type { PrismaClient } from '@prisma/client'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
@@ -75,6 +77,114 @@ export async function restoreInventoryForRestoredItem(
   } catch (error) {
     console.error('[Inventory] Failed to restore inventory for restored item:', error)
     return { success: false, itemsRestored: 0 }
+  }
+}
+
+/**
+ * Restore all inventory deductions for an entire order.
+ *
+ * Called when all payments on an order are voided or fully refunded, meaning
+ * the sale is fully reversed. Finds all `type: 'sale'` transactions created
+ * by `deductInventoryForOrder()` and creates compensating `type: 'adjustment'`
+ * transactions to restore the stock.
+ *
+ * Idempotent: if a restoration has already been performed (matching
+ * `referenceType: 'order_reversal'` transactions exist), it will not
+ * double-restore.
+ *
+ * @param orderId - The order whose sale deductions should be reversed
+ * @param locationId - The location for the new adjustment transactions
+ * @param prisma - Optional PrismaClient to use (defaults to global `db`)
+ */
+export async function restoreInventoryForOrder(
+  orderId: string,
+  locationId: string,
+  prisma?: PrismaClient,
+): Promise<{ success: boolean; itemsRestored: number; totalCostRestored: number }> {
+  const client = prisma ?? db
+  try {
+    // Idempotency: check if we already restored for this order
+    const existingReversal = await (client as any).inventoryItemTransaction.findFirst({
+      where: {
+        referenceType: 'order_reversal',
+        referenceId: orderId,
+      },
+      select: { id: true },
+    })
+
+    if (existingReversal) {
+      console.log(`[Inventory] Skipping restoration for order ${orderId} — already reversed`)
+      return { success: true, itemsRestored: 0, totalCostRestored: 0 }
+    }
+
+    // Find all sale transactions for this order
+    const saleTransactions = await (client as any).inventoryItemTransaction.findMany({
+      where: {
+        referenceType: 'order',
+        referenceId: orderId,
+        type: 'sale',
+      },
+      include: {
+        inventoryItem: {
+          select: { id: true, currentStock: true },
+        },
+      },
+    })
+
+    if (saleTransactions.length === 0) {
+      return { success: true, itemsRestored: 0, totalCostRestored: 0 }
+    }
+
+    // Execute all restorations atomically in an interactive transaction
+    let totalCostRestored = 0
+
+    await (client as any).$transaction(async (tx: any) => {
+      for (const saleTx of saleTransactions) {
+        const restoreQty = Math.abs(toNumber(saleTx.quantityChange))
+        const unitCost = toNumber(saleTx.unitCost)
+
+        // Increment stock
+        const updated = await tx.inventoryItem.update({
+          where: { id: saleTx.inventoryItemId },
+          data: { currentStock: { increment: restoreQty } },
+          select: { currentStock: true },
+        })
+
+        // Post-increment stock is the authoritative "after" value
+        const quantityAfter = toNumber(updated.currentStock)
+        const quantityBefore = quantityAfter - restoreQty
+        const totalCost = restoreQty * unitCost
+
+        // Create compensating adjustment transaction
+        await tx.inventoryItemTransaction.create({
+          data: {
+            locationId,
+            inventoryItemId: saleTx.inventoryItemId,
+            type: 'adjustment',
+            quantityBefore,
+            quantityChange: restoreQty,
+            quantityAfter,
+            unitCost,
+            totalCost: -(totalCost),
+            reason: `Restored: all payments voided/refunded (reversal of sale txn ${saleTx.id})`,
+            referenceType: 'order_reversal',
+            referenceId: orderId,
+          },
+        })
+
+        totalCostRestored += totalCost
+      }
+    })
+
+    console.log(
+      `[Inventory] Restored ${saleTransactions.length} deductions for order ${orderId}, ` +
+      `total cost restored: $${totalCostRestored.toFixed(2)}`
+    )
+
+    return { success: true, itemsRestored: saleTransactions.length, totalCostRestored }
+  } catch (error) {
+    console.error('[Inventory] Failed to restore inventory for order:', error)
+    return { success: false, itemsRestored: 0, totalCostRestored: 0 }
   }
 }
 

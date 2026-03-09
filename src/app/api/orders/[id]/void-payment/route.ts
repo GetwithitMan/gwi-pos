@@ -8,6 +8,7 @@ import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 
 /**
  * Voids a payment — handles both Datacap (card) and DB in a single atomic flow.
@@ -253,6 +254,13 @@ export const POST = withVenue(async function POST(
         // tip allocation, or legacy payment), this is expected. Log but don't fail.
         console.warn('[void-payment] Tip chargeback skipped or failed:', err.message)
       })
+    }
+
+    // Restore inventory deductions when ALL payments on the order are voided.
+    // The original sale deductions from deductInventoryForOrder() are reversed
+    // so stock levels reflect the fully-reversed sale. Fire-and-forget.
+    if (newOrderStatus === 'voided') {
+      void restoreInventoryForOrder(orderId, order.locationId).catch(console.error)
     }
 
     return NextResponse.json({

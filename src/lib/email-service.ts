@@ -86,6 +86,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
         text: options.text,
         reply_to: options.replyTo,
       }),
+      signal: AbortSignal.timeout(10_000),
     })
 
     const data = await response.json()

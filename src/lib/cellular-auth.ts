@@ -48,6 +48,9 @@ const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000
 /** Rate limit: max requests per second per terminal */
 const RATE_LIMIT_PER_SECOND = 10
 
+/** Max size for rateLimitBuckets before evicting oldest entries */
+const MAX_RATE_LIMIT_BUCKETS = 10_000
+
 // ═══════════════════════════════════════════════════════════
 // Base64url helpers (same pattern as cloud-auth.ts)
 // ═══════════════════════════════════════════════════════════
@@ -311,6 +314,20 @@ export function checkRateLimit(terminalId: string): boolean {
   if (!bucket || now - bucket.windowStart > 1000) {
     // New window
     rateLimitBuckets.set(terminalId, { count: 1, windowStart: now })
+
+    // Evict oldest entries if map exceeds size cap
+    if (rateLimitBuckets.size > MAX_RATE_LIMIT_BUCKETS) {
+      let oldest: string | null = null
+      let oldestTime = Infinity
+      for (const [id, b] of rateLimitBuckets) {
+        if (b.windowStart < oldestTime) {
+          oldestTime = b.windowStart
+          oldest = id
+        }
+      }
+      if (oldest) rateLimitBuckets.delete(oldest)
+    }
+
     return true
   }
 

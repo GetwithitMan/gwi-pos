@@ -36,6 +36,7 @@ export async function emitCloudEvent(eventType: string, payload: unknown): Promi
       method: 'POST',
       headers,
       body: bodyString,
+      signal: AbortSignal.timeout(5000),
     })
 
     if (!res.ok) {

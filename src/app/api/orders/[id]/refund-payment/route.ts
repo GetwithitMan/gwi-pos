@@ -8,6 +8,9 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -29,7 +32,11 @@ export const POST = withVenue(async function POST(
     // Fetch order
     const order = await db.order.findUnique({
       where: { id, deletedAt: null },
-      select: { id: true, locationId: true, orderNumber: true, status: true, deletedAt: true },
+      select: {
+        id: true, locationId: true, orderNumber: true, status: true, deletedAt: true,
+        tableId: true, tabName: true, guestCount: true, employeeId: true, itemCount: true,
+        subtotal: true, taxTotal: true, tipTotal: true, discountTotal: true, total: true,
+      },
     })
 
     if (!order) {
@@ -187,6 +194,49 @@ export const POST = withVenue(async function POST(
       employeeId: managerId,
     })
 
+    // Dispatch socket events for cross-terminal sync (fire-and-forget)
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'payment_updated',
+      orderId: id,
+      tableId: order.tableId || undefined,
+    }, { async: true }).catch(console.error)
+
+    void dispatchOrderTotalsUpdate(order.locationId, id, {
+      subtotal: Number(order.subtotal),
+      taxTotal: Number(order.taxTotal),
+      tipTotal: Number(order.tipTotal),
+      discountTotal: Number(order.discountTotal),
+      total: Number(order.total),
+    }, { async: true }).catch(console.error)
+
+    void dispatchOrderSummaryUpdated(order.locationId, {
+      orderId: id,
+      orderNumber: order.orderNumber ?? 0,
+      status: order.status,
+      tableId: order.tableId || null,
+      tableName: null,
+      tabName: order.tabName || null,
+      guestCount: order.guestCount ?? 0,
+      employeeId: order.employeeId || null,
+      subtotalCents: Math.round(Number(order.subtotal) * 100),
+      taxTotalCents: Math.round(Number(order.taxTotal) * 100),
+      discountTotalCents: Math.round(Number(order.discountTotal) * 100),
+      tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+      totalCents: Math.round(Number(order.total) * 100),
+      itemCount: order.itemCount ?? 0,
+      updatedAt: new Date().toISOString(),
+      locationId: order.locationId,
+    }, { async: true }).catch(console.error)
+
+    // Queue outage write if Neon is unreachable (fire-and-forget)
+    if (isInOutageMode()) {
+      void queueOutageWrite('Payment', paymentId, 'UPDATE', {
+        id: paymentId,
+        status: isPartial ? 'completed' : 'refunded',
+        refundedAmount: totalAlreadyRefunded + refundAmount,
+      }, order.locationId).catch(console.error)
+    }
+
     // Bug 8: Proportional tip reduction on partial/full refund (fire-and-forget)
     const paymentTipAmount = Number(payment.tipAmount)
     const paymentOriginalAmount = Number(payment.amount)
@@ -228,6 +278,28 @@ export const POST = withVenue(async function POST(
           console.warn('[refund-payment] Tip chargeback skipped or failed:', err.message)
         })
       }
+    }
+
+    // Restore inventory deductions when a FULL refund leaves no active payments.
+    // Check all payments on the order: if every one is now voided or fully refunded,
+    // the sale is fully reversed and stock should be restored. Fire-and-forget.
+    if (!isPartial) {
+      void (async () => {
+        try {
+          const allPayments = await db.payment.findMany({
+            where: { orderId: id, deletedAt: null },
+            select: { id: true, status: true },
+          })
+          const hasActivePayments = allPayments.some(
+            (p) => p.status !== 'voided' && p.status !== 'refunded'
+          )
+          if (!hasActivePayments) {
+            await restoreInventoryForOrder(id, order.locationId)
+          }
+        } catch (err) {
+          console.error('[refund-payment] Failed to restore inventory:', err)
+        }
+      })()
     }
 
     return NextResponse.json({

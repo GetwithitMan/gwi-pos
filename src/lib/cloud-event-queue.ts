@@ -99,6 +99,7 @@ async function processQueue(): Promise<void> {
           method: 'POST',
           headers,
           body: bodyString,
+          signal: AbortSignal.timeout(5000),
         })
 
         if (!res.ok) {
