@@ -32,9 +32,10 @@ export function useAuthenticationGuard(options?: AuthGuardOptions) {
   // Using onFinishHydration guarantees the real auth state is present before
   // the redirect guard runs, preventing false logouts on page refresh.
   const [hydrated, setHydrated] = useState(
-    () => useAuthStore.persist.hasHydrated()
+    () => useAuthStore.persist?.hasHydrated?.() ?? false
   )
   useEffect(() => {
+    if (!useAuthStore.persist) return
     if (useAuthStore.persist.hasHydrated()) {
       setHydrated(true)
       return
