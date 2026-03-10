@@ -835,6 +835,189 @@ export interface LocationSettings {
   payrollExport?: PayrollExportSettings             // Payroll data export (ADP/Gusto/Paychex/CSV) (optional for backward compat)
   catering?: CateringSettings                       // Catering order management (optional for backward compat)
   hardwareLimits?: HardwareLimitsSettings            // Per-device and per-transaction limits (optional for backward compat)
+  upsellPrompts?: UpsellPromptSettings               // Upsell prompt rules configuration (optional for backward compat)
+  invoicing?: InvoicingSettings                       // B2B customer invoicing system (optional for backward compat)
+  marketing?: MarketingSettings                       // Email/SMS marketing campaigns (optional for backward compat)
+  thirdPartyDelivery?: ThirdPartyDeliverySettings     // DoorDash/UberEats/Grubhub delivery integration (optional for backward compat)
+  hostView?: HostViewSettings                         // Host management station — seating, waitlist, server rotation (optional for backward compat)
+  delivery?: DeliverySettings                         // In-house delivery management (optional for backward compat)
+}
+
+// ─── Host View Settings ─────────────────────────────────────────────────────
+
+export interface HostViewSettings {
+  enabled: boolean                // Master toggle (default: false)
+  showWaitTimes: boolean          // Show estimated wait times (default: true)
+  showServerLoad: boolean         // Show # of tables per server (default: true)
+  autoRotateServers: boolean      // Round-robin seat assignment (default: true)
+  sectionBased: boolean           // Assign by section (default: true)
+  quotedWaitMultiplier: number    // Multiply estimated wait for customer-facing quote (default: 1.2)
+}
+
+export const DEFAULT_HOST_VIEW: HostViewSettings = {
+  enabled: false,
+  showWaitTimes: true,
+  showServerLoad: true,
+  autoRotateServers: true,
+  sectionBased: true,
+  quotedWaitMultiplier: 1.2,
+}
+
+// ─── Delivery Management Settings ───────────────────────────────────────────
+
+export interface DeliverySettings {
+  enabled: boolean              // Master toggle (default: false)
+  deliveryFee: number           // Default delivery fee in dollars (default: 5.00)
+  freeDeliveryMinimum: number   // Order minimum for free delivery, 0 = no free delivery (default: 0)
+  maxDeliveryRadius: number     // Maximum delivery radius in miles (default: 10)
+  estimatedDeliveryMinutes: number // Estimated delivery time in minutes (default: 45)
+  requirePhone: boolean         // Require phone number for delivery orders (default: true)
+  requireAddress: boolean       // Require address for delivery orders (default: true)
+  maxActiveDeliveries: number   // Maximum concurrent active deliveries (default: 20)
+}
+
+export const DEFAULT_DELIVERY: DeliverySettings = {
+  enabled: false,
+  deliveryFee: 5.00,
+  freeDeliveryMinimum: 0,
+  maxDeliveryRadius: 10,
+  estimatedDeliveryMinutes: 45,
+  requirePhone: true,
+  requireAddress: true,
+  maxActiveDeliveries: 20,
+}
+
+// ─── Third-Party Delivery Settings ──────────────────────────────────────────
+
+export interface ThirdPartyDeliveryPlatformSettings {
+  enabled: boolean
+  storeId: string                // DoorDash/UberEats storeId or Grubhub restaurantId
+  webhookSecret: string          // HMAC secret for webhook signature validation
+  autoAccept: boolean            // Auto-accept incoming orders (skip manual review)
+  prepTimeMinutes: number        // Default prep time communicated to platform
+}
+
+export interface ThirdPartyDeliveryUberEatsSettings extends ThirdPartyDeliveryPlatformSettings {
+  clientId: string               // UberEats OAuth client ID (for future API calls)
+}
+
+export interface ThirdPartyDeliverySettings {
+  doordash: ThirdPartyDeliveryPlatformSettings
+  ubereats: ThirdPartyDeliveryUberEatsSettings
+  grubhub: ThirdPartyDeliveryPlatformSettings
+  autoPrintTicket: boolean       // Auto-print kitchen ticket on new delivery order
+  alertOnNewOrder: boolean       // Sound alert on new delivery order
+  defaultTaxRate: number         // Override tax rate for delivery orders (0 = use location default)
+}
+
+export const DEFAULT_THIRD_PARTY_DELIVERY: ThirdPartyDeliverySettings = {
+  doordash: {
+    enabled: false,
+    storeId: '',
+    webhookSecret: '',
+    autoAccept: false,
+    prepTimeMinutes: 20,
+  },
+  ubereats: {
+    enabled: false,
+    storeId: '',
+    clientId: '',
+    webhookSecret: '',
+    autoAccept: false,
+    prepTimeMinutes: 20,
+  },
+  grubhub: {
+    enabled: false,
+    storeId: '',
+    webhookSecret: '',
+    autoAccept: false,
+    prepTimeMinutes: 20,
+  },
+  autoPrintTicket: true,
+  alertOnNewOrder: true,
+  defaultTaxRate: 0,
+}
+
+// ─── Marketing Campaign Settings ────────────────────────────────────────────
+
+export interface MarketingSettings {
+  enabled: boolean              // Master toggle (default: false)
+  smsEnabled: boolean           // Allow SMS campaigns (default: false)
+  emailEnabled: boolean         // Allow email campaigns (default: true)
+  senderName: string            // From name for emails (default: '')
+  unsubscribeUrl: string        // Required for CAN-SPAM (default: '')
+  maxSmsPerDay: number          // Daily SMS send limit (default: 500)
+  maxEmailsPerDay: number       // Daily email send limit (default: 2000)
+  defaultSegments: string[]     // Available audience segments
+}
+
+export const DEFAULT_MARKETING: MarketingSettings = {
+  enabled: false,
+  smsEnabled: false,
+  emailEnabled: true,
+  senderName: '',
+  unsubscribeUrl: '',
+  maxSmsPerDay: 500,
+  maxEmailsPerDay: 2000,
+  defaultSegments: ['all', 'vip', 'new', 'inactive', 'birthday'],
+}
+
+// ─── Upsell Prompts Settings ────────────────────────────────────────────────
+
+export interface UpsellPromptSettings {
+  enabled: boolean                    // Master toggle (default: false)
+  maxPromptsPerOrder: number          // Max suggestions shown per order (default: 3)
+  showOnItemAdd: boolean              // Show upsell prompt when item is added (default: true)
+  showBeforeSend: boolean             // Show upsell prompt before sending to kitchen (default: false)
+  dismissCooldownMinutes: number      // Minutes before showing same prompt again after dismiss (default: 0)
+}
+
+export const DEFAULT_UPSELL_PROMPTS: UpsellPromptSettings = {
+  enabled: false,
+  maxPromptsPerOrder: 3,
+  showOnItemAdd: true,
+  showBeforeSend: false,
+  dismissCooldownMinutes: 0,
+}
+
+// ─── B2B Invoicing Settings ─────────────────────────────────────────────────
+
+export interface InvoicingCompanyInfo {
+  name: string
+  address: string
+  phone: string
+  email: string
+  taxId: string
+}
+
+export interface InvoicingSettings {
+  enabled: boolean                    // Master toggle (default: false)
+  defaultPaymentTermsDays: number     // Default net payment terms in days (default: 30)
+  defaultTaxRate: number              // Override tax rate for invoices, 0 = no tax (default: 0)
+  autoNumberPrefix: string            // Prefix for auto-generated invoice numbers (default: 'INV')
+  nextInvoiceNumber: number           // Next sequential invoice number (default: 1001)
+  companyInfo: InvoicingCompanyInfo   // Company info printed on invoices
+  lateFeePercent: number              // Monthly late fee percentage, 0 = disabled (default: 0)
+  reminderDays: number[]              // Days before due date to send reminders (default: [7, 3, 1])
+}
+
+export const DEFAULT_INVOICING_COMPANY_INFO: InvoicingCompanyInfo = {
+  name: '',
+  address: '',
+  phone: '',
+  email: '',
+  taxId: '',
+}
+
+export const DEFAULT_INVOICING: InvoicingSettings = {
+  enabled: false,
+  defaultPaymentTermsDays: 30,
+  defaultTaxRate: 0,
+  autoNumberPrefix: 'INV',
+  nextInvoiceNumber: 1001,
+  companyInfo: { ...DEFAULT_INVOICING_COMPANY_INFO },
+  lateFeePercent: 0,
+  reminderDays: [7, 3, 1],
 }
 
 // ─── Printer Failover Settings ──────────────────────────────────────────────
@@ -1622,6 +1805,30 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     hardwareLimits: partial.hardwareLimits
       ? { ...DEFAULT_HARDWARE_LIMITS, ...partial.hardwareLimits }
+      : undefined,
+    upsellPrompts: partial.upsellPrompts
+      ? { ...DEFAULT_UPSELL_PROMPTS, ...partial.upsellPrompts }
+      : undefined,
+    invoicing: partial.invoicing
+      ? { ...DEFAULT_INVOICING, ...partial.invoicing, companyInfo: { ...DEFAULT_INVOICING_COMPANY_INFO, ...partial.invoicing.companyInfo }, reminderDays: partial.invoicing.reminderDays ?? DEFAULT_INVOICING.reminderDays }
+      : undefined,
+    marketing: partial.marketing
+      ? { ...DEFAULT_MARKETING, ...partial.marketing, defaultSegments: partial.marketing.defaultSegments ?? DEFAULT_MARKETING.defaultSegments }
+      : undefined,
+    thirdPartyDelivery: partial.thirdPartyDelivery
+      ? {
+          ...DEFAULT_THIRD_PARTY_DELIVERY,
+          ...partial.thirdPartyDelivery,
+          doordash: { ...DEFAULT_THIRD_PARTY_DELIVERY.doordash, ...partial.thirdPartyDelivery.doordash },
+          ubereats: { ...DEFAULT_THIRD_PARTY_DELIVERY.ubereats, ...partial.thirdPartyDelivery.ubereats },
+          grubhub: { ...DEFAULT_THIRD_PARTY_DELIVERY.grubhub, ...partial.thirdPartyDelivery.grubhub },
+        }
+      : undefined,
+    hostView: partial.hostView
+      ? { ...DEFAULT_HOST_VIEW, ...partial.hostView }
+      : undefined,
+    delivery: partial.delivery
+      ? { ...DEFAULT_DELIVERY, ...partial.delivery }
       : undefined,
   }
 }

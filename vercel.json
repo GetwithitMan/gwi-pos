@@ -7,6 +7,7 @@
     { "path": "/api/cron/marginedge-sync", "schedule": "0 8 * * *" },
     { "path": "/api/cron/process-deductions", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/berg-reprocess", "schedule": "* * * * *" },
-    { "path": "/api/cron/entertainment-expiry", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/entertainment-expiry", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/eod-batch-close", "schedule": "*/5 * * * *" }
   ]
 }

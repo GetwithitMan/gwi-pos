@@ -1,0 +1,113 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
+
+interface RulePerformanceRow {
+  upsellRuleId: string
+  ruleName: string
+  timesShown: bigint
+  timesAccepted: bigint
+  timesDismissed: bigint
+  revenueGenerated: string | null
+}
+
+interface OverallRow {
+  totalShown: bigint
+  totalAccepted: bigint
+  totalDismissed: bigint
+  totalRevenue: string | null
+  uniqueOrders: bigint
+}
+
+// GET — Upsell analytics report with per-rule and overall metrics
+export const GET = withVenue(async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams
+    const locationId = searchParams.get('locationId')
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+    }
+
+    // Default to last 30 days
+    const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const end = endDate ? new Date(endDate + 'T23:59:59.999Z') : new Date()
+
+    // Per-rule performance
+    const perRule = await db.$queryRawUnsafe<RulePerformanceRow[]>(`
+      SELECT
+        e."upsellRuleId",
+        r."name" as "ruleName",
+        COUNT(*) FILTER (WHERE e."action" = 'shown') as "timesShown",
+        COUNT(*) FILTER (WHERE e."action" = 'accepted') as "timesAccepted",
+        COUNT(*) FILTER (WHERE e."action" = 'dismissed') as "timesDismissed",
+        COALESCE(SUM(e."addedAmount") FILTER (WHERE e."action" = 'accepted'), 0) as "revenueGenerated"
+      FROM "UpsellEvent" e
+      JOIN "UpsellRule" r ON e."upsellRuleId" = r."id"
+      WHERE e."locationId" = $1
+        AND e."createdAt" >= $2
+        AND e."createdAt" <= $3
+        AND e."deletedAt" IS NULL
+      GROUP BY e."upsellRuleId", r."name"
+      ORDER BY "timesAccepted" DESC
+    `, locationId, start, end)
+
+    // Overall metrics
+    const overall = await db.$queryRawUnsafe<OverallRow[]>(`
+      SELECT
+        COUNT(*) FILTER (WHERE "action" = 'shown') as "totalShown",
+        COUNT(*) FILTER (WHERE "action" = 'accepted') as "totalAccepted",
+        COUNT(*) FILTER (WHERE "action" = 'dismissed') as "totalDismissed",
+        COALESCE(SUM("addedAmount") FILTER (WHERE "action" = 'accepted'), 0) as "totalRevenue",
+        COUNT(DISTINCT "orderId") FILTER (WHERE "action" = 'accepted') as "uniqueOrders"
+      FROM "UpsellEvent"
+      WHERE "locationId" = $1
+        AND "createdAt" >= $2
+        AND "createdAt" <= $3
+        AND "deletedAt" IS NULL
+    `, locationId, start, end)
+
+    const overallData = overall[0] || {
+      totalShown: BigInt(0),
+      totalAccepted: BigInt(0),
+      totalDismissed: BigInt(0),
+      totalRevenue: '0',
+      uniqueOrders: BigInt(0),
+    }
+
+    const totalShown = Number(overallData.totalShown)
+    const totalAccepted = Number(overallData.totalAccepted)
+
+    return NextResponse.json({
+      data: {
+        dateRange: { start: start.toISOString(), end: end.toISOString() },
+        overall: {
+          totalShown,
+          totalAccepted,
+          totalDismissed: Number(overallData.totalDismissed),
+          conversionRate: totalShown > 0 ? Math.round((totalAccepted / totalShown) * 10000) / 100 : 0,
+          totalRevenue: Number(overallData.totalRevenue || 0),
+          uniqueOrdersWithUpsell: Number(overallData.uniqueOrders),
+        },
+        byRule: perRule.map(r => {
+          const shown = Number(r.timesShown)
+          const accepted = Number(r.timesAccepted)
+          return {
+            ruleId: r.upsellRuleId,
+            ruleName: r.ruleName,
+            timesShown: shown,
+            timesAccepted: accepted,
+            timesDismissed: Number(r.timesDismissed),
+            conversionRate: shown > 0 ? Math.round((accepted / shown) * 10000) / 100 : 0,
+            revenueGenerated: Number(r.revenueGenerated || 0),
+          }
+        }),
+      },
+    })
+  } catch (error) {
+    console.error('Failed to generate upsell analytics:', error)
+    return NextResponse.json({ error: 'Failed to generate upsell analytics' }, { status: 500 })
+  }
+})

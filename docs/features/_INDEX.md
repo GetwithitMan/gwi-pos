@@ -138,7 +138,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | Feature | Doc | Status | Repos | Top Dependencies |
 |---------|-----|--------|-------|-----------------|
 | **Multi-Location Management** | [multi-location.md](multi-location.md) | Planned | mission-control, pos | Settings, Menu, Employees, Reports |
-| **Invoicing & B2B** | [invoicing.md](invoicing.md) | Planned | pos | Customers, Payments, Reports |
+| **Invoicing & B2B** | [invoicing.md](invoicing.md) | Active | pos | Customers, Payments, Reports |
 | **Hotel PMS Integration (Oracle OPERA)** | [hotel-pms.md](hotel-pms.md) | Active | pos | Payments, Orders, Settings |
 | **7shifts Labor Integration** | [7shifts-integration.md](7shifts-integration.md) | Active | pos | Employees, Scheduling, Time Clock, Settings |
 | **MarginEdge Integration** | [marginedge-integration.md](marginedge-integration.md) | Active | pos | Inventory, Vendors, Settings |

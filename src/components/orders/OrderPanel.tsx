@@ -10,6 +10,7 @@ import { roundToCents } from '@/lib/pricing'
 import { OrderDelayBanner } from './OrderDelayBanner'
 import { ConflictBanner } from './ConflictBanner'
 import { ComboSuggestionBanner } from './ComboSuggestionBanner'
+import { UpsellPromptBanner } from './UpsellPromptBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import { CustomerLookupModal } from '@/components/customers/CustomerLookupModal'
 import { getSharedSocket } from '@/lib/shared-socket'
@@ -159,6 +160,8 @@ export interface OrderPanelProps {
   onQuickSplitEvenly?: (numWays: number) => void
   onTransferItems?: () => void
   onMergeOrders?: () => void
+  // Upsell prompt integration
+  onAddUpsellItem?: (menuItemId: string) => void
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -286,6 +289,8 @@ export const OrderPanel = memo(function OrderPanel({
   onQuickSplitEvenly,
   onTransferItems,
   onMergeOrders,
+  // Upsell prompt integration
+  onAddUpsellItem,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -1875,6 +1880,17 @@ export const OrderPanel = memo(function OrderPanel({
           orderId={orderId ?? null}
           itemCount={pendingItems.length}
           hasSentItems={!!hasSentItems}
+        />
+      )}
+
+      {/* Upsell prompt banner */}
+      {hasItems && (
+        <UpsellPromptBanner
+          orderId={orderId ?? null}
+          locationId={locationId}
+          employeeId={employeeId}
+          itemCount={items.length}
+          onAddItem={onAddUpsellItem}
         />
       )}
 

@@ -1550,3 +1550,51 @@ export async function dispatchPrintJobFailed(
 
   return doEmit()
 }
+
+/**
+ * Dispatch delivery order update event
+ *
+ * Emitted when a delivery order is created, status changed, or driver assigned.
+ * Listened by the delivery dashboard for real-time updates.
+ */
+export async function dispatchDeliveryUpdated(
+  locationId: string,
+  payload: {
+    action: string
+    deliveryId: string
+    status?: string
+    driverId?: string | null
+    driverName?: string | null
+  }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'delivery:updated', payload)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch delivery:updated:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch host view update event
+ *
+ * Emitted when seating, rotation, or table status changes from host view.
+ * Notifies all terminals of floor state changes.
+ */
+export async function dispatchHostViewUpdated(
+  locationId: string,
+  payload: {
+    action: string
+    tableId?: string
+    serverId?: string
+  }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'host:updated', payload)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch host:updated:', error)
+    return false
+  }
+}
