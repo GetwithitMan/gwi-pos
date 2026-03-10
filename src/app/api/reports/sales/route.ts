@@ -80,6 +80,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 select: { id: true, name: true, categoryId: true },
               },
               modifiers: {
+                where: { deletedAt: null },
                 select: { id: true, name: true, price: true, modifierId: true },
               },
             },
