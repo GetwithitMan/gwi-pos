@@ -125,6 +125,9 @@ export default function ClosedOrdersPage() {
   const [adjustTipOrder, setAdjustTipOrder] = useState<ClosedOrder | null>(null)
   const [adjustTipPayment, setAdjustTipPayment] = useState<ClosedOrderPayment | null>(null)
 
+  // Reprint state
+  const [reprintingOrderId, setReprintingOrderId] = useState<string | null>(null)
+
   // ─── Fetch employees for filter dropdown ─────────────────────────────────
   useEffect(() => {
     if (!locationId) return
@@ -249,6 +252,28 @@ ${paymentRows}
 <button onclick="window.print()" style="display:block;margin:20px auto;padding:8px 24px;cursor:pointer;">Print</button>
 </body></html>`)
     win.document.close()
+  }
+
+  const handleReprintToReceiptPrinter = async (order: ClosedOrder) => {
+    setReprintingOrderId(order.id)
+    try {
+      const response = await fetch('/api/print/receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: order.id }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to print receipt')
+        return
+      }
+      const result = await response.json()
+      toast.success(`Receipt sent to ${result.data?.printerName || 'printer'}`)
+    } catch {
+      toast.error('Failed to print receipt')
+    } finally {
+      setReprintingOrderId(null)
+    }
   }
 
   // ─── Summary stats ───────────────────────────────────────────────────────
@@ -451,6 +476,15 @@ ${paymentRows}
                               <Button
                                 variant="outline"
                                 size="sm"
+                                onClick={() => handleReprintToReceiptPrinter(order)}
+                                disabled={reprintingOrderId === order.id}
+                                title="Reprint receipt to receipt printer"
+                              >
+                                {reprintingOrderId === order.id ? '...' : 'Reprint'}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={() => setDetailOrder(order)}
                               >
                                 View
@@ -624,9 +658,17 @@ ${paymentRows}
               <Button
                 variant="outline"
                 className="flex-1"
+                onClick={() => handleReprintToReceiptPrinter(detailOrder)}
+                disabled={reprintingOrderId === detailOrder.id}
+              >
+                {reprintingOrderId === detailOrder.id ? 'Printing...' : 'Reprint Receipt'}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
                 onClick={() => handlePrintReceipt(detailOrder)}
               >
-                Reprint Receipt
+                Browser Print
               </Button>
               <Button
                 variant="outline"

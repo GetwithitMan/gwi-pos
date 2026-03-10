@@ -19,6 +19,7 @@ interface AuditEntry {
   employeeId: string | null
   employeeName: string | null
   details: Record<string, unknown> | null
+  ipAddress: string | null
 }
 
 interface AuditResponse {
@@ -81,18 +82,43 @@ const ACTION_COLORS: Record<string, string> = {
   settings_changed: 'bg-indigo-50 text-indigo-700',
 }
 
+type DatePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'custom'
+
 // ============================================================================
 // HELPERS
 // ============================================================================
 
-function getDefaultStartDate(): string {
-  const d = new Date()
-  d.setDate(d.getDate() - 7)
+function toDateString(d: Date): string {
   return d.toISOString().split('T')[0]
 }
 
-function getDefaultEndDate(): string {
-  return new Date().toISOString().split('T')[0]
+function getPresetDates(preset: DatePreset): { start: string; end: string } {
+  const now = new Date()
+  const today = toDateString(now)
+
+  switch (preset) {
+    case 'today':
+      return { start: today, end: today }
+    case 'yesterday': {
+      const yesterday = new Date(now)
+      yesterday.setDate(yesterday.getDate() - 1)
+      const yd = toDateString(yesterday)
+      return { start: yd, end: yd }
+    }
+    case 'last7': {
+      const d = new Date(now)
+      d.setDate(d.getDate() - 7)
+      return { start: toDateString(d), end: today }
+    }
+    case 'last30': {
+      const d = new Date(now)
+      d.setDate(d.getDate() - 30)
+      return { start: toDateString(d), end: today }
+    }
+    case 'custom':
+    default:
+      return { start: toDateString(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)), end: today }
+  }
 }
 
 function formatTimestamp(iso: string): string {
@@ -112,11 +138,8 @@ function formatActionLabel(action: string): string {
 }
 
 function formatDetailValue(value: unknown): string {
-  if (value === null || value === undefined) return '—'
-  if (typeof value === 'number') {
-    // If it looks like a dollar amount (has decimals or key hints at currency)
-    return String(value)
-  }
+  if (value === null || value === undefined) return '--'
+  if (typeof value === 'number') return String(value)
   if (typeof value === 'boolean') return value ? 'Yes' : 'No'
   if (typeof value === 'string') return value
   return JSON.stringify(value)
@@ -138,10 +161,12 @@ export default function AuditLogBrowserPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/audit' })
 
   // Filter state
-  const [startDate, setStartDate] = useState(getDefaultStartDate)
-  const [endDate, setEndDate] = useState(getDefaultEndDate)
+  const [datePreset, setDatePreset] = useState<DatePreset>('last7')
+  const [startDate, setStartDate] = useState(() => getPresetDates('last7').start)
+  const [endDate, setEndDate] = useState(() => getPresetDates('last7').end)
   const [filterEmployeeId, setFilterEmployeeId] = useState('')
   const [actionType, setActionType] = useState('')
+  const [searchText, setSearchText] = useState('')
 
   // Data state
   const [data, setData] = useState<AuditResponse | null>(null)
@@ -163,6 +188,18 @@ export default function AuditLogBrowserPage() {
     permissions.includes('*')
 
   // ------------------------------------------
+  // Date preset handler
+  // ------------------------------------------
+  const handlePresetChange = (preset: DatePreset) => {
+    setDatePreset(preset)
+    if (preset !== 'custom') {
+      const { start, end } = getPresetDates(preset)
+      setStartDate(start)
+      setEndDate(end)
+    }
+  }
+
+  // ------------------------------------------
   // Fetch employees for filter dropdown
   // ------------------------------------------
   useEffect(() => {
@@ -179,7 +216,7 @@ export default function AuditLogBrowserPage() {
         }
       })
       .catch(() => {})
-  }, [locationId])
+  }, [locationId, currentEmployee?.id])
 
   // ------------------------------------------
   // Fetch audit log
@@ -207,6 +244,7 @@ export default function AuditLogBrowserPage() {
       }
       if (actionType) params.set('actionType', actionType)
       if (filterEmployeeId) params.set('filterEmployeeId', filterEmployeeId)
+      if (searchText.trim()) params.set('search', searchText.trim())
 
       const res = await fetch(`/api/audit/activity?${params}`)
       if (!res.ok) {
@@ -222,14 +260,15 @@ export default function AuditLogBrowserPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [locationId, currentEmployee?.id, startDate, endDate, actionType, filterEmployeeId])
+  }, [locationId, currentEmployee?.id, startDate, endDate, actionType, filterEmployeeId, searchText])
 
   // Initial load
   useEffect(() => {
     if (locationId && currentEmployee?.id && hasAccess) {
       fetchAuditLog(0)
     }
-  }, [locationId, currentEmployee?.id, hasAccess])  
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId, currentEmployee?.id, hasAccess])
 
   // ------------------------------------------
   // Handlers
@@ -241,10 +280,13 @@ export default function AuditLogBrowserPage() {
   }
 
   const handleReset = () => {
-    setStartDate(getDefaultStartDate())
-    setEndDate(getDefaultEndDate())
+    setDatePreset('last7')
+    const { start, end } = getPresetDates('last7')
+    setStartDate(start)
+    setEndDate(end)
     setFilterEmployeeId('')
     setActionType('')
+    setSearchText('')
     setCurrentPage(0)
     setExpandedRowId(null)
     // Fetch with defaults after state updates
@@ -260,17 +302,18 @@ export default function AuditLogBrowserPage() {
   const handleExportCsv = () => {
     if (!data?.entries.length) return
 
-    const headers = ['Timestamp', 'Employee', 'Action', 'Entity Type', 'Entity ID', 'Details']
+    const csvHeaders = ['Timestamp', 'Employee', 'Action', 'Entity Type', 'Entity ID', 'IP Address', 'Details']
     const rows = data.entries.map(entry => [
       escapeCsvField(new Date(entry.timestamp).toLocaleString()),
-      escapeCsvField(entry.employeeName || '—'),
+      escapeCsvField(entry.employeeName || '--'),
       escapeCsvField(entry.action),
-      escapeCsvField(entry.entityType || '—'),
-      escapeCsvField(entry.entityId || '—'),
+      escapeCsvField(entry.entityType || '--'),
+      escapeCsvField(entry.entityId || '--'),
+      escapeCsvField(entry.ipAddress || '--'),
       escapeCsvField(entry.details ? JSON.stringify(entry.details) : ''),
     ])
 
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const csv = [csvHeaders.join(','), ...rows.map(r => r.join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -297,7 +340,7 @@ export default function AuditLogBrowserPage() {
   if (!hasAccess) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
-        <AdminPageHeader title="Audit Log" />
+        <AdminPageHeader title="Audit Trail" />
         <div className="text-center py-20 text-gray-500">
           You do not have permission to view this page.
         </div>
@@ -308,15 +351,16 @@ export default function AuditLogBrowserPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <AdminPageHeader
-        title="Audit Log"
+        title="Audit Trail"
         subtitle={currentEmployee?.location?.name}
-        breadcrumbs={[{ label: 'Dashboard', href: '/dashboard' }]}
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         actions={
           <Button
             variant="outline"
             size="sm"
             onClick={handleExportCsv}
             disabled={!entries.length}
+            className="min-h-[44px]"
           >
             Export CSV
           </Button>
@@ -328,28 +372,54 @@ export default function AuditLogBrowserPage() {
         {/* FILTER BAR */}
         {/* ================================================================ */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
-          <div className="flex flex-wrap items-end gap-4">
-            {/* Start Date */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+          {/* Date preset buttons */}
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <span className="text-xs font-medium text-gray-500 mr-1">Date Range:</span>
+            {([
+              { key: 'today', label: 'Today' },
+              { key: 'yesterday', label: 'Yesterday' },
+              { key: 'last7', label: 'Last 7 Days' },
+              { key: 'last30', label: 'Last 30 Days' },
+              { key: 'custom', label: 'Custom' },
+            ] as { key: DatePreset; label: string }[]).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handlePresetChange(key)}
+                className={`px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium transition-colors ${
+                  datePreset === key
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-            {/* End Date */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
+          <div className="flex flex-wrap items-end gap-4">
+            {/* Custom date inputs (shown when custom is selected or always for context) */}
+            {datePreset === 'custom' && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={e => setStartDate(e.target.value)}
+                    className="px-3 py-2 min-h-[44px] border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={e => setEndDate(e.target.value)}
+                    className="px-3 py-2 min-h-[44px] border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </>
+            )}
 
             {/* Employee Filter */}
             <div>
@@ -357,7 +427,7 @@ export default function AuditLogBrowserPage() {
               <select
                 value={filterEmployeeId}
                 onChange={e => setFilterEmployeeId(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
+                className="px-3 py-2 min-h-[44px] border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
               >
                 <option value="">All Employees</option>
                 {employees.map(emp => (
@@ -374,7 +444,7 @@ export default function AuditLogBrowserPage() {
               <select
                 value={actionType}
                 onChange={e => setActionType(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
+                className="px-3 py-2 min-h-[44px] border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[180px]"
               >
                 <option value="">All Actions</option>
                 {ACTION_TYPES.map(type => (
@@ -385,12 +455,25 @@ export default function AuditLogBrowserPage() {
               </select>
             </div>
 
+            {/* Search Text */}
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
+              <input
+                type="text"
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSearch() }}
+                placeholder="Search details..."
+                className="px-3 py-2 min-h-[44px] border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[200px]"
+              />
+            </div>
+
             {/* Buttons */}
             <div className="flex items-center gap-2">
-              <Button onClick={handleSearch} size="sm">
+              <Button onClick={handleSearch} size="sm" className="min-h-[44px]">
                 Apply
               </Button>
-              <Button variant="outline" size="sm" onClick={handleReset}>
+              <Button variant="outline" size="sm" onClick={handleReset} className="min-h-[44px]">
                 Reset
               </Button>
             </div>
@@ -407,7 +490,7 @@ export default function AuditLogBrowserPage() {
               <h2 className="text-lg font-semibold text-gray-900">Activity Log</h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 {total > 0
-                  ? `Showing ${showingFrom}–${showingTo} of ${total.toLocaleString()} entries`
+                  ? `Showing ${showingFrom}--${showingTo} of ${total.toLocaleString()} entries`
                   : 'No entries found'}
               </p>
             </div>
@@ -422,7 +505,13 @@ export default function AuditLogBrowserPage() {
 
           {/* Loading state */}
           {isLoading ? (
-            <div className="text-center py-12 text-gray-400">Loading audit log...</div>
+            <div className="flex items-center justify-center py-12 gap-3 text-gray-400">
+              <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span>Loading audit log...</span>
+            </div>
           ) : entries.length === 0 ? (
             <div className="text-center py-12 text-gray-400">
               No audit entries found for the selected filters.
@@ -432,12 +521,11 @@ export default function AuditLogBrowserPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <th className="px-5 py-3">Timestamp</th>
+                    <th className="px-5 py-3">Date/Time</th>
                     <th className="px-5 py-3">Employee</th>
                     <th className="px-5 py-3">Action</th>
-                    <th className="px-5 py-3">Entity Type</th>
-                    <th className="px-5 py-3">Entity ID</th>
                     <th className="px-5 py-3">Details</th>
+                    <th className="px-5 py-3">IP Address</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -448,41 +536,49 @@ export default function AuditLogBrowserPage() {
                     const detailKeys = details ? Object.keys(details) : []
                     const hasDetails = detailKeys.length > 0
 
+                    // Build a brief summary for the collapsed details column
+                    const detailSummary = hasDetails
+                      ? detailKeys.slice(0, 2).map(k => `${k}: ${formatDetailValue(details![k])}`).join(', ') +
+                        (detailKeys.length > 2 ? ` (+${detailKeys.length - 2} more)` : '')
+                      : null
+
                     return (
                       <tr
                         key={entry.id}
-                        className="hover:bg-gray-50 cursor-pointer transition-colors align-top"
+                        className="hover:bg-gray-50 cursor-pointer transition-colors align-top min-h-[44px]"
                         onClick={() => setExpandedRowId(isExpanded ? null : entry.id)}
                       >
                         <td className="px-5 py-3 text-gray-600 whitespace-nowrap">
                           {formatTimestamp(entry.timestamp)}
                         </td>
                         <td className="px-5 py-3 font-medium text-gray-900 whitespace-nowrap">
-                          {entry.employeeName || '—'}
+                          {entry.employeeName || '--'}
                         </td>
                         <td className="px-5 py-3">
                           <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${colorClass}`}>
                             {formatActionLabel(entry.action)}
                           </span>
+                          {entry.entityType && (
+                            <span className="ml-2 text-xs text-gray-400 capitalize">
+                              {entry.entityType}
+                              {entry.entityId && (
+                                <span className="ml-1 font-mono">
+                                  {entry.entityId.length > 10
+                                    ? `${entry.entityId.slice(0, 10)}...`
+                                    : entry.entityId}
+                                </span>
+                              )}
+                            </span>
+                          )}
                         </td>
-                        <td className="px-5 py-3 text-gray-600 capitalize">
-                          {entry.entityType || '—'}
-                        </td>
-                        <td className="px-5 py-3 text-gray-500 font-mono text-xs">
-                          {entry.entityId
-                            ? entry.entityId.length > 12
-                              ? `${entry.entityId.slice(0, 12)}...`
-                              : entry.entityId
-                            : '—'}
-                        </td>
-                        <td className="px-5 py-3 text-gray-500">
+                        <td className="px-5 py-3 text-gray-500 max-w-[400px]">
                           {!hasDetails ? (
-                            <span className="text-gray-300">—</span>
+                            <span className="text-gray-300">--</span>
                           ) : isExpanded ? (
-                            <div className="space-y-1" onClick={e => e.stopPropagation()}>
+                            <div className="space-y-1 bg-gray-50 rounded-lg p-3 -mx-1" onClick={e => e.stopPropagation()}>
                               {detailKeys.map(key => (
                                 <div key={key} className="flex gap-2 text-xs">
-                                  <span className="font-medium text-gray-600 min-w-[80px]">
+                                  <span className="font-medium text-gray-600 min-w-[100px] flex-shrink-0">
                                     {key}:
                                   </span>
                                   <span className="text-gray-800 break-all">
@@ -492,10 +588,13 @@ export default function AuditLogBrowserPage() {
                               ))}
                             </div>
                           ) : (
-                            <span className="text-xs text-blue-600 hover:text-blue-800">
-                              {detailKeys.length} field{detailKeys.length !== 1 ? 's' : ''} — click to expand
+                            <span className="text-xs text-gray-500 truncate block max-w-[380px]" title="Click to expand">
+                              {detailSummary}
                             </span>
                           )}
+                        </td>
+                        <td className="px-5 py-3 text-gray-500 font-mono text-xs whitespace-nowrap">
+                          {entry.ipAddress || '--'}
                         </td>
                       </tr>
                     )
@@ -517,6 +616,7 @@ export default function AuditLogBrowserPage() {
                   size="sm"
                   disabled={currentPage === 0}
                   onClick={() => handlePageChange(currentPage - 1)}
+                  className="min-h-[44px]"
                 >
                   Previous
                 </Button>
@@ -525,6 +625,7 @@ export default function AuditLogBrowserPage() {
                   size="sm"
                   disabled={currentPage >= totalPages - 1}
                   onClick={() => handlePageChange(currentPage + 1)}
+                  className="min-h-[44px]"
                 >
                   Next
                 </Button>

@@ -2,6 +2,57 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
+/**
+ * Check for overlapping shifts for the same employee on the same date.
+ * An overlap exists when: newStart < existingEnd AND newEnd > existingStart
+ *
+ * Returns the first overlapping shift found, or null if no overlap.
+ */
+async function findOverlappingShift(
+  employeeId: string,
+  date: Date,
+  startTime: string,
+  endTime: string,
+  excludeShiftId?: string,
+) {
+  // Find all shifts for this employee on this date (across all schedules)
+  const existingShifts = await db.scheduledShift.findMany({
+    where: {
+      employeeId,
+      date,
+      deletedAt: null,
+      ...(excludeShiftId ? { id: { not: excludeShiftId } } : {}),
+    },
+    select: {
+      id: true,
+      startTime: true,
+      endTime: true,
+      scheduleId: true,
+    },
+  })
+
+  // Convert HH:MM to minutes for comparison
+  const toMinutes = (time: string) => {
+    const [h, m] = time.split(':').map(Number)
+    return h * 60 + m
+  }
+
+  const newStart = toMinutes(startTime)
+  const newEnd = toMinutes(endTime)
+
+  for (const existing of existingShifts) {
+    const existStart = toMinutes(existing.startTime)
+    const existEnd = toMinutes(existing.endTime)
+
+    // Overlap check: newStart < existingEnd AND newEnd > existingStart
+    if (newStart < existEnd && newEnd > existStart) {
+      return existing
+    }
+  }
+
+  return null
+}
+
 // POST - Add shift to schedule
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -32,21 +83,13 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
     }
 
-    // Check for conflicts
-    const conflictingShift = await db.scheduledShift.findFirst({
-      where: {
-        employeeId,
-        date: new Date(date),
-        scheduleId,
-      },
-    })
-
-    if (conflictingShift) {
-      return NextResponse.json(
-        { error: 'Employee already has a shift scheduled for this day' },
-        { status: 400 }
-      )
-    }
+    // Check for time-based overlapping shifts (not just same-day same-schedule)
+    const overlap = await findOverlappingShift(
+      employeeId,
+      new Date(date),
+      startTime,
+      endTime,
+    )
 
     const shift = await db.scheduledShift.create({
       data: {
@@ -76,7 +119,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({ data: {
+    const response: Record<string, unknown> = {
       shift: {
         id: shift.id,
         employee: {
@@ -91,7 +134,14 @@ export const POST = withVenue(async function POST(
         status: shift.status,
         notes: shift.notes,
       },
-    } })
+    }
+
+    // Return warning (not error) if overlap exists — client can still show it
+    if (overlap) {
+      response.warning = `This shift overlaps with an existing shift for this employee (${overlap.startTime}-${overlap.endTime})`
+    }
+
+    return NextResponse.json({ data: response })
   } catch (error) {
     console.error('Failed to create shift:', error)
     return NextResponse.json({ error: 'Failed to create shift' }, { status: 500 })
@@ -133,9 +183,25 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    // Upsert shifts
+    // Upsert shifts and collect overlap warnings
     const results = []
+    const warnings: string[] = []
     for (const shift of shifts) {
+      // Check for overlaps (exclude this shift's own ID if updating)
+      const overlap = await findOverlappingShift(
+        shift.employeeId,
+        new Date(shift.date),
+        shift.startTime,
+        shift.endTime,
+        shift.id,
+      )
+
+      if (overlap) {
+        warnings.push(
+          `Shift for employee ${shift.employeeId} on ${shift.date} (${shift.startTime}-${shift.endTime}) overlaps with existing shift (${overlap.startTime}-${overlap.endTime})`
+        )
+      }
+
       if (shift.id) {
         // Update existing
         const updated = await db.scheduledShift.update({
@@ -171,10 +237,16 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
-    return NextResponse.json({ data: {
+    const response: Record<string, unknown> = {
       message: 'Shifts updated',
       count: results.length,
-    } })
+    }
+
+    if (warnings.length > 0) {
+      response.warnings = warnings
+    }
+
+    return NextResponse.json({ data: response })
   } catch (error) {
     console.error('Failed to update shifts:', error)
     return NextResponse.json({ error: 'Failed to update shifts' }, { status: 500 })

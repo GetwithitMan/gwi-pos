@@ -280,6 +280,52 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         }
       }
 
+      // Speed-of-service tracking for serve/bump_order actions
+      if (action === 'serve' || status === 'served' || action === 'bump_order') {
+        void (async () => {
+          try {
+            const targetIds = action === 'bump_order' && body.orderId
+              ? (await db.orderItem.findMany({
+                  where: { orderId: body.orderId || orderId, isCompleted: true, deletedAt: null },
+                  select: { id: true, kitchenSentAt: true, completedAt: true },
+                }))
+              : (await db.orderItem.findMany({
+                  where: { id: { in: itemIds } },
+                  select: { id: true, kitchenSentAt: true, completedAt: true },
+                }))
+            const speedOfServiceItems: { itemId: string; seconds: number }[] = []
+            for (const item of targetIds) {
+              if (item.kitchenSentAt && item.completedAt) {
+                const seconds = Math.round((item.completedAt.getTime() - item.kitchenSentAt.getTime()) / 1000)
+                if (seconds > 0) {
+                  speedOfServiceItems.push({ itemId: item.id, seconds })
+                }
+              }
+            }
+            if (speedOfServiceItems.length > 0) {
+              const avgSeconds = Math.round(speedOfServiceItems.reduce((s, i) => s + i.seconds, 0) / speedOfServiceItems.length)
+              await db.auditLog.create({
+                data: {
+                  locationId,
+                  employeeId: body.employeeId || null,
+                  action: 'kds_speed_of_service',
+                  entityType: 'order',
+                  entityId: body.orderId || orderId,
+                  details: {
+                    stationId: body.stationId,
+                    bumpAction: action,
+                    avgSeconds,
+                    items: speedOfServiceItems,
+                  },
+                },
+              })
+            }
+          } catch (err) {
+            console.error('[Expo] Speed-of-service tracking failed:', err)
+          }
+        })()
+      }
+
       // BUG 20: Fire-and-forget audit trail for expo KDS actions
       if (action === 'bump_order') {
         void db.auditLog.create({

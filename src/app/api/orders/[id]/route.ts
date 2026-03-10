@@ -343,6 +343,17 @@ export const PUT = withVenue(async function PUT(
       isTaxExempt?: boolean
     }
 
+    // Input validation for fields that bypass Zod
+    if (tipTotal !== undefined && tipTotal !== null && Number(tipTotal) < 0) {
+      return NextResponse.json({ error: 'Tip total cannot be negative' }, { status: 400 })
+    }
+    if (tabName !== undefined && tabName !== null && tabName.length > 50) {
+      return NextResponse.json({ error: 'Tab name cannot exceed 50 characters' }, { status: 400 })
+    }
+    if (notes !== undefined && notes !== null && notes.length > 500) {
+      return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
+    }
+
     // Get existing order
     const existingOrder = await db.order.findUnique({
       where: { id },
@@ -552,6 +563,7 @@ export const PATCH = withVenue(async function PATCH(
       customerId,
       status,
       employeeId,
+      isTaxExempt,
     } = body as {
       tabName?: string
       guestCount?: number
@@ -562,6 +574,18 @@ export const PATCH = withVenue(async function PATCH(
       customerId?: string
       status?: string
       employeeId?: string
+      isTaxExempt?: boolean
+    }
+
+    // Input validation for fields that bypass Zod
+    if (tipTotal !== undefined && tipTotal !== null && Number(tipTotal) < 0) {
+      return NextResponse.json({ error: 'Tip total cannot be negative' }, { status: 400 })
+    }
+    if (tabName !== undefined && tabName !== null && tabName.length > 50) {
+      return NextResponse.json({ error: 'Tab name cannot exceed 50 characters' }, { status: 400 })
+    }
+    if (notes !== undefined && notes !== null && notes.length > 500) {
+      return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
     // Quick existence + status check (no includes)
@@ -574,6 +598,7 @@ export const PATCH = withVenue(async function PATCH(
         subtotal: true,
         taxTotal: true,
         discountTotal: true,
+        isTaxExempt: true,
       },
     })
 
@@ -595,6 +620,10 @@ export const PATCH = withVenue(async function PATCH(
         const sAuth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_CHANGE_SERVER)
         if (!sAuth.authorized) return NextResponse.json({ error: sAuth.error }, { status: sAuth.status })
       }
+      if (isTaxExempt !== undefined) {
+        const txAuth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.MGR_TAX_EXEMPT)
+        if (!txAuth.authorized) return NextResponse.json({ error: txAuth.error }, { status: txAuth.status })
+      }
     }
 
     if (!['open', 'draft', 'sent', 'in_progress', 'split'].includes(existing.status)) {
@@ -612,6 +641,20 @@ export const PATCH = withVenue(async function PATCH(
       )
     }
 
+    // Recalculate totals when tax exemption status changes
+    let taxExemptTotals: { taxTotal: number; total: number } | undefined
+    if (isTaxExempt !== undefined && isTaxExempt !== existing.isTaxExempt) {
+      const locSettings = await getLocationSettings(existing.locationId)
+      const parsed = parseSettings(locSettings as Record<string, unknown>)
+      const simpleTotals = calculateSimpleOrderTotals(
+        Number(existing.subtotal),
+        Number(existing.discountTotal),
+        parsed as { tax?: { defaultRate?: number } },
+        isTaxExempt
+      )
+      taxExemptTotals = { taxTotal: simpleTotals.taxTotal, total: simpleTotals.total }
+    }
+
     const updateData: Record<string, any> = {}
     if (tabName !== undefined) updateData.tabName = tabName
     if (guestCount !== undefined) updateData.guestCount = guestCount
@@ -622,6 +665,15 @@ export const PATCH = withVenue(async function PATCH(
     if (orderTypeId !== undefined) updateData.orderTypeId = orderTypeId
     if (customerId !== undefined) updateData.customerId = customerId
     if (employeeId !== undefined) updateData.employeeId = employeeId
+    if (isTaxExempt !== undefined) {
+      updateData.isTaxExempt = isTaxExempt
+      if (taxExemptTotals) {
+        updateData.taxTotal = taxExemptTotals.taxTotal
+        updateData.taxFromInclusive = 0
+        updateData.taxFromExclusive = isTaxExempt ? 0 : taxExemptTotals.taxTotal
+        updateData.total = taxExemptTotals.total
+      }
+    }
     if (status !== undefined) {
       // Status transition validation — same rules as PUT
       const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -680,11 +732,12 @@ export const PATCH = withVenue(async function PATCH(
         employeeId: true,
         orderTypeId: true,
         customerId: true,
+        isTaxExempt: true,
       },
     })
 
     // Dispatch socket updates for cross-terminal sync
-    if (tipTotal !== undefined) {
+    if (tipTotal !== undefined || isTaxExempt !== undefined) {
       dispatchOrderTotalsUpdate(updatedOrder.locationId, updatedOrder.id, {
         subtotal: Number(updatedOrder.subtotal),
         taxTotal: Number(updatedOrder.taxTotal),
@@ -716,6 +769,7 @@ export const PATCH = withVenue(async function PATCH(
       discountTotal: Number(updatedOrder.discountTotal),
       total: Number(updatedOrder.total),
       notes: updatedOrder.notes,
+      isTaxExempt: updatedOrder.isTaxExempt,
     } })
   } catch (error) {
     console.error('Failed to patch order:', error)

@@ -27,6 +27,10 @@ export async function batchUpdateOrderItemStatus(
   if (firedAt) {
     data.firedAt = firedAt
   }
+  // Set kitchenSentAt when item transitions to 'sent' or 'cooking' for speed-of-service tracking
+  if (status === 'sent' || status === 'cooking') {
+    data.kitchenSentAt = firedAt || new Date()
+  }
 
   await db.orderItem.updateMany({
     where: { id: { in: itemIds } },

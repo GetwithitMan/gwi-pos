@@ -54,6 +54,11 @@ export const GET = withVenue(async function GET(
       shift.drawerId || null
     )
 
+    // Include tip distribution summary for closed shifts
+    const tipDistributionData = shift.status === 'closed'
+      ? await getShiftTipDistributionSummary(shift.id, shift.locationId)
+      : null
+
     return NextResponse.json({ data: {
       shift: {
         id: shift.id,
@@ -73,9 +78,13 @@ export const GET = withVenue(async function GET(
         cashSales: shift.cashSales ? Number(shift.cashSales) : null,
         cardSales: shift.cardSales ? Number(shift.cardSales) : null,
         tipsDeclared: shift.tipsDeclared ? Number(shift.tipsDeclared) : null,
+        grossTips: shift.grossTips ? Number(shift.grossTips) : null,
+        tipOutTotal: shift.tipOutTotal ? Number(shift.tipOutTotal) : null,
+        netTips: shift.netTips ? Number(shift.netTips) : null,
         notes: shift.notes,
       },
       summary: shiftSummary,
+      tipDistribution: tipDistributionData,
     } })
   } catch (error) {
     console.error('Failed to fetch shift:', error)
@@ -146,6 +155,22 @@ export const PUT = withVenue(async function PUT(
           { error: 'Shift is already closed' },
           { status: 400 }
         )
+      }
+
+      // Check for pending outage queue entries before closing the shift.
+      // This is a warning only — it does not block the close.
+      try {
+        const outageResult = await db.$queryRawUnsafe<[{ cnt: number }]>(
+          `SELECT COUNT(*)::int as cnt FROM "OutageQueueEntry" WHERE status IN ('pending', 'processing')`
+        )
+        const pendingCount = outageResult?.[0]?.cnt ?? 0
+        if (pendingCount > 0) {
+          console.warn(
+            `[ShiftClose] Warning: ${pendingCount} outage queue entries pending sync — shift totals on Neon may be incomplete`
+          )
+        }
+      } catch {
+        // OutageQueueEntry table may not exist on all deployments — skip silently
       }
 
       // For 'none' cash handling mode, actual cash is always 0 (no cash handled)
@@ -236,6 +261,7 @@ export const PUT = withVenue(async function PUT(
 
         const serverGrossTips = summary.totalTips
         let actualTipOutTotal = 0
+        let autoDistributed = false
 
         // Process tip distribution first to get actual tip-out totals
         if (tipDistribution) {
@@ -247,6 +273,21 @@ export const PUT = withVenue(async function PUT(
             tipDistribution,
             summary.salesData
           )
+        } else if (locSettings.tipShares?.autoTipOutEnabled && serverGrossTips > 0) {
+          // Auto tip distribution: load TipOutRules for the employee's role
+          // and calculate tip-outs server-side without client involvement
+          const autoResult = await autoProcessTipDistribution(
+            tx,
+            shift.locationId,
+            shift.employeeId,
+            shift.workingRoleId,
+            id,
+            serverGrossTips,
+            summary.salesData,
+            summary
+          )
+          actualTipOutTotal = autoResult.totalTipOut
+          autoDistributed = autoResult.distributed
         }
 
         // Cap tip-outs so they never exceed gross tips (prevents negative net tips).
@@ -311,7 +352,8 @@ export const PUT = withVenue(async function PUT(
               actualCash,
               variance,
               tipsDeclared: tipsDeclared || summary.totalTips,
-              hasTipDistribution: !!tipDistribution,
+              hasTipDistribution: !!tipDistribution || autoDistributed,
+              autoTipDistribution: autoDistributed,
               serverGrossTips,
               actualTipOutTotal,
               serverNetTips,
@@ -321,6 +363,9 @@ export const PUT = withVenue(async function PUT(
 
         return closed
       })
+
+      // Fetch tip distribution summary for the response (fire-and-forget safe — not blocking)
+      const tipDistributionSummary = await getShiftTipDistributionSummary(id, shift.locationId)
 
       // Emit ORDER_METADATA_UPDATED for each transferred order (fire-and-forget)
       if (transferredOrderIds.length > 0) {
@@ -366,9 +411,13 @@ export const PUT = withVenue(async function PUT(
           cashSales: Number(updatedShift.cashSales),
           cardSales: Number(updatedShift.cardSales),
           tipsDeclared: Number(updatedShift.tipsDeclared),
+          grossTips: Number(updatedShift.grossTips || 0),
+          tipOutTotal: Number(updatedShift.tipOutTotal || 0),
+          netTips: Number(updatedShift.netTips || 0),
           notes: updatedShift.notes,
         },
         summary,
+        tipDistribution: tipDistributionSummary,
         message: variance === 0
           ? 'Shift closed successfully. Drawer is balanced!'
           : variance > 0
@@ -966,4 +1015,233 @@ async function processTipDistribution(
   }
 
   return Math.round(actualTipOutTotal * 100) / 100
+}
+
+// Auto-process tip distribution when client doesn't send explicit tipDistribution
+// but autoTipOutEnabled is true. Loads TipOutRules for the employee's role and
+// calculates tip-outs server-side.
+async function autoProcessTipDistribution(
+  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
+  locationId: string,
+  fromEmployeeId: string,
+  workingRoleId: string | null,
+  shiftId: string,
+  grossTips: number,
+  salesData: { totalSales: number; foodSales: number; barSales: number; netSales: number },
+  summary: { cashSales: number; cardSales: number; totalTips: number }
+): Promise<{ totalTipOut: number; distributed: boolean }> {
+  // Determine the employee's effective role (workingRoleId on shift, or default roleId)
+  let effectiveRoleId = workingRoleId
+  if (!effectiveRoleId) {
+    const employee = await tx.employee.findUnique({
+      where: { id: fromEmployeeId },
+      select: { roleId: true },
+    })
+    effectiveRoleId = employee?.roleId || null
+  }
+
+  if (!effectiveRoleId) {
+    return { totalTipOut: 0, distributed: false }
+  }
+
+  // Load active TipOutRules where this employee's role is the "from" role
+  const now = new Date()
+  const rules = await tx.tipOutRule.findMany({
+    where: {
+      locationId,
+      fromRoleId: effectiveRoleId,
+      isActive: true,
+      deletedAt: null,
+      OR: [
+        { effectiveDate: null },
+        { effectiveDate: { lte: now } },
+      ],
+      AND: [
+        {
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gte: now } },
+          ],
+        },
+      ],
+    },
+    select: {
+      id: true,
+      toRoleId: true,
+      percentage: true,
+      basisType: true,
+      maxPercentage: true,
+    },
+  })
+
+  if (rules.length === 0) {
+    return { totalTipOut: 0, distributed: false }
+  }
+
+  // Build roleTipOuts from rules (server-side calculation)
+  const roleTipOuts: { ruleId: string; toRoleId: string; amount: number }[] = []
+
+  for (const rule of rules) {
+    const percentage = Number(rule.percentage)
+    if (percentage <= 0) continue
+
+    // Determine basis amount based on rule's basisType
+    let basisAmount: number
+    switch (rule.basisType) {
+      case 'food_sales':
+        basisAmount = salesData.foodSales
+        break
+      case 'bar_sales':
+        basisAmount = salesData.barSales
+        break
+      case 'total_sales':
+        basisAmount = salesData.totalSales
+        break
+      case 'net_sales':
+        basisAmount = salesData.netSales
+        break
+      case 'total_tips':
+        basisAmount = grossTips
+        break
+      case 'cash_tips':
+        // Estimate cash tips: proportion of total tips that came from cash payments
+        basisAmount = summary.totalTips > 0 && salesData.totalSales > 0
+          ? grossTips * (summary.cashSales / salesData.totalSales)
+          : 0
+        break
+      case 'cc_tips':
+        // Estimate CC tips: proportion of total tips that came from card payments
+        basisAmount = summary.totalTips > 0 && salesData.totalSales > 0
+          ? grossTips * (summary.cardSales / salesData.totalSales)
+          : 0
+        break
+      case 'tips_earned':
+      default:
+        basisAmount = grossTips
+        break
+    }
+
+    let amount = Math.round(basisAmount * (percentage / 100) * 100) / 100
+
+    // Apply maxPercentage compliance cap if set
+    if (rule.maxPercentage) {
+      const maxPct = Number(rule.maxPercentage)
+      const maxAmount = Math.round(grossTips * (maxPct / 100) * 100) / 100
+      if (amount > maxAmount) {
+        amount = maxAmount
+      }
+    }
+
+    if (amount <= 0) continue
+
+    roleTipOuts.push({
+      ruleId: rule.id,
+      toRoleId: rule.toRoleId,
+      amount,
+    })
+  }
+
+  if (roleTipOuts.length === 0) {
+    return { totalTipOut: 0, distributed: false }
+  }
+
+  // Delegate to the existing processTipDistribution with the auto-computed distribution
+  const tipDistribution = {
+    grossTips,
+    tipOutTotal: roleTipOuts.reduce((sum, t) => sum + t.amount, 0),
+    netTips: grossTips - roleTipOuts.reduce((sum, t) => sum + t.amount, 0),
+    roleTipOuts,
+    customShares: [] as { toEmployeeId: string; amount: number }[],
+  }
+
+  const totalTipOut = await processTipDistribution(
+    tx,
+    locationId,
+    fromEmployeeId,
+    shiftId,
+    tipDistribution,
+    salesData
+  )
+
+  return { totalTipOut, distributed: true }
+}
+
+// Get tip distribution summary for a shift (used in both GET and POST responses)
+async function getShiftTipDistributionSummary(
+  shiftId: string,
+  locationId: string
+): Promise<{
+  grossTips: number
+  tipOutTotal: number
+  netTips: number
+  entries: {
+    id: string
+    toEmployeeId: string
+    toEmployeeName: string
+    amount: number
+    shareType: string
+    ruleName: string | null
+    status: string
+  }[]
+} | null> {
+  // Get the shift's tip fields
+  const shift = await db.shift.findUnique({
+    where: { id: shiftId },
+    select: {
+      grossTips: true,
+      tipOutTotal: true,
+      netTips: true,
+    },
+  })
+
+  if (!shift || shift.grossTips === null) {
+    return null
+  }
+
+  // Get all TipShares for this shift
+  const tipShares = await db.tipShare.findMany({
+    where: {
+      shiftId,
+      locationId,
+      deletedAt: null,
+    },
+    include: {
+      toEmployee: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          displayName: true,
+        },
+      },
+      rule: {
+        select: {
+          id: true,
+          toRole: {
+            select: { name: true },
+          },
+          basisType: true,
+          percentage: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  return {
+    grossTips: Number(shift.grossTips),
+    tipOutTotal: Number(shift.tipOutTotal || 0),
+    netTips: Number(shift.netTips || 0),
+    entries: tipShares.map(ts => ({
+      id: ts.id,
+      toEmployeeId: ts.toEmployee.id,
+      toEmployeeName: ts.toEmployee.displayName || `${ts.toEmployee.firstName} ${ts.toEmployee.lastName}`,
+      amount: Number(ts.amount),
+      shareType: ts.shareType,
+      ruleName: ts.rule
+        ? `${Number(ts.rule.percentage)}% of ${ts.rule.basisType.replace(/_/g, ' ')} → ${ts.rule.toRole.name}`
+        : null,
+      status: ts.status,
+    })),
+  }
 }

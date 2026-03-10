@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateOrderTotals } from '@/lib/order-calculations'
+import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
@@ -8,6 +9,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { checkOrderClaim } from '@/lib/order-claim'
+import { dispatchAlert } from '@/lib/alert-service'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -42,6 +44,9 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Track successful discount application for alert dispatch (mutable ref for TypeScript closure tracking)
+    const alertRef: { info: { locationId: string; orderNumber: number; discountName: string; discountAmount: number; employeeId: string | null } | null } = { info: null }
+
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent discount applications from bypassing stacking/cap guards
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
@@ -52,6 +57,10 @@ export const POST = withVenue(async function POST(
         include: {
           location: true,
           discounts: { where: { deletedAt: null } },
+          items: {
+            where: { deletedAt: null, status: 'active' },
+            include: { modifiers: true },
+          },
         },
       })
 
@@ -66,9 +75,12 @@ export const POST = withVenue(async function POST(
       const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-      if (order.status !== 'open' && order.status !== 'in_progress') {
+      const DISCOUNTABLE_STATUSES = ['draft', 'open', 'in_progress', 'sent'];
+      if (!DISCOUNTABLE_STATUSES.includes(order.status)) {
         return NextResponse.json(
-          { error: 'Cannot add discount to a closed order' },
+          { error: order.status === 'split'
+            ? 'Cannot discount a split parent order — discount individual splits instead'
+            : `Cannot add discount to order in '${order.status}' status` },
           { status: 400 }
         )
       }
@@ -117,10 +129,21 @@ export const POST = withVenue(async function POST(
             .filter(d => d.id !== alreadyApplied.id)
             .reduce((sum, d) => sum + Number(d.amount), 0)
 
+          const orderItems: OrderItemForCalculation[] = order.items.map(i => ({
+            price: Number(i.price),
+            quantity: i.quantity,
+            status: i.status,
+            itemTotal: Number(i.itemTotal),
+            isTaxInclusive: (i as any).isTaxInclusive ?? false,
+            modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+          }))
           const totals = calculateOrderTotals(
-            Number(order.subtotal),
-            newDiscountTotal,
+            orderItems,
             order.location.settings as { tax?: { defaultRate?: number } },
+            newDiscountTotal,
+            0,
+            undefined,
+            'card',
             order.isTaxExempt
           )
 
@@ -381,7 +404,15 @@ export const POST = withVenue(async function POST(
 
       // Update order totals
       const newDiscountTotal = currentDiscountTotal + discountAmount
-      const totals = calculateOrderTotals(Number(order.subtotal), newDiscountTotal, order.location.settings as { tax?: { defaultRate?: number } }, order.isTaxExempt)
+      const applyItems: OrderItemForCalculation[] = order.items.map(i => ({
+        price: Number(i.price),
+        quantity: i.quantity,
+        status: i.status,
+        itemTotal: Number(i.itemTotal),
+        isTaxInclusive: (i as any).isTaxInclusive ?? false,
+        modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+      }))
+      const totals = calculateOrderTotals(applyItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, 0, undefined, 'card', order.isTaxExempt)
 
       await tx.order.update({
         where: { id: orderId },
@@ -436,6 +467,15 @@ export const POST = withVenue(async function POST(
         locationId: order.locationId,
       }, { async: true }).catch(() => {})
 
+      // Track for post-transaction alert dispatch
+      alertRef.info = {
+        locationId: order.locationId,
+        orderNumber: order.orderNumber,
+        discountName,
+        discountAmount,
+        employeeId: body.employeeId || null,
+      }
+
       return NextResponse.json({ data: {
         discount: {
           id: discount.id,
@@ -452,6 +492,40 @@ export const POST = withVenue(async function POST(
         requiresApproval,
       } })
     })
+
+    // Audit trail for discount application
+    if (alertRef.info) {
+      const auditInfo = alertRef.info
+      console.log(`[AUDIT] DISCOUNT_APPLIED: orderId=${orderId}, type=${auditInfo.discountName}, amount=$${auditInfo.discountAmount}, reason="${body.reason || 'none'}", by employee ${auditInfo.employeeId}`)
+    }
+
+    // Alert dispatch: notify if discount exceeds threshold (fire-and-forget)
+    if (alertRef.info) {
+      const info = alertRef.info
+      void (async () => {
+        try {
+          const locSettings = parseSettings((await db.location.findUnique({
+            where: { id: info.locationId },
+            select: { settings: true },
+          }))?.settings)
+          if (!locSettings.alerts.enabled) return
+          if (info.discountAmount < locSettings.alerts.largeDiscountThreshold) return
+
+          void dispatchAlert({
+            severity: 'MEDIUM',
+            errorType: 'large_discount',
+            category: 'transaction',
+            message: `Large discount applied: ${info.discountName} - $${info.discountAmount.toFixed(2)} on Order #${info.orderNumber}`,
+            locationId: info.locationId,
+            employeeId: info.employeeId ?? undefined,
+            orderId,
+            groupId: `discount-${info.locationId}-${orderId}`,
+          }).catch(console.error)
+        } catch (err) {
+          console.error('[discount] Alert dispatch failed:', err)
+        }
+      })()
+    }
 
     return result
   } catch (error) {
@@ -541,6 +615,10 @@ export const DELETE = withVenue(async function DELETE(
           where: { deletedAt: null },
           include: { discountRule: { select: { name: true } } },
         },
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          include: { modifiers: true },
+        },
       },
     })
 
@@ -597,7 +675,15 @@ export const DELETE = withVenue(async function DELETE(
       .filter(d => d.id !== discountId)
       .reduce((sum, d) => sum + Number(d.amount), 0)
 
-    const totals = calculateOrderTotals(Number(order.subtotal), newDiscountTotal, order.location.settings as { tax?: { defaultRate?: number } }, order.isTaxExempt)
+    const deleteItems: OrderItemForCalculation[] = order.items.map(i => ({
+      price: Number(i.price),
+      quantity: i.quantity,
+      status: i.status,
+      itemTotal: Number(i.itemTotal),
+      isTaxInclusive: (i as any).isTaxInclusive ?? false,
+      modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+    }))
+    const totals = calculateOrderTotals(deleteItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, 0, undefined, 'card', order.isTaxExempt)
 
     await db.order.update({
       where: { id: orderId },

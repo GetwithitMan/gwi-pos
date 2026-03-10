@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback, useMemo, useState, memo } from 'react'
+import { useRef, useCallback, useMemo, useState, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FloorPlanTable, TableStatus } from './use-floor-plan'
 import { getSeatColor } from '@/lib/seat-utils'
@@ -250,6 +250,40 @@ function DraggableSeat({
   )
 }
 
+/**
+ * Format elapsed milliseconds into a compact duration string.
+ * Examples: "2m", "15m", "1h 5m", "3h 42m"
+ */
+function formatSeatingDuration(elapsedMs: number): string {
+  if (elapsedMs < 0) return ''
+  const totalMinutes = Math.floor(elapsedMs / 60_000)
+  if (totalMinutes < 1) return '<1m'
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours === 0) return `${minutes}m`
+  return `${hours}h ${minutes}m`
+}
+
+/**
+ * Hook that returns a formatted seating duration string, refreshed every 60 seconds.
+ * Returns empty string when no openedAt is provided (table not occupied).
+ */
+function useSeatingTimer(openedAt: string | undefined | null): string {
+  const [, setTick] = useState(0)
+
+  useEffect(() => {
+    if (!openedAt) return
+    // Force re-render every 60 seconds to update the displayed duration
+    const interval = setInterval(() => setTick(t => t + 1), 60_000)
+    return () => clearInterval(interval)
+  }, [openedAt])
+
+  if (!openedAt) return ''
+
+  const elapsedMs = Date.now() - new Date(openedAt).getTime()
+  return formatSeatingDuration(elapsedMs)
+}
+
 export const TableNode = memo(function TableNode({
   table,
   isSelected,
@@ -286,6 +320,9 @@ export const TableNode = memo(function TableNode({
   // Font sizes scale with table size
   const nameFontSize = isSmall ? Math.max(11, minDimension * 0.18) : Math.min(18, minDimension * 0.2)
   const infoFontSize = isSmall ? Math.max(9, minDimension * 0.12) : Math.min(12, minDimension * 0.14)
+
+  // Seating timer — shows elapsed time for occupied tables
+  const seatingDuration = useSeatingTimer(table.currentOrder?.openedAt)
 
   // For very narrow tables, we might want to rotate the text 90°
   const shouldRotateText = table.width < 60 && table.height > table.width * 1.5
@@ -542,6 +579,17 @@ export const TableNode = memo(function TableNode({
                   : table.currentOrder.total
                 ).toFixed(2)}
               </div>
+              {/* Seating timer — elapsed time since table was seated */}
+              {seatingDuration && (
+                <div style={{
+                  fontSize: `${Math.max(8, infoFontSize - 1)}px`,
+                  color: 'rgba(148, 163, 184, 0.7)',
+                  marginTop: '1px',
+                  letterSpacing: '0.02em',
+                }}>
+                  {seatingDuration}
+                </div>
+              )}
               {/* Order status badges (bottle service, delay, held, coursed) */}
               {orderStatusBadges && (orderStatusBadges.isBottleService || orderStatusBadges.hasDelay || orderStatusBadges.hasHeld || orderStatusBadges.hasCourses) && (
                 <div style={{

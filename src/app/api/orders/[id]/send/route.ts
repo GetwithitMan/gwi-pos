@@ -90,6 +90,15 @@ export const POST = withVenue(withTiming(async function POST(
       )
     }
 
+    // Status guard: only sendable statuses allowed
+    const SENDABLE_STATUSES = ['open', 'in_progress', 'sent', 'draft'];
+    if (!SENDABLE_STATUSES.includes(order.status)) {
+      return NextResponse.json(
+        { error: `Cannot send order in '${order.status}' status` },
+        { status: 400 }
+      );
+    }
+
     // Guard: sending another employee's order requires pos.edit_others_orders
     if (sendEmployeeId && order.employeeId && order.employeeId !== sendEmployeeId) {
       const auth = await requirePermission(sendEmployeeId, order.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)

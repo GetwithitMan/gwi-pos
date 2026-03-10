@@ -266,6 +266,11 @@ export async function deductInventoryForOrder(
       return { success: false, itemsDeducted: 0, totalCost: 0, errors: ['Order not found'] }
     }
 
+    // If order is paid/closed but has no items, items may not have synced yet — retry later
+    if (order.items.length === 0 && (order.status === 'paid' || order.status === 'closed')) {
+      return { success: false, itemsDeducted: 0, totalCost: 0, errors: ['Order has no items - may be awaiting sync'] }
+    }
+
     // Build usage map (same logic as calculateTheoreticalUsage but for one order)
     const usageMap = new Map<string, {
       inventoryItemId: string

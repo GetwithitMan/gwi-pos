@@ -8,6 +8,9 @@ import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
+import { getDatacapClient } from '@/lib/datacap/helpers'
+import { detectPotentialWalkouts } from '@/lib/walkout-detector'
 
 /**
  * POST /api/eod/reset
@@ -65,7 +68,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       select: { settings: true },
     })
     const locSettings = location?.settings as Record<string, unknown> | null
-    const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+    const parsedSettings = parseSettings(locSettings)
+    const dayStartTime = parsedSettings.businessDay.dayStartTime ?? '04:00'
     const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
 
     // Read from OrderSnapshot (event-sourced projection) — cents-based fields
@@ -83,6 +87,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         createdAt: true,
       },
     })
+
+    // ── warnBeforeClose: warn if open orders exist during EOD reset ────────
+    // When warnBeforeClose is enabled and confirm is not passed, return a
+    // warning instead of proceeding. Client must re-send with confirm: true.
+    const warnBeforeClose = parsedSettings.businessDay.warnBeforeClose ?? true
+    const confirm = body.confirm === true
+
+    if (!dryRun && warnBeforeClose && !confirm) {
+      const currentOpenOrderCount = await db.orderSnapshot.count({
+        where: { locationId, status: 'open', deletedAt: null },
+      })
+      if (currentOpenOrderCount > 0) {
+        return NextResponse.json({ data: {
+          requiresConfirmation: true,
+          warning: `There are ${currentOpenOrderCount} open orders. Are you sure you want to close the business day?`,
+          openOrderCount: currentOpenOrderCount,
+        } })
+      }
+    }
 
     if (dryRun) {
       // Return what WOULD be reset without actually doing it
@@ -250,6 +273,88 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     })
 
+    // ── Datacap Batch Close (fire-and-forget) ──────────────────────────────
+    const eodSettings = parsedSettings.eod ?? DEFAULT_EOD_SETTINGS
+    if (eodSettings.autoBatchClose && parsedSettings.payments.processor === 'datacap') {
+      void (async () => {
+        try {
+          const datacapClient = await getDatacapClient(locationId)
+          // Find all active readers for this location
+          const readers = await db.paymentReader.findMany({
+            where: { locationId, deletedAt: null, isActive: true },
+            select: { id: true, name: true },
+          })
+          for (const reader of readers) {
+            try {
+              const result = await datacapClient.batchClose(reader.id)
+              await db.auditLog.create({
+                data: {
+                  locationId,
+                  employeeId: employeeId || null,
+                  action: 'eod_batch_close_success',
+                  entityType: 'payment_reader',
+                  entityId: reader.id,
+                  details: {
+                    readerName: reader.name,
+                    batchNo: result.batchNo ?? null,
+                    batchItemCount: result.batchItemCount ?? null,
+                    message: `Batch close completed for reader ${reader.name}`,
+                  },
+                },
+              })
+              console.log(`[EOD Reset] Batch close succeeded for reader ${reader.name} (${reader.id})`)
+            } catch (readerErr) {
+              await db.auditLog.create({
+                data: {
+                  locationId,
+                  employeeId: employeeId || null,
+                  action: 'eod_batch_close_failed',
+                  entityType: 'payment_reader',
+                  entityId: reader.id,
+                  details: {
+                    readerName: reader.name,
+                    error: readerErr instanceof Error ? readerErr.message : 'Unknown error',
+                    message: `Batch close failed for reader ${reader.name}`,
+                  },
+                },
+              })
+              console.error(`[EOD Reset] Batch close failed for reader ${reader.name}:`, readerErr)
+            }
+          }
+        } catch (err) {
+          console.error('[EOD Reset] Batch close init failed:', err)
+        }
+      })().catch(console.error)
+    }
+
+    // ── Walkout Auto-Detection (fire-and-forget) ───────────────────────────
+    void detectPotentialWalkouts(locationId).catch(err => {
+      console.error('[EOD Reset] Walkout detection failed:', err)
+    })
+
+    // ── Orphaned Offline Payment Warning ─────────────────────────────────
+    // Check for stale open orders that may have had card payments captured
+    // by Android devices but never synced (PaymentReconciliationWorker exhaustion).
+    let orphanedPaymentSuspects = 0
+    try {
+      orphanedPaymentSuspects = await db.order.count({
+        where: {
+          locationId,
+          status: { in: ['open', 'sent', 'in_progress'] },
+          updatedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) },
+          deletedAt: null,
+        },
+      })
+      if (orphanedPaymentSuspects > 0) {
+        console.warn(
+          `[EOD] WARNING: ${orphanedPaymentSuspects} stale open order(s) found at location ${locationId}. ` +
+          `These may have orphaned offline card payments. Check Datacap batch report via GET /api/internal/payment-reconciliation?locationId=${locationId}`
+        )
+      }
+    } catch (err) {
+      console.error('[EOD Reset] Orphaned payment check failed:', err)
+    }
+
     // Emit ORDER_METADATA_UPDATED for rolled-over orders (fire-and-forget)
     if (staleOpenOrders.length > 0) {
       void Promise.all(
@@ -296,10 +401,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         tablesReset: stats.tablesReset,
         staleOrdersDetected: stats.orphanedOrdersClosed,
         entertainmentReset: stats.entertainmentReset,
+        batchCloseTriggered: eodSettings.autoBatchClose && parsedSettings.payments.processor === 'datacap',
+        walkoutDetectionTriggered: true,
       },
-      warnings: staleOpenOrders.length > 0
-        ? [`${staleOpenOrders.length} stale order(s) detected. Please review manually.`]
-        : [],
+      warnings: [
+        ...(staleOpenOrders.length > 0
+          ? [`${staleOpenOrders.length} stale order(s) detected. Please review manually.`]
+          : []),
+        ...(orphanedPaymentSuspects > 0
+          ? [`${orphanedPaymentSuspects} order(s) may have orphaned offline card payments. Check Datacap batch report.`]
+          : []),
+      ],
       message: 'EOD reset completed successfully',
     } })
   } catch (error) {

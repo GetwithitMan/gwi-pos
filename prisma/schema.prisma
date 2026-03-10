@@ -1849,6 +1849,7 @@ model Modifier {
   // C-SCHEMA-1: Reverse relations (batch 2)
   ingredientSwaps OrderItemIngredient[] @relation("IngredientSwapModifier")
 
+  @@unique([modifierGroupId, name])
   @@index([locationId])
   @@index([modifierGroupId])
   @@index([childModifierGroupId])
@@ -3050,6 +3051,7 @@ model DiscountRule {
   appliedDiscounts OrderDiscount[]
   itemDiscounts    OrderItemDiscount[]
 
+  @@unique([locationId, name])
   @@index([locationId])
   @@index([isActive, isAutomatic])
   @@index([locationId, isActive])
@@ -4749,6 +4751,7 @@ model PricingOptionGroup {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  @@unique([menuItemId, name])
   @@index([locationId])
   @@index([menuItemId])
   @@index([locationId, menuItemId, deletedAt])
@@ -4779,6 +4782,7 @@ model PricingOption {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  @@unique([groupId, label])
   @@index([locationId])
   @@index([groupId])
   @@index([groupId, deletedAt])
@@ -8655,6 +8659,7 @@ model OutageQueueEntry {
   localSeq       Int // monotonic local sequence
   idempotencyKey String    @unique // {locationId}:{tableName}:{recordId}:{localSeq}
   status         String    @default("pending") // pending, replayed, conflict, failed
+  metadata       Json?
   createdAt      DateTime  @default(now())
   replayedAt     DateTime?
   location       Location  @relation(fields: [locationId], references: [id])

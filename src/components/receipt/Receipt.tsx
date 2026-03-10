@@ -68,6 +68,8 @@ export interface ReceiptData {
   customer?: {
     name: string
     loyaltyPoints: number
+    phone?: string | null
+    email?: string | null
   } | null
   loyaltyPointsEarned?: number | null
   loyaltyPointsRedeemed?: number | null

@@ -227,6 +227,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           specialNotes: item.specialNotes,
           isCompleted: item.isCompleted || false,
           completedAt: item.completedAt?.toISOString() || null,
+          kitchenSentAt: item.kitchenSentAt?.toISOString() || null,
           resendCount: item.resendCount || 0,
           lastResentAt: item.lastResentAt?.toISOString() || null,
           resendNote: item.resendNote || null,
@@ -405,6 +406,49 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             console.error('Failed to dispatch resend status:', err)
           })
         }
+      }
+
+      // Speed-of-service tracking: compute bump times for complete/bump_order
+      // Fire-and-forget — calculate timing from kitchenSentAt → completedAt
+      if (action === 'complete' || action === 'bump_order') {
+        void (async () => {
+          try {
+            const bumpedItems = await db.orderItem.findMany({
+              where: { id: { in: itemIds } },
+              select: { id: true, kitchenSentAt: true, completedAt: true },
+            })
+            const speedOfServiceItems: { itemId: string; seconds: number }[] = []
+            for (const item of bumpedItems) {
+              if (item.kitchenSentAt && item.completedAt) {
+                const seconds = Math.round((item.completedAt.getTime() - item.kitchenSentAt.getTime()) / 1000)
+                if (seconds > 0) {
+                  speedOfServiceItems.push({ itemId: item.id, seconds })
+                }
+              }
+            }
+            if (speedOfServiceItems.length > 0) {
+              const avgSeconds = Math.round(speedOfServiceItems.reduce((s, i) => s + i.seconds, 0) / speedOfServiceItems.length)
+              // Store speed-of-service data in audit log for reporting
+              await db.auditLog.create({
+                data: {
+                  locationId,
+                  employeeId: body.employeeId || null,
+                  action: 'kds_speed_of_service',
+                  entityType: 'order',
+                  entityId: orderId,
+                  details: {
+                    stationId: body.stationId,
+                    bumpAction: action,
+                    avgSeconds,
+                    items: speedOfServiceItems,
+                  },
+                },
+              })
+            }
+          } catch (err) {
+            console.error('[KDS] Speed-of-service tracking failed:', err)
+          }
+        })()
       }
 
       // BUG 20: Fire-and-forget audit trail for KDS actions

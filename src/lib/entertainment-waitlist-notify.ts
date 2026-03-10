@@ -19,7 +19,7 @@ export async function notifyNextWaitlistEntry(
   try {
     const floorPlanElement = await db.floorPlanElement.findFirst({
       where: { linkedMenuItemId: menuItemId, deletedAt: null },
-      select: { id: true, visualType: true },
+      select: { id: true, visualType: true, name: true, linkedMenuItem: { select: { name: true } } },
     })
 
     if (!floorPlanElement) return
@@ -44,12 +44,18 @@ export async function notifyNextWaitlistEntry(
       data: { status: 'notified', notifiedAt: new Date() },
     })
 
+    const resolvedName = itemName
+      || floorPlanElement.name
+      || floorPlanElement.linkedMenuItem?.name
+      || floorPlanElement.visualType
+      || 'entertainment item'
+
     void emitToLocation(locationId, 'entertainment:waitlist-notify', {
       entryId: nextWaiting.id,
       customerName: nextWaiting.customerName,
       elementId: floorPlanElement.id,
-      elementName: floorPlanElement.visualType,
-      message: `${nextWaiting.customerName || 'Next customer'} — your ${itemName || 'entertainment item'} is now available!`,
+      elementName: floorPlanElement.name || floorPlanElement.linkedMenuItem?.name || floorPlanElement.visualType,
+      message: `${nextWaiting.customerName || 'Next customer'} — your ${resolvedName} is now available!`,
     }).catch(() => {})
   } catch (err) {
     console.error('[waitlist-notify] Failed to auto-notify:', err)

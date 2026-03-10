@@ -2,6 +2,51 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
+/**
+ * Check for overlapping shifts for the same employee on the same date.
+ * An overlap exists when: newStart < existingEnd AND newEnd > existingStart
+ */
+async function findOverlappingShift(
+  employeeId: string,
+  date: Date,
+  startTime: string,
+  endTime: string,
+  excludeShiftId: string,
+) {
+  const existingShifts = await db.scheduledShift.findMany({
+    where: {
+      employeeId,
+      date,
+      deletedAt: null,
+      id: { not: excludeShiftId },
+    },
+    select: {
+      id: true,
+      startTime: true,
+      endTime: true,
+    },
+  })
+
+  const toMinutes = (time: string) => {
+    const [h, m] = time.split(':').map(Number)
+    return h * 60 + m
+  }
+
+  const newStart = toMinutes(startTime)
+  const newEnd = toMinutes(endTime)
+
+  for (const existing of existingShifts) {
+    const existStart = toMinutes(existing.startTime)
+    const existEnd = toMinutes(existing.endTime)
+
+    if (newStart < existEnd && newEnd > existStart) {
+      return existing
+    }
+  }
+
+  return null
+}
+
 // PUT - Update an individual shift
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
@@ -53,6 +98,20 @@ export const PUT = withVenue(async function PUT(
     if (breakMinutes !== undefined) updateData.breakMinutes = breakMinutes
     if (notes !== undefined) updateData.notes = notes
 
+    // Check for overlap using final values (fallback to existing if not updating)
+    const finalEmployeeId = employeeId ?? shift.employeeId
+    const finalDate = date ? new Date(date) : shift.date
+    const finalStartTime = startTime ?? shift.startTime
+    const finalEndTime = endTime ?? shift.endTime
+
+    const overlap = await findOverlappingShift(
+      finalEmployeeId,
+      finalDate,
+      finalStartTime,
+      finalEndTime,
+      shiftId,
+    )
+
     const updated = await db.scheduledShift.update({
       where: { id: shiftId },
       data: updateData,
@@ -71,26 +130,30 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
-      data: {
-        shift: {
-          id: updated.id,
-          employee: {
-            id: updated.employee.id,
-            name:
-              updated.employee.displayName ||
-              `${updated.employee.firstName} ${updated.employee.lastName}`,
-          },
-          role: updated.role ? { id: updated.role.id, name: updated.role.name } : null,
-          date: updated.date.toISOString(),
-          startTime: updated.startTime,
-          endTime: updated.endTime,
-          breakMinutes: updated.breakMinutes,
-          status: updated.status,
-          notes: updated.notes,
+    const response: Record<string, unknown> = {
+      shift: {
+        id: updated.id,
+        employee: {
+          id: updated.employee.id,
+          name:
+            updated.employee.displayName ||
+            `${updated.employee.firstName} ${updated.employee.lastName}`,
         },
+        role: updated.role ? { id: updated.role.id, name: updated.role.name } : null,
+        date: updated.date.toISOString(),
+        startTime: updated.startTime,
+        endTime: updated.endTime,
+        breakMinutes: updated.breakMinutes,
+        status: updated.status,
+        notes: updated.notes,
       },
-    })
+    }
+
+    if (overlap) {
+      response.warning = `This shift overlaps with an existing shift for this employee (${overlap.startTime}-${overlap.endTime})`
+    }
+
+    return NextResponse.json({ data: response })
   } catch (error) {
     console.error('Failed to update shift:', error)
     return NextResponse.json({ error: 'Failed to update shift' }, { status: 500 })

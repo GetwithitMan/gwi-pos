@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
@@ -52,6 +52,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const settings = parseSettings(await getLocationSettings(locationId))
     const { walkoutRetryFrequencyDays, walkoutMaxRetryDays } = settings.payments
+
+    // ── Enforce walkout.maxCaptureRetries limit ──────────────────────────
+    const walkoutConfig = settings.walkout ?? DEFAULT_WALKOUT_SETTINGS
+    const maxCaptureRetries = walkoutConfig.maxCaptureRetries
+    if (retry.retryCount >= maxCaptureRetries) {
+      // Auto-mark as exhausted if retry count limit reached
+      await db.walkoutRetry.update({
+        where: { id: walkoutRetryId },
+        data: { status: 'exhausted' },
+      })
+      return NextResponse.json({
+        data: {
+          success: false,
+          status: 'exhausted',
+          retryCount: retry.retryCount,
+          maxCaptureRetries,
+          error: `Maximum retry attempts (${maxCaptureRetries}) reached`,
+        },
+      })
+    }
 
     try {
       await validateReader(orderCard.readerId, locationId)

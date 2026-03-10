@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { Prisma } from '@prisma/client'
 
 // GET /api/audit/activity - Global audit log with filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -14,6 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
     const actionType = searchParams.get('actionType')
     const filterEmployeeId = searchParams.get('filterEmployeeId')
+    const search = searchParams.get('search')?.trim() || ''
     const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
     const offset = parseInt(searchParams.get('offset') || '0')
 
@@ -30,10 +32,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build where clause
+    // Build where clause — no entityType filter so all action types surface
     const where: Record<string, unknown> = {
       locationId,
-      entityType: { in: ['order', 'payment'] },
       deletedAt: null,
     }
 
@@ -69,6 +70,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where.employeeId = filterEmployeeId
     }
 
+    // Text search: search action, entityType, entityId, and details JSON
+    if (search) {
+      where.OR = [
+        { action: { contains: search, mode: 'insensitive' as Prisma.QueryMode } },
+        { entityType: { contains: search, mode: 'insensitive' as Prisma.QueryMode } },
+        { entityId: { contains: search, mode: 'insensitive' as Prisma.QueryMode } },
+        // Search within the details JSON by casting to string
+        { details: { string_contains: search } },
+      ]
+    }
+
     const [entries, total] = await Promise.all([
       db.auditLog.findMany({
         where,
@@ -96,6 +108,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ? entry.employee.displayName || `${entry.employee.firstName} ${entry.employee.lastName}`
           : null,
         details: entry.details,
+        ipAddress: entry.ipAddress,
       })),
       total,
       limit,

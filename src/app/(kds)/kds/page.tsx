@@ -150,6 +150,7 @@ function KDSContent() {
   const [showCompleted, setShowCompleted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [socketConnected, setSocketConnected] = useState(false)
+  const [expoMode, setExpoMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
 
   // Authenticate device on mount (after hydration so employee fallback works)
@@ -345,7 +346,7 @@ function KDSContent() {
     return () => {
       clearInterval(heartbeatInterval)
     }
-  }, [authState, screenConfig, stationParam, showCompleted])
+  }, [authState, screenConfig, stationParam, showCompleted, expoMode])
 
   // Fallback polling ONLY when socket is disconnected (20s)
   useEffect(() => {
@@ -417,41 +418,120 @@ function KDSContent() {
     if (!locationId) return
 
     try {
-      const params = new URLSearchParams({ locationId })
-
-      const stationIds = getStationIds()
-      if (stationIds && stationIds.length > 0) {
-        stationIds.forEach(id => params.append('stationId', id))
-      } else {
-        params.append('showAll', 'true')
-      }
-
       const headers: Record<string, string> = {}
       if (deviceToken) {
         headers['x-device-token'] = deviceToken
       }
 
-      // Fetch all pages
       let allOrders: KDSOrder[] = []
-      let cursor: string | null = null
-      do {
-        const pageParams = new URLSearchParams(params)
-        if (cursor) pageParams.set('cursor', cursor)
-        const pageRes = await fetch(`/api/kds?${pageParams}`, { headers })
 
-        if (pageRes.status === 401) {
-          // Token expired or invalid
-          setAuthState('requires_pairing')
-          return
+      if (expoMode) {
+        // Expo mode: fetch from /api/kds/expo — returns all items across all stations
+        let cursor: string | null = null
+        do {
+          const params = new URLSearchParams({ locationId })
+          if (cursor) params.set('cursor', cursor)
+          const pageRes = await fetch(`/api/kds/expo?${params}`, { headers })
+
+          if (pageRes.status === 401) {
+            setAuthState('requires_pairing')
+            return
+          }
+          if (!pageRes.ok) break
+
+          const pageData = await pageRes.json()
+          const expoOrders = (pageData.data?.orders ?? []) as Array<{
+            id: string
+            orderNumber: number
+            orderType: string
+            table?: { name?: string } | null
+            tabName?: string | null
+            employeeName: string
+            createdAt: string
+            elapsedMinutes: number
+            timeStatus: 'fresh' | 'aging' | 'late'
+            items: Array<{
+              id: string
+              name: string
+              quantity: number
+              seatNumber?: number | null
+              kitchenStatus?: string | null
+              isCompleted: boolean
+              completedAt?: string | null
+              specialNotes?: string | null
+              categoryName?: string | null
+              prepStationName?: string | null
+              modifiers: Array<{ id: string; name: string; depth?: number }>
+            }>
+          }>
+
+          // Normalize expo response to KDSOrder shape
+          const normalized: KDSOrder[] = expoOrders.map(eo => ({
+            id: eo.id,
+            orderNumber: eo.orderNumber,
+            orderType: eo.orderType,
+            tableName: eo.table?.name || null,
+            tabName: eo.tabName || null,
+            employeeName: eo.employeeName,
+            createdAt: eo.createdAt,
+            elapsedMinutes: eo.elapsedMinutes,
+            timeStatus: eo.timeStatus,
+            notes: null,
+            items: eo.items.map(ei => ({
+              id: ei.id,
+              name: ei.name,
+              quantity: ei.quantity,
+              categoryName: ei.categoryName || null,
+              pricingOptionLabel: ei.prepStationName || null, // Show station name in expo
+              specialNotes: ei.specialNotes || null,
+              isCompleted: ei.isCompleted,
+              completedAt: ei.completedAt || null,
+              completedBy: null,
+              resendCount: 0,
+              lastResentAt: null,
+              resendNote: null,
+              seatNumber: ei.seatNumber ?? null,
+              courseNumber: null,
+              courseStatus: 'pending',
+              isHeld: false,
+              firedAt: null,
+              modifiers: ei.modifiers || [],
+              ingredientModifications: [],
+            })),
+          }))
+
+          allOrders = allOrders.concat(normalized)
+          cursor = pageData.data?.nextCursor ?? null
+        } while (cursor)
+      } else {
+        // Station mode: fetch from /api/kds with station filtering
+        const params = new URLSearchParams({ locationId })
+
+        const stationIds = getStationIds()
+        if (stationIds && stationIds.length > 0) {
+          stationIds.forEach(id => params.append('stationId', id))
+        } else {
+          params.append('showAll', 'true')
         }
 
-        if (!pageRes.ok) break
+        let cursor: string | null = null
+        do {
+          const pageParams = new URLSearchParams(params)
+          if (cursor) pageParams.set('cursor', cursor)
+          const pageRes = await fetch(`/api/kds?${pageParams}`, { headers })
 
-        const pageData = await pageRes.json()
-        allOrders = allOrders.concat(pageData.data?.orders ?? [])
-        cursor = pageData.data?.nextCursor ?? null
-        if (!station) setStation(pageData.data?.station)
-      } while (cursor)
+          if (pageRes.status === 401) {
+            setAuthState('requires_pairing')
+            return
+          }
+          if (!pageRes.ok) break
+
+          const pageData = await pageRes.json()
+          allOrders = allOrders.concat(pageData.data?.orders ?? [])
+          cursor = pageData.data?.nextCursor ?? null
+          if (!station) setStation(pageData.data?.station)
+        } while (cursor)
+      }
 
       let filteredOrders = allOrders
       if (!showCompleted) {
@@ -467,7 +547,7 @@ function KDSContent() {
     } finally {
       setIsLoading(false)
     }
-  }, [screenConfig, stationParam, showCompleted, deviceToken])
+  }, [screenConfig, stationParam, showCompleted, deviceToken, expoMode])
 
   const handleBumpItem = useCallback(async (itemId: string) => {
     if (!socketConnected) return
@@ -475,19 +555,21 @@ function KDSContent() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
 
-      await fetch('/api/kds', {
+      const endpoint = expoMode ? '/api/kds/expo' : '/api/kds'
+      const body = expoMode
+        ? { itemIds: [itemId], action: 'serve' }
+        : { itemIds: [itemId], action: 'complete' }
+
+      await fetch(endpoint, {
         method: 'PUT',
         headers,
-        body: JSON.stringify({
-          itemIds: [itemId],
-          action: 'complete',
-        }),
+        body: JSON.stringify(body),
       })
       loadOrders()
     } catch (error) {
       console.error('Failed to bump item:', error)
     }
-  }, [deviceToken, loadOrders, socketConnected])
+  }, [deviceToken, loadOrders, socketConnected, expoMode])
 
   const handleBumpOrder = useCallback(async (order: KDSOrder) => {
     if (!socketConnected) return
@@ -501,19 +583,22 @@ function KDSContent() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
 
-      await fetch('/api/kds', {
+      const endpoint = expoMode ? '/api/kds/expo' : '/api/kds'
+
+      await fetch(endpoint, {
         method: 'PUT',
         headers,
         body: JSON.stringify({
           itemIds: incompleteItemIds,
           action: 'bump_order',
+          orderId: order.id,
         }),
       })
       loadOrders()
     } catch (error) {
       console.error('Failed to bump order:', error)
     }
-  }, [deviceToken, loadOrders, socketConnected])
+  }, [deviceToken, loadOrders, socketConnected, expoMode])
 
   const handleUncompleteItem = useCallback(async (itemId: string) => {
     if (!socketConnected) return
@@ -521,19 +606,32 @@ function KDSContent() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
 
-      await fetch('/api/kds', {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({
-          itemIds: [itemId],
-          action: 'uncomplete',
-        }),
-      })
+      if (expoMode) {
+        // Expo: update status back to pending
+        await fetch('/api/kds/expo', {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            itemIds: [itemId],
+            action: 'update_status',
+            status: 'pending',
+          }),
+        })
+      } else {
+        await fetch('/api/kds', {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            itemIds: [itemId],
+            action: 'uncomplete',
+          }),
+        })
+      }
       loadOrders()
     } catch (error) {
       console.error('Failed to uncomplete item:', error)
     }
-  }, [deviceToken, loadOrders, socketConnected])
+  }, [deviceToken, loadOrders, socketConnected, expoMode])
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -606,7 +704,7 @@ function KDSContent() {
     )
   }
 
-  const displayName = screenConfig?.name || station?.displayName || station?.name || 'All Stations'
+  const displayName = expoMode ? 'Expo View' : (screenConfig?.name || station?.displayName || station?.name || 'All Stations')
   const locationName = employee?.location?.name || screenConfig?.locationId || ''
 
   return (
@@ -641,7 +739,12 @@ function KDSContent() {
           )}
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2">
-              {screenConfig ? (
+              {expoMode ? (
+                <>
+                  <span className="w-3 h-3 rounded-full bg-orange-500" title="Expo" />
+                  Expo View
+                </>
+              ) : screenConfig ? (
                 <>
                   <span className="w-3 h-3 rounded-full bg-green-500" title="Paired" />
                   {screenConfig.name}
@@ -693,6 +796,30 @@ function KDSContent() {
               ))}
             </select>
           )}
+
+          {/* Expo / Station Mode Toggle */}
+          <div className="flex rounded-lg overflow-hidden border border-gray-600">
+            <button
+              onClick={() => { setExpoMode(false); setIsLoading(true) }}
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
+                !expoMode
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Station
+            </button>
+            <button
+              onClick={() => { setExpoMode(true); setIsLoading(true) }}
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
+                expoMode
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Expo
+            </button>
+          </div>
 
           {/* Show Completed Toggle */}
           <button

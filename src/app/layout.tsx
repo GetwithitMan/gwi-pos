@@ -13,6 +13,7 @@ import { FailoverBanner } from "@/components/FailoverBanner";
 import { CellularModeBanner } from "@/components/CellularModeBanner";
 import { ManagerAlertListener } from "@/components/ManagerAlertListener";
 import { StockChangeListener } from "@/components/StockChangeListener";
+import { ManagerPinProvider } from "@/components/providers/ManagerPinProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,7 +42,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <ErrorBoundary>
-          {children}
+          <ManagerPinProvider>
+            {children}
+          </ManagerPinProvider>
         </ErrorBoundary>
         <KioskExitZone />
         <SystemReloadListener />

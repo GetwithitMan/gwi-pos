@@ -413,6 +413,11 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
+    // P1: Pre-auth expiration warning (informational — does not block payment)
+    if ((order as any).preAuthExpiresAt && new Date() > new Date((order as any).preAuthExpiresAt)) {
+      console.warn(`[Pay] Pre-auth expired for order ${orderId}. Proceeding with payment.`)
+    }
+
     // Guard: reject empty draft orders — they have $0 total but should NOT be closeable
     if (order.status === 'draft' && (!order.items || order.items.length === 0)) {
       return { earlyReturn: NextResponse.json(
@@ -503,6 +508,16 @@ export const POST = withVenue(withTiming(async function POST(
 
     const { payments, employeeId, terminalId, idempotencyKey } = validation.data
     const finalIdempotencyKey = idempotencyKey || crypto.randomUUID()
+
+    // P0: Unbounded tip guard — tips exceeding 500% of payment amount are clearly fraudulent
+    for (const payment of payments) {
+      if (payment.tipAmount && payment.tipAmount > payment.amount * 5) {
+        return { earlyReturn: NextResponse.json(
+          { error: 'Tip amount cannot exceed 500% of payment amount' },
+          { status: 400 }
+        ) }
+      }
+    }
 
     // Idempotency check using already-loaded payments (no extra query needed)
     if (idempotencyKey) {
@@ -611,11 +626,29 @@ export const POST = withVenue(withTiming(async function POST(
     if (order.parentOrderId) {
       const parentOrder = await tx.order.findUnique({
         where: { id: order.parentOrderId },
-        select: { status: true },
+        select: { status: true, total: true },
       })
       if (!parentOrder || parentOrder.status !== 'split') {
         return { earlyReturn: NextResponse.json(
           { error: 'Parent order is no longer in split state' },
+          { status: 400 }
+        ) }
+      }
+
+      // P0: Validate total payments across all splits don't exceed parent total
+      const allSplitPayments = await tx.payment.aggregate({
+        where: {
+          order: { parentOrderId: order.parentOrderId },
+          status: 'completed',
+        },
+        _sum: { totalAmount: true },
+      })
+      const existingPaidTotal = Number(allSplitPayments._sum.totalAmount ?? 0)
+      const parentTotal = Number(parentOrder.total)
+      const thisSplitPaymentTotal = payments.reduce((sum, p) => sum + p.amount + (p.tipAmount || 0), 0)
+      if (existingPaidTotal + thisSplitPaymentTotal > parentTotal + 0.01) {
+        return { earlyReturn: NextResponse.json(
+          { error: `Total split payments ($${(existingPaidTotal + thisSplitPaymentTotal).toFixed(2)}) would exceed original order total ($${parentTotal.toFixed(2)})` },
           { status: 400 }
         ) }
       }
@@ -1772,22 +1805,30 @@ export const POST = withVenue(withTiming(async function POST(
       // If this fails, log but don't block payment response.
       try {
         const firstPaymentId = ingestResult.bridgedPayments[0]?.id ?? null
-        await db.pendingDeduction.upsert({
-          where: { orderId },
-          create: {
-            locationId: order.locationId,
-            orderId,
-            paymentId: firstPaymentId,
-            deductionType: 'order_deduction',
-            status: 'pending',
-          },
-          update: {
-            paymentId: firstPaymentId,
-            status: 'pending',
-            availableAt: new Date(),
-            lastError: null,
-          },
-        })
+        // P1: Guard against re-deduction — don't reset succeeded/dead deductions back to pending
+        const existingDeduction = await db.pendingDeduction.findUnique({ where: { orderId } })
+        if (!existingDeduction) {
+          await db.pendingDeduction.create({
+            data: {
+              locationId: order.locationId,
+              orderId,
+              paymentId: firstPaymentId,
+              deductionType: 'order_deduction',
+              status: 'pending',
+            },
+          })
+        } else if (existingDeduction.status !== 'succeeded' && existingDeduction.status !== 'dead') {
+          await db.pendingDeduction.update({
+            where: { orderId },
+            data: {
+              paymentId: firstPaymentId,
+              status: 'pending',
+              availableAt: new Date(),
+              lastError: null,
+            },
+          })
+        }
+        // If already succeeded or dead, skip — no re-deduction
       } catch (err) {
         console.error('[Pay] Failed to create PendingDeduction outbox row:', err)
       }
@@ -1843,7 +1884,7 @@ export const POST = withVenue(withTiming(async function POST(
             params.push(...ids)
             const idPlaceholders = ids.map((_, i) => `$${commissionUpdates.length * 2 + i + 1}`).join(', ')
             await db.$executeRawUnsafe(
-              `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END, "updatedAt" = NOW() WHERE id IN (${idPlaceholders})`,
+              `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END, "updatedAt" = NOW(), "lastMutatedBy" = 'local' WHERE id IN (${idPlaceholders})`,
               ...params
             )
           }
@@ -1852,7 +1893,7 @@ export const POST = withVenue(withTiming(async function POST(
           if (Math.abs(recalculatedCommission - currentTotal) > 0.001) {
             await db.order.update({
               where: { id: orderId },
-              data: { commissionTotal: recalculatedCommission },
+              data: { commissionTotal: recalculatedCommission, lastMutatedBy: 'local' },
             })
           }
         } catch (err) {
@@ -1995,6 +2036,23 @@ export const POST = withVenue(withTiming(async function POST(
       }).catch(console.error)
     }
 
+    // Auto-send email receipt for online orders (fire-and-forget)
+    // Online orders (pickup, delivery, online) with a customer email get an automatic receipt
+    if (orderIsPaid && order.orderType && ['online', 'pickup', 'delivery'].includes(order.orderType)) {
+      const customerEmail = (order.customer as any)?.email
+      if (customerEmail) {
+        void fetch(`http://localhost:${process.env.PORT || '3005'}/api/receipts/email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId: order.id,
+            email: customerEmail,
+            locationId: order.locationId,
+          }),
+        }).catch(err => console.error('[Pay] Auto email receipt for online order failed:', err))
+      }
+    }
+
     // Build receipt data inline (eliminates separate /receipt fetch)
     const receiptData = {
       id: order.id,
@@ -2062,6 +2120,8 @@ export const POST = withVenue(withTiming(async function POST(
       customer: order.customer ? {
         name: (order.customer as any).displayName || `${(order.customer as any).firstName} ${(order.customer as any).lastName}`,
         loyaltyPoints: (order.customer as any).loyaltyPoints,
+        phone: (order.customer as any).phone || null,
+        email: (order.customer as any).email || null,
       } : null,
       loyaltyPointsRedeemed: null,
       loyaltyPointsEarned: pointsEarned || null,

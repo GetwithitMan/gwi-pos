@@ -35,6 +35,14 @@ export function ReceiptModal({
   const [emailAddress, setEmailAddress] = useState('')
   const [sendingEmail, setSendingEmail] = useState(false)
 
+  // SMS receipt state
+  const [showSmsForm, setShowSmsForm] = useState(false)
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [sendingSms, setSendingSms] = useState(false)
+
+  // Hardware receipt printer state
+  const [isPrinting, setIsPrinting] = useState(false)
+
   useEffect(() => {
     if (!isOpen || !orderId) {
       setReceiptData(null)
@@ -42,6 +50,9 @@ export function ReceiptModal({
       setShowEmailForm(false)
       setEmailAddress('')
       setSendingEmail(false)
+      setShowSmsForm(false)
+      setPhoneNumber('')
+      setSendingSms(false)
       return
     }
 
@@ -101,6 +112,34 @@ export function ReceiptModal({
       toast.error('Failed to send email receipt')
     } finally {
       setSendingEmail(false)
+    }
+  }
+
+  const handleSendSms = async () => {
+    if (!phoneNumber.trim() || !orderId) return
+    setSendingSms(true)
+    try {
+      const response = await fetch('/api/receipts/sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId,
+          phone: phoneNumber.trim(),
+          locationId,
+        }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to send SMS receipt')
+        return
+      }
+      toast.success(`Receipt texted to ${phoneNumber.trim()}`)
+      setShowSmsForm(false)
+      setPhoneNumber('')
+    } catch {
+      toast.error('Failed to send SMS receipt')
+    } finally {
+      setSendingSms(false)
     }
   }
 
@@ -184,6 +223,29 @@ export function ReceiptModal({
     printWindow.document.close()
   }
 
+  const handlePrintToReceiptPrinter = async () => {
+    if (!orderId) return
+    setIsPrinting(true)
+    try {
+      const response = await fetch('/api/print/receipt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to print receipt')
+        return
+      }
+      const result = await response.json()
+      toast.success(`Receipt sent to ${result.data?.printerName || 'printer'}`)
+    } catch {
+      toast.error('Failed to print receipt')
+    } finally {
+      setIsPrinting(false)
+    }
+  }
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Receipt" size="md" variant="default">
         <div className="bg-gray-100 -mx-5 -mt-5 p-4">
@@ -238,15 +300,54 @@ export function ReceiptModal({
           </div>
         )}
 
+        {/* SMS Receipt Form */}
+        {showSmsForm && (
+          <div className="px-4 py-3 border-t bg-green-50">
+            <div className="flex gap-2">
+              <Input
+                type="tel"
+                placeholder="(555) 123-4567"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                className="flex-1"
+                autoFocus
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSendSms() }}
+              />
+              <Button
+                variant="primary"
+                onClick={handleSendSms}
+                disabled={sendingSms || !phoneNumber.trim()}
+                className="whitespace-nowrap"
+              >
+                {sendingSms ? 'Sending...' : 'Send'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => { setShowSmsForm(false); setPhoneNumber('') }}
+                disabled={sendingSms}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
-        <div className="p-4 border-t bg-gray-50 flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={onClose}>
+        <div className="p-4 border-t bg-gray-50 flex flex-wrap gap-2">
+          <Button variant="outline" className="flex-1 min-w-[80px]" onClick={onClose}>
             Close
           </Button>
           <Button
             variant="outline"
-            className="flex-1"
-            onClick={() => setShowEmailForm(!showEmailForm)}
+            className="flex-1 min-w-[80px]"
+            onClick={() => {
+              setShowEmailForm(!showEmailForm)
+              setShowSmsForm(false)
+              // Pre-fill customer email if available
+              if (!showEmailForm && receiptData?.customer?.email && !emailAddress) {
+                setEmailAddress(receiptData.customer.email)
+              }
+            }}
             disabled={isLoading || !receiptData}
           >
             <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,8 +356,37 @@ export function ReceiptModal({
             Email
           </Button>
           <Button
+            variant="outline"
+            className="flex-1 min-w-[80px]"
+            onClick={() => {
+              setShowSmsForm(!showSmsForm)
+              setShowEmailForm(false)
+              // Pre-fill customer phone if available
+              if (!showSmsForm && receiptData?.customer?.phone && !phoneNumber) {
+                setPhoneNumber(receiptData.customer.phone)
+              }
+            }}
+            disabled={isLoading || !receiptData}
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            SMS
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 min-w-[80px]"
+            onClick={handlePrintToReceiptPrinter}
+            disabled={isLoading || !receiptData || isPrinting || !orderId}
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            {isPrinting ? 'Printing...' : 'Reprint'}
+          </Button>
+          <Button
             variant="primary"
-            className="flex-1"
+            className="flex-1 min-w-[80px]"
             onClick={handlePrint}
             disabled={isLoading || !receiptData}
           >

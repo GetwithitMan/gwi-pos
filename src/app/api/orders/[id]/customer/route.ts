@@ -87,6 +87,7 @@ export const PUT = withVenue(async function PUT(
         tags: customerTags,
         isBanned: customerTags.includes('banned'),
         notes: customer.notes,
+        birthday: customer.birthday?.toISOString() || null,
       } : null,
       loyaltyEnabled: settings.loyalty.enabled,
       loyaltySettings: settings.loyalty.enabled ? {
@@ -135,6 +136,7 @@ export const GET = withVenue(async function GET(
 
     return NextResponse.json({ data: {
       customerId: order.customerId,
+      isTaxExempt: order.isTaxExempt,
       customer: order.customer ? {
         id: order.customer.id,
         name: order.customer.displayName || `${order.customer.firstName} ${order.customer.lastName}`,
@@ -146,6 +148,7 @@ export const GET = withVenue(async function GET(
         tags: orderCustomerTags,
         isBanned: orderCustomerTags.includes('banned'),
         notes: order.customer.notes,
+        birthday: order.customer.birthday?.toISOString() || null,
       } : null,
       loyaltyEnabled: settings.loyalty.enabled,
       loyaltySettings: settings.loyalty.enabled ? {

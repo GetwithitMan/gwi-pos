@@ -17,6 +17,23 @@ interface Customer {
   totalOrders: number
   tags: string[]
   notes: string | null
+  birthday: string | null
+}
+
+/** Check if customer's birthday is today or within the next 7 days */
+function getBirthdayProximity(birthday: string | null): 'today' | number | null {
+  if (!birthday) return null
+  const bday = new Date(birthday)
+  const now = new Date()
+  const thisYearBday = new Date(now.getFullYear(), bday.getMonth(), bday.getDate())
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const checkDate = thisYearBday < todayStart
+    ? new Date(now.getFullYear() + 1, bday.getMonth(), bday.getDate())
+    : thisYearBday
+  const diffDays = Math.round((checkDate.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24))
+  if (diffDays === 0) return 'today'
+  if (diffDays <= 7) return diffDays
+  return null
 }
 
 interface CustomerLookupModalProps {
@@ -218,6 +235,18 @@ export function CustomerLookupModal({
                       {customer.email && (
                         <div className="text-sm text-gray-500">{customer.email}</div>
                       )}
+                      {/* Birthday alert */}
+                      {(() => {
+                        const bAlert = getBirthdayProximity(customer.birthday)
+                        if (bAlert === null) return null
+                        return (
+                          <div className={`text-xs font-semibold mt-0.5 ${bAlert === 'today' ? 'text-pink-600' : 'text-purple-600'}`}>
+                            {bAlert === 'today'
+                              ? '\uD83C\uDF82 Birthday today!'
+                              : `\uD83C\uDF82 Birthday in ${bAlert} day${bAlert === 1 ? '' : 's'}`}
+                          </div>
+                        )
+                      })()}
                     </div>
                     {loyaltyEnabled && (
                       <div className="text-right">

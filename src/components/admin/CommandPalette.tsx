@@ -34,6 +34,8 @@ const ALL_PAGES = [
   { name: 'Roles & Permissions', path: '/roles', section: 'Team', keywords: ['role', 'permission', 'access', 'security'] },
   { name: 'Scheduling', path: '/scheduling', section: 'Team', keywords: ['schedule', 'shift', 'calendar'] },
   { name: 'Payroll', path: '/payroll', section: 'Team', keywords: ['payroll', 'pay', 'wage', 'salary'] },
+  // Security
+  { name: 'Audit Trail', path: '/audit', section: 'Security', keywords: ['audit', 'trail', 'log', 'activity', 'security'] },
   // Reports
   { name: 'My Shift', path: '/reports/shift', section: 'Reports', keywords: ['shift', 'my', 'personal'] },
   { name: 'My Commissions', path: '/reports/commission', section: 'Reports', keywords: ['commission', 'earnings'] },

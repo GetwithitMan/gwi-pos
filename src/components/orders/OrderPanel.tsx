@@ -301,8 +301,12 @@ export const OrderPanel = memo(function OrderPanel({
     firstName: string
     lastName: string
     loyaltyPoints: number
+    tags?: string[]
+    birthday?: string | null
   } | null>(null)
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false)
+  const [isTaxExempt, setIsTaxExempt] = useState(false)
+  const [taxExemptToggling, setTaxExemptToggling] = useState(false)
   const customerFetchedForRef = useRef<string | null>(null)
 
   // Fetch customer data when order changes
@@ -310,6 +314,7 @@ export const OrderPanel = memo(function OrderPanel({
     if (!orderId || orderId.startsWith('temp-')) {
       setLinkedCustomer(null)
       setLoyaltyEnabled(false)
+      setIsTaxExempt(false)
       customerFetchedForRef.current = null
       return
     }
@@ -327,11 +332,14 @@ export const OrderPanel = memo(function OrderPanel({
             firstName: data.customer.firstName,
             lastName: data.customer.lastName,
             loyaltyPoints: data.customer.loyaltyPoints ?? 0,
+            tags: data.customer.tags ?? [],
+            birthday: data.customer.birthday ?? null,
           })
         } else {
           setLinkedCustomer(null)
         }
         setLoyaltyEnabled(!!data?.loyaltyEnabled)
+        setIsTaxExempt(!!data?.isTaxExempt)
       })
       .catch(err => {
         if (err?.name === 'AbortError') return
@@ -358,11 +366,14 @@ export const OrderPanel = memo(function OrderPanel({
                 firstName: d.customer.firstName,
                 lastName: d.customer.lastName,
                 loyaltyPoints: d.customer.loyaltyPoints ?? 0,
+                tags: d.customer.tags ?? [],
+                birthday: d.customer.birthday ?? null,
               })
             } else {
               setLinkedCustomer(null)
             }
             setLoyaltyEnabled(!!d?.loyaltyEnabled)
+            setIsTaxExempt(!!d?.isTaxExempt)
             customerFetchedForRef.current = orderId
           })
           .catch(() => {})
@@ -385,6 +396,8 @@ export const OrderPanel = memo(function OrderPanel({
         firstName: customer.firstName,
         lastName: customer.lastName,
         loyaltyPoints: customer.loyaltyPoints ?? 0,
+        tags: customer.tags ?? [],
+        birthday: customer.birthday ?? null,
       })
     } else {
       setLinkedCustomer(null)
@@ -411,6 +424,62 @@ export const OrderPanel = memo(function OrderPanel({
       })
       .catch(console.error)
   }, [orderId])
+
+  // Tax exempt toggle handler
+  const handleTaxExemptToggle = useCallback(() => {
+    if (!orderId || taxExemptToggling) return
+    const newValue = !isTaxExempt
+    setIsTaxExempt(newValue) // Optimistic
+    setTaxExemptToggling(true)
+    void fetch(`/api/orders/${orderId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(employeeId ? { 'x-employee-id': employeeId } : {}),
+      },
+      body: JSON.stringify({ isTaxExempt: newValue }),
+    })
+      .then(r => {
+        if (!r.ok) {
+          setIsTaxExempt(!newValue) // Revert on failure
+          console.error('Failed to toggle tax exempt')
+        }
+      })
+      .catch(err => {
+        setIsTaxExempt(!newValue) // Revert on error
+        console.error('Tax exempt toggle error:', err)
+      })
+      .finally(() => setTaxExemptToggling(false))
+  }, [orderId, isTaxExempt, taxExemptToggling, employeeId])
+
+  // Birthday proximity check: returns null, 'today', or days until birthday (1-7)
+  const birthdayAlert = useMemo(() => {
+    if (!linkedCustomer?.birthday) return null
+    const bday = new Date(linkedCustomer.birthday)
+    const now = new Date()
+    // Build this year's birthday
+    const thisYearBday = new Date(now.getFullYear(), bday.getMonth(), bday.getDate())
+    // If already passed this year, check next year
+    const checkDate = thisYearBday < new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      ? new Date(now.getFullYear() + 1, bday.getMonth(), bday.getDate())
+      : thisYearBday
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const diffDays = Math.round((checkDate.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays === 0) return 'today' as const
+    if (diffDays <= 7) return diffDays
+    return null
+  }, [linkedCustomer?.birthday])
+
+  // Tag colors (same as CustomerLookupModal)
+  const TAG_COLORS: Record<string, string> = {
+    VIP: 'bg-yellow-100 text-yellow-800',
+    Regular: 'bg-green-100 text-green-800',
+    'First-Timer': 'bg-blue-100 text-blue-800',
+    Staff: 'bg-purple-100 text-purple-800',
+    Family: 'bg-pink-100 text-pink-800',
+    Business: 'bg-gray-100 text-gray-800',
+    'Birthday Club': 'bg-red-100 text-red-800',
+  }
 
   // Sort direction: 'newest-bottom' (default, newest appended at bottom) or 'newest-top' (newest at top)
   const [sortDirection, setSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
@@ -1315,7 +1384,7 @@ export const OrderPanel = memo(function OrderPanel({
                   </p>
                 )}
                 {/* Share Table/Tab button + Customer button */}
-                {orderId && (
+                {orderId && (<>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
                     <button
                       onClick={() => setShowShareOwnership(true)}
@@ -1407,8 +1476,103 @@ export const OrderPanel = memo(function OrderPanel({
                         Add Customer
                       </button>
                     )}
+                    {/* Tax Exempt toggle — only when customer is attached */}
+                    {linkedCustomer && orderId && !orderId.startsWith('temp-') && (
+                      <button
+                        onClick={handleTaxExemptToggle}
+                        disabled={taxExemptToggling}
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          color: isTaxExempt ? '#fbbf24' : '#64748b',
+                          padding: '2px 8px',
+                          background: isTaxExempt ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                          border: `1px solid ${isTaxExempt ? 'rgba(251, 191, 36, 0.4)' : 'rgba(100, 116, 139, 0.3)'}`,
+                          borderRadius: '4px',
+                          cursor: taxExemptToggling ? 'wait' : 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.15s ease',
+                          minHeight: '24px',
+                          opacity: taxExemptToggling ? 0.6 : 1,
+                        }}
+                      >
+                        <span style={{
+                          display: 'inline-block',
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '2px',
+                          border: `1.5px solid ${isTaxExempt ? '#fbbf24' : '#64748b'}`,
+                          background: isTaxExempt ? '#fbbf24' : 'transparent',
+                          position: 'relative',
+                        }}>
+                          {isTaxExempt && (
+                            <svg width="6" height="6" viewBox="0 0 12 12" fill="none" style={{ position: 'absolute', top: '-0.5px', left: '0px' }}>
+                              <path d="M2 6l3 3 5-5" stroke="#1e293b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          )}
+                        </span>
+                        Tax Exempt
+                      </button>
+                    )}
                   </div>
-                )}
+                  {/* Customer tag badges + birthday alert (below buttons row) */}
+                  {linkedCustomer && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                      {/* Tag badges */}
+                      {linkedCustomer.tags && linkedCustomer.tags.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                          {/* Show BANNED badge prominently if present */}
+                          {linkedCustomer.tags.includes('banned') && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white">
+                              BANNED
+                            </span>
+                          )}
+                          {/* Show up to 3 non-banned tags */}
+                          {linkedCustomer.tags.filter(t => t !== 'banned').slice(0, 3).map(tag => (
+                            <span
+                              key={tag}
+                              className={`px-1.5 py-0.5 rounded-full text-[9px] font-medium ${TAG_COLORS[tag] || 'bg-gray-100 text-gray-700'}`}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                          {/* Overflow indicator */}
+                          {linkedCustomer.tags.filter(t => t !== 'banned').length > 3 && (
+                            <span style={{
+                              fontSize: '9px',
+                              color: '#64748b',
+                              fontWeight: 500,
+                            }}>
+                              +{linkedCustomer.tags.filter(t => t !== 'banned').length - 3} more
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {/* Birthday alert */}
+                      {birthdayAlert !== null && (
+                        <div style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: birthdayAlert === 'today' ? '#f472b6' : '#a78bfa',
+                          padding: '2px 8px',
+                          background: birthdayAlert === 'today' ? 'rgba(244, 114, 182, 0.12)' : 'rgba(167, 139, 250, 0.1)',
+                          border: `1px solid ${birthdayAlert === 'today' ? 'rgba(244, 114, 182, 0.3)' : 'rgba(167, 139, 250, 0.2)'}`,
+                          borderRadius: '6px',
+                          alignSelf: 'flex-start',
+                        }}>
+                          {birthdayAlert === 'today'
+                            ? '\uD83C\uDF82 Birthday today!'
+                            : `\uD83C\uDF82 Birthday in ${birthdayAlert} day${birthdayAlert === 1 ? '' : 's'}`}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>)}
                 {/* Card status */}
                 {hasCard !== undefined && (
                   <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>

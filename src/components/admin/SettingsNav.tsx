@@ -195,10 +195,13 @@ const settingsSections: SettingsSection[] = [
     permission: PERMISSIONS.SETTINGS_SECURITY,
     items: [
       { name: 'PIN & Lockout', href: '/settings/security' },
+      { name: 'Alerts & Notifications', href: '/settings/alerts' },
+      { name: 'Approvals', href: '/settings/approvals' },
       { name: 'Discounts', href: '/discounts' },
       { name: 'Void Reasons', href: '/settings/void-reasons' },
       { name: 'Comp Reasons', href: '/settings/comp-reasons' },
       { name: 'Reason Access', href: '/settings/reason-access' },
+      { name: 'Audit Trail', href: '/audit' },
     ],
   },
   {

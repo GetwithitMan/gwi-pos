@@ -10,6 +10,17 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 import { enableSyncReplication } from '@/lib/db-helpers'
+import { dispatchAlert } from '@/lib/alert-service'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
+
+class VoidValidationError extends Error {
+  statusCode: number
+  constructor(message: string, statusCode: number) {
+    super(message)
+    this.statusCode = statusCode
+  }
+}
 
 /**
  * Voids a payment — handles both Datacap (card) and DB in a single atomic flow.
@@ -39,17 +50,13 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Get the order with payment
-    const order = await db.order.findUnique({
+    // Lightweight order check before acquiring locks (for locationId needed by auth)
+    const orderCheck = await db.order.findUnique({
       where: { id: orderId },
-      include: {
-        payments: {
-          where: { deletedAt: null },
-        },
-      },
+      select: { id: true, locationId: true },
     })
 
-    if (!order) {
+    if (!orderCheck) {
       return NextResponse.json(
         { error: 'Order not found' },
         { status: 404 }
@@ -57,35 +64,52 @@ export const POST = withVenue(async function POST(
     }
 
     // Verify manager has permission scoped to order's location
-    const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
+    const authResult = await requirePermission(managerId, orderCheck.locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
     if (!authResult.authorized) {
       return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
     }
 
-    // Bug 14: Block voiding payments on closed/cancelled orders
-    if (order.status === 'closed' || order.status === 'cancelled') {
-      return NextResponse.json(
-        { error: 'Cannot void payments on a closed/cancelled order' },
-        { status: 400 }
-      )
+    // Phase 1: Read order + validate under FOR UPDATE lock on Order row.
+    // This contends with pay/route.ts which also holds FOR UPDATE on Order.
+    const lockedRead = await db.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          payments: {
+            where: { deletedAt: null },
+          },
+        },
+      })
+
+      if (!order) {
+        return { error: 'Order not found', status: 404 } as const
+      }
+
+      if (order.status === 'voided' || order.status === 'cancelled') {
+        return { error: `Cannot void payment on ${order.status} order`, status: 400 } as const
+      }
+
+      const payment = order.payments.find((p) => p.id === paymentId)
+      if (!payment) {
+        return { error: 'Payment not found', status: 404 } as const
+      }
+
+      if (payment.status === 'voided') {
+        return { error: 'Payment is already voided', status: 400 } as const
+      }
+
+      return { order, payment }
+    }, { timeout: 15000 })
+
+    if ('error' in lockedRead) {
+      return NextResponse.json({ error: lockedRead.error }, { status: lockedRead.status })
     }
 
-    const payment = order.payments.find((p) => p.id === paymentId)
-    if (!payment) {
-      return NextResponse.json(
-        { error: 'Payment not found' },
-        { status: 404 }
-      )
-    }
+    const { order, payment } = lockedRead
 
-    if (payment.status === 'voided') {
-      return NextResponse.json(
-        { error: 'Payment is already voided' },
-        { status: 400 }
-      )
-    }
-
-    // Step 1: If card payment, void at Datacap first
+    // Step 1: If card payment, void at Datacap first (outside DB transaction)
     const isCardPayment = payment.paymentMethod === 'card' || payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
     if (isCardPayment) {
       const recordNo = payment.datacapRecordNo
@@ -97,7 +121,6 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      // Determine which reader to use: caller-provided or from payment record
       const effectiveReaderId = readerId || payment.paymentReaderId
 
       if (!effectiveReaderId) {
@@ -128,25 +151,28 @@ export const POST = withVenue(async function POST(
     }
 
     // Step 2: Datacap succeeded (or cash) — update DB
-    // Check if there are other valid payments
     const activePayments = order.payments.filter(
       (p) => p.id !== paymentId && p.status !== 'voided'
     )
 
-    // Update order status if needed
     let newOrderStatus = order.status
     if (activePayments.length === 0) {
-      // No more active payments, mark order as voided
       newOrderStatus = 'voided'
     }
 
     let voidedPayment
     try {
-      // Wrap all critical writes in a single transaction
       voidedPayment = await db.$transaction(async (tx) => {
-        // Acquire row lock + synchronous replication for void durability
+        // Acquire row locks on Order + Payment + synchronous replication for void durability
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
         await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`
         await enableSyncReplication(tx)
+
+        // Re-check payment status inside lock (may have changed since Phase 1)
+        const freshPayment = await tx.payment.findUnique({ where: { id: paymentId } })
+        if (freshPayment?.status === 'voided') {
+          throw new VoidValidationError('Payment is already voided', 400)
+        }
 
         // 1. Update payment to voided
         const updated = await tx.payment.update({
@@ -196,6 +222,9 @@ export const POST = withVenue(async function POST(
         return updated
       })
     } catch (dbError) {
+      if (dbError instanceof VoidValidationError) {
+        return NextResponse.json({ error: dbError.message }, { status: dbError.statusCode })
+      }
       // CRITICAL: Datacap voided but DB update failed
       if (isCardPayment) {
         const recordNo = payment.datacapRecordNo
@@ -301,6 +330,37 @@ export const POST = withVenue(async function POST(
         console.error('[VOID] Inventory restoration failed — manual stock adjustment may be needed:', err)
       }
     }
+
+    // Alert dispatch: notify if void exceeds threshold (fire-and-forget)
+    void (async () => {
+      try {
+        const locSettings = parseSettings(await getLocationSettings(order.locationId))
+        if (!locSettings.alerts.enabled) return
+        const voidAmount = Number(payment.totalAmount)
+        if (voidAmount < locSettings.alerts.largeVoidThreshold) return
+
+        // Resolve manager name for the alert message
+        const manager = await db.employee.findUnique({
+          where: { id: managerId },
+          select: { firstName: true, lastName: true, displayName: true },
+        })
+        const managerName = manager?.displayName || `${manager?.firstName ?? ''} ${manager?.lastName ?? ''}`.trim() || 'Unknown'
+
+        void dispatchAlert({
+          severity: 'HIGH',
+          errorType: 'void_processed',
+          category: 'transaction',
+          message: `Void processed: Order #${order.orderNumber} - $${voidAmount.toFixed(2)} by ${managerName}`,
+          locationId: order.locationId,
+          employeeId: managerId,
+          orderId,
+          paymentId,
+          groupId: `void-${order.locationId}-${orderId}`,
+        }).catch(console.error)
+      } catch (err) {
+        console.error('[void-payment] Alert dispatch failed:', err)
+      }
+    })()
 
     return NextResponse.json({
       data: {

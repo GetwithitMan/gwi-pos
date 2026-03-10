@@ -80,6 +80,43 @@ export default function TimeClockPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [breaksByEntry, setBreaksByEntry] = useState<Record<string, BreakRecord[]>>({})
 
+  // Live clock for overtime badge (updates every 30s)
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Fetch overtimeWarningMinutes from location settings
+  useEffect(() => {
+    if (!employee?.location?.id) return
+    fetch('/api/settings')
+      .then(res => res.ok ? res.json() : null)
+      .then(json => {
+        if (!json) return
+        const data = json.data ?? json
+        const s = data.settings || data
+        const mins = s.alerts?.overtimeWarningMinutes
+        if (typeof mins === 'number' && mins > 0) setOvertimeWarningMinutes(mins)
+      })
+      .catch(console.error)
+  }, [employee?.location?.id])
+
+  /**
+   * Returns 'overtime' | 'warning' | null for an active (not clocked-out) entry.
+   * - 'overtime'  — worked >= 8 hours
+   * - 'warning'   — within overtimeWarningMinutes of 8 hours
+   */
+  function getOvertimeStatus(entry: TimeClockEntry): 'overtime' | 'warning' | null {
+    if (entry.clockOut) return null // completed — use recorded overtimeHours instead
+    const clockInMs = new Date(entry.clockIn).getTime()
+    const workedMs = now.getTime() - clockInMs
+    const workedMinutes = workedMs / 60_000
+    const thresholdMinutes = OVERTIME_THRESHOLD_HOURS * 60
+    if (workedMinutes >= thresholdMinutes) return 'overtime'
+    if (workedMinutes >= thresholdMinutes - overtimeWarningMinutes) return 'warning'
+    return null
+  }
+
   const loadEntries = useCallback(async () => {
     if (!employee?.location?.id) return
     setIsLoading(true)
@@ -433,7 +470,25 @@ export default function TimeClockPage() {
                           <td className="py-2 pr-3 text-right">{entry.overtimeHours?.toFixed(1) ?? '—'}</td>
                           <td className="py-2 pr-3 text-right">{calcEstPay(entry)}</td>
                           <td className="py-2 pr-3 max-w-[120px] truncate text-gray-500">{entry.notes || '—'}</td>
-                          <td className="py-2 pr-3">{statusBadge(entry)}</td>
+                          <td className="py-2 pr-3">
+                            <span className="flex items-center gap-1.5">
+                              {statusBadge(entry)}
+                              {(() => {
+                                const ot = getOvertimeStatus(entry)
+                                if (ot === 'overtime') return (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">OT</span>
+                                )
+                                if (ot === 'warning') return (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">Near OT</span>
+                                )
+                                // For completed entries, show OT badge if they logged overtime hours
+                                if (entry.clockOut && entry.overtimeHours && entry.overtimeHours > 0) return (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">OT</span>
+                                )
+                                return null
+                              })()}
+                            </span>
+                          </td>
                           {canEdit && (
                             <td className="py-2">
                               <Button

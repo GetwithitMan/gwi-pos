@@ -338,17 +338,34 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           }
         }
 
-        // Log the print job
-        await db.printJob.create({
-          data: {
-            locationId: order.locationId,
-            jobType: 'kitchen',
-            orderId: order.id,
-            printerId: printer.id,
-            status: result.success ? 'sent' : 'failed',
-            sentAt: new Date(),
-          },
-        })
+        // Log the print job — queue for retry if both primary and backup failed
+        if (result.success) {
+          await db.printJob.create({
+            data: {
+              locationId: order.locationId,
+              jobType: 'kitchen',
+              orderId: order.id,
+              printerId: printer.id,
+              status: 'sent',
+              sentAt: new Date(),
+            },
+          })
+        } else {
+          // Both primary and backup failed — queue for retry with stored content
+          await db.printJob.create({
+            data: {
+              locationId: order.locationId,
+              jobType: 'kitchen',
+              orderId: order.id,
+              printerId: printer.id,
+              status: 'queued',
+              retryCount: 0,
+              errorMessage: result.error || 'Primary and backup print failed',
+              content: document.toString('base64'), // Store ESC/POS buffer for retry
+            },
+          })
+          console.warn(`[Kitchen Print] Queued for retry — order ${order.orderNumber}, printer ${printer.name}`)
+        }
 
         results.push({
           printerId: printer.id,
@@ -369,9 +386,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Mark items as sent to kitchen
     if (results.some(r => r.success)) {
+      const now = new Date()
       await db.orderItem.updateMany({
         where: { id: { in: itemsToPrint.map(i => i.id) } },
-        data: { kitchenStatus: 'cooking' },
+        data: { kitchenStatus: 'cooking', kitchenSentAt: now },
       })
 
       // Fire-and-forget: emit ITEM_UPDATED per item for event-sourced sync

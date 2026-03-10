@@ -11,10 +11,38 @@ interface TimingMetrics {
   orderCount: number
 }
 
+interface BumpMetrics {
+  avgBumpSeconds: number | null
+  medianBumpSeconds: number | null
+  minBumpSeconds: number | null
+  maxBumpSeconds: number | null
+  itemCount: number
+}
+
 function avgMinutes(values: number[]): number | null {
   if (values.length === 0) return null
   const sum = values.reduce((s, v) => s + v, 0)
   return Math.round((sum / values.length / 60000) * 10) / 10 // ms → minutes, 1 decimal
+}
+
+function computeBumpMetrics(secondsArr: number[]): BumpMetrics {
+  if (secondsArr.length === 0) {
+    return { avgBumpSeconds: null, medianBumpSeconds: null, minBumpSeconds: null, maxBumpSeconds: null, itemCount: 0 }
+  }
+  const sorted = [...secondsArr].sort((a, b) => a - b)
+  const sum = sorted.reduce((s, v) => s + v, 0)
+  const mid = Math.floor(sorted.length / 2)
+  const median = sorted.length % 2 === 0
+    ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+    : sorted[mid]
+
+  return {
+    avgBumpSeconds: Math.round(sum / sorted.length),
+    medianBumpSeconds: median,
+    minBumpSeconds: sorted[0],
+    maxBumpSeconds: sorted[sorted.length - 1],
+    itemCount: sorted.length,
+  }
 }
 
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -25,7 +53,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
     const filterEmployeeId = searchParams.get('employeeId') || null
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
-
     if (!locationId || !startDate || !endDate) {
       return NextResponse.json(
         { error: 'locationId, startDate, and endDate are required' },
@@ -71,14 +98,29 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
         },
         items: {
+          where: { deletedAt: null },
           select: {
+            id: true,
+            kitchenSentAt: true,
             completedAt: true,
+            menuItem: {
+              select: {
+                id: true,
+                prepStationId: true,
+                category: {
+                  select: {
+                    id: true,
+                    prepStationId: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
     })
 
-    // Calculate overall metrics
+    // Calculate overall order-level metrics (existing)
     const orderToSendTimes: number[] = []
     const sendToCompleteTimes: number[] = []
     const seatToPayTimes: number[] = []
@@ -93,6 +135,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       seatToPay: number[]
     }>()
     const byOrderTypeMap = new Map<string, { orderToSend: number[]; sendToComplete: number[]; seatToPay: number[] }>()
+
+    // KDS bump speed-of-service: item-level kitchenSentAt → completedAt
+    const allBumpSeconds: number[] = []
+    const bumpByStationMap = new Map<string, number[]>()
+    const bumpByHourMap = new Map<number, number[]>()
+    const bumpByDayMap = new Map<string, number[]>()
 
     for (const order of orders) {
       const created = order.createdAt.getTime()
@@ -146,6 +194,31 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         empBucket.seatToPay.push(diff)
         typeBucket.seatToPay.push(diff)
       }
+
+      // KDS bump speed-of-service: per-item kitchenSentAt → completedAt
+      for (const item of order.items) {
+        if (item.kitchenSentAt && item.completedAt) {
+          const seconds = Math.round((item.completedAt.getTime() - item.kitchenSentAt.getTime()) / 1000)
+          if (seconds > 0 && seconds < 86400) { // Sanity: ignore > 24h
+            allBumpSeconds.push(seconds)
+
+            // Group by station
+            const stationId = item.menuItem?.prepStationId || item.menuItem?.category?.prepStationId || 'unassigned'
+            if (!bumpByStationMap.has(stationId)) bumpByStationMap.set(stationId, [])
+            bumpByStationMap.get(stationId)!.push(seconds)
+
+            // Group by hour (of kitchenSentAt)
+            const hour = item.kitchenSentAt.getHours()
+            if (!bumpByHourMap.has(hour)) bumpByHourMap.set(hour, [])
+            bumpByHourMap.get(hour)!.push(seconds)
+
+            // Group by day
+            const itemDayKey = item.kitchenSentAt.toISOString().split('T')[0]
+            if (!bumpByDayMap.has(itemDayKey)) bumpByDayMap.set(itemDayKey, [])
+            bumpByDayMap.get(itemDayKey)!.push(seconds)
+          }
+        }
+      }
     }
 
     const overall: TimingMetrics = {
@@ -190,12 +263,55 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       .filter(b => b.count > 0)
       .sort((a, b) => b.count - a.count)
 
+    // KDS bump speed-of-service metrics
+    const bumpOverall = computeBumpMetrics(allBumpSeconds)
+
+    // Resolve station names for groupBy=station
+    const stationIds = Array.from(bumpByStationMap.keys()).filter(id => id !== 'unassigned')
+    const stations = stationIds.length > 0
+      ? await db.prepStation.findMany({
+          where: { id: { in: stationIds } },
+          select: { id: true, name: true, displayName: true },
+        })
+      : []
+    const stationNameMap = new Map(stations.map(s => [s.id, s.displayName || s.name]))
+
+    const bumpByStation = Array.from(bumpByStationMap.entries())
+      .map(([stationId, seconds]) => ({
+        stationId,
+        stationName: stationNameMap.get(stationId) || (stationId === 'unassigned' ? 'Unassigned' : stationId),
+        ...computeBumpMetrics(seconds),
+      }))
+      .sort((a, b) => (b.itemCount - a.itemCount))
+
+    const bumpByHour = Array.from(bumpByHourMap.entries())
+      .map(([hour, seconds]) => ({
+        hour,
+        label: `${hour.toString().padStart(2, '0')}:00`,
+        ...computeBumpMetrics(seconds),
+      }))
+      .sort((a, b) => a.hour - b.hour)
+
+    const bumpByDay = Array.from(bumpByDayMap.entries())
+      .map(([date, seconds]) => ({
+        date,
+        ...computeBumpMetrics(seconds),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+
     return NextResponse.json({
       data: {
         overall,
         byDay,
         byEmployee,
         byOrderType,
+        // KDS bump speed-of-service
+        bump: {
+          overall: bumpOverall,
+          byStation: bumpByStation,
+          byHour: bumpByHour,
+          byDay: bumpByDay,
+        },
       },
     })
   } catch (error) {

@@ -6,10 +6,11 @@ import { assignEmployeeToTemplateGroup } from '@/lib/domain/tips/tip-group-templ
 import { emitToLocation } from '@/lib/socket-server'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { dispatchLocationAlert } from '@/lib/socket-dispatch'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, DEFAULT_BREAK_COMPLIANCE } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { findLastMemberGroup } from '@/lib/domain/tips/tip-groups'
+import { dispatchAlert } from '@/lib/alert-service'
 
 // GET - List time clock entries
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -334,6 +335,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     const now = new Date()
     let updateData: Record<string, unknown> = {}
+    let breakComplianceWarning: string | null = null
 
     switch (action) {
       case 'clockOut': {
@@ -373,6 +375,70 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         const totalMinutes = (now.getTime() - clockInTime) / (1000 * 60)
         const workedMinutes = totalMinutes - (entry.breakMinutes || 0)
         const workedHours = workedMinutes / 60
+
+        // ── Break compliance check ──────────────────────────────────────────
+        const locSettings = parseSettings(await getLocationSettings(entry.locationId))
+        const breakConfig = locSettings.breaks ?? DEFAULT_BREAK_COMPLIANCE
+        if (breakConfig.complianceMode !== 'off') {
+          const shiftHours = totalMinutes / 60
+          if (shiftHours >= breakConfig.minShiftForBreak) {
+            // Check if any completed break meets the minimum duration
+            const breakRecords = await db.break.findMany({
+              where: {
+                timeClockEntryId: entryId,
+                status: 'completed',
+                deletedAt: null,
+              },
+              select: { duration: true },
+            })
+            // Also account for inline breakMinutes on the entry (legacy path)
+            const totalBreakMinutes = breakRecords.reduce((sum, b) => sum + (b.duration || 0), 0)
+              || (entry.breakMinutes || 0)
+            const hasAdequateBreak = totalBreakMinutes >= breakConfig.breakDurationMinutes
+
+            if (!hasAdequateBreak) {
+              if (breakConfig.complianceMode === 'enforce' && !force) {
+                return NextResponse.json(
+                  { error: 'Cannot clock out without taking a required break. Please clock in for break first.' },
+                  { status: 400 }
+                )
+              }
+              // mode === 'warn': set flag to include warning in response
+              breakComplianceWarning = `Break compliance: No break taken during a ${Math.round(shiftHours * 10) / 10}-hour shift`
+            }
+          }
+        }
+        // ── End break compliance check ──────────────────────────────────────
+
+        // ── requireTipsAdjusted check ──────────────────────────────────────
+        if (!force && locSettings.clockOut?.requireTipsAdjusted) {
+          const unadjustedTips = await db.payment.findMany({
+            where: {
+              order: { employeeId: entry.employeeId, locationId: entry.locationId },
+              paymentMethod: { in: ['credit', 'debit', 'card'] },
+              tipAmount: { equals: 0 },
+              datacapRecordNo: { not: null },
+              status: 'completed',
+              deletedAt: null,
+              processedAt: { gte: entry.clockIn },
+            },
+            select: { id: true, amount: true },
+          })
+
+          if (unadjustedTips.length > 0) {
+            const totalUnadjusted = unadjustedTips.reduce((sum, p) => sum + Number(p.amount), 0)
+            return NextResponse.json({
+              data: {
+                id: entry.id,
+                employeeId: entry.employeeId,
+                warning: `You have ${unadjustedTips.length} unadjusted tip${unadjustedTips.length > 1 ? 's' : ''} totaling $${totalUnadjusted.toFixed(2)}. Please adjust tips before clocking out.`,
+                unadjustedTipCount: unadjustedTips.length,
+                unadjustedTipTotal: totalUnadjusted,
+              },
+            })
+          }
+        }
+        // ── End requireTipsAdjusted check ──────────────────────────────────
 
         // Calculate regular vs overtime (over 8 hours)
         const regularHours = Math.min(workedHours, 8)
@@ -503,6 +569,29 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }).catch(err => console.error('Failed to close Break audit record:', err))
     }
 
+    // Overtime alert dispatch (fire-and-forget)
+    if (action === 'clockOut' && updated.overtimeHours && Number(updated.overtimeHours) > 0) {
+      const empName = updated.employee.displayName || `${updated.employee.firstName} ${updated.employee.lastName}`
+      const totalWorkedHours = (Number(updated.regularHours) || 0) + Number(updated.overtimeHours)
+      void (async () => {
+        try {
+          const alertSettings = parseSettings(await getLocationSettings(entry.locationId))
+          if (!alertSettings.alerts.enabled) return
+          void dispatchAlert({
+            severity: 'MEDIUM',
+            errorType: 'overtime_detected',
+            category: 'labor',
+            message: `Overtime: ${empName} worked ${totalWorkedHours.toFixed(1)}h (${Number(updated.overtimeHours).toFixed(1)}h OT)`,
+            locationId: entry.locationId,
+            employeeId: entry.employeeId,
+            groupId: `overtime-${entry.locationId}-${entry.employeeId}-${entry.id}`,
+          }).catch(console.error)
+        } catch (err) {
+          console.error('[time-clock] Overtime alert dispatch failed:', err)
+        }
+      })()
+    }
+
     return NextResponse.json({ data: {
       id: updated.id,
       employeeId: updated.employeeId,
@@ -515,6 +604,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       overtimeHours: updated.overtimeHours ? Number(updated.overtimeHours) : null,
       message: action === 'clockOut' ? 'Clocked out successfully' :
                action === 'startBreak' ? 'Break started' : 'Break ended',
+      ...(breakComplianceWarning ? { warning: breakComplianceWarning } : {}),
     } })
   } catch (error) {
     console.error('Failed to update time clock:', error)

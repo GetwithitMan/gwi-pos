@@ -28,6 +28,7 @@ export default function CrewHubPage() {
   const [allowStandaloneServers, setAllowStandaloneServers] = useState(true)
   const [pendingClockInRoleId, setPendingClockInRoleId] = useState<string | undefined>(undefined)
   const [lastMemberGroupId, setLastMemberGroupId] = useState<string | null>(null)
+  const [overtimeWarningMinutes, setOvertimeWarningMinutes] = useState(30)
 
   // Hydration guard: Zustand persist middleware starts with defaults (isAuthenticated=false)
   // before rehydrating from localStorage. Without this guard, the auth redirect fires
@@ -67,6 +68,21 @@ export default function CrewHubPage() {
   useEffect(() => {
     fetchClockStatus()
   }, [fetchClockStatus])
+
+  // Fetch overtimeWarningMinutes from location settings
+  useEffect(() => {
+    if (!employee?.location?.id) return
+    fetch('/api/settings')
+      .then(res => res.ok ? res.json() : null)
+      .then(json => {
+        if (!json) return
+        const data = json.data ?? json
+        const s = data.settings || data
+        const mins = s.alerts?.overtimeWarningMinutes
+        if (typeof mins === 'number' && mins > 0) setOvertimeWarningMinutes(mins)
+      })
+      .catch(console.error)
+  }, [employee?.location?.id])
 
   const performClockIn = async (workingRoleId?: string, selectedTipGroupTemplateId?: string | null) => {
     if (!employee) return
@@ -227,6 +243,17 @@ export default function CrewHubPage() {
     return `${hours}h ${minutes}m`
   }
 
+  /** Returns 'overtime' | 'warning' | null for the currently clocked-in employee */
+  const getOvertimeStatus = (): 'overtime' | 'warning' | null => {
+    if (!clockStatus.clockedIn || !clockStatus.clockInTime) return null
+    const workedMs = currentTime.getTime() - new Date(clockStatus.clockInTime).getTime()
+    const workedMinutes = workedMs / 60_000
+    const thresholdMinutes = 8 * 60
+    if (workedMinutes >= thresholdMinutes) return 'overtime'
+    if (workedMinutes >= thresholdMinutes - overtimeWarningMinutes) return 'warning'
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4 sm:p-6 lg:p-8">
       {/* Header */}
@@ -271,7 +298,7 @@ export default function CrewHubPage() {
             <div className="text-white/40 text-sm">Loading status...</div>
           ) : (
             <>
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
                 {clockStatus.clockedIn ? (
                   <>
                     <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">
@@ -279,6 +306,16 @@ export default function CrewHubPage() {
                     </span>
                     {clockedInDuration() && (
                       <span className="text-white/40 text-xs">{clockedInDuration()}</span>
+                    )}
+                    {getOvertimeStatus() === 'overtime' && (
+                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-500/20 border border-red-500/30 text-red-400">
+                        Overtime
+                      </span>
+                    )}
+                    {getOvertimeStatus() === 'warning' && (
+                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-amber-500/20 border border-amber-500/30 text-amber-400">
+                        Near Overtime
+                      </span>
                     )}
                   </>
                 ) : (

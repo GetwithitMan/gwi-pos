@@ -535,6 +535,11 @@ export default function TipSettingsPage() {
               onChange={v => updateTipBank('allowManagerInPools', v)}
               border
             />
+            {tipBank.allowManagerInPools && (
+              <div className="mt-2 mb-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <span className="font-semibold">Warning:</span> Federal DOL rules prohibit managers and supervisors from participating in employee tip pools. This is also prohibited in CA, NY, IL, MA, and other states. Verify compliance with your state&apos;s labor laws before enabling.
+              </div>
+            )}
             <ToggleRow
               label="Allow Negative Balances"
               description="Allow an employee's tip balance to go negative (e.g., if a chargeback is larger than their current tips). See Chargeback Policy below for how chargebacks are handled."
@@ -639,6 +644,12 @@ export default function TipSettingsPage() {
               </button>
             ))}
           </div>
+
+          {tipBank.chargebackPolicy !== 'BUSINESS_ABSORBS' && (
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+              <span className="font-semibold">Warning:</span> Some states restrict or prohibit charging back tips to employees. California requires the business to absorb tip chargebacks. Verify your state&apos;s labor laws.
+            </div>
+          )}
         </section>
 
         {/* ═══════════════════════════════════════════
@@ -725,6 +736,12 @@ export default function TipSettingsPage() {
                 onChange={v => updateTipBank('deductCCFeeFromTips', v)}
               />
             </div>
+
+            {tipBank.deductCCFeeFromTips && (
+              <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <span className="font-semibold">Warning:</span> California and New York City prohibit deducting credit card processing fees from employee tips. Check your state and local regulations.
+              </div>
+            )}
 
             {/* Fee percent (only when enabled) */}
             {tipBank.deductCCFeeFromTips && (

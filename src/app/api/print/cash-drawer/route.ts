@@ -5,13 +5,17 @@ import { sendToPrinter } from '@/lib/printer-connection'
 import { ESCPOS } from '@/lib/escpos/commands'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { dispatchAlert } from '@/lib/alert-service'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 
 /**
  * POST /api/print/cash-drawer
  *
  * Sends an ESC/POS drawer-kick command to the receipt printer for a location.
+ * This route is the "No Sale" cash drawer open (not triggered by payment).
  *
- * Body: { locationId?: string }
+ * Body: { locationId?: string, employeeId?: string, reason?: string }
  * If locationId is omitted, it is resolved from the venue context (first active location).
  *
  * Always returns 200. On missing printer returns { success: false, reason }.
@@ -20,7 +24,11 @@ import { PERMISSIONS } from '@/lib/auth-utils'
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => ({})) as { locationId?: string; employeeId?: string }
+    const body = await request.json().catch(() => ({})) as {
+      locationId?: string
+      employeeId?: string
+      reason?: string
+    }
 
     // Resolve locationId — body takes precedence; fall back to the venue's only location
     let locationId = body.locationId
@@ -72,6 +80,38 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { data: { success: false, error: result.error ?? 'Printer did not acknowledge' } },
         { status: 500 }
       )
+    }
+
+    // Alert dispatch: notify on no-sale cash drawer open (fire-and-forget)
+    // This route IS the no-sale open path — payment-triggered opens use triggerCashDrawer() directly
+    if (body.employeeId) {
+      const empId = body.employeeId
+      const drawerReason = body.reason || 'No Sale'
+      const resolvedLocationId = locationId
+      void (async () => {
+        try {
+          const locSettings = parseSettings(await getLocationSettings(resolvedLocationId))
+          if (!locSettings.alerts.enabled || !locSettings.alerts.cashDrawerAlertEnabled) return
+
+          const employee = await db.employee.findUnique({
+            where: { id: empId },
+            select: { firstName: true, lastName: true, displayName: true },
+          })
+          const empName = employee?.displayName || `${employee?.firstName ?? ''} ${employee?.lastName ?? ''}`.trim() || 'Unknown'
+
+          void dispatchAlert({
+            severity: 'LOW',
+            errorType: 'drawer_opened',
+            category: 'cash_drawer',
+            message: `Cash drawer opened by ${empName} - Reason: ${drawerReason}`,
+            locationId: resolvedLocationId,
+            employeeId: empId,
+            groupId: `drawer-${resolvedLocationId}-${empId}-${Date.now()}`,
+          }).catch(console.error)
+        } catch (err) {
+          console.error('[cash-drawer] Alert dispatch failed:', err)
+        }
+      })()
     }
 
     return NextResponse.json({ data: { success: true } })
