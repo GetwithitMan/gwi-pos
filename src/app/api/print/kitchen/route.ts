@@ -851,15 +851,71 @@ function buildPizzaSection(
     parts.push(NORMAL)
   }
 
-  // Print base sauce and cheese (the selected ones, not from toppingsData)
-  if (pizzaData.sauce) {
+  // Parse toppings data
+  const data = pizzaData.toppingsData as {
+    toppings?: Array<{ name: string; sections: number[]; amount: string }>
+    sauces?: Array<{ name: string; sections: number[]; amount: string }>
+    cheeses?: Array<{ name: string; sections: number[]; amount: string }>
+    sauceSections?: number[] | null
+    cheeseSections?: number[] | null
+  } | null
+
+  const MAX_SECTIONS = 24
+
+  // Infer sectionMode from the smallest topping section span
+  const inferSectionMode = (): number => {
+    if (!data) return 1
+    const allItems = [
+      ...(data.toppings || []),
+      ...(data.sauces || []),
+      ...(data.cheeses || []),
+    ]
+    let mode = 1
+    for (const item of allItems) {
+      if (!item.sections || item.sections.length >= MAX_SECTIONS) continue
+      const len = item.sections.length
+      if (len <= 3) mode = Math.max(mode, 8)       // 24/8 = 3
+      else if (len <= 4) mode = Math.max(mode, 6)   // 24/6 = 4
+      else if (len <= 6) mode = Math.max(mode, 4)   // 24/4 = 6
+      else if (len <= 8) mode = Math.max(mode, 3)   // 24/3 = 8
+      else if (len <= 12) mode = Math.max(mode, 2)  // 24/2 = 12
+    }
+    return mode
+  }
+
+  const sectionMode = inferSectionMode()
+
+  // Define section boundaries for each mode
+  // Each entry: [startIndex, endIndex] (inclusive)
+  const getSectionBoundaries = (mode: number): number[][] => {
+    const sliceSize = MAX_SECTIONS / mode
+    return Array.from({ length: mode }, (_, i) => {
+      const start = i * sliceSize
+      return Array.from({ length: sliceSize }, (__, j) => start + j)
+    })
+  }
+
+  const sectionBoundaries = getSectionBoundaries(sectionMode)
+
+  // Check if a topping's sections overlap with a given set of indices
+  const overlaps = (toppingSections: number[], sectionIndices: number[]): boolean => {
+    const sectionSet = new Set(sectionIndices)
+    return toppingSections.some(idx => sectionSet.has(idx))
+  }
+
+  // Check if base sauce/cheese are whole-pizza (no section-specific data)
+  const baseSauceIsWhole = !data?.sauceSections
+  const baseCheeseIsWhole = !data?.cheeseSections
+
+  // For whole-pizza base sauce/cheese, print in header area (before sections)
+  if (baseSauceIsWhole && pizzaData.sauce) {
     const saucePrefix = pizzaData.sauceAmount !== 'regular' ? `${pizzaData.sauceAmount.toUpperCase()} ` : ''
     parts.push(toppingSizeCmd)
     parts.push(line(`  ${saucePrefix}${pizzaData.sauce.name.toUpperCase()} SAUCE`))
     parts.push(NORMAL)
   }
 
-  if (pizzaData.cheese) {
+  if (baseCheeseIsWhole && pizzaData.cheese) {
     const cheesePrefix = pizzaData.cheeseAmount !== 'regular' ? `${pizzaData.cheeseAmount.toUpperCase()} ` : ''
     parts.push(toppingSizeCmd)
     parts.push(line(`  ${cheesePrefix}${pizzaData.cheese.name.toUpperCase()} CHEESE`))
@@ -868,188 +924,43 @@ function buildPizzaSection(
 
   parts.push(line('')) // Blank line before toppings
 
-  const data = pizzaData.toppingsData as {
-    toppings?: Array<{ name: string; sections: number[]; amount: string }>
-    sauces?: Array<{ name: string; sections: number[]; amount: string }>
-    cheeses?: Array<{ name: string; sections: number[]; amount: string }>
-  } | null
-
   if (!data) return Buffer.concat(parts)
 
-  const maxSections = 24 // Our standard max sections
+  // Get section label for a 1-based section number
+  const getSectionLabel = (sectionNum: number, totalSections: number): string => {
+    const labelStyle = settings.sections.showSectionLabels || 'full'
 
-  // Define all section ranges - each section has a label and the indices it covers
-  type SectionDef = { label: string; indices: number[] }
-  const allSectionDefs: SectionDef[] = [
-    // Whole pizza
-    { label: 'WHOLE', indices: Array.from({ length: 24 }, (_, i) => i) },
-    // Halves
-    { label: 'LEFT HALF', indices: Array.from({ length: 12 }, (_, i) => i) },
-    { label: 'RIGHT HALF', indices: Array.from({ length: 12 }, (_, i) => i + 12) },
-    // Quarters
-    { label: 'TOP LEFT', indices: Array.from({ length: 6 }, (_, i) => i) },
-    { label: 'TOP RIGHT', indices: Array.from({ length: 6 }, (_, i) => i + 6) },
-    { label: 'BOTTOM RIGHT', indices: Array.from({ length: 6 }, (_, i) => i + 12) },
-    { label: 'BOTTOM LEFT', indices: Array.from({ length: 6 }, (_, i) => i + 18) },
-    // Sixths
-    { label: '1/6-1', indices: Array.from({ length: 4 }, (_, i) => i) },
-    { label: '1/6-2', indices: Array.from({ length: 4 }, (_, i) => i + 4) },
-    { label: '1/6-3', indices: Array.from({ length: 4 }, (_, i) => i + 8) },
-    { label: '1/6-4', indices: Array.from({ length: 4 }, (_, i) => i + 12) },
-    { label: '1/6-5', indices: Array.from({ length: 4 }, (_, i) => i + 16) },
-    { label: '1/6-6', indices: Array.from({ length: 4 }, (_, i) => i + 20) },
+    if (totalSections === 1) return 'WHOLE'
+
+    if (totalSections === 2) {
+      if (labelStyle === 'full') return sectionNum === 1 ? 'LEFT HALF' : 'RIGHT HALF'
+      if (labelStyle === 'abbreviated') return sectionNum === 1 ? 'L' : 'R'
+      if (labelStyle === 'numbered') return `${sectionNum}/${totalSections}`
+    }
+
+    // For 3, 4, 6, 8 sections
+    if (labelStyle === 'full') return `SEC. ${sectionNum}`
+    if (labelStyle === 'abbreviated') return `S${sectionNum}`
+    if (labelStyle === 'numbered') return `${sectionNum}/${totalSections}`
+
+    return `SEC. ${sectionNum}`
+  }
+
+  // Collect all toppings/sauces/cheeses from toppingsData
+  const allToppings = [
+    ...(data.toppings || []),
+    ...(data.sauces || []),
+    ...(data.cheeses || []),
   ]
 
-  // Helper: check if a topping's sections exactly match a section definition
-  const exactlyMatches = (toppingSections: number[], sectionDef: SectionDef): boolean => {
-    if (toppingSections.length !== sectionDef.indices.length) return false
-    const sorted = [...toppingSections].sort((a, b) => a - b)
-    return sorted.every((v, i) => v === sectionDef.indices[i])
-  }
-
-  // Helper: check if topping covers this section (has overlap AND is smallest matching section)
-  const coversSection = (toppingSections: number[], sectionDef: SectionDef): boolean => {
-    // Check if there's any overlap
-    const hasOverlap = sectionDef.indices.some(idx => toppingSections.includes(idx))
-    if (!hasOverlap) return false
-
-    // Check if ALL indices of this section are covered by the topping
-    const coversAll = sectionDef.indices.every(idx => toppingSections.includes(idx))
-    return coversAll
-  }
-
-  // Find the best (smallest) section label for each topping
-  const getBestSectionLabel = (toppingSections: number[]): string => {
-    if (!toppingSections || toppingSections.length === 0) return 'WHOLE'
-    if (toppingSections.length === maxSections) return 'WHOLE'
-
-    // Try to find exact match first (prioritize smallest sections)
-    // Check sixths first
-    for (const def of allSectionDefs.filter(d => d.label.startsWith('1/6'))) {
-      if (exactlyMatches(toppingSections, def)) return def.label
-    }
-    // Then quarters
-    for (const def of allSectionDefs.filter(d => ['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT'].includes(d.label))) {
-      if (exactlyMatches(toppingSections, def)) return def.label
-    }
-    // Then halves
-    for (const def of allSectionDefs.filter(d => d.label.includes('HALF'))) {
-      if (exactlyMatches(toppingSections, def)) return def.label
-    }
-
-    return 'CUSTOM'
-  }
-
-  // For each section, collect items that are on that specific section
-  // A topping belongs to a section if it covers EXACTLY that section or a subset
-  const sectionItems: Map<string, string[]> = new Map()
-
-  // Helper to add item to appropriate section(s)
-  const addItemToSections = (item: { name: string; sections: number[]; amount: string }, itemType?: string) => {
-    const toppingSections = item.sections
-    const amountPrefix = item.amount !== 'regular' ? `${item.amount.toUpperCase()} ` : ''
-    const itemText = `${amountPrefix}${item.name}`
-
-    // Find the best matching section for this item
-    const bestLabel = getBestSectionLabel(toppingSections)
-
-    if (bestLabel !== 'CUSTOM') {
-      const existing = sectionItems.get(bestLabel) || []
-      existing.push(itemText)
-      sectionItems.set(bestLabel, existing)
-    } else {
-      // Item spans multiple sections in a non-standard way
-      // Find all sections this item covers and add to each
-      for (const sectionDef of allSectionDefs.filter(d => d.label.startsWith('1/6'))) {
-        if (coversSection(toppingSections, sectionDef)) {
-          const existing = sectionItems.get(sectionDef.label) || []
-          existing.push(itemText)
-          sectionItems.set(sectionDef.label, existing)
-        }
-      }
-      // If still not found in sixths, try halves
-      if (!Array.from(sectionItems.keys()).some(k => k.startsWith('1/6'))) {
-        for (const sectionDef of allSectionDefs.filter(d => d.label.includes('HALF'))) {
-          if (coversSection(toppingSections, sectionDef)) {
-            const existing = sectionItems.get(sectionDef.label) || []
-            existing.push(itemText)
-            sectionItems.set(sectionDef.label, existing)
-          }
-        }
-      }
-    }
-  }
-
-  // Add sauces
-  for (const sauce of data.sauces || []) {
-    addItemToSections(sauce)
-  }
-
-  // Add cheeses
-  for (const cheese of data.cheeses || []) {
-    addItemToSections(cheese)
-  }
-
-  // Add toppings
-  for (const topping of data.toppings || []) {
-    addItemToSections(topping)
-  }
-
-  // Define the order we want sections to print
-  const sectionOrder = [
-    'WHOLE',
-    'LEFT HALF', 'RIGHT HALF',
-    'TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT',
-    '1/6-1', '1/6-2', '1/6-3', '1/6-4', '1/6-5', '1/6-6',
-  ]
-
-  // Print each section in order - SKIP empty sections
-  for (const label of sectionOrder) {
-    const items = sectionItems.get(label)
-    // Skip sections with no items
-    if (!items || items.length === 0) continue
-
-    // Section header - only show if enabled
-    if (settings.sections.useSectionHeaders) {
-      // Get section label based on style setting
-      let sectionLabel = label
-      if (settings.sections.showSectionLabels === 'abbreviated') {
-        // Convert to abbreviated
-        if (label === 'LEFT HALF') sectionLabel = 'L'
-        else if (label === 'RIGHT HALF') sectionLabel = 'R'
-        else if (label === 'WHOLE') sectionLabel = 'W'
-        else if (label.startsWith('TOP')) sectionLabel = label.replace('TOP ', 'T-')
-        else if (label.startsWith('BOTTOM')) sectionLabel = label.replace('BOTTOM ', 'B-')
-      } else if (settings.sections.showSectionLabels === 'numbered') {
-        if (label === 'LEFT HALF') sectionLabel = '1/2'
-        else if (label === 'RIGHT HALF') sectionLabel = '2/2'
-        else if (label === 'WHOLE') sectionLabel = 'WHOLE'
-      }
-
-      // Format header based on style - use brackets for clarity
-      const headerStyle = settings.sections.sectionHeaderStyle
-      let headerText = `[${sectionLabel.toUpperCase()}]`
-      if (headerStyle === 'uppercase' || headerStyle === 'bold') {
-        headerText = `[${sectionLabel.toUpperCase()}]`
-      }
-
-      // Print section header - use TALL not LARGE to prevent text cutoff
-      parts.push(TALL)
-      if (headerStyle === 'bold' && !isImpact) parts.push(ESCPOS.BOLD_ON)
-      if (headerStyle === 'underlined' && !isImpact) parts.push(ESCPOS.UNDERLINE_ON)
-      parts.push(line(headerText))
-      if (headerStyle === 'underlined' && !isImpact) parts.push(ESCPOS.UNDERLINE_OFF)
-      if (headerStyle === 'bold' && !isImpact) parts.push(ESCPOS.BOLD_OFF)
-      parts.push(NORMAL)
-    }
-
-    // Print items in this section
+  // For sectionMode 1 (whole pizza), list everything flat — no section header
+  if (sectionMode === 1) {
     const indent = settings.toppings.indentToppings ? '  ' : ''
-    for (const item of items) {
-      let itemText = item
+    for (const item of allToppings) {
+      const amountPrefix = item.amount !== 'regular' ? `${item.amount.toUpperCase()} ` : ''
+      let itemText = `${amountPrefix}${item.name}`
       if (settings.toppings.allCaps) itemText = itemText.toUpperCase()
 
-      // Apply red for modifiers/toppings if enabled
       if (hasRed && useRedForModifiers) parts.push(RED)
       parts.push(toppingSizeCmd)
       if (settings.toppings.boldToppings && !isImpact) parts.push(ESCPOS.BOLD_ON)
@@ -1057,6 +968,84 @@ function buildPizzaSection(
       if (settings.toppings.boldToppings && !isImpact) parts.push(ESCPOS.BOLD_OFF)
       parts.push(NORMAL)
       if (hasRed && useRedForModifiers) parts.push(BLACK)
+    }
+  } else {
+    // Multi-section: print each section with its items
+    for (let secIdx = 0; secIdx < sectionBoundaries.length; secIdx++) {
+      const sectionIndices = sectionBoundaries[secIdx]
+      const sectionNum = secIdx + 1
+
+      // Collect items for this section
+      const sectionItems: string[] = []
+
+      // Add section-specific base sauce if applicable
+      if (!baseSauceIsWhole && pizzaData.sauce && data.sauceSections) {
+        if (overlaps(data.sauceSections, sectionIndices)) {
+          const saucePrefix = pizzaData.sauceAmount !== 'regular' ? `${pizzaData.sauceAmount.toUpperCase()} ` : ''
+          sectionItems.push(`${saucePrefix}${pizzaData.sauce.name.toUpperCase()} SAUCE`)
+        }
+      }
+
+      // Add section-specific base cheese if applicable
+      if (!baseCheeseIsWhole && pizzaData.cheese && data.cheeseSections) {
+        if (overlaps(data.cheeseSections, sectionIndices)) {
+          const cheesePrefix = pizzaData.cheeseAmount !== 'regular' ? `${pizzaData.cheeseAmount.toUpperCase()} ` : ''
+          sectionItems.push(`${cheesePrefix}${pizzaData.cheese.name.toUpperCase()} CHEESE`)
+        }
+      }
+
+      // Add all toppings/sauces/cheeses from toppingsData that overlap this section
+      for (const item of allToppings) {
+        const toppingSections = item.sections
+        // Whole-pizza toppings (all 24 sections or empty) show in every section
+        const isWhole = !toppingSections || toppingSections.length === 0 || toppingSections.length >= MAX_SECTIONS
+        if (isWhole || overlaps(toppingSections, sectionIndices)) {
+          const amountPrefix = item.amount !== 'regular' ? `${item.amount.toUpperCase()} ` : ''
+          sectionItems.push(`${amountPrefix}${item.name}`)
+        }
+      }
+
+      // Skip empty sections
+      if (sectionItems.length === 0) continue
+
+      // Section header
+      if (settings.sections.useSectionHeaders) {
+        const sectionLabel = getSectionLabel(sectionNum, sectionMode)
+
+        const headerStyle = settings.sections.sectionHeaderStyle
+        const headerText = `--- ${sectionLabel.toUpperCase()} ---`
+
+        parts.push(TALL)
+        if (headerStyle === 'bold' && !isImpact) parts.push(ESCPOS.BOLD_ON)
+        if (headerStyle === 'underlined' && !isImpact) parts.push(ESCPOS.UNDERLINE_ON)
+        if (headerStyle === 'red' || headerStyle === 'red-bold') {
+          if (hasRed) parts.push(RED)
+          if (headerStyle === 'red-bold' && !isImpact) parts.push(ESCPOS.BOLD_ON)
+        }
+        parts.push(line(headerText))
+        if (headerStyle === 'red' || headerStyle === 'red-bold') {
+          if (headerStyle === 'red-bold' && !isImpact) parts.push(ESCPOS.BOLD_OFF)
+          if (hasRed) parts.push(BLACK)
+        }
+        if (headerStyle === 'underlined' && !isImpact) parts.push(ESCPOS.UNDERLINE_OFF)
+        if (headerStyle === 'bold' && !isImpact) parts.push(ESCPOS.BOLD_OFF)
+        parts.push(NORMAL)
+      }
+
+      // Print items in this section
+      const indent = settings.toppings.indentToppings ? '  ' : ''
+      for (const item of sectionItems) {
+        let itemText = item
+        if (settings.toppings.allCaps) itemText = itemText.toUpperCase()
+
+        if (hasRed && useRedForModifiers) parts.push(RED)
+        parts.push(toppingSizeCmd)
+        if (settings.toppings.boldToppings && !isImpact) parts.push(ESCPOS.BOLD_ON)
+        parts.push(line(`${indent}${itemText}`))
+        if (settings.toppings.boldToppings && !isImpact) parts.push(ESCPOS.BOLD_OFF)
+        parts.push(NORMAL)
+        if (hasRed && useRedForModifiers) parts.push(BLACK)
+      }
     }
   }
 

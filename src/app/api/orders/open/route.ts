@@ -248,8 +248,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           hasHeldItems: o.items.some((item: { isHeld?: boolean }) => item.isHeld),
           courseMode: (o as Record<string, unknown>).courseMode || null,
           hasCoursingEnabled: (o as Record<string, unknown>).courseMode !== 'off' && !!(o as Record<string, unknown>).courseMode,
-          // No items/modifiers in summary - just counts
-          itemCount: o.itemCount,
+          // Use live item count from _count relation (DB itemCount field can be stale on splits)
+          itemCount: (o as any)._count?.items ?? o.itemCount,
           subtotal: Number(o.subtotal),
           taxTotal: Number(o.taxTotal),
           tipTotal: Number(o.tipTotal),
@@ -505,7 +505,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
             preModifier: mod.preModifier,
           })),
         })),
-        itemCount: order.itemCount,
+        itemCount: order.items?.length ?? order.itemCount,
         subtotal: Number(order.subtotal),
         taxTotal: Number(order.taxTotal),
         total: Number(order.total),

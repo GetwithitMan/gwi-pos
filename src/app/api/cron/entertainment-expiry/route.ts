@@ -8,8 +8,10 @@ import {
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import {
   calculateCharge,
+  calculateBlockTimeOvertime,
   getActiveRate,
   type EntertainmentPricing,
+  type OvertimeConfig,
 } from '@/lib/entertainment-pricing'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 
@@ -28,6 +30,12 @@ function buildPricing(menuItem: {
   happyHourStart: any
   happyHourEnd: any
   happyHourDays: any
+  overtimeEnabled?: any
+  overtimeMode?: any
+  overtimeMultiplier?: any
+  overtimePerMinuteRate?: any
+  overtimeFlatFee?: any
+  overtimeGraceMinutes?: any
 }): EntertainmentPricing {
   return {
     ratePerMinute: Number(menuItem.ratePerMinute) || 0,
@@ -43,6 +51,35 @@ function buildPricing(menuItem: {
           days: (menuItem.happyHourDays as string[]) || [],
         }
       : undefined,
+    overtime: menuItem.overtimeEnabled
+      ? {
+          enabled: true,
+          mode: (menuItem.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
+          multiplier: menuItem.overtimeMultiplier ? Number(menuItem.overtimeMultiplier) : undefined,
+          perMinuteRate: menuItem.overtimePerMinuteRate ? Number(menuItem.overtimePerMinuteRate) : undefined,
+          flatFee: menuItem.overtimeFlatFee ? Number(menuItem.overtimeFlatFee) : undefined,
+          graceMinutes: menuItem.overtimeGraceMinutes ?? undefined,
+        }
+      : undefined,
+  }
+}
+
+function buildOvertimeConfig(menuItem: {
+  overtimeEnabled?: any
+  overtimeMode?: any
+  overtimeMultiplier?: any
+  overtimePerMinuteRate?: any
+  overtimeFlatFee?: any
+  overtimeGraceMinutes?: any
+}): OvertimeConfig | undefined {
+  if (!menuItem.overtimeEnabled) return undefined
+  return {
+    enabled: true,
+    mode: (menuItem.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
+    multiplier: menuItem.overtimeMultiplier ? Number(menuItem.overtimeMultiplier) : undefined,
+    perMinuteRate: menuItem.overtimePerMinuteRate ? Number(menuItem.overtimePerMinuteRate) : undefined,
+    flatFee: menuItem.overtimeFlatFee ? Number(menuItem.overtimeFlatFee) : undefined,
+    graceMinutes: menuItem.overtimeGraceMinutes ?? undefined,
   }
 }
 
@@ -86,6 +123,12 @@ export async function GET(request: NextRequest) {
             happyHourStart: true,
             happyHourEnd: true,
             happyHourDays: true,
+            overtimeEnabled: true,
+            overtimeMode: true,
+            overtimeMultiplier: true,
+            overtimePerMinuteRate: true,
+            overtimeFlatFee: true,
+            overtimeGraceMinutes: true,
           },
         },
         order: {
@@ -151,6 +194,7 @@ export async function GET(request: NextRequest) {
 
         // Calculate charge using pricing engine
         let newPrice: number
+        const bookedMinutes = item.blockTimeMinutes || undefined
 
         if (item.menuItem.ratePerMinute != null && Number(item.menuItem.ratePerMinute) > 0) {
           // Per-minute pricing available
@@ -164,17 +208,34 @@ export async function GET(request: NextRequest) {
             ...pricing,
             ratePerMinute: activeRate,
           }
-          const breakdown = calculateCharge(elapsedMinutes, adjustedPricing)
+          // Pass bookedMinutes so calculateCharge applies overtime if exceeded
+          const breakdown = calculateCharge(elapsedMinutes, adjustedPricing, bookedMinutes)
           newPrice = breakdown.totalCharge
         } else {
           // No per-minute config -- fall back to MenuItem.price
           newPrice = Number(item.menuItem.price) || 0
+
+          // Apply overtime for non-per-minute items (tier-based or flat-rate)
+          const otConfig = buildOvertimeConfig(item.menuItem)
+          if (otConfig && bookedMinutes && elapsedMinutes > bookedMinutes) {
+            const baseRate = newPrice / bookedMinutes
+            const incrementMin = item.menuItem.incrementMinutes || 15
+            const otResult = calculateBlockTimeOvertime(
+              elapsedMinutes,
+              bookedMinutes,
+              otConfig,
+              baseRate,
+              incrementMin
+            )
+            newPrice += otResult.overtimeCharge
+          }
         }
 
-        // Update the OrderItem price with the calculated charge
+        // Update the OrderItem price with the calculated charge and clear startedAt
         await db.orderItem.update({
           where: { id: item.id },
           data: {
+            blockTimeStartedAt: null,
             price: newPrice,
             itemTotal: newPrice,
           },

@@ -224,7 +224,7 @@ The `WalkoutRetryStatus.written_off` value exists in the schema and `writtenOffA
 - **No write-off API endpoint** — `WalkoutRetryStatus.written_off` exists in the schema with `writtenOffAt` / `writtenOffBy` fields, but there is no `POST` endpoint to transition a record to this state. Exhausted retries cannot be formally closed through the application.
 - **Money in limbo when exhausted** — a `WalkoutRetry` in `exhausted` status represents a debt that Datacap has permanently failed to collect. With no write-off path, this record stays in the database with no resolution workflow. The order also remains in `isWalkout = true` / open state until manually corrected.
 - **Auto-flag (Path B) does not create retry records** — the auto-flag in `close-tab` sets `isWalkout = true` but does not create `WalkoutRetry` rows. Retries only exist if the manual `mark-walkout` endpoint is called afterward.
-- **No dedicated admin UI** — there is no admin page listing walkout retries. Visibility is API-only via `GET /api/datacap/walkout-retry?locationId=...&status=pending`.
+- ~~**No dedicated admin UI**~~ **RESOLVED (2026-03-10):** Walkout retries report at `/reports/walkout-retries` (status filter, write-off action, auto-refresh). Walkout retry status also shown inline on closed tab/order detail views (order history, closed orders modal, closed tabs page) when `order.isWalkout === true`.
 - **Reader must be online** — retries call `validateReader()` before the Datacap attempt; if the card reader is offline, the retry will throw and the retry record will have its `retryCount` incremented with the error stored in `lastRetryError`.
 - **`walkoutAutoDetectMinutes` setting is unimplemented** — the setting exists in `settings.ts` with a default of 120 minutes, but no background job monitors idle tabs and auto-creates walkout records based on this threshold.
 
@@ -237,4 +237,4 @@ The `WalkoutRetryStatus.written_off` value exists in the schema and `writtenOffA
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-10*

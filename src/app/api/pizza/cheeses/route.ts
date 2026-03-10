@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET() {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, displayName, description, price, allowLight, allowExtra, extraPrice, isDefault } = body
+    const { name, displayName, description, price, allowLight, allowExtra, extraPrice, isDefault, inventoryItemId, usageQuantity, usageUnit } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -65,6 +65,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         allowExtra: allowExtra ?? true,
         extraPrice: extraPrice || 0,
         isDefault: isDefault || false,
+        inventoryItemId: inventoryItemId || null,
+        usageQuantity: usageQuantity ?? null,
+        usageUnit: usageUnit || null,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
       }
     })

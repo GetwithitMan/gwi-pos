@@ -26,7 +26,8 @@ The End of Day (EOD) Reset is a manager-triggered cleanup operation that prepare
 | Interface | Path / Screen | Notes |
 |-----------|--------------|-------|
 | Floor Plan (POS) | `src/components/floor-plan/FloorPlanHome.tsx` | Receives `eod:reset-complete` socket event and shows the EOD Summary Overlay (bottom-right toast) to all connected terminals |
-| No admin trigger button | — | There is no dedicated admin page or button to initiate EOD reset. The `POST /api/eod/reset` endpoint must be called programmatically or via a future UI trigger. |
+| Dashboard (Admin) | `src/app/(admin)/dashboard/page.tsx` | "Close Day" button — calls dry-run preview first, then confirm dialog before executing `POST /api/eod/reset`. Requires `manager.close_day` permission. |
+| Settings (Admin) | `src/app/(admin)/settings/payments/page.tsx` | Read-only "Nightly Batch Close" card showing batch time + auto-close status. "All tips must be entered before this time." Managed from MC. |
 
 The EOD Summary Overlay is a fixed bottom-right panel showing: cancelled draft orders count, orders rolled to next business day, and tables reset to available. It is dismissed by a button tap. It appears on all terminals that receive the `eod:reset-complete` socket event.
 
@@ -43,6 +44,9 @@ The EOD Summary Overlay is a fixed bottom-right panel showing: cancelled draft o
 | `src/components/floor-plan/FloorPlanHome.tsx` | Listens for `eod:reset-complete` socket event, sets `eodSummary` state, renders EOD Summary Overlay |
 | `src/lib/events/types.ts` | `EodResetCompleteEvent` type definition (line 370); registered in `ServerToClientEvents` map (line 202) |
 | `src/lib/business-day.ts` | `getCurrentBusinessDay(dayStartTime)` — computes the current business day start from a configured HH:MM time string |
+| `src/app/api/cron/eod-batch-close/route.ts` | Automated nightly batch close cron — runs every 5 min, checks batch window, triggers Datacap batch close + table reset + walkout detection |
+| `src/app/(admin)/dashboard/page.tsx` | "Close Day" button with dry-run preview and confirmation dialog |
+| `src/app/(admin)/settings/payments/page.tsx` | Read-only "Nightly Batch Close" visual card |
 
 ---
 
@@ -54,6 +58,12 @@ The EOD Summary Overlay is a fixed bottom-right panel showing: cancelled draft o
 |--------|-------|------|-------------|
 | `POST` | `/api/eod/reset` | `requirePermission(MGR_CLOSE_DAY)` + `withVenue` | Run full EOD reset. Body: `{ locationId, employeeId, dryRun?: boolean }` |
 | `GET` | `/api/eod/reset` | `requirePermission(MGR_CLOSE_DAY)` + `withVenue` | Pre-flight check — returns counts of what would be reset without making changes. Query: `?locationId=&employeeId=` |
+
+### Automated Nightly Batch Close
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| `GET` | `/api/cron/eod-batch-close` | `Bearer ${CRON_SECRET}` | Automated cron — checks all locations against their configured `eod.batchCloseTime` (default 04:00). If within 15-min window and hasn't run today: Datacap batch close, table reset, entertainment cleanup, walkout detection, socket notification. Idempotency via AuditLog `eod_auto_batch_close`. |
 
 ### Supplementary Cleanup
 
@@ -107,6 +117,7 @@ After cancellations, if any orders were cancelled, `orders:list-changed` is emit
 | Event | Direction | Emitter | Consumer | Payload |
 |-------|-----------|---------|----------|---------|
 | `eod:reset-complete` | Server → All terminals | `POST /api/eod/reset` via `emitToLocation()` | `FloorPlanHome.tsx` | `{ cancelledDrafts, rolledOverOrders, tablesReset, businessDay }` |
+| `eod:auto-batch-complete` | Server → All terminals | `/api/cron/eod-batch-close` via `emitToLocation()` | All connected terminals | `{ tablesReset, entertainmentReset, batchCloseTime, businessDay }` |
 | `orders:list-changed` | Server → All terminals | Both EOD routes (fire-and-forget) | Floor plan, order list views | `{ trigger: 'updated' }` or `{ source: 'eod-cleanup', cancelledCount }` |
 
 ---
@@ -161,7 +172,7 @@ After cancellations, if any orders were cancelled, `orders:list-changed` is emit
 
 ## Known Constraints & Limits
 
-- No admin UI trigger exists. The reset must be called via API. A future admin button (likely in Settings or a closing checklist) would call `GET /api/eod/reset` first for a pre-flight check, then `POST /api/eod/reset`.
+- ~~No admin UI trigger exists.~~ **RESOLVED (2026-03-10):** "Close Day" button on the admin dashboard calls `POST /api/eod/reset` with dry-run preview first, then confirmation dialog. Permission-gated to `manager.close_day`.
 - The EOD cleanup route (`POST /api/orders/eod-cleanup`) has no permission check beyond `withVenue`. Any authenticated session for the venue can call it. This may need to be gated to manager-level in a future hardening pass.
 - `cancelledDrafts` in the `eod:reset-complete` payload is always `0` from the primary reset route, because draft cancellation is handled by the supplementary cleanup route. This means the overlay will always show `0 draft orders cancelled` unless the cleanup route separately triggers the overlay (which it currently does not — it emits `orders:list-changed`, not `eod:reset-complete`).
 - Stale orders with a balance are rolled over but **not** automatically closed. The warning in the API response (`"X stale order(s) detected. Please review manually."`) is the only notification. There is no push alert to a manager.
@@ -185,4 +196,19 @@ Android does not call the EOD endpoints. It receives the effects via the order e
 
 ---
 
-*Last updated: 2026-03-03*
+## Automated Nightly Batch Close
+
+The automated cron (`/api/cron/eod-batch-close`) runs every 5 minutes via Vercel cron. For each location:
+
+1. Reads `eod.batchCloseTime` (default "04:00") from location settings
+2. Checks if current time is within the 15-minute window after configured batch time
+3. Idempotency: checks for `eod_auto_batch_close` AuditLog within current business day — skips if found
+4. If in window and not yet run: triggers Datacap batch close for all active readers, resets orphaned tables, cleans up stale entertainment, expires waitlist, runs walkout detection
+5. Writes `/opt/gwi-pos/last-batch.json` for heartbeat reporting to MC
+6. Emits `eod:auto-batch-complete` socket event to all terminals
+
+**MC Configuration:** `BatchCloseCard` on the MC venue config page allows adjusting batch close time and enabling/disabling auto batch close. Settings sync to POS via existing fleet push.
+
+**POS Visual:** Read-only "Nightly Batch Close" card on `/settings/payments` shows configured time and warns: "All tips must be entered before the batch close time."
+
+*Last updated: 2026-03-10*

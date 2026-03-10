@@ -23,7 +23,7 @@ export const GET = withVenue(async function GET() {
           locationId,
           maxSections: 8,
           defaultSections: 2,
-          sectionOptions: [1, 2, 4, 8],
+          sectionOptions: [1, 2, 3, 4, 6, 8],
           pricingMode: 'fractional',
           freeToppingsEnabled: false,
           freeToppingsCount: 0,
@@ -34,6 +34,8 @@ export const GET = withVenue(async function GET() {
           builderMode: 'both',
           defaultBuilderMode: 'quick',
           allowModeSwitch: true,
+          allowCondimentSections: false,
+          condimentDivisionMax: 1,
         }
       })
     }
@@ -48,6 +50,8 @@ export const GET = withVenue(async function GET() {
       builderMode: config.builderMode || 'both',
       defaultBuilderMode: config.defaultBuilderMode || 'quick',
       allowModeSwitch: config.allowModeSwitch ?? true,
+      allowCondimentSections: config.allowCondimentSections,
+      condimentDivisionMax: config.condimentDivisionMax,
     } })
   } catch (error) {
     console.error('Failed to get pizza config:', error)
@@ -84,12 +88,14 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         ...(body.builderMode !== undefined && { builderMode: body.builderMode }),
         ...(body.defaultBuilderMode !== undefined && { defaultBuilderMode: body.defaultBuilderMode }),
         ...(body.allowModeSwitch !== undefined && { allowModeSwitch: body.allowModeSwitch }),
+        ...(body.allowCondimentSections !== undefined && { allowCondimentSections: body.allowCondimentSections }),
+        ...(body.condimentDivisionMax !== undefined && { condimentDivisionMax: body.condimentDivisionMax }),
       },
       create: {
         locationId,
         maxSections: body.maxSections ?? 8,
         defaultSections: body.defaultSections ?? 2,
-        sectionOptions: body.sectionOptions ?? [1, 2, 4, 8],
+        sectionOptions: body.sectionOptions ?? [1, 2, 3, 4, 6, 8],
         pricingMode: body.pricingMode ?? 'fractional',
         hybridPricing: body.hybridPricing,
         freeToppingsEnabled: body.freeToppingsEnabled ?? false,
@@ -104,6 +110,8 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         builderMode: body.builderMode ?? 'both',
         defaultBuilderMode: body.defaultBuilderMode ?? 'quick',
         allowModeSwitch: body.allowModeSwitch ?? true,
+        allowCondimentSections: body.allowCondimentSections ?? false,
+        condimentDivisionMax: body.condimentDivisionMax ?? 1,
       }
     })
 
@@ -117,6 +125,8 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       builderMode: config.builderMode || 'both',
       defaultBuilderMode: config.defaultBuilderMode || 'quick',
       allowModeSwitch: config.allowModeSwitch ?? true,
+      allowCondimentSections: config.allowCondimentSections,
+      condimentDivisionMax: config.condimentDivisionMax,
     } })
   } catch (error) {
     console.error('Failed to update pizza config:', error)

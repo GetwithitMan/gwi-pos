@@ -16,6 +16,8 @@ export interface PizzaConfig {
   defaultToListView: boolean
   printerIds: string[]
   printSettings: PizzaPrintSettings | null
+  allowCondimentSections: boolean
+  condimentDivisionMax: number  // 1=whole only, 2=halves, 3=thirds
 }
 
 export interface Printer {
@@ -34,6 +36,11 @@ export interface PizzaSize {
   priceMultiplier: number
   toppingMultiplier: number
   freeToppings: number
+  inventoryMultiplier: number
+  inventoryItemId: string | null
+  inventoryItemName?: string | null
+  usageQuantity: number | null
+  usageUnit: string | null
   isDefault: boolean
   isActive: boolean
   sortOrder: number
@@ -45,6 +52,10 @@ export interface PizzaCrust {
   displayName: string | null
   description: string | null
   price: number
+  inventoryItemId: string | null
+  inventoryItemName?: string | null
+  usageQuantity: number | null
+  usageUnit: string | null
   isDefault: boolean
   isActive: boolean
   sortOrder: number
@@ -59,6 +70,10 @@ export interface PizzaSauce {
   allowLight: boolean
   allowExtra: boolean
   extraPrice: number
+  inventoryItemId: string | null
+  inventoryItemName?: string | null
+  usageQuantity: number | null
+  usageUnit: string | null
   isDefault: boolean
   isActive: boolean
   sortOrder: number
@@ -73,6 +88,10 @@ export interface PizzaCheese {
   allowLight: boolean
   allowExtra: boolean
   extraPrice: number
+  inventoryItemId: string | null
+  inventoryItemName?: string | null
+  usageQuantity: number | null
+  usageUnit: string | null
   isDefault: boolean
   isActive: boolean
   sortOrder: number
@@ -89,6 +108,11 @@ export interface PizzaTopping {
   color: string | null
   isActive: boolean
   sortOrder: number
+  // Inventory linkage for cost tracking & deductions
+  inventoryItemId: string | null
+  inventoryItemName?: string | null
+  usageQuantity: number | null
+  usageUnit: string | null
 }
 
 export const TOPPING_CATEGORIES = [
@@ -96,6 +120,7 @@ export const TOPPING_CATEGORIES = [
   { value: 'veggie', label: 'Vegetables', color: '#22c55e' },
   { value: 'cheese', label: 'Cheeses', color: '#eab308' },
   { value: 'premium', label: 'Premium', color: '#a855f7' },
+  { value: 'specialty', label: 'Specialty', color: '#f59e0b' },
   { value: 'seafood', label: 'Seafood', color: '#3b82f6' },
   { value: 'standard', label: 'Standard', color: '#6b7280' },
 ]

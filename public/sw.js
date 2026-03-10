@@ -27,8 +27,15 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Cache-first for static assets
+  // Network-first for dev, cache fallback for production
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    fetch(event.request)
+      .then(response => {
+        // Update cache with fresh response
+        const clone = response.clone()
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone))
+        return response
+      })
+      .catch(() => caches.match(event.request).then(cached => cached || new Response('Offline', { status: 503 })))
   )
 })

@@ -55,6 +55,7 @@ export interface MappedOrderItem {
   // Pricing option (e.g., "Large", "Bowl")
   pricingOptionId: string | null
   pricingOptionLabel: string | null
+  itemType: string | null
   createdAt: Date
 }
 
@@ -198,6 +199,7 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
     // Pricing option snapshot
     pricingOptionId: item.pricingOptionId || null,
     pricingOptionLabel: item.pricingOptionLabel || null,
+    itemType: item.menuItem?.itemType || item.itemType || null,
     createdAt: item.createdAt,
   }
 }

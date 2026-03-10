@@ -630,7 +630,7 @@ export async function dispatchEntertainmentWaitlistNotify(
     elementId: string | null
     elementName: string | null
     partySize: number
-    action: 'added' | 'notified' | 'seated' | 'cancelled' | 'expired'
+    action: 'added' | 'notified' | 'seated' | 'cancelled' | 'expired' | 'deposit-collected' | 'deposit-refunded'
     message: string
   },
   options: DispatchOptions = {}

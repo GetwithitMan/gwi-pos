@@ -106,6 +106,13 @@ export const GET = withVenue(async function GET(
         entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
         blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
         timedPricing: item.itemType === 'timed_rental' ? item.timedPricing : null,
+        // Overtime pricing
+        overtimeEnabled: (item as any).overtimeEnabled ?? false,
+        overtimeMode: (item as any).overtimeMode ?? null,
+        overtimeMultiplier: (item as any).overtimeMultiplier ? Number((item as any).overtimeMultiplier) : null,
+        overtimePerMinuteRate: (item as any).overtimePerMinuteRate ? Number((item as any).overtimePerMinuteRate) : null,
+        overtimeFlatFee: (item as any).overtimeFlatFee ? Number((item as any).overtimeFlatFee) : null,
+        overtimeGraceMinutes: (item as any).overtimeGraceMinutes ?? null,
         pourSizes: item.pourSizes,
         defaultPourSize: item.defaultPourSize,
         imageUrl: item.imageUrl,
@@ -221,6 +228,13 @@ export const PUT = withVenue(async function PUT(
       soldByWeight,
       weightUnit,
       pricePerWeightUnit,
+      // Overtime pricing for block-time entertainment
+      overtimeEnabled,
+      overtimeMode,
+      overtimeMultiplier,
+      overtimePerMinuteRate,
+      overtimeFlatFee,
+      overtimeGraceMinutes,
       // Allergen tracking
       allergens,
       // Age verification
@@ -319,6 +333,13 @@ export const PUT = withVenue(async function PUT(
         ...(soldByWeight !== undefined && { soldByWeight }),
         ...(weightUnit !== undefined && { weightUnit: weightUnit || null }),
         ...(pricePerWeightUnit !== undefined && { pricePerWeightUnit: pricePerWeightUnit !== null ? new Prisma.Decimal(pricePerWeightUnit) : null }),
+        // Overtime pricing for block-time entertainment
+        ...(overtimeEnabled !== undefined && { overtimeEnabled }),
+        ...(overtimeMode !== undefined && { overtimeMode: overtimeMode || null }),
+        ...(overtimeMultiplier !== undefined && { overtimeMultiplier: overtimeMultiplier ?? null }),
+        ...(overtimePerMinuteRate !== undefined && { overtimePerMinuteRate: overtimePerMinuteRate ?? null }),
+        ...(overtimeFlatFee !== undefined && { overtimeFlatFee: overtimeFlatFee ?? null }),
+        ...(overtimeGraceMinutes !== undefined && { overtimeGraceMinutes: overtimeGraceMinutes ?? null }),
         // Allergen tracking
         ...(allergens !== undefined && { allergens: Array.isArray(allergens) ? allergens : [] }),
         // Age verification
@@ -466,12 +487,21 @@ export const PATCH = withVenue(async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    const allowedFields: Record<string, true> = { isFeaturedCfd: true }
+    const allowedFields: Record<string, true> = {
+      isFeaturedCfd: true,
+      entertainmentStatus: true,
+    }
     const data: Record<string, unknown> = {}
     for (const key of Object.keys(body)) {
       if (allowedFields[key]) {
         data[key] = body[key]
       }
+    }
+
+    // When resetting entertainmentStatus to 'available', also clear linked order fields
+    if (data.entertainmentStatus === 'available') {
+      data.currentOrderId = null
+      data.currentOrderItemId = null
     }
 
     if (Object.keys(data).length === 0) {
@@ -481,7 +511,7 @@ export const PATCH = withVenue(async function PATCH(
     const item = await db.menuItem.update({
       where: { id },
       data,
-      select: { id: true, name: true, isFeaturedCfd: true },
+      select: { id: true, name: true, isFeaturedCfd: true, entertainmentStatus: true },
     })
 
     return NextResponse.json({ data: { item } })

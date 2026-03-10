@@ -687,17 +687,9 @@ export const POST = withVenue(async function POST(
             },
           })
 
-          // Mark entertainment items as in_use
-          if (menuItem?.itemType === 'timed_rental') {
-            await tx.menuItem.update({
-              where: { id: item.menuItemId },
-              data: {
-                entertainmentStatus: 'in_use',
-                currentOrderId: orderId,
-                currentOrderItemId: createdItem.id,
-              },
-            })
-          }
+          // NOTE: Do NOT set entertainmentStatus here. The block-time POST
+          // endpoint handles the 'in_use' transition atomically when the timer
+          // starts. Setting it here caused a 409 conflict on block-time POST.
 
           return { ...createdItem, correlationId: item.correlationId }
         })
@@ -832,7 +824,7 @@ export const POST = withVenue(async function POST(
         })
       }
 
-      return { updatedOrder, createdItems }
+      return { updatedOrder, createdItems, menuItemMap }
     })
 
     // Fire-and-forget: check if bar tab or bottle service tab needs auto-increment
@@ -915,6 +907,7 @@ export const POST = withVenue(async function POST(
         costAtSaleCents: item.costAtSale ? Math.round(Number(item.costAtSale) * 100) : null,
         pourSize: item.pourSize || null,
         pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
+        itemType: result.menuItemMap.get(item.menuItemId)?.itemType || null,
       },
     })))
 
@@ -952,7 +945,7 @@ export const POST = withVenue(async function POST(
     }, { async: true }).catch(console.error)
 
     // Dispatch open orders + floor plan update for cross-terminal table status
-    dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'created', orderId: result.updatedOrder.id, tableId: result.updatedOrder.tableId || undefined }, { async: true }).catch(() => {})
+    dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'item_updated', orderId: result.updatedOrder.id, tableId: result.updatedOrder.tableId || undefined }, { async: true }).catch(() => {})
     if (result.updatedOrder.tableId) {
       dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(() => {})
     }

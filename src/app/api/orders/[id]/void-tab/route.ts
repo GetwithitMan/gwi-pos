@@ -110,6 +110,12 @@ export const POST = withVenue(async function POST(
           select: { id: true, name: true },
         })
 
+        // Clear blockTimeStartedAt on order items
+        await db.orderItem.updateMany({
+          where: { orderId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
+          data: { blockTimeStartedAt: null },
+        })
+
         for (const item of entertainmentItems) {
           await db.menuItem.update({
             where: { id: item.id },

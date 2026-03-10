@@ -66,6 +66,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             recipe: { select: { totalCost: true } },
           },
         },
+        modifiers: {
+          select: {
+            price: true,
+            quantity: true,
+            modifier: {
+              select: {
+                cost: true,
+                inventoryLink: {
+                  select: {
+                    calculatedCost: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     })
 
@@ -100,9 +116,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             ? Number(mi.cost)
             : null
 
-      const hasCost = unitCost !== null && unitCost > 0
+      // Add modifier ingredient costs (pizza toppings, extras, etc.)
+      let modifierCost = 0
+      if ((oi as any).modifiers?.length > 0) {
+        for (const mod of (oi as any).modifiers) {
+          const modCost = mod.modifier?.inventoryLink?.calculatedCost
+            ?? mod.modifier?.cost
+            ?? null
+          if (modCost != null) {
+            modifierCost += Number(modCost) * (mod.quantity || 1)
+          }
+        }
+      }
+
+      const totalUnitCost = (unitCost ?? 0) + modifierCost
+      const hasCost = totalUnitCost > 0
       // Cost is always included — comped items still consumed food
-      const costForItem = hasCost ? unitCost! * oi.quantity : 0
+      const costForItem = hasCost ? totalUnitCost * oi.quantity : 0
 
       totalRevenue += itemRevenue
       totalCost += costForItem
@@ -153,7 +183,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           qtySold: oi.quantity,
           revenue: itemRevenue,
           unitPrice: Number(mi.price),
-          unitCost: unitCost ?? 0,
+          unitCost: totalUnitCost,
           totalCost: costForItem,
           hasCostData: hasCost,
         })

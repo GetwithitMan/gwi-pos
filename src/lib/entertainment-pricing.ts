@@ -17,6 +17,17 @@ export interface HappyHourConfig {
   days: string[]    // ["monday", "tuesday", ...]
 }
 
+export type OvertimeMode = 'multiplier' | 'custom_rate' | 'flat_fee' | 'per_minute'
+
+export interface OvertimeConfig {
+  enabled: boolean
+  mode: OvertimeMode
+  multiplier?: number       // e.g., 1.5, 2.0 — scales base rate per increment
+  perMinuteRate?: number    // custom per-minute rate (dollars)
+  flatFee?: number          // flat fee for any overtime
+  graceMinutes?: number     // grace before overtime kicks in (default 5)
+}
+
 export interface EntertainmentPricing {
   ratePerMinute: number    // e.g., 0.25 = $0.25/min
   minimumCharge: number    // e.g., 15.00 = $15 minimum (backward compat)
@@ -24,6 +35,7 @@ export interface EntertainmentPricing {
   graceMinutes: number     // e.g., 5 = 5 min before next charge
   prepaidPackages?: PrepaidPackage[]
   happyHour?: HappyHourConfig
+  overtime?: OvertimeConfig
 }
 
 export interface ChargeBreakdown {
@@ -34,14 +46,21 @@ export interface ChargeBreakdown {
   chargeableOverage: number
   extraIncrements: number
   incrementCost: number
+  // Overtime breakdown
+  overtimeMinutes: number
+  overtimeCharge: number
+  overtimeMode?: OvertimeMode
 }
 
 /**
- * Calculate current charge based on elapsed time
+ * Calculate current charge based on elapsed time.
+ * If bookedMinutes is provided AND overtime config exists, applies overtime pricing
+ * for any time beyond the booked duration + overtime grace period.
  */
 export function calculateCharge(
   elapsedMinutes: number,
-  pricing: EntertainmentPricing
+  pricing: EntertainmentPricing,
+  bookedMinutes?: number
 ): ChargeBreakdown {
   const { ratePerMinute, minimumCharge, incrementMinutes, graceMinutes } = pricing
 
@@ -59,6 +78,8 @@ export function calculateCharge(
       chargeableOverage: 0,
       extraIncrements: 0,
       incrementCost,
+      overtimeMinutes: 0,
+      overtimeCharge: 0,
     }
   }
 
@@ -73,16 +94,91 @@ export function calculateCharge(
     ? Math.ceil(chargeableOverage / incrementMinutes)
     : 0
 
-  const totalCharge = minimumCharge + (extraIncrements * incrementCost)
+  let baseCharge = minimumCharge + (extraIncrements * incrementCost)
+
+  // Calculate overtime if applicable
+  const ot = pricing.overtime
+  const otGrace = ot?.graceMinutes ?? 0
+  const threshold = bookedMinutes != null ? bookedMinutes + otGrace : null
+  let overtimeMinutes = 0
+  let overtimeCharge = 0
+  let overtimeMode: OvertimeMode | undefined
+
+  if (ot?.enabled && threshold != null && elapsedMinutes > threshold) {
+    overtimeMinutes = elapsedMinutes - threshold
+    overtimeMode = ot.mode
+    overtimeCharge = calculateOvertimeCharge(overtimeMinutes, ot, ratePerMinute, incrementMinutes)
+  }
 
   return {
-    totalCharge,
+    totalCharge: baseCharge + overtimeCharge,
     minutesUsed: elapsedMinutes,
     minutesCoveredByMinimum,
     overageMinutes,
     chargeableOverage,
     extraIncrements,
     incrementCost,
+    overtimeMinutes,
+    overtimeCharge,
+    overtimeMode,
+  }
+}
+
+/**
+ * Calculate the overtime surcharge for a block-time session that ran past its booked time.
+ * Used when the session had a fixed block duration (e.g., 60 min) and the customer stayed longer.
+ */
+export function calculateBlockTimeOvertime(
+  elapsedMinutes: number,
+  bookedMinutes: number,
+  overtime: OvertimeConfig,
+  baseRatePerMinute: number,
+  incrementMinutes: number = 15
+): { overtimeMinutes: number; overtimeCharge: number } {
+  const otGrace = overtime.graceMinutes ?? 0
+  const threshold = bookedMinutes + otGrace
+  if (!overtime.enabled || elapsedMinutes <= threshold) {
+    return { overtimeMinutes: 0, overtimeCharge: 0 }
+  }
+  const overtimeMinutes = elapsedMinutes - threshold
+  const overtimeCharge = calculateOvertimeCharge(overtimeMinutes, overtime, baseRatePerMinute, incrementMinutes)
+  return { overtimeMinutes, overtimeCharge }
+}
+
+/**
+ * Core overtime charge calculation based on mode.
+ */
+function calculateOvertimeCharge(
+  overtimeMinutes: number,
+  ot: OvertimeConfig,
+  baseRatePerMinute: number,
+  incrementMinutes: number
+): number {
+  switch (ot.mode) {
+    case 'multiplier': {
+      // Scale the base rate by multiplier, charge in increments
+      const multiplier = ot.multiplier ?? 1.5
+      const otRate = baseRatePerMinute * multiplier
+      const otIncrements = Math.ceil(overtimeMinutes / incrementMinutes)
+      return otIncrements * incrementMinutes * otRate
+    }
+    case 'custom_rate': {
+      // Custom per-minute rate, charge in increments
+      const customRate = ot.perMinuteRate ?? baseRatePerMinute
+      const otIncrements = Math.ceil(overtimeMinutes / incrementMinutes)
+      return otIncrements * incrementMinutes * customRate
+    }
+    case 'per_minute': {
+      // Exact per-minute (no rounding to increments)
+      const perMinRate = ot.perMinuteRate ?? baseRatePerMinute
+      return overtimeMinutes * perMinRate
+    }
+    case 'flat_fee': {
+      // One-time flat fee regardless of how long overtime is
+      return ot.flatFee ?? 0
+    }
+    default:
+      return 0
   }
 }
 

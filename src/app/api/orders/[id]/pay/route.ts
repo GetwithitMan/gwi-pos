@@ -24,7 +24,7 @@ import { triggerCashDrawer } from '@/lib/cash-drawer'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient } from '@/lib/datacap/helpers'
-import { calculateCharge, type EntertainmentPricing } from '@/lib/entertainment-pricing'
+import { calculateCharge, type EntertainmentPricing, type OvertimeConfig } from '@/lib/entertainment-pricing'
 import { getLocationTaxRate, recalculatePercentDiscounts } from '@/lib/order-calculations'
 import { ingestAndProject, type IngestEvent, type IngestResult } from '@/lib/order-events/ingester'
 import { OrderRouter } from '@/lib/order-router'
@@ -382,14 +382,20 @@ export const POST = withVenue(withTiming(async function POST(
     await enableSyncReplication(tx)
 
     // HA FAILOVER PROTECTION: Detect orphaned pending Datacap sales.
-    // If the primary NUC died between card-charged and response-returned, the pending
-    // record will still be in 'pending' status. Mark as orphaned for reconciliation.
-    // Only check records older than 60s to avoid flagging in-flight transactions.
-    const orphanedSales = await tx.$queryRawUnsafe<Array<{ id: string; amount: unknown; datacapRecordNo: string | null; invoiceNo: string | null }>>(
-      `SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
-       WHERE "orderId" = $1 AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'`,
-      orderId,
-    ).catch(() => [] as Array<{ id: string; amount: unknown; datacapRecordNo: string | null; invoiceNo: string | null }>)
+    // Uses a savepoint so a missing table doesn't abort the outer transaction.
+    let orphanedSales: Array<{ id: string; amount: unknown; datacapRecordNo: string | null; invoiceNo: string | null }> = []
+    try {
+      await tx.$executeRawUnsafe(`SAVEPOINT orphan_check`)
+      orphanedSales = await tx.$queryRawUnsafe<typeof orphanedSales>(
+        `SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
+         WHERE "orderId" = $1 AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'`,
+        orderId,
+      )
+      await tx.$executeRawUnsafe(`RELEASE SAVEPOINT orphan_check`)
+    } catch {
+      // Table may not exist on this NUC — roll back savepoint to keep transaction alive
+      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT orphan_check`).catch(() => {})
+    }
 
     if (orphanedSales.length > 0) {
       console.warn(`[PAY] Found ${orphanedSales.length} orphaned pending Datacap sale(s) for order ${orderId}. These may need manual void.`)
@@ -694,7 +700,11 @@ export const POST = withVenue(withTiming(async function POST(
       const perMinuteMenuItemIds = [...new Set(perMinuteItems.map((item: any) => item.menuItemId))]
       const perMinuteMenuItems = await tx.menuItem.findMany({
         where: { id: { in: perMinuteMenuItemIds } },
-        select: { id: true, ratePerMinute: true, minimumCharge: true, incrementMinutes: true, graceMinutes: true, price: true },
+        select: {
+          id: true, ratePerMinute: true, minimumCharge: true, incrementMinutes: true, graceMinutes: true, price: true,
+          overtimeEnabled: true, overtimeMode: true, overtimeMultiplier: true,
+          overtimePerMinuteRate: true, overtimeFlatFee: true, overtimeGraceMinutes: true,
+        },
       })
       const perMinuteMenuItemMap = new Map(perMinuteMenuItems.map(mi => [mi.id, mi]))
 
@@ -710,14 +720,29 @@ export const POST = withVenue(withTiming(async function POST(
           const ratePerMinute = mi.ratePerMinute ? Number(mi.ratePerMinute) : 0
           if (ratePerMinute <= 0) continue
 
+          // Build overtime config if enabled on the menu item
+          const otConfig: OvertimeConfig | undefined = mi.overtimeEnabled
+            ? {
+                enabled: true,
+                mode: (mi.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
+                multiplier: mi.overtimeMultiplier ? Number(mi.overtimeMultiplier) : undefined,
+                perMinuteRate: mi.overtimePerMinuteRate ? Number(mi.overtimePerMinuteRate) : undefined,
+                flatFee: mi.overtimeFlatFee ? Number(mi.overtimeFlatFee) : undefined,
+                graceMinutes: mi.overtimeGraceMinutes ?? undefined,
+              }
+            : undefined
+
           const pricing: EntertainmentPricing = {
             ratePerMinute,
             minimumCharge: mi.minimumCharge ? Number(mi.minimumCharge) : 0,
             incrementMinutes: mi.incrementMinutes ?? 15,
             graceMinutes: mi.graceMinutes ?? 5,
+            overtime: otConfig,
           }
 
-          const breakdown = calculateCharge(elapsedMinutes, pricing)
+          // Pass bookedMinutes to calculateCharge so overtime applies if session exceeded booked time
+          const bookedMinutes = item.blockTimeMinutes || undefined
+          const breakdown = calculateCharge(elapsedMinutes, pricing, bookedMinutes)
           const settledPrice = breakdown.totalCharge
 
           settlementUpdates.push(
@@ -1872,6 +1897,12 @@ export const POST = withVenue(withTiming(async function POST(
         })
 
         if (entertainmentItems.length > 0) {
+          // Clear blockTimeStartedAt on order items so Android stops showing timers
+          await db.orderItem.updateMany({
+            where: { orderId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
+            data: { blockTimeStartedAt: null },
+          })
+
           await db.menuItem.updateMany({
             where: { currentOrderId: orderId, itemType: 'timed_rental' },
             data: {
@@ -2364,7 +2395,7 @@ export const POST = withVenue(withTiming(async function POST(
     }).catch(() => {})
 
     return NextResponse.json(
-      { error: 'Failed to process payment' },
+      { error: 'Failed to process payment', detail: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     )
   }

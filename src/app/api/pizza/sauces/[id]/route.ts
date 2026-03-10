@@ -36,6 +36,9 @@ export const PATCH = withVenue(async function PATCH(
         ...(body.isDefault !== undefined && { isDefault: body.isDefault }),
         ...(body.isActive !== undefined && { isActive: body.isActive }),
         ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
+        ...(body.inventoryItemId !== undefined && { inventoryItemId: body.inventoryItemId || null }),
+        ...(body.usageQuantity !== undefined && { usageQuantity: body.usageQuantity }),
+        ...(body.usageUnit !== undefined && { usageUnit: body.usageUnit || null }),
       }
     })
 

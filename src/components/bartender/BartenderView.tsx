@@ -1904,7 +1904,10 @@ export function BartenderView({
                                   const isVariant = option.price !== null
                                   const displayPrice = isVariant ? option.price! : item.price
                                   const prices = getDualPrices(displayPrice, dualPricing)
-                                  const shown = dualPricing.enabled ? prices.cardPrice : prices.cashPrice
+                                  // Use explicit priceCC if available, otherwise computed card price
+                                  const shown = dualPricing.enabled
+                                    ? (isVariant && option.priceCC != null ? option.priceCC : prices.cardPrice)
+                                    : prices.cashPrice
                                   const bgColor = option.color || '#6366f1'
                                   const isHex = bgColor.startsWith('#') || bgColor.startsWith('rgb')
                                   return (

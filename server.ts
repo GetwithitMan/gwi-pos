@@ -242,7 +242,13 @@ async function main() {
   process.on('unhandledRejection', (err) => {
     console.error('[Server] Unhandled rejection:', err)
   })
-  process.on('uncaughtException', (err) => {
+  process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
+    // ECONNRESET / EPIPE / aborted are normal — client disconnected mid-request.
+    // Do NOT crash the server for these.
+    if (err.code === 'ECONNRESET' || err.code === 'EPIPE' || err.message === 'aborted') {
+      console.warn('[Server] Connection reset (harmless):', err.code || err.message)
+      return
+    }
     console.error('[Server] Uncaught exception:', err)
     process.exit(1)
   })

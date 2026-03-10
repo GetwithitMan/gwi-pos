@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { toast } from '@/stores/toast-store'
 import type { Ingredient, IngredientLibraryItem } from './item-editor-types'
 
@@ -15,8 +15,16 @@ export function useIngredientOperations({ itemId, ingredientsLibrary, loadData, 
   const [relinkingIngredientId, setRelinkingIngredientId] = useState<string | null>(null)
   const [ingredientSearch, setIngredientSearch] = useState('')
 
-  const saveIngredients = async (newIngredients: typeof ingredients) => {
+  // Ref tracks the latest intended state (updated optimistically before API calls)
+  const ingredientsRef = useRef(ingredients)
+  ingredientsRef.current = ingredients
+
+  // Optimistically update both state and ref, then persist to server
+  const applyAndSave = useCallback(async (newIngredients: Ingredient[]) => {
     if (!itemId) return
+    // Optimistic: update state + ref immediately so next operation sees latest
+    setIngredients(newIngredients)
+    ingredientsRef.current = newIngredients
     setSaving(true)
     try {
       const res = await fetch(`/api/menu/items/${itemId}/ingredients`, {
@@ -38,22 +46,30 @@ export function useIngredientOperations({ itemId, ingredientsLibrary, loadData, 
         const err = await res.json().catch(() => ({ error: 'Unknown error' }))
         console.error('Save ingredients failed:', res.status, err)
         toast.error(err.error || `Save failed (${res.status})`)
+        // Rollback: reload server state on failure
+        await loadData()
         return
       }
+      // Sync with server (may add server-generated IDs etc.)
       await loadData()
-      // No onItemUpdated() — ingredient toggles are local-only, no tree change
     } catch (e) {
       console.error('Failed to save:', e)
       toast.error('Failed to save ingredients')
+      await loadData()
     } finally {
       setSaving(false)
     }
-  }
+  }, [itemId, loadData, setSaving])
 
   const addIngredient = (ingredientId: string) => {
     const lib = ingredientsLibrary.find(i => i.id === ingredientId)
     if (!lib) return
-    const newIngredients = [...ingredients, {
+    // Prevent duplicate — ingredient already linked
+    if (ingredientsRef.current.some(i => i.ingredientId === ingredientId)) {
+      toast.info(`"${lib.name}" is already linked`)
+      return
+    }
+    const newIngredients = [...ingredientsRef.current, {
       id: '',
       ingredientId,
       name: lib.name,
@@ -65,22 +81,21 @@ export function useIngredientOperations({ itemId, ingredientsLibrary, loadData, 
       allowSwap: true,
       extraPrice: 0,
     }]
-    saveIngredients(newIngredients)
+    applyAndSave(newIngredients)
     setShowIngredientPicker(false)
     setIngredientSearch('')
   }
 
   const removeIngredient = (ingredientId: string) => {
-    saveIngredients(ingredients.filter(i => i.ingredientId !== ingredientId))
+    applyAndSave(ingredientsRef.current.filter(i => i.ingredientId !== ingredientId))
   }
 
-  // Swap an ingredient link — replace one ingredientId with another
   const swapIngredientLink = async (oldIngredientId: string, newIngredientId: string) => {
     const lib = ingredientsLibrary.find(i => i.id === newIngredientId)
     if (!lib) return
     setRelinkingIngredientId(null)
     setIngredientSearch('')
-    await saveIngredients(ingredients.map(i =>
+    await applyAndSave(ingredientsRef.current.map(i =>
       i.ingredientId === oldIngredientId
         ? { ...i, ingredientId: newIngredientId, name: lib.name }
         : i
@@ -89,11 +104,11 @@ export function useIngredientOperations({ itemId, ingredientsLibrary, loadData, 
   }
 
   const toggleIngredientOption = (ingredientId: string, option: 'allowNo' | 'allowLite' | 'allowExtra' | 'allowOnSide' | 'allowSwap') => {
-    saveIngredients(ingredients.map(i => i.ingredientId === ingredientId ? { ...i, [option]: !i[option] } : i))
+    applyAndSave(ingredientsRef.current.map(i => i.ingredientId === ingredientId ? { ...i, [option]: !i[option] } : i))
   }
 
   const updateExtraPrice = (ingredientId: string, price: number) => {
-    saveIngredients(ingredients.map(i => i.ingredientId === ingredientId ? { ...i, extraPrice: price } : i))
+    applyAndSave(ingredientsRef.current.map(i => i.ingredientId === ingredientId ? { ...i, extraPrice: price } : i))
   }
 
   return {
@@ -101,7 +116,7 @@ export function useIngredientOperations({ itemId, ingredientsLibrary, loadData, 
     showIngredientPicker, setShowIngredientPicker,
     relinkingIngredientId, setRelinkingIngredientId,
     ingredientSearch, setIngredientSearch,
-    saveIngredients, addIngredient, removeIngredient,
+    saveIngredients: applyAndSave, addIngredient, removeIngredient,
     swapIngredientLink, toggleIngredientOption, updateExtraPrice,
   }
 }

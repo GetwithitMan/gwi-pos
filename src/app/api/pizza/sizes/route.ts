@@ -21,6 +21,7 @@ export const GET = withVenue(async function GET() {
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
+      inventoryMultiplier: Number(size.inventoryMultiplier),
     })))
   } catch (error) {
     console.error('Failed to get pizza sizes:', error)
@@ -32,7 +33,7 @@ export const GET = withVenue(async function GET() {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, displayName, inches, slices, basePrice, priceMultiplier, toppingMultiplier, freeToppings, isDefault } = body
+    const { name, displayName, inches, slices, basePrice, priceMultiplier, toppingMultiplier, freeToppings, isDefault, inventoryMultiplier, inventoryItemId, usageQuantity, usageUnit } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -70,6 +71,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         basePrice,
         priceMultiplier: priceMultiplier || 1.0,
         toppingMultiplier: toppingMultiplier || 1.0,
+        inventoryMultiplier: inventoryMultiplier || 1.0,
+        inventoryItemId: inventoryItemId || null,
+        usageQuantity: usageQuantity ?? null,
+        usageUnit: usageUnit || null,
         freeToppings: freeToppings || 0,
         isDefault: isDefault || false,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
@@ -81,6 +86,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
+      inventoryMultiplier: Number(size.inventoryMultiplier),
+      usageQuantity: size.usageQuantity ? Number(size.usageQuantity) : null,
     } })
   } catch (error) {
     console.error('Failed to create pizza size:', error)

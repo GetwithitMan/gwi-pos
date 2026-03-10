@@ -1,24 +1,91 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatWaitTime, type WaitlistEntry } from '@/lib/entertainment'
 
 interface WaitlistPanelProps {
   waitlist: WaitlistEntry[]
+  locationId?: string
   onNotify?: (entryId: string) => void
   onSeat?: (entryId: string) => void
   onRemove?: (entryId: string) => void
   onAddNew?: () => void
+  onRefresh?: () => void
+}
+
+function DepositBadge({ entry }: { entry: WaitlistEntry }) {
+  if (!entry.depositStatus) return null
+
+  const amount = Number(entry.depositAmount || 0)
+
+  switch (entry.depositStatus) {
+    case 'collected': {
+      const label = entry.depositMethod === 'card'
+        ? `$${amount.toFixed(0)} (${entry.depositCardBrand || 'Card'} ••${entry.depositCardLast4 || '****'})`
+        : `$${amount.toFixed(0)} (Cash)`
+      return (
+        <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-300">
+          {label}
+        </span>
+      )
+    }
+    case 'applied':
+      return (
+        <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-300">
+          Applied to order
+        </span>
+      )
+    case 'refunded':
+      return (
+        <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-300">
+          Refunded
+        </span>
+      )
+    case 'forfeited':
+      return (
+        <span className="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300">
+          Forfeited
+        </span>
+      )
+    default:
+      return null
+  }
 }
 
 export function WaitlistPanel({
   waitlist,
+  locationId,
   onNotify,
   onSeat,
   onRemove,
   onAddNew,
+  onRefresh,
 }: WaitlistPanelProps) {
   const waitingEntries = waitlist.filter(e => e.status === 'waiting' || !e.status)
+  const [refundingId, setRefundingId] = useState<string | null>(null)
+
+  const handleRefundDeposit = async (entryId: string) => {
+    setRefundingId(entryId)
+    try {
+      const params = locationId ? `?locationId=${locationId}` : ''
+      const response = await fetch(`/api/entertainment/waitlist/${entryId}/deposit${params}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        console.error('Failed to refund deposit:', data.error || 'Unknown error')
+      }
+
+      // Refresh the panel data
+      onRefresh?.()
+    } catch (err) {
+      console.error('Failed to refund deposit:', err)
+    } finally {
+      setRefundingId(null)
+    }
+  }
 
   return (
     <div className="bg-white rounded-lg border-2 border-amber-400 shadow-lg">
@@ -74,11 +141,29 @@ export function WaitlistPanel({
                       <span>•</span>
                       <span className="text-amber-700 font-semibold">{formatWaitTime(entry.waitMinutes)}</span>
                     </div>
+                    {/* Deposit badge */}
+                    {entry.depositStatus && (
+                      <div className="mt-1">
+                        <DepositBadge entry={entry} />
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-2">
+                  {/* Refund deposit button */}
+                  {entry.depositStatus === 'collected' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-amber-700 border-amber-400 hover:bg-amber-100 font-semibold text-xs"
+                      onClick={() => handleRefundDeposit(entry.id)}
+                      disabled={refundingId === entry.id}
+                    >
+                      {refundingId === entry.id ? 'Refunding...' : 'Refund Deposit'}
+                    </Button>
+                  )}
                   {onNotify && (
                     <Button
                       size="sm"

@@ -118,6 +118,9 @@ Floor Plan is the primary POS interface for service-floor operations. It renders
 | `PUT` | `/api/sections/[id]` | Employee PIN | Update section (name, color, isVisible, posX/Y, width/height in pixels, widthFeet/heightFeet/gridSizeFeet). |
 | `DELETE` | `/api/sections/[id]` | Employee PIN | Soft-delete section. Tables in the section are moved to `sectionId: null` (not deleted). |
 | `PUT` | `/api/sections/reorder` | Employee PIN | Reorder sections by `sortOrder`. Body: `{ locationId, roomIds: [id1, id2, ...] }`. Uses `roomIds` naming (sections are rooms). |
+| `GET` | `/api/sections/[id]/assignments` | `TABLES_FLOOR_PLAN` | List active server assignments for section (where `unassignedAt` IS NULL). Includes employee name and role. |
+| `POST` | `/api/sections/[id]/assignments` | `TABLES_FLOOR_PLAN` | Assign a server to section. Body: `{ employeeId }`. Returns 409 if already assigned. |
+| `DELETE` | `/api/sections/[id]/assignments` | `TABLES_FLOOR_PLAN` | Unassign a server. Query: `employeeId`. Sets `unassignedAt = now()` (soft unassign). |
 
 ### Floor Plan Elements
 

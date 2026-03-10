@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { EntertainmentWaitlistStatus } from '@prisma/client'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings } from '@/lib/settings'
+import { requireDatacapClient } from '@/lib/datacap/helpers'
+import { parseError } from '@/lib/datacap/xml-parser'
 
 // GET - Get a specific waitlist entry
 export const GET = withVenue(async function GET(
@@ -59,6 +62,15 @@ export const GET = withVenue(async function GET(
         notifiedAt: entry.notifiedAt?.toISOString() || null,
         seatedAt: entry.seatedAt?.toISOString() || null,
         expiresAt: entry.expiresAt?.toISOString() || null,
+        // Deposit fields
+        depositAmount: entry.depositAmount ? Number(entry.depositAmount) : null,
+        depositMethod: entry.depositMethod,
+        depositRecordNo: entry.depositRecordNo,
+        depositCardLast4: entry.depositCardLast4,
+        depositCardBrand: entry.depositCardBrand,
+        depositStatus: entry.depositStatus,
+        depositCollectedBy: entry.depositCollectedBy,
+        depositRefundedAt: entry.depositRefundedAt?.toISOString() || null,
       },
     } })
   } catch (error) {
@@ -97,6 +109,14 @@ export const PATCH = withVenue(async function PATCH(
         position: true,
         elementId: true,
         visualType: true,
+        depositAmount: true,
+        depositMethod: true,
+        depositRecordNo: true,
+        depositCardLast4: true,
+        depositCardBrand: true,
+        depositStatus: true,
+        depositCollectedBy: true,
+        depositRefundedAt: true,
       },
     })
 
@@ -130,7 +150,20 @@ export const PATCH = withVenue(async function PATCH(
       notes?: string | null
       phone?: string | null
       partySize?: number
+      depositStatus?: string | null
+      depositRefundedAt?: Date | null
     } = {}
+
+    // Load settings for deposit handling
+    let waitlistSettings: { applyDepositToOrder?: boolean; forfeitOnNoShow?: boolean } | undefined
+    if (status && (status === 'seated' || status === 'cancelled' || status === 'expired')) {
+      const loc = await db.location.findUnique({
+        where: { id: locationId },
+        select: { settings: true },
+      })
+      const settings = parseSettings(loc?.settings)
+      waitlistSettings = settings.waitlist
+    }
 
     // Handle status transitions
     if (status) {
@@ -140,6 +173,48 @@ export const PATCH = withVenue(async function PATCH(
         updateData.notifiedAt = new Date()
       } else if (status === 'seated') {
         updateData.seatedAt = new Date()
+
+        // If deposit exists and applyDepositToOrder is true, mark as applied
+        if (entry.depositStatus === 'collected' && waitlistSettings?.applyDepositToOrder !== false) {
+          updateData.depositStatus = 'applied'
+        }
+      } else if (status === 'cancelled' || status === 'expired') {
+        // Handle deposit on cancellation/expiry
+        if (entry.depositStatus === 'collected' && entry.depositAmount) {
+          const forfeit = waitlistSettings?.forfeitOnNoShow !== false // default true
+          if (forfeit) {
+            updateData.depositStatus = 'forfeited'
+          } else {
+            // Auto-refund: for card deposits, void the pre-auth
+            if (entry.depositMethod === 'card' && entry.depositRecordNo) {
+              try {
+                const client = await requireDatacapClient(locationId)
+                // Find any active reader for this location to process the void
+                const reader = await db.paymentReader.findFirst({
+                  where: { locationId, deletedAt: null, isActive: true },
+                  select: { id: true },
+                })
+                if (reader) {
+                  const voidResponse = await client.voidSale(reader.id, {
+                    recordNo: entry.depositRecordNo,
+                  })
+                  const voidError = parseError(voidResponse)
+                  if (voidError) {
+                    console.error(`[Waitlist] Failed to void deposit pre-auth for entry ${id}:`, voidError.text)
+                    // Still mark as refunded — operator can investigate
+                  }
+                } else {
+                  console.error(`[Waitlist] No active reader found to void deposit for entry ${id}`)
+                }
+              } catch (err) {
+                console.error(`[Waitlist] Error voiding deposit for entry ${id}:`, err)
+              }
+            }
+            // Mark as refunded regardless (cash or card)
+            updateData.depositStatus = 'refunded'
+            updateData.depositRefundedAt = new Date()
+          }
+        }
       } else if (status === 'waiting') {
         // Reset notification if moved back to waiting
         updateData.notifiedAt = null
@@ -254,6 +329,15 @@ export const PATCH = withVenue(async function PATCH(
         table: updatedEntry.table,
         notifiedAt: updatedEntry.notifiedAt?.toISOString() || null,
         seatedAt: updatedEntry.seatedAt?.toISOString() || null,
+        // Deposit fields
+        depositAmount: updatedEntry.depositAmount ? Number(updatedEntry.depositAmount) : null,
+        depositMethod: updatedEntry.depositMethod,
+        depositRecordNo: updatedEntry.depositRecordNo,
+        depositCardLast4: updatedEntry.depositCardLast4,
+        depositCardBrand: updatedEntry.depositCardBrand,
+        depositStatus: updatedEntry.depositStatus,
+        depositCollectedBy: updatedEntry.depositCollectedBy,
+        depositRefundedAt: updatedEntry.depositRefundedAt?.toISOString() || null,
       },
       message: `Updated waitlist entry status to ${status || 'modified'}`,
     } })

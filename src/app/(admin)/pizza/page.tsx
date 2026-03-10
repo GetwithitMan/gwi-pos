@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
+import { useAuthStore } from '@/stores/auth-store'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import type { IngredientLibraryItem, IngredientCategory } from '@/components/menu/IngredientHierarchyPicker'
 import {
   PizzaConfig,
   Printer,
@@ -33,6 +35,8 @@ type TabType = 'config' | 'sizes' | 'crusts' | 'sauces' | 'cheeses' | 'toppings'
 
 export default function PizzaAdminPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/pizza' })
+  const locationId = useAuthStore(s => s.employee?.location?.id)
+  const employeeId = useAuthStore(s => s.employee?.id)
   const [activeTab, setActiveTab] = useState<TabType>('sizes')
   const [isLoading, setIsLoading] = useState(true)
   const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
@@ -45,6 +49,11 @@ export default function PizzaAdminPage() {
   const [cheeses, setCheeses] = useState<PizzaCheese[]>([])
   const [toppings, setToppings] = useState<PizzaTopping[]>([])
   const [printers, setPrinters] = useState<Printer[]>([])
+
+  // Ingredient data (for topping inventory linking)
+  const [ingredientsLibrary, setIngredientsLibrary] = useState<IngredientLibraryItem[]>([])
+  const [ingredientCategories, setIngredientCategories] = useState<IngredientCategory[]>([])
+  const [ingredientInventoryMap, setIngredientInventoryMap] = useState<Record<string, string>>({})
 
   // Modal states
   const [showSizeModal, setShowSizeModal] = useState(false)
@@ -61,9 +70,80 @@ export default function PizzaAdminPage() {
   const [editingCheese, setEditingCheese] = useState<PizzaCheese | null>(null)
   const [editingTopping, setEditingTopping] = useState<PizzaTopping | null>(null)
 
+  const loadIngredientData = useCallback(async () => {
+    if (!locationId) return
+    try {
+      const params = `locationId=${locationId}${employeeId ? `&requestingEmployeeId=${employeeId}` : ''}`
+      const [ingRes, catRes] = await Promise.all([
+        fetch(`/api/ingredients?${params}`),
+        fetch(`/api/ingredient-categories?${params}`),
+      ])
+      if (ingRes.ok) {
+        const ingData = await ingRes.json()
+        const rawIngredients = ingData.data || []
+        const ingredients = rawIngredients.map((ing: any) => ({
+          ...ing,
+          categoryName: ing.categoryRelation?.name || ing.category || null,
+          categoryId: ing.categoryId || null,
+          parentName: ing.parentIngredient?.name || null,
+          needsVerification: ing.needsVerification || false,
+        }))
+        setIngredientsLibrary(ingredients)
+        // Build ingredientId → inventoryItemId map
+        const map: Record<string, string> = {}
+        for (const ing of rawIngredients) {
+          if (ing.inventoryItemId) map[ing.id] = ing.inventoryItemId
+        }
+        setIngredientInventoryMap(map)
+      }
+      if (catRes.ok) {
+        const catData = await catRes.json()
+        setIngredientCategories(catData.data || [])
+      }
+    } catch (error) {
+      console.error('Failed to load ingredient data:', error)
+    }
+  }, [locationId, employeeId])
+
+  const handleIngredientCreated = useCallback((ingredient: any) => {
+    const normalized: IngredientLibraryItem = {
+      id: ingredient.id,
+      name: ingredient.name,
+      category: ingredient.category || null,
+      categoryName: ingredient.categoryRelation?.name || ingredient.category || null,
+      categoryId: ingredient.categoryId || null,
+      parentIngredientId: ingredient.parentIngredientId || null,
+      parentName: ingredient.parentIngredient?.name || null,
+      needsVerification: ingredient.needsVerification ?? true,
+      allowNo: ingredient.allowNo ?? true,
+      allowLite: ingredient.allowLite ?? true,
+      allowExtra: ingredient.allowExtra ?? true,
+      allowOnSide: ingredient.allowOnSide ?? false,
+      extraPrice: ingredient.extraPrice ?? 0,
+      allowSwap: ingredient.allowSwap ?? false,
+      swapModifierGroupId: null,
+      swapUpcharge: 0,
+    }
+    setIngredientsLibrary(prev => {
+      if (prev.some(i => i.id === normalized.id)) return prev
+      return [...prev, normalized]
+    })
+    if (ingredient.inventoryItemId) {
+      setIngredientInventoryMap(prev => ({ ...prev, [ingredient.id]: ingredient.inventoryItemId }))
+    }
+  }, [])
+
+  const handleCategoryCreated = useCallback((category: IngredientCategory) => {
+    setIngredientCategories(prev => {
+      if (prev.some(c => c.id === category.id)) return prev
+      return [...prev, category]
+    })
+  }, [])
+
   useEffect(() => {
     loadAllData()
-  }, [])
+    loadIngredientData()
+  }, [loadIngredientData])
 
   const loadAllData = async () => {
     setIsLoading(true)
@@ -381,6 +461,12 @@ export default function PizzaAdminPage() {
             size={editingSize}
             onSave={handleSaveSize}
             onClose={() => { setShowSizeModal(false); setEditingSize(null) }}
+            ingredientsLibrary={ingredientsLibrary}
+            ingredientCategories={ingredientCategories}
+            ingredientInventoryMap={ingredientInventoryMap}
+            onIngredientCreated={handleIngredientCreated}
+            onCategoryCreated={handleCategoryCreated}
+            onIngredientDataRefresh={loadIngredientData}
           />
         )}
 
@@ -389,6 +475,12 @@ export default function PizzaAdminPage() {
             crust={editingCrust}
             onSave={handleSaveCrust}
             onClose={() => { setShowCrustModal(false); setEditingCrust(null) }}
+            ingredientsLibrary={ingredientsLibrary}
+            ingredientCategories={ingredientCategories}
+            ingredientInventoryMap={ingredientInventoryMap}
+            onIngredientCreated={handleIngredientCreated}
+            onCategoryCreated={handleCategoryCreated}
+            onIngredientDataRefresh={loadIngredientData}
           />
         )}
 
@@ -397,6 +489,12 @@ export default function PizzaAdminPage() {
             sauce={editingSauce}
             onSave={handleSaveSauce}
             onClose={() => { setShowSauceModal(false); setEditingSauce(null) }}
+            ingredientsLibrary={ingredientsLibrary}
+            ingredientCategories={ingredientCategories}
+            ingredientInventoryMap={ingredientInventoryMap}
+            onIngredientCreated={handleIngredientCreated}
+            onCategoryCreated={handleCategoryCreated}
+            onIngredientDataRefresh={loadIngredientData}
           />
         )}
 
@@ -405,6 +503,12 @@ export default function PizzaAdminPage() {
             cheese={editingCheese}
             onSave={handleSaveCheese}
             onClose={() => { setShowCheeseModal(false); setEditingCheese(null) }}
+            ingredientsLibrary={ingredientsLibrary}
+            ingredientCategories={ingredientCategories}
+            ingredientInventoryMap={ingredientInventoryMap}
+            onIngredientCreated={handleIngredientCreated}
+            onCategoryCreated={handleCategoryCreated}
+            onIngredientDataRefresh={loadIngredientData}
           />
         )}
 
@@ -413,6 +517,12 @@ export default function PizzaAdminPage() {
             topping={editingTopping}
             onSave={handleSaveTopping}
             onClose={() => { setShowToppingModal(false); setEditingTopping(null) }}
+            ingredientsLibrary={ingredientsLibrary}
+            ingredientCategories={ingredientCategories}
+            ingredientInventoryMap={ingredientInventoryMap}
+            onIngredientCreated={handleIngredientCreated}
+            onCategoryCreated={handleCategoryCreated}
+            onIngredientDataRefresh={loadIngredientData}
           />
         )}
 

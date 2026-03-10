@@ -17,7 +17,9 @@ Real-time operational visibility screen — shows live sales vs. last week pacin
 - **Voids & comps** — total void amount + comp amount for the day
 - **Discounts** — total discounted amount for the day
 - **Paid In / Out chips** — green/red inline chips with totals; links to `/cash-drawer/paid-in-out`
+- **Labor %** — current shift wages / net sales today × 100, color-coded (green <25%, yellow 25-35%, red >35%). Fetches from `/api/reports/labor-cost?groupBy=date`.
 - **Deduction queue alert** — red dismissible banner when failed inventory deductions exist; links to `/inventory/deductions-queue`
+- **"Close Day" button** — manager-only (`manager.close_day`), calls `POST /api/eod/reset` with dry-run preview → confirm flow. Shows results: tables reset, orders rolled over, batch close status.
 - **Socket-first** — subscribes to `dashboard:metrics` socket event; falls back to 60s polling
 
 ## API Response (`GET /api/dashboard/live`)
@@ -40,7 +42,7 @@ Real-time operational visibility screen — shows live sales vs. last week pacin
 | `businessDate` | Today's business date (ISO) |
 
 ## Known Constraints
-- No labor % (requires time-clock integration — available but not wired)
+- ~~No labor %~~ **RESOLVED (2026-03-10):** Labor % card added, fetches from `/api/reports/labor-cost`
 - No kitchen performance metrics (ticket time, late tickets)
 - No widget customization
 - No dedicated always-on display mode
@@ -53,4 +55,4 @@ Real-time operational visibility screen — shows live sales vs. last week pacin
 - **Inventory Deduction Queue** — failed deduction alert
 - **Socket** — `dashboard:metrics` event
 
-*Last updated: 2026-03-04*
+*Last updated: 2026-03-10*

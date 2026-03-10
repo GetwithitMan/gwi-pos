@@ -152,6 +152,40 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
           <CardTitle>Section Settings</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Section Options */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Available Divisions</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: 1, label: 'Whole' },
+                { value: 2, label: 'Halves' },
+                { value: 3, label: 'Thirds' },
+                { value: 4, label: 'Quarters' },
+                { value: 6, label: 'Sixths' },
+                { value: 8, label: 'Eighths' },
+              ].map(opt => {
+                const isChecked = (config.sectionOptions || []).includes(opt.value)
+                return (
+                  <label key={opt.value} className="flex items-center gap-1.5 px-3 py-1.5 rounded border cursor-pointer select-none text-sm" style={{ borderColor: isChecked ? '#6366f1' : '#e5e7eb', backgroundColor: isChecked ? '#eef2ff' : 'white' }}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {
+                        const current = config.sectionOptions || [1, 2, 3, 4, 6, 8]
+                        const next = isChecked
+                          ? current.filter((v: number) => v !== opt.value)
+                          : [...current, opt.value].sort((a: number, b: number) => a - b)
+                        if (next.length > 0) onSave({ sectionOptions: next })
+                      }}
+                      className="sr-only"
+                    />
+                    {opt.label}
+                  </label>
+                )
+              })}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Check which division modes are available in the pizza builder</p>
+          </div>
           <div>
             <label className="block text-sm font-medium mb-1">Default Section View</label>
             <select
@@ -159,10 +193,10 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
               onChange={(e) => onSave({ defaultSections: parseInt(e.target.value) })}
               className="w-full p-2 border rounded-lg"
             >
-              <option value={1}>Whole Pizza (1)</option>
-              <option value={2}>Halves (2)</option>
-              <option value={4}>Quarters (4)</option>
-              <option value={8}>Eighths (8)</option>
+              {(config.sectionOptions || [1, 2, 4, 8]).map((v: number) => {
+                const labels: Record<number, string> = { 1: 'Whole Pizza (1)', 2: 'Halves (2)', 3: 'Thirds (3)', 4: 'Quarters (4)', 6: 'Sixths (6)', 8: 'Eighths (8)' }
+                return <option key={v} value={v}>{labels[v] || `${v} sections`}</option>
+              })}
             </select>
           </div>
           <div>
@@ -179,7 +213,81 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
             <p className="text-xs text-gray-500 mt-1">
               Fractional: A topping covering half the pizza costs half price
             </p>
+            {config.pricingMode === 'hybrid' && (
+              <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <label className="block text-sm font-medium mb-2">Custom Pricing Percentages</label>
+                <p className="text-xs text-gray-500 mb-3">Set the price percentage charged for each division level (1.0 = 100%)</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { key: 'whole', label: 'Whole', default: 1.0 },
+                    { key: 'half', label: 'Half', default: 0.6 },
+                    { key: 'third', label: 'Third', default: 0.45 },
+                    { key: 'quarter', label: 'Quarter', default: 0.35 },
+                    { key: 'sixth', label: 'Sixth', default: 0.2 },
+                    { key: 'eighth', label: 'Eighth', default: 0.15 },
+                  ].map(item => (
+                    <div key={item.key}>
+                      <label className="block text-xs text-gray-600 mb-1">{item.label}</label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        className="w-full px-2 py-1 text-sm border rounded"
+                        value={config.hybridPricing?.[item.key] ?? item.default}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value)
+                          if (!isNaN(val) && val >= 0 && val <= 2) {
+                            onSave({
+                              hybridPricing: {
+                                ...(config.hybridPricing || { whole: 1.0, half: 0.6, third: 0.45, quarter: 0.35, sixth: 0.2, eighth: 0.15 }),
+                                [item.key]: val,
+                              }
+                            })
+                          }
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Condiment Sections</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="text-sm font-medium">Allow section-based sauce & cheese</label>
+              <p className="text-xs text-gray-500">Let staff place sauce or cheese on specific sections (e.g. marinara on left, BBQ on right)</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={config.allowCondimentSections || false}
+              onChange={(e) => onSave({ allowCondimentSections: e.target.checked })}
+              className="h-4 w-4"
+            />
+          </div>
+          {config.allowCondimentSections && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Max Condiment Division</label>
+              <select
+                className="w-full px-3 py-2 border rounded-md text-sm"
+                value={config.condimentDivisionMax || 1}
+                onChange={(e) => onSave({ condimentDivisionMax: parseInt(e.target.value) })}
+              >
+                <option value={1}>Whole only</option>
+                <option value={2}>Up to halves</option>
+                <option value={3}>Up to thirds</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Maximum number of sections for sauce and cheese placement</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -302,6 +410,14 @@ export function SizesTab({ sizes, onAdd, onEdit, onDelete }: SizesTabProps) {
                       {size.displayName || `${size.inches || '?'}"`} • {size.slices} slices
                       {size.isDefault && <span className="ml-2 text-orange-600 font-medium">Default</span>}
                     </div>
+                    {size.inventoryItemName ? (
+                      <div className="text-xs text-blue-600">
+                        Linked: {size.inventoryItemName}
+                        {size.usageQuantity ? ` (${size.usageQuantity} ${size.usageUnit || 'ea'})` : ''}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-amber-500">No inventory link</div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -353,6 +469,14 @@ export function CrustsTab({ crusts, onAdd, onEdit, onDelete }: CrustsTabProps) {
                   {crust.isDefault && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">Default</span>}
                 </div>
                 {crust.description && <p className="text-sm text-gray-500 mb-2">{crust.description}</p>}
+                {crust.inventoryItemName ? (
+                  <div className="text-xs text-blue-600 mb-1">
+                    Linked: {crust.inventoryItemName}
+                    {crust.usageQuantity ? ` (${crust.usageQuantity} ${crust.usageUnit || 'ea'})` : ''}
+                  </div>
+                ) : (
+                  <div className="text-xs text-amber-500 mb-1">No inventory link</div>
+                )}
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-bold">
                     {crust.price > 0 ? `+${formatCurrency(crust.price)}` : 'Included'}
@@ -404,6 +528,14 @@ export function SaucesTab({ sauces, onAdd, onEdit, onDelete }: SaucesTabProps) {
                   {sauce.allowLight && <span className="bg-gray-100 px-2 py-0.5 rounded">Light</span>}
                   {sauce.allowExtra && <span className="bg-gray-100 px-2 py-0.5 rounded">Extra +{formatCurrency(sauce.extraPrice)}</span>}
                 </div>
+                {sauce.inventoryItemName ? (
+                  <div className="text-xs text-blue-600 mb-1">
+                    Linked: {sauce.inventoryItemName}
+                    {sauce.usageQuantity ? ` (${sauce.usageQuantity} ${sauce.usageUnit || 'ea'})` : ''}
+                  </div>
+                ) : (
+                  <div className="text-xs text-amber-500 mb-1">No inventory link</div>
+                )}
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-bold">
                     {sauce.price > 0 ? `+${formatCurrency(sauce.price)}` : 'Included'}
@@ -455,6 +587,14 @@ export function CheesesTab({ cheeses, onAdd, onEdit, onDelete }: CheesesTabProps
                   {cheese.allowLight && <span className="bg-gray-100 px-2 py-0.5 rounded">Light</span>}
                   {cheese.allowExtra && <span className="bg-gray-100 px-2 py-0.5 rounded">Extra +{formatCurrency(cheese.extraPrice)}</span>}
                 </div>
+                {cheese.inventoryItemName ? (
+                  <div className="text-xs text-blue-600 mb-1">
+                    Linked: {cheese.inventoryItemName}
+                    {cheese.usageQuantity ? ` (${cheese.usageQuantity} ${cheese.usageUnit || 'ea'})` : ''}
+                  </div>
+                ) : (
+                  <div className="text-xs text-amber-500 mb-1">No inventory link</div>
+                )}
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-bold">
                     {cheese.price > 0 ? `+${formatCurrency(cheese.price)}` : 'Included'}
@@ -540,9 +680,17 @@ export function ToppingsTab({ toppings, onAdd, onEdit, onDelete }: ToppingsTabPr
                           <div className="font-bold text-green-600">{formatCurrency(topping.price)}</div>
                         </div>
                         {topping.extraPrice && (
-                          <div className="text-xs text-gray-500 mb-2">
+                          <div className="text-xs text-gray-500">
                             Extra: +{formatCurrency(topping.extraPrice)}
                           </div>
+                        )}
+                        {topping.inventoryItemName ? (
+                          <div className="text-xs text-blue-600 mb-1">
+                            Linked: {topping.inventoryItemName}
+                            {topping.usageQuantity ? ` (${topping.usageQuantity} ${topping.usageUnit || 'ea'})` : ''}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-amber-500 mb-1">No inventory link</div>
                         )}
                         <div className="flex gap-2">
                           <Button variant="ghost" size="sm" onClick={() => onEdit(topping)}>Edit</Button>

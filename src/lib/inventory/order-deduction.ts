@@ -231,6 +231,16 @@ export const ORDER_INVENTORY_INCLUDE = {
           },
         },
       },
+      // Pizza-specific inventory (toppings, sauce, cheese, crust from PizzaTopping/Sauce/Cheese/Crust)
+      pizza: {
+        select: {
+          toppingsData: true,
+          sizeId: true,
+          sauceId: true,
+          cheeseId: true,
+          crustId: true,
+        },
+      },
     },
   },
 } as const
@@ -707,6 +717,167 @@ export async function deductInventoryForOrder(
               addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
             }
           }
+        }
+      }
+
+      // Pizza topping inventory deductions
+      // Parse OrderItemPizza.toppingsData and deduct each topping's linked inventory
+      const pizzaData = (orderItem as any).pizza
+      if (pizzaData?.toppingsData) {
+        try {
+          const toppingsJson = typeof pizzaData.toppingsData === 'string'
+            ? JSON.parse(pizzaData.toppingsData)
+            : pizzaData.toppingsData
+
+          const toppingEntries: Array<{
+            toppingId?: string
+            sections?: number[]
+            amount?: string
+          }> = toppingsJson.toppings || []
+
+          if (toppingEntries.length > 0) {
+            // Fetch PizzaTopping records with inventory links
+            const toppingIds = toppingEntries
+              .map(t => t.toppingId)
+              .filter((id): id is string => !!id)
+
+            if (toppingIds.length > 0) {
+              const pizzaToppings = await db.pizzaTopping.findMany({
+                where: { id: { in: toppingIds } },
+                select: {
+                  id: true,
+                  name: true,
+                  usageQuantity: true,
+                  usageUnit: true,
+                  inventoryItemId: true,
+                  inventoryItem: {
+                    select: {
+                      id: true,
+                      name: true,
+                      category: true,
+                      department: true,
+                      storageUnit: true,
+                      costPerUnit: true,
+                      yieldCostPerUnit: true,
+                      currentStock: true,
+                    },
+                  },
+                },
+              })
+
+              const toppingMap = new Map(pizzaToppings.map(t => [t.id, t]))
+
+              // Fetch size multiplier if available
+              let sizeInventoryMultiplier = 1.0
+              if (pizzaData.sizeId) {
+                const size = await db.pizzaSize.findUnique({
+                  where: { id: pizzaData.sizeId },
+                  select: { inventoryMultiplier: true },
+                })
+                if (size?.inventoryMultiplier) {
+                  sizeInventoryMultiplier = toNumber(size.inventoryMultiplier) || 1.0
+                }
+              }
+
+              for (const entry of toppingEntries) {
+                if (!entry.toppingId) continue
+                const topping = toppingMap.get(entry.toppingId)
+                if (!topping?.inventoryItem) continue
+
+                const baseUsage = toNumber(topping.usageQuantity) || 0
+                if (baseUsage <= 0) continue
+
+                // Coverage fraction: sections array length / 24 (micro-section grid)
+                // Default to whole pizza (24/24 = 1.0) if no sections specified
+                const sectionCount = entry.sections?.length || 24
+                const coverageFraction = sectionCount / 24.0
+
+                // Amount multiplier: light=0.5, regular=1.0, extra=2.0
+                const amountMultiplier = entry.amount === 'light' ? 0.5
+                  : entry.amount === 'extra' ? 2.0
+                  : 1.0
+
+                const totalUsage = baseUsage * coverageFraction * amountMultiplier
+                  * sizeInventoryMultiplier * itemQty
+
+                // Apply unit conversion if needed
+                let finalUsage = totalUsage
+                if (topping.usageUnit && topping.inventoryItem.storageUnit) {
+                  const converted = convertUnits(
+                    totalUsage,
+                    topping.usageUnit,
+                    topping.inventoryItem.storageUnit
+                  )
+                  if (converted !== null) {
+                    finalUsage = converted
+                  }
+                }
+
+                addUsage(topping.inventoryItem, finalUsage)
+              }
+            }
+          }
+
+          // Also deduct sauce/cheese/crust inventory if linked
+          // Sauce
+          if (pizzaData.sauceId) {
+            const sauce = await db.pizzaSauce.findUnique({
+              where: { id: pizzaData.sauceId },
+              select: {
+                inventoryItemId: true,
+                inventoryItem: {
+                  select: {
+                    id: true, name: true, category: true, department: true,
+                    storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                  },
+                },
+              },
+            })
+            if (sauce?.inventoryItem) {
+              // Sauce covers whole pizza, 1x multiplier, scaled by size
+              addUsage(sauce.inventoryItem, 1.0 * itemQty)
+            }
+          }
+
+          // Cheese
+          if (pizzaData.cheeseId) {
+            const cheese = await db.pizzaCheese.findUnique({
+              where: { id: pizzaData.cheeseId },
+              select: {
+                inventoryItemId: true,
+                inventoryItem: {
+                  select: {
+                    id: true, name: true, category: true, department: true,
+                    storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                  },
+                },
+              },
+            })
+            if (cheese?.inventoryItem) {
+              addUsage(cheese.inventoryItem, 1.0 * itemQty)
+            }
+          }
+
+          // Crust
+          if (pizzaData.crustId) {
+            const crust = await db.pizzaCrust.findUnique({
+              where: { id: pizzaData.crustId },
+              select: {
+                inventoryItemId: true,
+                inventoryItem: {
+                  select: {
+                    id: true, name: true, category: true, department: true,
+                    storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                  },
+                },
+              },
+            })
+            if (crust?.inventoryItem) {
+              addUsage(crust.inventoryItem, 1.0 * itemQty)
+            }
+          }
+        } catch (err) {
+          console.warn('[DEDUCTION] Failed to process pizza toppings for order item:', err)
         }
       }
     }

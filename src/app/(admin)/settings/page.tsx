@@ -192,6 +192,18 @@ export default function SettingsPage() {
             description="Training mode for new employees, login screen announcements, and staff alerts"
             href="/settings/training"
           />
+          <SectionCard
+            icon="💡"
+            title="Upsell Rules"
+            description="Configure intelligent upsell prompts to increase revenue per check"
+            href="/settings/upsell-rules"
+          />
+          <SectionCard
+            icon="⏳"
+            title="Waitlist"
+            description="Entertainment waitlist settings, SMS notifications, deposit collection, and no-show policies"
+            href="/settings/waitlist"
+          />
         </div>
 
         {/* Hardware Health Widget */}

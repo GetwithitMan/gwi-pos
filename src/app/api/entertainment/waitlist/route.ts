@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { EntertainmentWaitlistStatus } from '@prisma/client'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings } from '@/lib/settings'
 
 // GET - List waitlist entries for floor plan elements
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -83,6 +84,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         notifiedAt: entry.notifiedAt?.toISOString() || null,
         seatedAt: entry.seatedAt?.toISOString() || null,
         expiresAt: entry.expiresAt?.toISOString() || null,
+        // Deposit fields
+        depositAmount: entry.depositAmount ? Number(entry.depositAmount) : null,
+        depositMethod: entry.depositMethod,
+        depositRecordNo: entry.depositRecordNo,
+        depositCardLast4: entry.depositCardLast4,
+        depositCardBrand: entry.depositCardBrand,
+        depositStatus: entry.depositStatus,
+        depositCollectedBy: entry.depositCollectedBy,
+        depositRefundedAt: entry.depositRefundedAt?.toISOString() || null,
       }
     })
 
@@ -225,6 +235,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Dispatch real-time update
     dispatchFloorPlanUpdate(locationId, { async: true })
 
+    // Check if deposits are enabled for this location
+    const location = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const settings = parseSettings(location?.settings)
+    const waitlistSettings = settings.waitlist
+    const depositRequired = waitlistSettings?.depositEnabled === true
+    const depositAmountSetting = waitlistSettings?.depositAmount ?? 25
+
     return NextResponse.json({ data: {
       entry: {
         id: entry.id,
@@ -240,7 +260,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         table: entry.table,
         requestedAt: entry.requestedAt.toISOString(),
         expiresAt: entry.expiresAt?.toISOString() || null,
+        depositAmount: null,
+        depositMethod: null,
+        depositRecordNo: null,
+        depositCardLast4: null,
+        depositCardBrand: null,
+        depositStatus: null,
+        depositCollectedBy: null,
+        depositRefundedAt: null,
       },
+      ...(depositRequired ? {
+        depositRequired: true,
+        depositAmount: depositAmountSetting,
+        allowCashDeposit: waitlistSettings?.allowCashDeposit !== false,
+      } : {}),
       message: `Added ${customerName || 'Table'} to waitlist at position ${entry.position}`,
     } })
   } catch (error) {

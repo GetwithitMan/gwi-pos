@@ -192,7 +192,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   useEffect(() => {
     const fetchPrinters = async () => {
       try {
-        const res = await fetch('/api/hardware/printers')
+        const res = await fetch(`/api/hardware/printers?locationId=${encodeURIComponent(locationId)}`)
         if (res.ok) {
           const raw = await res.json()
           const data = raw.data ?? raw
@@ -1235,7 +1235,6 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                         actionLabel="+ Add"
                         actionColor="green"
                         onAction={addIngredient}
-                        excludeIds={new Set(ingredients.map(i => i.ingredientId))}
                         showAvailableCount
                         creatingNewCategory={creatingNewCategory}
                         setCreatingNewCategory={setCreatingNewCategory}
@@ -1261,7 +1260,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                   {ingredients.length === 0 ? (
                     <p className="text-gray-600 text-sm text-center py-2">No ingredients linked</p>
                   ) : (
-                    ingredients.map(ing => {
+                    ingredients.map((ing, idx) => {
                       const linkedModifiers = ingredientToModifiers.get(ing.ingredientId) || []
                       const libItem = ingredientsLibrary.find(l => l.id === ing.ingredientId)
                       const isUnverified = ing.needsVerification || libItem?.needsVerification
@@ -1271,7 +1270,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                       const parentId = libItem?.parentIngredientId
                       const categoryName = libItem?.categoryName || ing.category
                       return (
-                        <div key={ing.ingredientId} className={`rounded border overflow-hidden ${isPrepItem ? 'border-green-200' : 'border-blue-200'}`}>
+                        <div key={ing.id || `${ing.ingredientId}-${idx}`} className={`rounded border overflow-hidden ${isPrepItem ? 'border-green-200' : 'border-blue-200'}`}>
                           {/* Hierarchy breadcrumb — stepped display */}
                           <div className="px-2 pt-1.5 pb-1 bg-white">
                             <div className="flex items-center gap-0 text-[9px] leading-tight">
@@ -1377,7 +1376,6 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                                 actionLabel="Link"
                                 actionColor="green"
                                 onAction={(prepId) => swapIngredientLink(ing.ingredientId, prepId)}
-                                excludeIds={new Set([...ingredients.map(i => i.ingredientId), ing.ingredientId])}
                                 showAvailableCount
                                 maxHeight="max-h-64"
                                 showCategoryCreation={false}

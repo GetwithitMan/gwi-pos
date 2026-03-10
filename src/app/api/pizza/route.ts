@@ -21,7 +21,7 @@ export const GET = withVenue(async function GET() {
           locationId,
           maxSections: 8,
           defaultSections: 2,
-          sectionOptions: [1, 2, 4, 8],
+          sectionOptions: [1, 2, 3, 4, 6, 8],
           pricingMode: 'fractional',
           freeToppingsEnabled: false,
           freeToppingsCount: 0,
@@ -29,32 +29,39 @@ export const GET = withVenue(async function GET() {
           showVisualBuilder: true,
           showToppingList: true,
           defaultToListView: false,
+          allowCondimentSections: false,
+          condimentDivisionMax: 1,
         }
       }),
       // Sizes
       db.pizzaSize.findMany({
         where: { locationId, isActive: true },
-        orderBy: { sortOrder: 'asc' }
+        orderBy: { sortOrder: 'asc' },
+        include: { inventoryItem: { select: { id: true, name: true } } },
       }),
       // Crusts
       db.pizzaCrust.findMany({
         where: { locationId, isActive: true },
-        orderBy: { sortOrder: 'asc' }
+        orderBy: { sortOrder: 'asc' },
+        include: { inventoryItem: { select: { id: true, name: true } } },
       }),
       // Sauces
       db.pizzaSauce.findMany({
         where: { locationId, isActive: true },
-        orderBy: { sortOrder: 'asc' }
+        orderBy: { sortOrder: 'asc' },
+        include: { inventoryItem: { select: { id: true, name: true } } },
       }),
       // Cheeses
       db.pizzaCheese.findMany({
         where: { locationId, isActive: true },
-        orderBy: { sortOrder: 'asc' }
+        orderBy: { sortOrder: 'asc' },
+        include: { inventoryItem: { select: { id: true, name: true } } },
       }),
-      // Toppings
+      // Toppings (include inventory item name for admin display)
       db.pizzaTopping.findMany({
         where: { locationId, isActive: true },
-        orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }]
+        orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
+        include: { inventoryItem: { select: { id: true, name: true } } },
       }),
       // Printers (for admin UI)
       db.printer.findMany({
@@ -82,6 +89,8 @@ export const GET = withVenue(async function GET() {
         extraToppingPrice: config.extraToppingPrice ? Number(config.extraToppingPrice) : null,
         printerIds: (config.printerIds as string[]) || [],
         printSettings: config.printSettings,
+        allowCondimentSections: config.allowCondimentSections,
+        condimentDivisionMax: config.condimentDivisionMax,
       },
       printers,
       sizes: sizes.map(s => ({
@@ -89,25 +98,44 @@ export const GET = withVenue(async function GET() {
         basePrice: Number(s.basePrice),
         priceMultiplier: Number(s.priceMultiplier),
         toppingMultiplier: Number(s.toppingMultiplier),
+        inventoryMultiplier: Number(s.inventoryMultiplier),
+        inventoryItemId: s.inventoryItemId || null,
+        usageQuantity: s.usageQuantity ? Number(s.usageQuantity) : null,
+        usageUnit: s.usageUnit || null,
+        inventoryItemName: s.inventoryItem?.name || null,
       })),
       crusts: crusts.map(c => ({
         ...c,
         price: Number(c.price),
+        inventoryItemId: c.inventoryItemId || null,
+        usageQuantity: c.usageQuantity ? Number(c.usageQuantity) : null,
+        usageUnit: c.usageUnit || null,
+        inventoryItemName: c.inventoryItem?.name || null,
       })),
       sauces: sauces.map(s => ({
         ...s,
         price: Number(s.price),
         extraPrice: Number(s.extraPrice),
+        inventoryItemId: s.inventoryItemId || null,
+        usageQuantity: s.usageQuantity ? Number(s.usageQuantity) : null,
+        usageUnit: s.usageUnit || null,
+        inventoryItemName: s.inventoryItem?.name || null,
       })),
       cheeses: cheeses.map(c => ({
         ...c,
         price: Number(c.price),
         extraPrice: Number(c.extraPrice),
+        inventoryItemId: c.inventoryItemId || null,
+        usageQuantity: c.usageQuantity ? Number(c.usageQuantity) : null,
+        usageUnit: c.usageUnit || null,
+        inventoryItemName: c.inventoryItem?.name || null,
       })),
       toppings: toppings.map(t => ({
         ...t,
         price: Number(t.price),
         extraPrice: t.extraPrice ? Number(t.extraPrice) : null,
+        usageQuantity: t.usageQuantity ? Number(t.usageQuantity) : null,
+        inventoryItemName: t.inventoryItem?.name || null,
       })),
       toppingsByCategory: Object.fromEntries(
         Object.entries(toppingsByCategory).map(([cat, tops]) => [
@@ -116,11 +144,13 @@ export const GET = withVenue(async function GET() {
             ...t,
             price: Number(t.price),
             extraPrice: t.extraPrice ? Number(t.extraPrice) : null,
+            usageQuantity: t.usageQuantity ? Number(t.usageQuantity) : null,
+            inventoryItemName: t.inventoryItem?.name || null,
           }))
         ])
       ),
       // Category order for display
-      toppingCategories: ['meat', 'veggie', 'cheese', 'premium', 'seafood', 'standard'].filter(
+      toppingCategories: ['meat', 'veggie', 'cheese', 'premium', 'specialty', 'seafood', 'standard'].filter(
         cat => toppingsByCategory[cat]?.length > 0
       ),
     } })

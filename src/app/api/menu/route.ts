@@ -105,7 +105,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
               options: {
                 where: { deletedAt: null },
                 orderBy: { sortOrder: 'asc' },
-                select: { id: true, label: true, price: true, priceCC: true, sortOrder: true, isDefault: true, color: true },
+                select: { id: true, label: true, price: true, priceCC: true, sortOrder: true, isDefault: true, showOnPos: true, color: true },
               },
             },
           },

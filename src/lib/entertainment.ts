@@ -270,6 +270,15 @@ export interface WaitlistEntry {
   notifiedAt?: string | null
   seatedAt?: string | null
   expiresAt?: string | null
+  // Deposit fields
+  depositAmount?: number | null
+  depositMethod?: string | null       // 'cash' | 'card'
+  depositRecordNo?: string | null
+  depositCardLast4?: string | null
+  depositCardBrand?: string | null
+  depositStatus?: string | null       // 'collected' | 'applied' | 'refunded' | 'forfeited'
+  depositCollectedBy?: string | null
+  depositRefundedAt?: string | null
   // Client-enriched: set by KDS page when flattening per-item waitlists
   menuItem?: {
     id: string

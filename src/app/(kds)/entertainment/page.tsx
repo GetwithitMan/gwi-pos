@@ -554,10 +554,12 @@ export default function EntertainmentKDSPage() {
               <div className="mt-8">
                 <WaitlistPanel
                   waitlist={allWaitlist}
+                  locationId={locationId}
                   onNotify={handleNotify}
                   onSeat={handleSeat}
                   onRemove={handleRemoveFromWaitlist}
                   onAddNew={() => handleAddToWaitlist()}
+                  onRefresh={fetchStatus}
                 />
               </div>
             )}

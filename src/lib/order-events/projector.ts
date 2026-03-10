@@ -215,7 +215,9 @@ export async function applyProjection(
   const snapshotData = projectSnapshot(state, locationId, lastEventSequence)
   const itemRows = projectItemSnapshots(state, locationId)
 
-  await db.$transaction(async (tx) => {
+  // If db is already a transaction client (no $transaction method), run directly.
+  // This happens when ingestAndProject is called from inside a $transaction callback.
+  const runOps = async (tx: any) => {
     // 1. Upsert the order-level snapshot.
     await tx.orderSnapshot.upsert({
       where: { id: state.orderId },
@@ -235,7 +237,14 @@ export async function applyProjection(
         data: itemRows,
       })
     }
-  })
+  }
+
+  if (typeof (db as any).$transaction === 'function') {
+    await db.$transaction(runOps)
+  } else {
+    // Already inside a transaction — use db directly as the transaction client
+    await runOps(db)
+  }
 }
 
 // ── Legacy → Snapshot Bridge ──────────────────────────────────────────────────

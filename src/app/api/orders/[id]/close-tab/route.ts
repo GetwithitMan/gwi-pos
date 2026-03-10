@@ -819,6 +819,12 @@ export const POST = withVenue(async function POST(
       })
 
       if (entertainmentItems.length > 0) {
+        // Clear blockTimeStartedAt on order items so Android stops showing timers
+        await db.orderItem.updateMany({
+          where: { orderId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
+          data: { blockTimeStartedAt: null },
+        })
+
         await db.menuItem.updateMany({
           where: { currentOrderId: orderId, itemType: 'timed_rental' },
           data: {

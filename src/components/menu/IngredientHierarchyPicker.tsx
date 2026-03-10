@@ -21,7 +21,7 @@ export interface IngredientLibraryItem {
   swapUpcharge: number
 }
 
-interface IngredientCategory {
+export interface IngredientCategory {
   id: string
   code: number
   name: string

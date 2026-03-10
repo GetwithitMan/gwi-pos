@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { calculateCharge, getActiveRate, type EntertainmentPricing, type HappyHourConfig, type ChargeBreakdown } from '@/lib/entertainment-pricing'
+import { calculateCharge, calculateBlockTimeOvertime, getActiveRate, type EntertainmentPricing, type HappyHourConfig, type ChargeBreakdown, type OvertimeConfig } from '@/lib/entertainment-pricing'
 import { emitToLocation } from '@/lib/socket-server'
 import { recalculatePercentDiscounts } from '@/lib/order-calculations'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
@@ -57,6 +57,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             happyHourEnd: true,
             happyHourDays: true,
             prepaidPackages: true,
+            overtimeEnabled: true,
+            overtimeMode: true,
+            overtimeMultiplier: true,
+            overtimePerMinuteRate: true,
+            overtimeFlatFee: true,
+            overtimeGraceMinutes: true,
           },
         },
         order: {
@@ -101,6 +107,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Calculate expiration time
     const now = new Date()
     const expiresAt = new Date(now.getTime() + minutes * 60 * 1000)
+
+    // Build overtime config from MenuItem fields (included in response so client knows pricing)
+    const overtimeConfig: OvertimeConfig | undefined = orderItem.menuItem.overtimeEnabled
+      ? {
+          enabled: true,
+          mode: (orderItem.menuItem.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
+          multiplier: orderItem.menuItem.overtimeMultiplier ? Number(orderItem.menuItem.overtimeMultiplier) : undefined,
+          perMinuteRate: orderItem.menuItem.overtimePerMinuteRate ? Number(orderItem.menuItem.overtimePerMinuteRate) : undefined,
+          flatFee: orderItem.menuItem.overtimeFlatFee ? Number(orderItem.menuItem.overtimeFlatFee) : undefined,
+          graceMinutes: orderItem.menuItem.overtimeGraceMinutes ?? undefined,
+        }
+      : undefined
 
     // Calculate initial block price based on selected duration
     const mi = orderItem.menuItem
@@ -251,6 +269,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         startedAt: updatedItem.blockTimeStartedAt?.toISOString(),
         expiresAt: updatedItem.blockTimeExpiresAt?.toISOString(),
       },
+      overtime: overtimeConfig || null,
       message: `Started ${minutes} minute block time, expires at ${expiresAt.toLocaleTimeString()}`,
     } })
   } catch (error) {
@@ -310,6 +329,12 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
             happyHourEnd: true,
             happyHourDays: true,
             prepaidPackages: true,
+            overtimeEnabled: true,
+            overtimeMode: true,
+            overtimeMultiplier: true,
+            overtimePerMinuteRate: true,
+            overtimeFlatFee: true,
+            overtimeGraceMinutes: true,
           },
         },
         order: {
@@ -518,6 +543,12 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
             happyHourEnd: true,
             happyHourDays: true,
             prepaidPackages: true,
+            overtimeEnabled: true,
+            overtimeMode: true,
+            overtimeMultiplier: true,
+            overtimePerMinuteRate: true,
+            overtimeFlatFee: true,
+            overtimeGraceMinutes: true,
           },
         },
         order: {
@@ -574,6 +605,19 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     const menuItem = orderItem.menuItem
     let calculatedCharge = Number(menuItem.price || 0)
     let breakdown: ChargeBreakdown | null = null
+    let overtimeBreakdown: { overtimeMinutes: number; overtimeCharge: number } | null = null
+
+    // Build overtime config from MenuItem fields
+    const deleteOvertimeConfig: OvertimeConfig | undefined = menuItem.overtimeEnabled
+      ? {
+          enabled: true,
+          mode: (menuItem.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
+          multiplier: menuItem.overtimeMultiplier ? Number(menuItem.overtimeMultiplier) : undefined,
+          perMinuteRate: menuItem.overtimePerMinuteRate ? Number(menuItem.overtimePerMinuteRate) : undefined,
+          flatFee: menuItem.overtimeFlatFee ? Number(menuItem.overtimeFlatFee) : undefined,
+          graceMinutes: menuItem.overtimeGraceMinutes ?? undefined,
+        }
+      : undefined
 
     if (Number(menuItem.ratePerMinute || 0) > 0) {
       // Per-minute pricing engine
@@ -599,10 +643,19 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       // Apply happy hour rate if active (use session start time for consistency)
       const sessionStart = orderItem.blockTimeStartedAt || now
       const { rate: activeRate } = getActiveRate(pricing.ratePerMinute, happyHour, sessionStart)
-      const effectivePricing: EntertainmentPricing = { ...pricing, ratePerMinute: activeRate }
+      const effectivePricing: EntertainmentPricing = {
+        ...pricing,
+        ratePerMinute: activeRate,
+        overtime: deleteOvertimeConfig,
+      }
 
-      breakdown = calculateCharge(actualMinutes, effectivePricing)
+      // Pass bookedMinutes so calculateCharge applies overtime if session exceeded booked time
+      const bookedMinutes = orderItem.blockTimeMinutes || undefined
+      breakdown = calculateCharge(actualMinutes, effectivePricing, bookedMinutes)
       calculatedCharge = breakdown.totalCharge
+      if (breakdown.overtimeMinutes > 0) {
+        overtimeBreakdown = { overtimeMinutes: breakdown.overtimeMinutes, overtimeCharge: breakdown.overtimeCharge }
+      }
     } else if (menuItem.timedPricing && typeof menuItem.timedPricing === 'object') {
       // Tier-based pricing from timedPricing JSON
       const tp = menuItem.timedPricing as Record<string, unknown>
@@ -616,13 +669,42 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       } else if (tp.perHour) {
         calculatedCharge = (purchasedMinutes / 60) * Number(tp.perHour)
       }
+
+      // Apply overtime for tier-based pricing if session exceeded booked duration
+      if (deleteOvertimeConfig && purchasedMinutes > 0 && actualMinutes > purchasedMinutes) {
+        // Use the tier-based rate per minute as base for overtime calculation
+        const tierBaseRate = calculatedCharge / purchasedMinutes
+        const incrementMin = menuItem.incrementMinutes || 15
+        overtimeBreakdown = calculateBlockTimeOvertime(
+          actualMinutes,
+          purchasedMinutes,
+          deleteOvertimeConfig,
+          tierBaseRate,
+          incrementMin
+        )
+        calculatedCharge += overtimeBreakdown.overtimeCharge
+      }
+    } else if (deleteOvertimeConfig && orderItem.blockTimeMinutes && actualMinutes > orderItem.blockTimeMinutes) {
+      // Flat-rate fallback with overtime: derive a base rate from the flat price / booked minutes
+      const flatBaseRate = calculatedCharge / orderItem.blockTimeMinutes
+      const incrementMin = menuItem.incrementMinutes || 15
+      overtimeBreakdown = calculateBlockTimeOvertime(
+        actualMinutes,
+        orderItem.blockTimeMinutes,
+        deleteOvertimeConfig,
+        flatBaseRate,
+        incrementMin
+      )
+      calculatedCharge += overtimeBreakdown.overtimeCharge
     }
     // Otherwise keep MenuItem.price as flat-rate fallback
 
-    // Update the order item - set expiration to now and apply calculated charge
+    // Update the order item - clear startedAt (so Android filter excludes it),
+    // set expiration to now, and apply calculated charge
     await db.orderItem.update({
       where: { id: orderItemId },
       data: {
+        blockTimeStartedAt: null,
         blockTimeExpiresAt: now,
         price: calculatedCharge,
         itemTotal: calculatedCharge,
@@ -710,7 +792,8 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       actualMinutesUsed: actualMinutes,
       charge: calculatedCharge,
       chargeBreakdown: breakdown || null,
-      message: `Stopped session. ${actualMinutes} minutes used. Charge: $${calculatedCharge.toFixed(2)}`,
+      overtimeBreakdown: overtimeBreakdown || null,
+      message: `Stopped session. ${actualMinutes} minutes used. Charge: $${calculatedCharge.toFixed(2)}${overtimeBreakdown ? ` (includes $${overtimeBreakdown.overtimeCharge.toFixed(2)} overtime for ${overtimeBreakdown.overtimeMinutes} min)` : ''}`,
       menuItem: updatedMenuItem,
     } })
   } catch (error) {

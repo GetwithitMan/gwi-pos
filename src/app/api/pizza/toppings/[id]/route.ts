@@ -9,7 +9,10 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
-    const topping = await db.pizzaTopping.findUnique({ where: { id } })
+    const topping = await db.pizzaTopping.findUnique({
+      where: { id },
+      include: { inventoryItem: { select: { id: true, name: true } } },
+    })
 
     if (!topping) {
       return NextResponse.json({ error: 'Topping not found' }, { status: 404 })
@@ -19,6 +22,8 @@ export const GET = withVenue(async function GET(
       ...topping,
       price: Number(topping.price),
       extraPrice: topping.extraPrice ? Number(topping.extraPrice) : null,
+      usageQuantity: topping.usageQuantity ? Number(topping.usageQuantity) : null,
+      inventoryItemName: topping.inventoryItem?.name || null,
     } })
   } catch (error) {
     console.error('Failed to get pizza topping:', error)
@@ -53,6 +58,9 @@ export const PATCH = withVenue(async function PATCH(
         ...(body.iconUrl !== undefined && { iconUrl: body.iconUrl }),
         ...(body.isActive !== undefined && { isActive: body.isActive }),
         ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
+        ...(body.inventoryItemId !== undefined && { inventoryItemId: body.inventoryItemId || null }),
+        ...(body.usageQuantity !== undefined && { usageQuantity: body.usageQuantity }),
+        ...(body.usageUnit !== undefined && { usageUnit: body.usageUnit || null }),
       }
     })
 

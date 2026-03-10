@@ -182,8 +182,9 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
           {quickPickOptions.map(option => {
             const isVariant = option.price !== null
             const displayPrice = isVariant ? option.price! : item.price
+            // For card price: use priceCC if available, otherwise compute from cash price
             const adjustedPrice = pricing.isDualPricingEnabled
-              ? displayPrice * (1 + pricing.cashDiscountRate / 100)
+              ? (isVariant && option.priceCC != null ? option.priceCC : displayPrice * (1 + pricing.cashDiscountRate / 100))
               : displayPrice
             const bgClass = option.color || '#6366f1'
             const isHex = bgClass.startsWith('#') || bgClass.startsWith('rgb')

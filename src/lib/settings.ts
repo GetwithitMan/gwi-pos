@@ -1098,6 +1098,12 @@ export interface WaitlistSettings {
   smsNotifications: boolean            // Send SMS via Twilio when table ready (default: true)
   maxWaitlistSize: number              // Max concurrent entries before full (default: 50)
   autoRemoveAfterMinutes: number       // Remove if not seated within X min of notification (default: 15)
+  // Deposit settings
+  depositEnabled: boolean              // Require deposit to hold waitlist position (default: false)
+  depositAmount: number                // Deposit amount in dollars (default: 25)
+  allowCashDeposit: boolean            // Accept cash as deposit method (default: true)
+  applyDepositToOrder: boolean         // Apply deposit toward the order when seated (default: true)
+  forfeitOnNoShow: boolean             // Forfeit deposit if customer doesn't show (default: true)
 }
 
 export const DEFAULT_WAITLIST_SETTINGS: WaitlistSettings = {
@@ -1107,6 +1113,11 @@ export const DEFAULT_WAITLIST_SETTINGS: WaitlistSettings = {
   smsNotifications: true,
   maxWaitlistSize: 50,
   autoRemoveAfterMinutes: 15,
+  depositEnabled: false,
+  depositAmount: 25,
+  allowCashDeposit: true,
+  applyDepositToOrder: true,
+  forfeitOnNoShow: true,
 }
 
 // ─── Menu Restore Point Settings ──────────────────────────────────────────────

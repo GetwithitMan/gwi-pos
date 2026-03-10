@@ -64,6 +64,8 @@ interface TimedItem {
   visualType?: EntertainmentVisualType
 }
 
+type OvertimeMode = 'multiplier' | 'custom_rate' | 'flat_fee' | 'per_minute'
+
 interface ItemBuilderForm {
   name: string
   visualType: EntertainmentVisualType
@@ -77,6 +79,13 @@ interface ItemBuilderForm {
   happyHourStart: string         // 24h format e.g. "13:00"
   happyHourEnd: string           // 24h format e.g. "18:00"
   happyHourDays: string[]        // e.g. ["monday","tuesday",...]
+  // Overtime pricing
+  overtimeEnabled: boolean
+  overtimeMode: OvertimeMode
+  overtimeMultiplier: number
+  overtimePerMinuteRate: number
+  overtimeFlatFee: number
+  overtimeGraceMinutes: number
   // Status
   status: 'available' | 'maintenance'
 }
@@ -118,6 +127,12 @@ function TimedRentalsContent() {
     happyHourStart: '13:00',
     happyHourEnd: '18:00',
     happyHourDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+    overtimeEnabled: false,
+    overtimeMode: 'multiplier',
+    overtimeMultiplier: 1.5,
+    overtimePerMinuteRate: 0.50,
+    overtimeFlatFee: 10,
+    overtimeGraceMinutes: 5,
     status: 'available'
   })
   const [isSaving, setIsSaving] = useState(false)
@@ -171,6 +186,12 @@ function TimedRentalsContent() {
         happyHourStart: '13:00',
         happyHourEnd: '18:00',
         happyHourDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        overtimeEnabled: false,
+        overtimeMode: 'multiplier',
+        overtimeMultiplier: 1.5,
+        overtimePerMinuteRate: 0.50,
+        overtimeFlatFee: 10,
+        overtimeGraceMinutes: 5,
         status: 'available'
       })
       setShowBuilder(true)
@@ -188,6 +209,15 @@ function TimedRentalsContent() {
         let hhEnd = '18:00'
         let hhDays: string[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
 
+        // Extract overtime fields from timedPricing JSON (fallback defaults)
+        const overtime = (item.timedPricing as any)?.overtime
+        let otEnabled = overtime?.enabled || false
+        let otMode: OvertimeMode = overtime?.mode || 'multiplier'
+        let otMultiplier = overtime?.multiplier ?? 1.5
+        let otPerMinuteRate = overtime?.perMinuteRate ?? 0.50
+        let otFlatFee = overtime?.flatFee ?? 10
+        let otGraceMinutes = overtime?.graceMinutes ?? 5
+
         const applyForm = () => {
           setBuilderForm({
             name: item.name,
@@ -200,6 +230,12 @@ function TimedRentalsContent() {
             happyHourStart: hhStart,
             happyHourEnd: hhEnd,
             happyHourDays: hhDays,
+            overtimeEnabled: otEnabled,
+            overtimeMode: otMode,
+            overtimeMultiplier: otMultiplier,
+            overtimePerMinuteRate: otPerMinuteRate,
+            overtimeFlatFee: otFlatFee,
+            overtimeGraceMinutes: otGraceMinutes,
             status: item.entertainmentStatus || 'available'
           })
           setShowBuilder(true)
@@ -221,6 +257,13 @@ function TimedRentalsContent() {
                 if (hhEnabled && detail.happyHourDiscount != null && ratePerMinute > 0) {
                   hhPrice = ratePerMinute * (1 - Number(detail.happyHourDiscount) / 100)
                 }
+                // Populate overtime fields from MenuItem columns if present
+                if (detail.overtimeEnabled != null) otEnabled = detail.overtimeEnabled
+                if (detail.overtimeMode) otMode = detail.overtimeMode as OvertimeMode
+                if (detail.overtimeMultiplier != null) otMultiplier = Number(detail.overtimeMultiplier)
+                if (detail.overtimePerMinuteRate != null) otPerMinuteRate = Number(detail.overtimePerMinuteRate)
+                if (detail.overtimeFlatFee != null) otFlatFee = Number(detail.overtimeFlatFee)
+                if (detail.overtimeGraceMinutes != null) otGraceMinutes = Number(detail.overtimeGraceMinutes)
               }
             }
           } catch {
@@ -350,6 +393,14 @@ function TimedRentalsContent() {
             enabled: true,
             price: builderForm.happyHourPrice,
           } : null,
+          overtime: builderForm.overtimeEnabled ? {
+            enabled: true,
+            mode: builderForm.overtimeMode,
+            multiplier: builderForm.overtimeMultiplier,
+            perMinuteRate: builderForm.overtimePerMinuteRate,
+            flatFee: builderForm.overtimeFlatFee,
+            graceMinutes: builderForm.overtimeGraceMinutes,
+          } : null,
         },
         gracePeriodMinutes: builderForm.gracePeriodMinutes,
         entertainmentStatus: builderForm.status,
@@ -363,6 +414,13 @@ function TimedRentalsContent() {
         happyHourStart: builderForm.happyHourEnabled ? builderForm.happyHourStart : null,
         happyHourEnd: builderForm.happyHourEnabled ? builderForm.happyHourEnd : null,
         happyHourDays: builderForm.happyHourEnabled ? builderForm.happyHourDays : [],
+        // MenuItem-level overtime columns
+        overtimeEnabled: builderForm.overtimeEnabled,
+        overtimeMode: builderForm.overtimeEnabled ? builderForm.overtimeMode : null,
+        overtimeMultiplier: builderForm.overtimeEnabled ? builderForm.overtimeMultiplier : null,
+        overtimePerMinuteRate: builderForm.overtimeEnabled ? builderForm.overtimePerMinuteRate : null,
+        overtimeFlatFee: builderForm.overtimeEnabled ? builderForm.overtimeFlatFee : null,
+        overtimeGraceMinutes: builderForm.overtimeEnabled ? builderForm.overtimeGraceMinutes : null,
       }
 
       const res = await fetch(url, {
@@ -688,6 +746,155 @@ function TimedRentalsContent() {
                         {Math.round((1 - (builderForm.happyHourPrice / builderForm.ratePerMinute)) * 100)}% discount applied during happy hour
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+
+              {/* Overtime Pricing */}
+              <div className="border-t pt-3 mt-3">
+                <label className="flex items-center gap-2 text-sm mb-2">
+                  <input
+                    type="checkbox"
+                    checked={builderForm.overtimeEnabled}
+                    onChange={e => setBuilderForm({...builderForm, overtimeEnabled: e.target.checked})}
+                    className="rounded"
+                  />
+                  <span className="font-medium text-gray-700">Enable Overtime Charges</span>
+                </label>
+
+                {builderForm.overtimeEnabled && (
+                  <div className="ml-6 space-y-3">
+                    {/* Mode selector pills */}
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Overtime Mode</div>
+                      <div className="flex flex-wrap gap-1">
+                        {([
+                          { value: 'multiplier' as OvertimeMode, label: 'Rate Multiplier' },
+                          { value: 'custom_rate' as OvertimeMode, label: 'Custom Rate' },
+                          { value: 'per_minute' as OvertimeMode, label: 'Per Minute' },
+                          { value: 'flat_fee' as OvertimeMode, label: 'Flat Fee' },
+                        ] as const).map(mode => (
+                          <button
+                            key={mode.value}
+                            type="button"
+                            onClick={() => setBuilderForm({...builderForm, overtimeMode: mode.value})}
+                            className={`px-3 py-1 rounded text-xs font-medium ${
+                              builderForm.overtimeMode === mode.value
+                                ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                                : 'bg-gray-100 text-gray-500 border border-gray-200'
+                            }`}
+                          >
+                            {mode.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Mode-specific input */}
+                    <div>
+                      {builderForm.overtimeMode === 'multiplier' && (
+                        <div className="flex items-center gap-1 text-sm">
+                          <span className="text-gray-500">Multiplier:</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="1"
+                            value={builderForm.overtimeMultiplier}
+                            onChange={e => setBuilderForm({...builderForm, overtimeMultiplier: parseFloat(e.target.value) || 1.5})}
+                            className="w-16 px-2 py-1 border rounded text-right text-sm"
+                          />
+                          <span className="text-gray-500">x base rate</span>
+                          <span className="text-gray-400 text-xs ml-1">
+                            (${(builderForm.ratePerMinute * builderForm.overtimeMultiplier).toFixed(2)}/min)
+                          </span>
+                        </div>
+                      )}
+
+                      {builderForm.overtimeMode === 'custom_rate' && (
+                        <div className="flex items-center gap-1 text-sm">
+                          <span className="text-gray-500">Rate: $</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={builderForm.overtimePerMinuteRate}
+                            onChange={e => setBuilderForm({...builderForm, overtimePerMinuteRate: parseFloat(e.target.value) || 0.50})}
+                            className="w-16 px-2 py-1 border rounded text-right text-sm"
+                          />
+                          <span className="text-gray-500">/min</span>
+                          <span className="text-gray-400 text-xs ml-1">
+                            (${(builderForm.overtimePerMinuteRate * 60).toFixed(2)}/hr)
+                          </span>
+                        </div>
+                      )}
+
+                      {builderForm.overtimeMode === 'per_minute' && (
+                        <div className="flex items-center gap-1 text-sm">
+                          <span className="text-gray-500">Rate: $</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={builderForm.overtimePerMinuteRate}
+                            onChange={e => setBuilderForm({...builderForm, overtimePerMinuteRate: parseFloat(e.target.value) || 0.35})}
+                            className="w-16 px-2 py-1 border rounded text-right text-sm"
+                          />
+                          <span className="text-gray-500">/min (exact)</span>
+                          <span className="text-gray-400 text-xs ml-1">
+                            (${(builderForm.overtimePerMinuteRate * 60).toFixed(2)}/hr)
+                          </span>
+                        </div>
+                      )}
+
+                      {builderForm.overtimeMode === 'flat_fee' && (
+                        <div className="flex items-center gap-1 text-sm">
+                          <span className="text-gray-500">Fee: $</span>
+                          <input
+                            type="number"
+                            step="1"
+                            min="1"
+                            value={builderForm.overtimeFlatFee}
+                            onChange={e => setBuilderForm({...builderForm, overtimeFlatFee: parseFloat(e.target.value) || 10})}
+                            className="w-16 px-2 py-1 border rounded text-right text-sm"
+                          />
+                          <span className="text-gray-500">one-time</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Grace period */}
+                    <div className="flex items-center gap-1 text-sm">
+                      <span className="text-gray-500">Grace period:</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="30"
+                        value={builderForm.overtimeGraceMinutes}
+                        onChange={e => setBuilderForm({...builderForm, overtimeGraceMinutes: parseInt(e.target.value) || 0})}
+                        className="w-12 px-2 py-1 border rounded text-right text-sm"
+                      />
+                      <span className="text-gray-500">min before overtime starts</span>
+                    </div>
+
+                    {/* Preview text */}
+                    <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1.5 rounded">
+                      {(() => {
+                        const sessionMin = 60
+                        const overMin = 15
+                        const billableOver = Math.max(0, overMin - builderForm.overtimeGraceMinutes)
+                        let charge = 0
+                        if (builderForm.overtimeMode === 'multiplier') {
+                          charge = billableOver * builderForm.ratePerMinute * builderForm.overtimeMultiplier
+                        } else if (builderForm.overtimeMode === 'custom_rate' || builderForm.overtimeMode === 'per_minute') {
+                          charge = billableOver * builderForm.overtimePerMinuteRate
+                        } else if (builderForm.overtimeMode === 'flat_fee') {
+                          charge = billableOver > 0 ? builderForm.overtimeFlatFee : 0
+                        }
+                        return billableOver > 0
+                          ? `If a ${sessionMin}-min session goes ${overMin} min over: +${formatCurrency(charge)} overtime (${billableOver} billable min after ${builderForm.overtimeGraceMinutes}-min grace)`
+                          : `If a ${sessionMin}-min session goes ${overMin} min over: no charge (within ${builderForm.overtimeGraceMinutes}-min grace period)`
+                      })()}
+                    </div>
                   </div>
                 )}
               </div>

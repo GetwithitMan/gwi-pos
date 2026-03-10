@@ -236,6 +236,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       happyHourStart,
       happyHourEnd,
       happyHourDays,
+      // Overtime pricing for block-time entertainment
+      overtimeEnabled,
+      overtimeMode,
+      overtimeMultiplier,
+      overtimePerMinuteRate,
+      overtimeFlatFee,
+      overtimeGraceMinutes,
       // Allergen tracking
       allergens,
       // Age verification
@@ -312,6 +319,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ...(happyHourStart !== undefined && { happyHourStart: happyHourStart || null }),
         ...(happyHourEnd !== undefined && { happyHourEnd: happyHourEnd || null }),
         ...(happyHourDays !== undefined && { happyHourDays: happyHourDays || null }),
+        // Overtime pricing for block-time entertainment
+        ...(overtimeEnabled !== undefined && { overtimeEnabled }),
+        ...(overtimeMode !== undefined && { overtimeMode: overtimeMode || null }),
+        ...(overtimeMultiplier !== undefined && { overtimeMultiplier: overtimeMultiplier ?? null }),
+        ...(overtimePerMinuteRate !== undefined && { overtimePerMinuteRate: overtimePerMinuteRate ?? null }),
+        ...(overtimeFlatFee !== undefined && { overtimeFlatFee: overtimeFlatFee ?? null }),
+        ...(overtimeGraceMinutes !== undefined && { overtimeGraceMinutes: overtimeGraceMinutes ?? null }),
         // Allergen tracking
         ...(allergens !== undefined && { allergens: Array.isArray(allergens) ? allergens : [] }),
         // Age verification

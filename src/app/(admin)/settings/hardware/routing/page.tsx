@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
+import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 
 interface Category {
@@ -48,6 +49,7 @@ interface PrintDestination {
 export default function RoutingPage() {
   const router = useRouter()
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/settings/hardware/routing' })
+  const locationId = useAuthStore(s => s.locationId)
   const [isLoading, setIsLoading] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
   const [printers, setPrinters] = useState<Printer[]>([])
@@ -65,8 +67,8 @@ export default function RoutingPage() {
     try {
       const [menuRes, printersRes, kdsRes] = await Promise.all([
         fetch('/api/menu'),
-        fetch('/api/hardware/printers'),
-        fetch('/api/hardware/kds-screens'),
+        fetch(`/api/hardware/printers?locationId=${locationId}`),
+        fetch(`/api/hardware/kds-screens?locationId=${locationId}`),
       ])
 
       if (menuRes.ok) {

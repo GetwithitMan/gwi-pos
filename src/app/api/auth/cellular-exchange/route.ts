@@ -157,8 +157,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Cellular device count limit check (subscription-gated)
+    // Pass the venue-specific DB since this route is NOT wrapped in withVenue
+    const venueDbForLimits = getDbForVenue(mcData.venueSlug)
     const { checkDeviceLimit } = await import('@/lib/device-limits')
-    const cellularLimit = await checkDeviceLimit(resolvedLocationId, 'cellular')
+    const cellularLimit = await checkDeviceLimit(resolvedLocationId, 'cellular', venueDbForLimits)
     if (!cellularLimit.allowed) {
       return NextResponse.json(
         {

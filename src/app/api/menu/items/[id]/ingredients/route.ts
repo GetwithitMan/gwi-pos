@@ -111,9 +111,19 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
     }
 
+    // Deduplicate by ingredientId — keep last occurrence (latest settings win)
+    const seen = new Set<string>()
+    const deduped: typeof ingredients = []
+    for (let i = ingredients.length - 1; i >= 0; i--) {
+      if (!seen.has(ingredients[i].ingredientId)) {
+        seen.add(ingredients[i].ingredientId)
+        deduped.unshift(ingredients[i])
+      }
+    }
+
     // Verify all ingredient IDs exist (no locationId filter — the ingredient may have been
     // created under a different session locationId; the link record stamps menuItem.locationId)
-    const ingredientIds = ingredients.map(i => i.ingredientId)
+    const ingredientIds = deduped.map(i => i.ingredientId)
     const existingIngredients = await db.ingredient.findMany({
       where: { id: { in: ingredientIds }, deletedAt: null },
       select: { id: true },
@@ -136,9 +146,9 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         where: { menuItemId },
       })
 
-      if (ingredients.length > 0) {
+      if (deduped.length > 0) {
         await tx.menuItemIngredient.createMany({
-          data: ingredients.map((ing, index) => ({
+          data: deduped.map((ing, index) => ({
             locationId: menuItem.locationId,
             menuItemId,
             ingredientId: ing.ingredientId,

@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
+import type { PrismaClient } from '@prisma/client'
 
 export type DeviceType = 'terminal' | 'handheld' | 'cellular' | 'kds' | 'printer'
 
@@ -14,13 +15,19 @@ export interface DeviceLimitCheck {
  * Check if adding another device of the given type would exceed the location's limit.
  * Limits come from LocationSettings.hardwareLimits (synced from MC subscription tier).
  * A limit of 0 means unlimited.
+ *
+ * @param prismaOverride — Pass a venue-specific PrismaClient when calling from
+ *   routes that are NOT wrapped in withVenue (e.g. cellular-exchange).
  */
 export async function checkDeviceLimit(
   locationId: string,
-  deviceType: DeviceType
+  deviceType: DeviceType,
+  prismaOverride?: PrismaClient
 ): Promise<DeviceLimitCheck> {
+  const prisma = (prismaOverride ?? db) as PrismaClient
+
   // Get location settings for limits
-  const location = await db.location.findUnique({
+  const location = await prisma.location.findUnique({
     where: { id: locationId },
     select: { settings: true },
   })
@@ -40,7 +47,7 @@ export async function checkDeviceLimit(
   switch (deviceType) {
     case 'terminal': {
       limit = limits.maxPOSTerminals
-      current = await db.terminal.count({
+      current = await prisma.terminal.count({
         where: { locationId, category: 'FIXED_STATION', deletedAt: null, isPaired: true },
       })
       deviceLabel = 'POS terminals'
@@ -48,7 +55,7 @@ export async function checkDeviceLimit(
     }
     case 'handheld': {
       limit = limits.maxHandhelds
-      current = await db.terminal.count({
+      current = await prisma.terminal.count({
         where: { locationId, category: 'HANDHELD', deletedAt: null, isPaired: true },
       })
       deviceLabel = 'handheld devices'
@@ -72,7 +79,7 @@ export async function checkDeviceLimit(
     }
     case 'printer': {
       limit = limits.maxPrinters
-      current = await db.printer.count({
+      current = await prisma.printer.count({
         where: { locationId, deletedAt: null },
       })
       deviceLabel = 'printers'

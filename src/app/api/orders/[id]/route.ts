@@ -112,6 +112,10 @@ export const GET = withVenue(async function GET(
               itemTotal: true,
               menuItemId: true,
               pricingOptionLabel: true,
+              blockTimeMinutes: true,
+              blockTimeStartedAt: true,
+              blockTimeExpiresAt: true,
+              menuItem: { select: { itemType: true } },
               createdAt: true,
               modifiers: {
                 where: { deletedAt: null },
@@ -218,6 +222,7 @@ export const GET = withVenue(async function GET(
             },
             pizzaData: true,
             ingredientModifications: true,
+            menuItem: { select: { itemType: true } },
             itemDiscounts: {
               where: { deletedAt: null },
               select: { id: true, amount: true, percent: true, reason: true },

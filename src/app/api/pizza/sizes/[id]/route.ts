@@ -20,6 +20,8 @@ export const GET = withVenue(async function GET(
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
+      inventoryMultiplier: Number(size.inventoryMultiplier),
+      usageQuantity: size.usageQuantity ? Number(size.usageQuantity) : null,
     } })
   } catch (error) {
     console.error('Failed to get pizza size:', error)
@@ -59,6 +61,10 @@ export const PATCH = withVenue(async function PATCH(
         ...(body.basePrice !== undefined && { basePrice: body.basePrice }),
         ...(body.priceMultiplier !== undefined && { priceMultiplier: body.priceMultiplier }),
         ...(body.toppingMultiplier !== undefined && { toppingMultiplier: body.toppingMultiplier }),
+        ...(body.inventoryMultiplier !== undefined && { inventoryMultiplier: body.inventoryMultiplier }),
+        ...(body.inventoryItemId !== undefined && { inventoryItemId: body.inventoryItemId || null }),
+        ...(body.usageQuantity !== undefined && { usageQuantity: body.usageQuantity ?? null }),
+        ...(body.usageUnit !== undefined && { usageUnit: body.usageUnit || null }),
         ...(body.freeToppings !== undefined && { freeToppings: body.freeToppings }),
         ...(body.isDefault !== undefined && { isDefault: body.isDefault }),
         ...(body.isActive !== undefined && { isActive: body.isActive }),
@@ -71,6 +77,8 @@ export const PATCH = withVenue(async function PATCH(
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
+      inventoryMultiplier: Number(size.inventoryMultiplier),
+      usageQuantity: size.usageQuantity ? Number(size.usageQuantity) : null,
     } })
   } catch (error) {
     console.error('Failed to update pizza size:', error)

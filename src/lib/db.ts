@@ -240,10 +240,9 @@ function resolveClient(): PrismaClient {
  * based on the x-venue-slug header set by proxy.ts.
  */
 export const db: PrismaClient = new Proxy(masterClient, {
-  get(_target, prop, receiver) {
+  get(_target, prop) {
     const client = resolveClient()
-    const value = Reflect.get(client, prop, receiver)
-    // Bind methods to the correct client instance
+    const value = (client as any)[prop]
     if (typeof value === 'function') {
       return value.bind(client)
     }
