@@ -1,6 +1,7 @@
 'use client'
 
 import { RefObject } from 'react'
+import { useDroppable } from '@dnd-kit/core'
 import { Button } from '@/components/ui/button'
 import { CATEGORY_TYPES } from '../types'
 import type { Category } from '../types'
@@ -13,6 +14,81 @@ interface CategoriesBarProps {
   onSelectCategory: (id: string) => void
   onEditCategory: (category: Category) => void
   onAddCategory: () => void
+  isDraggingItem?: boolean
+}
+
+/** Individual droppable category button */
+function DroppableCategoryButton({
+  category,
+  isSelected,
+  isDraggingItem,
+  onSelectCategory,
+  onEditCategory,
+}: {
+  category: Category
+  isSelected: boolean
+  isDraggingItem: boolean
+  onSelectCategory: (id: string) => void
+  onEditCategory: (category: Category) => void
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `category-drop-${category.id}`,
+    data: { type: 'category', categoryId: category.id },
+  })
+
+  const typeInfo = CATEGORY_TYPES.find(t => t.value === category.categoryType)
+
+  return (
+    <button
+      ref={setNodeRef}
+      onClick={() => onSelectCategory(category.id)}
+      className={`shrink-0 px-3 py-1.5 rounded-lg border-2 transition-all flex items-center gap-1.5 text-sm ${
+        isOver && isDraggingItem
+          ? 'border-green-500 bg-green-50 ring-2 ring-green-300 scale-105'
+          : isSelected
+          ? 'border-blue-500 bg-blue-50'
+          : isDraggingItem
+          ? 'border-dashed border-gray-300 bg-gray-50 hover:border-green-400 hover:bg-green-50'
+          : 'border-transparent bg-gray-100 hover:bg-gray-200'
+      }`}
+    >
+      <div
+        className="w-3 h-3 rounded"
+        style={{ backgroundColor: category.color }}
+      />
+      <span className={`font-medium whitespace-nowrap ${
+        isOver && isDraggingItem ? 'text-green-700' : isSelected ? 'text-blue-700' : 'text-gray-800'
+      }`}>
+        {category.name}
+      </span>
+      <span className={`text-sm ${
+        isOver && isDraggingItem ? 'text-green-500' : isSelected ? 'text-blue-500' : 'text-gray-600'
+      }`}>
+        ({category.itemCount})
+      </span>
+      {isSelected && !isDraggingItem && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation()
+            onEditCategory(category)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.stopPropagation()
+              onEditCategory(category)
+            }
+          }}
+          className="ml-1 p-1 hover:bg-blue-100 rounded cursor-pointer"
+        >
+          <svg className="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+        </span>
+      )}
+    </button>
+  )
 }
 
 export function CategoriesBar({
@@ -23,11 +99,17 @@ export function CategoriesBar({
   onSelectCategory,
   onEditCategory,
   onAddCategory,
+  isDraggingItem = false,
 }: CategoriesBarProps) {
   return (
     <div className="bg-white border-b px-4 py-1.5 shrink-0">
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xs font-medium text-gray-700">Categories</span>
+        {isDraggingItem && (
+          <span className="text-xs text-green-600 font-medium animate-pulse">
+            Drop on a category to move
+          </span>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -67,53 +149,16 @@ export function CategoriesBar({
             <p className="text-xs mt-1">Click + Add to create your first category.</p>
           </div>
         ) : (
-          categories.map(category => {
-            const typeInfo = CATEGORY_TYPES.find(t => t.value === category.categoryType)
-            const isSelected = selectedCategory === category.id
-            return (
-              <button
-                key={category.id}
-                onClick={() => onSelectCategory(category.id)}
-                className={`shrink-0 px-3 py-1.5 rounded-lg border-2 transition-all flex items-center gap-1.5 text-sm ${
-                  isSelected
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-transparent bg-gray-100 hover:bg-gray-200'
-                }`}
-              >
-                <div
-                  className="w-3 h-3 rounded"
-                  style={{ backgroundColor: category.color }}
-                />
-                <span className={`font-medium whitespace-nowrap ${isSelected ? 'text-blue-700' : 'text-gray-800'}`}>
-                  {category.name}
-                </span>
-                <span className={`text-sm ${isSelected ? 'text-blue-500' : 'text-gray-600'}`}>
-                  ({category.itemCount})
-                </span>
-                {isSelected && (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onEditCategory(category)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.stopPropagation()
-                        onEditCategory(category)
-                      }
-                    }}
-                    className="ml-1 p-1 hover:bg-blue-100 rounded cursor-pointer"
-                  >
-                    <svg className="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </span>
-                )}
-              </button>
-            )
-          })
+          categories.map(category => (
+            <DroppableCategoryButton
+              key={category.id}
+              category={category}
+              isSelected={selectedCategory === category.id}
+              isDraggingItem={isDraggingItem}
+              onSelectCategory={onSelectCategory}
+              onEditCategory={onEditCategory}
+            />
+          ))
         )}
       </div>
     </div>

@@ -1598,3 +1598,21 @@ export async function dispatchHostViewUpdated(
     return false
   }
 }
+
+// ==================== Quick Bar Events ====================
+
+/**
+ * Dispatch quickbar:changed event to all connected clients.
+ *
+ * Emitted when a manager updates the location-level default quick bar layout.
+ * All POS terminals refresh their quick bar to pick up the new defaults.
+ */
+export async function dispatchQuickBarChanged(
+  locationId: string,
+): Promise<void> {
+  try {
+    await emitToLocation(locationId, 'quickbar:changed', {})
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch quickbar:changed:', error)
+  }
+}

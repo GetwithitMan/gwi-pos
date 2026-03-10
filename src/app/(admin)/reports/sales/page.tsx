@@ -11,6 +11,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { WebReportBanner } from '@/components/admin/WebReportBanner'
 import { useDataRetention } from '@/hooks/useDataRetention'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import { ReportExportBar } from '@/components/reports/ReportExportBar'
 
 interface SalesReport {
   summary: {
@@ -151,13 +152,27 @@ export default function SalesReportPage() {
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              disabled={!report}
-              onClick={() => report && exportSalesCSV(report, startDate, endDate)}
-            >
-              Export CSV
-            </Button>
+            {report && (
+              <ReportExportBar
+                reportType="sales"
+                reportTitle="Sales Report"
+                headers={['Date', 'Orders', 'Gross', 'Tax', 'Tips', 'Net']}
+                rows={report.byDay.map(d => [
+                  d.date, String(d.orders), formatCurrency(d.gross),
+                  formatCurrency(d.tax), formatCurrency(d.tips), formatCurrency(d.net),
+                ])}
+                summary={[
+                  { label: 'Gross Sales', value: formatCurrency(report.summary.grossSales) },
+                  { label: 'Net Sales', value: formatCurrency(report.summary.netSales) },
+                  { label: 'Orders', value: String(report.summary.orderCount) },
+                  { label: 'Avg Order Value', value: formatCurrency(report.summary.averageOrderValue) },
+                  { label: 'Tax', value: formatCurrency(report.summary.tax) },
+                  { label: 'Tips', value: formatCurrency(report.summary.tips) },
+                ]}
+                dateRange={{ start: startDate, end: endDate }}
+                onExportCSV={() => exportSalesCSV(report, startDate, endDate)}
+              />
+            )}
             <Button variant="ghost" onClick={() => router.push('/reports/commission')}>
               Commission Report
             </Button>

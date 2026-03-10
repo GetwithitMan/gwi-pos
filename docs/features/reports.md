@@ -48,7 +48,8 @@ Reports provides comprehensive business analytics for bar/restaurant operations.
 | Admin | `/reports/cash-liabilities` | Managers |
 | Admin | `/reports/reservations` | Managers |
 | Admin | `/reports/forecasting` | Managers |
-| Admin | `/reports/trends` | Managers |
+| Admin | `/reports/trends` | Managers (includes MTD comparison option) |
+| Admin | `/reports/payment-methods` | Managers |
 | Admin | `/reports/flash` | Managers |
 | Settings | `/settings/reports/*` (per-report config) | Managers |
 

@@ -225,6 +225,8 @@ export const PUT = withVenue(async function PUT(
       allergens,
       // Age verification
       isAgeRestricted,
+      // Category reassignment (drag-drop between categories)
+      categoryId,
       // Nutritional info (optional — schema fields may not exist yet)
       calories,
       caloriesFromFat,
@@ -255,6 +257,7 @@ export const PUT = withVenue(async function PUT(
     const item = await db.menuItem.update({
       where: { id },
       data: {
+        ...(categoryId !== undefined && { categoryId }),
         ...(name !== undefined && { name }),
         ...(displayName !== undefined && { displayName: displayName || null }),
         ...(price !== undefined && { price }),
@@ -320,15 +323,7 @@ export const PUT = withVenue(async function PUT(
         ...(allergens !== undefined && { allergens: Array.isArray(allergens) ? allergens : [] }),
         // Age verification
         ...(isAgeRestricted !== undefined && { isAgeRestricted }),
-        // Nutritional info (safe — Prisma ignores unknown fields if columns don't exist yet)
-        ...(calories !== undefined && { calories: calories != null ? parseInt(calories) : null }),
-        ...(caloriesFromFat !== undefined && { caloriesFromFat: caloriesFromFat != null ? parseInt(caloriesFromFat) : null }),
-        ...(protein !== undefined && { protein: protein != null ? new Prisma.Decimal(protein) : null }),
-        ...(carbs !== undefined && { carbs: carbs != null ? new Prisma.Decimal(carbs) : null }),
-        ...(fat !== undefined && { fat: fat != null ? new Prisma.Decimal(fat) : null }),
-        ...(fiber !== undefined && { fiber: fiber != null ? new Prisma.Decimal(fiber) : null }),
-        ...(sodium !== undefined && { sodium: sodium != null ? new Prisma.Decimal(sodium) : null }),
-        ...(allergenNotes !== undefined && { allergenNotes: allergenNotes || null }),
+        // Nutritional info — columns not yet in schema, skip to avoid Prisma validation error
       }
     })
 

@@ -219,7 +219,11 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         itemCount: c._count.menuItems,
         printerIds: c.printerIds,
       })),
-      items: itemsWithPourCost.map(item => ({
+      items: itemsWithPourCost.map(item => {
+        // Pizza detection: item type OR category type
+        const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
+
+        return {
         id: item.id,
         categoryId: item.categoryId,
         categoryType: item.category?.categoryType || 'food',
@@ -230,6 +234,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         isActive: item.isActive,
         isAvailable: item.isAvailable,
         itemType: item.itemType,
+        isPizza: isPizzaItem,
+        hasModifiers: item.ownedModifierGroups.length > 0 || isPizzaItem,
         timedPricing: item.timedPricing,
         minimumMinutes: item.minimumMinutes,
         commissionType: item.commissionType,
@@ -313,7 +319,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         stockIngredientName: item.stockIngredientName,
         // Nutritional info (optional — columns may not exist yet)
         calories: (item as any).calories ?? null,
-      }))
+      }
+      }),
     }
     timing.end('map', 'Response mapping')
 

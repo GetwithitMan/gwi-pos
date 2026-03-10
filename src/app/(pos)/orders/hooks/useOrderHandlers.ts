@@ -2,8 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
-import { buildPizzaModifiers, getPizzaBasePrice } from '@/lib/pizza-order-utils'
-import { debugPizzaPricing } from '@/lib/pizza-helpers'
+import { buildPizzaModifiers } from '@/lib/pizza-order-utils'
 import { formatCurrency } from '@/lib/utils'
 import { OfflineManager } from '@/lib/offline-manager'
 import { uuid } from '@/lib/uuid'
@@ -1142,20 +1141,10 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
 
     const itemName = selectedPizzaItem.name
     const pizzaModifiers = buildPizzaModifiers(config)
-    const basePrice = getPizzaBasePrice(config)
-
-    if (process.env.NODE_ENV === 'development') {
-      const tempItem = {
-        id: 'temp',
-        menuItemId: selectedPizzaItem.id,
-        name: itemName,
-        price: basePrice,
-        quantity: 1,
-        modifiers: pizzaModifiers.map(m => ({ ...m, quantity: 1 })),
-        pizzaConfig: config,
-      } as any
-      debugPizzaPricing(tempItem, 'orders-page-add')
-    }
+    // Base price = size + crust ONLY. Sauce, cheese, and topping prices are
+    // already carried on the box-section modifiers from buildPizzaModifiers().
+    // Using getPizzaBasePrice() here would double-count sauce/cheese.
+    const basePrice = config.priceBreakdown.sizePrice + config.priceBreakdown.crustPrice
 
     if (editingPizzaItem) {
       updateItem(editingPizzaItem.id, {

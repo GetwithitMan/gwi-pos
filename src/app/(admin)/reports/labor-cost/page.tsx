@@ -8,6 +8,7 @@ import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import { ReportExportBar } from '@/components/reports/ReportExportBar'
 
 interface LaborRow {
   key: string
@@ -123,6 +124,30 @@ export default function LaborCostReportPage() {
               <Button variant="outline" onClick={loadReport} disabled={isLoading}>
                 {isLoading ? 'Loading...' : 'Refresh'}
               </Button>
+              {report && (
+                <ReportExportBar
+                  reportType="labor-cost"
+                  reportTitle="Labor Cost Report"
+                  headers={[
+                    groupBy === 'date' ? 'Date' : groupBy === 'role' ? 'Role' : 'Employee',
+                    'Hours', 'Wages', 'Sales', 'Labor %',
+                  ]}
+                  rows={report.rows.map(row => [
+                    row.label,
+                    row.hours.toFixed(1),
+                    formatCurrency(row.wages),
+                    formatCurrency(row.sales),
+                    row.laborPercent !== null ? `${row.laborPercent}%` : 'N/A',
+                  ])}
+                  summary={[
+                    { label: 'Total Hours', value: report.summary.totalHours.toFixed(1) },
+                    { label: 'Total Wages', value: formatCurrency(report.summary.totalWages) },
+                    { label: 'Total Sales', value: formatCurrency(report.summary.totalSales) },
+                    { label: 'Labor %', value: report.summary.laborPercent !== null ? `${report.summary.laborPercent}%` : 'N/A' },
+                  ]}
+                  dateRange={{ start: startDate, end: endDate }}
+                />
+              )}
             </div>
           </CardContent>
         </Card>

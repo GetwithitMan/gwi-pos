@@ -29,6 +29,7 @@ export function useMenuData() {
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null)
   const [itemSearch, setItemSearch] = useState('')
   const itemSearchRef = useRef<HTMLInputElement>(null)
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set())
 
   // "/" keyboard shortcut to focus search input
   useEffect(() => {
@@ -425,6 +426,58 @@ export function useMenuData() {
     }
   }
 
+  // Toggle an item's selection for batch move
+  const toggleItemSelection = useCallback((itemId: string) => {
+    setSelectedItemIds(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
+      return next
+    })
+  }, [])
+
+  // Move one or more items to a target category
+  const handleMoveItems = useCallback(async (itemIds: string[], targetCategoryId: string) => {
+    if (itemIds.length === 0 || !targetCategoryId) return
+    const targetCategory = categories.find(c => c.id === targetCategoryId)
+    if (!targetCategory) return
+
+    try {
+      // Fire all PUTs in parallel
+      const results = await Promise.all(
+        itemIds.map(id =>
+          fetch(`/api/menu/items/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ categoryId: targetCategoryId }),
+          })
+        )
+      )
+
+      const failCount = results.filter(r => !r.ok).length
+      if (failCount > 0) {
+        toast.error(`Failed to move ${failCount} of ${itemIds.length} item(s)`)
+      } else {
+        const label = itemIds.length === 1
+          ? items.find(i => i.id === itemIds[0])?.name || '1 item'
+          : `${itemIds.length} items`
+        toast.success(`Moved ${label} to "${targetCategory.name}"`)
+      }
+
+      // Clear selection
+      setSelectedItemIds(new Set())
+
+      // Refresh menu data
+      await loadMenu()
+    } catch (error) {
+      console.error('Failed to move items:', error)
+      toast.error('Failed to move items')
+    }
+  }, [categories, items, loadMenu])
+
   return {
     // State
     categories,
@@ -452,6 +505,7 @@ export function useMenuData() {
     selectedCategoryType,
     filteredItems,
     employee,
+    selectedItemIds,
 
     // Setters
     setSelectedCategory,
@@ -476,5 +530,8 @@ export function useMenuData() {
     handleCategoryCreated,
     handleItemClick,
     handleCreateItem,
+    toggleItemSelection,
+    handleMoveItems,
+    setSelectedItemIds,
   }
 }

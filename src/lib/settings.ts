@@ -841,6 +841,25 @@ export interface LocationSettings {
   thirdPartyDelivery?: ThirdPartyDeliverySettings     // DoorDash/UberEats/Grubhub delivery integration (optional for backward compat)
   hostView?: HostViewSettings                         // Host management station — seating, waitlist, server rotation (optional for backward compat)
   delivery?: DeliverySettings                         // In-house delivery management (optional for backward compat)
+  textToPay?: TextToPaySettings                       // Text-to-Pay / Payment Links via SMS/email (optional for backward compat)
+}
+
+// ─── Text-to-Pay Settings ───────────────────────────────────────────────────
+
+export interface TextToPaySettings {
+  enabled: boolean                    // Master toggle (default: false)
+  defaultExpirationMinutes: number    // Link expiry in minutes (default: 60)
+  allowTipOnLink: boolean             // Show tip selector on pay page (default: true)
+  requireCustomerPhone: boolean       // Require phone number on order to send link (default: false)
+  smsTemplate: string                 // SMS body template — {venue}, {link}, {amount} placeholders
+}
+
+export const DEFAULT_TEXT_TO_PAY: TextToPaySettings = {
+  enabled: false,
+  defaultExpirationMinutes: 60,
+  allowTipOnLink: true,
+  requireCustomerPhone: false,
+  smsTemplate: 'Pay your bill at {venue}: {link}',
 }
 
 // ─── Host View Settings ─────────────────────────────────────────────────────
@@ -1829,6 +1848,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     delivery: partial.delivery
       ? { ...DEFAULT_DELIVERY, ...partial.delivery }
+      : undefined,
+    textToPay: partial.textToPay
+      ? { ...DEFAULT_TEXT_TO_PAY, ...partial.textToPay }
       : undefined,
   }
 }

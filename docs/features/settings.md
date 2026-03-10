@@ -52,6 +52,7 @@ Settings manages all system-wide configuration for a location. Configuration is 
 | Admin | `/settings/floor-plan` | Managers |
 | Admin | `/settings/entertainment` | Managers |
 | Admin | `/settings/online-ordering` | Managers |
+| Admin | `/settings/sections` | Managers (server-to-section assignment) |
 | Admin | `/settings/reports/*` | Managers |
 
 ---

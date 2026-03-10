@@ -691,11 +691,11 @@ This matrix answers: "If I change feature X, what else might break?"
 ### EOD Reset
 | | |
 |---|---|
-| **Depends On** | Orders (cancels abandoned draft orders), Settings (`MGR_CLOSE_DAY` permission), Shifts (EOD ties to business day boundary) |
-| **Depended On By** | Reports (business day boundary reset), Floor Plan (`eod:reset-complete` socket triggers FloorPlanHome summary toast) |
-| **Shared Models** | `Order` (draft cancellation), `BusinessDay` |
-| **Shared Socket Events** | `eod:reset-complete` (`FloorPlanHome.tsx` subscribes — shows summary toast with counts) |
-| **Critical Rules** | **Two routes**: `POST /api/eod/reset` (full reset, requires `MGR_CLOSE_DAY`) AND `POST /api/orders/eod-cleanup` (**no `requirePermission()` call** — only guarded by `withVenue`). No admin UI trigger — must call API directly. `cancelledDrafts` is always 0 in primary route payload — draft cancellation is handled by `eod-cleanup` which does NOT emit `eod:reset-complete`. 6-step full reset. |
+| **Depends On** | Orders (cancels abandoned draft orders), Settings (`MGR_CLOSE_DAY` permission, `eod.batchCloseTime`), Shifts (EOD ties to business day boundary), Payments (Datacap batch close), Walkout Retry (walkout detection at batch close) |
+| **Depended On By** | Reports (business day boundary reset), Floor Plan (`eod:reset-complete` socket triggers FloorPlanHome summary toast), Live Dashboard ("Close Day" button), Settings/Payments (read-only batch time visual), Mission Control (BatchCloseCard config) |
+| **Shared Models** | `Order` (draft cancellation), `BusinessDay`, `AuditLog` (eod_auto_batch_close, eod_batch_close_success/failed) |
+| **Shared Socket Events** | `eod:reset-complete` (manual), `eod:auto-batch-complete` (automated cron) |
+| **Critical Rules** | **Three routes**: `POST /api/eod/reset` (manual, requires `MGR_CLOSE_DAY`), `GET /api/cron/eod-batch-close` (automated, cron secret auth, runs every 5 min), `POST /api/orders/eod-cleanup` (no permission check). Dashboard "Close Day" button triggers manual reset with dry-run preview. Automated cron checks batch window (15 min after configured `batchCloseTime`), idempotent via AuditLog. Batch close time configured from MC `BatchCloseCard`, defaults to 04:00. |
 
 ---
 
@@ -759,4 +759,4 @@ When one of these changes, the entire cluster often needs review:
 
 ---
 
-*Last updated: 2026-03-05 (added Berg Liquor Controls; post-reverse-flow audit — added Walkout Retry, Mobile Tab Management, Notifications, EOD Reset, Pay-at-Table; corrected Online Ordering + Bottle Service status)*
+*Last updated: 2026-03-10 (EOD Reset: added automated cron, dashboard button, MC config, batch close dependencies; added Payment Methods report, Section Assignments, crew hub features)*

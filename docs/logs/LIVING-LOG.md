@@ -5,6 +5,53 @@
 
 ---
 
+## 2026-03-10 — UI/UX Audit + Automated EOD Batch Close
+
+**Commits:** (uncommitted — multi-file changes across gwi-pos + gwi-mission-control)
+
+### Multi-Pass Security & Reliability Audit (Passes 1-6)
+- 6-pass audit: architecture, data flow, auth, payments, edge cases, dark corners
+- **Pass 6 fixes:** Server-side modifier price validation (DB override, not client-trusted), ingredient adjustment bounds (±$50), pizza component sum + $500 cap, fixed discount cap against subtotal, max 100 modifiers per item, max 500 items per request, max 999 quantity per item, empty tab audit logging, Play Integrity production CRITICAL warnings, migration advisory lock (`pg_try_advisory_lock(20250101)`)
+
+### Architectural Gap Closure (3 post-launch TODO items → DONE)
+- **Socket event buffer:** Per-location circular buffer (1000 events, 5min TTL) with `_eid` injection. Client tracks `lastEventId`, emits `catch-up` on reconnect for replay. New files: `socket-event-buffer.ts`, `socket-ack-queue.ts`
+- **Order creation idempotency:** Client-generated UUID via `src/lib/uuid.ts`, partial unique index on `(idempotencyKey, locationId)`, server dedup returns existing order with `duplicate: true`. Migration 024.
+- **Socket QoS 1 acknowledgments:** Retry queue with exponential backoff (2s/4s/8s, max 3 attempts, 30s TTL). Only `payment:processed` and `order:closed` upgraded to critical. Client auto-acknowledges via `_ackId` field detection. New `emitCriticalToLocation()` export.
+
+### 4-Role Front-End UI/UX Audit (Server, Bartender, Manager, Owner)
+Traced every action from button press to API call to final reporting. 10 fixes built:
+
+**Server fixes (S1-S3):**
+- S1: "Add More Items" blue outline button in OrderPanelActions after order sent
+- S2: Table status summary card on crew hub ("Tables: X/Y occupied · Z open orders")
+- S3: "Close Shift" button on crew hub wired to existing ShiftCloseoutModal
+
+**Bartender fixes (B1-B2):**
+- B1: Walkout retry status inline on closed tab/order detail — red status card with retry count, next retry date, last error. Added to OrderDetailPanel, ClosedOrderActionsModal, closed tabs page. API enhanced with `orderId` filter on GET `/api/datacap/walkout-retry`.
+- B2: "Count Drawer" card on crew hub — denomination-based counting modal with starting/expected/variance display. Preview-only (final count at shift closeout).
+
+**Manager fix (M2):**
+- Server-to-section assignment — new API at `/api/sections/[id]/assignments` (GET/POST/DELETE), new admin page at `/settings/sections` with expandable section cards, assign/remove employees. Added to SettingsNav.
+
+**Owner fixes (O1-O4):**
+- O1: Payment Methods standalone report (`/reports/payment-methods`) — date range, summary cards, credit card brand breakdown, daily breakdown, CSV export. Added to reports hub.
+- O2: Labor % metric card on live dashboard — color-coded (green <25%, yellow 25-35%, red >35%), auto-refreshes via socket
+- O3: "Close Day" EOD reset button on dashboard — dry-run preview → confirm flow. Permission-gated to `manager.close_day`.
+- O4: "Month to Date" option in trends report — current MTD vs same period last month
+
+### Automated EOD Batch Close
+- **Settings:** `EodSettings.batchCloseTime` (HH:MM, default "04:00") added to `settings.ts`
+- **Cron:** `/api/cron/eod-batch-close` — runs every 5 min via Vercel cron. Per-location batch window check (15 min after configured time). Idempotency via AuditLog `eod_auto_batch_close`. Datacap batch close, table reset, entertainment cleanup, walkout detection, socket notification.
+- **POS visual:** Read-only "Nightly Batch Close" card on `/settings/payments` — shows batch time + "All tips must be entered before this time"
+- **MC config:** New `BatchCloseCard.tsx` on venue config page — toggle + time picker for batch close, last batch status display. Saves via PUT `/api/admin/locations/{id}` → syncs to POS via fleet settings push.
+- **vercel.json:** Added `eod-batch-close` cron (*/5 schedule)
+
+### Files Changed
+**New files:** `socket-event-buffer.ts`, `socket-ack-queue.ts`, `src/lib/uuid.ts`, `scripts/migrations/024-order-idempotency-key.js`, `/api/cron/eod-batch-close/route.ts`, `/api/sections/[id]/assignments/route.ts`, `/settings/sections/page.tsx`, `/reports/payment-methods/page.tsx`, MC `BatchCloseCard.tsx`
+**Modified:** `socket-server.ts`, `socket-dispatch.ts`, `shared-socket.ts`, `socket-provider.ts`, `schema.prisma`, `orders/route.ts`, `validations.ts`, `useActiveOrder.ts`, `useOrderHandlers.ts`, `SharedOrderPanel.tsx`, `SeatFromWaitlistModal.tsx`, `replay-cart-events/route.ts`, `items/route.ts`, `discount/route.ts`, `close-tab/route.ts`, `cellular-auth.ts`, `nuc-pre-migrate.js`, `settings.ts`, `vercel.json`, `OrderPanelActions.tsx`, `crew/page.tsx`, `walkout-retry/route.ts`, `order-history/[id]/route.ts`, `closed/route.ts`, `ClosedOrderActionsModal.tsx`, `OpenOrdersPanel.tsx`, `tabs/closed/page.tsx`, `shifts/route.ts`, `dashboard/page.tsx`, `trends/page.tsx`, `reports/page.tsx`, `settings/payments/page.tsx`, `SettingsNav.tsx`, MC `page.tsx`
+
+---
+
 ## 2026-03-10 — Security Hardening (Penetration Test)
 
 **Commits:** (uncommitted — 14 files changed)

@@ -4,7 +4,7 @@
 > Before working in any area, scan your section. Before closing a bug, update its status here.
 > When a bug is confirmed fixed, mark it ✅ FIXED with the commit hash.
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-10*
 
 ---
 
@@ -57,14 +57,18 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-H1 — Pizza Builder Non-Functional
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ RESOLVED
 **Feature:** Pizza Builder
 **Source:** "Broken things need fixin.rtf" + Front-End Audit Report (BUG-3)
-**Affected files:** `src/components/pizza/`, `docs/features/pizza-builder.md`
+**Affected files:** `src/app/api/menu/route.ts`, `src/hooks/useOrderingEngine.ts`, `src/app/(pos)/orders/hooks/useOrderHandlers.ts`
 
-**What happens:** The pizza builder modal exists in code but does not function correctly. Pizza orders cannot be properly built or customized.
+**Root causes found and fixed:**
+1. **`/api/menu` missing `isPizza` field** (ROOT CAUSE): The main menu endpoint (`/api/menu/route.ts`) did not return `isPizza` or `hasModifiers` for pizza items. Since `FloorPlanHome` loads menu data from this endpoint, `engine.handleMenuItemTap` could never detect pizza items — the pizza builder modal never opened.
+2. **Double-counted price in `useOrderingEngine.ts`**: The engine callback set `price: config.totalPrice` (all components) while also building modifiers with all component prices. `computeTotals` sums both, yielding 2x the correct price. Fixed to `price: 0` since modifiers carry all prices.
+3. **Double-counted sauce/cheese in `useOrderHandlers.ts`**: `handleAddPizzaToOrder` used `getPizzaBasePrice()` (size+crust+sauce+cheese) as item price, but `buildPizzaModifiers()` also includes sauce/cheese in box-section modifier prices. Fixed to use `sizePrice + crustPrice` only.
+4. **Missing `pizzaConfig` on engine-added items**: The engine callback did not pass `pizzaConfig` to the store, preventing pizza editing after initial add. Fixed.
 
-**Do not attempt:** Do not add pizza-related features until this core flow is fixed.
+**Fix details:** `isPizza` and `hasModifiers` now computed in `/api/menu/route.ts` matching `/api/menu/items/route.ts` logic. Engine `addItemDirectly` signature extended with optional `pizzaConfig`.
 
 ---
 

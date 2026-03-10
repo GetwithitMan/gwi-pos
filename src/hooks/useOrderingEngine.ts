@@ -217,6 +217,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
     blockTimeExpiresAt?: string
     pricingOptionId?: string
     pricingOptionLabel?: string
+    pizzaConfig?: PizzaOrderConfig
   }) => {
     ensureOrder()
     const store = useOrderStore.getState()
@@ -252,6 +253,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       blockTimeExpiresAt: item.blockTimeExpiresAt ?? null,
       pricingOptionId: item.pricingOptionId,
       pricingOptionLabel: item.pricingOptionLabel,
+      pizzaConfig: item.pizzaConfig,
     })
 
     // Haptic feedback
@@ -346,12 +348,14 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       pizzaModifiers.push({ id: t.toppingId, name: `${t.name}${sectionStr ? ` (${sectionStr})` : ''}`, price: t.price })
     })
 
+    // price: 0 because all component prices are on the individual modifiers
     addItemDirectly({
       menuItemId: pending.menuItem.id,
       name: pending.menuItem.name,
-      price: config.totalPrice,
+      price: 0,
       modifiers: pizzaModifiers,
       categoryType: pending.menuItem.categoryType,
+      pizzaConfig: config,
     })
 
     setPendingItem(null)
@@ -451,10 +455,13 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
 
           ensureOrder()
           const store = useOrderStore.getState()
+          // price: 0 because all component prices (size, crust, sauce, cheese, toppings)
+          // are already carried on the individual modifiers. computeTotals sums
+          // item.price + sum(mod.price), so setting price: 0 avoids double-counting.
           store.addItem({
             menuItemId: item.id,
             name: item.name,
-            price: config.totalPrice,
+            price: 0,
             quantity: 1,
             modifiers: pizzaModifiers.map(m => ({
               id: m.id, name: m.name, price: m.price, depth: 0,
@@ -464,6 +471,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
             sourceTableId: sourceTableIdRef.current || undefined,
             sentToKitchen: false,
             categoryType: item.categoryType,
+            pizzaConfig: config,
           })
           setPendingItem(null)
           if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10)
@@ -515,6 +523,49 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
           }
         })
         return
+      }
+
+      // showAsQuickPick is true — auto-select the isDefault option on main button tap
+      if (group.showAsQuickPick) {
+        const allOptions = group.options || []
+        const defaultOption = allOptions.find((o: { isDefault?: boolean }) => o.isDefault)
+        if (defaultOption) {
+          const isVariant = defaultOption.price !== null
+          const itemName = isVariant ? `${item.name} (${defaultOption.label})` : item.name
+          const itemPrice = isVariant ? defaultOption.price! : item.price
+          const pricingOptionLabel = isVariant ? undefined : defaultOption.label
+
+          if (item.hasModifiers && onOpenModifiers) {
+            const qtyForModifiers = quantityMultiplierRef.current
+            setPendingItem({ type: 'modifier', menuItem: { ...item, name: itemName, price: itemPrice } })
+            onOpenModifiers({ ...item, name: itemName, price: itemPrice }, (modifiers, ingredientMods) => {
+              addItemDirectly({
+                menuItemId: item.id,
+                name: itemName,
+                price: itemPrice,
+                quantity: qtyForModifiers,
+                modifiers,
+                ingredientModifications: ingredientMods,
+                categoryType: item.categoryType,
+                pricingOptionId: defaultOption.id,
+                pricingOptionLabel,
+              })
+              setPendingItem(null)
+            })
+          } else {
+            addItemDirectly({
+              menuItemId: item.id,
+              name: itemName,
+              price: itemPrice,
+              quantity: quantityMultiplierRef.current,
+              categoryType: item.categoryType,
+              pricingOptionId: defaultOption.id,
+              pricingOptionLabel,
+            })
+          }
+          return
+        }
+        // No default option marked — fall through to normal add (base price)
       }
     }
 

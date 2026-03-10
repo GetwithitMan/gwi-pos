@@ -178,8 +178,8 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 
 | Gap | Severity | Source | Details |
 |-----|----------|--------|---------|
-| **WalkoutRetry no write-off API** | **Critical** | Financial audit | `writtenOffAt`/`writtenOffBy` fields in schema, zero API endpoint — exhausted walkout debts cannot be manually resolved. See `walkout-retry.md` |
-| **WalkoutRetry no scheduler** | **Critical** | Walkout audit | Route comment says "used by cron/scheduler" but no scheduler exists anywhere in codebase — all retries require MANUAL triggering via API |
+| ~~**WalkoutRetry no write-off API**~~ | ~~Critical~~ **RESOLVED 2026-03-10** | Financial audit | Write-off endpoint at `PUT /api/datacap/walkout-retry/[id]` (action: 'write-off', requires MGR_VOID_PAYMENTS). Admin report at `/reports/walkout-retries`. Inline status in closed tab/order detail. |
+| **WalkoutRetry no scheduler** | **Critical** | Walkout audit | Route comment says "used by cron/scheduler" but no scheduler exists. Retries require manual triggering. Walkout auto-detection now runs during automated EOD batch close (`/api/cron/eod-batch-close`). |
 | **Mobile socket relay drops events silently** | High | Mobile audit | `tab:close-request`, `tab:transfer-request`, `tab:alert-manager` emitted by `MobileTabActions.tsx` — `socket-server.ts` has ZERO handlers for them. If no POS terminal is in the same location room, events are silently dropped |
 | **`walkoutAutoDetectMinutes` setting not wired** | Medium | Walkout audit | Setting exists (default 120 min) to auto-detect idle tabs as walkouts — no background job monitors this threshold |
 | TipAdjustment undocumented in tips.md | Low | Financial audit | `POST /api/tips/adjustments` exists and handles all 5 adjustment types — now documented in `tips.md`. Was incorrectly flagged as missing. |

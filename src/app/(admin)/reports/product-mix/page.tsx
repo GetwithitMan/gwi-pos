@@ -7,6 +7,7 @@ import { useDataRetention } from '@/hooks/useDataRetention'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import { ReportExportBar } from '@/components/reports/ReportExportBar'
 
 interface ProductMixItem {
   menuItemId: string
@@ -232,12 +233,30 @@ export default function ProductMixReportPage() {
             90 Days
           </button>
           {report && report.items.length > 0 && (
-            <button
-              onClick={() => exportProductMixCSV(report)}
-              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-medium"
-            >
-              Export CSV
-            </button>
+            <ReportExportBar
+              reportType="product-mix"
+              reportTitle="Product Mix Report"
+              headers={['Item', 'Category', 'Qty', 'Revenue', 'Cost', 'Profit', 'Margin %', '% of Sales']}
+              rows={report.items.map(item => [
+                item.name,
+                item.categoryName,
+                formatQty(item),
+                `$${item.revenue.toFixed(2)}`,
+                `$${item.cost.toFixed(2)}`,
+                `$${item.profit.toFixed(2)}`,
+                `${item.profitMargin.toFixed(1)}%`,
+                `${item.revenuePercent.toFixed(1)}%`,
+              ])}
+              summary={[
+                { label: 'Total Revenue', value: `$${report.summary.totalRevenue.toFixed(2)}` },
+                { label: 'Total Cost', value: `$${report.summary.totalCost.toFixed(2)}` },
+                { label: 'Gross Profit', value: `$${report.summary.totalProfit.toFixed(2)}` },
+                { label: 'Items Sold', value: String(report.summary.totalQuantity) },
+                { label: 'Profit Margin', value: `${report.summary.profitMargin.toFixed(1)}%` },
+              ]}
+              dateRange={{ start: startDate, end: endDate }}
+              onExportCSV={() => exportProductMixCSV(report)}
+            />
           )}
         </div>
       </div>
