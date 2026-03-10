@@ -13,15 +13,16 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
       // 1. Lock the order row
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
-      // 2. Delete items assigned to the seat being removed
-      await tx.orderItem.deleteMany({
+      // 2. Soft-delete items assigned to the seat being removed (preserve audit trail)
+      await tx.orderItem.updateMany({
         where: { orderId, seatNumber: removeAtSeatNumber },
+        data: { deletedAt: new Date(), status: 'voided' },
       })
 
-      // 3. Shift all items ABOVE the removed seat DOWN by 1
+      // 3. Shift all active items ABOVE the removed seat DOWN by 1
       // We sort ASCENDING to fill the gap sequentially
       const itemsToShift = await tx.orderItem.findMany({
-        where: { orderId, seatNumber: { gt: removeAtSeatNumber } },
+        where: { orderId, seatNumber: { gt: removeAtSeatNumber }, deletedAt: null },
         orderBy: { seatNumber: 'asc' },
       })
 
@@ -32,9 +33,9 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
         })
       }
 
-      // 4. Recalculate itemCount from remaining items
+      // 4. Recalculate itemCount from remaining active items
       const remainingItems = await tx.orderItem.findMany({
-        where: { orderId },
+        where: { orderId, deletedAt: null, status: 'active' },
         select: { quantity: true },
       })
       const newItemCount = remainingItems.reduce((sum, i) => sum + i.quantity, 0)

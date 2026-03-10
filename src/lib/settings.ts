@@ -169,6 +169,13 @@ export interface TipBankSettings {
   noTipQuickButton: boolean  // If true, a "$0 Tip" button appears on the tip prompt (default: false)
 }
 
+export interface AutoGratuitySettings {
+  enabled: boolean
+  minimumPartySize: number       // Minimum guest count to trigger auto-gratuity (default: 6)
+  percent: number                // Gratuity percentage (default: 18)
+  allowRemoval: boolean          // Manager can remove the auto-gratuity (default: true)
+}
+
 export interface AutoRebootSettings {
   enabled: boolean
   delayMinutes: number
@@ -216,6 +223,13 @@ export const DEFAULT_BREAK_COMPLIANCE: BreakComplianceSettings = {
   breakDurationMinutes: 30,
 }
 
+export const DEFAULT_AUTO_GRATUITY: AutoGratuitySettings = {
+  enabled: false,
+  minimumPartySize: 6,
+  percent: 18,
+  allowRemoval: true,
+}
+
 export interface ClockOutSettings {
   requireSettledBeforeClockOut: boolean   // Check for open tabs/orders before allowing clock-out
   requireTipsAdjusted: boolean           // Check for unadjusted tips before clock-out
@@ -248,7 +262,7 @@ export interface PaymentSettings {
   preAuthExpirationDays: number
 
   // Card processing
-  processor: 'none' | 'simulated' | 'datacap'  // datacap = Datacap Direct integration
+  processor: 'none' | 'datacap'  // datacap = Datacap Direct integration
   testMode: boolean
 
   // Datacap Direct configuration (written by UPDATE_PAYMENT_CONFIG fleet command)
@@ -675,6 +689,20 @@ export const DEFAULT_EOD_SETTINGS: EodSettings = {
   autoBatchClose: true,
 }
 
+// ─── Speed-of-Service Goals Settings ─────────────────────────────────────────
+
+export interface SpeedOfServiceSettings {
+  goalMinutes: number              // Target minutes from send to bump (default: 15)
+  warningMinutes: number           // Threshold for slow-ticket alert (default: 20)
+  alertEnabled: boolean            // Fire alert when bump time exceeds warningMinutes (default: false)
+}
+
+export const DEFAULT_SPEED_OF_SERVICE: SpeedOfServiceSettings = {
+  goalMinutes: 15,
+  warningMinutes: 20,
+  alertEnabled: false,
+}
+
 // ─── Walkout Auto-Detection Settings ────────────────────────────────────────
 
 export interface WalkoutSettings {
@@ -687,6 +715,20 @@ export const DEFAULT_WALKOUT_SETTINGS: WalkoutSettings = {
   autoDetectMinutes: 120,
   autoDetectEnabled: true,
   maxCaptureRetries: 10,
+}
+
+// ─── Age Verification Settings ────────────────────────────────────────────────
+
+export interface AgeVerificationSettings {
+  enabled: boolean             // Master toggle for age verification prompts
+  minimumAge: number           // Minimum age required (default: 21)
+  verifyOnce: boolean          // Only prompt once per order, not per item (default: true)
+}
+
+export const DEFAULT_AGE_VERIFICATION: AgeVerificationSettings = {
+  enabled: true,
+  minimumAge: 21,
+  verifyOnce: true,
 }
 
 export interface LocationSettings {
@@ -718,6 +760,22 @@ export interface LocationSettings {
   eod?: EodSettings                     // EOD batch close automation (optional for backward compat)
   walkout?: WalkoutSettings             // Walkout auto-detection (optional for backward compat)
   breaks?: BreakComplianceSettings     // Break compliance enforcement (optional for backward compat)
+  kds?: KdsSettings                    // KDS order age thresholds (optional for backward compat)
+  speedOfService?: SpeedOfServiceSettings  // Speed-of-service goal/alert thresholds (optional for backward compat)
+  autoGratuity?: AutoGratuitySettings  // Party-size auto-gratuity (optional for backward compat)
+  ageVerification?: AgeVerificationSettings  // Age verification prompts for restricted items (optional for backward compat)
+}
+
+// ─── KDS Settings ──────────────────────────────────────────────────────────────
+
+export interface KdsSettings {
+  orderAgeWarningMinutes: number       // Minutes until order card turns yellow (default: 10)
+  orderAgeCriticalMinutes: number      // Minutes until order card turns red (default: 20)
+}
+
+export const DEFAULT_KDS_SETTINGS: KdsSettings = {
+  orderAgeWarningMinutes: 10,
+  orderAgeCriticalMinutes: 20,
 }
 
 // Default settings for new locations
@@ -797,7 +855,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     enablePreAuth: true,
     defaultPreAuthAmount: 100.00,
     preAuthExpirationDays: 7,
-    processor: 'simulated',        // 'none' | 'simulated' | 'datacap'
+    processor: 'none',             // 'none' | 'datacap'
     testMode: true,
     readerTimeoutSeconds: 30,
     autoSwapOnFailure: true,
@@ -1041,7 +1099,66 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     breaks: partial.breaks
       ? { ...DEFAULT_BREAK_COMPLIANCE, ...partial.breaks }
       : undefined,
+    kds: partial.kds
+      ? { ...DEFAULT_KDS_SETTINGS, ...partial.kds }
+      : undefined,
+    autoGratuity: partial.autoGratuity
+      ? { ...DEFAULT_AUTO_GRATUITY, ...partial.autoGratuity }
+      : undefined,
+    ageVerification: partial.ageVerification
+      ? { ...DEFAULT_AGE_VERIFICATION, ...partial.ageVerification }
+      : undefined,
+    speedOfService: partial.speedOfService
+      ? { ...DEFAULT_SPEED_OF_SERVICE, ...partial.speedOfService }
+      : undefined,
   }
+}
+
+/**
+ * Get the active happy hour end time for the current schedule.
+ * Returns null if happy hour is not active right now.
+ */
+export function getHappyHourEndTime(settings: HappyHourSettings): Date | null {
+  if (!settings.enabled) return null
+
+  const now = new Date()
+  const currentDay = now.getDay()
+  const currentTimeMinutes = now.getHours() * 60 + now.getMinutes()
+
+  for (const schedule of settings.schedules) {
+    if (!schedule.dayOfWeek.includes(currentDay)) continue
+
+    const [startHour, startMin] = schedule.startTime.split(':').map(Number)
+    const [endHour, endMin] = schedule.endTime.split(':').map(Number)
+
+    const startMinutes = startHour * 60 + startMin
+    const endMinutes = endHour * 60 + endMin
+
+    let isActive = false
+    if (endMinutes < startMinutes) {
+      isActive = currentTimeMinutes >= startMinutes || currentTimeMinutes <= endMinutes
+    } else {
+      isActive = currentTimeMinutes >= startMinutes && currentTimeMinutes <= endMinutes
+    }
+
+    if (isActive) {
+      const endDate = new Date(now)
+      endDate.setSeconds(0, 0)
+      if (endMinutes < startMinutes && currentTimeMinutes < startMinutes) {
+        // Past midnight in overnight schedule — end time is today
+        endDate.setHours(endHour, endMin)
+      } else if (endMinutes < startMinutes) {
+        // Before midnight in overnight schedule — end time is tomorrow
+        endDate.setDate(endDate.getDate() + 1)
+        endDate.setHours(endHour, endMin)
+      } else {
+        endDate.setHours(endHour, endMin)
+      }
+      return endDate
+    }
+  }
+
+  return null
 }
 
 // Check if happy hour is currently active

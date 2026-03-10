@@ -49,7 +49,7 @@ export type GratuityMode = 'SuggestivePrompt' | 'Prompt' | 'PrintBlankLine'
 
 export type DeviceType = 'PAX' | 'INGENICO'
 
-export type CommunicationMode = 'local' | 'cloud' | 'local_with_cloud_fallback' | 'simulated'
+export type CommunicationMode = 'local' | 'cloud' | 'local_with_cloud_fallback'
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -121,8 +121,6 @@ export interface DatacapRequestFields {
   customerCode?: string   // PO number or customer code (max 17 chars per Datacap spec)
   // Collect card data (no charge)
   collectData?: boolean
-  // Simulator-only: override response scenario (dev/testing)
-  simScenario?: 'decline' | 'error' | 'partial'
   // Force transaction offline (SAF storage on reader — certification test 18.x)
   forceOffline?: boolean
 }
@@ -311,23 +309,14 @@ export type DatacapResult<T = DatacapResponse> =
  * Ensures required fields are present for the selected mode:
  * - 'local' / 'local_with_cloud_fallback': requires defaultPort
  * - 'cloud' / 'local_with_cloud_fallback': requires cloudUrl, cloudUsername, cloudPassword
- * - 'simulated': no additional requirements
  *
  * @throws Error if validation fails with descriptive message
  */
 export function validateDatacapConfig(config: DatacapConfig): void {
   const { communicationMode } = config
 
-  // Simulated mode is never allowed in production — prevent accidental deployment
-  if (communicationMode === 'simulated' && process.env.NODE_ENV === 'production') {
-    throw new Error(
-      'Simulated communication mode is not allowed in production. ' +
-      'Set communicationMode to "local" or "cloud" and configure real Datacap credentials.'
-    )
-  }
-
   // Validate mode is one of the allowed values
-  const validModes: CommunicationMode[] = ['local', 'cloud', 'local_with_cloud_fallback', 'simulated']
+  const validModes: CommunicationMode[] = ['local', 'cloud', 'local_with_cloud_fallback']
   if (!validModes.includes(communicationMode)) {
     throw new Error(
       `Invalid communication mode: ${communicationMode}. Must be one of: ${validModes.join(', ')}`
@@ -356,6 +345,4 @@ export function validateDatacapConfig(config: DatacapConfig): void {
       )
     }
   }
-
-  // Simulated mode has no additional requirements
 }

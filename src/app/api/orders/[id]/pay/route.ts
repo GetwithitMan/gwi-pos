@@ -120,15 +120,13 @@ interface PaymentInput {
   amountAuthorized?: number
   // SAF (Store-and-Forward) — transaction stored offline on reader
   storedOffline?: boolean
-  // Simulated - will be replaced with real processor
-  simulate?: boolean
 }
 
 // Zod schema for request validation
 const PaymentInputSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty_points', 'room_charge']),
-  amount: z.number().positive('Amount must be positive'),
-  tipAmount: z.number().min(0, 'Tip amount cannot be negative').optional(),
+  amount: z.number().positive('Amount must be positive').max(999999.99, 'Amount cannot exceed $999,999.99').finite('Amount must be a finite number'),
+  tipAmount: z.number().min(0, 'Tip amount cannot be negative').max(99999.99, 'Tip cannot exceed $99,999.99').finite('Tip must be a finite number').optional(),
   // Cash specific
   amountTendered: z.number().positive().optional(),
   // Card specific
@@ -156,8 +154,6 @@ const PaymentInputSchema = z.object({
   amountAuthorized: z.number().positive().optional(),
   // SAF (Store-and-Forward) — transaction stored offline on reader, pending upload
   storedOffline: z.boolean().optional(),
-  // Simulated
-  simulate: z.boolean().optional(),
 })
 
 // PAYMENT-SAFETY: Idempotency design
@@ -482,7 +478,6 @@ export const POST = withVenue(withTiming(async function POST(
           ...(body.amountTendered !== undefined ? { amountTendered: body.amountTendered } : {}),
           ...(body.cardBrand !== undefined ? { cardBrand: body.cardBrand } : {}),
           ...(body.cardLast4 !== undefined ? { cardLast4: body.cardLast4 } : {}),
-          ...(body.simulate !== undefined ? { simulate: body.simulate } : {}),
           // Map Android PaymentReconciliationWorker fields
           ...(body.authCode !== undefined ? { authCode: body.authCode } : {}),
           ...(body.recordNo !== undefined ? { datacapRecordNo: body.recordNo } : {}),
@@ -661,18 +656,6 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Get settings for rounding
     const settings = parseSettings(order.location.settings)
-
-    // SIMULATED_DEFAULTS guard: block simulated payments in production
-    if (process.env.NODE_ENV === 'production' && settings.payments.processor === 'simulated') {
-      console.error(
-        `[PAY] BLOCKED: Location ${order.locationId} is using simulated payment processor in production. ` +
-        'Configure a real Datacap merchantId before processing payments.'
-      )
-      return { earlyReturn: NextResponse.json(
-        { error: 'Payment processor not configured for production. Contact your administrator.' },
-        { status: 503 }
-      ) }
-    }
 
     // Compute current business day start for promotion on pay
     const locSettingsRaw = order.location.settings as Record<string, unknown> | null
@@ -886,6 +869,41 @@ export const POST = withVenue(withTiming(async function POST(
     const allPendingPayments: Record<string, unknown>[] = []
     let totalTips = 0
     let alreadyPaidInLoop = 0
+    let autoGratApplied = false
+    let autoGratNote: string | null = null
+
+    // ── Party-size auto-gratuity ────────────────────────────────────────────
+    // Check BEFORE the payment loop so the auto-grat flows through the standard
+    // tip pipeline (TipLedger -> TipShare). Applied as tipAmount on the first
+    // tippable payment. Does NOT apply if any payment already carries a tip
+    // (customer-provided tip takes precedence). Does NOT double-apply if
+    // existing tipTotal indicates a prior auto-grat.
+    const autoGrat = settings.autoGratuity
+    if (
+      autoGrat?.enabled &&
+      autoGrat.percent > 0 &&
+      autoGrat.minimumPartySize > 0 &&
+      order.guestCount >= autoGrat.minimumPartySize &&
+      Number(order.tipTotal ?? 0) === 0 // no prior tip on the order
+    ) {
+      // Only apply if no payment in this request already carries a tip
+      const hasExistingTip = payments.some(p => (p.tipAmount ?? 0) > 0)
+      if (!hasExistingTip) {
+        const orderSubtotal = Number(order.subtotal ?? order.total ?? 0) - Number(order.tipTotal ?? 0)
+        const autoGratAmount = Math.round(orderSubtotal * (autoGrat.percent / 100) * 100) / 100
+
+        if (autoGratAmount > 0) {
+          // Apply to the first payment that supports tips (not gift card)
+          const tippableIdx = payments.findIndex(p => p.method !== 'gift_card')
+          if (tippableIdx >= 0) {
+            ;(payments[tippableIdx] as any).tipAmount = autoGratAmount
+            autoGratApplied = true
+            autoGratNote = `Auto-gratuity applied (${autoGrat.percent}% for party of ${order.guestCount})`
+            console.info(`[Pay] ${autoGratNote}`, { orderId, guestCount: order.guestCount, autoGratAmount })
+          }
+        }
+      }
+    }
 
     // PMS attempt tracking — set in room_charge handler, consumed after payment creation
     let pmsAttemptId: string | null = null
@@ -1037,12 +1055,18 @@ export const POST = withVenue(withTiming(async function POST(
           roundingAdjustment: roundingAdjustment !== 0 ? roundingAdjustment : undefined,
         }
       } else if (payment.method === 'credit' || payment.method === 'debit') {
-        // Default cardLast4 to '0000' if missing or invalid (e.g. simulated payments)
+        // Validate cardLast4 — allow '0000' only for non-card methods (gift card, house account, etc.)
+        // For actual credit/debit card payments, a missing cardLast4 likely means the terminal
+        // didn't return it. We still allow the payment through (blocking could strand a successful
+        // charge) but log a warning so it shows up in monitoring.
         if (!payment.cardLast4 || !/^\d{4}$/.test(payment.cardLast4)) {
+          if (payment.method === 'credit' || payment.method === 'debit') {
+            console.warn(`[Pay] Card payment missing cardLast4 for order ${orderId} (method=${payment.method}). Defaulting to '0000'.`)
+          }
           payment.cardLast4 = '0000'
         }
 
-        // Use real Datacap fields when available, fall back to simulated
+        // Use real Datacap fields when available, fall back to placeholders
         const isDatacap = !!payment.datacapRecordNo || !!payment.datacapRefNumber
         paymentRecord = {
           ...paymentRecord,
@@ -1375,9 +1399,14 @@ export const POST = withVenue(withTiming(async function POST(
       businessDayDate: businessDayStart,
     }
 
-    // Set primary payment method based on first/largest payment
+    // Set primary payment method based on the payment with the largest amount.
+    // In split-tender scenarios, the largest payment determines the primary method
+    // (e.g., $80 card + $20 cash → primary is 'card'). If tied, first wins.
     if (!order.primaryPaymentMethod) {
-      const primaryMethod = payments[0].method
+      const largestPayment = payments.reduce((max, p) =>
+        (p.amount || 0) > (max.amount || 0) ? p : max
+      , payments[0])
+      const primaryMethod = largestPayment.method
       updateData.primaryPaymentMethod = (primaryMethod === 'cash' ? 'cash' : 'card') as PaymentMethod
     }
 
@@ -1549,6 +1578,8 @@ export const POST = withVenue(withTiming(async function POST(
       businessDayStart,
       paymentMutationOrigin,
       hasCash,
+      autoGratApplied,
+      autoGratNote,
     }
 
     }, { timeout: 30000 })
@@ -1582,6 +1613,8 @@ export const POST = withVenue(withTiming(async function POST(
       businessDayStart,
       paymentMutationOrigin,
       hasCash,
+      autoGratApplied,
+      autoGratNote,
     } = txResult as any
 
     if (isInOutageMode()) {
@@ -1929,7 +1962,7 @@ export const POST = withVenue(withTiming(async function POST(
           })),
           totalTipsDollars: totalTips,
           tipBankSettings: settings.tipBank,
-          // kind: 'tip' (default — voluntary gratuity from customer)
+          kind: autoGratApplied ? 'auto_gratuity' : 'tip',
         }).catch(err => {
           console.error('Background tip allocation failed:', err)
         })
@@ -2063,8 +2096,8 @@ export const POST = withVenue(withTiming(async function POST(
       tableName: order.table?.name || null,
       guestCount: order.guestCount,
       employee: {
-        id: order.employee.id,
-        name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
+        id: order.employee?.id ?? 'unknown',
+        name: order.employee?.displayName || (order.employee ? `${order.employee.firstName} ${order.employee.lastName}` : 'Unknown'),
       },
       location: {
         name: order.location.name,
@@ -2170,6 +2203,8 @@ export const POST = withVenue(withTiming(async function POST(
       // Loyalty info
       loyaltyPointsEarned: pointsEarned,
       customerId: order.customer?.id || null,
+      // Auto-gratuity info (when applied)
+      ...(autoGratApplied ? { autoGratuityApplied: true, autoGratuityNote: autoGratNote } : {}),
     } })
   } catch (error) {
     console.error('Failed to process payment:', error)

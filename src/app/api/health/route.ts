@@ -12,6 +12,8 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchFailoverActive, dispatchFailoverResolved } from '@/lib/socket-dispatch'
 import { getLocalLeaseExpiry } from '@/app/api/fence-check/route'
+import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
+import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,6 +38,24 @@ interface HealthResponse {
   primaryLeaseExpiry: string | null
   /** Whether this node currently holds a valid MC primary lease */
   holdsMcLease: boolean
+  /** Count of stale open orders that may have orphaned offline payments */
+  pendingReconciliation: number
+  /** Downstream sync metrics (Neon → NUC). Null if worker not initialized. */
+  downstreamSync: {
+    running: boolean
+    lastSyncAt: string | null
+    rowsSyncedTotal: number
+    conflictCount: number
+  } | null
+  /** Upstream sync metrics (NUC → Neon). Null if worker not initialized. */
+  upstreamSync: {
+    running: boolean
+    lastSyncAt: string | null
+    pendingCount: number
+    rowsSyncedTotal: number
+    errorCount: number
+    inOutage: boolean
+  } | null
   error?: string
 }
 
@@ -127,6 +147,52 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   const holdsMcLease = leaseExpiry !== null && leaseExpiry > now
   const primaryLeaseExpiry = leaseExpiry ? leaseExpiry.toISOString() : null
 
+  // Count stale open orders that may have orphaned offline payments
+  let pendingReconciliation = 0
+  if (databaseCheck && locationId) {
+    try {
+      pendingReconciliation = await db.order.count({
+        where: {
+          locationId,
+          status: { in: ['open', 'sent', 'in_progress'] },
+          updatedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) },
+          deletedAt: null,
+        },
+      })
+    } catch {
+      // Non-critical — don't fail health check for this
+    }
+  }
+
+  // Collect sync worker metrics (safe — returns null if workers aren't initialized)
+  let downstreamSync: HealthResponse['downstreamSync'] = null
+  try {
+    const dm = getDownstreamSyncMetrics()
+    downstreamSync = {
+      running: dm.running,
+      lastSyncAt: dm.lastSyncAt ? dm.lastSyncAt.toISOString() : null,
+      rowsSyncedTotal: dm.rowsSyncedTotal,
+      conflictCount: dm.conflictCount,
+    }
+  } catch {
+    // Worker not initialized — leave null
+  }
+
+  let upstreamSync: HealthResponse['upstreamSync'] = null
+  try {
+    const um = getUpstreamSyncMetrics()
+    upstreamSync = {
+      running: um.running,
+      lastSyncAt: um.lastSyncAt ? um.lastSyncAt.toISOString() : null,
+      pendingCount: um.pendingCount,
+      rowsSyncedTotal: um.rowsSyncedTotal,
+      errorCount: um.errorCount,
+      inOutage: isInOutageMode(),
+    }
+  } catch {
+    // Worker not initialized — leave null
+  }
+
   const response: HealthResponse = {
     status,
     timestamp,
@@ -146,6 +212,9 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     isPromotedBackup,
     primaryLeaseExpiry,
     holdsMcLease,
+    pendingReconciliation,
+    downstreamSync,
+    upstreamSync,
   }
 
   // Return appropriate HTTP status

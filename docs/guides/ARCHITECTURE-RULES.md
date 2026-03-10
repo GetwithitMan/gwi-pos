@@ -62,6 +62,18 @@ Every POS terminal, kiosk, SmartTab, and browser **MUST** connect to the local N
 6. **Clock discipline:** All business writes MUST use DB-generated `NOW()` (Prisma `@default(now())` / `@updatedAt`). NEVER accept a client-supplied timestamp for `createdAt`, `updatedAt`, or `syncedAt`.
 7. If you see a NUC with `DATABASE_URL=neon.tech` — that is a **critical bug**, file it immediately.
 
+### Cloud-Primary Sync Safety Rules (added 2026-03-10)
+
+These rules were discovered via penetration testing and prevent data loss, duplication, and sync corruption.
+
+1. **HWM only advances on success** — downstream sync high-water mark (`maxSyncedAt`) must only include successfully upserted rows. Failed rows (constraint violations, FK errors) must retry on the next cycle. Never advance HWM past a failed row.
+2. **lastMutatedBy on every NUC mutation** — every `db.payment.update()`, `db.order.update()`, or raw SQL UPDATE to a bidirectional model (Order, OrderItem, Payment, OrderDiscount, OrderCard, OrderItemModifier) MUST set `lastMutatedBy: 'local'` (or the terminal ID). Without this, upstream sync skips the row and changes are lost.
+3. **FulfillmentEvent dedup by orderId** — before creating FulfillmentEvents in downstream sync (`handleCloudFulfillment`), always check if events already exist for that orderId. send/route.ts may have already created them.
+4. **ON CONFLICT for idempotency, not SELECT-before-INSERT** — never use a SELECT check followed by INSERT for dedup. Use `INSERT ... ON CONFLICT DO NOTHING` as the sole guard to eliminate TOCTOU race conditions.
+5. **One socket event per location per sync cycle** — downstream sync must batch socket dispatches. Emit at most one `dispatchOpenOrdersChanged` per locationId per cycle, not per row.
+6. **Upstream syncedAt stamps are individually resilient** — if one row's syncedAt stamp fails, continue stamping other rows. A single failure must not block the entire batch.
+7. **Outage queue requires metadata column** — OutageQueueEntry.metadata (JSONB) tracks retryCount for dead-letter logic. Without it, failed entries loop forever.
+
 ---
 
 ## Data Ownership

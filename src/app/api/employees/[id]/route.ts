@@ -353,11 +353,11 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    // Check for open orders
+    // Check for open orders (all active statuses, not just open/pending)
     const openOrders = await db.order.count({
       where: {
         employeeId: id,
-        status: { in: ['open', 'pending'] },
+        status: { in: ['draft', 'open', 'sent', 'in_progress', 'split', 'pending'] },
       },
     })
 

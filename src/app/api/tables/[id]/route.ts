@@ -273,14 +273,14 @@ export const DELETE = withVenue(async function DELETE(
       return NextResponse.json({ error: 'Table not found' }, { status: 404 })
     }
 
-    // Check for open orders
+    // Check for active orders (all active statuses, not just open)
     const openOrders = await db.order.count({
-      where: { tableId: id, locationId, status: 'open' },
+      where: { tableId: id, locationId, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split', 'pending'] } },
     })
 
     if (openOrders > 0) {
       return NextResponse.json(
-        { error: 'Cannot delete table with open orders' },
+        { error: 'Cannot delete table with active orders' },
         { status: 400 }
       )
     }

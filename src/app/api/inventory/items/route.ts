@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET - List inventory items with filtering and pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -124,6 +126,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       locationId,
+      employeeId: bodyEmployeeId,
       name,
       sku,
       description,
@@ -156,6 +159,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         error: 'Missing required fields: locationId, name, department, itemType, revenueCenter, category',
       }, { status: 400 })
     }
+
+    // Auth check — require inventory.manage permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_MANAGE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!purchaseUnit || !purchaseSize || !purchaseCost || !storageUnit || !unitsPerPurchase) {
       return NextResponse.json({

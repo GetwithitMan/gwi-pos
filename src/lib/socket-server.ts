@@ -21,6 +21,13 @@ import type { Server as SocketServer, Socket } from 'socket.io'
 import { MOBILE_EVENTS, PAT_EVENTS } from '@/types/multi-surface'
 import { db } from '@/lib/db'
 import { verifySessionToken, POS_SESSION_COOKIE } from '@/lib/auth-session'
+import { recordEvent, getEventsSince, getLatestEventId } from '@/lib/socket-event-buffer'
+import {
+  enqueueAck,
+  acknowledgeEvent as ackQueueAcknowledge,
+  getRetryableEvents,
+  markRetryAttempt,
+} from './socket-ack-queue'
 
 // Dynamic import for socket.io (optional dependency)
 const io: typeof import('socket.io').Server | null = null
@@ -282,6 +289,13 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       }
     })
 
+    // QoS 1: client sends ack with ackId after receiving critical events
+    socket.on('ack', (ackPayload: { ackId: string }) => {
+      if (ackPayload?.ackId) {
+        ackQueueAcknowledge(ackPayload.ackId)
+      }
+    })
+
     // ==================== Room Management ====================
 
     /**
@@ -339,8 +353,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           station: stationId ? `station:${stationId}` : null,
         })
 
-        // Acknowledge successful join
-        socket.emit('joined', { success: true, rooms: socket.rooms.size })
+        // Acknowledge successful join — include latestEventId for catch-up baseline
+        socket.emit('joined', { success: true, rooms: socket.rooms.size, latestEventId: getLatestEventId(locationId) })
 
         // Mark terminal online on (re)connection — fire-and-forget
         void markTerminalOnline(terminalId, locationId)
@@ -358,6 +372,42 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         // Socket.io automatically cleans up room memberships on disconnect
       } catch (err) {
         console.error(JSON.stringify({ event: 'leave_station', socketId: socket.id, error: String(err) }))
+      }
+    })
+
+    // ==================== Reconnection Catch-Up ====================
+
+    /**
+     * Client sends catch-up request after reconnecting with last known eventId.
+     * Server replays all buffered events since that eventId that match the
+     * client's subscribed rooms.
+     */
+    socket.on('catch-up', ({ lastEventId, locationId: catchUpLocationId }: { lastEventId: number; locationId: string }) => {
+      try {
+        if (typeof lastEventId !== 'number' || lastEventId < 0) return
+        if (typeof catchUpLocationId !== 'string' || !catchUpLocationId) return
+
+        // Validate locationId matches socket's authenticated context
+        if (socket.data.locationId && catchUpLocationId !== socket.data.locationId) {
+          console.warn(`[Socket] catch-up rejected: socket bound to ${socket.data.locationId}, requested ${catchUpLocationId}`)
+          return
+        }
+
+        // Get the rooms this socket is currently subscribed to
+        const subscribedRooms = Array.from(socket.rooms).filter(
+          r => r !== socket.id // Exclude the socket's own room
+        )
+
+        const missedEvents = getEventsSince(catchUpLocationId, lastEventId, subscribedRooms)
+
+        if (missedEvents.length > 0) {
+          if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Catch-up: replaying ${missedEvents.length} events to ${socket.id} (since eid=${lastEventId})`)
+          for (const evt of missedEvents) {
+            socket.emit(evt.event, evt.data)
+          }
+        }
+      } catch (err) {
+        console.error(JSON.stringify({ event: 'catch-up', socketId: socket.id, error: String(err) }))
       }
     })
 
@@ -774,6 +824,23 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   // that added unnecessary DB queries every 60s and delayed offline detection vs
   // the authoritative socket disconnect handler.
 
+  // Retry unacknowledged critical events every 2 seconds (QoS 1)
+  setInterval(() => {
+    const retryable = getRetryableEvents()
+    for (const pending of retryable) {
+      try {
+        socketServer.to(pending.room).emit(pending.event, {
+          ...(typeof pending.data === 'object' && pending.data !== null ? pending.data : {}),
+          _ackId: pending.ackId,
+          _retry: pending.attempts,
+        })
+        markRetryAttempt(pending.ackId)
+      } catch (err) {
+        console.error('[socket-ack] Retry emit failed:', err)
+      }
+    }
+  }, 2000)
+
   // Store in global so API routes can emit events (survives HMR)
   setSocketServer(socketServer)
   if (process.env.DEBUG_SOCKETS) console.log('[Socket] Server initialized and stored in globalThis')
@@ -800,7 +867,27 @@ export function getSocketServer(): SocketServer | null {
  * Emit event from API route (helper function)
  */
 export async function emitToRoom(room: string, event: string, data: unknown): Promise<boolean> {
+  // Only buffer location: and tag: rooms (terminal/scale/station are device-specific, not replayable)
+  const shouldBuffer = room.startsWith('location:') || room.startsWith('tag:')
+
   if (globalForSocket.socketServer) {
+    if (shouldBuffer) {
+      // Extract locationId from room name for buffer scoping
+      let locationId: string | null = null
+      if (room.startsWith('location:')) {
+        locationId = room.slice('location:'.length)
+      } else if (room.startsWith('tag:')) {
+        // tag:{locationId}:{tagName}
+        const parts = room.split(':')
+        if (parts.length >= 2) locationId = parts[1]
+      }
+      if (locationId) {
+        const eid = recordEvent(locationId, event, data, room)
+        const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown>, _eid: eid } : data
+        globalForSocket.socketServer.to(room).emit(event, enriched)
+        return true
+      }
+    }
     globalForSocket.socketServer.to(room).emit(event, data)
     return true
   }
@@ -817,7 +904,15 @@ export async function emitToTags(tags: string[], event: string, data: unknown, l
 
   if (globalForSocket.socketServer) {
     rooms.forEach((room) => {
-      globalForSocket.socketServer!.to(room).emit(event, data)
+      // Extract locationId from room for buffer scoping
+      const bufferLocationId = locationId || (room.startsWith('tag:') ? room.split(':')[1] : null)
+      if (bufferLocationId) {
+        const eid = recordEvent(bufferLocationId, event, data, room)
+        const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown>, _eid: eid } : data
+        globalForSocket.socketServer!.to(room).emit(event, enriched)
+      } else {
+        globalForSocket.socketServer!.to(room).emit(event, data)
+      }
     })
     return true
   }
@@ -833,10 +928,44 @@ export async function emitToLocation(locationId: string, event: string, data: un
     const room = `location:${locationId}`
     const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
     if (process.env.DEBUG_SOCKETS) console.log(`[Socket] emitToLocation: ${event} → ${room} (${roomSockets?.size ?? 0} clients)`)
-    globalForSocket.socketServer.to(room).emit(event, data)
+    // Record in buffer and inject _eid for client catch-up tracking
+    const eid = recordEvent(locationId, event, data, room)
+    const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown>, _eid: eid } : data
+    globalForSocket.socketServer.to(room).emit(event, enriched)
     return true
   }
   return emitViaIPC({ type: 'location', target: locationId, event, data })
+}
+
+/**
+ * Emit a critical event that requires client acknowledgment (QoS 1).
+ * The event includes an `_ackId` field. Client must emit `ack` with this ID.
+ * If no ack within timeout, retries up to 3 times with exponential backoff.
+ *
+ * Used for financial events: payment:processed, order:closed.
+ * Backward-compatible: old clients ignore `_ackId`, server stops retrying after timeout.
+ */
+export async function emitCriticalToLocation(
+  locationId: string,
+  event: string,
+  data: unknown,
+): Promise<void> {
+  const room = `location:${locationId}`
+  const ackId = enqueueAck(locationId, room, event, data)
+  const payload = {
+    ...(typeof data === 'object' && data !== null ? data : {}),
+    _ackId: ackId,
+  }
+  if (globalForSocket.socketServer) {
+    const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
+    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] emitCriticalToLocation: ${event} -> ${room} (${roomSockets?.size ?? 0} clients) ackId=${ackId}`)
+    // Also record in event buffer for catch-up
+    const eid = recordEvent(locationId, event, payload, room)
+    const enriched = { ...payload, _eid: eid }
+    globalForSocket.socketServer.to(room).emit(event, enriched)
+  } else {
+    void emitViaIPC({ type: 'location', target: locationId, event, data: payload })
+  }
 }
 
 /**

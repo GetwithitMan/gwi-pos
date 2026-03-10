@@ -50,6 +50,7 @@ import { SharedOrderPanel } from './components/SharedOrderPanel'
 import { useOrderBootstrap } from './hooks/useOrderBootstrap'
 import { useOrderHandlers } from './hooks/useOrderHandlers'
 import { TestModeBanner } from '@/components/payments/TestModeBanner'
+import { HappyHourBanner } from '@/components/pos/HappyHourBanner'
 import type { MenuItem, PizzaOrderConfig } from '@/types'
 import type { ViewMode, OrderToLoad, QuickBarItem } from './types'
 
@@ -699,6 +700,7 @@ export default function OrdersPage() {
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <TestModeBanner />
+      <HappyHourBanner />
       <UnifiedPOSHeader
         orderTypes={bootstrap.orderTypes}
         employeeName={employee.displayName}

@@ -23,6 +23,7 @@ function LoginContent() {
   const [pendingEmployee, setPendingEmployee] = useState<{ id: string; locationId: string } | null>(null)
   const [pendingAvailableRoles, setPendingAvailableRoles] = useState<{ id: string; name: string; cashHandlingMode: string; isPrimary: boolean }[]>([])
   const [showTimeClockModal, setShowTimeClockModal] = useState(false)
+  const [welcomeName, setWelcomeName] = useState<string | null>(null)
 
   const employee = useAuthStore((state) => state.employee)
 
@@ -104,7 +105,9 @@ function LoginContent() {
 
         if (statusRes.ok && clockData.clockedIn) {
           clockInStore({ entryId: clockData.entryId, clockInTime: clockData.clockInTime })
-          router.push(getRedirectPath(emp))
+          const name = emp.displayName || emp.firstName || 'there'
+          setWelcomeName(name)
+          setTimeout(() => router.push(getRedirectPath(emp)), 800)
           return
         }
       } catch {}
@@ -136,6 +139,24 @@ function LoginContent() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (welcomeName) {
+    return (
+      <Card className="w-full max-w-md">
+        <CardContent className="py-12 text-center">
+          <div className="mx-auto mb-4">
+            <div className="w-16 h-16 bg-green-600 rounded-2xl flex items-center justify-center mx-auto">
+              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold mb-1">Welcome, {welcomeName}!</h2>
+          <p className="text-gray-400 text-sm">Redirecting...</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (showRolePicker) {

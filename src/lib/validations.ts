@@ -111,7 +111,7 @@ const orderItemSchema = z.object({
   menuItemId: idSchema,
   name: z.string().min(1),
   price: nonNegativeNumber,
-  quantity: z.number().int().positive(),
+  quantity: z.number().int().positive().max(9999),
   correlationId: z.string().optional(), // Client-provided ID for matching response items
   modifiers: z.array(orderItemModifierSchema).default([]),
   ingredientModifications: z.array(ingredientModificationSchema).optional(),
@@ -140,9 +140,10 @@ export const createOrderSchema = z.object({
   tableId: idSchema.nullish(),
   tabName: z.string().max(50).nullish(),
   guestCount: z.number().int().positive().nullish().default(1),
-  items: z.array(orderItemSchema).default([]),  // Empty = draft shell (no items yet)
+  items: z.array(orderItemSchema).max(500, 'Order cannot exceed 500 items').default([]),  // Empty = draft shell (no items yet)
   notes: z.string().max(500).nullish(),
   customFields: z.record(z.string(), z.string()).optional(), // Custom fields for configurable order types
+  idempotencyKey: z.string().max(128).nullish(), // Client-generated UUID to prevent double-tap duplicates
 })
 
 export const updateOrderSchema = z.object({

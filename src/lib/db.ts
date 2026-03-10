@@ -169,6 +169,24 @@ if (!globalForPrisma.venueClients) {
 
 const MAX_VENUE_CLIENTS = 50
 
+/** Idle venue clients are disconnected after 30 minutes of inactivity */
+const VENUE_CLIENT_TTL_MS = 30 * 60 * 1000
+
+// Periodic cleanup: disconnect idle venue clients every 5 minutes
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const clients = globalForPrisma.venueClients
+    if (!clients) return
+    const now = Date.now()
+    for (const [slug, entry] of clients) {
+      if (now - entry.lastAccessed > VENUE_CLIENT_TTL_MS) {
+        entry.client.$disconnect().catch(() => {})
+        clients.delete(slug)
+      }
+    }
+  }, 5 * 60 * 1000)
+}
+
 /**
  * Resolve the active PrismaClient for the current request.
  *

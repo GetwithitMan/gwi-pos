@@ -6,6 +6,7 @@ import { buildPizzaModifiers, getPizzaBasePrice } from '@/lib/pizza-order-utils'
 import { debugPizzaPricing } from '@/lib/pizza-helpers'
 import { formatCurrency } from '@/lib/utils'
 import { OfflineManager } from '@/lib/offline-manager'
+import { uuid } from '@/lib/uuid'
 import { toast } from '@/stores/toast-store'
 import type {
   MenuItem,
@@ -1226,6 +1227,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
           employeeId,
           orderType: 'bar_tab',
           tabName,
+          idempotencyKey: uuid(),
         }),
       })
       const orderData = await orderRes.json()

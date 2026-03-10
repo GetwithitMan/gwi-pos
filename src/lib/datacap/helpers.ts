@@ -48,7 +48,7 @@ export async function getDatacapClient(locationId: string): Promise<DatacapClien
     merchantId: payments.datacapMerchantId || '',
     operatorId: 'POS',
     posPackageId: POS_PACKAGE_ID,
-    communicationMode: payments.processor === 'simulated' ? 'simulated' : 'local',
+    communicationMode: 'local',
     cloudUrl: isTestMode ? CLOUD_URLS.test : CLOUD_URLS.prod,
     // Datacap cloud auth: MID as username, tokenKey as password (used for cloud mode)
     cloudUsername: payments.datacapMerchantId || '',

@@ -56,7 +56,7 @@ interface DiscountModalProps {
   itemName?: string
 }
 
-type DiscountMode = 'select' | 'custom' | 'manage'
+type DiscountMode = 'select' | 'custom' | 'manage' | 'coupon'
 
 export function DiscountModal({
   isOpen,
@@ -84,6 +84,11 @@ export function DiscountModal({
   const [customType, setCustomType] = useState<'percent' | 'fixed'>('percent')
   const [customValue, setCustomValue] = useState('')
   const [customReason, setCustomReason] = useState('')
+
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('')
+  const [couponError, setCouponError] = useState<string | null>(null)
+  const [isApplyingCoupon, setIsApplyingCoupon] = useState(false)
 
   // Manager PIN approval state (for 403 requiresApproval responses)
   const [showManagerPin, setShowManagerPin] = useState(false)

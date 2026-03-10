@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/stores/toast-store'
+import { uuid } from '@/lib/uuid'
 import type { EntertainmentItem, WaitlistEntry } from '@/lib/entertainment'
 
 interface SeatFromWaitlistModalProps {
@@ -161,6 +162,7 @@ export function SeatFromWaitlistModal({
           tabName,
           guestCount: entry.partySize || 1,
           items: [entertainmentOrderItem],
+          idempotencyKey: uuid(),
         }),
       })
 

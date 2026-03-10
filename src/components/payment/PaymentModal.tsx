@@ -241,13 +241,19 @@ export function PaymentModal({
     }
   }, [isOpen, orderId, orderTotal])
 
-  // CFD: dispatch show-order via server when payment modal opens (fire and forget)
+  // CFD: dispatch show-order + show-order-detail via server when payment modal opens (fire and forget)
   useEffect(() => {
     if (!isOpen || !orderId || !locationId) return
     fetch(`/api/orders/${orderId}`)
       .then(res => res.json())
       .then(raw => {
         const data = raw.data ?? raw
+        const itemsBasic = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string }) => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: Number(i.price),
+        }))
+        // Show-order: basic view (existing behavior)
         void fetch('/api/cfd/notify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -257,14 +263,34 @@ export function PaymentModal({
             payload: {
               orderId: data.id ?? orderId,
               orderNumber: data.orderNumber ?? 0,
-              items: (data.items ?? []).map((i: { name: string; quantity: number; price: number | string }) => ({
-                name: i.name,
-                quantity: i.quantity,
-                price: Number(i.price),
-              })),
+              items: itemsBasic,
               subtotal: Number(data.subtotal ?? 0),
               tax: Number(data.taxTotal ?? 0),
               total: Number(data.total ?? orderTotal),
+            },
+          }),
+        }).catch(() => {})
+        // Show-order-detail: full confirmation with modifiers before card swipe
+        const itemsDetailed = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string; modifiers?: Array<{ name: string }> }) => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: Number(i.price),
+          modifiers: (i.modifiers ?? []).map((m: { name: string }) => m.name),
+        }))
+        void fetch('/api/cfd/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'show-order-detail',
+            locationId,
+            payload: {
+              orderId: data.id ?? orderId,
+              orderNumber: data.orderNumber ?? 0,
+              items: itemsDetailed,
+              subtotal: Number(data.subtotal ?? 0),
+              tax: Number(data.taxTotal ?? 0),
+              total: Number(data.total ?? orderTotal),
+              discountTotal: Number(data.discountTotal ?? 0),
             },
           }),
         }).catch(() => {})
@@ -419,7 +445,7 @@ export function PaymentModal({
     } else if (method === 'cash') {
       setStep('cash')
     } else {
-      // All card payments go through Datacap (simulated or real)
+      // All card payments go through Datacap
       setStep('datacap_card')
     }
   }
@@ -679,7 +705,7 @@ export function PaymentModal({
         setStep('method') // Go back to method selection
         return
       }
-      // All card payments go through Datacap (simulated or real)
+      // All card payments go through Datacap
       setStep('datacap_card')
     } else {
       // Other payment methods (gift card, house account)

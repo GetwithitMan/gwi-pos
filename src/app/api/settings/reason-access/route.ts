@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List reason access rules
@@ -52,6 +54,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Require settings.security permission — this controls who can void/comp
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const authResult = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_SECURITY)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+
     if (!['role', 'employee'].includes(subjectType)) {
       return NextResponse.json({ error: 'subjectType must be "role" or "employee"' }, { status: 400 })
     }
@@ -99,6 +107,11 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     if (!existing) {
       return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
     }
+
+    // Require settings.security permission — this controls who can void/comp
+    const actor = await getActorFromRequest(request)
+    const authResult = await requirePermission(actor.employeeId, existing.locationId, PERMISSIONS.SETTINGS_SECURITY)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
 
     await db.reasonAccess.delete({ where: { id } })
 

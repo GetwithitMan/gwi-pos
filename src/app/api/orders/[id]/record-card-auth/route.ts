@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { normalizeCardholderName } from '@/lib/datacap/helpers'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
+import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
 
 /**
  * POST /api/orders/[id]/record-card-auth
@@ -101,6 +102,10 @@ export const POST = withVenue(async function POST(
         tabName: order.tabName || undefined,
         tableId: order.tableId,
       })
+
+      // Fire-and-forget socket dispatches so other terminals see the card auth
+      void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId }).catch(console.error)
+      void dispatchTabUpdated(locationId, { orderId }).catch(console.error)
 
       return NextResponse.json({
         data: {

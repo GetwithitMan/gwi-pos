@@ -99,6 +99,15 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       )
     }
 
+    // Gift card creation must be tied to a payment (anti-fraud guard)
+    const skipPaymentCheck = body.skipPaymentCheck === true
+    if (!orderId && !skipPaymentCheck) {
+      return NextResponse.json(
+        { error: 'Gift card creation requires an associated order. Use the POS payment flow to create gift cards.' },
+        { status: 400 }
+      )
+    }
+
     // Generate unique card number
     let cardNumber = generateCardNumber()
     let attempts = 0
@@ -143,6 +152,9 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
         transactions: true,
       }
     })
+
+    // Audit trail for gift card creation
+    console.log(`[AUDIT] GIFT_CARD_CREATED: card=${giftCard.cardNumber}, balance=$${Number(giftCard.initialBalance)}, by employee ${purchasedById}, orderId=${orderId || 'NONE'}`)
 
     return NextResponse.json({ data: {
       ...giftCard,

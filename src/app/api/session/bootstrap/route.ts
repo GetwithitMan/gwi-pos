@@ -210,6 +210,8 @@ async function getMenuForBootstrap(locationId: string) {
       availableFrom: item.availableFrom,
       availableTo: item.availableTo,
       availableDays: item.availableDays,
+      availableFromDate: item.availableFromDate?.toISOString() ?? null,
+      availableUntilDate: item.availableUntilDate?.toISOString() ?? null,
       entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
       currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,
       blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,

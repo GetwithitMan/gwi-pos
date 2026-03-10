@@ -84,6 +84,17 @@ export const POST = withVenue(async function POST(
         return { earlyReturn: NextResponse.json({ error: 'Order not found' }, { status: 404 }) }
       }
 
+      // Status guard: block voided/cancelled orders from tab close
+      // (paid/closed is handled below as a successful duplicate detection)
+      if (order.status === 'voided' || order.status === 'cancelled') {
+        return {
+          earlyReturn: NextResponse.json(
+            { error: `Cannot close tab on order in '${order.status}' status` },
+            { status: 400 }
+          ),
+        }
+      }
+
       // PAYMENT-SAFETY: Double-capture prevention — if order is already paid/closed,
       // return success with existing state instead of attempting another capture.
       if (order.status === 'paid' || order.status === 'closed') {
@@ -156,6 +167,15 @@ export const POST = withVenue(async function POST(
 
       if (order.cards.length === 0) {
         return { earlyReturn: NextResponse.json({ error: 'No authorized cards on this tab' }, { status: 400 }) }
+      }
+
+      // AUDIT: Empty tab with pre-auth — will release card holds ($0 capture path)
+      if (order.items.length === 0 && order.cards.length > 0) {
+        console.warn('[AUDIT] EMPTY_TAB_CLOSE: Order has pre-auth cards but zero items — releasing holds', {
+          orderId,
+          cardCount: order.cards.length,
+          employeeId,
+        })
       }
 
       // Mark tab as 'closing' to prevent concurrent close-tab from another terminal.
@@ -315,6 +335,8 @@ export const POST = withVenue(async function POST(
       }, { status: httpStatus })
     }
 
+    let isAutoGratuity = false
+
     // Bottle service auto-gratuity: apply if no explicit tip was provided
     if (
       order.isBottleService &&
@@ -333,7 +355,29 @@ export const POST = withVenue(async function POST(
 
         if (autoGratPct > 0 && (minSpend <= 0 || purchaseAmount >= minSpend)) {
           gratuityAmount = Math.round(purchaseAmount * (autoGratPct / 100) * 100) / 100
+          isAutoGratuity = true
         }
+      }
+    }
+
+    // Party-size auto-gratuity: apply if no explicit tip and bottle service didn't set one
+    if (
+      !order.isBottleService &&
+      gratuityAmount == null &&
+      tipMode !== 'device'
+    ) {
+      const autoGrat = locSettings.autoGratuity
+      if (
+        autoGrat?.enabled &&
+        autoGrat.percent > 0 &&
+        autoGrat.minimumPartySize > 0 &&
+        order.guestCount >= autoGrat.minimumPartySize
+      ) {
+        gratuityAmount = Math.round(purchaseAmount * (autoGrat.percent / 100) * 100) / 100
+        isAutoGratuity = true
+        console.info(`[Tab Close] Auto-gratuity applied (${autoGrat.percent}% for party of ${order.guestCount})`, {
+          orderId, guestCount: order.guestCount, gratuityAmount,
+        })
       }
     }
 
@@ -366,6 +410,34 @@ export const POST = withVenue(async function POST(
     // PHASE 2: External Datacap API calls (NO database lock held)
     // This is the slow part (500-3000ms). No other terminal is blocked.
     // ═══════════════════════════════════════════════════════════════════════════
+
+    // PAYMENT-SAFETY: Create a durable pending-capture record BEFORE calling Datacap.
+    // If Datacap capture succeeds but the Phase 3 DB write fails, this record remains
+    // with status='pending' for manual reconciliation. Updated to 'completed' after Phase 3.
+    const pendingCaptureId = crypto.randomUUID()
+    const primaryCard = cardsToTry[0]
+    try {
+      await db.$executeRawUnsafe(
+        `INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "cardLast4", "purchaseAmount", "tipAmount", "totalAmount", "status", "createdAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW())
+         ON CONFLICT ("id") DO NOTHING`,
+        pendingCaptureId,
+        orderId,
+        locationId,
+        primaryCard.recordNo,
+        primaryCard.cardLast4 || '',
+        purchaseAmount,
+        gratuityAmount || 0,
+        purchaseAmount + (gratuityAmount || 0)
+      )
+    } catch (pcErr) {
+      // Non-fatal: if the safety-net table doesn't exist yet or insert fails,
+      // proceed with capture anyway — this is a safety net, not a gate.
+      console.warn('[PAYMENT-SAFETY] Failed to insert pending capture record', {
+        orderId, error: pcErr instanceof Error ? pcErr.message : String(pcErr),
+      })
+    }
+
     let capturedCard = null
     let captureResult = null
 
@@ -674,6 +746,21 @@ export const POST = withVenue(async function POST(
       }
     })
 
+    // PAYMENT-SAFETY: Phase 3 DB write succeeded — mark the pending capture as completed.
+    // Fire-and-forget: if this update fails, the record stays 'pending' which is safe
+    // (ops can see it was captured via authCode + Datacap settlement report).
+    void db.$executeRawUnsafe(
+      `UPDATE "_pending_captures" SET "status" = 'completed', "completedAt" = NOW(), "authCode" = $2, "tipAmount" = $3, "totalAmount" = $4 WHERE "id" = $1`,
+      pendingCaptureId,
+      response.authCode || '',
+      finalTipAmount,
+      totalCaptured
+    ).catch((pcErr) => {
+      console.warn('[PAYMENT-SAFETY] Failed to mark pending capture as completed', {
+        pendingCaptureId, orderId, error: pcErr instanceof Error ? pcErr.message : String(pcErr),
+      })
+    })
+
     // ═══════════════════════════════════════════════════════════════════════════
     // POST-TRANSACTION: Fire-and-forget side effects (unchanged from original)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -775,6 +862,7 @@ export const POST = withVenue(async function POST(
         }],
         totalTipsDollars: finalTipAmount,
         tipBankSettings: locSettings.tipBank,
+        kind: isAutoGratuity ? 'auto_gratuity' : 'tip',
       }).catch(err => {
         console.error('Background tip allocation failed (close-tab):', err)
       })

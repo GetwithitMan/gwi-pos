@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 
@@ -52,6 +54,12 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Tax rule not found' }, { status: 404 })
     }
 
+    // Require settings.tax permission — modifying tax rules is a sensitive operation
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const authResult = await requirePermission(resolvedEmployeeId, existing.locationId, PERMISSIONS.SETTINGS_TAX)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+
     const taxRule = await prisma.taxRule.update({
       where: { id },
       data: {
@@ -97,6 +105,12 @@ export const DELETE = withVenue(async function DELETE(
     if (!taxRule) {
       return NextResponse.json({ error: 'Tax rule not found' }, { status: 404 })
     }
+
+    // Require settings.tax permission — deleting tax rules is a sensitive operation
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? null
+    const authResult = await requirePermission(resolvedEmployeeId, taxRule.locationId, PERMISSIONS.SETTINGS_TAX)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
 
     await prisma.taxRule.update({ where: { id }, data: { deletedAt: new Date() } })
     await syncTaxRateToSettings(taxRule.locationId)

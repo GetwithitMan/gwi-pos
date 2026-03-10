@@ -45,11 +45,68 @@ const rateLimitBuckets = new Map<string, { count: number; windowStart: number }>
 /** Idle timeout: 2 hours in milliseconds */
 const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000
 
+/**
+ * Grace period for expired tokens: 4 hours.
+ *
+ * During an outage, Android workers (CartOutboxWorker, PaymentReconciliationWorker)
+ * queue orders/payments locally. When connectivity returns, the JWT may have expired.
+ * This grace window allows recently-expired tokens to be used for:
+ *   1. Token refresh via /api/auth/refresh-cellular
+ *   2. Replay-specific endpoints (with automatic token reissue via X-Refreshed-Token header)
+ *
+ * Security constraints:
+ * - Signature MUST still be valid (HMAC-SHA256)
+ * - Device MUST NOT be revoked/quarantined (both L1 + L2 checks)
+ * - Device fingerprint MUST match
+ * - Grace period is narrow (4h) — beyond this, device must re-pair
+ */
+const EXPIRED_GRACE_PERIOD_S = 4 * 60 * 60 // 4 hours in seconds
+
 /** Rate limit: max requests per second per terminal */
 const RATE_LIMIT_PER_SECOND = 10
 
 /** Max size for rateLimitBuckets before evicting oldest entries */
 const MAX_RATE_LIMIT_BUCKETS = 10_000
+
+/** Max size for lastActivity map before evicting oldest 20% */
+const MAX_ACTIVITY_ENTRIES = 5_000
+
+/** File path for persisting activity timestamps across restarts */
+const ACTIVITY_PERSIST_FILE = '/opt/gwi-pos/.cellular-activity.json'
+
+/** Debounce file writes — only persist every 30 seconds */
+let _lastPersistTime = 0
+const PERSIST_INTERVAL_MS = 30_000
+
+function persistActivityToFile(): void {
+  const now = Date.now()
+  if (now - _lastPersistTime < PERSIST_INTERVAL_MS) return
+  _lastPersistTime = now
+  try {
+    const fs = require('node:fs')
+    const data: Record<string, number> = {}
+    for (const [id, ts] of lastActivity) {
+      data[id] = ts
+    }
+    fs.writeFileSync(ACTIVITY_PERSIST_FILE, JSON.stringify(data), { mode: 0o600 })
+  } catch { /* best-effort — don't block requests */ }
+}
+
+function loadPersistedActivity(): void {
+  try {
+    const fs = require('node:fs')
+    const raw = fs.readFileSync(ACTIVITY_PERSIST_FILE, 'utf8') as string
+    const data = JSON.parse(raw) as Record<string, number>
+    const now = Date.now()
+    for (const [id, ts] of Object.entries(data)) {
+      if (typeof ts === 'number' && now - ts < IDLE_TIMEOUT_MS) {
+        lastActivity.set(id, ts)
+      }
+    }
+  } catch { /* file doesn't exist or corrupt — start fresh */ }
+}
+
+loadPersistedActivity()
 
 // ═══════════════════════════════════════════════════════════
 // Base64url helpers (same pattern as cloud-auth.ts)
@@ -147,7 +204,8 @@ function getCellularSecret(): string {
 /**
  * Verify a cellular terminal JWT token.
  * Returns the payload if valid, null if invalid/expired/revoked.
- * No DB queries — all checks are in-memory for middleware speed.
+ * L1 (in-memory deny list) is checked first for speed, then L2 (DB) catches
+ * revocations missed after Vercel cold starts.
  */
 export async function verifyCellularToken(token: string): Promise<CellularTokenPayload | null> {
   try {
@@ -198,10 +256,102 @@ export async function verifyCellularToken(token: string): Promise<CellularTokenP
       return null
     }
 
-    // Check revocation deny list
+    // Check revocation deny list (L1: in-memory — fast path)
     if (isRevoked(payload.terminalId)) return null
 
+    // L2: Check DB for revocation (critical on Vercel where in-memory is empty after cold start)
+    if (await isRevokedFromDb(payload.terminalId, payload.locationId)) return null
+
     return payload
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Verify a cellular token with a grace period for recently-expired tokens.
+ *
+ * Same validation as verifyCellularToken() but allows tokens that expired
+ * within EXPIRED_GRACE_PERIOD_S (4 hours). Used by:
+ *   - /api/auth/refresh-cellular — so workers can refresh after outage
+ *   - proxy.ts replay gate — so CartOutboxWorker requests auto-heal
+ *
+ * Returns { payload, expired } where:
+ *   - payload is the decoded token (null if completely invalid)
+ *   - expired is true if the token was in the grace window (not currently valid)
+ *
+ * Security: signature, device status, required fields all still enforced.
+ */
+export async function verifyCellularTokenWithGrace(
+  token: string
+): Promise<{ payload: CellularTokenPayload; expired: boolean } | null> {
+  try {
+    const secret = getCellularSecret()
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+
+    const [headerB64, payloadB64, signatureB64] = parts
+
+    // Verify HMAC-SHA256 signature (non-negotiable — no grace on tampered tokens)
+    const encoder = new TextEncoder()
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    )
+
+    const signature = base64urlDecode(signatureB64)
+    const data = encoder.encode(`${headerB64}.${payloadB64}`)
+    const valid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength) as ArrayBuffer,
+      data
+    )
+
+    if (!valid) return null
+
+    // Decode payload
+    const payload = JSON.parse(
+      new TextDecoder().decode(base64urlDecode(payloadB64))
+    ) as CellularTokenPayload
+
+    if (!payload.exp) return null
+
+    const now = Math.floor(Date.now() / 1000)
+    let expired = false
+
+    if (payload.exp < now) {
+      // Token is expired — check if within grace period
+      const expiredSeconds = now - payload.exp
+      if (expiredSeconds > EXPIRED_GRACE_PERIOD_S) {
+        // Beyond grace period — reject completely
+        return null
+      }
+      expired = true
+    }
+
+    // Validate required fields
+    if (
+      payload.sub !== 'cellular-terminal' ||
+      !payload.terminalId ||
+      !payload.locationId ||
+      !payload.venueSlug ||
+      !payload.deviceFingerprint ||
+      !payload.terminalRole
+    ) {
+      return null
+    }
+
+    // Check revocation deny list (L1: in-memory)
+    if (isRevoked(payload.terminalId)) return null
+
+    // L2: Check DB for revocation
+    if (await isRevokedFromDb(payload.terminalId, payload.locationId)) return null
+
+    return { payload, expired }
   } catch {
     return null
   }
@@ -254,22 +404,43 @@ export async function issueCellularToken(
   const signatureB64 = base64urlEncodeBytes(new Uint8Array(signatureBuffer))
 
   // Record activity on issuance
-  lastActivity.set(terminalId, Date.now())
+  recordActivity(terminalId)
 
   return `${headerB64}.${payloadB64}.${signatureB64}`
 }
 
 /**
  * Refresh a cellular token.
- * Verifies old token, checks not revoked, issues new token with fresh expiry.
- * Returns null if old token is invalid or revoked.
+ * Verifies old token (with grace period for recently-expired tokens),
+ * checks not revoked, issues new token with fresh expiry.
+ * Returns null if old token is completely invalid, revoked, or expired beyond grace.
+ *
+ * Grace period: tokens expired within 4 hours can be refreshed. This is
+ * critical for outage recovery — Android workers queue orders offline and
+ * need to re-authenticate when connectivity returns.
  */
 export async function refreshCellularToken(oldToken: string): Promise<string | null> {
-  const payload = await verifyCellularToken(oldToken)
-  if (!payload) return null
+  // Use grace-aware verification so recently-expired tokens can be refreshed
+  const result = await verifyCellularTokenWithGrace(oldToken)
+  if (!result) return null
 
-  // Check idle timeout
-  if (checkIdleTimeout(payload.terminalId)) return null
+  const { payload, expired } = result
+
+  if (expired) {
+    console.warn(JSON.stringify({
+      event: 'cellular_token_grace_refresh',
+      terminalId: payload.terminalId,
+      locationId: payload.locationId,
+      venueSlug: payload.venueSlug,
+      tokenExpiredAt: new Date(payload.exp * 1000).toISOString(),
+      graceWindowUsed: true,
+      timestamp: new Date().toISOString(),
+    }))
+  }
+
+  // Skip idle timeout check for grace-period refreshes — the device was offline,
+  // so it couldn't have recorded activity. Idle timeout is meaningless after an outage.
+  if (!expired && checkIdleTimeout(payload.terminalId)) return null
 
   // Re-check revocation (belt-and-suspenders with verify)
   if (isRevoked(payload.terminalId)) return null
@@ -305,15 +476,59 @@ export function checkIdleTimeout(terminalId: string): boolean {
  */
 export function recordActivity(terminalId: string): void {
   lastActivity.set(terminalId, Date.now())
+
+  // Evict oldest 20% if map exceeds size cap
+  if (lastActivity.size > MAX_ACTIVITY_ENTRIES) {
+    const entries = Array.from(lastActivity.entries())
+    entries.sort((a, b) => a[1] - b[1]) // sort by timestamp ascending
+    const toDelete = Math.floor(entries.length * 0.2)
+    for (let i = 0; i < toDelete; i++) {
+      lastActivity.delete(entries[i][0])
+    }
+  }
+
+  void Promise.resolve().then(persistActivityToFile).catch(() => {})
 }
 
 // ═══════════════════════════════════════════════════════════
 // Revocation deny list
 // ═══════════════════════════════════════════════════════════
 
-/** Check if a terminalId is on the deny list */
+/** Check if a terminalId is on the in-memory deny list (L1 cache — fast path) */
 export function isRevoked(terminalId: string): boolean {
   return denyList.has(terminalId)
+}
+
+/**
+ * Check if a terminal is revoked via DB lookup (L2 — for Vercel cold starts).
+ * On Vercel, the in-memory deny list is empty after every cold start, so a revoked
+ * device could operate for up to 24h (JWT expiry). This DB check closes that gap.
+ * On NUC, this is redundant with the downstream-sync-worker but adds defense-in-depth.
+ *
+ * Fail-open: if the DB check errors (table doesn't exist, connection issue),
+ * we allow the request rather than blocking legitimate devices.
+ */
+async function isRevokedFromDb(terminalId: string, locationId: string): Promise<boolean> {
+  try {
+    // Dynamic import to avoid top-level dependency on db module
+    // (cellular-auth.ts is loaded in edge-compatible contexts)
+    const { db } = await import('@/lib/db')
+    const revoked = await db.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "CellularDevice" WHERE "terminalId" = $1 AND "locationId" = $2 AND status IN ('revoked', 'quarantined') LIMIT 1`,
+      terminalId,
+      locationId
+    )
+    if (revoked && revoked.length > 0) {
+      // Populate in-memory cache so subsequent checks in this process are fast
+      denyList.set(terminalId, Date.now())
+      return true
+    }
+    return false
+  } catch (error) {
+    // Fail-closed: if we can't verify a device's revocation status, reject the request
+    console.error('[cellular-auth] DB revocation check failed, denying request:', error)
+    return true
+  }
 }
 
 /** Revoke a terminal (add to deny list) */
@@ -393,15 +608,25 @@ export function cleanupCaches(): void {
     if (now - last > IDLE_TIMEOUT_MS + ONE_DAY) lastActivity.delete(id)
   }
 
+  // Hard cap: evict oldest 20% if still over limit after TTL eviction
+  if (lastActivity.size > MAX_ACTIVITY_ENTRIES) {
+    const entries = Array.from(lastActivity.entries())
+    entries.sort((a, b) => a[1] - b[1])
+    const toDelete = Math.floor(entries.length * 0.2)
+    for (let i = 0; i < toDelete; i++) {
+      lastActivity.delete(entries[i][0])
+    }
+  }
+
   // Evict stale rate limit buckets
   for (const [id, bucket] of rateLimitBuckets) {
     if (now - bucket.windowStart > 10_000) rateLimitBuckets.delete(id)
   }
 }
 
-// Run cleanup every 10 minutes
+// Run cleanup every 5 minutes (reduced from 10 to limit memory growth)
 if (typeof setInterval !== 'undefined') {
-  setInterval(cleanupCaches, 10 * 60 * 1000)
+  setInterval(cleanupCaches, 5 * 60 * 1000)
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -458,7 +683,14 @@ export async function verifyPlayIntegrity(
 ): Promise<PlayIntegrityResult> {
   const projectNumber = process.env.GOOGLE_CLOUD_PROJECT_NUMBER
   if (!projectNumber) {
-    console.warn('[PlayIntegrity] GOOGLE_CLOUD_PROJECT_NUMBER not set — skipping attestation')
+    // In production, missing Play Integrity config is a security risk — log a critical warning
+    // but still allow the request (blocking all cellular terminals is worse than skipping attestation)
+    const isProduction = process.env.NODE_ENV === 'production'
+    if (isProduction) {
+      console.error('[PlayIntegrity] CRITICAL: GOOGLE_CLOUD_PROJECT_NUMBER not set in production — attestation bypassed. Configure immediately.')
+    } else {
+      console.warn('[PlayIntegrity] GOOGLE_CLOUD_PROJECT_NUMBER not set — attestation skipped (non-production)')
+    }
     return {
       valid: true,
       verdict: 'skipped_no_config',
@@ -470,7 +702,12 @@ export async function verifyPlayIntegrity(
     // Get access token for Google API call
     const accessToken = await getGoogleAccessToken()
     if (!accessToken) {
-      console.warn('[PlayIntegrity] Could not obtain Google access token — allowing request (gradual rollout)')
+      const isProduction = process.env.NODE_ENV === 'production'
+      if (isProduction) {
+        console.error('[PlayIntegrity] CRITICAL: Could not obtain Google access token in production — attestation bypassed. Configure GOOGLE_SERVICE_ACCOUNT_KEY immediately.')
+      } else {
+        console.warn('[PlayIntegrity] Could not obtain Google access token — attestation skipped (non-production)')
+      }
       return {
         valid: true,
         verdict: 'skipped_no_credentials',

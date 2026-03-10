@@ -45,6 +45,7 @@ interface KDSItem {
   tareWeight?: number | null
   modifiers: { id: string; name: string; depth?: number }[]
   ingredientModifications: IngredientMod[]
+  allergens?: string[]
 }
 
 interface KDSOrder {
@@ -356,6 +357,31 @@ function KDSContent() {
     return () => clearInterval(fallback)
   }, [authState, socketConnected])
 
+  // Client-side order age recomputation every 30s
+  // Recalculates elapsedMinutes and timeStatus from createdAt so cards
+  // update color/time without waiting for a server fetch.
+  useEffect(() => {
+    if (orders.length === 0) return
+
+    const warningMin = screenConfig?.agingWarning ?? 10
+    const criticalMin = screenConfig?.lateWarning ?? 20
+
+    const tick = () => {
+      const now = Date.now()
+      setOrders(prev => prev.map(order => {
+        const elapsed = Math.floor((now - new Date(order.createdAt).getTime()) / 60_000)
+        let status: 'fresh' | 'aging' | 'late' = 'fresh'
+        if (elapsed >= criticalMin) status = 'late'
+        else if (elapsed >= warningMin) status = 'aging'
+        if (elapsed === order.elapsedMinutes && status === order.timeStatus) return order
+        return { ...order, elapsedMinutes: elapsed, timeStatus: status }
+      }))
+    }
+
+    const interval = setInterval(tick, 30_000)
+    return () => clearInterval(interval)
+  }, [orders.length, screenConfig?.agingWarning, screenConfig?.lateWarning])
+
   // Instant refresh on tab switch
   useEffect(() => {
     const handler = () => {
@@ -540,6 +566,18 @@ function KDSContent() {
         )
       }
 
+      // Recompute elapsed time and status client-side using screen config thresholds
+      const warningMin = screenConfig?.agingWarning ?? 10
+      const criticalMin = screenConfig?.lateWarning ?? 20
+      const now = Date.now()
+      filteredOrders = filteredOrders.map(order => {
+        const elapsed = Math.floor((now - new Date(order.createdAt).getTime()) / 60_000)
+        let status: 'fresh' | 'aging' | 'late' = 'fresh'
+        if (elapsed >= criticalMin) status = 'late'
+        else if (elapsed >= warningMin) status = 'aging'
+        return { ...order, elapsedMinutes: elapsed, timeStatus: status }
+      })
+
       setOrders(filteredOrders)
       setLastUpdate(new Date())
     } catch (error) {
@@ -663,8 +701,8 @@ function KDSContent() {
   const getTimeStatusBg = (status: string) => {
     switch (status) {
       case 'fresh': return 'border-green-500'
-      case 'aging': return 'border-yellow-500'
-      case 'late': return 'border-red-500 animate-pulse'
+      case 'aging': return 'border-yellow-400 bg-yellow-950/30'
+      case 'late': return 'border-red-400 bg-red-950/40 animate-pulse'
       default: return 'border-gray-500'
     }
   }
@@ -1037,6 +1075,24 @@ function KDSContent() {
                             {item.specialNotes && (
                               <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-orange-400'}`}>
                                 {item.specialNotes}
+                              </div>
+                            )}
+
+                            {/* Allergen badges */}
+                            {item.allergens && item.allergens.length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {item.allergens.map(allergen => (
+                                  <span
+                                    key={allergen}
+                                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${
+                                      item.isCompleted
+                                        ? 'bg-gray-700 text-gray-400 border-gray-600'
+                                        : 'bg-orange-900/60 text-orange-300 border-orange-500/50'
+                                    }`}
+                                  >
+                                    {allergen.toUpperCase()}
+                                  </span>
+                                ))}
                               </div>
                             )}
 

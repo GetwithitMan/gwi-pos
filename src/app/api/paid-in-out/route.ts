@@ -154,6 +154,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
+    // Manager approval required for paid-out over $100
+    const managerId = body.managerId as string | undefined
+    if (type === 'paid_out' && Number(amount) > 100) {
+      if (!managerId) {
+        return NextResponse.json(
+          { error: 'Manager approval required for paid-out over $100' },
+          { status: 400 }
+        )
+      }
+      // Verify manager exists and has manager permissions
+      const manager = await db.employee.findFirst({
+        where: { id: managerId, locationId, isActive: true, deletedAt: null },
+        include: { role: true },
+      })
+      if (!manager) {
+        return NextResponse.json(
+          { error: 'Invalid manager ID' },
+          { status: 400 }
+        )
+      }
+      console.log(`[AUDIT] PAID_OUT approved by manager ${managerId} (${manager.firstName} ${manager.lastName})`)
+    }
+
     // Resolve drawer — use provided drawerId or find first active drawer
     let resolvedDrawerId = drawerId
     if (!resolvedDrawerId) {
@@ -193,6 +216,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    // Audit trail for paid in/out
+    console.log(`[AUDIT] PAID_${dbType.toUpperCase()}: $${Number(record.amount)} by employee ${employeeId} — reason: "${record.reason}", reference: "${record.reference || 'none'}", locationId: ${locationId}`)
 
     // Emit socket event for real-time updates
     void emitToLocation(locationId, 'drawer:paid_in_out', {

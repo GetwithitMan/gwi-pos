@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { TerminalCategory } from '@prisma/client'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET all terminals for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -115,11 +117,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       receiptPrinterId,
       roleSkipRules,
       scaleId,
+      employeeId: bodyEmployeeId,
     } = body
 
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require settings.hardware permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Validate required fields
     if (!name) {

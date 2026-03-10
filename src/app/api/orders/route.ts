@@ -32,8 +32,32 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       return apiError.badRequest(validation.error, ERROR_CODES.VALIDATION_ERROR)
     }
 
-    const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields } = validation.data
+    const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields, idempotencyKey } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
+
+    // Order creation idempotency — prevent double-tap / retry duplicates
+    if (idempotencyKey) {
+      const existing = await db.order.findFirst({
+        where: {
+          idempotencyKey,
+          locationId, // location-scoped to prevent cross-venue collisions
+          deletedAt: null,
+        },
+        select: { id: true, orderNumber: true, status: true },
+      })
+      if (existing) {
+        // Return existing order — this is a duplicate request
+        const fullOrder = await db.order.findUnique({
+          where: { id: existing.id },
+          include: {
+            employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+            items: { where: { deletedAt: null }, include: { modifiers: true, ingredientModifications: true, pizzaData: true } },
+            table: { select: { id: true, name: true, sectionId: true } },
+          },
+        })
+        return NextResponse.json({ data: fullOrder, duplicate: true })
+      }
+    }
 
     // HA cellular sync — detect mutation origin
     const isCellularOrigin = request.headers.get('x-cellular-authenticated') === '1'
@@ -115,6 +139,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
               notes: notes || null,
               customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
               businessDayDate: businessDayStart,
+              idempotencyKey: idempotencyKey || null,
               ...cellularMutationFields,
             },
           })
@@ -459,6 +484,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             notes: notes || null,
             customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
             businessDayDate: businessDayStart,
+            idempotencyKey: idempotencyKey || null,
             ...cellularMutationFields,
             items: {
               create: orderItems,

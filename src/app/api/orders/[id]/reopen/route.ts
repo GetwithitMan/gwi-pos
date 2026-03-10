@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hasPermission } from '@/lib/auth-utils'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission } from '@/lib/api-auth'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { calculateSimpleOrderTotals } from '@/lib/order-calculations'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
@@ -25,19 +26,7 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Verify manager has permission
-    const manager = await db.employee.findUnique({
-      where: { id: managerId },
-      include: { role: true },
-    })
-    if (!manager) {
-      return NextResponse.json({ error: 'Manager not found' }, { status: 404 })
-    }
-    const permissions = Array.isArray(manager.role?.permissions) ? manager.role.permissions as string[] : []
-    if (!hasPermission(permissions, 'manager.void_orders')) {
-      return NextResponse.json({ error: 'Insufficient permissions to reopen orders' }, { status: 403 })
-    }
-
+    // Get the order first so we have locationId for auth check
     // Get the order with its payments (exclude soft-deleted)
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
@@ -63,6 +52,10 @@ export const POST = withVenue(async function POST(
         { status: 404 }
       )
     }
+
+    // Verify manager has permission to reopen (void) orders
+    const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.MGR_VOID_ORDERS)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
 
     // Check if order can be reopened
     if (order.status !== 'closed' && order.status !== 'paid' && order.status !== 'voided') {

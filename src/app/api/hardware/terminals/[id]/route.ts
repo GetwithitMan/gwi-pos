@@ -246,9 +246,9 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Validate payment provider if provided
-    if (paymentProvider && !['DATACAP_DIRECT', 'SIMULATED'].includes(paymentProvider)) {
+    if (paymentProvider && paymentProvider !== 'DATACAP_DIRECT') {
       return NextResponse.json(
-        { error: 'Payment provider must be DATACAP_DIRECT or SIMULATED' },
+        { error: 'Payment provider must be DATACAP_DIRECT' },
         { status: 400 }
       )
     }

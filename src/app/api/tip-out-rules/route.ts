@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
 // Valid basisType values
@@ -76,6 +78,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Require tips.manage_rules permission — modifying tip-out rules is a manager action
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const authResult = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TIPS_MANAGE_RULES)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
 
     if (fromRoleId === toRoleId) {
       return NextResponse.json(

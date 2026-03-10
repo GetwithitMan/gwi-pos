@@ -131,12 +131,6 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
   const [backupReader, setBackupReader] = useState<PaymentReader | null>(null)
   const [isReaderOnline, setIsReaderOnline] = useState(false)
   const [readerFailoverTimeout, setReaderFailoverTimeout] = useState(10000)
-  const [isSimulated, setIsSimulated] = useState(false)
-
-  // Ref to prevent race condition: getReaderUrl reads this immediately,
-  // even before React re-renders with the new isSimulated state
-  const isSimulatedRef = useRef(false)
-
   // Processing state
   const [processingStatus, setProcessingStatus] = useState<DatacapProcessingStatus>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -170,22 +164,10 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         return
       }
 
-      // Track whether this is a simulated reader (update both state and ref)
-      // Simulated if paymentProvider is SIMULATED *or* the bound reader's communicationMode is 'simulated'
-      const simulated = terminal.paymentProvider === 'SIMULATED' ||
-        terminal.paymentReader?.communicationMode === 'simulated'
-      setIsSimulated(simulated)
-      isSimulatedRef.current = simulated
-
       if (terminal.paymentReader) {
         setReader(terminal.paymentReader)
         readerRef.current = terminal.paymentReader
-        // Simulated readers are always online
-        if (simulated) {
-          setIsReaderOnline(true)
-        } else {
-          setIsReaderOnline(terminal.paymentReader.isOnline || false)
-        }
+        setIsReaderOnline(terminal.paymentReader.isOnline || false)
       } else {
         setReader(null)
         readerRef.current = null
@@ -221,9 +203,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
       // Fire-and-forget cancel to the reader so it doesn't hang waiting for a card
       // that nobody will present (e.g., user navigated away mid-transaction)
       let cancelUrl: string | null = null
-      if (isSimulatedRef.current || readerRef.current?.communicationMode === 'simulated') {
-        cancelUrl = '/api/simulated-reader/cancel'
-      } else if (readerRef.current) {
+      if (readerRef.current) {
         if (readerRef.current.communicationMode === 'cloud') {
           cancelUrl = `/api/hardware/payment-readers/${readerRef.current.id}/cloud/cancel`
         } else {
@@ -318,20 +298,11 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
 
   /**
    * Build URL for reader communication.
-   * - Simulated: routes to local /api/simulated-reader/* API
    * - Cloud (USB VP3350 etc.): routes to server-side proxy /api/hardware/payment-readers/[id]/cloud/*
    * - Local IP: routes direct to reader's HTTP server
-   * Uses isSimulatedRef to avoid race condition on first mount.
    */
   const getReaderUrl = useCallback((path: string) => {
-    if (isSimulatedRef.current) {
-      return `/api/simulated-reader${path}`
-    }
     if (!reader) return ''
-    // Safety net: if reader itself is marked simulated, never send to real hardware
-    if (reader.communicationMode === 'simulated') {
-      return `/api/simulated-reader${path}`
-    }
     if (reader.communicationMode === 'cloud') {
       return `/api/hardware/payment-readers/${reader.id}/cloud${path}`
     }
@@ -422,16 +393,14 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         return null
       }
 
-      // Verify serial number matches (skip for simulated reader)
-      if (!isSimulatedRef.current) {
-        const deviceSerial = deviceInfo.serialNumber || deviceInfo.serial || deviceInfo.sn
-        if (deviceSerial && deviceSerial !== reader.serialNumber) {
-          const msg = 'Reader serial mismatch - wrong device?'
-          setProcessingStatus('error')
-          setError(msg)
-          onError?.(msg)
-          return null
-        }
+      // Verify serial number matches
+      const deviceSerial = deviceInfo.serialNumber || deviceInfo.serial || deviceInfo.sn
+      if (deviceSerial && deviceSerial !== reader.serialNumber) {
+        const msg = 'Reader serial mismatch - wrong device?'
+        setProcessingStatus('error')
+        setError(msg)
+        onError?.(msg)
+        return null
       }
 
       setIsReaderOnline(true)

@@ -225,9 +225,27 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    if (order.status !== 'open' && order.status !== 'in_progress') {
+    // Guard: cannot void/cancel a split parent with unpaid children
+    if (order.status === 'split') {
+      const unpaidChildren = await db.order.count({
+        where: {
+          parentOrderId: order.id,
+          status: { notIn: ['paid', 'closed', 'voided', 'cancelled'] },
+          deletedAt: null,
+        },
+      });
+      if (unpaidChildren > 0) {
+        return NextResponse.json(
+          { error: `Cannot void split parent with ${unpaidChildren} unpaid split children. Void or pay children first.` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const COMP_VOID_ALLOWED_STATUSES = ['open', 'in_progress', 'sent', 'draft'];
+    if (!COMP_VOID_ALLOWED_STATUSES.includes(order.status)) {
       return NextResponse.json(
-        { error: 'Cannot modify a closed order' },
+        { error: `Cannot comp/void items on order in '${order.status}' status` },
         { status: 400 }
       )
     }
@@ -460,8 +478,8 @@ export const POST = withVenue(async function POST(
         const qty = ci.quantity || 1
         const ciTotal = Number(ci.itemTotal ?? 0)
         newCommission += ci.menuItem.commissionType === 'percent'
-          ? Math.round(ciTotal * val / 100 * 100) / 100
-          : Math.round(val * qty * 100) / 100
+          ? roundToCents(ciTotal * (val / 100))
+          : roundToCents(val * qty)
       }
       await tx.order.update({ where: { id: orderId }, data: { commissionTotal: newCommission } })
       // Zero the voided/comped item's own commission

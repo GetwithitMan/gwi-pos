@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CFDIdleScreen from '@/components/cfd/CFDIdleScreen'
 import CFDOrderDisplay from '@/components/cfd/CFDOrderDisplay'
+import CFDOrderDetailScreen from '@/components/cfd/CFDOrderDetailScreen'
 import CFDTipScreen from '@/components/cfd/CFDTipScreen'
 import CFDSignatureScreen from '@/components/cfd/CFDSignatureScreen'
 import CFDApprovedScreen from '@/components/cfd/CFDApprovedScreen'
@@ -11,6 +12,7 @@ import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type {
   CFDScreenState,
   CFDShowOrderEvent,
+  CFDShowOrderDetailEvent,
   CFDTipPromptEvent,
   CFDSignatureRequestEvent,
   CFDApprovedEvent,
@@ -33,6 +35,7 @@ function CFDContent() {
 
   const [screenState, setScreenState] = useState<CFDScreenState>('idle')
   const [orderData, setOrderData] = useState<CFDShowOrderEvent | null>(null)
+  const [orderDetailData, setOrderDetailData] = useState<CFDShowOrderDetailEvent | null>(null)
   const [tipData, setTipData] = useState<CFDTipPromptEvent | null>(null)
   const [signatureData, setSignatureData] = useState<CFDSignatureRequestEvent | null>(null)
   const [approvedData, setApprovedData] = useState<CFDApprovedEvent | null>(null)
@@ -73,6 +76,10 @@ function CFDContent() {
       setOrderData(data)
       setScreenState('order')
     }
+    const onShowOrderDetail = (data: CFDShowOrderDetailEvent) => {
+      setOrderDetailData(data)
+      setScreenState('order-detail')
+    }
     const onPaymentStarted = () => setScreenState('payment')
     const onTipPrompt = (data: CFDTipPromptEvent) => {
       setTipData(data)
@@ -95,6 +102,7 @@ function CFDContent() {
     const onReceiptSent = () => setScreenState('receipt')
 
     socket.on(CFD_EVENTS.SHOW_ORDER, onShowOrder)
+    socket.on(CFD_EVENTS.SHOW_ORDER_DETAIL, onShowOrderDetail)
     socket.on(CFD_EVENTS.PAYMENT_STARTED, onPaymentStarted)
     socket.on(CFD_EVENTS.TIP_PROMPT, onTipPrompt)
     socket.on(CFD_EVENTS.SIGNATURE_REQUEST, onSignatureRequest)
@@ -112,6 +120,7 @@ function CFDContent() {
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
       socket.off(CFD_EVENTS.SHOW_ORDER, onShowOrder)
+      socket.off(CFD_EVENTS.SHOW_ORDER_DETAIL, onShowOrderDetail)
       socket.off(CFD_EVENTS.PAYMENT_STARTED, onPaymentStarted)
       socket.off(CFD_EVENTS.TIP_PROMPT, onTipPrompt)
       socket.off(CFD_EVENTS.SIGNATURE_REQUEST, onSignatureRequest)
@@ -178,6 +187,9 @@ function CFDContent() {
 
       case 'order':
         return <CFDOrderDisplay data={orderData} />
+
+      case 'order-detail':
+        return <CFDOrderDetailScreen data={orderDetailData} />
 
       case 'payment':
       case 'processing':

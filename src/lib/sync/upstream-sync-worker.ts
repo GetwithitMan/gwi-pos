@@ -11,6 +11,7 @@
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
 import { getUpstreamModels, getBidirectionalModelNames, UPSTREAM_INTERVAL_MS } from './sync-config'
+import { dispatchOutageStatus } from '../socket-dispatch'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,8 @@ const columnCache = new Map<string, string[]>()
 const columnTypeMap = new Map<string, Map<string, string>>()
 
 let timer: ReturnType<typeof setInterval> | null = null
+/** Guard against overlapping sync cycles */
+let cycleRunning = false
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -178,25 +181,77 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
 
   const sql = `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}`
 
+  const CHUNK_SIZE = 100
   let synced = 0
-  for (const row of rows) {
+
+  for (let offset = 0; offset < rows.length; offset += CHUNK_SIZE) {
+    const chunk = rows.slice(offset, offset + CHUNK_SIZE)
+
     try {
-      const values = upsertCols.map((col) => serializeValue(row[col]))
-      await neonClient!.$executeRawUnsafe(sql, ...values)
+      await neonClient!.$transaction(async (neonTx) => {
+        for (const row of chunk) {
+          const values = upsertCols.map((col) => serializeValue(row[col]))
+          await neonTx.$executeRawUnsafe(sql, ...values)
+        }
+      })
 
-      // Stamp syncedAt locally
-      await masterClient.$executeRawUnsafe(
-        `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
-        row.id as string
-      )
-
-      synced++
+      // Neon transaction committed — stamp syncedAt locally for the whole chunk.
+      // Each stamp is individually try/caught: if one fails, the rest still get
+      // stamped. A missed stamp just means the row is re-sent next cycle
+      // (idempotent via ON CONFLICT).
+      for (const row of chunk) {
+        try {
+          await masterClient.$executeRawUnsafe(
+            `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
+            row.id as string
+          )
+          synced++
+        } catch (stampErr) {
+          console.error(
+            `[UpstreamSync] ${tableName} row ${row.id}: syncedAt stamp failed (will retry next cycle):`,
+            stampErr instanceof Error ? stampErr.message : stampErr
+          )
+          metrics.errorCount++
+        }
+      }
     } catch (err) {
-      console.error(
-        `[UpstreamSync] ${tableName} row ${row.id}:`,
-        err instanceof Error ? err.message : err
-      )
-      metrics.errorCount++
+      const errMsg = err instanceof Error ? err.message : String(err)
+
+      // Transaction failed — fall back to individual row sync for this chunk
+      // so a single bad row doesn't block the rest
+      for (const row of chunk) {
+        try {
+          const values = upsertCols.map((col) => serializeValue(row[col]))
+          await neonClient!.$executeRawUnsafe(sql, ...values)
+
+          await masterClient.$executeRawUnsafe(
+            `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
+            row.id as string
+          )
+          synced++
+        } catch (rowErr) {
+          const rowErrMsg = rowErr instanceof Error ? rowErr.message : String(rowErr)
+
+          if (rowErrMsg.includes('unique constraint') || rowErrMsg.includes('duplicate key') || rowErrMsg.includes('Unique constraint')) {
+            console.warn(
+              `[UpstreamSync] ${tableName} row ${row.id}: unique constraint violation on Neon — marking synced to prevent retry loop`
+            )
+            try {
+              await masterClient.$executeRawUnsafe(
+                `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
+                row.id as string
+              )
+            } catch {
+              // Best effort
+            }
+          } else {
+            console.error(
+              `[UpstreamSync] ${tableName} row ${row.id}:`, rowErrMsg
+            )
+          }
+          metrics.errorCount++
+        }
+      }
     }
   }
 
@@ -205,6 +260,8 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
 
 async function runSyncCycle(): Promise<void> {
   if (!hasNeonConnection()) return
+  if (cycleRunning) return // Prevent overlapping cycles
+  cycleRunning = true
 
   try {
     // Quick connectivity check — if Neon is unreachable, bail early
@@ -216,6 +273,8 @@ async function runSyncCycle(): Promise<void> {
       if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
         isInOutage = true
         console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)
+        const locId = process.env.LOCATION_ID
+        if (locId) void dispatchOutageStatus(locId, true).catch(console.error)
       }
       return
     }
@@ -224,6 +283,8 @@ async function runSyncCycle(): Promise<void> {
     if (isInOutage) {
       console.log(`[UpstreamSync] Connectivity restored after ${consecutiveFailures} failures — exiting outage mode`)
       isInOutage = false
+      const locId = process.env.LOCATION_ID
+      if (locId) void dispatchOutageStatus(locId, false).catch(console.error)
     }
     consecutiveFailures = 0
 
@@ -280,7 +341,11 @@ async function runSyncCycle(): Promise<void> {
     if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
       isInOutage = true
       console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)
+      const locId = process.env.LOCATION_ID
+      if (locId) void dispatchOutageStatus(locId, true).catch(console.error)
     }
+  } finally {
+    cycleRunning = false
   }
 }
 

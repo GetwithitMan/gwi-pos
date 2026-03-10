@@ -8,6 +8,10 @@
  *   - An order at 4:30 AM on Feb 11 belongs to business day Feb 11
  */
 
+if (Intl.DateTimeFormat().resolvedOptions().timeZone === 'UTC') {
+  console.warn('[BUSINESS-DAY] WARNING: System timezone is UTC. Business day calculations may be incorrect. Set TZ environment variable to the location timezone.')
+}
+
 /**
  * Parse a time string "HH:MM" into hours and minutes.
  */
@@ -48,7 +52,7 @@ export function getBusinessDayRange(
  *
  * If it's 2:00 AM and dayStartTime is "04:00", the business day is "yesterday".
  */
-export function getCurrentBusinessDay(dayStartTime: string): {
+export function getCurrentBusinessDay(dayStartTime: string, timezone?: string): {
   date: string
   start: Date
   end: Date
@@ -56,18 +60,40 @@ export function getCurrentBusinessDay(dayStartTime: string): {
   const now = new Date()
   const { hours, minutes } = parseTimeString(dayStartTime)
 
+  // Use timezone-aware local time if a timezone is provided (or via TZ env var)
+  const tz = timezone || process.env.TIMEZONE || process.env.TZ
+  let currentHours: number
+  let currentMins: number
+  let localDateStr: string
+
+  if (tz) {
+    const localStr = now.toLocaleString('en-US', { timeZone: tz })
+    const localDate = new Date(localStr)
+    currentHours = localDate.getHours()
+    currentMins = localDate.getMinutes()
+    // Format as YYYY-MM-DD from the timezone-aware date
+    const y = localDate.getFullYear()
+    const m = String(localDate.getMonth() + 1).padStart(2, '0')
+    const d = String(localDate.getDate()).padStart(2, '0')
+    localDateStr = `${y}-${m}-${d}`
+  } else {
+    currentHours = now.getHours()
+    currentMins = now.getMinutes()
+    localDateStr = now.toISOString().split('T')[0]
+  }
+
   // Determine the business date:
   // If current time is BEFORE dayStartTime, it belongs to the previous calendar date's business day
-  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const currentMinutes = currentHours * 60 + currentMins
   const startMinutes = hours * 60 + minutes
 
-  const businessDate = new Date(now)
+  const businessDate = new Date(localDateStr + 'T12:00:00')
   if (currentMinutes < startMinutes) {
     // Before start time -> belongs to previous day's business day
     businessDate.setDate(businessDate.getDate() - 1)
   }
 
-  const dateStr = businessDate.toISOString().split('T')[0]
+  const dateStr = `${businessDate.getFullYear()}-${String(businessDate.getMonth() + 1).padStart(2, '0')}-${String(businessDate.getDate()).padStart(2, '0')}`
   const range = getBusinessDayRange(dateStr, dayStartTime)
 
   return { date: dateStr, ...range }
@@ -83,14 +109,42 @@ export function getBusinessDateForTimestamp(
 ): string {
   const { hours, minutes } = parseTimeString(dayStartTime)
   const startMinutes = hours * 60 + minutes
-  const tsMinutes = timestamp.getHours() * 60 + timestamp.getMinutes()
 
-  const businessDate = new Date(timestamp)
-  if (tsMinutes < startMinutes) {
+  // Use timezone-aware date extraction
+  const tz = process.env.TIMEZONE || process.env.TZ
+  let tsHours: number
+  let tsMinutes: number
+  let localDateStr: string
+
+  if (tz) {
+    const localStr = timestamp.toLocaleString('en-US', { timeZone: tz })
+    const localDate = new Date(localStr)
+    tsHours = localDate.getHours()
+    tsMinutes = localDate.getMinutes()
+    const y = localDate.getFullYear()
+    const m = String(localDate.getMonth() + 1).padStart(2, '0')
+    const d = String(localDate.getDate()).padStart(2, '0')
+    localDateStr = `${y}-${m}-${d}`
+  } else {
+    tsHours = timestamp.getHours()
+    tsMinutes = timestamp.getMinutes()
+    // Fallback: extract local date components
+    const year = timestamp.getFullYear()
+    const month = String(timestamp.getMonth() + 1).padStart(2, '0')
+    const day = String(timestamp.getDate()).padStart(2, '0')
+    localDateStr = `${year}-${month}-${day}`
+  }
+
+  const tsMinutesTotal = tsHours * 60 + tsMinutes
+  const businessDate = new Date(localDateStr + 'T12:00:00')
+  if (tsMinutesTotal < startMinutes) {
     businessDate.setDate(businessDate.getDate() - 1)
   }
 
-  return businessDate.toISOString().split('T')[0]
+  const year = businessDate.getFullYear()
+  const month = String(businessDate.getMonth() + 1).padStart(2, '0')
+  const day = String(businessDate.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 /**

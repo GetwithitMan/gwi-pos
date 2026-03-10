@@ -206,11 +206,6 @@ export function buildRequest(fields: DatacapRequestFields): string {
     parts.push(tag('CustomerCode', truncated))
   }
 
-  // Simulator scenario tag — dev/staging only, never emitted in production
-  if (fields.simScenario && process.env.NODE_ENV !== 'production') {
-    parts.push(`<SimScenario>${fields.simScenario}</SimScenario>`)
-  }
-
   // Filter out empty strings
   const content = parts.filter(Boolean).join('')
 

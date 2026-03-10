@@ -97,7 +97,7 @@ export const PUT = withVenue(async function PUT(
     if (ipAddress && isNetworkType) {
       const resolvedMode = communicationMode || existing.communicationMode
       const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
-      if (resolvedMode !== 'simulated' && !ipv4Regex.test(ipAddress)) {
+      if (!ipv4Regex.test(ipAddress)) {
         return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
       }
     }
@@ -161,7 +161,7 @@ export const PUT = withVenue(async function PUT(
       // Remove this reader from all terminals that currently have it
       await db.terminal.updateMany({
         where: { paymentReaderId: id, locationId: existing.locationId },
-        data: { paymentReaderId: null, paymentProvider: 'SIMULATED' },
+        data: { paymentReaderId: null },
       })
       // Assign to the new list
       if (assignTerminalIds.length > 0) {

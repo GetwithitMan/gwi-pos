@@ -201,6 +201,11 @@ export const POST = withVenue(async function POST(
       return apiError.badRequest('No items provided', ERROR_CODES.ORDER_EMPTY)
     }
 
+    // Cap items per request to prevent abuse (500 items is already generous)
+    if (items.length > 500) {
+      return apiError.badRequest('Too many items in a single request (max 500)', ERROR_CODES.VALIDATION_ERROR)
+    }
+
     // Auth checks — fetch order metadata once for all permission guards
     if (requestingEmployeeId) {
       const orderMeta = await db.order.findUnique({
@@ -268,7 +273,13 @@ export const POST = withVenue(async function POST(
           ERROR_CODES.VALIDATION_ERROR
         )
       }
-      // Validate weight-based items: weight and unitPrice must be > 0
+      if (item.quantity > 999) {
+        return apiError.badRequest(
+          `Quantity ${item.quantity} exceeds maximum (999) for item "${item.name || item.menuItemId}"`,
+          ERROR_CODES.VALIDATION_ERROR
+        )
+      }
+      // Validate weight-based items: weight and unitPrice must be > 0, weight <= 999
       if (item.soldByWeight) {
         if (!item.weight || item.weight <= 0) {
           return apiError.badRequest(
@@ -276,9 +287,57 @@ export const POST = withVenue(async function POST(
             ERROR_CODES.VALIDATION_ERROR
           )
         }
+        if (item.weight > 999) {
+          return apiError.badRequest(
+            `Weight ${item.weight} exceeds maximum allowed (999) for item "${item.name || item.menuItemId}"`,
+            ERROR_CODES.VALIDATION_ERROR
+          )
+        }
         if (!item.unitPrice || item.unitPrice <= 0) {
           return apiError.badRequest(
             `Unit price is required for sold-by-weight item "${item.name || item.menuItemId}"`,
+            ERROR_CODES.VALIDATION_ERROR
+          )
+        }
+      }
+
+      // Fix 1: Cap modifier count to prevent abuse
+      if (item.modifiers && item.modifiers.length > 100) {
+        return apiError.badRequest(
+          `Too many modifiers (${item.modifiers.length}) for item "${item.name || item.menuItemId}": max 100`,
+          ERROR_CODES.VALIDATION_ERROR
+        )
+      }
+
+      // Fix 2: Validate ingredient price adjustments are within bounds
+      for (const ing of item.ingredientModifications || []) {
+        const adj = Number(ing.priceAdjustment ?? 0)
+        if (adj < -50 || adj > 50) {
+          return apiError.badRequest(
+            `Ingredient price adjustment $${adj} is outside allowed range (-$50 to $50) for item "${item.name || item.menuItemId}"`,
+            ERROR_CODES.VALIDATION_ERROR
+          )
+        }
+      }
+
+      // Fix 3: Pizza price sanity checks
+      if (item.pizzaConfig) {
+        const breakdown = item.pizzaConfig.priceBreakdown || {} as any
+        const componentSum = Number(breakdown.sizePrice ?? 0) + Number(breakdown.crustPrice ?? 0) +
+          Number(breakdown.saucePrice ?? 0) + Number(breakdown.cheesePrice ?? 0) + Number(breakdown.toppingsPrice ?? 0)
+
+        // Sanity check: total must match components
+        if (Math.abs(componentSum - Number(item.pizzaConfig.totalPrice ?? 0)) > 0.01) {
+          return apiError.badRequest(
+            `Pizza price breakdown does not match total for item "${item.name || item.menuItemId}"`,
+            ERROR_CODES.VALIDATION_ERROR
+          )
+        }
+
+        // Cap total at reasonable max
+        if (Number(item.pizzaConfig.totalPrice) > 500) {
+          return apiError.badRequest(
+            `Pizza price exceeds maximum ($500) for item "${item.name || item.menuItemId}"`,
             ERROR_CODES.VALIDATION_ERROR
           )
         }
@@ -434,6 +493,27 @@ export const POST = withVenue(async function POST(
             }
             if (comp.menuItem && !comp.menuItem.isActive) {
               throw new Error(`COMBO_COMPONENT_INACTIVE:${comp.menuItem.name}`)
+            }
+          }
+        }
+      }
+
+      // Fix 1: Server-side modifier price validation — override client prices with DB prices
+      const allModifierIds = items
+        .flatMap(item => (item.modifiers || []).map(m => m.modifierId))
+        .filter(id => id && isValidModifierId(id))
+      if (allModifierIds.length > 0) {
+        const dbModifiers = await tx.modifier.findMany({
+          where: { id: { in: allModifierIds } },
+          select: { id: true, price: true, name: true },
+        })
+        const modifierPriceMap = new Map(dbModifiers.map(m => [m.id, Number(m.price ?? 0)]))
+
+        // Override client-supplied prices with server-authoritative prices
+        for (const item of items) {
+          for (const mod of item.modifiers || []) {
+            if (mod.modifierId && isValidModifierId(mod.modifierId) && modifierPriceMap.has(mod.modifierId)) {
+              mod.price = modifierPriceMap.get(mod.modifierId)!
             }
           }
         }

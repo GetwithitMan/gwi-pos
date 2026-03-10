@@ -56,9 +56,9 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    if (targetOrder.status === 'paid' || targetOrder.status === 'closed' || targetOrder.status === 'voided') {
+    if (['paid', 'closed', 'voided', 'cancelled', 'split'].includes(targetOrder.status)) {
       return NextResponse.json(
-        { error: 'Cannot merge into a paid/closed/voided order' },
+        { error: `Cannot merge into a ${targetOrder.status} order` },
         { status: 400 }
       )
     }
@@ -81,9 +81,9 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    if (sourceOrder.status === 'paid' || sourceOrder.status === 'closed' || sourceOrder.status === 'voided') {
+    if (['paid', 'closed', 'voided', 'cancelled', 'split'].includes(sourceOrder.status)) {
       return NextResponse.json(
-        { error: 'Cannot merge from a paid/closed/voided order' },
+        { error: `Cannot merge from a ${sourceOrder.status} order` },
         { status: 400 }
       )
     }
@@ -96,8 +96,33 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Block merging split children from different parent orders
+    if (sourceOrder.parentOrderId && targetOrder.parentOrderId && sourceOrder.parentOrderId !== targetOrder.parentOrderId) {
+      return NextResponse.json(
+        { error: 'Cannot merge split children from different parent orders' },
+        { status: 400 }
+      )
+    }
+
     // Move items, recalculate totals, void source, and audit log atomically
     const { movedItems, movedDiscounts } = await db.$transaction(async (tx) => {
+      // Acquire row-level locks in consistent order (alphabetical by ID) to prevent deadlocks
+      const [firstId, secondId] = [sourceOrderId, targetOrderId].sort()
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', firstId)
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', secondId)
+
+      // Re-check both orders are still in valid states after acquiring locks
+      const [lockedTarget, lockedSource] = await Promise.all([
+        tx.order.findUnique({ where: { id: targetOrderId }, select: { status: true } }),
+        tx.order.findUnique({ where: { id: sourceOrderId }, select: { status: true } }),
+      ])
+      if (!lockedTarget || ['paid', 'closed', 'voided', 'cancelled', 'split'].includes(lockedTarget.status)) {
+        throw new Error('TARGET_ORDER_INVALID')
+      }
+      if (!lockedSource || ['paid', 'closed', 'voided', 'cancelled', 'split'].includes(lockedSource.status)) {
+        throw new Error('SOURCE_ORDER_INVALID')
+      }
+
       // Move all active (non-soft-deleted) items from source to target
       const moved = await tx.orderItem.updateMany({
         where: { orderId: sourceOrderId, deletedAt: null },
@@ -274,6 +299,20 @@ export const POST = withVenue(async function POST(
       discountsMoved: movedDiscounts.count,
     } })
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === 'TARGET_ORDER_INVALID') {
+        return NextResponse.json(
+          { error: 'Target order can no longer be merged — it may have been paid or closed' },
+          { status: 409 }
+        )
+      }
+      if (error.message === 'SOURCE_ORDER_INVALID') {
+        return NextResponse.json(
+          { error: 'Source order can no longer be merged — it may have been paid or closed' },
+          { status: 409 }
+        )
+      }
+    }
     console.error('Failed to merge orders:', error)
     return NextResponse.json(
       { error: 'Failed to merge orders' },

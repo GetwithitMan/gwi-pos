@@ -75,6 +75,10 @@ export interface MenuItem {
   // Pricing option groups (size/variant pricing)
   pricingOptionGroups?: PricingOptionGroup[]
   hasPricingOptions?: boolean
+  // Allergen tracking
+  allergens?: string[]
+  // Age verification
+  isAgeRestricted?: boolean
 }
 
 /**
@@ -569,9 +573,8 @@ export interface PizzaOrderConfig {
   }
 }
 
-// Re-export payment types (legacy SimulatedCardReader types removed)
+// Re-export payment types
 export type {
-  SimulatedPaymentResult,
   CardReadMethod,
   CardReaderState,
 } from './payment'

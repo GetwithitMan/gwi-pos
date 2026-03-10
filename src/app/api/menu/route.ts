@@ -130,8 +130,17 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     timing.end('db', 'Queries')
 
     timing.start('map')
+
+    // Filter out items outside their seasonal date range
+    const now = new Date()
+    const seasonallyAvailable = items.filter(item => {
+      if (item.availableFromDate && now < item.availableFromDate) return false
+      if (item.availableUntilDate && now > item.availableUntilDate) return false
+      return true
+    })
+
     // Calculate pour cost for items with recipes and check 86 status
-    const itemsWithPourCost = items.map(item => {
+    const itemsWithPourCost = seasonallyAvailable.map(item => {
       let totalPourCost = 0
       let hasRecipe = false
 
@@ -228,6 +237,9 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         availableFrom: item.availableFrom,
         availableTo: item.availableTo,
         availableDays: item.availableDays,
+        // Seasonal date-based availability
+        availableFromDate: item.availableFromDate?.toISOString() ?? null,
+        availableUntilDate: item.availableUntilDate?.toISOString() ?? null,
         // Entertainment status for timed_rental items
         entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
         currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,

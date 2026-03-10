@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET - List inventory counts
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -69,6 +71,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         error: 'Location ID, started by, and count type required',
       }, { status: 400 })
     }
+
+    // Auth check — require inventory.counts permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? startedById
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_COUNTS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Only allow one in_progress count at a time
     const activeCount = await db.inventoryCount.findFirst({

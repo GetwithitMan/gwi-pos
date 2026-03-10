@@ -41,7 +41,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ]
     }
 
-    // Get customers with their order data
+    // Get customers with their order data (capped at 1000 to prevent memory exhaustion)
     const customers = await db.customer.findMany({
       where: {
         locationId,
@@ -50,6 +50,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         totalOrders: { gte: minOrders },
         totalSpent: { gte: minSpent },
       },
+      take: 1000,
       include: {
         orders: {
           where: {

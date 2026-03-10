@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 
 // PUT - Update modifiers on an existing order item
 export const PUT = withVenue(async function PUT(
@@ -85,6 +86,31 @@ export const PUT = withVenue(async function PUT(
       lineItemId: itemId,
       modifiersJson: JSON.stringify(modifiers || []),
     }).catch(console.error)
+
+    // Fire-and-forget socket dispatches so other terminals see updated modifiers/totals
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'item_updated',
+      orderId,
+    }).catch(console.error)
+
+    // Re-fetch order with totals for Android cross-terminal summary
+    void (async () => {
+      try {
+        const freshOrder = await db.order.findUnique({
+          where: { id: orderId },
+          include: { table: { select: { name: true } }, _count: { select: { items: true } } },
+        })
+        if (freshOrder) {
+          const summary = buildOrderSummary({
+            ...freshOrder,
+            itemCount: freshOrder._count.items,
+          })
+          await dispatchOrderSummaryUpdated(order.locationId, summary)
+        }
+      } catch (err) {
+        console.error('[modifiers/route] Failed to dispatch order summary:', err)
+      }
+    })()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

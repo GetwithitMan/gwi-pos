@@ -124,6 +124,12 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       },
     })
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'A modifier with this name already exists in this group' },
+        { status: 409 }
+      )
+    }
     console.error('Error creating modifier:', error)
     return NextResponse.json({ error: 'Failed to create modifier' }, { status: 500 })
   }

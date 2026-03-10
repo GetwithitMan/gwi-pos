@@ -93,6 +93,9 @@ export const GET = withVenue(async function GET(
         availableFrom: item.availableFrom,
         availableTo: item.availableTo,
         availableDays: item.availableDays,
+        // Seasonal date-based availability
+        availableFromDate: item.availableFromDate?.toISOString() ?? null,
+        availableUntilDate: item.availableUntilDate?.toISOString() ?? null,
         // Happy Hour
         happyHourEnabled: item.happyHourEnabled,
         happyHourDiscount: item.happyHourDiscount,
@@ -110,6 +113,10 @@ export const GET = withVenue(async function GET(
         soldByWeight: item.soldByWeight,
         weightUnit: item.weightUnit,
         pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
+        // Allergen tracking
+        allergens: item.allergens || [],
+        // Age verification
+        isAgeRestricted: item.isAgeRestricted ?? false,
         // Pricing option groups (size/variant pricing)
         pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
           id: group.id,
@@ -180,6 +187,9 @@ export const PUT = withVenue(async function PUT(
       availableFrom,
       availableTo,
       availableDays,
+      // Seasonal date-based availability
+      availableFromDate,
+      availableUntilDate,
       // Happy Hour
       happyHourEnabled,
       happyHourDiscount,
@@ -202,6 +212,10 @@ export const PUT = withVenue(async function PUT(
       soldByWeight,
       weightUnit,
       pricePerWeightUnit,
+      // Allergen tracking
+      allergens,
+      // Age verification
+      isAgeRestricted,
     } = body
 
     // Get old item to detect stock changes (fetch availability fields for computeIsOrderableOnline)
@@ -255,6 +269,9 @@ export const PUT = withVenue(async function PUT(
         ...(availableFrom !== undefined && { availableFrom: availableFrom || null }),
         ...(availableTo !== undefined && { availableTo: availableTo || null }),
         ...(availableDays !== undefined && { availableDays: availableDays || null }),
+        // Seasonal date-based availability
+        ...(availableFromDate !== undefined && { availableFromDate: availableFromDate ? new Date(availableFromDate) : null }),
+        ...(availableUntilDate !== undefined && { availableUntilDate: availableUntilDate ? new Date(availableUntilDate) : null }),
         // Happy Hour
         ...(happyHourEnabled !== undefined && { happyHourEnabled }),
         ...(happyHourDiscount !== undefined && { happyHourDiscount: happyHourDiscount ?? null }),
@@ -281,6 +298,10 @@ export const PUT = withVenue(async function PUT(
         ...(soldByWeight !== undefined && { soldByWeight }),
         ...(weightUnit !== undefined && { weightUnit: weightUnit || null }),
         ...(pricePerWeightUnit !== undefined && { pricePerWeightUnit: pricePerWeightUnit !== null ? new Prisma.Decimal(pricePerWeightUnit) : null }),
+        // Allergen tracking
+        ...(allergens !== undefined && { allergens: Array.isArray(allergens) ? allergens : [] }),
+        // Age verification
+        ...(isAgeRestricted !== undefined && { isAgeRestricted }),
       }
     })
 

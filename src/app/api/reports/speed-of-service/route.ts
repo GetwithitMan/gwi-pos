@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
 
 interface TimingMetrics {
   avgOrderToSend: number | null
@@ -299,6 +300,57 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
       .sort((a, b) => a.date.localeCompare(b.date))
 
+    // Load speed-of-service goal settings
+    const location = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const settings = parseSettings(location?.settings)
+    const sos = settings.speedOfService ?? DEFAULT_SPEED_OF_SERVICE
+    const goalSeconds = sos.goalMinutes * 60
+
+    // Compute goal attainment: % of bumped items completed within goalMinutes
+    const itemsMetGoal = allBumpSeconds.filter(s => s <= goalSeconds).length
+    const goalAttainmentPercent = allBumpSeconds.length > 0
+      ? Math.round((itemsMetGoal / allBumpSeconds.length) * 1000) / 10
+      : null
+
+    // Per-station goal attainment
+    const bumpByStationWithGoal = bumpByStation.map(s => {
+      const stationSeconds = bumpByStationMap.get(s.stationId) || []
+      const met = stationSeconds.filter(sec => sec <= goalSeconds).length
+      return {
+        ...s,
+        goalAttainmentPercent: stationSeconds.length > 0
+          ? Math.round((met / stationSeconds.length) * 1000) / 10
+          : null,
+      }
+    })
+
+    // Per-hour goal attainment
+    const bumpByHourWithGoal = bumpByHour.map(h => {
+      const hourSeconds = bumpByHourMap.get(h.hour) || []
+      const met = hourSeconds.filter(sec => sec <= goalSeconds).length
+      return {
+        ...h,
+        goalAttainmentPercent: hourSeconds.length > 0
+          ? Math.round((met / hourSeconds.length) * 1000) / 10
+          : null,
+      }
+    })
+
+    // Per-day goal attainment
+    const bumpByDayWithGoal = bumpByDay.map(d => {
+      const daySeconds = bumpByDayMap.get(d.date) || []
+      const met = daySeconds.filter(sec => sec <= goalSeconds).length
+      return {
+        ...d,
+        goalAttainmentPercent: daySeconds.length > 0
+          ? Math.round((met / daySeconds.length) * 1000) / 10
+          : null,
+      }
+    })
+
     return NextResponse.json({
       data: {
         overall,
@@ -308,9 +360,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         // KDS bump speed-of-service
         bump: {
           overall: bumpOverall,
-          byStation: bumpByStation,
-          byHour: bumpByHour,
-          byDay: bumpByDay,
+          byStation: bumpByStationWithGoal,
+          byHour: bumpByHourWithGoal,
+          byDay: bumpByDayWithGoal,
+          // Goal settings and attainment
+          goalMinutes: sos.goalMinutes,
+          warningMinutes: sos.warningMinutes,
+          goalAttainmentPercent,
         },
       },
     })

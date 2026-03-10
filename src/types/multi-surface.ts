@@ -19,6 +19,22 @@ export interface CFDShowOrderEvent {
   discountTotal?: number
 }
 
+/** POS → CFD: Show order confirmation with full item detail before payment */
+export interface CFDShowOrderDetailEvent {
+  orderId: string
+  orderNumber: number
+  items: Array<{
+    name: string
+    quantity: number
+    price: number
+    modifiers?: string[]
+  }>
+  subtotal: number
+  tax: number
+  total: number
+  discountTotal?: number
+}
+
 /** POS → CFD: Payment initiated, show payment screen */
 export interface CFDPaymentStartedEvent {
   amount: number
@@ -81,6 +97,7 @@ export interface CFDReceiptChoiceEvent {
 export const CFD_EVENTS = {
   // POS → CFD
   SHOW_ORDER: 'cfd:show-order',
+  SHOW_ORDER_DETAIL: 'cfd:show-order-detail',
   PAYMENT_STARTED: 'cfd:payment-started',
   TIP_PROMPT: 'cfd:tip-prompt',
   SIGNATURE_REQUEST: 'cfd:signature-request',
@@ -96,7 +113,7 @@ export const CFD_EVENTS = {
 } as const
 
 // CFD screen states
-export type CFDScreenState = 'idle' | 'order' | 'payment' | 'tip' | 'signature' | 'processing' | 'approved' | 'declined' | 'receipt'
+export type CFDScreenState = 'idle' | 'order' | 'order-detail' | 'payment' | 'tip' | 'signature' | 'processing' | 'approved' | 'declined' | 'receipt'
 
 // ============================================
 // PAY-AT-TABLE (Phase 12)

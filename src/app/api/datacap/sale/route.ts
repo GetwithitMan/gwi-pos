@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -5,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
+import { db } from '@/lib/db'
 
 interface SaleRequest {
   locationId: string
@@ -15,6 +17,8 @@ interface SaleRequest {
   tipMode?: 'suggestive' | 'prompt' | 'included' | 'none'
   tipSuggestions?: number[]
   employeeId: string
+  orderId?: string        // Optional — used for pending sale tracking (HA failover protection)
+  terminalId?: string     // Optional — terminal ID for pending sale tracking
   customerCode?: string   // Level II — PO number or customer code
   taxAmount?: number      // Level II — tax for interchange qualification
 }
@@ -36,21 +40,57 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     await validateReader(readerId, locationId)
     const client = await requireDatacapClient(locationId)
 
-    const response = await client.sale(readerId, {
-      invoiceNo,
-      amounts: {
-        purchase: amount,
-        gratuity: tipMode === 'included' ? tipAmount : undefined,
-        tax: body.taxAmount,   // Level II tax
-      },
-      tipMode: tipMode || 'none',
-      tipSuggestions,
-      requestRecordNo: true,
-      allowPartialAuth: true,
-      customerCode: body.customerCode,
-    })
+    // HA FAILOVER PROTECTION: Track pending sale BEFORE sending to Datacap.
+    // If the primary NUC dies between card-charged and response-returned,
+    // the backup can detect the orphaned pending record and prevent double-charge.
+    const pendingId = crypto.randomUUID()
+    const trackOrderId = body.orderId || invoiceNo // fallback to invoiceNo if orderId not sent
+    const trackTerminalId = body.terminalId || readerId
+
+    await db.$executeRawUnsafe(
+      `INSERT INTO "_pending_datacap_sales" (id, "orderId", "terminalId", "invoiceNo", "amount", "status", "locationId")
+       VALUES ($1, $2, $3, $4, $5, 'pending', $6)`,
+      pendingId, trackOrderId, trackTerminalId, invoiceNo, amount, locationId
+    )
+
+    let response
+    try {
+      response = await client.sale(readerId, {
+        invoiceNo,
+        amounts: {
+          purchase: amount,
+          gratuity: tipMode === 'included' ? tipAmount : undefined,
+          tax: body.taxAmount,   // Level II tax
+        },
+        tipMode: tipMode || 'none',
+        tipSuggestions,
+        requestRecordNo: true,
+        allowPartialAuth: true,
+        customerCode: body.customerCode,
+      })
+    } catch (saleError) {
+      // Sale failed (timeout, network, etc.) — mark pending record as failed
+      void db.$executeRawUnsafe(
+        `UPDATE "_pending_datacap_sales" SET "status" = 'failed', "resolvedAt" = NOW() WHERE id = $1`,
+        pendingId
+      ).catch(e => console.error('[Datacap Sale] Failed to mark pending sale as failed:', e))
+      throw saleError
+    }
 
     const error = parseError(response)
+
+    // Update pending sale record with outcome
+    if (response.cmdStatus === 'Approved') {
+      void db.$executeRawUnsafe(
+        `UPDATE "_pending_datacap_sales" SET "status" = 'completed', "datacapRecordNo" = $2, "datacapRefNumber" = $3, "resolvedAt" = NOW() WHERE id = $1`,
+        pendingId, response.recordNo || null, response.refNo || null
+      ).catch(e => console.error('[Datacap Sale] Failed to mark pending sale as completed:', e))
+    } else {
+      void db.$executeRawUnsafe(
+        `UPDATE "_pending_datacap_sales" SET "status" = 'declined', "resolvedAt" = NOW() WHERE id = $1`,
+        pendingId
+      ).catch(e => console.error('[Datacap Sale] Failed to mark pending sale as declined:', e))
+    }
 
     // Fire-and-forget: card recognition (Phase 8)
     // Use server-relative URL to avoid exposing internal endpoints via NEXT_PUBLIC_ vars

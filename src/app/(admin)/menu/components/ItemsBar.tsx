@@ -127,6 +127,9 @@ export function ItemsBar({
                   {!item.isAvailable && (
                     <span className="text-[9px] bg-red-100 text-red-700 px-1 rounded">86</span>
                   )}
+                  {(item.availableFromDate || item.availableUntilDate) && (
+                    <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded">Seasonal</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className={`text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-green-600'}`}>

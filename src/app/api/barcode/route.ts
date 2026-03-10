@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET — List barcodes for a menu item or inventory item
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -66,13 +68,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId: bodyLocationId, barcode, label, packSize, price, menuItemId, inventoryItemId } = body
+    const { locationId: bodyLocationId, barcode, label, packSize, price, menuItemId, inventoryItemId, employeeId: bodyEmployeeId } = body
 
     const locationId = bodyLocationId || await getLocationId()
 
     if (!locationId) {
       return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
     }
+
+    // Auth check — require menu.edit_items permission for barcode management
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!barcode) {
       return NextResponse.json({ error: 'Barcode is required' }, { status: 400 })

@@ -125,6 +125,7 @@ Only after Steps 1–5:
 - Fire-and-forget: `void doWork().catch(console.error)` for side effects
 - **Socket events are instant:** NEVER add debounce/setTimeout to socket event dispatch. SocketEventProvider fires immediately. Only consumers (like KDS) may debounce locally if needed. KDS debounce is 50ms max.
 - **Every mutation emits socket events:** Comp/void, discount, payment, order send MUST emit `orders:list-changed` + `order:totals-updated` + `order:summary-updated` for cross-terminal awareness.
+- **Report/admin pages use `useReportAutoRefresh`:** All live-data pages must import the hook for socket-driven auto-refresh (2s debounce, 60s fallback). Never rely on manual refresh only.
 - **Full rules:** `docs/guides/CODING-STANDARDS.md`
 
 ### Multi-Tenancy

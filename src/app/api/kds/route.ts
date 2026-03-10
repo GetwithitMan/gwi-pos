@@ -4,6 +4,8 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
+import { dispatchAlert } from '@/lib/alert-service'
 
 // Throttle entertainment expiry scan — once per 30s, not every KDS poll
 let _lastExpiryCheck = 0
@@ -119,6 +121,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 itemType: true,
                 categoryId: true,
                 prepStationId: true,
+                allergens: true,
                 category: {
                   select: {
                     id: true,
@@ -199,10 +202,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const elapsedMinutes = Math.floor(elapsedMs / (1000 * 60))
 
       // Determine status color based on elapsed time
+      // Defaults: 10min warning (aging), 20min critical (late)
+      // Client recomputes live from createdAt using per-screen config thresholds
       let timeStatus: 'fresh' | 'aging' | 'late' = 'fresh'
-      if (elapsedMinutes >= 15) {
+      if (elapsedMinutes >= 20) {
         timeStatus = 'late'
-      } else if (elapsedMinutes >= 8) {
+      } else if (elapsedMinutes >= 10) {
         timeStatus = 'aging'
       }
 
@@ -252,6 +257,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             modificationType: ing.modificationType as 'no' | 'lite' | 'on_side' | 'extra' | 'swap',
             swappedToModifierName: ing.swappedToModifierName,
           })),
+          // Allergen tracking — passed to KDS for display
+          allergens: item.menuItem.allergens || [],
         })),
       }
     }).filter(Boolean)
@@ -410,6 +417,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
       // Speed-of-service tracking: compute bump times for complete/bump_order
       // Fire-and-forget — calculate timing from kitchenSentAt → completedAt
+      // Enhanced: check against goal/warning thresholds and fire alerts
       if (action === 'complete' || action === 'bump_order') {
         void (async () => {
           try {
@@ -428,6 +436,17 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             }
             if (speedOfServiceItems.length > 0) {
               const avgSeconds = Math.round(speedOfServiceItems.reduce((s, i) => s + i.seconds, 0) / speedOfServiceItems.length)
+              const avgMinutes = avgSeconds / 60
+
+              // Load speed-of-service settings for goal/alert comparison
+              const location = await db.location.findUnique({
+                where: { id: locationId },
+                select: { settings: true },
+              })
+              const settings = parseSettings(location?.settings)
+              const sos = settings.speedOfService ?? DEFAULT_SPEED_OF_SERVICE
+              const exceededGoal = avgMinutes > sos.goalMinutes
+
               // Store speed-of-service data in audit log for reporting
               await db.auditLog.create({
                 data: {
@@ -440,10 +459,26 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
                     stationId: body.stationId,
                     bumpAction: action,
                     avgSeconds,
+                    avgMinutes: Math.round(avgMinutes * 10) / 10,
+                    goalMinutes: sos.goalMinutes,
+                    exceededGoal,
                     items: speedOfServiceItems,
                   },
                 },
               })
+
+              // Fire alert if bump time exceeds warning threshold
+              if (sos.alertEnabled && avgMinutes > sos.warningMinutes) {
+                void dispatchAlert({
+                  severity: 'LOW',
+                  errorType: 'slow_ticket',
+                  category: 'speed_of_service',
+                  message: `Order ${orderId} bumped after ${Math.round(avgMinutes)}m (warning: ${sos.warningMinutes}m)`,
+                  locationId,
+                  orderId,
+                  groupId: `sos-slow-${locationId}`,
+                }).catch(console.error)
+              }
             }
           } catch (err) {
             console.error('[KDS] Speed-of-service tracking failed:', err)

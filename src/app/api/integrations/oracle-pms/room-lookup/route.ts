@@ -5,6 +5,8 @@ import { parseSettings } from '@/lib/settings'
 import { lookupByRoom, lookupByName } from '@/lib/oracle-pms-client'
 import { createRoomChargeSelection } from '@/lib/room-charge-selections'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // ─── In-memory rate limiter: 10 lookups per employee per minute ───────────────
 
@@ -70,6 +72,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
   const location = await db.location.findFirst({ select: { id: true } })
   if (!location) return NextResponse.json({ error: 'No location' }, { status: 404 })
+
+  // Auth check — require POS access to perform guest lookups (exposes hotel guest data)
+  const actor = await getActorFromRequest(request)
+  const resolvedEmployeeId = actor.employeeId ?? employeeId
+  const auth = await requirePermission(resolvedEmployeeId, location.id, PERMISSIONS.POS_ACCESS)
+  if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   // Validate employeeId is a real employee at this location before using as rate-limit key.
   // Prevents a malicious client from cycling through fake IDs to bypass per-employee limits.

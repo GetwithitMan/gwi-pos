@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET all payment readers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -63,6 +65,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       terminalId,
       communicationMode: rawMode,
       assignTerminalIds,           // string[] — terminals to bind on creation
+      employeeId: bodyEmployeeId,
     } = body
     // merchantId intentionally NOT accepted from client — sourced from location settings (MC-managed)
 
@@ -73,6 +76,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require settings.hardware permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Connection-type rules
     const isNetworkType = connectionType === 'IP' || connectionType === 'WIFI'
@@ -86,7 +95,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'IP address is required for IP/WiFi readers' }, { status: 400 })
       }
       const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
-      if (communicationMode !== 'simulated' && !ipv4Regex.test(ipAddress)) {
+      if (!ipv4Regex.test(ipAddress)) {
         return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
       }
     }
@@ -141,7 +150,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         terminalId,
         communicationMode,
         isActive: true,
-        isOnline: communicationMode === 'simulated',
+        isOnline: false,
       },
     })
 

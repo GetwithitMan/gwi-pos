@@ -45,6 +45,8 @@ const columnTypeMap = new Map<string, Map<string, string>>()
 
 let timer: ReturnType<typeof setInterval> | null = null
 let immediateRunning = false
+/** Guard against overlapping sync cycles */
+let cycleRunning = false
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -184,7 +186,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   // schema changes on the Neon connection pooler.
   const quotedSelectCols = columns.map((c) => `"${c}"`).join(', ')
   const rows = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT ${quotedSelectCols} FROM "${tableName}" WHERE "updatedAt" > $1::timestamptz${biDirFilter} ORDER BY "updatedAt" ASC LIMIT $2`,
+    `SELECT ${quotedSelectCols} FROM "${tableName}" WHERE "updatedAt" >= $1::timestamptz${biDirFilter} ORDER BY "updatedAt" ASC LIMIT $2`,
     hwm.toISOString(),
     batchSize
   )
@@ -211,8 +213,10 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   const sql = `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}${biDirConflictGuard}`
 
   let synced = 0
-  let maxUpdatedAt = hwm
+  let maxSyncedAt = hwm   // Only tracks successfully synced rows — failed rows must NOT advance HWM
   const strategy = getConflictStrategy(tableName)
+  /** Track which locationIds have already received a socket dispatch this batch */
+  const dispatchedLocations = new Set<string>()
 
   for (const row of rows) {
     try {
@@ -224,8 +228,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
           const rowUpdatedAt = row.updatedAt instanceof Date
             ? row.updatedAt
             : new Date(row.updatedAt as string)
-          if (rowUpdatedAt > maxUpdatedAt) {
-            maxUpdatedAt = rowUpdatedAt
+          if (rowUpdatedAt > maxSyncedAt) {
+            maxSyncedAt = rowUpdatedAt
           }
           continue
         }
@@ -250,53 +254,84 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
         })
       }
 
-      // Emit socket events when Order or OrderItem rows sync to local PG
-      // so terminals know new data arrived without waiting for the next poll
-      if (tableName === 'Order' || tableName === 'OrderItem') {
-        void (async () => {
-          try {
-            const { dispatchOpenOrdersChanged } = await import('../socket-dispatch')
-            const rowLocationId = row.locationId as string
-            if (rowLocationId) {
-              await dispatchOpenOrdersChanged(rowLocationId, {
-                trigger: tableName === 'Order' ? 'created' : 'item_updated',
-                orderId: tableName === 'Order' ? (row.id as string) : (row.orderId as string),
-              })
-            }
-          } catch {
-            // Socket dispatch is best-effort — don't fail sync
-          }
-        })().catch(console.error)
+      // Inventory deduction hook — when a cloud-originated Order arrives
+      // with status 'paid' or 'closed', create a PendingDeduction so inventory
+      // gets decremented. Without this, cellular orders paid on the cloud never
+      // trigger inventory deduction on the NUC.
+      if (tableName === 'Order' && row.lastMutatedBy === 'cloud' && (row.status === 'paid' || row.status === 'closed')) {
+        void handleCloudDeduction(row).catch((err) => {
+          console.error('[DownstreamSync] Cloud deduction creation failed:', err)
+        })
       }
 
-      // Track max updatedAt for high-water mark
-      const rowUpdatedAt = row.updatedAt instanceof Date
-        ? row.updatedAt
-        : new Date(row.updatedAt as string)
-      if (rowUpdatedAt > maxUpdatedAt) {
-        maxUpdatedAt = rowUpdatedAt
+      // Table status hook — when a cloud-originated Order arrives with a tableId,
+      // update the Table status to 'occupied' and emit floor plan updates so
+      // LAN terminals see correct table state.
+      if (tableName === 'Order' && row.lastMutatedBy === 'cloud' && row.tableId && row.status !== 'paid' && row.status !== 'closed' && row.status !== 'cancelled') {
+        void handleCloudTableStatus(row).catch((err) => {
+          console.error('[DownstreamSync] Cloud table status update failed:', err)
+        })
+      }
+
+      // Emit socket events when Order or OrderItem rows sync to local PG
+      // so terminals know new data arrived without waiting for the next poll.
+      // Deduplicate per locationId — at most one dispatch per location per batch.
+      if (tableName === 'Order' || tableName === 'OrderItem') {
+        const rowLocationId = row.locationId as string
+        if (rowLocationId && !dispatchedLocations.has(rowLocationId)) {
+          dispatchedLocations.add(rowLocationId)
+          void (async () => {
+            try {
+              const { dispatchOpenOrdersChanged } = await import('../socket-dispatch')
+              await dispatchOpenOrdersChanged(rowLocationId, {
+                trigger: tableName === 'Order' ? 'created' : 'item_updated',
+              })
+            } catch {
+              // Socket dispatch is best-effort — don't fail sync
+            }
+          })().catch(console.error)
+        }
       }
 
       synced++
+      // Only advance HWM for successfully synced rows
+      const rowUpdatedAt = row.updatedAt instanceof Date
+        ? row.updatedAt
+        : new Date(row.updatedAt as string)
+      if (rowUpdatedAt > maxSyncedAt) {
+        maxSyncedAt = rowUpdatedAt
+      }
     } catch (err) {
-      console.error(
-        `[DownstreamSync] ${tableName} row ${row.id}:`,
-        err instanceof Error ? err.message : err
-      )
+      const errMsg = err instanceof Error ? err.message : String(err)
+
+      // Handle unique constraint violations gracefully — this is expected when
+      // Neon has a record with a different id but same business key (e.g.,
+      // [locationId, name]). Log as warning rather than error. The row will be
+      // retried next cycle since HWM is not advanced past failed rows.
+      if (errMsg.includes('unique constraint') || errMsg.includes('duplicate key') || errMsg.includes('Unique constraint')) {
+        console.warn(
+          `[DownstreamSync] ${tableName} row ${row.id}: unique constraint violation (duplicate business key) — skipping`
+        )
+      } else {
+        console.error(
+          `[DownstreamSync] ${tableName} row ${row.id}:`, errMsg
+        )
+      }
       metrics.conflictCount++
+      // Do NOT advance HWM for failed rows — they must be retried on next cycle
     }
   }
 
-  // Advance high-water mark (in-memory + persisted to DB)
-  if (synced > 0) {
-    highWaterMarks.set(tableName, maxUpdatedAt)
+  // Advance high-water mark (in-memory + persisted to DB) — only based on successful rows
+  if (maxSyncedAt > (highWaterMarks.get(tableName) ?? new Date('1970-01-01T00:00:00Z'))) {
+    highWaterMarks.set(tableName, maxSyncedAt)
 
     // Persist HWM to DB so it survives process restarts
     try {
       await masterClient.$executeRawUnsafe(
         `INSERT INTO "_gwi_sync_state" (table_name, high_water_mark, updated_at) VALUES ($1, $2, NOW())
          ON CONFLICT (table_name) DO UPDATE SET high_water_mark = $2, updated_at = NOW()`,
-        tableName, maxUpdatedAt.toISOString()
+        tableName, maxSyncedAt.toISOString()
       )
     } catch (err) {
       console.error(`[DownstreamSync] Failed to persist HWM for ${tableName}:`, err instanceof Error ? err.message : err)
@@ -313,6 +348,20 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
 async function handleCloudFulfillment(row: Record<string, unknown>): Promise<void> {
   const orderId = row.id as string
   const locationId = row.locationId as string
+
+  // Check if fulfillment events already exist for this order (e.g., created by send/route.ts)
+  try {
+    const existingEvents = await masterClient.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM "FulfillmentEvent" WHERE "orderId" = $1 LIMIT 1`,
+      orderId
+    )
+    if (existingEvents.length > 0) {
+      console.log(`[DownstreamSync] FulfillmentEvents already exist for order ${orderId} — skipping`)
+      return
+    }
+  } catch {
+    // FulfillmentEvent table may not exist yet — continue with fulfillment
+  }
 
   // Fetch order items with fulfillment metadata from local PG
   const items = await masterClient.$queryRawUnsafe<Array<{
@@ -407,7 +456,6 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
   void (async () => {
     try {
       const { emitToLocation, emitToTags } = await import('../socket-server')
-      const { dispatchOpenOrdersChanged } = await import('../socket-dispatch')
 
       // Build a KDS-compatible order event payload for each station
       for (const action of actions) {
@@ -479,19 +527,64 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
         stations: actions.map(a => a.stationName).filter(Boolean),
       })
 
-      // Emit open orders changed so terminals refresh their order lists
-      await dispatchOpenOrdersChanged(locationId, {
-        trigger: 'sent',
-        orderId,
-        orderNumber: row.orderNumber as number,
-        status: 'sent',
-      })
+      // NOTE: dispatchOpenOrdersChanged is NOT called here — the outer sync loop
+      // (syncTableDown) already dispatches it per-location with deduplication.
+      // Calling it here would cause a double-dispatch for the same order.
     } catch (err) {
       console.error('[DownstreamSync] Socket dispatch for cloud order failed:', err)
     }
   })().catch(console.error)
 
   console.log(`[DownstreamSync] Fulfillment routed for cloud order ${orderId} (${items.length} items, ${actions.length} events persisted)`)
+}
+
+/**
+ * Create a PendingDeduction for a cloud-originated order that was paid/closed
+ * on the cloud (e.g., cellular order). Without this, inventory deduction only
+ * runs for locally-paid orders (via pay/route.ts).
+ */
+async function handleCloudDeduction(row: Record<string, unknown>): Promise<void> {
+  const orderId = row.id as string
+  const locationId = row.locationId as string
+
+  try {
+    // Rely solely on ON CONFLICT for idempotency (no TOCTOU race)
+    await masterClient.$executeRawUnsafe(
+      `INSERT INTO "PendingDeduction" (id, "locationId", "orderId", "deductionType", status, attempts, "maxAttempts", "availableAt", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), $1, $2, 'STANDARD', 'pending', 0, 5, NOW(), NOW(), NOW())
+       ON CONFLICT ("orderId") DO NOTHING`,
+      locationId, orderId
+    )
+
+    console.log(`[DownstreamSync] Created PendingDeduction for cloud order ${orderId}`)
+  } catch (err) {
+    // PendingDeduction table may not exist yet — non-fatal
+    console.error('[DownstreamSync] Failed to create PendingDeduction:', err instanceof Error ? err.message : err)
+  }
+}
+
+/**
+ * Update Table status to 'occupied' when a cloud-originated order with a tableId
+ * syncs downstream. Without this, the floor plan shows the table as 'available'
+ * even though it has an active order from a cellular device.
+ */
+async function handleCloudTableStatus(row: Record<string, unknown>): Promise<void> {
+  const tableId = row.tableId as string
+  const locationId = row.locationId as string
+
+  try {
+    await masterClient.$executeRawUnsafe(
+      `UPDATE "Table" SET status = 'occupied', "updatedAt" = NOW() WHERE id = $1 AND status != 'occupied'`,
+      tableId
+    )
+
+    // Emit floor plan update so LAN terminals see the table status change
+    const { dispatchFloorPlanUpdate, dispatchTableStatusChanged } = await import('../socket-dispatch')
+    await dispatchFloorPlanUpdate(locationId)
+    await dispatchTableStatusChanged(locationId, { tableId, status: 'occupied' })
+  } catch (err) {
+    console.error('[DownstreamSync] Failed to update table status:', err instanceof Error ? err.message : err)
+  }
 }
 
 // ── Bidirectional Conflict Detection ──────────────────────────────────────────
@@ -626,6 +719,8 @@ async function syncCellularDenyList(): Promise<void> {
 
 async function runDownstreamCycle(): Promise<void> {
   if (!hasNeonConnection()) return
+  if (cycleRunning) return // Prevent overlapping cycles
+  cycleRunning = true
 
   try {
     const models = getDownstreamModels()
@@ -662,6 +757,8 @@ async function runDownstreamCycle(): Promise<void> {
     })
   } catch (err) {
     console.error('[DownstreamSync] Cycle error:', err)
+  } finally {
+    cycleRunning = false
   }
 }
 

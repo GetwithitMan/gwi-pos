@@ -29,7 +29,7 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Fetch order
+    // Fetch order (unlocked — lightweight check before acquiring lock)
     const order = await db.order.findUnique({
       where: { id, deletedAt: null },
       select: {
@@ -43,16 +43,7 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    // Fetch payment
-    const payment = await db.payment.findFirst({
-      where: { id: paymentId, orderId: id, deletedAt: null },
-    })
-
-    if (!payment) {
-      return NextResponse.json({ error: 'Payment not found' }, { status: 404 })
-    }
-
-    // Validate refund amount
+    // Validate refund amount (cheap check before lock)
     if (refundAmount <= 0) {
       return NextResponse.json(
         { error: 'Refund amount must be greater than 0' },
@@ -60,43 +51,9 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    if (refundAmount > Number(payment.amount)) {
-      return NextResponse.json(
-        { error: 'Refund amount exceeds payment amount' },
-        { status: 400 }
-      )
-    }
-
-    if (payment.status === 'voided') {
-      return NextResponse.json(
-        { error: 'Cannot refund a voided payment' },
-        { status: 400 }
-      )
-    }
-
-    if (payment.status === 'refunded') {
-      return NextResponse.json(
-        { error: 'Payment has already been fully refunded' },
-        { status: 400 }
-      )
-    }
-
     // Verify manager has permission to issue refunds
     const authResult = await requirePermission(managerId, order.locationId, PERMISSIONS.MGR_REFUNDS)
     if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
-
-    // Check cumulative refunds don't exceed original payment amount
-    const existingRefunds = await db.refundLog.aggregate({
-      where: { paymentId },
-      _sum: { refundAmount: true },
-    })
-    const totalAlreadyRefunded = Number(existingRefunds._sum.refundAmount ?? 0)
-    if (totalAlreadyRefunded + refundAmount > Number(payment.amount)) {
-      return NextResponse.json(
-        { error: `Refund amount exceeds remaining refundable balance. Already refunded: $${totalAlreadyRefunded.toFixed(2)}, remaining: $${(Number(payment.amount) - totalAlreadyRefunded).toFixed(2)}` },
-        { status: 400 }
-      )
-    }
 
     // W5-11: 2FA enforcement for large refunds
     const locationSettings = parseSettings(await getLocationSettings(order.locationId))
@@ -110,51 +67,87 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Process Datacap refund for card payments
-    let datacapRefNo: string | null = null
+    // Interactive transaction: FOR UPDATE on Payment row prevents concurrent over-refund
+    const txResult = await db.$transaction(async (tx) => {
+      // Acquire row lock on Payment
+      await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
 
-    const isCardPayment =
-      payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
-
-    const effectiveReaderId = readerId ?? payment.paymentReaderId ?? null
-    if (isCardPayment && effectiveReaderId && payment.datacapRecordNo) {
-      await validateReader(effectiveReaderId, order.locationId)
-      const client = await requireDatacapClient(order.locationId)
-
-      const response = await client.emvReturn(effectiveReaderId, {
-        recordNo: payment.datacapRecordNo,
-        invoiceNo: order.orderNumber?.toString() ?? id,
-        amount: refundAmount,
-        cardPresent: false,
+      // Re-read payment inside lock
+      const payment = await tx.payment.findFirst({
+        where: { id: paymentId, orderId: id, deletedAt: null },
       })
 
-      const approved = response.cmdStatus === 'Approved'
-
-      if (!approved) {
-        return NextResponse.json(
-          { error: response.textResponse || 'Refund declined' },
-          { status: 422 }
-        )
+      if (!payment) {
+        return { error: 'Payment not found', status: 404 } as const
       }
 
-      datacapRefNo = response.refNo ?? null
-    }
+      if (payment.status === 'voided') {
+        return { error: 'Cannot refund a voided payment', status: 400 } as const
+      }
 
-    // Database transaction
-    const isPartial = refundAmount < Number(payment.amount)
+      if (payment.status === 'refunded') {
+        return { error: 'Payment has already been fully refunded', status: 400 } as const
+      }
 
-    const [, refundLog] = await db.$transaction([
+      if (refundAmount > Number(payment.amount)) {
+        return { error: 'Refund amount exceeds payment amount', status: 400 } as const
+      }
+
+      // Check cumulative refunds inside lock
+      const existingRefunds = await tx.refundLog.aggregate({
+        where: { paymentId },
+        _sum: { refundAmount: true },
+      })
+      const totalAlreadyRefunded = Number(existingRefunds._sum.refundAmount ?? 0)
+      if (totalAlreadyRefunded + refundAmount > Number(payment.amount)) {
+        return {
+          error: `Refund amount exceeds remaining refundable balance. Already refunded: $${totalAlreadyRefunded.toFixed(2)}, remaining: $${(Number(payment.amount) - totalAlreadyRefunded).toFixed(2)}`,
+          status: 400,
+        } as const
+      }
+
+      // Process Datacap refund for card payments (idempotent at processor)
+      let datacapRefNo: string | null = null
+
+      const isCardPayment =
+        payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
+
+      const effectiveReaderId = readerId ?? payment.paymentReaderId ?? null
+      if (isCardPayment && effectiveReaderId && payment.datacapRecordNo) {
+        await validateReader(effectiveReaderId, order.locationId)
+        const client = await requireDatacapClient(order.locationId)
+
+        const response = await client.emvReturn(effectiveReaderId, {
+          recordNo: payment.datacapRecordNo,
+          invoiceNo: order.orderNumber?.toString() ?? id,
+          amount: refundAmount,
+          cardPresent: false,
+        })
+
+        const approved = response.cmdStatus === 'Approved'
+
+        if (!approved) {
+          return { error: response.textResponse || 'Refund declined', status: 422 } as const
+        }
+
+        datacapRefNo = response.refNo ?? null
+      }
+
+      const isPartial = refundAmount < Number(payment.amount)
+
       // Update payment status
-      db.payment.update({
+      await tx.payment.update({
         where: { id: paymentId },
         data: {
           status: isPartial ? 'completed' : 'refunded',
           refundedAt: new Date(),
           refundedAmount: totalAlreadyRefunded + refundAmount,
+          lastMutatedBy: 'local',
         },
-      }),
+      })
+
       // Create RefundLog
-      db.refundLog.create({
+      const refundLog = await tx.refundLog.create({
         data: {
           locationId: order.locationId,
           orderId: id,
@@ -169,9 +162,10 @@ export const POST = withVenue(async function POST(
           approvedById: managerId,
           approvedAt: new Date(),
         },
-      }),
+      })
+
       // Create AuditLog
-      db.auditLog.create({
+      await tx.auditLog.create({
         data: {
           locationId: order.locationId,
           action: 'payment_refunded',
@@ -184,8 +178,17 @@ export const POST = withVenue(async function POST(
             isPartial,
           }),
         },
-      }),
-    ])
+      })
+
+      return { refundLog, isPartial, totalAlreadyRefunded, payment }
+    }, { timeout: 30000 })
+
+    // Handle early-return errors from inside the transaction
+    if ('error' in txResult) {
+      return NextResponse.json({ error: txResult.error }, { status: txResult.status })
+    }
+
+    const { refundLog, isPartial, totalAlreadyRefunded, payment } = txResult
 
     // Emit PAYMENT_VOIDED event (fire-and-forget)
     void emitOrderEvent(order.locationId, id, 'PAYMENT_VOIDED', {
@@ -275,6 +278,7 @@ export const POST = withVenue(async function POST(
             data: {
               tipAmount: newTipAmount,
               totalAmount: Number(freshPayment.amount) - totalRefunded + newTipAmount,
+              lastMutatedBy: 'local',
             },
           })
 
@@ -285,7 +289,7 @@ export const POST = withVenue(async function POST(
           const newOrderTipTotal = allPayments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
           await tx.order.update({
             where: { id },
-            data: { tipTotal: newOrderTipTotal },
+            data: { tipTotal: newOrderTipTotal, lastMutatedBy: 'local' },
           })
 
           return { tipReduction, newOrderTipTotal }

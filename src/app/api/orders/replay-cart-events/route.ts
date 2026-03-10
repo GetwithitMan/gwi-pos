@@ -29,15 +29,15 @@ interface ReplayError {
   error: string
 }
 
-// ─── In-memory idempotency cache (per-process) ─────────────────────────
-// Tracks recently processed eventIds to skip duplicates.
-// Bounded to prevent memory leaks — evicts oldest entries past limit.
+// ─── In-memory idempotency cache (per-process, L1) ──────────────────────
+// Fast path — avoids DB round-trip for events already seen this process.
+// L2 (DB-backed) catches duplicates after server restart / cold start.
 const processedEventIds = new Map<string, number>() // eventId → timestamp
 const MAX_CACHE_SIZE = 10_000
+const EVENT_TTL_MS = 60 * 60 * 1000 // 1 hour
 
-function markProcessed(eventId: string): void {
+function markProcessedLocal(eventId: string): void {
   if (processedEventIds.size >= MAX_CACHE_SIZE) {
-    // Evict oldest 20%
     const entries = [...processedEventIds.entries()]
       .sort((a, b) => a[1] - b[1])
     const evictCount = Math.floor(MAX_CACHE_SIZE * 0.2)
@@ -48,8 +48,44 @@ function markProcessed(eventId: string): void {
   processedEventIds.set(eventId, Date.now())
 }
 
-function wasProcessed(eventId: string): boolean {
-  return processedEventIds.has(eventId)
+// Periodic TTL-based cleanup: remove entries older than 1 hour every 10 minutes
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    const now = Date.now()
+    for (const [key, timestamp] of processedEventIds) {
+      if (now - timestamp > EVENT_TTL_MS) {
+        processedEventIds.delete(key)
+      }
+    }
+  }, 10 * 60 * 1000)
+}
+
+let dedupTableReady = false
+
+async function ensureDedupTable(): Promise<void> {
+  if (dedupTableReady) return
+  await db.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "_processed_cart_events" (
+      "eventId" TEXT PRIMARY KEY,
+      "processedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+  dedupTableReady = true
+}
+
+async function wasProcessedInDb(eventId: string): Promise<boolean> {
+  const rows = await db.$queryRawUnsafe<{ eventId: string }[]>(
+    `SELECT "eventId" FROM "_processed_cart_events" WHERE "eventId" = $1 LIMIT 1`,
+    eventId
+  )
+  return rows.length > 0
+}
+
+async function markProcessedInDb(eventId: string): Promise<void> {
+  await db.$executeRawUnsafe(
+    `INSERT INTO "_processed_cart_events" ("eventId") VALUES ($1) ON CONFLICT DO NOTHING`,
+    eventId
+  )
 }
 
 // ─── POST /api/orders/replay-cart-events ────────────────────────────────
@@ -58,6 +94,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const events: CartEvent[] = body?.events
+
+    await ensureDedupTable()
 
     if (!Array.isArray(events) || events.length === 0) {
       return NextResponse.json(
@@ -138,6 +176,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       groups.set(evt.orderId, list)
     }
 
+    // ── Validate ORDER_STARTED precedes other events for each order ─────
+    for (const [oid, grp] of groups) {
+      const hasStart = grp.some(e => e.eventType === 'ORDER_STARTED')
+      if (!hasStart) {
+        const existingOrder = await db.order.findFirst({ where: { id: oid } })
+        if (!existingOrder) {
+          return NextResponse.json(
+            { error: `ORDER_STARTED event missing for order ${oid}. Cannot process items without order creation.` },
+            { status: 400 }
+          )
+        }
+        // Block replaying events onto split orders
+        if (existingOrder.status === 'split') {
+          return NextResponse.json(
+            { error: 'Cannot apply cart events to split orders' },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
     // ── Replay each order group ─────────────────────────────────────────
     let processed = 0
     let skipped = 0
@@ -156,8 +215,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           const taxRate = getLocationTaxRate(location?.settings as { tax?: { defaultRate?: number } })
 
           for (const evt of orderEvents) {
-            // Idempotency: skip already-processed events
-            if (wasProcessed(evt.eventId)) {
+            // Idempotency L1: in-memory fast path
+            if (processedEventIds.has(evt.eventId)) {
+              skipped++
+              continue
+            }
+            // Idempotency L2: DB-backed (survives restart / cold start)
+            if (await wasProcessedInDb(evt.eventId)) {
+              markProcessedLocal(evt.eventId)
               skipped++
               continue
             }
@@ -186,7 +251,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 if (existing) {
                   serverOrderId = existing.id
                   skipped++
-                  markProcessed(evt.eventId)
+                  markProcessedLocal(evt.eventId)
+                  await markProcessedInDb(evt.eventId)
                   continue
                 }
 
@@ -228,6 +294,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                     total: 0,
                     commissionTotal: 0,
                     businessDayDate: businessDayStart,
+                    idempotencyKey: evt.eventId || null,
                     ...cellularMutationFields,
                   },
                 })
@@ -257,8 +324,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   displayNumber: null,
                 })
 
+                // Socket: notify terminals of new order + floor plan update
+                void dispatchOpenOrdersChanged(locationId, { trigger: 'created', orderId: order.id }, { async: true }).catch(() => {})
+                if (payload.tableId) {
+                  void dispatchFloorPlanUpdate(locationId).catch(() => {})
+                }
+
                 processed++
-                markProcessed(evt.eventId)
+                markProcessedLocal(evt.eventId)
+                await markProcessedInDb(evt.eventId)
                 break
               }
 
@@ -277,7 +351,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 }
 
                 const quantity = payload.quantity || 1
-                const price = payload.price ?? Number(menuItem.price)
+                const serverPrice = Number(menuItem.price)
+                if (payload.price !== undefined && payload.price !== null && Math.abs(payload.price - serverPrice) > 0.01) {
+                  console.warn(`[REPLAY] Price mismatch for item ${menuItem.id}: client=$${payload.price}, server=$${serverPrice}. Using server price.`)
+                }
+                const price = serverPrice
                 const itemTotal = price * quantity
 
                 const modifierData = Array.isArray(payload.modifiers)
@@ -322,8 +400,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   },
                 })
 
+                // Socket: notify terminals that order items/totals changed
+                void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId: targetOrderId }, { async: true }).catch(() => {})
+
                 processed++
-                markProcessed(evt.eventId)
+                markProcessedLocal(evt.eventId)
+                await markProcessedInDb(evt.eventId)
                 break
               }
 
@@ -348,7 +430,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 if (item.deletedAt) {
                   // Already deleted — idempotent
                   skipped++
-                  markProcessed(evt.eventId)
+                  markProcessedLocal(evt.eventId)
+                  await markProcessedInDb(evt.eventId)
                   continue
                 }
 
@@ -372,8 +455,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   },
                 })
 
+                // Socket: notify terminals that order items/totals changed
+                void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId: targetOrderId }, { async: true }).catch(() => {})
+
                 processed++
-                markProcessed(evt.eventId)
+                markProcessedLocal(evt.eventId)
+                await markProcessedInDb(evt.eventId)
                 break
               }
 
@@ -438,13 +525,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                       ? { terminalId: originTerminalId || undefined, type: 'cellular' }
                       : undefined
 
-                    await routeOrderFulfillment(
+                    const actions = await routeOrderFulfillment(
                       { id: targetOrderId, locationId },
                       fulfillmentItems,
                       stationConfigs,
                       new Date().toISOString(),
                       originDevice,
                     )
+
+                    // Persist FulfillmentEvents so bridge worker dispatches to hardware (printers, KDS)
+                    for (const action of actions) {
+                      try {
+                        await db.$executeRawUnsafe(
+                          `INSERT INTO "FulfillmentEvent" (id, "locationId", "orderId", "stationId", type, status, payload, "retryCount", "createdAt", "updatedAt")
+                           VALUES (gen_random_uuid(), $1, $2, $3, $4, 'pending', $5::jsonb, 0, NOW(), NOW())`,
+                          locationId, targetOrderId, action.stationId || null, action.type,
+                          JSON.stringify({ items: action.items, stationName: action.stationName, idempotencyKey: action.idempotencyKey })
+                        )
+                      } catch (feErr) {
+                        console.error(`[replay-cart-events] Failed to persist FulfillmentEvent:`, feErr)
+                      }
+                    }
                   } catch (err) {
                     console.error('[replay-cart-events] Fulfillment routing failed:', err)
                   }
@@ -455,11 +556,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   sentItemIds: [],
                 })
 
-                // Dispatch open orders update (fire-and-forget)
+                // Dispatch open orders update + floor plan (fire-and-forget)
                 void dispatchOpenOrdersChanged(locationId, { trigger: 'sent', orderId: targetOrderId }, { async: true }).catch(() => {})
+                void dispatchFloorPlanUpdate(locationId).catch(() => {})
 
                 processed++
-                markProcessed(evt.eventId)
+                markProcessedLocal(evt.eventId)
+                await markProcessedInDb(evt.eventId)
                 break
               }
 
@@ -467,12 +570,41 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 errors.push({ eventId: evt.eventId, error: `Unknown eventType: ${evt.eventType}` })
             }
           }
+
+          // Recalculate order totals from actual DB state (accounts for discounts
+          // applied by other terminals between replayed events)
+          const targetOrderId = serverOrderId || clientOrderId
+          const freshOrder = await tx.order.findUnique({
+            where: { id: targetOrderId },
+            include: {
+              items: { where: { deletedAt: null, status: 'active' } },
+              discounts: true,
+            },
+          })
+          if (freshOrder) {
+            const subtotal = freshOrder.items.reduce((sum, i) => sum + Number(i.itemTotal ?? 0), 0)
+            const taxTotal = freshOrder.items.reduce((sum, i) => roundToCents(Number(i.itemTotal ?? 0) * taxRate), 0)
+            const discountTotal = freshOrder.discounts.reduce((sum, d) => sum + Number(d.amount ?? 0), 0)
+            const total = roundToCents(subtotal + taxTotal - discountTotal)
+            const itemCount = freshOrder.items.reduce((sum, i) => sum + i.quantity, 0)
+            await tx.order.update({
+              where: { id: targetOrderId },
+              data: {
+                subtotal: roundToCents(subtotal),
+                taxTotal: roundToCents(taxTotal),
+                taxFromExclusive: roundToCents(taxTotal),
+                discountTotal: roundToCents(discountTotal),
+                total: Math.max(0, total),
+                itemCount,
+              },
+            })
+          }
         })
       } catch (txErr) {
         // Transaction failed for this order group — record errors for all events in the group
         const errMsg = txErr instanceof Error ? txErr.message : 'Transaction failed'
         for (const evt of orderEvents) {
-          if (!wasProcessed(evt.eventId)) {
+          if (!processedEventIds.has(evt.eventId)) {
             errors.push({ eventId: evt.eventId, error: errMsg })
           }
         }

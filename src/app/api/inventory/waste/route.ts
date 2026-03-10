@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - List waste log entries
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -71,6 +73,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({
         error: 'Location ID, inventory item, reason, quantity, and unit required',
       }, { status: 400 })
+    }
+
+    // Permission check — require inventory.waste permission
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_WASTE)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Get current item cost
@@ -156,6 +164,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       return wasteEntry
     })
+
+    // Audit trail for waste recording
+    console.log(`[AUDIT] WASTE_RECORDED: item=${inventoryItemId}, qty=${qtyNum}, reason="${reason}", by employee ${employeeId}, locationId=${locationId}`)
 
     return NextResponse.json({ data: {
       entry: {

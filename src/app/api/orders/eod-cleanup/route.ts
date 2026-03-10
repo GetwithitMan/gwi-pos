@@ -3,9 +3,9 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
-import { emitToLocation } from '@/lib/socket-server'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -95,12 +95,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }
 
-    // Fire socket event so all terminals update
+    // Fire socket events so all terminals update
     if (toCancelIds.length > 0) {
-      void emitToLocation(locationId, 'orders:list-changed', {
-        source: 'eod-cleanup',
-        cancelledCount: toCancelIds.length,
+      void dispatchOpenOrdersChanged(locationId, {
+        trigger: 'voided',
       }).catch(console.error)
+    }
+
+    // Refresh floor plan so table statuses update on other terminals
+    if (toResetTableIds.length > 0) {
+      void dispatchFloorPlanUpdate(locationId).catch(console.error)
     }
 
     return NextResponse.json({

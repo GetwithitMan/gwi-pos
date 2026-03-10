@@ -51,7 +51,7 @@ export const GET = withVenue(async function GET() {
  */
 
 const PaymentConfigSchema = z.object({
-  processor:   z.enum(['datacap', 'simulated']),
+  processor:   z.enum(['datacap']),
   environment: z.enum(['cert', 'production']),
   merchantId:  z.string().min(1).max(50),
   tokenKey:    z.string().min(32).max(100),
@@ -59,6 +59,20 @@ const PaymentConfigSchema = z.object({
 
 export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
+    // Security: require INTERNAL_API_SECRET or localhost origin
+    // This endpoint is called by the NUC sync agent (localhost only) when it receives
+    // an UPDATE_PAYMENT_CONFIG fleet command from Mission Control.
+    const apiKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '')
+    const internalSecret = process.env.INTERNAL_API_SECRET
+    if (internalSecret && apiKey !== internalSecret) {
+      // Allow localhost for backward compatibility with sync agent
+      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
+      const isLocalhost = ['127.0.0.1', '::1', 'localhost'].includes(ip)
+      if (!isLocalhost) {
+        return NextResponse.json({ error: 'Unauthorized — internal API secret required' }, { status: 401 })
+      }
+    }
+
     const body = await request.json().catch(() => null)
     if (!body) {
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })

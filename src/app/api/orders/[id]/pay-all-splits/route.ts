@@ -75,19 +75,6 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Idempotency check — if any split already has a payment with this key, it's a duplicate
-    const existingPayment = parentOrder.splitOrders
-      .flatMap(s => s.payments)
-      .find(p => p.idempotencyKey === effectiveIdempotencyKey)
-    if (existingPayment) {
-      return NextResponse.json({ data: {
-        success: true,
-        duplicate: true,
-        parentOrderId,
-        message: 'Duplicate payment detected — already processed',
-      } })
-    }
-
     // Find unpaid split children
     const unpaidSplits = parentOrder.splitOrders.filter(s => s.status !== 'paid')
 
@@ -96,6 +83,20 @@ export const POST = withVenue(async function POST(
         { error: 'All split tickets are already paid' },
         { status: 400 }
       )
+    }
+
+    // Idempotency check — per-split keys use format `${key}:split:${splitId}`
+    const perSplitKeys = new Set(unpaidSplits.map(s => `${effectiveIdempotencyKey}:split:${s.id}`))
+    const existingPayment = parentOrder.splitOrders
+      .flatMap(s => s.payments)
+      .find(p => p.idempotencyKey && perSplitKeys.has(p.idempotencyKey))
+    if (existingPayment) {
+      return NextResponse.json({ data: {
+        success: true,
+        duplicate: true,
+        parentOrderId,
+        message: 'Duplicate payment detected — already processed',
+      } })
     }
 
     // Parse settings before tx — needed for loyalty inside tx and tips outside
@@ -134,7 +135,8 @@ export const POST = withVenue(async function POST(
 
     const unpaidSplitIds = unpaidSplits.map(s => s.id)
 
-    await db.$transaction(async (tx) => {
+    // splitPaymentMap: splitOrderId → real payment row ID (populated inside tx, used outside for events)
+    const splitPaymentMap = await db.$transaction(async (tx) => {
       // RACE-CONDITION FIX: Lock the parent order first to prevent concurrent
       // pay-all-splits requests from double-paying all splits.
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${parentOrderId} FOR UPDATE`
@@ -154,31 +156,37 @@ export const POST = withVenue(async function POST(
         throw new Error('ALL_SPLITS_ALREADY_PAID')
       }
 
-      // Batch-create all payments at once
-      await tx.payment.createMany({
-        data: unpaidSplits.map(split => {
+      // Create payments individually to capture real payment IDs for event emission
+      const createdPayments = await Promise.all(
+        unpaidSplits.map(split => {
           const cashSplitTotal = roundToCents(Number(split.total))
           const splitTotal = dualPricingApplies
             ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
             : cashSplitTotal
 
-          return {
-            locationId: split.locationId,
-            orderId: split.id,
-            // Use split.employeeId (the selling employee) for sale credit,
-            // falling back to request employeeId if split has none.
-            employeeId: split.employeeId || employeeId,
-            terminalId: terminalId || null,
-            amount: splitTotal,
-            tipAmount: 0,
-            totalAmount: splitTotal,
-            paymentMethod: method,
-            status: 'completed',
-            ...cardDetails,
-            idempotencyKey: effectiveIdempotencyKey,
-          }
-        }),
-      })
+          return tx.payment.create({
+            data: {
+              locationId: split.locationId,
+              orderId: split.id,
+              // Use split.employeeId (the selling employee) for sale credit,
+              // falling back to request employeeId if split has none.
+              employeeId: split.employeeId || employeeId,
+              terminalId: terminalId || null,
+              amount: splitTotal,
+              tipAmount: 0,
+              totalAmount: splitTotal,
+              paymentMethod: method,
+              status: 'completed',
+              ...cardDetails,
+              idempotencyKey: `${effectiveIdempotencyKey}:split:${split.id}`,
+            },
+            select: { id: true, orderId: true, totalAmount: true },
+          })
+        })
+      )
+
+      // Build lookup: splitOrderId → real payment row ID (returned from tx)
+      const paymentMap = new Map(createdPayments.map(p => [p.orderId, p.id]))
 
       // Batch-update all unpaid splits to paid + mark parent as paid
       await Promise.all([
@@ -216,6 +224,8 @@ export const POST = withVenue(async function POST(
           }
         }
       }
+
+      return paymentMap
     })
 
     // Fire-and-forget socket events
@@ -240,7 +250,7 @@ export const POST = withVenue(async function POST(
         {
           type: 'PAYMENT_APPLIED',
           payload: {
-            paymentId: split.id,
+            paymentId: splitPaymentMap.get(split.id) || split.id,
             method,
             amountCents: Math.round(splitTotal * 100),
             tipCents: 0,
@@ -288,7 +298,7 @@ export const POST = withVenue(async function POST(
           orderId: split.id,
           primaryEmployeeId: split.employeeId,
           createdPayments: [{
-            id: split.id,
+            id: splitPaymentMap.get(split.id) || split.id,
             paymentMethod: method,
             tipAmount: splitTipTotal,
           }],

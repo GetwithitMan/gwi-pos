@@ -71,22 +71,24 @@ export interface OrderTotals {
 export function calculateItemTotal(item: OrderItemForCalculation): number {
   // If item already has itemTotal (from DB), use it
   if (item.itemTotal !== undefined && item.itemTotal !== null) {
-    return Number(item.itemTotal)
+    return Number(item.itemTotal) || 0
   }
 
   // Calculate from components
+  const price = Number(item.price ?? 0) || 0
+  const quantity = Number(item.quantity ?? 1) || 1
   // Weight-based items: unitPrice * weight * quantity (instead of price * quantity)
   const itemBaseTotal = (item.soldByWeight && item.weight && item.unitPrice)
-    ? item.unitPrice * item.weight * item.quantity
-    : item.price * item.quantity
+    ? (Number(item.unitPrice ?? 0) || 0) * (Number(item.weight ?? 0) || 0) * quantity
+    : price * quantity
 
   const modifiersTotal = (item.modifiers || []).reduce((sum, mod) => {
-    return sum + (mod.price * (mod.quantity || 1))
-  }, 0) * item.quantity
+    return sum + ((Number(mod.price ?? 0) || 0) * (Number(mod.quantity ?? 1) || 1))
+  }, 0) * quantity
 
   const ingredientModTotal = (item.ingredientModifications || []).reduce((sum, ing) => {
-    return sum + (ing.priceAdjustment || 0)
-  }, 0) * item.quantity
+    return sum + (Number(ing.priceAdjustment ?? 0) || 0)
+  }, 0) * quantity
 
   return itemBaseTotal + modifiersTotal + ingredientModTotal
 }
@@ -177,7 +179,7 @@ export function calculateOrderCommission(
 ): number {
   return items.reduce((sum, item) => {
     if (item.commissionAmount !== undefined && item.commissionAmount !== null) {
-      return sum + Number(item.commissionAmount)
+      return sum + (Number(item.commissionAmount) || 0)
     }
     return sum
   }, 0)
@@ -503,7 +505,7 @@ export async function recalculatePercentDiscounts(
       // Cap: discount can't exceed remaining subtotal
       const cappedAmount = Math.min(newAmount, Math.max(0, newSubtotal - totalDiscount))
 
-      if (cappedAmount !== Number(discount.amount)) {
+      if (cappedAmount !== (Number(discount.amount) || 0)) {
         await tx.orderDiscount.update({
           where: { id: discount.id },
           data: { amount: cappedAmount },
@@ -512,7 +514,7 @@ export async function recalculatePercentDiscounts(
       totalDiscount += cappedAmount
     } else {
       // Fixed discount — unchanged
-      totalDiscount += Number(discount.amount)
+      totalDiscount += (Number(discount.amount) || 0)
     }
   }
 

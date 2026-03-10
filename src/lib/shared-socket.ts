@@ -26,6 +26,31 @@ let refCount = 0
 let visibilityHandlerAttached = false
 let lastPongAt = 0 // Timestamp of last successful pong/event from server
 
+// ==================== Event Buffer Catch-Up State ====================
+// Tracks the highest _eid seen from the server, so on reconnect we can
+// request replay of missed events.
+let lastEventId = 0
+let trackedLocationId: string | null = null
+let isInitialConnect = true // First connect — no catch-up needed
+
+/**
+ * Update the last seen event ID from the server.
+ * Called by SocketEventProvider when it receives events with _eid.
+ */
+export function updateLastEventId(eid: number): void {
+  if (typeof eid === 'number' && eid > lastEventId) {
+    lastEventId = eid
+  }
+}
+
+/**
+ * Set the location ID for catch-up requests.
+ * Called when join_station establishes the location binding.
+ */
+export function setTrackedLocationId(locationId: string): void {
+  trackedLocationId = locationId
+}
+
 // Stable terminal ID per tab (survives component re-mounts AND page refreshes via sessionStorage)
 let stableTerminalId: string | null = null
 const TERMINAL_ID_KEY = 'gwi-pos-terminal-id'
@@ -113,6 +138,22 @@ function attachVisibilityHandler(socket: Socket) {
 
   socket.on('connect', () => {
     lastPongAt = Date.now()
+
+    // On reconnect (not initial connect), request catch-up for missed events
+    if (!isInitialConnect && lastEventId > 0 && trackedLocationId) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[SharedSocket] Reconnected — requesting catch-up from eid=${lastEventId} for location=${trackedLocationId}`)
+      }
+      socket.emit('catch-up', { lastEventId, locationId: trackedLocationId })
+    }
+    isInitialConnect = false
+  })
+
+  // Capture latestEventId from join_station response to establish baseline
+  socket.on('joined', (data: { success?: boolean; latestEventId?: number }) => {
+    if (data?.success && typeof data.latestEventId === 'number') {
+      updateLastEventId(data.latestEventId)
+    }
   })
 
   // Any incoming event from the server = proof of life
@@ -167,3 +208,15 @@ export function releaseSharedSocket(): void {
 export function isSharedSocketConnected(): boolean {
   return sharedSocket?.connected ?? false
 }
+
+/**
+ * Send acknowledgment for a critical event back to the server (QoS 1).
+ * Called by the SocketEventProvider when it sees an `_ackId` in event data.
+ */
+export function acknowledgeEvent(ackId: string): void {
+  if (sharedSocket?.connected) {
+    sharedSocket.emit('ack', { ackId })
+  }
+}
+
+

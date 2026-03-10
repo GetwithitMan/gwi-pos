@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
   // Enable strict mode for better error catching
   reactStrictMode: true,
 
+  // Limit body sizes to prevent resource exhaustion
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '2mb',
+    },
+  },
+
   // Prevent source code from being exposed in production browser bundles
   productionBrowserSourceMaps: false,
 

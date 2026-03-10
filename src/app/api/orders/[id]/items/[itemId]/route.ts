@@ -37,6 +37,15 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
+    // Status guard: only modifiable statuses allowed
+    const MODIFIABLE_STATUSES = ['open', 'in_progress', 'sent', 'draft'];
+    if (!MODIFIABLE_STATUSES.includes(order.status)) {
+      return NextResponse.json(
+        { error: `Cannot modify items on order in '${order.status}' status` },
+        { status: 400 }
+      );
+    }
+
     // Block modifications if any completed payment exists
     const hasCompletedPayment = order.payments?.some(p => p.status === 'completed') || false
     if (hasCompletedPayment) {
@@ -338,179 +347,194 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id: orderId, itemId } = await params
 
-    // Verify order exists and is in a deletable state
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      select: {
-        id: true,
-        status: true,
-        locationId: true,
-        payments: {
-          where: { deletedAt: null },
-          select: { id: true, status: true },
-        },
-      },
-    })
+    const result = await db.$transaction(async (tx) => {
+      // Lock the Order row to prevent concurrent deletes from producing incorrect totals
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-    if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
-    }
-
-    // Only allow item deletion on open/draft/sent orders (not paid/closed/voided/cancelled)
-    const deletableStatuses = ['open', 'sent', 'draft']
-    if (!deletableStatuses.includes(order.status)) {
-      return NextResponse.json(
-        { error: `Cannot delete items on a ${order.status} order` },
-        { status: 400 }
-      )
-    }
-
-    // Block deletion if any completed payment exists
-    const hasCompletedPaymentDel = order.payments?.some(p => p.status === 'completed') || false
-    if (hasCompletedPaymentDel) {
-      return NextResponse.json(
-        { error: 'Cannot modify an order with existing payments. Void the payment first.' },
-        { status: 400 }
-      )
-    }
-
-    // Verify item exists and belongs to this order
-    const item = await db.orderItem.findFirst({
-      where: { id: itemId, orderId },
-      include: { menuItem: { select: { name: true } } },
-    })
-
-    if (!item) {
-      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
-    }
-
-    // Don't allow deleting items already sent to kitchen — use comp/void
-    if (item.kitchenStatus !== 'pending') {
-      return NextResponse.json(
-        { error: 'Cannot delete an item that has been sent to the kitchen. Use comp/void instead.' },
-        { status: 400 }
-      )
-    }
-
-    // Don't allow deleting voided/comped items
-    if (item.status !== 'active') {
-      return NextResponse.json(
-        { error: `Cannot delete a ${item.status} item` },
-        { status: 400 }
-      )
-    }
-
-    // W4-3: Audit log for item deletion before send (fire-and-forget)
-    const employeeId = request.nextUrl.searchParams.get('employeeId') || null
-    void db.auditLog.create({
-      data: {
-        locationId: order.locationId,
-        employeeId,
-        action: 'item_removed_before_send',
-        entityType: 'order',
-        entityId: orderId,
-        details: {
-          itemId: item.id,
-          menuItemName: item.menuItem?.name || item.name,
-          quantity: item.quantity,
-          amount: Number(item.itemTotal),
-          sentToKitchen: false,
-        },
-      },
-    }).catch(err => console.error('[AuditLog] Failed to log item removal:', err))
-
-    // Soft delete modifiers and the item (preserve audit trail)
-    const now = new Date()
-    await db.orderItemModifier.updateMany({
-      where: { orderItemId: itemId },
-      data: { deletedAt: now },
-    })
-    await db.orderItem.update({
-      where: { id: itemId },
-      data: { deletedAt: now, status: 'removed' },
-    })
-
-    // Emit ITEM_REMOVED event (fire-and-forget)
-    void emitOrderEvent(order.locationId, orderId, 'ITEM_REMOVED', {
-      lineItemId: itemId,
-    })
-
-    // Recalculate totals from remaining active items
-    const fullOrder = await db.order.findUniqueOrThrow({
-      where: { id: orderId },
-      include: {
-        location: { select: { settings: true } },
-        items: {
-          where: { deletedAt: null, status: 'active' },
-          include: {
-            modifiers: { where: { deletedAt: null } },
-            ingredientModifications: true,
+      // Verify order exists and is in a deletable state
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          status: true,
+          locationId: true,
+          payments: {
+            where: { deletedAt: null },
+            select: { id: true, status: true },
           },
         },
-      },
-    })
+      })
 
-    const itemsForCalc = fullOrder.items.map(i => ({
-      ...i,
-      price: Number(i.price),
-      itemTotal: Number(i.itemTotal),
-      commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
-      weight: i.weight ? Number(i.weight) : undefined,
-      unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
-      soldByWeight: i.soldByWeight ?? false,
-      modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
-      ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
-    }))
+      if (!order) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
 
-    const newSubtotalForDiscounts = calculateOrderSubtotal(itemsForCalc)
-    const updatedDiscountTotal = await recalculatePercentDiscounts(db, orderId, newSubtotalForDiscounts)
+      // Only allow item deletion on open/draft/sent orders (not paid/closed/voided/cancelled)
+      const deletableStatuses = ['open', 'sent', 'draft']
+      if (!deletableStatuses.includes(order.status)) {
+        return NextResponse.json(
+          { error: `Cannot delete items on a ${order.status} order` },
+          { status: 400 }
+        )
+      }
 
-    const totals = calculateOrderTotals(
-      itemsForCalc,
-      fullOrder.location.settings as LocationTaxSettings | null,
-      updatedDiscountTotal,
-      Number(fullOrder.tipTotal) || 0,
-      undefined,
-      'card',
-      fullOrder.isTaxExempt
-    )
+      // Block deletion if any completed payment exists
+      const hasCompletedPaymentDel = order.payments?.some(p => p.status === 'completed') || false
+      if (hasCompletedPaymentDel) {
+        return NextResponse.json(
+          { error: 'Cannot modify an order with existing payments. Void the payment first.' },
+          { status: 400 }
+        )
+      }
 
-    await db.order.update({
-      where: { id: orderId },
-      data: {
-        subtotal: totals.subtotal,
-        taxTotal: totals.taxTotal,
-        taxFromInclusive: totals.taxFromInclusive,
-        taxFromExclusive: totals.taxFromExclusive,
-        total: totals.total,
-        commissionTotal: totals.commissionTotal,
-        itemCount: fullOrder.items.reduce((sum, i) => sum + i.quantity, 0),
-        version: { increment: 1 },
-      },
-    })
+      // Verify item exists and belongs to this order
+      const item = await tx.orderItem.findFirst({
+        where: { id: itemId, orderId },
+        include: { menuItem: { select: { name: true } } },
+      })
 
-    // Fetch updated order with items for response
-    const updatedOrder = await db.order.findUniqueOrThrow({
-      where: { id: orderId },
-      include: {
-        items: {
-          where: { deletedAt: null },
-          include: { modifiers: { where: { deletedAt: null } } },
+      if (!item) {
+        return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+      }
+
+      // Don't allow deleting items already sent to kitchen — use comp/void
+      if (item.kitchenStatus !== 'pending') {
+        return NextResponse.json(
+          { error: 'Cannot delete an item that has been sent to the kitchen. Use comp/void instead.' },
+          { status: 400 }
+        )
+      }
+
+      // Don't allow deleting voided/comped items
+      if (item.status !== 'active') {
+        return NextResponse.json(
+          { error: `Cannot delete a ${item.status} item` },
+          { status: 400 }
+        )
+      }
+
+      // Permission check — require POS access to delete items
+      const employeeId = request.nextUrl.searchParams.get('employeeId') || null
+      if (employeeId) {
+        const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+        if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
+
+      // W4-3: Audit log for item deletion before send (fire-and-forget)
+      void tx.auditLog.create({
+        data: {
+          locationId: order.locationId,
+          employeeId,
+          action: 'item_removed_before_send',
+          entityType: 'order',
+          entityId: orderId,
+          details: {
+            itemId: item.id,
+            menuItemName: item.menuItem?.name || item.name,
+            quantity: item.quantity,
+            amount: Number(item.itemTotal),
+            sentToKitchen: false,
+          },
         },
-        employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
-        table: { select: { id: true, name: true } },
-        payments: true,
-        discounts: true,
-      },
+      }).catch(err => console.error('[AuditLog] Failed to log item removal:', err))
+
+      // Soft delete modifiers and the item (preserve audit trail)
+      const now = new Date()
+      await tx.orderItemModifier.updateMany({
+        where: { orderItemId: itemId },
+        data: { deletedAt: now },
+      })
+      await tx.orderItem.update({
+        where: { id: itemId },
+        data: { deletedAt: now, status: 'removed' },
+      })
+
+      console.log(`[AUDIT] ORDER_ITEM_DELETED: orderId=${orderId}, itemId=${itemId}, itemName="${item.menuItem?.name || item.name}", qty=${item.quantity}, amount=$${Number(item.itemTotal)}, by employee ${employeeId}`)
+
+      // Emit ITEM_REMOVED event (fire-and-forget)
+      void emitOrderEvent(order.locationId, orderId, 'ITEM_REMOVED', {
+        lineItemId: itemId,
+      })
+
+      // Recalculate totals from remaining active items
+      const fullOrder = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: {
+          location: { select: { settings: true } },
+          items: {
+            where: { deletedAt: null, status: 'active' },
+            include: {
+              modifiers: { where: { deletedAt: null } },
+              ingredientModifications: true,
+            },
+          },
+        },
+      })
+
+      const itemsForCalc = fullOrder.items.map(i => ({
+        ...i,
+        price: Number(i.price),
+        itemTotal: Number(i.itemTotal),
+        commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
+        weight: i.weight ? Number(i.weight) : undefined,
+        unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
+        soldByWeight: i.soldByWeight ?? false,
+        modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
+        ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
+      }))
+
+      const newSubtotalForDiscounts = calculateOrderSubtotal(itemsForCalc)
+      const updatedDiscountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotalForDiscounts)
+
+      const totals = calculateOrderTotals(
+        itemsForCalc,
+        fullOrder.location.settings as LocationTaxSettings | null,
+        updatedDiscountTotal,
+        Number(fullOrder.tipTotal) || 0,
+        undefined,
+        'card',
+        fullOrder.isTaxExempt
+      )
+
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
+          total: totals.total,
+          commissionTotal: totals.commissionTotal,
+          itemCount: fullOrder.items.reduce((sum, i) => sum + i.quantity, 0),
+          version: { increment: 1 },
+        },
+      })
+
+      // Fetch updated order with items for response
+      const updatedOrder = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: {
+          items: {
+            where: { deletedAt: null },
+            include: { modifiers: { where: { deletedAt: null } } },
+          },
+          employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+          table: { select: { id: true, name: true } },
+          payments: true,
+          discounts: true,
+        },
+      })
+
+      // Dispatch socket event so other terminals see the removal (Bug 11)
+      void dispatchOpenOrdersChanged(order.locationId, {
+        trigger: 'voided',
+        orderId: order.id,
+      }).catch(() => {})
+
+      return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
     })
 
-    // Dispatch socket event so other terminals see the removal (Bug 11)
-    void dispatchOpenOrdersChanged(order.locationId, {
-      trigger: 'voided',
-      orderId: order.id,
-    }).catch(() => {})
-
-    return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
+    return result
   } catch (error) {
     console.error('Failed to delete order item:', error)
     return NextResponse.json(

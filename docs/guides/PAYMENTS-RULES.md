@@ -125,6 +125,36 @@ Search tag: `SIMULATED_DEFAULTS`. Steps:
 
 ---
 
+## Payment Security Hardening (added 2026-03-10)
+
+Rules discovered via penetration testing:
+
+### Tip Validation
+- Tip amount MUST NOT exceed 500% of the payment amount
+- Enforced post-Zod in pay/route.ts (runtime check after schema validation)
+
+### Split Payment Validation
+- Total payments across all split children MUST NOT exceed the parent order's total (with 1-cent tolerance)
+- Validated via `payment.aggregate()` summing all completed payments across all child orders
+
+### Deduction Safety
+- PendingDeduction with `status: 'succeeded'` or `'dead'` is NEVER reset to `'pending'` on re-pay
+- Prevents double inventory deduction when an order is reopened and re-paid
+- 0-item guard: paid/closed orders with 0 items return `success: false` (retries until items sync)
+
+### Sync Markers
+- `lastMutatedBy: 'local'` MUST be set on every Payment/Order mutation originating from NUC:
+  - `adjust-tip/route.ts` — Payment.tipAmount + Order.tipTotal
+  - `refund-payment/route.ts` — Payment.status + Payment.tipAmount + Order.tipTotal
+  - `pay/route.ts` — commission recalc (raw SQL OrderItem + db.order.update for commissionTotal)
+- Without this marker, upstream sync skips the mutation → Neon never sees the change
+
+### Pre-Auth
+- Pre-auth expiration is logged as a warning when payment is processed on an expired pre-auth
+- Pre-auth is informational only (fake transaction IDs) — does not block payment
+
+---
+
 ## Key Files
 
 | File | Purpose |

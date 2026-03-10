@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 export const GET = withVenue(async (request: NextRequest) => {
   try {
@@ -10,6 +12,12 @@ export const GET = withVenue(async (request: NextRequest) => {
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require reports.view permission
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId ?? searchParams.get('employeeId')
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // 1. Cash on hand from active drawers (paid in/out)
     const paidInOuts = await db.paidInOut.findMany({

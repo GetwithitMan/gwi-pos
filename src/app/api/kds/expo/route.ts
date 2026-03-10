@@ -119,9 +119,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           (now.getTime() - createdAt.getTime()) / (1000 * 60)
         )
 
+        // Defaults: 10min warning (aging), 20min critical (late)
+        // Client recomputes live from createdAt using per-screen config thresholds
         let timeStatus: 'fresh' | 'aging' | 'late' = 'fresh'
-        if (elapsedMinutes >= 15) timeStatus = 'late'
-        else if (elapsedMinutes >= 8) timeStatus = 'aging'
+        if (elapsedMinutes >= 20) timeStatus = 'late'
+        else if (elapsedMinutes >= 10) timeStatus = 'aging'
 
         return {
           id: order.id,

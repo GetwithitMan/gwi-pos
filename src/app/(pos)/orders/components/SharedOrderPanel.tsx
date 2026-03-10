@@ -6,6 +6,7 @@ import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import { calculateCardPrice } from '@/lib/pricing'
 import { fetchAndLoadSplitOrder } from '@/lib/split-order-loader'
 import { OfflineManager } from '@/lib/offline-manager'
+import { uuid } from '@/lib/uuid'
 import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
 import { Modal } from '@/components/ui/modal'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
@@ -443,6 +444,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                         locationId,
                         orderType: 'bar_tab',
                         items: [],
+                        idempotencyKey: uuid(),
                       }),
                     })
                     if (!shellRes.ok) {
@@ -506,6 +508,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                             depth: m.depth,
                           })) || [],
                         })),
+                        idempotencyKey: uuid(),
                       }),
                     })
 

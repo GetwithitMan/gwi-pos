@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission } from '@/lib/api-auth'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -33,6 +35,10 @@ export const POST = withVenue(async function POST(
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
+
+    // Require manager void permission — voiding a tab is a high-risk financial action
+    const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_VOID_ORDERS)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
 
     if (order.cards.length === 0) {
       return NextResponse.json({ error: 'No authorized cards to void on this tab' }, { status: 400 })

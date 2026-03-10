@@ -13,6 +13,7 @@ import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import {
   dispatchCFDShowOrder,
+  dispatchCFDShowOrderDetail,
   dispatchCFDPaymentStarted,
   dispatchCFDTipPrompt,
   dispatchCFDSignatureRequest,
@@ -35,6 +36,9 @@ export const POST = withVenue(async (request: Request) => {
     switch (event) {
       case 'show-order':
         dispatchCFDShowOrder(locationId, cfdTerminalId, payload)
+        break
+      case 'show-order-detail':
+        dispatchCFDShowOrderDetail(locationId, cfdTerminalId, payload)
         break
       case 'payment-started':
         dispatchCFDPaymentStarted(locationId, cfdTerminalId, payload)

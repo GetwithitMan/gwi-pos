@@ -57,6 +57,8 @@ export interface OrderPanelItemData {
   unitPrice?: number | null
   // Pricing option label (e.g., "Large", "Bowl")
   pricingOptionLabel?: string | null
+  // Allergen tracking
+  allergens?: string[]
 }
 
 interface OrderPanelItemProps {
@@ -760,6 +762,29 @@ export const OrderPanelItem = memo(function OrderPanelItem({
               }}
             >
               Note: {item.specialNotes}
+            </div>
+          )}
+
+          {/* Allergen badges */}
+          {item.allergens && item.allergens.length > 0 && (
+            <div style={{ marginTop: '4px', paddingLeft: '8px', display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+              {item.allergens.map(allergen => (
+                <span
+                  key={allergen}
+                  style={{
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    padding: '1px 5px',
+                    borderRadius: '3px',
+                    background: 'rgba(251, 146, 60, 0.15)',
+                    color: '#fb923c',
+                    border: '1px solid rgba(251, 146, 60, 0.3)',
+                    letterSpacing: '0.3px',
+                  }}
+                >
+                  {allergen.toUpperCase()}
+                </span>
+              ))}
             </div>
           )}
 

@@ -85,6 +85,34 @@ If a future PR touches the areas below, check the corresponding invariant before
 | PS4 | Shift close with absolute cash variance >$5 requires MGR_CASH_VARIANCE_OVERRIDE; response includes code: 'VARIANCE_OVERRIDE_REQUIRED' and variance amount | PUT /api/shifts/[id] close with large variance without permission → 403 with code |
 | PS5 | Tax exemption (isTaxExempt=true) on an Order requires MGR_TAX_EXEMPT; once set, calculateOrderTotals and calculateSimpleOrderTotals both apply taxRate=0 for all subsequent recalculations | Set isTaxExempt without permission → 403; verify taxTotal=0 after setting |
 
+## Sync & Security Hardening (2026-03-10)
+
+> Added after comprehensive 6-agent penetration test. These invariants protect against data loss, double-charging, and auth bypass.
+
+### Payment Safety (5)
+- **PAY1**: Tip amount MUST NOT exceed 500% of payment amount — enforced in pay/route.ts post-Zod validation
+- **PAY2**: Split child payments MUST NOT exceed parent order total — aggregate check against all completed sibling payments
+- **PAY3**: PendingDeduction with status `succeeded` or `dead` MUST NOT be reset to `pending` on re-pay — prevents double inventory deduction
+- **PAY4**: All Payment mutations on NUC (adjust-tip, refund, void) MUST set `lastMutatedBy: 'local'` — required for upstream sync replication
+- **PAY5**: All Order total mutations on NUC (tip adjust, refund tip reduction, commission recalc) MUST set `lastMutatedBy: 'local'`
+
+### Sync Safety (5)
+- **SYNC1**: Downstream sync HWM (`maxSyncedAt`) MUST only advance for successfully synced rows — failed rows must retry on next cycle
+- **SYNC2**: FulfillmentEvent creation in `handleCloudFulfillment` MUST check for existing events by orderId — prevents duplicate printing
+- **SYNC3**: `handleCloudDeduction` MUST NOT use SELECT-before-INSERT pattern — rely solely on `ON CONFLICT ("orderId") DO NOTHING`
+- **SYNC4**: Socket dispatch in downstream sync MUST emit at most one `dispatchOpenOrdersChanged` per location per sync cycle — prevents client-side event storms
+- **SYNC5**: Upstream sync `syncedAt` stamps MUST be individually try/caught — one failure must not block stamping of other rows in the batch
+
+### Cellular Auth (4)
+- **AUTH1**: `CELLULAR_CLAIM_KEY` env var MUST be non-empty for cellular-exchange endpoint to function — returns 503 if unconfigured
+- **AUTH2**: `isRevokedFromDb()` MUST be fail-closed — DB errors return `true` (revoked), not `false` (allowed)
+- **AUTH3**: `x-device-fingerprint` header MUST be validated when JWT contains `deviceFingerprint` — omitting header = 401 rejection
+- **AUTH4**: Proxy `matchesRouteList()` MUST normalize paths via `normalizePath()` — prevents path traversal bypass of HARD_BLOCKED routes
+
+### Inventory (2)
+- **INV1**: `deductInventoryForOrder()` MUST return `success: false` when a paid/closed order has 0 items — prevents false-succeeded deductions when OrderItems haven't synced yet
+- **INV2**: Modifier creation API MUST return 409 (not 500) on unique constraint violation — Prisma error code P2002 check in catch block
+
 ---
 
 ## How to Use This List
@@ -93,4 +121,4 @@ If a future PR touches the areas below, check the corresponding invariant before
 2. **After a schema change** to `Payment`, `Order`, `Shift`, or `TipLedgerEntry` — re-run P1–P5 and T1–T5.
 3. **After any event sourcing change** — re-run O2 and O3.
 
-This list is intentionally short. It covers the invariants that were bugs before this audit — the highest re-regression risk.
+The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. All 47 represent the highest re-regression risk.

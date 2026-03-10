@@ -28,7 +28,6 @@ import { buildRequest, buildAdminRequest } from './xml-builder'
 import { parseResponse, parseError } from './xml-parser'
 import { getSequenceNo, updateSequenceNo } from './sequence'
 import { assertReaderHealthy, markReaderHealthy, markReaderDegraded, clearReaderHealth } from './reader-health'
-import { simulateResponse } from './simulator'
 import {
   LOCAL_ENDPOINT,
   POS_PACKAGE_ID,
@@ -290,52 +289,6 @@ export class DatacapClient {
     const tranCodeMatch = xml.match(/<TranCode>([^<]+)<\/TranCode>/)
     if (tranCodeMatch?.[1]) {
       this._lastTranCode.set(reader.id, tranCodeMatch[1])
-    }
-
-    // W1-P2: Guard simulated mode in production at the reader level
-    // (Config-level guard exists in validateDatacapConfig, but reader.communicationMode can override)
-    if (mode === 'simulated' && process.env.NODE_ENV === 'production') {
-      throw new Error(
-        'Simulated payment mode is not allowed in production. ' +
-        'Configure reader communicationMode to "local" or "cloud".'
-      )
-    }
-
-    // Simulated mode — no network calls
-    if (mode === 'simulated') {
-      // Extract tranCode and simScenario from XML for simulator
-      const tranCode = (tranCodeMatch?.[1] || 'EMVPadReset') as TranCode
-      const scenarioMatch = xml.match(/<SimScenario>([^<]+)<\/SimScenario>/)
-      const simScenario = scenarioMatch?.[1] as 'decline' | 'error' | 'partial' | undefined
-
-      // Extract additional fields from XML so simulator can produce accurate responses
-      const purchaseMatch = xml.match(/<Purchase>([\d.]+)<\/Purchase>/)
-      const gratuityMatch = xml.match(/<Gratuity>([\d.]+)<\/Gratuity>/)
-      const customerCodeMatch = xml.match(/<CustomerCode>([^<]+)<\/CustomerCode>/)
-      const forceOffline = /<ForceOffline>Yes<\/ForceOffline>/i.test(xml)
-      const recordNoMatch = xml.match(/<RecordNo>([^<]+)<\/RecordNo>/)
-      const invoiceMatch = xml.match(/<InvoiceNo>([^<]+)<\/InvoiceNo>/)
-
-      const simXml = simulateResponse(tranCode, {
-        merchantId: '',
-        operatorId: '',
-        tranCode,
-        invoiceNo: invoiceMatch?.[1],
-        recordNo: recordNoMatch?.[1],
-        customerCode: customerCodeMatch?.[1],
-        amounts: purchaseMatch
-          ? {
-              purchase: parseFloat(purchaseMatch[1]),
-              gratuity: gratuityMatch ? parseFloat(gratuityMatch[1]) : undefined,
-            }
-          : undefined,
-      }, {
-        decline: simScenario === 'decline',
-        error: simScenario === 'error',
-        partial: simScenario === 'partial',
-        forceOffline,
-      })
-      return parseResponse(simXml)
     }
 
     if (mode === 'local') {

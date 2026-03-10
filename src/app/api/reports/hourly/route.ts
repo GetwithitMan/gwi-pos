@@ -85,7 +85,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       resolvedDate = current.date
     }
 
-    // Fetch primary day orders
+    // Fetch primary day orders (capped at 5000 to prevent memory exhaustion)
     const orders = await db.order.findMany({
       where: {
         locationId,
@@ -98,6 +98,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         total: true,
         tipTotal: true,
       },
+      take: 5000,
     })
 
     // Build primary hourly buckets
@@ -148,6 +149,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           total: true,
           tipTotal: true,
         },
+        take: 5000,
       })
 
       const compareBuckets = buildHourlyBuckets(compareOrders)

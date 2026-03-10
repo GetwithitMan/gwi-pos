@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET - List vendors
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -52,6 +54,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         error: 'Location ID and name required',
       }, { status: 400 })
     }
+
+    // Auth check — require inventory.vendors permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.INVENTORY_VENDORS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const vendor = await db.vendor.create({
       data: {

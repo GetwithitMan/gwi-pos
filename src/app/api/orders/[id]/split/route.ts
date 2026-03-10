@@ -8,6 +8,7 @@ import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { checkOrderClaim } from '@/lib/order-claim'
+import { roundToCents } from '@/lib/pricing'
 
 interface SplitRequest {
   type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'get_splits'
@@ -61,6 +62,7 @@ export const POST = withVenue(async function POST(
         payments: {
           where: { status: 'completed' },
         },
+        cards: true,
         splitOrders: {
           include: {
             payments: {
@@ -93,10 +95,39 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Status guard: only splittable statuses allowed
+    const SPLITTABLE_STATUSES = ['open', 'in_progress', 'sent'];
+    if (!SPLITTABLE_STATUSES.includes(order.status)) {
+      return NextResponse.json(
+        { error: `Cannot split order in '${order.status}' status` },
+        { status: 400 }
+      );
+    }
+
     // Auth check — require pos.split_checks permission (skip for read-only get_splits)
     if (body.type !== 'get_splits') {
       const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.POS_SPLIT_CHECKS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    // Block splitting orders with active pre-auth holds
+    if (body.type !== 'get_splits') {
+      const activeCards = order.cards?.filter((c: any) => c.status === 'authorized') || []
+      if (activeCards.length > 0) {
+        return NextResponse.json(
+          { error: 'Cannot split order with active pre-authorization. Close the tab or void the pre-auth first.' },
+          { status: 400 }
+        )
+      }
+
+      // Block splitting orders with partial payments (including gift cards)
+      const completedPayments = order.payments?.filter((p: any) => p.status === 'completed') || []
+      if (completedPayments.length > 0) {
+        return NextResponse.json(
+          { error: 'Cannot split order with existing payments. Void payments first or pay remaining balance.' },
+          { status: 400 }
+        )
+      }
     }
 
     // If this is a split order, get the parent
@@ -309,6 +340,29 @@ export const POST = withVenue(async function POST(
               })
             }
           }
+
+          // Remainder correction: ensure sum of child discounts equals parent discount total
+          const parentDiscountTotal = Number(order.discountTotal || 0)
+          if (parentDiscountTotal > 0 && createdSplits.length > 0) {
+            const childDiscountSum = Array.from(childDiscountAccum.values()).reduce((sum, v) => sum + v, 0)
+            const remainder = roundToCents(parentDiscountTotal - childDiscountSum)
+            if (Math.abs(remainder) > 0 && Math.abs(remainder) <= 0.05) {
+              // Add remainder to last child's discount
+              const lastChild = createdSplits[createdSplits.length - 1]
+              const lastChildDisc = childDiscountAccum.get(lastChild.id) || 0
+              const correctedDisc = roundToCents(lastChildDisc + remainder)
+              const lastChildSubtotal = Number(lastChild.subtotal)
+              const lastChildTax = Number(lastChild.taxTotal)
+              const correctedTotal = Math.round((lastChildSubtotal - correctedDisc + lastChildTax) * 100) / 100
+              await tx.order.update({
+                where: { id: lastChild.id },
+                data: {
+                  discountTotal: correctedDisc,
+                  total: Math.max(0, correctedTotal),
+                },
+              })
+            }
+          }
         }
 
         // Mark parent order as 'split' so children become payable
@@ -348,6 +402,8 @@ export const POST = withVenue(async function POST(
           displayNumber: s.displayNumber,
         })
       }
+
+      console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=even, children=${splitOrders.length}, by employee ${body.employeeId}`)
 
       return NextResponse.json({ data: {
         type: 'even',
@@ -737,6 +793,8 @@ export const POST = withVenue(async function POST(
           reason: 'split_by_item',
         })
       }
+
+      console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_item, children=1, by employee ${body.employeeId}`)
 
       return NextResponse.json({ data: {
         type: 'by_item',
@@ -1148,6 +1206,8 @@ export const POST = withVenue(async function POST(
         })
       }
 
+      console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_seat, children=${splitOrders.length}, by employee ${body.employeeId}`)
+
       return NextResponse.json({ data: {
         type: 'by_seat',
         parentOrder: {
@@ -1544,6 +1604,8 @@ export const POST = withVenue(async function POST(
           reason: 'split_by_table',
         })
       }
+
+      console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_table, children=${splitOrders.length}, by employee ${body.employeeId}`)
 
       return NextResponse.json({ data: {
         type: 'by_table',

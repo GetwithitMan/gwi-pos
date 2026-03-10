@@ -163,18 +163,18 @@ async function seedHardware(db: PrismaClient) {
   console.log('\n[local] payment reader + terminal')
 
   const reader = await db.paymentReader.upsert({
-    where:  { serialNumber: 'SIM-DEV-001' },
-    update: { communicationMode: 'simulated', isActive: true, isOnline: true },
+    where:  { serialNumber: 'DEV-001' },
+    update: { communicationMode: 'local', isActive: true },
     create: {
       locationId:        LOC_ID,
-      name:              'Simulated Card Reader (Dev)',
-      serialNumber:      'SIM-DEV-001',
-      ipAddress:         'localhost',
-      port:              3005,
+      name:              'Dev Card Reader',
+      serialNumber:      'DEV-001',
+      ipAddress:         '127.0.0.1',
+      port:              8080,
       verificationType:  'IP_ONLY',
-      communicationMode: 'simulated',
+      communicationMode: 'local',
       isActive:          true,
-      isOnline:          true,
+      isOnline:          false,
     },
   })
   log(`reader: ${reader.name}`)

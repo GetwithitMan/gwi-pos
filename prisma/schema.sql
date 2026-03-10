@@ -1,5 +1,5 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -64,7 +64,7 @@ CREATE TYPE "PrinterType" AS ENUM ('thermal', 'impact');
 CREATE TYPE "PrinterRole" AS ENUM ('receipt', 'kitchen', 'bar');
 
 -- CreateEnum
-CREATE TYPE "PrintJobStatus" AS ENUM ('pending', 'sent', 'failed');
+CREATE TYPE "PrintJobStatus" AS ENUM ('pending', 'queued', 'sent', 'failed', 'failed_permanent');
 
 -- CreateEnum
 CREATE TYPE "PrintRuleLevel" AS ENUM ('category', 'item', 'modifier');
@@ -127,7 +127,7 @@ CREATE TYPE "SeatStatus" AS ENUM ('available', 'occupied', 'reserved');
 CREATE TYPE "SeatType" AS ENUM ('standard', 'premium', 'accessible', 'booth_end');
 
 -- CreateEnum
-CREATE TYPE "OrderCardStatus" AS ENUM ('authorized', 'declined', 'captured', 'voided');
+CREATE TYPE "OrderCardStatus" AS ENUM ('authorized', 'declined', 'captured', 'voided', 'released');
 
 -- CreateEnum
 CREATE TYPE "ChargebackStatus" AS ENUM ('open', 'responded', 'won', 'lost');
@@ -199,7 +199,7 @@ CREATE TYPE "ShiftSwapRequestStatus" AS ENUM ('pending', 'accepted', 'approved',
 CREATE TYPE "TipGroupMembershipStatus" AS ENUM ('active', 'left', 'pending_approval');
 
 -- CreateEnum
-CREATE TYPE "DeductionStatus" AS ENUM ('pending', 'processing', 'succeeded', 'failed', 'dead');
+CREATE TYPE "DeductionStatus" AS ENUM ('pending', 'processing', 'succeeded', 'failed', 'dead', 'cancelled');
 
 -- CreateEnum
 CREATE TYPE "DeductionType" AS ENUM ('order_deduction', 'liquor_only', 'food_only');
@@ -612,6 +612,8 @@ CREATE TABLE "MenuItem" (
     "availableFrom" TEXT,
     "availableTo" TEXT,
     "availableDays" TEXT,
+    "availableFromDate" TIMESTAMP(3),
+    "availableUntilDate" TIMESTAMP(3),
     "commissionType" TEXT,
     "commissionValue" DECIMAL(65,30),
     "pourSizes" JSONB,
@@ -623,6 +625,8 @@ CREATE TABLE "MenuItem" (
     "isFeaturedCfd" BOOLEAN NOT NULL DEFAULT false,
     "fulfillmentType" "FulfillmentType" NOT NULL DEFAULT 'KITCHEN_STATION',
     "fulfillmentStationId" TEXT,
+    "allergens" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "isAgeRestricted" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -991,6 +995,10 @@ CREATE TABLE "Order" (
     "businessDayDate" TIMESTAMP(3),
     "source" TEXT,
     "isTaxExempt" BOOLEAN NOT NULL DEFAULT false,
+    "claimedByEmployeeId" TEXT,
+    "claimedByTerminalId" TEXT,
+    "claimedAt" TIMESTAMP(3),
+    "idempotencyKey" TEXT,
     "lastMutatedBy" TEXT,
     "originTerminalId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1025,6 +1033,7 @@ CREATE TABLE "OrderItem" (
     "delayMinutes" INTEGER,
     "delayStartedAt" TIMESTAMP(3),
     "kitchenStatus" "KitchenStatus" NOT NULL DEFAULT 'pending',
+    "kitchenSentAt" TIMESTAMP(3),
     "isCompleted" BOOLEAN NOT NULL DEFAULT false,
     "completedAt" TIMESTAMP(3),
     "resendCount" INTEGER NOT NULL DEFAULT 0,
@@ -1197,6 +1206,7 @@ CREATE TABLE "Coupon" (
     "validFrom" TIMESTAMP(3),
     "validUntil" TIMESTAMP(3),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "isStackable" BOOLEAN NOT NULL DEFAULT false,
     "createdBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -1287,6 +1297,8 @@ CREATE TABLE "OrderDiscount" (
     "locationId" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "discountRuleId" TEXT,
+    "couponId" TEXT,
+    "couponCode" TEXT,
     "name" TEXT NOT NULL,
     "amount" DECIMAL(65,30) NOT NULL,
     "percent" DECIMAL(65,30),
@@ -4133,6 +4145,7 @@ CREATE TABLE "order_item_snapshots" (
     "courseNumber" INTEGER,
     "isHeld" BOOLEAN NOT NULL DEFAULT false,
     "kitchenStatus" TEXT,
+    "kitchenSentAt" TIMESTAMP(3),
     "soldByWeight" BOOLEAN NOT NULL DEFAULT false,
     "weight" DOUBLE PRECISION,
     "weightUnit" TEXT,
@@ -4542,6 +4555,7 @@ CREATE TABLE "OutageQueueEntry" (
     "localSeq" INTEGER NOT NULL,
     "idempotencyKey" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
+    "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "replayedAt" TIMESTAMP(3),
 
@@ -4729,6 +4743,9 @@ CREATE INDEX "Modifier_linkedMenuItemId_idx" ON "Modifier"("linkedMenuItemId");
 CREATE INDEX "Modifier_locationId_linkedMenuItemId_idx" ON "Modifier"("locationId", "linkedMenuItemId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Modifier_modifierGroupId_name_key" ON "Modifier"("modifierGroupId", "name");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "ComboTemplate_menuItemId_key" ON "ComboTemplate"("menuItemId");
 
 -- CreateIndex
@@ -4756,6 +4773,9 @@ CREATE UNIQUE INDEX "ComboComponentOption_comboComponentId_menuItemId_key" ON "C
 CREATE INDEX "Section_locationId_idx" ON "Section"("locationId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Section_locationId_name_key" ON "Section"("locationId", "name");
+
+-- CreateIndex
 CREATE INDEX "SectionAssignment_locationId_idx" ON "SectionAssignment"("locationId");
 
 -- CreateIndex
@@ -4778,6 +4798,9 @@ CREATE INDEX "Table_locationId_isActive_deletedAt_idx" ON "Table"("locationId", 
 
 -- CreateIndex
 CREATE INDEX "Table_locationId_sectionId_idx" ON "Table"("locationId", "sectionId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Table_locationId_name_key" ON "Table"("locationId", "name");
 
 -- CreateIndex
 CREATE INDEX "FloorPlanElement_locationId_idx" ON "FloorPlanElement"("locationId");
@@ -4877,6 +4900,9 @@ CREATE INDEX "Order_locationId_businessDayDate_idx" ON "Order"("locationId", "bu
 
 -- CreateIndex
 CREATE INDEX "Order_locationId_status_businessDayDate_idx" ON "Order"("locationId", "status", "businessDayDate");
+
+-- CreateIndex
+CREATE INDEX "Order_claimedByEmployeeId_claimedAt_idx" ON "Order"("claimedByEmployeeId", "claimedAt");
 
 -- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
@@ -5047,10 +5073,16 @@ CREATE INDEX "DiscountRule_isActive_isAutomatic_idx" ON "DiscountRule"("isActive
 CREATE INDEX "DiscountRule_locationId_isActive_idx" ON "DiscountRule"("locationId", "isActive");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "DiscountRule_locationId_name_key" ON "DiscountRule"("locationId", "name");
+
+-- CreateIndex
 CREATE INDEX "OrderDiscount_locationId_idx" ON "OrderDiscount"("locationId");
 
 -- CreateIndex
 CREATE INDEX "OrderDiscount_orderId_idx" ON "OrderDiscount"("orderId");
+
+-- CreateIndex
+CREATE INDEX "OrderDiscount_couponId_idx" ON "OrderDiscount"("couponId");
 
 -- CreateIndex
 CREATE INDEX "VoidLog_locationId_idx" ON "VoidLog"("locationId");
@@ -5431,6 +5463,9 @@ CREATE INDEX "TaxRule_isActive_idx" ON "TaxRule"("isActive");
 CREATE INDEX "TaxRule_locationId_isActive_isInclusive_idx" ON "TaxRule"("locationId", "isActive", "isInclusive");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "TaxRule_locationId_name_key" ON "TaxRule"("locationId", "name");
+
+-- CreateIndex
 CREATE INDEX "InventoryTransaction_locationId_idx" ON "InventoryTransaction"("locationId");
 
 -- CreateIndex
@@ -5569,6 +5604,9 @@ CREATE INDEX "PricingOptionGroup_menuItemId_idx" ON "PricingOptionGroup"("menuIt
 CREATE INDEX "PricingOptionGroup_locationId_menuItemId_deletedAt_idx" ON "PricingOptionGroup"("locationId", "menuItemId", "deletedAt");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "PricingOptionGroup_menuItemId_name_key" ON "PricingOptionGroup"("menuItemId", "name");
+
+-- CreateIndex
 CREATE INDEX "PricingOption_locationId_idx" ON "PricingOption"("locationId");
 
 -- CreateIndex
@@ -5576,6 +5614,9 @@ CREATE INDEX "PricingOption_groupId_idx" ON "PricingOption"("groupId");
 
 -- CreateIndex
 CREATE INDEX "PricingOption_groupId_deletedAt_idx" ON "PricingOption"("groupId", "deletedAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PricingOption_groupId_label_key" ON "PricingOption"("groupId", "label");
 
 -- CreateIndex
 CREATE INDEX "PricingOptionInventoryLink_locationId_idx" ON "PricingOptionInventoryLink"("locationId");
@@ -5999,6 +6040,9 @@ CREATE INDEX "PrintRoute_routeType_idx" ON "PrintRoute"("routeType");
 
 -- CreateIndex
 CREATE INDEX "PrintRoute_priority_idx" ON "PrintRoute"("priority");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PrintRoute_locationId_name_key" ON "PrintRoute"("locationId", "name");
 
 -- CreateIndex
 CREATE INDEX "PrintJob_locationId_idx" ON "PrintJob"("locationId");
@@ -6874,6 +6918,9 @@ ALTER TABLE "Order" ADD CONSTRAINT "Order_preAuthReaderId_fkey" FOREIGN KEY ("pr
 ALTER TABLE "Order" ADD CONSTRAINT "Order_bottleServiceTierId_fkey" FOREIGN KEY ("bottleServiceTierId") REFERENCES "BottleServiceTier"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Order" ADD CONSTRAINT "Order_claimedByEmployeeId_fkey" FOREIGN KEY ("claimedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "OrderItem" ADD CONSTRAINT "OrderItem_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -6980,6 +7027,9 @@ ALTER TABLE "OrderDiscount" ADD CONSTRAINT "OrderDiscount_orderId_fkey" FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE "OrderDiscount" ADD CONSTRAINT "OrderDiscount_discountRuleId_fkey" FOREIGN KEY ("discountRuleId") REFERENCES "DiscountRule"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrderDiscount" ADD CONSTRAINT "OrderDiscount_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "VoidLog" ADD CONSTRAINT "VoidLog_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

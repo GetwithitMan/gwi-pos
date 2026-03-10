@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -149,6 +151,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require events.manage permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? createdBy
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.EVENTS_MANAGE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Check for conflicting reservations
     const eventDateObj = new Date(eventDate)

@@ -4,6 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
 
 // GET - Get tab details
 export const GET = withVenue(async function GET(
@@ -228,6 +229,10 @@ export const PUT = withVenue(async function PUT(
       } : {}),
     }).catch(console.error)
 
+    // Socket dispatch so other terminals see tab metadata changes in real-time
+    void dispatchTabUpdated(tab.locationId, { orderId: id }).catch(console.error)
+    void dispatchOpenOrdersChanged(tab.locationId, { trigger: 'item_updated', orderId: id }).catch(console.error)
+
     return NextResponse.json({ data: {
       id: updated.id,
       tabName: updated.tabName || `Tab #${updated.orderNumber}`,
@@ -307,6 +312,13 @@ export const DELETE = withVenue(async function DELETE(
       closedStatus: 'cancelled',
       reason: 'Empty tab deleted',
     }).catch(console.error)
+
+    // Socket dispatch so other terminals remove the deleted tab from their list
+    void dispatchOpenOrdersChanged(tab.locationId, { trigger: 'voided', orderId: id }).catch(console.error)
+    if (tab.tableId) {
+      const { dispatchFloorPlanUpdate } = await import('@/lib/socket-dispatch')
+      void dispatchFloorPlanUpdate(tab.locationId).catch(console.error)
+    }
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

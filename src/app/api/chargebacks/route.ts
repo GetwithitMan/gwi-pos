@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Create a chargeback case (manual entry for now)
@@ -8,6 +10,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       locationId,
+      employeeId,
       cardLast4,
       cardBrand,
       amount,
@@ -21,6 +24,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!locationId || !cardLast4 || !amount || !chargebackDate) {
       return NextResponse.json({ error: 'Missing required fields: locationId, cardLast4, amount, chargebackDate' }, { status: 400 })
     }
+
+    // Require manager-level permission — creating chargebacks is a sensitive financial operation
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? employeeId
+    const authResult = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
 
     // Try to auto-match against orders
     let matchedOrderId: string | null = null

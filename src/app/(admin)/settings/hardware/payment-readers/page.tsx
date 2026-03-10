@@ -723,9 +723,6 @@ export default function PaymentReadersPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-base font-semibold ${reader.isActive ? 'text-gray-900' : 'text-gray-400'}`}>{reader.name}</span>
                       <ConnectionBadge type={reader.connectionType} />
-                      {reader.communicationMode === 'simulated' && (
-                        <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full font-medium">SIMULATED</span>
-                      )}
                       {!reader.isActive && (
                         <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">Disabled</span>
                       )}
@@ -760,32 +757,28 @@ export default function PaymentReadersPage() {
 
                   {/* Action buttons */}
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {reader.communicationMode !== 'simulated' && (
-                      <>
-                        <button
-                          onClick={() => handlePing(reader)}
-                          disabled={pingingId === reader.id}
-                          title="Ping reader"
-                          className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                        >
-                          {pingingId === reader.id
-                            ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                            : <SignalIcon className="w-4 h-4" />
-                          }
-                        </button>
-                        <button
-                          onClick={() => handleVerify(reader)}
-                          disabled={verifyingId === reader.id}
-                          title="Verify serial (beep)"
-                          className="p-2 text-gray-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors disabled:opacity-50"
-                        >
-                          {verifyingId === reader.id
-                            ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                            : <SpeakerWaveIcon className="w-4 h-4" />
-                          }
-                        </button>
-                      </>
-                    )}
+                    <button
+                      onClick={() => handlePing(reader)}
+                      disabled={pingingId === reader.id}
+                      title="Ping reader"
+                      className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {pingingId === reader.id
+                        ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                        : <SignalIcon className="w-4 h-4" />
+                      }
+                    </button>
+                    <button
+                      onClick={() => handleVerify(reader)}
+                      disabled={verifyingId === reader.id}
+                      title="Verify serial (beep)"
+                      className="p-2 text-gray-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {verifyingId === reader.id
+                        ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                        : <SpeakerWaveIcon className="w-4 h-4" />
+                      }
+                    </button>
                     {/* Enable / Disable toggle */}
                     <button
                       onClick={() => handleToggleActive(reader)}
@@ -802,19 +795,17 @@ export default function PaymentReadersPage() {
                         : <CheckCircleIcon className="w-4 h-4" />
                       }
                     </button>
-                    {reader.communicationMode !== 'simulated' && (
-                      <button
-                        onClick={() => handleInitialize(reader)}
-                        disabled={initializingId === reader.id}
-                        title="Initialize reader (EMVParamDownload) — run once on first setup or after factory reset"
-                        className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50"
-                      >
-                        {initializingId === reader.id
-                          ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
-                          : <BoltIcon className="w-4 h-4" />
-                        }
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleInitialize(reader)}
+                      disabled={initializingId === reader.id}
+                      title="Initialize reader (EMVParamDownload) — run once on first setup or after factory reset"
+                      className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {initializingId === reader.id
+                        ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
+                        : <BoltIcon className="w-4 h-4" />
+                      }
+                    </button>
                     <button
                       onClick={() => setModal({ mode: 'edit', existing: reader })}
                       title="Edit reader"

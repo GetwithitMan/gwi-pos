@@ -17,7 +17,7 @@
 
 import type { RoutingResult } from '@/types/routing'
 import type { WeightReading } from '@/lib/scale/scale-protocol'
-import { emitToLocation, emitToTags, emitToRoom, emitToTerminal } from '@/lib/socket-server'
+import { emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation } from '@/lib/socket-server'
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 
@@ -747,7 +747,8 @@ export async function dispatchPaymentProcessed(
   data: { orderId: string; paymentId?: string; status: string; sourceTerminalId?: string }
 ): Promise<boolean> {
   try {
-    await emitToLocation(locationId, 'payment:processed', data)
+    // QoS 1: critical financial event — acknowledged delivery with retry
+    await emitCriticalToLocation(locationId, 'payment:processed', data)
     return true
   } catch (error) {
     console.error('[SocketDispatch] Failed to dispatch payment:processed:', error)
@@ -962,6 +963,29 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
   } else {
     void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
+  }
+}
+
+/**
+ * Dispatch CFD show-order-detail event
+ *
+ * Called just before payment to show the customer a full itemized confirmation
+ * on the CFD screen. Includes item names, quantities, prices, and modifiers.
+ */
+export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: string | null, data: {
+  terminalId?: string
+  orderId: string
+  orderNumber: number
+  items: Array<{ name: string; quantity: number; price: number; modifiers?: string[] }>
+  subtotal: number
+  tax: number
+  total: number
+  discountTotal?: number
+}): void {
+  if (cfdTerminalId) {
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch(console.error)
+  } else {
+    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch(console.error)
   }
 }
 
@@ -1208,7 +1232,8 @@ export async function dispatchOrderClosed(
 ): Promise<boolean> {
   const doEmit = async () => {
     try {
-      await emitToLocation(locationId, 'order:closed', payload)
+      // QoS 1: critical financial event — acknowledged delivery with retry
+      await emitCriticalToLocation(locationId, 'order:closed', payload)
       return true
     } catch (error) {
       console.error('[SocketDispatch] Failed to dispatch order:closed:', error)
@@ -1222,6 +1247,28 @@ export async function dispatchOrderClosed(
   }
 
   return doEmit()
+}
+
+// ==================== Outage Status Events ====================
+
+/**
+ * Dispatch sync:outage-status event to all connected clients.
+ *
+ * Emitted by the upstream sync worker when outage state transitions:
+ * - false → true: Internet lost (3 consecutive Neon failures)
+ * - true → false: Internet restored
+ *
+ * Client listener: OutageBanner listens for this to show/hide the offline banner.
+ */
+export async function dispatchOutageStatus(
+  locationId: string,
+  isInOutage: boolean,
+): Promise<void> {
+  try {
+    await emitToLocation(locationId, 'sync:outage-status', { isInOutage })
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch sync:outage-status:', error)
+  }
 }
 
 // ==================== HA Failover Events ====================

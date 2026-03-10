@@ -15,7 +15,30 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
-export const GET = withVenue(async function GET() {
+/**
+ * Security gate for system recovery endpoints.
+ * Requires CRON_SECRET or INTERNAL_API_SECRET, or localhost origin.
+ */
+function checkInternalAuth(request: NextRequest): NextResponse | null {
+  const authHeader = request.headers.get('authorization')?.replace('Bearer ', '') || ''
+  const apiKey = request.headers.get('x-api-key') || ''
+  const cronSecret = process.env.CRON_SECRET
+  const internalSecret = process.env.INTERNAL_API_SECRET
+  const isAuthorized = (cronSecret && (authHeader === cronSecret || apiKey === cronSecret)) ||
+                       (internalSecret && (authHeader === internalSecret || apiKey === internalSecret))
+  if (!isAuthorized) {
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
+    if (!['127.0.0.1', '::1', 'localhost'].includes(ip)) {
+      return NextResponse.json({ error: 'Unauthorized — API key required' }, { status: 401 })
+    }
+  }
+  return null
+}
+
+export const GET = withVenue(async function GET(request: NextRequest) {
+  const authError = checkInternalAuth(request)
+  if (authError) return authError
+
   const fiveMinAgo = new Date(Date.now() - STALE_THRESHOLD_MS)
 
   // Read from OrderSnapshot (event-sourced projection)
@@ -50,6 +73,9 @@ export const GET = withVenue(async function GET() {
 })
 
 export const POST = withVenue(async function POST(request: NextRequest) {
+  const authError = checkInternalAuth(request)
+  if (authError) return authError
+
   const body = await request.json().catch(() => ({}))
   const { orderId, employeeId } = body
 

@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
+import { getBusinessDayRange } from '@/lib/business-day'
 
 // GET sales report with comprehensive groupings
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -37,14 +38,29 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Build date filter with businessDayDate OR-fallback
+    // Fetch dayStartTime from location settings for business day range calculation
+    const reportLocationSettings = parseSettings(await getLocationSettings(locationId))
+    const dayStartTime = reportLocationSettings.businessDay?.dayStartTime || '04:00'
+
     const dateFilter: Record<string, unknown> = {}
     if (startDate || endDate) {
+      // For businessDayDate (stored as a date): simple date range comparison
       const dateRange: { gte?: Date; lte?: Date } = {}
       if (startDate) dateRange.gte = new Date(startDate)
       if (endDate) dateRange.lte = new Date(endDate + 'T23:59:59')
+
+      // For createdAt fallback (orders without businessDayDate): use business day time ranges
+      const createdAtRange: { gte?: Date; lte?: Date } = {}
+      if (startDate) {
+        createdAtRange.gte = getBusinessDayRange(startDate, dayStartTime).start
+      }
+      if (endDate) {
+        createdAtRange.lte = getBusinessDayRange(endDate, dayStartTime).end
+      }
+
       dateFilter.OR = [
         { businessDayDate: dateRange },
-        { businessDayDate: null, createdAt: dateRange },
+        { businessDayDate: null, createdAt: createdAtRange },
       ]
     }
 
@@ -194,8 +210,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         }
       }
 
-      // Daily grouping
-      const dateKey = order.createdAt.toISOString().split('T')[0]
+      // Daily grouping — use businessDayDate when available, with timezone-aware formatting
+      const tz = process.env.TIMEZONE || process.env.TZ
+      const dateKey = order.businessDayDate
+        ? (tz ? order.businessDayDate.toLocaleDateString('en-CA', { timeZone: tz }) : order.businessDayDate.toISOString().split('T')[0])
+        : (tz ? order.createdAt.toLocaleDateString('en-CA', { timeZone: tz }) : order.createdAt.toISOString().split('T')[0])
       if (!dailySales[dateKey]) {
         dailySales[dateKey] = { date: dateKey, orders: 0, gross: 0, net: 0, tax: 0, tips: 0, guests: 0 }
       }

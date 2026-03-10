@@ -5,6 +5,49 @@
 
 ---
 
+## 2026-03-10 — Security Hardening (Penetration Test)
+
+**Commits:** (uncommitted — 14 files changed)
+
+### Penetration Test
+- 6 parallel pen-test agents attacked: sync race conditions, payment money paths, unique constraint edge cases, cellular auth/proxy, inventory deduction, socket event reliability
+- 22 vulnerabilities fixed across 3 rounds
+
+### Payment Security (P0/P1)
+- Tip amount capped at 500% of payment amount (Zod post-validation)
+- Split child payments validated against parent order total (aggregate check)
+- PendingDeduction won't reset succeeded/dead status on re-pay
+- `lastMutatedBy: 'local'` added to: adjust-tip Payment+Order, refund-payment Payment×2+Order, commission OrderItem+Order raw SQL
+
+### Cellular Auth (P0)
+- CELLULAR_CLAIM_KEY: removed `|| ''` fallback → 503 when unconfigured
+- `isRevokedFromDb()`: fail-closed (DB error = deny instead of allow)
+- Fingerprint validation: mandatory when JWT contains deviceFingerprint (can't omit header)
+
+### Sync Safety (P0/P1)
+- FulfillmentEvent dedup: check existing events by orderId before creating in handleCloudFulfillment
+- handleCloudDeduction: removed TOCTOU SELECT, rely solely on ON CONFLICT
+- Socket dispatch: one `dispatchOpenOrdersChanged` per location per sync cycle (was 6+ per row)
+- HWM: `maxSyncedAt` only advances for successfully synced rows (failed rows retry next cycle)
+- Upstream sync: per-row try/catch on syncedAt stamps (one failure doesn't block others)
+
+### Inventory (P1)
+- 0-item deduction guard: returns `success: false` for paid/closed orders with 0 items (retries until OrderItems arrive)
+
+### Schema + Migrations
+- `OutageQueueEntry.metadata Json?` added to Prisma schema
+- Migration 022: adds metadata JSONB column to OutageQueueEntry
+- Modifier creation POST returns 409 (not 500) on unique constraint violation
+
+### Verified False Positives (not bugs)
+- Proxy path traversal: `normalizePath()` already exists
+- Deny list 15s window: `isRevokedFromDb()` runs on every cellular request (real-time)
+- @@unique for DiscountRule/PricingOptionGroup: already present in schema
+- Negative payment amounts: Zod `.positive()` catches
+- Gift card double-spend: FOR UPDATE within same tx prevents
+
+---
+
 ## 2026-03-08 — Barcode Scanning Feature (Full Stack)
 
 ### Session Summary

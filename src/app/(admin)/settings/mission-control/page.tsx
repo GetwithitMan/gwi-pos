@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button'
 
 const PROCESSOR_OPTIONS: { value: PaymentSettings['processor']; label: string; description: string }[] = [
   { value: 'none', label: 'None', description: 'No card processing -- cash only' },
-  { value: 'simulated', label: 'Simulated', description: 'Test mode with simulated transactions' },
   { value: 'datacap', label: 'Datacap', description: 'Datacap Direct integration for live card processing' },
 ]
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
@@ -15,6 +17,7 @@ export const GET = withVenue(async function GET(
       where: { id },
       select: {
         id: true,
+        locationId: true,
         firstName: true,
         lastName: true,
         displayName: true,
@@ -55,9 +58,16 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
 
-    // Mask sensitive data
+    // Require payroll or staff wages permission — bank account info is highly sensitive
+    const actor = await getActorFromRequest(request)
+    const resolvedActorId = actor.employeeId
+    const authResult = await requireAnyPermission(resolvedActorId, employee.locationId, [PERMISSIONS.PAYROLL_MANAGE, PERMISSIONS.STAFF_EDIT_WAGES])
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+
+    // Mask sensitive data — strip locationId (added for auth only)
+    const { locationId: _loc, ...employeeData } = employee
     const safeEmployee = {
-      ...employee,
+      ...employeeData,
       hourlyRate: employee.hourlyRate ? Number(employee.hourlyRate) : null,
       additionalFederalWithholding: employee.additionalFederalWithholding
         ? Number(employee.additionalFederalWithholding)
@@ -100,6 +110,12 @@ export const PUT = withVenue(async function PUT(
     if (!employee) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
+
+    // Require payroll or staff wages permission — updating bank account info is highly sensitive
+    const actor = await getActorFromRequest(request)
+    const resolvedActorId = actor.employeeId
+    const authResult = await requireAnyPermission(resolvedActorId, employee.locationId, [PERMISSIONS.PAYROLL_MANAGE, PERMISSIONS.STAFF_EDIT_WAGES])
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
 
     const updateData: Record<string, unknown> = {}
 

@@ -46,7 +46,7 @@ export function getQuickCashAmounts(amountDue: number): number[] {
   return [...new Set(amounts)].sort((a, b) => a - b).slice(0, 5)
 }
 
-// Generate fake auth code for simulated payments
+// Generate a placeholder auth code (used as fallback when no Datacap auth is available)
 export function generateFakeAuthCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
   let code = ''
@@ -56,9 +56,9 @@ export function generateFakeAuthCode(): string {
   return code
 }
 
-// Generate fake transaction ID
+// Generate a placeholder transaction ID (used as fallback when no Datacap ref is available)
 export function generateFakeTransactionId(): string {
-  return `SIM_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  return `PH_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
 // Validate card last 4 digits

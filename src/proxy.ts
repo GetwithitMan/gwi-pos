@@ -3,6 +3,8 @@ import { verifyCloudToken, isBlockedInCloudMode } from '@/lib/cloud-auth'
 import { verifyAccessToken } from '@/lib/access-gate'
 import {
   verifyCellularToken,
+  verifyCellularTokenWithGrace,
+  issueCellularToken,
   checkIdleTimeout,
   recordActivity,
   checkRateLimit,
@@ -122,7 +124,12 @@ const PUBLIC_API_PATH_RE = /^\/api\/(online|public)\//
 
 /** Routes allowed for cellular terminals */
 const CELLULAR_ALLOWLIST: Array<string | RegExp> = [
-  /^\/api\/orders(\/|$)/,       // create, update, send, close, pay
+  /^\/api\/orders$/,                           // GET list, POST create
+  /^\/api\/orders\/[^/]+$/,                    // GET single order
+  /^\/api\/orders\/[^/]+\/items$/,             // POST add items
+  /^\/api\/orders\/[^/]+\/send$/,              // POST send to kitchen
+  /^\/api\/orders\/[^/]+\/pay$/,               // POST payment
+  /^\/api\/orders\/replay-cart-events$/,       // POST cart replay
   /^\/api\/menu(\/|$)/,         // read-only menu access
   /^\/api\/sync(\/|$)/,         // all sync endpoints (bootstrap, delta, events, floor-plan, outbox)
   /^\/api\/order-events(\/|$)/, // event-sourced order mutations (batch)
@@ -139,6 +146,8 @@ const CELLULAR_ALLOWLIST: Array<string | RegExp> = [
 const CELLULAR_HARD_BLOCKED: Array<string | RegExp> = [
   /^\/api\/orders\/[^/]+\/refund/,
   /^\/api\/orders\/[^/]+\/adjust-tip/,
+  /^\/api\/orders\/[^/]+\/split/,
+  /^\/api\/orders\/[^/]+\/merge/,
   /^\/api\/shifts\/[^/]+\/close/,
   /^\/api\/(admin|settings|reports)(\/|$)/,
   /^\/api\/inventory(\/|$)/,
@@ -155,12 +164,53 @@ const CELLULAR_REAUTH_ROUTES: RegExp[] = [
   /^\/api\/orders\/[^/]+\/comp/,
 ]
 
+/**
+ * Routes eligible for expired-token grace period.
+ *
+ * These are outage-recovery replay endpoints used by Android workers
+ * (CartOutboxWorker, PaymentReconciliationWorker). When the JWT is expired
+ * but within the 4-hour grace window, the proxy:
+ *   1. Allows the request through (with x-cellular-authenticated headers)
+ *   2. Issues a fresh token and attaches it as X-Refreshed-Token response header
+ *   3. Logs the grace event for audit
+ *
+ * The Android client reads X-Refreshed-Token and stores the new JWT for
+ * subsequent requests, self-healing without requiring a re-pair.
+ */
+const CELLULAR_GRACE_ELIGIBLE_ROUTES: Array<string | RegExp> = [
+  /^\/api\/orders\/replay-cart-events$/,  // CartOutboxWorker replay
+  /^\/api\/orders\/[^/]+\/pay$/,          // PaymentReconciliationWorker replay
+  '/api/auth/refresh-cellular',           // Token refresh itself
+]
+
+/**
+ * Normalize a URL path by resolving `.` and `..` segments.
+ *
+ * Next.js `request.nextUrl.pathname` already normalizes via the WHATWG URL
+ * constructor, but we normalize explicitly as defense-in-depth: if any
+ * upstream layer ever passes a raw path, traversal sequences like
+ * `/api/orders/../../admin/settings` cannot bypass the allowlist/blocklist.
+ */
+function normalizePath(pathname: string): string {
+  const segments = pathname.split('/').filter(s => s !== '' && s !== '.')
+  const normalized: string[] = []
+  for (const seg of segments) {
+    if (seg === '..') {
+      normalized.pop()
+    } else {
+      normalized.push(seg)
+    }
+  }
+  return '/' + normalized.join('/')
+}
+
 function matchesRouteList(pathname: string, routes: Array<string | RegExp>): boolean {
+  const safe = normalizePath(pathname)
   for (const route of routes) {
     if (typeof route === 'string') {
-      if (pathname === route) return true
+      if (safe === route) return true
     } else {
-      if (route.test(pathname)) return true
+      if (route.test(safe)) return true
     }
   }
   return false
@@ -182,6 +232,25 @@ export async function proxy(request: NextRequest) {
   const host = request.headers.get('host') || ''
   const hostname = host.split(':')[0]
   const pathname = request.nextUrl.pathname
+
+  // ═══════════════════════════════════════════════════════════
+  // FENCED NODE CHECK (STONITH-lite)
+  //
+  // If this node has been fenced by the new primary (via
+  // /api/internal/ha-fence), reject all write requests with 503.
+  // Read-only requests (GET/HEAD) still pass so health checks
+  // and diagnostics remain functional.
+  // ═══════════════════════════════════════════════════════════
+  if (process.env.STATION_ROLE === 'fenced') {
+    // Allow the fence endpoint itself through so STONITH can get acknowledgment
+    const isFenceEndpoint = pathname === '/api/internal/ha-fence'
+    if (!isFenceEndpoint && request.method !== 'GET' && request.method !== 'HEAD') {
+      return NextResponse.json(
+        { error: 'This server has been fenced. Please reconnect to the primary.' },
+        { status: 503 }
+      )
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════
   // EARLY BYPASS: Online ordering customer pages + public APIs
@@ -224,31 +293,70 @@ export async function proxy(request: NextRequest) {
   // Auto-detect: if Bearer token is present, try verifying as cellular JWT
   // This allows cellular terminals to work without x-cellular-terminal header
   let cellularPayload: Awaited<ReturnType<typeof verifyCellularToken>> = null
+  let gracePayload: Awaited<ReturnType<typeof verifyCellularTokenWithGrace>> = null
+  let refreshedToken: string | null = null
+
   if (bearerToken) {
     cellularPayload = await verifyCellularToken(bearerToken)
+
+    // If normal verification failed, check if this is a grace-eligible route
+    // with a recently-expired token (outage recovery scenario)
+    if (!cellularPayload && (explicitCellular || matchesRouteList(pathname, CELLULAR_GRACE_ELIGIBLE_ROUTES))) {
+      gracePayload = await verifyCellularTokenWithGrace(bearerToken)
+      if (gracePayload?.expired) {
+        // Token is expired but within 4h grace window — issue a fresh token
+        // to send back via X-Refreshed-Token header
+        try {
+          refreshedToken = await issueCellularToken(
+            gracePayload.payload.terminalId,
+            gracePayload.payload.locationId,
+            gracePayload.payload.venueSlug,
+            gracePayload.payload.deviceFingerprint,
+            gracePayload.payload.terminalRole
+          )
+          console.warn(JSON.stringify({
+            event: 'cellular_grace_token_issued',
+            terminalId: gracePayload.payload.terminalId,
+            locationId: gracePayload.payload.locationId,
+            pathname,
+            tokenExpiredAt: new Date(gracePayload.payload.exp * 1000).toISOString(),
+            timestamp: new Date().toISOString(),
+          }))
+        } catch (issueErr) {
+          console.error('[proxy] Failed to issue grace token:', issueErr)
+          // Continue without refreshed token — the request will still go through
+        }
+      }
+    }
   }
 
-  const isCellularRequest = explicitCellular || cellularPayload !== null
+  // A request is cellular if: valid token, or explicitly cellular, or grace-verified
+  const effectiveCellularPayload = cellularPayload ?? gracePayload?.payload ?? null
+  const isCellularRequest = explicitCellular || effectiveCellularPayload !== null
 
   if (isCellularRequest) {
     if (!bearerToken) {
       return NextResponse.json({ error: 'Missing cellular token' }, { status: 401 })
     }
 
-    const payload = cellularPayload ?? await verifyCellularToken(bearerToken)
+    const payload = effectiveCellularPayload
     if (!payload) {
       return NextResponse.json({ error: 'Invalid or expired cellular token' }, { status: 401 })
     }
 
-    // Fingerprint check: header must match token
+    const isGraceAuth = gracePayload?.expired === true
+
+    // Fingerprint check: if JWT contains a fingerprint (set during pairing), always validate
     const fingerprintHeader = request.headers.get('x-device-fingerprint')
-    if (fingerprintHeader && fingerprintHeader !== payload.deviceFingerprint) {
-      logCellularBlock(payload.terminalId, payload.locationId, pathname, 'fingerprint_mismatch')
-      return NextResponse.json({ error: 'Device fingerprint mismatch' }, { status: 401 })
+    if (payload.deviceFingerprint) {
+      if (!fingerprintHeader || fingerprintHeader !== payload.deviceFingerprint) {
+        logCellularBlock(payload.terminalId, payload.locationId, pathname, 'fingerprint_missing_or_mismatch')
+        return NextResponse.json({ error: 'Device fingerprint missing or invalid' }, { status: 401 })
+      }
     }
 
-    // Idle timeout check
-    if (checkIdleTimeout(payload.terminalId)) {
+    // Idle timeout check — skip for grace-auth (device was offline, no activity to record)
+    if (!isGraceAuth && checkIdleTimeout(payload.terminalId)) {
       logCellularBlock(payload.terminalId, payload.locationId, pathname, 'idle_timeout')
       return NextResponse.json({ error: 'Session expired due to inactivity' }, { status: 401 })
     }
@@ -257,6 +365,12 @@ export async function proxy(request: NextRequest) {
     if (!checkRateLimit(payload.terminalId)) {
       logCellularBlock(payload.terminalId, payload.locationId, pathname, 'rate_limited')
       return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 })
+    }
+
+    // Grace-auth is ONLY allowed on grace-eligible routes (replay + refresh)
+    if (isGraceAuth && !matchesRouteList(pathname, CELLULAR_GRACE_ELIGIBLE_ROUTES)) {
+      logCellularBlock(payload.terminalId, payload.locationId, pathname, 'grace_not_eligible')
+      return NextResponse.json({ error: 'Token expired. Refresh your token first.' }, { status: 401 })
     }
 
     // Hard-blocked routes (403 — admin, settings, reports, refund, etc.)
@@ -285,6 +399,15 @@ export async function proxy(request: NextRequest) {
       // Re-auth required routes: void/comp pass through but flagged
       if (matchesRouteList(pathname, CELLULAR_REAUTH_ROUTES)) {
         headers.set('x-requires-reauth', 'true')
+      }
+
+      // If a refreshed token was issued (grace-period auth), attach it as a
+      // response header so the Android client can pick it up and store it
+      // for subsequent requests — self-healing without explicit refresh call.
+      if (refreshedToken) {
+        const response = NextResponse.next({ request: { headers } })
+        response.headers.set('X-Refreshed-Token', refreshedToken)
+        return response
       }
 
       return NextResponse.next({ request: { headers } })

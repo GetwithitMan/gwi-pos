@@ -47,6 +47,17 @@ async function runPrePushMigrations() {
       )
     `)
 
+    // Advisory lock to prevent concurrent migration runners
+    // Lock ID 20250101 is arbitrary but unique to this migration runner
+    const [lockResult] = await prisma.$queryRawUnsafe(
+      `SELECT pg_try_advisory_lock(20250101) as locked`
+    )
+    if (!lockResult || !lockResult.locked) {
+      console.log(`${PREFIX} Another migration runner is active — skipping`)
+      return
+    }
+    console.log(`${PREFIX} Acquired advisory lock`)
+
     // --- Discover and run pending migrations ---
     const migrationsDir = path.join(__dirname, 'migrations')
     if (!fs.existsSync(migrationsDir)) {
@@ -101,6 +112,10 @@ async function runPrePushMigrations() {
     }
     console.log(`${PREFIX} Pre-push migrations complete (${applied} applied, ${skipped} skipped)`)
   } finally {
+    // Release advisory lock
+    try {
+      await prisma.$queryRawUnsafe(`SELECT pg_advisory_unlock(20250101)`)
+    } catch { /* best-effort */ }
     await prisma.$disconnect()
   }
 }

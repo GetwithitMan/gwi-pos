@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { withVenue } from '@/lib/with-venue'
-import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 
 // ============================================
 // POST - Create a new empty check on a split order
@@ -95,12 +95,12 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    // Fire-and-forget socket emit
-    void emitToLocation(parentOrder.locationId, 'orders:list-changed', {
-      orderId: id,
-      trigger: 'split',
+    // Fire-and-forget: notify all terminals that a new split order was created
+    void dispatchOpenOrdersChanged(parentOrder.locationId, {
+      trigger: 'created',
+      orderId: newOrder.id,
       tableId: parentOrder.tableId || undefined,
-    }).catch(() => {})
+    }).catch(console.error)
 
     // Event emission: new empty split check created
     void emitOrderEvent(parentOrder.locationId, newOrder.id, 'ORDER_CREATED', {

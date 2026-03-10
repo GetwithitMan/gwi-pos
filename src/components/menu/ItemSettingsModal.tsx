@@ -31,6 +31,9 @@ interface ItemSettings {
   availableFrom: string | null
   availableTo: string | null
   availableDays: string | null
+  // Seasonal date-based availability
+  availableFromDate: string | null
+  availableUntilDate: string | null
   // Commission
   commissionType: string | null
   commissionValue: number | null
@@ -38,6 +41,10 @@ interface ItemSettings {
   soldByWeight: boolean
   weightUnit: string | null
   pricePerWeightUnit: number | null
+  // Allergen tracking
+  allergens: string[]
+  // Age verification
+  isAgeRestricted: boolean
 }
 
 interface IngredientLibraryItem {
@@ -119,6 +126,9 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
   const [availableFrom, setAvailableFrom] = useState('')
   const [availableTo, setAvailableTo] = useState('')
   const [availableDays, setAvailableDays] = useState<Set<string>>(new Set())
+  // Seasonal date-based availability
+  const [availableFromDate, setAvailableFromDate] = useState('')
+  const [availableUntilDate, setAvailableUntilDate] = useState('')
   // Commission
   const [commissionType, setCommissionType] = useState('')
   const [commissionValue, setCommissionValue] = useState('')
@@ -126,6 +136,10 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
   const [soldByWeight, setSoldByWeight] = useState(false)
   const [weightUnit, setWeightUnit] = useState('lb')
   const [pricePerWeightUnit, setPricePerWeightUnit] = useState('')
+  // Allergen tracking
+  const [allergens, setAllergens] = useState<string[]>([])
+  // Age verification
+  const [isAgeRestricted, setIsAgeRestricted] = useState(false)
   // Whether size options are active (overrides base price)
   const [sizesActive, setSizesActive] = useState(false)
   const handleSizesActiveChange = useCallback((active: boolean) => setSizesActive(active), [])
@@ -164,11 +178,16 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
         if (it.availableDays) {
           setAvailableDays(new Set(it.availableDays.split(',')))
         }
+        // Seasonal date-based availability
+        setAvailableFromDate(it.availableFromDate ? it.availableFromDate.split('T')[0] : '')
+        setAvailableUntilDate(it.availableUntilDate ? it.availableUntilDate.split('T')[0] : '')
         setCommissionType(it.commissionType || '')
         setCommissionValue(it.commissionValue != null ? String(it.commissionValue) : '')
         setSoldByWeight(it.soldByWeight ?? false)
         setWeightUnit(it.weightUnit || 'lb')
         setPricePerWeightUnit(it.pricePerWeightUnit != null ? String(it.pricePerWeightUnit) : '')
+        setAllergens(Array.isArray(it.allergens) ? it.allergens : [])
+        setIsAgeRestricted(it.isAgeRestricted ?? false)
 
         // Auto-focus name if new item
         if (it.name === 'New Item') {
@@ -269,12 +288,18 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
         availableFrom: availableFrom || null,
         availableTo: availableTo || null,
         availableDays: availableDays.size > 0 ? Array.from(availableDays).join(',') : null,
+        availableFromDate: availableFromDate || null,
+        availableUntilDate: availableUntilDate || null,
         commissionType: commissionType || null,
         commissionValue: commissionValue ? parseFloat(commissionValue) : null,
         // Weight-Based Selling
         soldByWeight,
         weightUnit: soldByWeight ? weightUnit : null,
         pricePerWeightUnit: soldByWeight && pricePerWeightUnit ? parseFloat(pricePerWeightUnit) : null,
+        // Allergen tracking
+        allergens,
+        // Age verification
+        isAgeRestricted,
       }
 
       const res = await fetch(`/api/menu/items/${itemId}`, {
@@ -336,8 +361,36 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
     { id: 'kitchen', label: 'Kitchen & Print' },
     { id: 'availability', label: 'Availability' },
     { id: 'pricing', label: 'Tax & Commission' },
+    { id: 'compliance', label: 'Compliance' },
     { id: 'barcodes', label: 'Barcodes' },
   ]
+
+  const STANDARD_ALLERGENS = [
+    'Milk', 'Eggs', 'Fish', 'Shellfish', 'Tree Nuts',
+    'Peanuts', 'Wheat', 'Soy', 'Sesame', 'Sulfites', 'Gluten',
+  ]
+
+  const ALLERGEN_COLORS: Record<string, string> = {
+    'Milk': 'bg-blue-100 text-blue-800 border-blue-300',
+    'Eggs': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+    'Fish': 'bg-cyan-100 text-cyan-800 border-cyan-300',
+    'Shellfish': 'bg-red-100 text-red-800 border-red-300',
+    'Tree Nuts': 'bg-amber-100 text-amber-800 border-amber-300',
+    'Peanuts': 'bg-orange-100 text-orange-800 border-orange-300',
+    'Wheat': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+    'Soy': 'bg-green-100 text-green-800 border-green-300',
+    'Sesame': 'bg-lime-100 text-lime-800 border-lime-300',
+    'Sulfites': 'bg-purple-100 text-purple-800 border-purple-300',
+    'Gluten': 'bg-rose-100 text-rose-800 border-rose-300',
+  }
+
+  const toggleAllergen = (allergen: string) => {
+    setAllergens(prev =>
+      prev.includes(allergen)
+        ? prev.filter(a => a !== allergen)
+        : [...prev, allergen]
+    )
+  }
 
   const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
   const labelClass = 'block text-xs font-semibold text-gray-700 mb-1'
@@ -711,6 +764,33 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                     <p className="text-[11px] text-gray-600 mt-1">Select none for every day.</p>
                   </div>
 
+                  {/* Seasonal date-based availability */}
+                  <div className="mt-4 pt-4 border-t border-gray-200">
+                    <span className={labelClass}>Seasonal Availability (optional)</span>
+                    <p className="text-[11px] text-gray-600 mb-2">Set a date range when this item is available. Outside this range it will be hidden from the POS menu.</p>
+                    <div className="grid grid-cols-2 gap-3 mt-1">
+                      <div>
+                        <label className="text-[11px] text-gray-600">Available From Date</label>
+                        <input
+                          type="date"
+                          value={availableFromDate}
+                          onChange={(e) => setAvailableFromDate(e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-gray-600">Available Until Date</label>
+                        <input
+                          type="date"
+                          value={availableUntilDate}
+                          onChange={(e) => setAvailableUntilDate(e.target.value)}
+                          className={inputClass}
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-gray-600 mt-1">Leave blank for year-round availability.</p>
+                  </div>
+
                 </>
               )}
 
@@ -803,6 +883,86 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                         </div>
                       </div>
                     )}
+                  </div>
+                </>
+              )}
+
+              {/* COMPLIANCE TAB (Allergens + Age Verification) */}
+              {activeTab === 'compliance' && (
+                <>
+                  {/* Allergen Tracking */}
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-3 py-2 bg-orange-50 border-b border-orange-200">
+                      <span className="text-xs font-semibold text-orange-800">ALLERGEN TRACKING</span>
+                      <p className="text-[11px] text-orange-600 mt-0.5">Select all allergens present in this item. Badges appear on POS orders and KDS tickets.</p>
+                    </div>
+                    <div className="p-3">
+                      <div className="flex flex-wrap gap-2">
+                        {STANDARD_ALLERGENS.map(allergen => {
+                          const isSelected = allergens.includes(allergen)
+                          const colorClass = ALLERGEN_COLORS[allergen] || 'bg-gray-100 text-gray-800 border-gray-300'
+                          return (
+                            <button
+                              key={allergen}
+                              type="button"
+                              onClick={() => toggleAllergen(allergen)}
+                              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all min-h-[44px] ${
+                                isSelected
+                                  ? `${colorClass} ring-2 ring-offset-1 ring-orange-400`
+                                  : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'
+                              }`}
+                            >
+                              {allergen}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {allergens.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <span className="text-[11px] text-gray-500">Selected: </span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {allergens.map(a => (
+                              <span
+                                key={a}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+                                  ALLERGEN_COLORS[a] || 'bg-gray-100 text-gray-800 border-gray-300'
+                                }`}
+                              >
+                                {a}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAllergen(a)}
+                                  className="ml-0.5 hover:opacity-70"
+                                >
+                                  x
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Age Verification */}
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-3 py-2 bg-red-50 border-b border-red-200">
+                      <span className="text-xs font-semibold text-red-800">AGE VERIFICATION</span>
+                    </div>
+                    <div className="p-3">
+                      <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
+                        <input
+                          type="checkbox"
+                          checked={isAgeRestricted}
+                          onChange={(e) => setIsAgeRestricted(e.target.checked)}
+                          className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">Age-Restricted (21+)</span>
+                          <p className="text-[11px] text-gray-500">Requires ID verification before adding to order. Alcohol, tobacco, etc.</p>
+                        </div>
+                      </label>
+                    </div>
                   </div>
                 </>
               )}

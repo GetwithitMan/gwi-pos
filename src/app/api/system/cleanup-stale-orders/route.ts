@@ -19,6 +19,21 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
  */
 export const POST = withVenue(async (request) => {
   try {
+    // Security: require CRON_SECRET or INTERNAL_API_SECRET
+    // This endpoint is called by the EOD cron or admin action — never by regular users.
+    const authHeader = request.headers.get('authorization')?.replace('Bearer ', '') || ''
+    const apiKey = request.headers.get('x-api-key') || ''
+    const cronSecret = process.env.CRON_SECRET
+    const internalSecret = process.env.INTERNAL_API_SECRET
+    const isAuthorized = (cronSecret && (authHeader === cronSecret || apiKey === cronSecret)) ||
+                         (internalSecret && (authHeader === internalSecret || apiKey === internalSecret))
+    if (!isAuthorized) {
+      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
+      if (!['127.0.0.1', '::1', 'localhost'].includes(ip)) {
+        return NextResponse.json({ error: 'Unauthorized — API key required' }, { status: 401 })
+      }
+    }
+
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     const maxAgeHours = parseInt(searchParams.get('maxAgeHours') || '4', 10)

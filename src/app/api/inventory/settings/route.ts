@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 const DEFAULT_SETTINGS = {
   // Tracking mode
@@ -108,11 +110,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, ...settingsData } = body
+    const { locationId, employeeId: bodyEmployeeId, ...settingsData } = body
 
     if (!locationId) {
       return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
     }
+
+    // Auth check — require settings.inventory permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_INVENTORY)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Prepare update data
     const updateData: Record<string, unknown> = {}

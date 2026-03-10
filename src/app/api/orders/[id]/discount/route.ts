@@ -354,6 +354,14 @@ export const POST = withVenue(async function POST(
       )
       const maxAllowedDiscount = Number(order.subtotal) - currentDiscountTotal
 
+      // Fix 4: Reject fixed discounts that exceed remaining subtotal (don't silently clamp)
+      if (discountPercent == null && discountAmount > Number(order.subtotal)) {
+        return NextResponse.json(
+          { error: `Discount amount $${discountAmount.toFixed(2)} exceeds order subtotal $${Number(order.subtotal).toFixed(2)}` },
+          { status: 400 }
+        )
+      }
+
       if (discountAmount > maxAllowedDiscount) {
         discountAmount = maxAllowedDiscount
       }

@@ -40,7 +40,14 @@ export async function POST(request: NextRequest) {
 
     // Verify the nonce with Mission Control
     const mcUrl = process.env.MISSION_CONTROL_URL || 'https://app.thepasspos.com'
-    const claimKey = process.env.CELLULAR_CLAIM_KEY || ''
+    const claimKey = process.env.CELLULAR_CLAIM_KEY
+    if (!claimKey) {
+      console.error('[cellular-exchange] CELLULAR_CLAIM_KEY not configured')
+      return NextResponse.json(
+        { error: 'Server not configured for cellular pairing' },
+        { status: 503 }
+      )
+    }
 
     let mcResponse: Response
     try {

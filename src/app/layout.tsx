@@ -11,6 +11,7 @@ import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistratio
 import { OfflineDisconnectBanner } from "@/components/OfflineDisconnectBanner";
 import { FailoverBanner } from "@/components/FailoverBanner";
 import { CellularModeBanner } from "@/components/CellularModeBanner";
+import { OutageBanner } from "@/components/OutageBanner";
 import { ManagerAlertListener } from "@/components/ManagerAlertListener";
 import { StockChangeListener } from "@/components/StockChangeListener";
 import { ManagerPinProvider } from "@/components/providers/ManagerPinProvider";
@@ -55,6 +56,7 @@ export default function RootLayout({
         <ServiceWorkerRegistration />
         <OfflineDisconnectBanner />
         <FailoverBanner />
+        <OutageBanner />
         <CellularModeBanner />
         <ToastContainer />
       </body>

@@ -1,9 +1,16 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { hasNeonConnection } from '@/lib/neon-client'
 import { getUpstreamSyncMetrics } from '@/lib/sync/upstream-sync-worker'
 import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Internal route — require INTERNAL_API_SECRET or admin session
+  const authHeader = request.headers.get('x-internal-secret')
+  const expectedSecret = process.env.INTERNAL_API_SECRET
+  if (expectedSecret && authHeader !== expectedSecret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const syncEnabled = process.env.SYNC_ENABLED === 'true'
   const neonConnected = hasNeonConnection()
 

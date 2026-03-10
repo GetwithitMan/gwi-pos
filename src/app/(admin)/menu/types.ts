@@ -80,6 +80,9 @@ export interface MenuItem {
   pourSizes?: Record<string, number | { label: string; multiplier: number }> | null
   defaultPourSize?: string | null
   applyPourToModifiers?: boolean
+  // Seasonal date-based availability
+  availableFromDate?: string | null
+  availableUntilDate?: string | null
   // Entertainment fields
   entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
   currentOrderId?: string | null

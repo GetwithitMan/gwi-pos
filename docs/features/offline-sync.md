@@ -208,6 +208,19 @@ Android → NUC (local PG) → Neon Cloud
 - Stale heartbeat timeout: 120 seconds
 - Health check: 7 check types (ORDER_CREATION, PAYMENT_PROCESSING, PRINTER_CONNECTION, DATABASE_QUERY, API_RESPONSE, KDS_CONNECTION, NETWORK_CONNECTIVITY)
 
+### Sync Safety Invariants (added 2026-03-10)
+
+These rules were hardened via penetration testing:
+
+- **HWM advancement**: Only successful rows advance `maxSyncedAt`. Failed rows retry next cycle.
+- **Bidirectional sync marker**: All NUC mutations to Order/Payment/OrderItem MUST set `lastMutatedBy: 'local'`. Missing this causes silent sync data loss.
+- **FulfillmentEvent dedup**: `handleCloudFulfillment` checks for existing events by orderId before creating new ones. Prevents duplicate printing when send/route.ts already created events.
+- **PendingDeduction idempotency**: Uses `ON CONFLICT ("orderId") DO NOTHING` — no SELECT-before-INSERT pattern.
+- **0-item deduction guard**: If a paid/closed order has 0 items (OrderItems not yet synced), deduction returns `success: false` for retry. Prevents false-succeeded deductions.
+- **Socket batching**: Downstream sync emits at most one `dispatchOpenOrdersChanged` per location per cycle.
+- **Upstream resilience**: Per-row try/catch on `syncedAt` stamps. One failure doesn't block the batch.
+- **OutageQueueEntry.metadata**: JSONB field for retryCount tracking. Added in migration 022.
+
 ---
 
 ## Android-Specific Notes
@@ -230,4 +243,4 @@ Android → NUC (local PG) → Neon Cloud
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-10*

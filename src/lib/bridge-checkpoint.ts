@@ -57,6 +57,19 @@ async function renewLease(): Promise<void> {
       leaseExpiresAt,
       now,
     )
+
+    // NTP drift detection: compare Node.js Date.now() against DB NOW()
+    // If drift exceeds 5s, lease expiry calculations and sync HWMs are unreliable
+    const [dbTimeRow] = await masterClient.$queryRawUnsafe<[{ now: Date }]>(
+      `SELECT NOW() as now`
+    )
+    if (dbTimeRow) {
+      const dbNow = dbTimeRow.now instanceof Date ? dbTimeRow.now.getTime() : new Date(dbTimeRow.now as unknown as string).getTime()
+      const drift = Math.abs(Date.now() - dbNow)
+      if (drift > 5000) {
+        console.warn(`[BridgeCheckpoint] NTP drift detected: ${drift}ms between Node.js and PostgreSQL — lease expiry and sync timestamps may be unreliable`)
+      }
+    }
   } catch (err) {
     console.error('[BridgeCheckpoint] Failed to renew lease:', err instanceof Error ? err.message : err)
   }

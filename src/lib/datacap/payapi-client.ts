@@ -127,92 +127,15 @@ function mapResponse(raw: RawPayApiResponse): PayApiResponse {
   }
 }
 
-// ─── Simulated Responses ──────────────────────────────────────────────────────
-
-function simulateSaleResponse(invoiceNo: string, amount: string, tip?: string): PayApiResponse {
-  return {
-    status:         'Approved',
-    message:        'APPROVAL',
-    refNo:          `SIM-${Date.now()}`,
-    invoiceNo,
-    amount,
-    authorized:     amount,
-    token:          'DC4:SIM:MULTIUSE:4111111111111111',
-    authCode:       'SIM123',
-    account:        '476173XXXXXX0043',
-    brand:          'VISA',
-    tip,
-    returnCode:     '000000',
-    responseOrigin: 'Simulator',
-  }
-}
-
-function simulateVoidResponse(invoiceNo: string): PayApiResponse {
-  return {
-    status:         'Approved',
-    message:        'VOIDED',
-    refNo:          `SIM-VOID-${Date.now()}`,
-    invoiceNo,
-    amount:         '0.00',
-    authorized:     '0.00',
-    token:          'DC4:SIM:MULTIUSE:4111111111111111',
-    returnCode:     '000000',
-    responseOrigin: 'Simulator',
-  }
-}
-
-function simulateRefundResponse(invoiceNo: string, amount: string): PayApiResponse {
-  return {
-    status:         'Approved',
-    message:        'REFUND APPROVED',
-    refNo:          `SIM-REF-${Date.now()}`,
-    invoiceNo,
-    amount,
-    authorized:     amount,
-    token:          'DC4:SIM:MULTIUSE:4111111111111111',
-    returnCode:     '000000',
-    responseOrigin: 'Simulator',
-  }
-}
-
-function simulateGetTxResponse(refNo: string): PayApiResponse {
-  return {
-    status:         'Approved',
-    message:        'APPROVAL',
-    refNo,
-    invoiceNo:      'SIM-INV',
-    amount:         '10.00',
-    authorized:     '10.00',
-    token:          'DC4:SIM:MULTIUSE:4111111111111111',
-    authCode:       'SIM123',
-    account:        '476173XXXXXX0043',
-    brand:          'VISA',
-    returnCode:     '000000',
-    responseOrigin: 'Simulator',
-  }
-}
-
 // ─── PayApiClient ─────────────────────────────────────────────────────────────
 
 export class PayApiClient {
   private readonly mid: string
   private readonly apiKey: string
   private readonly baseUrl: string
-  private readonly isSimulated: boolean
 
   constructor() {
     const env = process.env.DATACAP_PAYAPI_ENV ?? 'cert'
-
-    // Simulated mode — no credentials required
-    if (env === 'simulated') {
-      this.isSimulated = true
-      this.mid = 'SIM_MID'
-      this.apiKey = 'SIM_KEY'
-      this.baseUrl = PAYAPI_URLS.cert
-      return
-    }
-
-    this.isSimulated = false
 
     const mid    = process.env.DATACAP_PAYAPI_MID
     const apiKey = process.env.DATACAP_PAYAPI_KEY
@@ -323,8 +246,6 @@ export class PayApiClient {
    * POST /credit/sale
    */
   async sale(req: PayApiSaleRequest): Promise<PayApiResponse> {
-    if (this.isSimulated) return simulateSaleResponse(req.invoiceNo, req.amount, req.tip)
-
     return this.request('POST', '/credit/sale', {
       Token:     req.token,
       Amount:    req.amount,
@@ -341,8 +262,6 @@ export class PayApiClient {
    * POST /credit/sale/{RefNo}/void
    */
   async voidSale(req: PayApiVoidRequest): Promise<PayApiResponse> {
-    if (this.isSimulated) return simulateVoidResponse(req.invoiceNo)
-
     return this.request('POST', `/credit/sale/${encodeURIComponent(req.refNo)}/void`, {
       Token:     req.token,
       InvoiceNo: req.invoiceNo,
@@ -355,8 +274,6 @@ export class PayApiClient {
    * POST /credit/return
    */
   async refund(req: PayApiRefundRequest): Promise<PayApiResponse> {
-    if (this.isSimulated) return simulateRefundResponse(req.invoiceNo, req.amount)
-
     return this.request('POST', '/credit/return', {
       Token:     req.token,
       Amount:    req.amount,
@@ -370,8 +287,6 @@ export class PayApiClient {
    * POST /credit/preauth
    */
   async preAuth(req: PayApiPreAuthRequest): Promise<PayApiResponse> {
-    if (this.isSimulated) return simulateSaleResponse(req.invoiceNo, req.amount)
-
     return this.request('POST', '/credit/preauth', {
       Token:     req.token,
       Amount:    req.amount,
@@ -386,8 +301,6 @@ export class PayApiClient {
    * PUT /credit/preauth/{RefNo}
    */
   async capture(req: PayApiCaptureRequest): Promise<PayApiResponse> {
-    if (this.isSimulated) return simulateSaleResponse(req.invoiceNo, req.amount, req.tip)
-
     return this.request('PUT', `/credit/preauth/${encodeURIComponent(req.refNo)}`, {
       Token:     req.token,
       Amount:    req.amount,
@@ -402,8 +315,6 @@ export class PayApiClient {
    * POST /credit/preauth/{RefNo}/void
    */
   async voidAuth(req: PayApiVoidRequest): Promise<PayApiResponse> {
-    if (this.isSimulated) return simulateVoidResponse(req.invoiceNo)
-
     return this.request('POST', `/credit/preauth/${encodeURIComponent(req.refNo)}/void`, {
       Token:     req.token,
       InvoiceNo: req.invoiceNo,
@@ -416,8 +327,6 @@ export class PayApiClient {
    * GET /credit/{RefNo}
    */
   async getTransaction(refNo: string): Promise<PayApiResponse> {
-    if (this.isSimulated) return simulateGetTxResponse(refNo)
-
     return this.request('GET', `/credit/${encodeURIComponent(refNo)}`)
   }
 }
@@ -430,8 +339,7 @@ let _payApiClient: PayApiClient | null = null
  * Return the shared PayApiClient singleton.
  * Constructed lazily — reads env vars on first call.
  *
- * Throws if DATACAP_PAYAPI_MID or DATACAP_PAYAPI_KEY are missing
- * and DATACAP_PAYAPI_ENV is not "simulated".
+ * Throws if DATACAP_PAYAPI_MID or DATACAP_PAYAPI_KEY are missing.
  */
 export function getPayApiClient(): PayApiClient {
   if (!_payApiClient) {

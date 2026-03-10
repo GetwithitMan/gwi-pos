@@ -195,7 +195,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
       try {
         // Claim the order in Neon (prevent double-pickup)
         const claimed = await neonClient!.$executeRawUnsafe(
-          `UPDATE "Order" SET status = 'processing' WHERE id = $1 AND status = 'received'`,
+          `UPDATE "Order" SET status = 'processing', "updatedAt" = NOW(), "lastMutatedBy" = 'cloud' WHERE id = $1 AND status = 'received'`,
           orderId
         )
         if (claimed === 0) continue // Already claimed
@@ -249,7 +249,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
         // Revert claim in Neon on failure
         await neonClient!
           .$executeRawUnsafe(
-            `UPDATE "Order" SET status = 'received' WHERE id = $1 AND status = 'processing'`,
+            `UPDATE "Order" SET status = 'received', "updatedAt" = NOW(), "lastMutatedBy" = 'cloud' WHERE id = $1 AND status = 'processing'`,
             orderId
           )
           .catch(() => {})

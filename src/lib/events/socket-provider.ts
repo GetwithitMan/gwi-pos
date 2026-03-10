@@ -85,6 +85,14 @@ export class SocketEventProvider implements EventProvider {
 
     this.socket = getSharedSocket()
 
+    // Track locationId for catch-up requests on reconnect
+    try {
+      const sharedMod = await import('@/lib/shared-socket')
+      sharedMod.setTrackedLocationId(locationId)
+    } catch {
+      // shared-socket unavailable
+    }
+
     // Create named handlers for proper cleanup
     this.onConnectHandler = () => {
       this.setConnectionStatus('connected')
@@ -124,7 +132,23 @@ export class SocketEventProvider implements EventProvider {
 
     // Event forwarding — immediate dispatch (no artificial delay)
     // Individual consumers can debounce on their end if needed.
+    // Also extracts _eid from incoming events for reconnection catch-up tracking.
     this.onAnyHandler = (eventName: string, data: EventMap[EventName]) => {
+      // Track event buffer position for catch-up on reconnect
+      const dataObj = data as unknown as Record<string, unknown> | null
+      if (dataObj && typeof dataObj === 'object' && '_eid' in dataObj) {
+        import('@/lib/shared-socket').then(({ updateLastEventId }) => {
+          updateLastEventId(dataObj._eid as number)
+        }).catch(() => { /* shared-socket unavailable */ })
+      }
+
+      // QoS 1: auto-acknowledge critical events (payment:processed, order:closed)
+      if (dataObj && typeof dataObj === 'object' && '_ackId' in dataObj) {
+        import('@/lib/shared-socket').then(({ acknowledgeEvent }) => {
+          acknowledgeEvent(dataObj._ackId as string)
+        }).catch(() => { /* shared-socket unavailable */ })
+      }
+
       const listeners = this.eventListeners.get(eventName)
       if (!listeners || listeners.size === 0) return
 

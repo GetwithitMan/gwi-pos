@@ -3,6 +3,8 @@ import { PrinterRole } from '@prisma/client'
 import { db } from '@/lib/db'
 import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET all printers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -52,6 +54,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       paperWidth = 80,
       supportsCut = true,
       printSettings,
+      employeeId: bodyEmployeeId,
     } = body
 
     // Validate required fields
@@ -64,6 +67,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require settings.hardware permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Validate IP address format
     const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/

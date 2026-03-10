@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { refreshCellularToken, verifyCellularToken, verifyPlayIntegrity } from '@/lib/cellular-auth'
+import { refreshCellularToken, verifyCellularTokenWithGrace, verifyPlayIntegrity } from '@/lib/cellular-auth'
 
 /**
  * POST /api/auth/refresh-cellular
@@ -7,6 +7,10 @@ import { refreshCellularToken, verifyCellularToken, verifyPlayIntegrity } from '
  * Refresh a cellular terminal JWT token.
  * Accepts current token in Authorization header.
  * Returns new token or 401/403 if revoked/expired/attestation-failed.
+ *
+ * Grace period: accepts tokens expired within 4 hours (outage recovery).
+ * refreshCellularToken() uses verifyCellularTokenWithGrace() internally,
+ * so Android workers can self-heal after extended offline periods.
  *
  * Play Integrity:
  * - If `x-play-integrity-token` header is present, verify device attestation
@@ -22,8 +26,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing authorization token' }, { status: 401 })
     }
 
-    // Verify old token is at least structurally valid for logging
-    const oldPayload = await verifyCellularToken(token)
+    // Use grace-aware verification for logging context — the token may be expired
+    // but still structurally valid (which is expected after an outage)
+    const graceResult = await verifyCellularTokenWithGrace(token)
+    const oldPayload = graceResult?.payload ?? null
 
     // Play Integrity attestation check
     const integrityToken = request.headers.get('x-play-integrity-token')
@@ -61,6 +67,7 @@ export async function POST(request: NextRequest) {
         event: 'cellular_refresh_denied',
         terminalId: oldPayload?.terminalId ?? 'unknown',
         reason: oldPayload ? 'revoked_or_idle' : 'invalid_token',
+        graceExpired: graceResult === null && oldPayload === null,
         timestamp: new Date().toISOString(),
       }))
       return NextResponse.json({ error: 'Token refresh denied' }, { status: 401 })

@@ -1602,6 +1602,10 @@ model MenuItem {
   availableTo   String? // Time format "HH:mm" e.g., "11:00"
   availableDays String? // Comma-separated days: "0,1,2,3,4,5,6" (0=Sunday)
 
+  // Seasonal date-based availability (date range, not time-of-day)
+  availableFromDate DateTime? // Item becomes visible on this date
+  availableUntilDate DateTime? // Item becomes hidden after this date
+
   // Commission (Skill 29)
   commissionType  String? // 'fixed' | 'percent' | null
   commissionValue Decimal?
@@ -1623,6 +1627,12 @@ model MenuItem {
   // Fulfillment routing (HA cellular)
   fulfillmentType      FulfillmentType @default(KITCHEN_STATION)
   fulfillmentStationId String?
+
+  // Allergen tracking — array of allergen tags (e.g., ["Milk", "Eggs", "Gluten"])
+  allergens String[] @default([])
+
+  // Age verification — flag for items requiring age check (alcohol, tobacco, etc.)
+  isAgeRestricted Boolean @default(false)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2392,6 +2402,10 @@ model Order {
   claimedByEmployee   Employee? @relation("ClaimedOrders", fields: [claimedByEmployeeId], references: [id])
   claimedByTerminalId String?   // Terminal ID that currently has the order open
   claimedAt           DateTime? // When the claim was acquired; auto-expires after 60s
+
+  // Order creation idempotency — client-generated key to prevent double-tap duplicates
+  // Partial unique index (migration 024) scoped to locationId, non-null keys, non-deleted
+  idempotencyKey String?
 
   // HA cellular sync — mutation origin tracking
   lastMutatedBy    String? // 'cloud' | 'local' | null

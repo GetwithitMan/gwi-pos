@@ -189,7 +189,7 @@ export function NewTabModal({
                   />
                 )}
                 <p className="text-xs text-gray-600 mt-1">
-                  Simulated pre-auth (no real charge)
+                  Card on file for tab pre-authorization
                 </p>
               </div>
 

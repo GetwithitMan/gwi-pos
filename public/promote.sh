@@ -278,6 +278,34 @@ fi
 log "Fencing PASSED: peer is fenced ($PEER_FENCED), MC arbiter=$MC_ARBITER_RESULT — proceeding with promotion"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Step C.0: Check replication lag before promoting
+# ─────────────────────────────────────────────────────────────────────────────
+
+log "Checking replication lag..."
+LAG_BYTES=$(sudo -u postgres psql -t -c "SELECT COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()), 0);" 2>/dev/null | tr -d ' ')
+LAG_BYTES=${LAG_BYTES:-0}
+
+# Convert to approximate seconds (assuming ~10MB/s WAL throughput)
+LAG_SECONDS=$((LAG_BYTES / 10485760))
+
+if [[ "$LAG_SECONDS" -gt 30 ]]; then
+  log "WARNING: Replication lag is approximately ${LAG_SECONDS}s (${LAG_BYTES} bytes behind)"
+  log "WARNING: Data from the last ~${LAG_SECONDS} seconds may be lost after promotion"
+  log "WARNING: This includes orders, items, and tips (payments use sync replication and are safe)"
+  # Don't abort — in a failover situation, some data loss is better than total downtime
+  # But log it prominently for post-incident analysis
+  echo "LAG_AT_PROMOTION=${LAG_SECONDS}s" >> /var/log/gwi-pos/promote-$(date +%Y%m%d).log
+fi
+
+if [[ "$LAG_SECONDS" -gt 300 ]]; then
+  log "ERROR: Replication lag exceeds 5 minutes (${LAG_SECONDS}s). This is dangerously high."
+  log "ERROR: Consider waiting for replication to catch up before promoting."
+  # Still don't abort — operator can Ctrl+C if they want to wait
+fi
+
+log "Replication lag: ${LAG_BYTES} bytes (~${LAG_SECONDS}s)"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Step C: Promote PostgreSQL
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -324,6 +352,26 @@ fi
 
 # Remove standby.signal if it exists (PG removes it on promote, but be safe)
 rm -f "$PG_DATA/standby.signal" 2>/dev/null || true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step D.2: Update .env to reflect new role BEFORE app restart
+# ─────────────────────────────────────────────────────────────────────────────
+# CRITICAL: The POS app reads STATION_ROLE at boot. If it starts as "backup",
+# all five sync workers are disabled. This MUST happen before Step E.
+
+log "Updating STATION_ROLE=server in .env (before app restart)..."
+
+if grep -q "^STATION_ROLE=" "$ENV_FILE" 2>/dev/null; then
+  sed -i "s|^STATION_ROLE=.*|STATION_ROLE=server|" "$ENV_FILE"
+else
+  echo "STATION_ROLE=server" >> "$ENV_FILE"
+fi
+
+# Copy updated .env into app directory so the app sees the new role
+cp "$ENV_FILE" "$APP_DIR/.env" 2>/dev/null || true
+cp "$ENV_FILE" "$APP_DIR/.env.local" 2>/dev/null || true
+
+log "STATION_ROLE=server written to .env"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step E: Start POS application
@@ -423,19 +471,64 @@ fi
 log "Sync workers started"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step I: Report to Mission Control
+# Step I: STONITH-lite — continuously try to fence old primary
+# ─────────────────────────────────────────────────────────────────────────────
+# After promotion is complete, the old primary may come back online and briefly
+# serve as a second primary (split-brain). This background loop tells the old
+# primary to step down by calling its /api/internal/ha-fence endpoint.
+
+if [[ -n "$HA_PEER_IP" ]]; then
+  # Resolve INTERNAL_API_SECRET (or fall back to HA_SHARED_SECRET)
+  FENCE_SECRET=""
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    key="${line%%=*}"; val="${line#*=}"
+    case "$key" in
+      INTERNAL_API_SECRET) FENCE_SECRET="$val" ;;
+      HA_SHARED_SECRET)    [[ -z "$FENCE_SECRET" ]] && FENCE_SECRET="$val" ;;
+    esac
+  done < "$ENV_FILE"
+
+  log "Starting background fencing of old primary at $HA_PEER_IP..."
+  (
+    for attempt in $(seq 1 30); do
+      # Try to tell old primary to step down
+      FENCE_RESULT=$(curl -sf --max-time 3 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${FENCE_SECRET}" \
+        -d '{"action":"step_down","newPrimary":"'"$(hostname)"'"}' \
+        "http://${HA_PEER_IP}:3005/api/internal/ha-fence" 2>/dev/null) || true
+
+      if [[ "$FENCE_RESULT" == *"stepped_down"* ]]; then
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [promote] STONITH: Old primary acknowledged step-down" >> "$LOG_FILE"
+        break
+      fi
+      sleep 2
+    done
+  ) &
+  STONITH_PID=$!
+  log "STONITH background process started (PID=$STONITH_PID)"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Step J: Report to Mission Control
 # ─────────────────────────────────────────────────────────────────────────────
 
 if [[ -n "$MISSION_CONTROL_URL" ]] && [[ -n "$SERVER_API_KEY" ]]; then
   log "Reporting failover event to Mission Control..."
-  FAILOVER_BODY=$(printf '{"event":"promotion_complete","fromNodeId":"%s","toNodeId":"%s","peerIp":"%s","timestamp":"%s","appHealthy":%s,"mcArbiter":"%s","leaseExpiry":"%s"}' \
+  FAILOVER_BODY=$(printf '{"event":"promotion_complete","fromNodeId":"%s","toNodeId":"%s","peerIp":"%s","timestamp":"%s","appHealthy":%s,"mcArbiter":"%s","leaseExpiry":"%s","lagAtPromotion":{"bytes":%s,"seconds":%s}}' \
     "${HA_PEER_IP:-unknown}" \
     "${SERVER_NODE_ID:-unknown}" \
     "${HA_PEER_IP:-unknown}" \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "$APP_READY" \
     "$MC_ARBITER_RESULT" \
-    "${LEASE_EXPIRY:-none}")
+    "${LEASE_EXPIRY:-none}" \
+    "${LAG_BYTES:-0}" \
+    "${LAG_SECONDS:-0}")
 
   MC_HTTP=$(curl -sf --max-time 10 -X POST \
     "${MISSION_CONTROL_URL}/api/fleet/failover-event" \
@@ -449,22 +542,6 @@ if [[ -n "$MISSION_CONTROL_URL" ]] && [[ -n "$SERVER_API_KEY" ]]; then
 else
   log "WARN: MISSION_CONTROL_URL or SERVER_API_KEY not set — skipping MC notification"
 fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Step J: Update .env to reflect new role
-# ─────────────────────────────────────────────────────────────────────────────
-
-log "Updating STATION_ROLE=server in .env..."
-
-if grep -q "^STATION_ROLE=" "$ENV_FILE" 2>/dev/null; then
-  sed -i "s|^STATION_ROLE=.*|STATION_ROLE=server|" "$ENV_FILE"
-else
-  echo "STATION_ROLE=server" >> "$ENV_FILE"
-fi
-
-# Copy updated .env into app directory
-cp "$ENV_FILE" "$APP_DIR/.env" 2>/dev/null || true
-cp "$ENV_FILE" "$APP_DIR/.env.local" 2>/dev/null || true
 
 log "=== PROMOTION COMPLETE ==="
 

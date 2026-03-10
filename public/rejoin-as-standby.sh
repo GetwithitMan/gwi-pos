@@ -121,15 +121,27 @@ systemctl stop thepasspos-sync 2>/dev/null || true
 log "Sync workers stopped"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step B: Stop POS application
+# Step B: Gracefully drain and stop POS application
 # ─────────────────────────────────────────────────────────────────────────────
+# Send SIGTERM first to allow the Node.js server's graceful shutdown handler
+# to finish in-flight requests (typically a 10s drain timeout in server.ts).
+# Wait 15 seconds for draining, then force-stop if still running.
 
-log "Stopping POS application..."
+log "Sending graceful shutdown signal to POS app..."
+
+# systemd: SIGTERM for connection draining
+systemctl kill --signal=SIGTERM thepasspos 2>/dev/null || true
+
+# PM2: send SIGINT (PM2's graceful stop signal)
+POSUSER=$(stat -c '%U' /opt/gwi-pos/app 2>/dev/null || echo "smarttab")
+sudo -u "$POSUSER" pm2 sendSignal SIGINT gwi-pos 2>/dev/null || true
+
+log "Waiting 15 seconds for in-flight requests to drain..."
+sleep 15
+
+# Now force-stop if still running
 systemctl stop thepasspos 2>/dev/null || true
 systemctl stop thepasspos-kiosk 2>/dev/null || true
-
-# Also stop via PM2 (in case running outside systemd)
-POSUSER=$(stat -c '%U' /opt/gwi-pos/app 2>/dev/null || echo "smarttab")
 sudo -u "$POSUSER" pm2 stop all 2>/dev/null || true
 
 log "POS application stopped"

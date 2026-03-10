@@ -178,6 +178,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           applyPourToModifiers: item.applyPourToModifiers,
           // Spirit tier data for quick selection
           spiritTiers,
+          // Allergen tracking
+          allergens: item.allergens || [],
+          // Age verification
+          isAgeRestricted: item.isAgeRestricted ?? false,
           // Stock status (only included if requested)
           ...(includeStock ? {
             stockStatus: stockInfo.status,
@@ -208,6 +212,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       availableFrom,
       availableTo,
       availableDays,
+      // Seasonal date-based availability
+      availableFromDate,
+      availableUntilDate,
       // Pour size options for liquor items
       pourSizes,
       defaultPourSize,
@@ -229,6 +236,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       happyHourStart,
       happyHourEnd,
       happyHourDays,
+      // Allergen tracking
+      allergens,
+      // Age verification
+      isAgeRestricted,
     } = body
 
     if (!name?.trim()) {
@@ -277,6 +288,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         availableFrom: availableFrom || null,
         availableTo: availableTo || null,
         availableDays: availableDays || null,
+        // Seasonal date-based availability
+        ...(availableFromDate && { availableFromDate: new Date(availableFromDate) }),
+        ...(availableUntilDate && { availableUntilDate: new Date(availableUntilDate) }),
         // Pour size options
         pourSizes: pourSizes || null,
         defaultPourSize: defaultPourSize || null,
@@ -298,6 +312,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ...(happyHourStart !== undefined && { happyHourStart: happyHourStart || null }),
         ...(happyHourEnd !== undefined && { happyHourEnd: happyHourEnd || null }),
         ...(happyHourDays !== undefined && { happyHourDays: happyHourDays || null }),
+        // Allergen tracking
+        ...(allergens !== undefined && { allergens: Array.isArray(allergens) ? allergens : [] }),
+        // Age verification
+        ...(isAgeRestricted !== undefined && { isAgeRestricted }),
       }
     })
 

@@ -26,7 +26,7 @@ const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
   enablePreAuth: true,
   defaultPreAuthAmount: 50,
   preAuthExpirationDays: 7,
-  processor: 'simulated',
+  processor: 'none',
   testMode: true,
   readerTimeoutSeconds: 30,
   autoSwapOnFailure: true,

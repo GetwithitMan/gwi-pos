@@ -6,6 +6,7 @@ import { startPaymentTiming, markRequestSent, completePaymentTiming } from '@/li
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { OfflineManager } from '@/lib/offline-manager'
+import { uuid } from '@/lib/uuid'
 import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
 
 interface UseActiveOrderOptions {
@@ -260,6 +261,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       const gen = ++draftGenRef.current
       const draftTableId = opts.tableId || null
 
+      const draftIdempotencyKey = uuid()
       const draftPromise = fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -273,6 +275,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           guestCount: opts.guestCount || 1,
           items: [],  // Empty = draft shell
           customFields: opts.customFields,
+          idempotencyKey: draftIdempotencyKey,
         }),
       }).then(async (res) => {
         // Stale check: if generation changed, another startOrder/clearOrder ran — discard
@@ -450,6 +453,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       }
 
       try {
+        const ensureIdempotencyKey = uuid()
         const res = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -464,6 +468,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             notes: order.notes || null,
             customFields: order.customFields,
             items: order.items.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+            idempotencyKey: ensureIdempotencyKey,
           }),
         })
 
