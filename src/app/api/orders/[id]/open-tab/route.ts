@@ -215,6 +215,14 @@ export const POST = withVenue(async function POST(
         authCode: preAuthResponse.authCode,
         tabName: order.tabName || undefined,
         tableId: order.tableId,
+        // Datacap metadata for ByRecordNo operations + chargeback defense
+        tokenFrequency: 'Recurring',
+        acqRefData: preAuthResponse.acqRefData,
+        processData: preAuthResponse.processData,
+        aid: preAuthResponse.aid,
+        cvm: preAuthResponse.cvm ? String(preAuthResponse.cvm) : undefined,
+        avsResult: undefined, // Pre-auth doesn't return AVS
+        refNo: preAuthResponse.refNo,
       })
 
       return NextResponse.json({

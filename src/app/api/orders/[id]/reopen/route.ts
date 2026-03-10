@@ -43,6 +43,19 @@ export const POST = withVenue(async function POST(
             cardLast4: true,
           },
         },
+        cards: {
+          where: { deletedAt: null, status: { in: ['authorized', 'captured'] } },
+          select: {
+            id: true,
+            recordNo: true,
+            cardType: true,
+            cardLast4: true,
+            authAmount: true,
+            status: true,
+            readerId: true,
+            tokenFrequency: true,
+          },
+        },
       },
     })
 
@@ -194,6 +207,31 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Restore OrderCards for token reuse after reopen
+    // Cards with Recurring tokens can potentially be re-used for new charges
+    const orderCards = order.cards || []
+    if (orderCards.length > 0) {
+      const cardIdsToRestore = orderCards
+        .filter(c => c.status === 'captured' && c.tokenFrequency === 'Recurring')
+        .map(c => c.id)
+
+      if (cardIdsToRestore.length > 0) {
+        await db.orderCard.updateMany({
+          where: { id: { in: cardIdsToRestore } },
+          data: {
+            status: 'authorized',
+            capturedAmount: null,
+            capturedAt: null,
+            tipAmount: null,
+          },
+        })
+
+        console.log(
+          `[reopen] Restored ${cardIdsToRestore.length} Recurring token OrderCard(s) to 'authorized' for potential reuse`
+        )
+      }
+    }
+
     // W2-R2: Recalculate order totals from active items (payments were voided, totals are stale)
     const activeItems = await db.orderItem.findMany({
       where: {
@@ -272,6 +310,8 @@ export const POST = withVenue(async function POST(
           total: Number(order.total),
           paymentsVoided: order.payments.length,
           cardPaymentsVoided: cardPayments.length,
+          cardsRestored: orderCards.filter(c => c.status === 'captured' && c.tokenFrequency === 'Recurring').length,
+          recurringTokensAvailable: orderCards.filter(c => c.tokenFrequency === 'Recurring').length,
         },
         ipAddress: request.headers.get('x-forwarded-for'),
         userAgent: request.headers.get('user-agent'),
@@ -304,6 +344,8 @@ export const POST = withVenue(async function POST(
           reopenedAt: reopenedOrder.reopenedAt,
         },
         paymentsVoided: order.payments.length,
+        cardsRestored: orderCards.filter(c => c.status === 'captured' && c.tokenFrequency === 'Recurring').length,
+        hasReusableCards: orderCards.some(c => c.tokenFrequency === 'Recurring'),
       },
     })
   } catch (error) {

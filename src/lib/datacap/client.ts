@@ -519,7 +519,7 @@ export class DatacapClient {
         amounts: { purchase: params.amount },
         partialAuth: 'Allow',
         recordNumberRequested: params.requestRecordNo !== false,
-        frequency: 'OneTime',
+        frequency: 'Recurring',
         cardHolderId: 'Allow_V2',
         forceOffline: params.forceOffline,
       }
@@ -724,6 +724,8 @@ export class DatacapClient {
         operatorId: base.operatorId!,
         tranCode: TRAN_CODES.COLLECT_CARD,
         amounts: { purchase: params?.placeholderAmount || 0.01 },
+        recordNumberRequested: true,
+        frequency: 'Recurring',
         cardHolderId: 'Allow_V2',
       }
 

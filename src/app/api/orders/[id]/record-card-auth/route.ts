@@ -45,6 +45,9 @@ export const POST = withVenue(async function POST(
       cvm,
       aid,
       isPartialApproval,
+      acqRefData,
+      processData,
+      tokenFrequency,
     } = body
 
     // Validate required fields
@@ -101,6 +104,13 @@ export const POST = withVenue(async function POST(
         authCode,
         tabName: order.tabName || undefined,
         tableId: order.tableId,
+        // Datacap metadata from Android SDK
+        tokenFrequency: tokenFrequency || 'Recurring',
+        acqRefData,
+        processData,
+        aid,
+        cvm: cvm ? String(cvm) : undefined,
+        refNo: datacapRefNo,
       })
 
       // Fire-and-forget socket dispatches so other terminals see the card auth

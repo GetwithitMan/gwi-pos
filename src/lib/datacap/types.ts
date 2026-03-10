@@ -144,6 +144,8 @@ export interface DatacapResponse {
   authorize?: string        // Amount authorized (string from XML)
   authCode?: string
   refNo?: string
+  acqRefData?: string       // Acquirer reference data (settlement routing)
+  processData?: string      // Processor-specific routing data
   recordNo?: string         // Token for future operations (voids, captures, adjustments)
   // Card info
   acctNo?: string           // Masked card number (e.g., "***4111")

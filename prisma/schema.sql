@@ -1,5 +1,5 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -999,6 +999,7 @@ CREATE TABLE "Order" (
     "claimedByTerminalId" TEXT,
     "claimedAt" TIMESTAMP(3),
     "idempotencyKey" TEXT,
+    "isTraining" BOOLEAN NOT NULL DEFAULT false,
     "lastMutatedBy" TEXT,
     "originTerminalId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1120,6 +1121,13 @@ CREATE TABLE "Payment" (
     "datacapRecordNo" TEXT,
     "datacapSequenceNo" TEXT,
     "entryMethod" TEXT,
+    "acqRefData" TEXT,
+    "processData" TEXT,
+    "aid" TEXT,
+    "cvmResult" TEXT,
+    "avsResult" TEXT,
+    "level2Status" TEXT,
+    "tokenFrequency" TEXT,
     "amountRequested" DECIMAL(65,30),
     "amountAuthorized" DECIMAL(65,30),
     "signatureData" TEXT,
@@ -3714,6 +3722,14 @@ CREATE TABLE "OrderCard" (
     "cardholderName" TEXT,
     "authAmount" DECIMAL(65,30) NOT NULL,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "tokenFrequency" TEXT,
+    "acqRefData" TEXT,
+    "processData" TEXT,
+    "aid" TEXT,
+    "cvm" TEXT,
+    "avsResult" TEXT,
+    "authCode" TEXT,
+    "refNo" TEXT,
     "status" "OrderCardStatus" NOT NULL DEFAULT 'authorized',
     "capturedAmount" DECIMAL(65,30),
     "capturedAt" TIMESTAMP(3),
@@ -4552,7 +4568,7 @@ CREATE TABLE "OutageQueueEntry" (
     "recordId" TEXT NOT NULL,
     "operation" TEXT NOT NULL,
     "payload" JSONB NOT NULL,
-    "localSeq" INTEGER NOT NULL,
+    "localSeq" BIGINT NOT NULL,
     "idempotencyKey" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
     "metadata" JSONB,

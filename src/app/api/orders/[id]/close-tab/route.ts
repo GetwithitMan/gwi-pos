@@ -739,6 +739,13 @@ export const POST = withVenue(async function POST(
           entryMethod: 'Chip', // Tab was opened with card present
           status: 'completed',
           lastMutatedBy: 'local',
+          // Datacap processor metadata from capture response
+          acqRefData: response.acqRefData || null,
+          processData: response.processData || null,
+          aid: response.aid || null,
+          cvmResult: response.cvm ? String(response.cvm) : null,
+          level2Status: response.level2Status || null,
+          tokenFrequency: 'Recurring', // From pre-auth (tab capture)
         },
       })
       // Void any remaining authorized cards

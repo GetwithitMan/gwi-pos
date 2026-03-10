@@ -117,6 +117,8 @@ export function parseResponse(xml: string): DatacapResponse {
   const authorize = extractTag(xml, 'Authorize')
   const authCode = extractTag(xml, 'AuthCode')
   const refNo = extractTag(xml, 'RefNo')
+  const acqRefData = extractTag(xml, 'AcqRefData')
+  const processData = extractTag(xml, 'ProcessData')
   const recordNo = extractTag(xml, 'RecordNo')
 
   // Card info
@@ -175,6 +177,8 @@ export function parseResponse(xml: string): DatacapResponse {
     authorize,
     authCode,
     refNo,
+    acqRefData,
+    processData,
     recordNo,
     acctNo,
     cardLast4,

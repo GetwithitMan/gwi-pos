@@ -118,6 +118,14 @@ interface PaymentInput {
   entryMethod?: string
   signatureData?: string
   amountAuthorized?: number
+  // Datacap processor metadata for ByRecordNo ops + chargeback defense
+  acqRefData?: string
+  processData?: string
+  aid?: string
+  cvm?: string
+  avsResult?: string
+  level2Status?: string
+  tokenFrequency?: string
   // SAF (Store-and-Forward) — transaction stored offline on reader
   storedOffline?: boolean
 }
@@ -152,6 +160,14 @@ const PaymentInputSchema = z.object({
   entryMethod: z.string().optional(),
   signatureData: z.string().optional(),
   amountAuthorized: z.number().positive().optional(),
+  // Datacap processor metadata for ByRecordNo ops + chargeback defense
+  acqRefData: z.string().optional(),
+  processData: z.string().optional(),
+  aid: z.string().optional(),
+  cvm: z.string().optional(),
+  avsResult: z.string().optional(),
+  level2Status: z.string().optional(),
+  tokenFrequency: z.string().optional(),
   // SAF (Store-and-Forward) — transaction stored offline on reader, pending upload
   storedOffline: z.boolean().optional(),
 })
@@ -980,6 +996,14 @@ export const POST = withVenue(withTiming(async function POST(
         amountRequested?: number
         isOfflineCapture?: boolean
         safStatus?: string
+        // Datacap processor metadata
+        acqRefData?: string | null
+        processData?: string | null
+        aid?: string | null
+        cvmResult?: string | null
+        avsResult?: string | null
+        level2Status?: string | null
+        tokenFrequency?: string | null
         cashDiscountAmount?: number
         priceBeforeDiscount?: number
         pricingMode?: string
@@ -1113,6 +1137,14 @@ export const POST = withVenue(withTiming(async function POST(
             amountAuthorized: payment.amountAuthorized,
             amountRequested: payment.amount,
             ...(payment.storedOffline && { isOfflineCapture: true }),
+            // Datacap processor metadata for chargeback defense + ByRecordNo ops
+            acqRefData: payment.acqRefData || null,
+            processData: payment.processData || null,
+            aid: payment.aid || null,
+            cvmResult: payment.cvm ? String(payment.cvm) : null,
+            avsResult: payment.avsResult || null,
+            level2Status: payment.level2Status || null,
+            tokenFrequency: payment.tokenFrequency || 'OneTime',
           }),
           safStatus: payment.storedOffline ? 'APPROVED_SAF_PENDING_UPLOAD' : 'APPROVED_ONLINE',
         }

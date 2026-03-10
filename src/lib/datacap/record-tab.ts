@@ -28,6 +28,14 @@ export interface RecordTabParams {
   authCode?: string       // 6-digit approval code
   tabName?: string        // Fallback tab name if no cardholder name
   tableId?: string | null // For socket dispatch context
+  // Datacap metadata for ByRecordNo operations + chargeback defense
+  tokenFrequency?: string  // 'OneTime' | 'Recurring'
+  acqRefData?: string      // Acquirer reference data
+  processData?: string     // Processor routing data
+  aid?: string             // EMV Application ID
+  cvm?: string             // Cardholder Verification Method
+  avsResult?: string       // AVS response code
+  refNo?: string           // Reference number from Datacap
 }
 
 export interface RecordTabResult {
@@ -79,6 +87,13 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
     authCode,
     tabName: fallbackTabName,
     tableId,
+    tokenFrequency,
+    acqRefData,
+    processData,
+    aid,
+    cvm,
+    avsResult,
+    refNo,
   } = params
 
   // Duplicate check: does this recordNo already have an open bar_tab at this location?
@@ -120,8 +135,17 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
         cardLast4,
         cardholderName,
         authAmount,
+        authCode,
         isDefault: true,
         status: 'authorized',
+        // Datacap metadata for ByRecordNo operations + chargeback defense
+        tokenFrequency: tokenFrequency || 'Recurring',
+        acqRefData,
+        processData,
+        aid,
+        cvm,
+        avsResult,
+        refNo,
       },
     }),
     db.order.update({

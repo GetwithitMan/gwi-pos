@@ -2725,6 +2725,15 @@ model Payment {
   datacapSequenceNo String? // SequenceNo for audit trail
   entryMethod       String? // "Chip" | "Tap" | "Swipe" | "Manual"
 
+  // Datacap processor data for ByRecordNo ops + chargeback defense
+  acqRefData        String?   // Acquirer reference (for voids/refunds)
+  processData       String?   // Processor routing data
+  aid               String?   // EMV Application ID
+  cvmResult         String?   // Cardholder Verification Method result
+  avsResult         String?   // AVS check result
+  level2Status      String?   // B2B interchange qualification
+  tokenFrequency    String?   // 'OneTime' | 'Recurring'
+
   // Partial Approvals & Signature (Chargeback Defense)
   amountRequested  Decimal? // Original amount requested
   amountAuthorized Decimal? // Actual amount approved (may be less for partial approvals)
@@ -7395,6 +7404,16 @@ model OrderCard {
   // Authorization tracking
   authAmount Decimal // Current total authorized amount
   isDefault  Boolean @default(false) // Default payment card for this tab
+
+  // Datacap token metadata for ByRecordNo operations
+  tokenFrequency   String?   // 'OneTime' | 'Recurring' — determines post-batch reuse
+  acqRefData       String?   // Acquirer reference data — required by some processors for ByRecordNo
+  processData      String?   // Processor routing data — required by some processors for ByRecordNo
+  aid              String?   // EMV Application ID (chargeback evidence)
+  cvm              String?   // Cardholder Verification Method (chargeback evidence)
+  avsResult        String?   // AVS response code (fraud detection)
+  authCode         String?   // 6-digit authorization code
+  refNo            String?   // Reference number from Datacap response
 
   // Status
   status OrderCardStatus @default(authorized)
