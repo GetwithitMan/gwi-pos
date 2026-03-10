@@ -693,6 +693,48 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // BUG 3 FIX: If this is a split child order, recalculate parent totals
+      if (existingOrder.parentOrderId) {
+        // Sum totals across all children of this parent
+        const siblings = await tx.order.findMany({
+          where: {
+            parentOrderId: existingOrder.parentOrderId,
+            status: { not: 'voided' },
+          },
+          select: {
+            subtotal: true,
+            taxTotal: true,
+            total: true,
+            discountTotal: true,
+            tipTotal: true,
+            commissionTotal: true,
+            itemCount: true,
+          },
+        })
+
+        const parentSubtotal = siblings.reduce((sum, s) => sum + Number(s.subtotal), 0)
+        const parentTax = siblings.reduce((sum, s) => sum + Number(s.taxTotal), 0)
+        const parentTotal = siblings.reduce((sum, s) => sum + Number(s.total), 0)
+        const parentDiscount = siblings.reduce((sum, s) => sum + Number(s.discountTotal), 0)
+        const parentTip = siblings.reduce((sum, s) => sum + Number(s.tipTotal), 0)
+        const parentCommission = siblings.reduce((sum, s) => sum + Number(s.commissionTotal || 0), 0)
+        const parentItemCount = siblings.reduce((sum, s) => sum + (s.itemCount || 0), 0)
+
+        await tx.order.update({
+          where: { id: existingOrder.parentOrderId },
+          data: {
+            subtotal: parentSubtotal,
+            taxTotal: parentTax,
+            total: parentTotal,
+            discountTotal: parentDiscount,
+            tipTotal: parentTip,
+            commissionTotal: parentCommission,
+            itemCount: parentItemCount,
+            version: { increment: 1 },
+          },
+        })
+      }
+
       return { updatedOrder, createdItems }
     })
 
@@ -728,7 +770,7 @@ export const POST = withVenue(async function POST(
           params.push(...ids)
           const idPlaceholders = ids.map((_, i) => `$${updates.length * 2 + i + 1}`).join(', ')
           await db.$executeRawUnsafe(
-            `UPDATE "OrderItem" SET "costAtSale" = CASE ${caseClauses} END WHERE id IN (${idPlaceholders})`,
+            `UPDATE "OrderItem" SET "costAtSale" = CASE ${caseClauses} END, "updatedAt" = NOW() WHERE id IN (${idPlaceholders})`,
             ...params
           )
         }

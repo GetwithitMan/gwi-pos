@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 interface ApplyItemDiscountRequest {
@@ -56,6 +59,10 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Auth check — require manager.discounts permission
+    const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     if (order.status === 'paid' || order.status === 'closed') {
       return NextResponse.json(
         { error: 'Cannot apply discount to a paid or closed order' },
@@ -66,12 +73,21 @@ export const POST = withVenue(async function POST(
     // Fetch item
     const item = await db.orderItem.findFirst({
       where: { id: itemId, orderId, deletedAt: null },
+      include: { menuItem: { select: { itemType: true } } },
     })
 
     if (!item) {
       return NextResponse.json(
         { error: 'Order item not found' },
         { status: 404 }
+      )
+    }
+
+    // Block item-level discounts on timed_rental items (dynamic pricing makes fixed discounts unreliable)
+    if (item.menuItem?.itemType === 'timed_rental') {
+      return NextResponse.json(
+        { error: 'Cannot apply item-level discounts to timed rental items. Use order-level discounts instead.' },
+        { status: 400 }
       )
     }
 
@@ -87,10 +103,15 @@ export const POST = withVenue(async function POST(
           data: { deletedAt: new Date() },
         })
         const newDiscountTotal = Math.max(0, Number(order.discountTotal) - removedAmount)
-        const newTotal = Number(order.subtotal) + Number(order.taxTotal) - newDiscountTotal + Number(order.tipTotal)
+        const totals = calculateOrderTotals(
+          Number(order.subtotal),
+          newDiscountTotal,
+          order.location.settings as { tax?: { defaultRate?: number } },
+          order.isTaxExempt
+        )
         const updatedOrder = await db.order.update({
           where: { id: orderId },
-          data: { discountTotal: newDiscountTotal, total: newTotal },
+          data: { discountTotal: totals.discountTotal, taxTotal: totals.taxTotal, total: totals.total },
           select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
         })
         void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
@@ -141,15 +162,21 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    // Update Order.discountTotal (increment) and recalculate total
+    // Update Order.discountTotal (increment) and recalculate total via calculateOrderTotals
     const newDiscountTotal = Number(order.discountTotal) + discountAmount
-    const newTotal = Number(order.subtotal) + Number(order.taxTotal) - newDiscountTotal + Number(order.tipTotal)
+    const totals = calculateOrderTotals(
+      Number(order.subtotal),
+      newDiscountTotal,
+      order.location.settings as { tax?: { defaultRate?: number } },
+      order.isTaxExempt
+    )
 
     const updatedOrder = await db.order.update({
       where: { id: orderId },
       data: {
-        discountTotal: newDiscountTotal,
-        total: newTotal,
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        total: totals.total,
       },
       select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
     })
@@ -208,10 +235,18 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id: orderId, itemId } = await params
     const discountId = request.nextUrl.searchParams.get('discountId')
+    const employeeId = request.nextUrl.searchParams.get('employeeId')
 
     if (!discountId) {
       return NextResponse.json(
         { error: 'discountId query parameter is required' },
+        { status: 400 }
+      )
+    }
+
+    if (!employeeId) {
+      return NextResponse.json(
+        { error: 'employeeId query parameter is required' },
         { status: 400 }
       )
     }
@@ -236,6 +271,7 @@ export const DELETE = withVenue(async function DELETE(
     // Fetch order for total recalculation
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
+      include: { location: true },
     })
 
     if (!order) {
@@ -244,6 +280,10 @@ export const DELETE = withVenue(async function DELETE(
         { status: 404 }
       )
     }
+
+    // Auth check — require manager.discounts permission
+    const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
 
     const discountAmount = Number(existingDiscount.amount)
 
@@ -256,15 +296,21 @@ export const DELETE = withVenue(async function DELETE(
       },
     })
 
-    // Update Order.discountTotal (decrement) and recalculate total
+    // Update Order.discountTotal (decrement) and recalculate total via calculateOrderTotals
     const newDiscountTotal = Math.max(0, Number(order.discountTotal) - discountAmount)
-    const newTotal = Number(order.subtotal) + Number(order.taxTotal) - newDiscountTotal + Number(order.tipTotal)
+    const totals = calculateOrderTotals(
+      Number(order.subtotal),
+      newDiscountTotal,
+      order.location.settings as { tax?: { defaultRate?: number } },
+      order.isTaxExempt
+    )
 
     const updatedOrder = await db.order.update({
       where: { id: orderId },
       data: {
-        discountTotal: newDiscountTotal,
-        total: newTotal,
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        total: totals.total,
       },
       select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
     })

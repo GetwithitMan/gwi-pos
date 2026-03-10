@@ -35,10 +35,15 @@ export const POST = withVenue(async function POST(
         employee: true,
         location: true,
         items: {
+          where: { deletedAt: null },
           include: {
             modifiers: true,
             menuItem: { select: { id: true, itemType: true } },
+            itemDiscounts: { where: { deletedAt: null } },
           },
+        },
+        discounts: {
+          where: { deletedAt: null },
         },
         payments: {
           where: { status: 'completed' },
@@ -207,11 +212,88 @@ export const POST = withVenue(async function POST(
           })
         )
 
+        // --- Distribute parent OrderDiscount records to children ---
+        const parentDiscounts = await tx.orderDiscount.findMany({
+          where: { orderId: order.id, deletedAt: null },
+        })
+
+        if (parentDiscounts.length > 0) {
+          // Track cumulative discount per child (handles multiple discount records)
+          const childDiscountAccum = new Map<string, number>()
+          for (const child of createdSplits) {
+            childDiscountAccum.set(child.id, 0)
+          }
+
+          for (const disc of parentDiscounts) {
+            const discAmount = Number(disc.amount)
+            const isPercent = disc.percent != null && Number(disc.percent) > 0
+
+            for (let i = 0; i < createdSplits.length; i++) {
+              const child = createdSplits[i]
+              let childDiscAmount: number
+
+              if (isPercent) {
+                // Percent-based: clone with same percentage, recalculate amount based on child subtotal
+                const childSubtotal = Number(child.subtotal)
+                childDiscAmount = Math.round(childSubtotal * (Number(disc.percent) / 100) * 100) / 100
+              } else {
+                // Fixed amount: divide equally, last child gets remainder
+                const perChild = Math.floor((discAmount / numWays) * 100) / 100
+                childDiscAmount = i === numWays - 1
+                  ? Math.round((discAmount - perChild * (numWays - 1)) * 100) / 100
+                  : perChild
+              }
+
+              await tx.orderDiscount.create({
+                data: {
+                  locationId: order.locationId,
+                  orderId: child.id,
+                  discountRuleId: disc.discountRuleId,
+                  couponId: disc.couponId,
+                  couponCode: disc.couponCode,
+                  name: disc.name,
+                  amount: childDiscAmount,
+                  percent: isPercent ? disc.percent : null,
+                  appliedBy: disc.appliedBy,
+                  isAutomatic: disc.isAutomatic,
+                  reason: disc.reason,
+                },
+              })
+
+              childDiscountAccum.set(child.id, (childDiscountAccum.get(child.id) || 0) + childDiscAmount)
+            }
+
+            // Soft-delete parent's discount record
+            await tx.orderDiscount.update({
+              where: { id: disc.id },
+              data: { deletedAt: new Date() },
+            })
+          }
+
+          // Update each child's discountTotal and total with accumulated discount
+          for (const child of createdSplits) {
+            const totalChildDisc = childDiscountAccum.get(child.id) || 0
+            if (totalChildDisc > 0) {
+              const childSubtotal = Number(child.subtotal)
+              const childTax = Number(child.taxTotal)
+              const newChildTotal = Math.round((childSubtotal - totalChildDisc + childTax) * 100) / 100
+              await tx.order.update({
+                where: { id: child.id },
+                data: {
+                  discountTotal: totalChildDisc,
+                  total: Math.max(0, newChildTotal),
+                },
+              })
+            }
+          }
+        }
+
         // Mark parent order as 'split' so children become payable
         await tx.order.update({
           where: { id: order.id },
           data: {
             status: 'split',
+            discountTotal: 0,
             notes: order.notes
               ? `${order.notes}\n[Split ${numWays} ways]`
               : `[Split ${numWays} ways]`,
@@ -413,7 +495,54 @@ export const POST = withVenue(async function POST(
           data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
         })
 
-        // Recalculate original order totals
+        // --- Move item-level discounts to the new child order ---
+        // Build a map from old item ID → new item ID in the child order
+        const oldToNewItemMap = new Map<string, string>()
+        for (let i = 0; i < itemsToMove.length; i++) {
+          const oldItem = itemsToMove[i]
+          // _newOrder.items are in the same order as newItems (which mirrors itemsToMove)
+          const newItem = _newOrder.items[i]
+          if (newItem) oldToNewItemMap.set(oldItem.id, newItem.id)
+        }
+
+        // Find all item-level discounts on the moved items
+        let childItemDiscountTotal = 0
+        for (const movedItem of itemsToMove) {
+          const discounts = (movedItem as any).itemDiscounts || []
+          for (const disc of discounts) {
+            if (disc.deletedAt) continue
+            const newItemId = oldToNewItemMap.get(movedItem.id)
+            if (!newItemId) continue
+
+            // Create a copy on the child order
+            await tx.orderItemDiscount.create({
+              data: {
+                locationId: order.locationId,
+                orderId: _newOrder.id,
+                orderItemId: newItemId,
+                discountRuleId: disc.discountRuleId,
+                amount: disc.amount,
+                percent: disc.percent,
+                appliedById: disc.appliedById,
+                reason: disc.reason,
+              },
+            })
+            childItemDiscountTotal += Number(disc.amount)
+
+            // Soft-delete the original
+            await tx.orderItemDiscount.update({
+              where: { id: disc.id },
+              data: { deletedAt: new Date() },
+            })
+          }
+        }
+
+        // Also proportionally distribute order-level discounts for by_item split
+        const parentDiscounts = await tx.orderDiscount.findMany({
+          where: { orderId: order.id, deletedAt: null },
+        })
+
+        let childOrderDiscountTotal = 0
         const _remainingItems = order.items.filter(item => !itemIds.includes(item.id))
         let _remainingSubtotal = 0
         _remainingItems.forEach(item => {
@@ -421,9 +550,86 @@ export const POST = withVenue(async function POST(
           const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
           _remainingSubtotal += itemTotal + modifiersTotal
         })
+        const parentSubtotal = Number(order.subtotal)
+
+        if (parentDiscounts.length > 0 && parentSubtotal > 0) {
+          const childRatio = newSubtotal / parentSubtotal
+          const parentRatio = _remainingSubtotal / parentSubtotal
+
+          for (const disc of parentDiscounts) {
+            const discAmount = Number(disc.amount)
+            const isPercent = disc.percent != null && Number(disc.percent) > 0
+
+            let childDiscAmount: number
+            let parentDiscAmount: number
+
+            if (isPercent) {
+              // Percent-based: same percent, recalculate amounts based on new subtotals
+              childDiscAmount = Math.round(newSubtotal * (Number(disc.percent) / 100) * 100) / 100
+              parentDiscAmount = Math.round(_remainingSubtotal * (Number(disc.percent) / 100) * 100) / 100
+            } else {
+              // Fixed amount: split proportionally by subtotal ratio
+              childDiscAmount = Math.round(discAmount * childRatio * 100) / 100
+              parentDiscAmount = Math.round((discAmount - childDiscAmount) * 100) / 100
+            }
+
+            // Create discount on child
+            await tx.orderDiscount.create({
+              data: {
+                locationId: order.locationId,
+                orderId: _newOrder.id,
+                discountRuleId: disc.discountRuleId,
+                couponId: disc.couponId,
+                couponCode: disc.couponCode,
+                name: disc.name,
+                amount: childDiscAmount,
+                percent: isPercent ? disc.percent : null,
+                appliedBy: disc.appliedBy,
+                isAutomatic: disc.isAutomatic,
+                reason: disc.reason,
+              },
+            })
+            childOrderDiscountTotal += childDiscAmount
+
+            // Update parent discount amount to reduced value
+            await tx.orderDiscount.update({
+              where: { id: disc.id },
+              data: { amount: parentDiscAmount },
+            })
+          }
+        }
+
+        // Update child order with discount totals
+        const totalChildDiscount = childItemDiscountTotal + childOrderDiscountTotal
+        if (totalChildDiscount > 0) {
+          const childTax = Number(_newOrder.taxTotal)
+          const childTotal = Math.round((newSubtotal - totalChildDiscount + childTax) * 100) / 100
+          await tx.order.update({
+            where: { id: _newOrder.id },
+            data: {
+              discountTotal: totalChildDiscount,
+              total: Math.max(0, childTotal),
+            },
+          })
+        }
+
+        // Recalculate remaining parent item discount total
+        const remainingItemDiscounts = await tx.orderItemDiscount.findMany({
+          where: { orderId: order.id, deletedAt: null },
+        })
+        const remainingItemDiscountTotal = remainingItemDiscounts.reduce(
+          (sum, d) => sum + Number(d.amount), 0
+        )
+        const remainingOrderDiscounts = await tx.orderDiscount.findMany({
+          where: { orderId: order.id, deletedAt: null },
+        })
+        const remainingOrderDiscountTotal = remainingOrderDiscounts.reduce(
+          (sum, d) => sum + Number(d.amount), 0
+        )
+        const totalParentDiscount = remainingItemDiscountTotal + remainingOrderDiscountTotal
 
         const _remainingTax = calculateTax(_remainingSubtotal, taxRate)
-        const _remainingTotal = Math.round((_remainingSubtotal + _remainingTax) * 100) / 100
+        const _remainingTotal = Math.round((_remainingSubtotal - totalParentDiscount + _remainingTax) * 100) / 100
 
         // Update original order totals and mark as 'split' so children become payable
         await tx.order.update({
@@ -431,8 +637,9 @@ export const POST = withVenue(async function POST(
           data: {
             status: 'split',
             subtotal: _remainingSubtotal,
+            discountTotal: totalParentDiscount,
             taxTotal: _remainingTax,
-            total: _remainingTotal,
+            total: Math.max(0, _remainingTotal),
             itemCount: _remainingItems.reduce((sum, i) => sum + i.quantity, 0),
             version: { increment: 1 },
           },
@@ -707,6 +914,108 @@ export const POST = withVenue(async function POST(
           data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
         })
 
+        // --- Distribute parent OrderDiscount records proportionally to seat children ---
+        const parentDiscountsBySeat = await tx.orderDiscount.findMany({
+          where: { orderId: order.id, deletedAt: null },
+        })
+
+        // Calculate total subtotal across all seat children for proportional distribution
+        const totalChildSubtotal = _splitOrders.reduce((sum, s) => {
+          // Re-derive subtotal from total and tax: subtotal = total / (1 + taxRate)
+          // But we stored seatSubtotal locally during creation. Since _splitOrders doesn't
+          // carry subtotal, we derive from seatItems.
+          const seatItems = itemsBySeat.get(s.seatNumber) || []
+          let sub = 0
+          seatItems.forEach(item => {
+            sub += Number(item.price) * item.quantity
+            sub += item.modifiers.reduce((ms, m) => ms + Number(m.price), 0) * item.quantity
+          })
+          return sum + sub
+        }, 0)
+
+        if (parentDiscountsBySeat.length > 0 && totalChildSubtotal > 0) {
+          // Track cumulative discount per child
+          const seatChildDiscAccum = new Map<string, number>()
+          for (const child of _splitOrders) {
+            seatChildDiscAccum.set(child.id, 0)
+          }
+
+          for (const disc of parentDiscountsBySeat) {
+            const discAmount = Number(disc.amount)
+            const isPercent = disc.percent != null && Number(disc.percent) > 0
+            let distributed = 0
+
+            for (let si = 0; si < _splitOrders.length; si++) {
+              const child = _splitOrders[si]
+              const seatItems = itemsBySeat.get(child.seatNumber) || []
+              let childSub = 0
+              seatItems.forEach(item => {
+                childSub += Number(item.price) * item.quantity
+                childSub += item.modifiers.reduce((ms, m) => ms + Number(m.price), 0) * item.quantity
+              })
+
+              let childDiscAmount: number
+              if (isPercent) {
+                childDiscAmount = Math.round(childSub * (Number(disc.percent) / 100) * 100) / 100
+              } else {
+                if (si === _splitOrders.length - 1) {
+                  childDiscAmount = Math.round((discAmount - distributed) * 100) / 100
+                } else {
+                  childDiscAmount = Math.round(discAmount * (childSub / totalChildSubtotal) * 100) / 100
+                }
+              }
+              distributed += childDiscAmount
+
+              await tx.orderDiscount.create({
+                data: {
+                  locationId: order.locationId,
+                  orderId: child.id,
+                  discountRuleId: disc.discountRuleId,
+                  couponId: disc.couponId,
+                  couponCode: disc.couponCode,
+                  name: disc.name,
+                  amount: childDiscAmount,
+                  percent: isPercent ? disc.percent : null,
+                  appliedBy: disc.appliedBy,
+                  isAutomatic: disc.isAutomatic,
+                  reason: disc.reason,
+                },
+              })
+
+              seatChildDiscAccum.set(child.id, (seatChildDiscAccum.get(child.id) || 0) + childDiscAmount)
+            }
+
+            // Soft-delete parent discount
+            await tx.orderDiscount.update({
+              where: { id: disc.id },
+              data: { deletedAt: new Date() },
+            })
+          }
+
+          // Update each child's discountTotal and total with accumulated discount
+          for (const child of _splitOrders) {
+            const totalChildDisc = seatChildDiscAccum.get(child.id) || 0
+            if (totalChildDisc > 0) {
+              const seatItems = itemsBySeat.get(child.seatNumber) || []
+              let childSub = 0
+              seatItems.forEach(item => {
+                childSub += Number(item.price) * item.quantity
+                childSub += item.modifiers.reduce((ms, m) => ms + Number(m.price), 0) * item.quantity
+              })
+              const childTax = calculateTax(childSub, taxRate)
+              const newChildTotal = Math.round((childSub - totalChildDisc + childTax) * 100) / 100
+              await tx.order.update({
+                where: { id: child.id },
+                data: {
+                  discountTotal: totalChildDisc,
+                  total: Math.max(0, newChildTotal),
+                },
+              })
+              child.total = Math.max(0, newChildTotal)
+            }
+          }
+        }
+
         // Recalculate original order totals (for items without seat assignment)
         const _remainingItems = itemsBySeat.get(null) || []
         let _remainingSubtotal = 0
@@ -725,6 +1034,7 @@ export const POST = withVenue(async function POST(
           data: {
             status: 'split',
             subtotal: _remainingSubtotal,
+            discountTotal: 0,
             taxTotal: _remainingTax,
             total: _remainingTotal,
             itemCount: _remainingItems.reduce((sum, i) => sum + i.quantity, 0),
@@ -1005,6 +1315,105 @@ export const POST = withVenue(async function POST(
           data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
         })
 
+        // --- Distribute parent OrderDiscount records proportionally to table children ---
+        const parentDiscountsByTable = await tx.orderDiscount.findMany({
+          where: { orderId: order.id, deletedAt: null },
+        })
+
+        // Calculate total subtotal across all table children for proportional distribution
+        const totalTableChildSubtotal = _splitOrders.reduce((sum, s) => {
+          const tblItems = itemsByTable.get(s.tableId) || []
+          let sub = 0
+          tblItems.forEach(item => {
+            sub += Number(item.price) * item.quantity
+            sub += item.modifiers.reduce((ms, m) => ms + Number(m.price), 0) * item.quantity
+          })
+          return sum + sub
+        }, 0)
+
+        if (parentDiscountsByTable.length > 0 && totalTableChildSubtotal > 0) {
+          // Track cumulative discount per child
+          const tableChildDiscAccum = new Map<string, number>()
+          for (const child of _splitOrders) {
+            tableChildDiscAccum.set(child.id, 0)
+          }
+
+          for (const disc of parentDiscountsByTable) {
+            const discAmount = Number(disc.amount)
+            const isPercent = disc.percent != null && Number(disc.percent) > 0
+            let distributed = 0
+
+            for (let si = 0; si < _splitOrders.length; si++) {
+              const child = _splitOrders[si]
+              const tblItems = itemsByTable.get(child.tableId) || []
+              let childSub = 0
+              tblItems.forEach(item => {
+                childSub += Number(item.price) * item.quantity
+                childSub += item.modifiers.reduce((ms, m) => ms + Number(m.price), 0) * item.quantity
+              })
+
+              let childDiscAmount: number
+              if (isPercent) {
+                childDiscAmount = Math.round(childSub * (Number(disc.percent) / 100) * 100) / 100
+              } else {
+                if (si === _splitOrders.length - 1) {
+                  childDiscAmount = Math.round((discAmount - distributed) * 100) / 100
+                } else {
+                  childDiscAmount = Math.round(discAmount * (childSub / totalTableChildSubtotal) * 100) / 100
+                }
+              }
+              distributed += childDiscAmount
+
+              await tx.orderDiscount.create({
+                data: {
+                  locationId: order.locationId,
+                  orderId: child.id,
+                  discountRuleId: disc.discountRuleId,
+                  couponId: disc.couponId,
+                  couponCode: disc.couponCode,
+                  name: disc.name,
+                  amount: childDiscAmount,
+                  percent: isPercent ? disc.percent : null,
+                  appliedBy: disc.appliedBy,
+                  isAutomatic: disc.isAutomatic,
+                  reason: disc.reason,
+                },
+              })
+
+              tableChildDiscAccum.set(child.id, (tableChildDiscAccum.get(child.id) || 0) + childDiscAmount)
+            }
+
+            // Soft-delete parent discount
+            await tx.orderDiscount.update({
+              where: { id: disc.id },
+              data: { deletedAt: new Date() },
+            })
+          }
+
+          // Update each child's discountTotal and total with accumulated discount
+          for (const child of _splitOrders) {
+            const totalChildDisc = tableChildDiscAccum.get(child.id) || 0
+            if (totalChildDisc > 0) {
+              const tblItems = itemsByTable.get(child.tableId) || []
+              let childSub = 0
+              tblItems.forEach(item => {
+                childSub += Number(item.price) * item.quantity
+                childSub += item.modifiers.reduce((ms, m) => ms + Number(m.price), 0) * item.quantity
+              })
+              const childTax = calculateTax(childSub, taxRate)
+              const newChildTotal = Math.round((childSub - totalChildDisc + childTax) * 100) / 100
+              await tx.order.update({
+                where: { id: child.id },
+                data: {
+                  discountTotal: totalChildDisc,
+                  total: Math.max(0, newChildTotal),
+                },
+              })
+              child.total = Math.max(0, newChildTotal)
+            }
+          }
+        }
+
         // Recalculate original order totals (for items without table assignment)
         const _remainingItems = itemsByTable.get(null) || []
         let _remainingSubtotal = 0
@@ -1023,6 +1432,7 @@ export const POST = withVenue(async function POST(
           data: {
             status: 'split',
             subtotal: _remainingSubtotal,
+            discountTotal: 0,
             taxTotal: _remainingTax,
             total: _remainingTotal,
             itemCount: _remainingItems.reduce((sum, i) => sum + i.quantity, 0),

@@ -287,6 +287,13 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // 1b. Soft-delete any OrderItemDiscount records for the voided/comped item
+      // Without this, orphaned discount records remain and corrupt totals
+      await tx.orderItemDiscount.updateMany({
+        where: { orderItemId: itemId, deletedAt: null },
+        data: { deletedAt: new Date() },
+      })
+
       // 2. Create void log entry
       await tx.voidLog.create({
         data: {
@@ -384,8 +391,16 @@ export const POST = withVenue(async function POST(
       exclusiveSubtotal = roundToCents(exclusiveSubtotal)
       const newSubtotal = roundToCents(inclusiveSubtotal + exclusiveSubtotal)
 
-      // Recalculate percent-based discounts against new subtotal
-      const discountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
+      // Recalculate percent-based order-level discounts against new subtotal
+      const orderLevelDiscount = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
+
+      // Sum item-level discounts from active (non-deleted) OrderItemDiscount records
+      const activeItemDiscounts = await tx.orderItemDiscount.findMany({
+        where: { orderId, deletedAt: null },
+        select: { amount: true },
+      })
+      const itemLevelDiscount = activeItemDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
+      const discountTotal = roundToCents(orderLevelDiscount + itemLevelDiscount)
 
       // H-FIN-7: Use split tax calculation for tax-inclusive pricing support
       const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
@@ -414,6 +429,25 @@ export const POST = withVenue(async function POST(
           version: { increment: 1 },
         },
       })
+
+      // 5b. Recalculate commission from active items only (voided item's commission must not persist)
+      const activeCommissionItems = await tx.orderItem.findMany({
+        where: { orderId, status: 'active', deletedAt: null },
+        include: { menuItem: { select: { commissionType: true, commissionValue: true } } },
+      })
+      let newCommission = 0
+      for (const ci of activeCommissionItems) {
+        if (!ci.menuItem?.commissionType || !ci.menuItem?.commissionValue) continue
+        const val = Number(ci.menuItem.commissionValue)
+        const qty = ci.quantity || 1
+        const ciTotal = Number(ci.itemTotal ?? 0)
+        newCommission += ci.menuItem.commissionType === 'percent'
+          ? Math.round(ciTotal * val / 100 * 100) / 100
+          : Math.round(val * qty * 100) / 100
+      }
+      await tx.order.update({ where: { id: orderId }, data: { commissionTotal: newCommission } })
+      // Zero the voided/comped item's own commission
+      await tx.orderItem.update({ where: { id: itemId }, data: { commissionAmount: 0 } })
 
       // 6. If this is a split child, update parent order totals to match sum of siblings
       let txParentTotals: { subtotal: number; taxTotal: number; total: number; discountTotal: number; itemCount: number } | null = null
@@ -890,6 +924,12 @@ export const PUT = withVenue(async function PUT(
         },
       })
 
+      // 1b. Restore any OrderItemDiscount records that were soft-deleted when the item was voided/comped
+      await tx.orderItemDiscount.updateMany({
+        where: { orderItemId: itemId, deletedAt: { not: null } },
+        data: { deletedAt: null },
+      })
+
       // 2. Recalculate order totals
       // H-FIN-7: Include isTaxInclusive to handle tax-inclusive pricing correctly
       const activeItems = await tx.orderItem.findMany({
@@ -915,8 +955,16 @@ export const PUT = withVenue(async function PUT(
       restoreExclusiveSubtotal = roundToCents(restoreExclusiveSubtotal)
       const newSubtotal = roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal)
 
-      // Recalculate percent-based discounts against new subtotal
-      const discountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
+      // Recalculate percent-based order-level discounts against new subtotal
+      const orderLevelDiscount = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
+
+      // Sum item-level discounts from active (non-deleted) OrderItemDiscount records (includes restored ones)
+      const restoreItemDiscounts = await tx.orderItemDiscount.findMany({
+        where: { orderId, deletedAt: null },
+        select: { amount: true },
+      })
+      const restoreItemLevelDiscount = restoreItemDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
+      const discountTotal = roundToCents(orderLevelDiscount + restoreItemLevelDiscount)
 
       // H-FIN-7: Use split tax calculation for tax-inclusive pricing support
       const restoreTaxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
@@ -974,6 +1022,8 @@ export const PUT = withVenue(async function PUT(
           data: {
             status: 'in_use',
             currentOrderId: orderId,
+            sessionStartedAt: item.blockTimeStartedAt || null,
+            sessionExpiresAt: item.blockTimeExpiresAt || null,
           },
         })
       }).then(() => {

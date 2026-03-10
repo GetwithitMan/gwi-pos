@@ -80,6 +80,56 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
+    // Also get item-level discounts (OrderItemDiscount)
+    const itemDiscounts = await db.orderItemDiscount.findMany({
+      where: {
+        order: {
+          locationId,
+          ...dateFilter,
+        },
+        deletedAt: null,
+        ...(discountRuleId ? { discountRuleId } : {}),
+        ...(employeeId ? { appliedById: employeeId } : {}),
+      },
+      include: {
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            orderType: true,
+            subtotal: true,
+            total: true,
+            createdAt: true,
+            employee: {
+              select: {
+                id: true,
+                displayName: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+        orderItem: {
+          select: {
+            id: true,
+            menuItem: {
+              select: { name: true },
+            },
+          },
+        },
+        discountRule: {
+          select: {
+            id: true,
+            name: true,
+            discountType: true,
+            discountConfig: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
     // Get all discount rules for reference
     const discountRules = await db.discountRule.findMany({
       where: { locationId, isActive: true },
@@ -113,6 +163,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let customDiscountCount = 0
     let presetDiscountAmount = 0
     let customDiscountAmount = 0
+    let orderLevelDiscountCount = 0
+    let orderLevelDiscountAmount = 0
+    let itemLevelDiscountCount = 0
+    let itemLevelDiscountAmount = 0
 
     // Group by discount rule
     const byRule: Record<string, {
@@ -171,6 +225,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       totalDiscountCount += 1
       totalDiscountAmount += amount
+      orderLevelDiscountCount += 1
+      orderLevelDiscountAmount += amount
 
       if (isPreset) {
         presetDiscountCount += 1
@@ -268,6 +324,113 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
+    // Process item-level discounts (OrderItemDiscount)
+    itemDiscounts.forEach(discount => {
+      const amount = Number(discount.amount)
+      const isPreset = !!discount.discountRuleId
+
+      totalDiscountCount += 1
+      totalDiscountAmount += amount
+      itemLevelDiscountCount += 1
+      itemLevelDiscountAmount += amount
+
+      if (isPreset) {
+        presetDiscountCount += 1
+        presetDiscountAmount += amount
+      } else {
+        customDiscountCount += 1
+        customDiscountAmount += amount
+      }
+
+      // By rule
+      const ruleKey = discount.discountRuleId || 'custom'
+      const ruleName = discount.discountRule?.name || discount.reason || 'Custom Item Discount'
+      const ruleType = discount.discountRule?.discountType || (discount.percent ? 'percent' : 'fixed')
+
+      if (!byRule[ruleKey]) {
+        byRule[ruleKey] = {
+          id: discount.discountRuleId,
+          name: ruleName,
+          type: ruleType,
+          count: 0,
+          totalAmount: 0,
+          avgAmount: 0,
+          orders: [],
+        }
+      }
+      byRule[ruleKey].count += 1
+      byRule[ruleKey].totalAmount += amount
+      byRule[ruleKey].orders.push(discount.order.orderNumber)
+
+      // By employee who applied
+      const appliedById = discount.appliedById || discount.order.employee.id
+      const appliedByName = employeeMap.get(appliedById) ||
+        (discount.order.employee.displayName ||
+          `${discount.order.employee.firstName} ${discount.order.employee.lastName}`)
+
+      if (!byEmployee[appliedById]) {
+        byEmployee[appliedById] = {
+          id: appliedById,
+          name: appliedByName,
+          count: 0,
+          totalAmount: 0,
+          presetCount: 0,
+          customCount: 0,
+        }
+      }
+      byEmployee[appliedById].count += 1
+      byEmployee[appliedById].totalAmount += amount
+      if (isPreset) {
+        byEmployee[appliedById].presetCount += 1
+      } else {
+        byEmployee[appliedById].customCount += 1
+      }
+
+      // By day
+      const dateKey = discount.createdAt.toISOString().split('T')[0]
+      if (!byDay[dateKey]) {
+        byDay[dateKey] = {
+          date: dateKey,
+          count: 0,
+          totalAmount: 0,
+          avgDiscount: 0,
+        }
+      }
+      byDay[dateKey].count += 1
+      byDay[dateKey].totalAmount += amount
+
+      // By order type
+      const orderType = discount.order.orderType
+      if (!byOrderType[orderType]) {
+        byOrderType[orderType] = {
+          type: orderType,
+          count: 0,
+          totalAmount: 0,
+        }
+      }
+      byOrderType[orderType].count += 1
+      byOrderType[orderType].totalAmount += amount
+
+      // Add to recent discounts (limit to 100)
+      const itemName = discount.orderItem?.menuItem?.name || 'Unknown Item'
+      if (recentDiscounts.length < 100) {
+        recentDiscounts.push({
+          id: discount.id,
+          orderNumber: discount.order.orderNumber,
+          orderType: discount.order.orderType,
+          discountName: `${ruleName} (on ${itemName})`,
+          amount,
+          percent: discount.percent ? Number(discount.percent) : null,
+          reason: discount.reason,
+          appliedBy: appliedByName,
+          orderEmployee: discount.order.employee.displayName ||
+            `${discount.order.employee.firstName} ${discount.order.employee.lastName}`,
+          isPreset,
+          createdAt: discount.createdAt.toISOString(),
+        })
+      }
+    })
+
     // Calculate averages
     Object.values(byRule).forEach(rule => {
       rule.avgAmount = rule.count > 0 ? rule.totalAmount / rule.count : 0
@@ -318,6 +481,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         presetDiscountAmount: Math.round(presetDiscountAmount * 100) / 100,
         customDiscountCount,
         customDiscountAmount: Math.round(customDiscountAmount * 100) / 100,
+        orderLevelDiscountCount,
+        orderLevelDiscountAmount: Math.round(orderLevelDiscountAmount * 100) / 100,
+        itemLevelDiscountCount,
+        itemLevelDiscountAmount: Math.round(itemLevelDiscountAmount * 100) / 100,
         avgDiscountAmount: totalDiscountCount > 0
           ? Math.round((totalDiscountAmount / totalDiscountCount) * 100) / 100
           : 0,

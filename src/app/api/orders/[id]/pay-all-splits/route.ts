@@ -135,6 +135,25 @@ export const POST = withVenue(async function POST(
     const unpaidSplitIds = unpaidSplits.map(s => s.id)
 
     await db.$transaction(async (tx) => {
+      // RACE-CONDITION FIX: Lock the parent order first to prevent concurrent
+      // pay-all-splits requests from double-paying all splits.
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${parentOrderId} FOR UPDATE`
+
+      // Also lock each split order to prevent individual split payments racing
+      for (const split of unpaidSplits) {
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${split.id} FOR UPDATE`
+      }
+
+      // Re-check that splits are still unpaid after acquiring locks
+      const lockedSplits = await tx.order.findMany({
+        where: { id: { in: unpaidSplitIds }, deletedAt: null },
+        select: { id: true, status: true },
+      })
+      const stillUnpaid = lockedSplits.filter(s => s.status !== 'paid')
+      if (stillUnpaid.length === 0) {
+        throw new Error('ALL_SPLITS_ALREADY_PAID')
+      }
+
       // Batch-create all payments at once
       await tx.payment.createMany({
         data: unpaidSplits.map(split => {
@@ -146,7 +165,9 @@ export const POST = withVenue(async function POST(
           return {
             locationId: split.locationId,
             orderId: split.id,
-            employeeId,
+            // Use split.employeeId (the selling employee) for sale credit,
+            // falling back to request employeeId if split has none.
+            employeeId: split.employeeId || employeeId,
             terminalId: terminalId || null,
             amount: splitTotal,
             tipAmount: 0,
@@ -286,6 +307,15 @@ export const POST = withVenue(async function POST(
       parentOrderId,
     } })
   } catch (error) {
+    // Handle race condition: another request already paid all splits
+    if (error instanceof Error && error.message === 'ALL_SPLITS_ALREADY_PAID') {
+      return NextResponse.json({ data: {
+        success: true,
+        duplicate: true,
+        parentOrderId,
+        message: 'All splits were already paid by another request',
+      } })
+    }
     console.error('Failed to pay all splits:', error)
     return NextResponse.json(
       { error: 'Failed to pay all splits' },

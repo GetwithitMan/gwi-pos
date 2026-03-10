@@ -57,12 +57,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Fetch orders and reference data in parallel (all independent)
     const [orders, categories, tables, sections] = await Promise.all([
       // Completed/paid orders with all related data
+      // Exclude split parents to prevent double-counting when pay-all-splits
+      // marks the parent as 'paid' alongside its children.
       db.order.findMany({
         where: {
           locationId,
           ...dateFilter,
           ...additionalFilters,
           status: { in: ['completed', 'paid'] },
+          NOT: { splitOrders: { some: {} } },
         },
         include: {
           employee: {
@@ -81,7 +84,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               },
             },
           },
-          payments: true,
+          payments: {
+            where: { status: 'completed' },
+          },
           discounts: {
             include: {
               discountRule: {

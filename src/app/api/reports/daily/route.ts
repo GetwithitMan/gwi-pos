@@ -95,6 +95,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ccTipFees,
     ] = await Promise.all([
       // 1) Revenue summary — order-level aggregates
+      // Exclude split parents: when pay-all-splits marks the parent as 'paid',
+      // both parent and children would be counted — doubling sales totals.
       db.$queryRaw<RevenueSummaryRow[]>(Prisma.sql`
         SELECT
           COUNT(*)::int AS order_count,
@@ -116,6 +118,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         WHERE o."locationId" = ${locationId}
           AND o.status IN ('completed', 'closed', 'paid')
           AND o."deletedAt" IS NULL
+          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
           AND (
             (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
             OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
@@ -133,6 +136,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         WHERE o."locationId" = ${locationId}
           AND o.status IN ('completed', 'closed', 'paid')
           AND o."deletedAt" IS NULL
+          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
           AND (
             (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
             OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
@@ -170,6 +174,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           AND o.status IN ('completed', 'closed', 'paid')
           AND o."deletedAt" IS NULL
           AND oi."deletedAt" IS NULL
+          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
           AND (
             (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
             OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
@@ -212,6 +217,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           AND o.status IN ('completed', 'closed', 'paid')
           AND o."deletedAt" IS NULL
           AND p.status = 'completed'
+          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
           AND (
             (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
             OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
@@ -232,6 +238,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           AND o.status IN ('completed', 'closed', 'paid')
           AND o."deletedAt" IS NULL
           AND od."deletedAt" IS NULL
+          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
           AND (
             (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
             OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
@@ -254,6 +261,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           AND oi."deletedAt" IS NULL
           AND oi."soldByWeight" = true
           AND oi.weight IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
           AND (
             (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
             OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
@@ -290,6 +298,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           WHERE o."locationId" = ${locationId}
             AND o.status IN ('completed', 'closed', 'paid')
             AND o."deletedAt" IS NULL
+            AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
             AND (
               (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
               OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
@@ -1164,11 +1173,14 @@ async function legacyReport(
     categories,
   ] = await Promise.all([
     // Completed/paid orders
+    // Exclude split parents to prevent double-counting when pay-all-splits
+    // marks the parent as 'paid' alongside its children.
     db.order.findMany({
       where: {
         locationId,
         deletedAt: null,
         status: { in: ['completed', 'closed', 'paid'] },
+        NOT: { splitOrders: { some: {} } },
         OR: [
           { businessDayDate: { gte: startOfDay, lte: endOfDay } },
           { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
@@ -1190,6 +1202,7 @@ async function legacyReport(
           },
         },
         payments: {
+          where: { status: 'completed' },
           select: {
             paymentMethod: true,
             amount: true,

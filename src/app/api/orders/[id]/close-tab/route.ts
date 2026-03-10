@@ -12,6 +12,7 @@ import { withVenue } from '@/lib/with-venue'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { enableSyncReplication } from '@/lib/db-helpers'
+import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -712,6 +713,7 @@ export const POST = withVenue(async function POST(
             currentOrderId: null,
             expiresAt: null,
           }, { async: true }).catch(() => {})
+          void notifyNextWaitlistEntry(locationId, item.id).catch(() => {})
         }
       }
     } catch (cleanupErr) {
