@@ -156,6 +156,9 @@ interface UseOrderHandlersOptions {
 
   // requireCardForTab
   requireCardForTab: boolean
+
+  // Send behavior setting
+  sendBehavior: 'stay' | 'return_to_floor' | 'return_to_orders'
 }
 
 export function useOrderHandlers(options: UseOrderHandlersOptions) {
@@ -272,6 +275,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     setAgeVerificationCallback,
     setAllergenNotice,
     ageVerificationSettings,
+    sendBehavior,
   } = options
 
   const [isSendingOrder, setIsSendingOrder] = useState(false)
@@ -399,8 +403,12 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
           })
         }
 
-        clearOrder()
-        setSavedOrderId(null)
+        const shouldStay = !isBartender && sendBehavior === 'stay'
+
+        if (!shouldStay) {
+          clearOrder()
+          setSavedOrderId(null)
+        }
         setOrderSent(false)
         setSelectedOrderType(null)
         setOrderCustomFields({})
@@ -408,8 +416,16 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         setFloorPlanRefreshTrigger(prev => prev + 1)
         toast.success(`Order #${orderNum} sent to kitchen`)
 
+        // Post-send navigation based on sendBehavior setting
         if (!isBartender) {
-          setViewMode('floor-plan')
+          if (sendBehavior === 'return_to_orders') {
+            // Stay on orders view — order already cleared above
+          } else if (shouldStay) {
+            // Stay on the current order — order was NOT cleared above
+          } else {
+            // 'return_to_floor' — default
+            setViewMode('floor-plan')
+          }
         }
 
         printKitchenTicket(orderId).catch(() => {})
@@ -418,7 +434,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       sendLockRef.current = false
       setIsSendingOrder(false)
     }
-  }, [savedOrderId, employeeId, isBartender, orderTypes, activeOrderFull, validateBeforeSend, addTableOrder, clearOrder])
+  }, [savedOrderId, employeeId, isBartender, orderTypes, activeOrderFull, validateBeforeSend, addTableOrder, clearOrder, sendBehavior])
 
   // Print kitchen ticket
   const printKitchenTicket = async (orderId: string) => {

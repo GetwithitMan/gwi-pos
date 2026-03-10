@@ -126,6 +126,27 @@ export default function ClosedTabsPage() {
 
   // Detail modal
   const [detailTab, setDetailTab] = useState<ClosedTab | null>(null)
+  const [walkoutRetries, setWalkoutRetries] = useState<WalkoutRetryInfo[]>([])
+
+  useEffect(() => {
+    if (!detailTab?.isWalkout || !locationId) {
+      setWalkoutRetries([])
+      return
+    }
+    const fetchRetries = async () => {
+      try {
+        const params = new URLSearchParams({ locationId, orderId: detailTab.id })
+        const res = await fetch(`/api/datacap/walkout-retry?${params}`)
+        if (res.ok) {
+          const json = await res.json()
+          setWalkoutRetries(json.data || [])
+        }
+      } catch {
+        // Supplementary data
+      }
+    }
+    fetchRetries()
+  }, [detailTab?.isWalkout, detailTab?.id, locationId])
 
   // ─── Fetch employees ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -415,6 +436,60 @@ export default function ClosedTabsPage() {
                 <span className="font-medium">{detailTab.closedAt ? formatDateTime(detailTab.closedAt) : '-'}</span>
               </div>
             </div>
+
+            {/* Walkout Retry Status */}
+            {detailTab.isWalkout && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-red-600 text-xs font-bold uppercase tracking-wider">Walkout</span>
+                </div>
+                {walkoutRetries.length === 0 ? (
+                  <p className="text-xs text-gray-500">No capture retry records found.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {walkoutRetries.map(retry => {
+                      const statusStyles: Record<string, string> = {
+                        pending: 'bg-yellow-100 text-yellow-800',
+                        collected: 'bg-green-100 text-green-800',
+                        exhausted: 'bg-red-100 text-red-800',
+                        written_off: 'bg-gray-100 text-gray-600',
+                      }
+                      const statusLabels: Record<string, string> = {
+                        pending: 'Pending',
+                        collected: 'Collected',
+                        exhausted: 'Exhausted',
+                        written_off: 'Written Off',
+                      }
+                      return (
+                        <div key={retry.id} className="text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusStyles[retry.status] || 'bg-gray-100 text-gray-600'}`}>
+                              {statusLabels[retry.status] || retry.status}
+                            </span>
+                            <span className="text-gray-900 font-medium">{formatCurrency(retry.amount)}</span>
+                            {retry.cardType && retry.cardLast4 && (
+                              <span className="text-gray-500">{retry.cardType} ****{retry.cardLast4}</span>
+                            )}
+                          </div>
+                          <div className="text-gray-500 mt-0.5">
+                            <span>Retries: {retry.retryCount}/{retry.maxRetries}</span>
+                            {retry.nextRetryAt && retry.status === 'pending' && (
+                              <span className="ml-2">Next: {new Date(retry.nextRetryAt).toLocaleDateString()}</span>
+                            )}
+                            {retry.lastRetryError && (
+                              <p className="text-red-500 truncate">Error: {retry.lastRetryError}</p>
+                            )}
+                            {retry.collectedAt && (
+                              <p className="text-green-600">Collected: {new Date(retry.collectedAt).toLocaleString()}</p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Items */}
             <div>

@@ -45,6 +45,15 @@ interface ItemSettings {
   allergens: string[]
   // Age verification
   isAgeRestricted: boolean
+  // Nutritional info
+  calories: number | null
+  caloriesFromFat: number | null
+  protein: number | null
+  carbs: number | null
+  fat: number | null
+  fiber: number | null
+  sodium: number | null
+  allergenNotes: string | null
 }
 
 interface IngredientLibraryItem {
@@ -140,6 +149,16 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
   const [allergens, setAllergens] = useState<string[]>([])
   // Age verification
   const [isAgeRestricted, setIsAgeRestricted] = useState(false)
+  // Nutritional info
+  const [calories, setCalories] = useState('')
+  const [caloriesFromFat, setCaloriesFromFat] = useState('')
+  const [protein, setProtein] = useState('')
+  const [carbs, setCarbs] = useState('')
+  const [fat, setFat] = useState('')
+  const [fiber, setFiber] = useState('')
+  const [sodium, setSodium] = useState('')
+  const [allergenNotes, setAllergenNotes] = useState('')
+  const [nutritionExpanded, setNutritionExpanded] = useState(false)
   // Whether size options are active (overrides base price)
   const [sizesActive, setSizesActive] = useState(false)
   const handleSizesActiveChange = useCallback((active: boolean) => setSizesActive(active), [])
@@ -188,6 +207,15 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
         setPricePerWeightUnit(it.pricePerWeightUnit != null ? String(it.pricePerWeightUnit) : '')
         setAllergens(Array.isArray(it.allergens) ? it.allergens : [])
         setIsAgeRestricted(it.isAgeRestricted ?? false)
+        // Nutritional info (optional chaining — fields may not exist on DB yet)
+        setCalories((it as any).calories != null ? String((it as any).calories) : '')
+        setCaloriesFromFat((it as any).caloriesFromFat != null ? String((it as any).caloriesFromFat) : '')
+        setProtein((it as any).protein != null ? String((it as any).protein) : '')
+        setCarbs((it as any).carbs != null ? String((it as any).carbs) : '')
+        setFat((it as any).fat != null ? String((it as any).fat) : '')
+        setFiber((it as any).fiber != null ? String((it as any).fiber) : '')
+        setSodium((it as any).sodium != null ? String((it as any).sodium) : '')
+        setAllergenNotes((it as any).allergenNotes || '')
 
         // Auto-focus name if new item
         if (it.name === 'New Item') {
@@ -300,6 +328,15 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
         allergens,
         // Age verification
         isAgeRestricted,
+        // Nutritional info
+        calories: calories ? parseInt(calories) : null,
+        caloriesFromFat: caloriesFromFat ? parseInt(caloriesFromFat) : null,
+        protein: protein ? parseFloat(protein) : null,
+        carbs: carbs ? parseFloat(carbs) : null,
+        fat: fat ? parseFloat(fat) : null,
+        fiber: fiber ? parseFloat(fiber) : null,
+        sodium: sodium ? parseFloat(sodium) : null,
+        allergenNotes: allergenNotes.trim() || null,
       }
 
       const res = await fetch(`/api/menu/items/${itemId}`, {
@@ -963,6 +1000,131 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                         </div>
                       </label>
                     </div>
+                  </div>
+
+                  {/* Nutritional Info (collapsible) */}
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setNutritionExpanded(!nutritionExpanded)}
+                      className="w-full px-3 py-2 bg-emerald-50 border-b border-emerald-200 flex items-center justify-between min-h-[44px]"
+                    >
+                      <div>
+                        <span className="text-xs font-semibold text-emerald-800">NUTRITIONAL INFO</span>
+                        <p className="text-[11px] text-emerald-600 mt-0.5">Calorie and macro data for menu labeling compliance.</p>
+                      </div>
+                      <span className="text-emerald-600 text-sm">{nutritionExpanded ? '\u25B2' : '\u25BC'}</span>
+                    </button>
+                    {nutritionExpanded && (
+                      <div className="p-3 space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelClass}>Calories</label>
+                            <input
+                              type="number"
+                              value={calories}
+                              onChange={(e) => setCalories(e.target.value)}
+                              placeholder="e.g. 450"
+                              className={inputClass}
+                              min="0"
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Calories from Fat</label>
+                            <input
+                              type="number"
+                              value={caloriesFromFat}
+                              onChange={(e) => setCaloriesFromFat(e.target.value)}
+                              placeholder="e.g. 120"
+                              className={inputClass}
+                              min="0"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelClass}>Protein (g)</label>
+                            <input
+                              type="number"
+                              value={protein}
+                              onChange={(e) => setProtein(e.target.value)}
+                              placeholder="e.g. 25"
+                              className={inputClass}
+                              min="0"
+                              step="0.1"
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Carbs (g)</label>
+                            <input
+                              type="number"
+                              value={carbs}
+                              onChange={(e) => setCarbs(e.target.value)}
+                              placeholder="e.g. 35"
+                              className={inputClass}
+                              min="0"
+                              step="0.1"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className={labelClass}>Fat (g)</label>
+                            <input
+                              type="number"
+                              value={fat}
+                              onChange={(e) => setFat(e.target.value)}
+                              placeholder="e.g. 14"
+                              className={inputClass}
+                              min="0"
+                              step="0.1"
+                            />
+                          </div>
+                          <div>
+                            <label className={labelClass}>Fiber (g)</label>
+                            <input
+                              type="number"
+                              value={fiber}
+                              onChange={(e) => setFiber(e.target.value)}
+                              placeholder="e.g. 3"
+                              className={inputClass}
+                              min="0"
+                              step="0.1"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className={labelClass}>Sodium (mg)</label>
+                          <input
+                            type="number"
+                            value={sodium}
+                            onChange={(e) => setSodium(e.target.value)}
+                            placeholder="e.g. 680"
+                            className={inputClass}
+                            min="0"
+                            step="0.1"
+                          />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Allergen Notes</label>
+                          <textarea
+                            value={allergenNotes}
+                            onChange={(e) => setAllergenNotes(e.target.value)}
+                            placeholder="e.g. Contains traces of tree nuts. Prepared in facility that processes wheat."
+                            className={`${inputClass} resize-none`}
+                            rows={2}
+                          />
+                        </div>
+                        {calories && (
+                          <div className="text-[11px] text-gray-500 bg-gray-50 rounded-lg p-2">
+                            Summary: {calories} cal
+                            {protein ? ` | ${protein}g protein` : ''}
+                            {carbs ? ` | ${carbs}g carbs` : ''}
+                            {fat ? ` | ${fat}g fat` : ''}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </>
               )}

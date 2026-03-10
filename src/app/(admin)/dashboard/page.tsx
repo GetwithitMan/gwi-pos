@@ -177,6 +177,9 @@ export default function ManagerDashboardPage() {
   const [laborPercent, setLaborPercent] = useState<number | null>(null)
   const [laborCost, setLaborCost] = useState<number>(0)
 
+  // Cover charge / door count state
+  const [doorCount, setDoorCount] = useState<{ count: number; maxCapacity: number; totalCollected: number; cashTotal: number; cardTotal: number } | null>(null)
+
   // EOD Reset state
   const [eodConfirmOpen, setEodConfirmOpen] = useState(false)
   const [eodDryRunResult, setEodDryRunResult] = useState<{
@@ -360,6 +363,30 @@ export default function ManagerDashboardPage() {
     }
   }, [locationId, currentEmployee?.id])
 
+  // ------------------------------------------
+  // Cover charge / door count fetch
+  // ------------------------------------------
+  const refreshDoorCount = useCallback(async () => {
+    if (!locationId || !currentEmployee?.id) return
+    try {
+      const res = await fetch(`/api/cover-charges?locationId=${locationId}&requestingEmployeeId=${currentEmployee.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data) {
+          setDoorCount({
+            count: data.data.doorCount ?? 0,
+            maxCapacity: data.data.maxCapacity ?? 0,
+            totalCollected: data.data.totalCollected ?? 0,
+            cashTotal: data.data.cashTotal ?? 0,
+            cardTotal: data.data.cardTotal ?? 0,
+          })
+        }
+      }
+    } catch (err) {
+      console.error('Door count refresh failed:', err)
+    }
+  }, [locationId, currentEmployee?.id])
+
   // Initial load
   useEffect(() => {
     if (locationId) {
@@ -367,8 +394,9 @@ export default function ManagerDashboardPage() {
       refreshEmployeeStats()
       refreshLiveMetrics()
       refreshLaborPercent()
+      refreshDoorCount()
     }
-  }, [locationId, refreshData, refreshEmployeeStats, refreshLiveMetrics, refreshLaborPercent])
+  }, [locationId, refreshData, refreshEmployeeStats, refreshLiveMetrics, refreshLaborPercent, refreshDoorCount])
 
   // ------------------------------------------
   // Socket: real-time updates
@@ -381,6 +409,8 @@ export default function ManagerDashboardPage() {
   employeeStatsRef.current = refreshEmployeeStats
   const laborPercentRef = useRef(refreshLaborPercent)
   laborPercentRef.current = refreshLaborPercent
+  const doorCountRef = useRef(refreshDoorCount)
+  doorCountRef.current = refreshDoorCount
 
   useEffect(() => {
     if (!locationId) return
@@ -421,10 +451,15 @@ export default function ManagerDashboardPage() {
       laborPercentRef.current()
     }
 
+    const onCoverEntry = () => {
+      doorCountRef.current()
+    }
+
     socket.on('orders:list-changed', debouncedRefresh)
     socket.on('order:totals-updated', debouncedRefresh)
     socket.on('employee:clock-changed', debouncedRefresh)
     socket.on('location:alert', onAlert)
+    socket.on('cover:entry-recorded', onCoverEntry)
     socket.on('connect', onConnect)
 
     return () => {
@@ -432,6 +467,7 @@ export default function ManagerDashboardPage() {
       socket.off('order:totals-updated', debouncedRefresh)
       socket.off('employee:clock-changed', debouncedRefresh)
       socket.off('location:alert', onAlert)
+      socket.off('cover:entry-recorded', onCoverEntry)
       socket.off('connect', onConnect)
       if (debounceTimer.current) clearTimeout(debounceTimer.current)
       releaseSharedSocket()
@@ -788,6 +824,67 @@ export default function ManagerDashboardPage() {
       )}
 
       {/* ================================================================ */}
+      {/* DOOR COUNT WIDGET (cover charges)                              */}
+      {/* ================================================================ */}
+      {doorCount && doorCount.count > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900">Door Count</h3>
+            {doorCount.maxCapacity > 0 && (
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                doorCount.count >= doorCount.maxCapacity
+                  ? 'bg-red-100 text-red-700'
+                  : doorCount.count >= doorCount.maxCapacity * 0.9
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-green-100 text-green-700'
+              }`}>
+                {doorCount.count >= doorCount.maxCapacity ? 'AT CAPACITY' : `${Math.round((doorCount.count / doorCount.maxCapacity) * 100)}% full`}
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider">Current Count</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">
+                {doorCount.count}
+                {doorCount.maxCapacity > 0 && (
+                  <span className="text-sm font-normal text-gray-400"> / {doorCount.maxCapacity}</span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider">Total Collected</p>
+              <p className="text-2xl font-bold text-green-600 mt-1">{formatCurrency(doorCount.totalCollected)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider">Cash</p>
+              <p className="text-lg font-semibold text-gray-700 mt-1">{formatCurrency(doorCount.cashTotal)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider">Card</p>
+              <p className="text-lg font-semibold text-gray-700 mt-1">{formatCurrency(doorCount.cardTotal)}</p>
+            </div>
+          </div>
+          {doorCount.maxCapacity > 0 && (
+            <div className="mt-3">
+              <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    doorCount.count >= doorCount.maxCapacity
+                      ? 'bg-red-500'
+                      : doorCount.count >= doorCount.maxCapacity * 0.9
+                        ? 'bg-amber-500'
+                        : 'bg-green-500'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.round((doorCount.count / doorCount.maxCapacity) * 100))}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================ */}
       {/* OPEN ORDERS TABLE */}
       {/* ================================================================ */}
       <section className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
@@ -1090,7 +1187,7 @@ export default function ManagerDashboardPage() {
           variant="ghost"
           size="sm"
           className="text-xs text-gray-400 hover:text-gray-600"
-          onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics(); refreshLaborPercent() }}
+          onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics(); refreshLaborPercent(); refreshDoorCount() }}
         >
           Refresh now
         </Button>

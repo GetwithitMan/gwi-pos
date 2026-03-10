@@ -157,6 +157,8 @@ interface Order {
   reopenReason?: string | null
   // Order status (open, split, paid, etc.)
   status?: string
+  // Pre-order / scheduled order
+  scheduledFor?: string | null  // ISO datetime for future orders
   // Optimistic concurrency control — server version for 409 conflict detection
   version?: number
 }

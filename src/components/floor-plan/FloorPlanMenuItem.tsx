@@ -31,6 +31,7 @@ interface MenuItem {
   reasons86d?: string[]
   pricingOptionGroups?: PricingOptionGroup[]
   hasPricingOptions?: boolean
+  calories?: number | null
 }
 
 export interface FloorPlanMenuItemProps {
@@ -227,6 +228,19 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
             )
           })}
         </div>
+      )}
+      {/* Calorie badge (subtle, informational) */}
+      {item.calories != null && item.calories > 0 && !isItem86d && (
+        <span
+          style={{
+            fontSize: '10px',
+            color: '#94a3b8',
+            marginTop: hasQuickPicks ? '2px' : '4px',
+            opacity: 0.7,
+          }}
+        >
+          {item.calories} cal
+        </span>
       )}
       {item.hasModifiers && !isItem86d && !hasQuickPicks && (
         <span

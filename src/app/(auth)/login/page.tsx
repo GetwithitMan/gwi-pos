@@ -73,6 +73,8 @@ function LoginContent() {
   const [pendingAvailableRoles, setPendingAvailableRoles] = useState<{ id: string; name: string; cashHandlingMode: string; isPrimary: boolean }[]>([])
   const [showTimeClockModal, setShowTimeClockModal] = useState(false)
   const [welcomeName, setWelcomeName] = useState<string | null>(null)
+  const [breakPrompt, setBreakPrompt] = useState<{ name: string; onBreak: boolean; entryId: string; emp: any } | null>(null)
+  const [breakActionLoading, setBreakActionLoading] = useState(false)
 
   const employee = useAuthStore((state) => state.employee)
 
@@ -155,8 +157,15 @@ function LoginContent() {
         if (statusRes.ok && clockData.clockedIn) {
           clockInStore({ entryId: clockData.entryId, clockInTime: clockData.clockInTime })
           const name = emp.displayName || emp.firstName || 'there'
-          setWelcomeName(name)
-          setTimeout(() => router.push(getRedirectPath(emp)), 800)
+
+          // If on break, show resume prompt instead of auto-redirect
+          if (clockData.onBreak) {
+            setBreakPrompt({ name, onBreak: true, entryId: clockData.entryId, emp })
+            return
+          }
+
+          // Clocked in, not on break — show welcome with optional "Start Break" link
+          setBreakPrompt({ name, onBreak: false, entryId: clockData.entryId, emp })
           return
         }
       } catch {}
@@ -203,6 +212,95 @@ function LoginContent() {
           </div>
           <h2 className="text-2xl font-bold mb-1">Welcome, {welcomeName}!</h2>
           <p className="text-gray-400 text-sm">Redirecting...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (breakPrompt) {
+    const handleBreakAction = async (action: 'resume' | 'start_break' | 'continue') => {
+      if (action === 'continue') {
+        // Just redirect — no break action needed
+        setWelcomeName(breakPrompt.name)
+        setTimeout(() => router.push(getRedirectPath(breakPrompt.emp)), 800)
+        setBreakPrompt(null)
+        return
+      }
+      setBreakActionLoading(true)
+      try {
+        const res = await fetch('/api/time-clock', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entryId: breakPrompt.entryId,
+            action: action === 'resume' ? 'endBreak' : 'startBreak',
+          }),
+        })
+        if (!res.ok) {
+          const json = await res.json()
+          setError(json.error || 'Break action failed')
+          setBreakPrompt(null)
+          return
+        }
+        setWelcomeName(breakPrompt.name)
+        setTimeout(() => router.push(getRedirectPath(breakPrompt.emp)), 800)
+        setBreakPrompt(null)
+      } catch {
+        setError('Connection error')
+        setBreakPrompt(null)
+      } finally {
+        setBreakActionLoading(false)
+      }
+    }
+
+    return (
+      <Card className="w-full max-w-md">
+        <CardContent className="py-8">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-bold mb-1">Welcome, {breakPrompt.name}</h2>
+            {breakPrompt.onBreak ? (
+              <p className="text-amber-400 text-sm">You are currently on break</p>
+            ) : (
+              <p className="text-green-400 text-sm">You are clocked in</p>
+            )}
+          </div>
+          <div className="space-y-3">
+            {breakPrompt.onBreak ? (
+              <>
+                <button
+                  onClick={() => handleBreakAction('resume')}
+                  disabled={breakActionLoading}
+                  className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-xl font-semibold transition-all"
+                >
+                  {breakActionLoading ? 'Resuming...' : 'Resume from Break'}
+                </button>
+                <button
+                  onClick={() => handleBreakAction('continue')}
+                  disabled={breakActionLoading}
+                  className="w-full py-2 text-gray-400 hover:text-white text-sm transition-colors"
+                >
+                  Continue to POS (stay on break)
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleBreakAction('continue')}
+                  disabled={breakActionLoading}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-semibold transition-all"
+                >
+                  Continue to POS
+                </button>
+                <button
+                  onClick={() => handleBreakAction('start_break')}
+                  disabled={breakActionLoading}
+                  className="w-full py-2 text-gray-400 hover:text-white text-sm transition-colors"
+                >
+                  {breakActionLoading ? 'Starting break...' : 'Start Break'}
+                </button>
+              </>
+            )}
+          </div>
         </CardContent>
       </Card>
     )

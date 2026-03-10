@@ -100,6 +100,7 @@ const ORDER_TYPE_LABELS: Record<string, string> = {
   takeout: 'Takeout',
   delivery: 'Delivery',
   bar_tab: 'Bar',
+  boh_sale: 'BOH',
 }
 
 const ORDER_TYPE_COLORS: Record<string, string> = {
@@ -107,6 +108,7 @@ const ORDER_TYPE_COLORS: Record<string, string> = {
   takeout: 'bg-orange-600',
   delivery: 'bg-purple-600',
   bar_tab: 'bg-green-600',
+  boh_sale: 'bg-gray-600',
 }
 
 // Course colors for KDS display (T013)
@@ -152,6 +154,13 @@ function KDSContent() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [socketConnected, setSocketConnected] = useState(false)
   const [expoMode, setExpoMode] = useState(false)
+  const [showKdsClockModal, setShowKdsClockModal] = useState(false)
+  const [kdsClockPin, setKdsClockPin] = useState('')
+  const [kdsClockEmployee, setKdsClockEmployee] = useState<{ id: string; name: string; locationId: string; permissions: string[] } | null>(null)
+  const [kdsClockError, setKdsClockError] = useState('')
+  const [kdsClockLoading, setKdsClockLoading] = useState(false)
+  const [kdsClockStatus, setKdsClockStatus] = useState<{ clockedIn: boolean; onBreak: boolean; entryId?: string } | null>(null)
+  const [kdsClockMessage, setKdsClockMessage] = useState('')
   const socketRef = useRef<Socket | null>(null)
 
   // Authenticate device on mount (after hydration so employee fallback works)
@@ -745,6 +754,84 @@ function KDSContent() {
   const displayName = expoMode ? 'Expo View' : (screenConfig?.name || station?.displayName || station?.name || 'All Stations')
   const locationName = employee?.location?.name || screenConfig?.locationId || ''
 
+  // KDS Clock-In/Out helpers
+  const kdsClockReset = () => {
+    setKdsClockPin('')
+    setKdsClockEmployee(null)
+    setKdsClockError('')
+    setKdsClockStatus(null)
+    setKdsClockMessage('')
+    setKdsClockLoading(false)
+  }
+
+  const kdsClockAuthPin = async (pinOverride?: string) => {
+    const pin = pinOverride || kdsClockPin
+    if (pin.length < 4) return
+    setKdsClockLoading(true)
+    setKdsClockError('')
+    try {
+      const authRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      })
+      const authJson = await authRes.json()
+      if (!authRes.ok) { setKdsClockError(authJson.error || 'Invalid PIN'); return }
+      const emp = authJson.data.employee
+      const empData = { id: emp.id, name: emp.displayName || `${emp.firstName} ${emp.lastName}`, locationId: emp.location.id, permissions: emp.permissions || [] }
+      setKdsClockEmployee(empData)
+      // Fetch clock status
+      const statusRes = await fetch(`/api/time-clock/status?employeeId=${emp.id}`)
+      const statusJson = await statusRes.json()
+      const clockData = statusJson.data ?? statusJson
+      if (statusRes.ok) {
+        setKdsClockStatus({ clockedIn: !!clockData.clockedIn, onBreak: !!clockData.onBreak, entryId: clockData.entryId })
+      } else {
+        setKdsClockStatus({ clockedIn: false, onBreak: false })
+      }
+    } catch {
+      setKdsClockError('Connection error')
+    } finally {
+      setKdsClockLoading(false)
+    }
+  }
+
+  const kdsClockAction = async (action: 'clock_in' | 'clock_out' | 'start_break' | 'end_break') => {
+    if (!kdsClockEmployee) return
+    setKdsClockLoading(true)
+    setKdsClockError('')
+    try {
+      if (action === 'start_break' || action === 'end_break') {
+        // Breaks use PUT /api/time-clock with entryId + action
+        if (!kdsClockStatus?.entryId) { setKdsClockError('No active clock entry'); return }
+        const res = await fetch('/api/time-clock', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entryId: kdsClockStatus.entryId, action: action === 'start_break' ? 'startBreak' : 'endBreak' }),
+        })
+        const json = await res.json()
+        if (!res.ok) { setKdsClockError(json.error || 'Break action failed'); return }
+        setKdsClockMessage(action === 'start_break' ? 'Break started' : 'Break ended')
+      } else {
+        const res = await fetch('/api/time-clock/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employeeId: kdsClockEmployee.id, locationId: kdsClockEmployee.locationId }),
+        })
+        const json = await res.json()
+        if (!res.ok) { setKdsClockError(json.error || 'Clock action failed'); return }
+        const data = json.data
+        setKdsClockMessage(data.message || (data.action === 'clock_in' ? 'Clocked in' : 'Clocked out'))
+      }
+      // Auto-close after brief delay
+      setTimeout(() => { setShowKdsClockModal(false); kdsClockReset() }, 1500)
+    } catch {
+      setKdsClockError('Connection error')
+    } finally {
+      setKdsClockLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-900 text-white relative">
       {/* Disconnect overlay */}
@@ -887,6 +974,17 @@ function KDSContent() {
             )}
           </button>
 
+          {/* Clock In/Out Button */}
+          <button
+            onClick={() => { kdsClockReset(); setShowKdsClockModal(true) }}
+            className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+            title="Clock In / Out"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+
           {/* Refresh Button */}
           <button
             onClick={loadOrders}
@@ -898,6 +996,68 @@ function KDSContent() {
           </button>
         </div>
       </header>
+
+      {/* KDS Clock In/Out Modal */}
+      {showKdsClockModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center" onClick={() => { setShowKdsClockModal(false); kdsClockReset() }}>
+          <div className="bg-gray-800 rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={e => e.stopPropagation()}>
+            {kdsClockMessage ? (
+              <div className="text-center py-4">
+                <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-lg font-semibold">{kdsClockMessage}</p>
+              </div>
+            ) : !kdsClockEmployee ? (
+              <>
+                <h3 className="text-lg font-bold mb-4 text-center">Enter PIN</h3>
+                <div className="flex justify-center mb-4">
+                  <div className="flex gap-2">
+                    {[0,1,2,3].map(i => (
+                      <div key={i} className={`w-4 h-4 rounded-full ${i < kdsClockPin.length ? 'bg-blue-500' : 'bg-gray-600'}`} />
+                    ))}
+                  </div>
+                </div>
+                {kdsClockError && <p className="text-red-400 text-sm text-center mb-3">{kdsClockError}</p>}
+                <div className="grid grid-cols-3 gap-2">
+                  {[1,2,3,4,5,6,7,8,9].map(n => (
+                    <button key={n} onClick={() => { const newPin = kdsClockPin + n; setKdsClockPin(newPin); if (newPin.length === 4) { setKdsClockPin(newPin); setTimeout(() => kdsClockAuthPin(newPin), 50) } }} className="py-4 bg-gray-700 hover:bg-gray-600 rounded-xl text-xl font-bold transition-colors">{n}</button>
+                  ))}
+                  <button onClick={() => { setShowKdsClockModal(false); kdsClockReset() }} className="py-4 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm font-medium transition-colors text-gray-400">Cancel</button>
+                  <button onClick={() => { const newPin = kdsClockPin + '0'; setKdsClockPin(newPin); if (newPin.length === 4) { setKdsClockPin(newPin); setTimeout(() => kdsClockAuthPin(newPin), 50) } }} className="py-4 bg-gray-700 hover:bg-gray-600 rounded-xl text-xl font-bold transition-colors">0</button>
+                  <button onClick={() => setKdsClockPin(kdsClockPin.slice(0, -1))} className="py-4 bg-gray-700 hover:bg-gray-600 rounded-xl text-sm font-medium transition-colors text-gray-400">Del</button>
+                </div>
+                {kdsClockLoading && <p className="text-gray-400 text-sm text-center mt-3">Authenticating...</p>}
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-bold mb-1 text-center">{kdsClockEmployee.name}</h3>
+                <p className="text-gray-400 text-sm text-center mb-4">
+                  {kdsClockStatus?.clockedIn ? (kdsClockStatus.onBreak ? 'On Break' : 'Clocked In') : 'Clocked Out'}
+                </p>
+                {kdsClockError && <p className="text-red-400 text-sm text-center mb-3">{kdsClockError}</p>}
+                <div className="space-y-2">
+                  {!kdsClockStatus?.clockedIn ? (
+                    <button onClick={() => kdsClockAction('clock_in')} disabled={kdsClockLoading} className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-xl font-semibold transition-colors">Clock In</button>
+                  ) : (
+                    <>
+                      <button onClick={() => kdsClockAction('clock_out')} disabled={kdsClockLoading} className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 rounded-xl font-semibold transition-colors">Clock Out</button>
+                      {!kdsClockStatus?.onBreak ? (
+                        <button onClick={() => kdsClockAction('start_break')} disabled={kdsClockLoading} className="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 rounded-xl font-semibold transition-colors">Start Break</button>
+                      ) : (
+                        <button onClick={() => kdsClockAction('end_break')} disabled={kdsClockLoading} className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl font-semibold transition-colors">End Break</button>
+                      )}
+                    </>
+                  )}
+                  <button onClick={() => { setShowKdsClockModal(false); kdsClockReset() }} className="w-full py-2 text-gray-400 hover:text-white text-sm transition-colors">Cancel</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Orders Grid */}
       <div className="p-4">

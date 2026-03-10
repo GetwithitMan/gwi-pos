@@ -33,7 +33,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       return apiError.badRequest(validation.error, ERROR_CODES.VALIDATION_ERROR)
     }
 
-    const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields, idempotencyKey } = validation.data
+    const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields, idempotencyKey, scheduledFor } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
 
     // Order creation idempotency — prevent double-tap / retry duplicates
@@ -78,6 +78,31 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     // Training mode: stamp isTraining on orders created by training employees
     const parsedLocSettings = locSettings ? parseSettings(locSettings) : null
     const orderIsTraining = parsedLocSettings ? isTrainingEmployee(employeeId, parsedLocSettings) : false
+
+    // Pre-order / scheduled order validation
+    let scheduledForDate: Date | null = null
+    if (scheduledFor) {
+      scheduledForDate = new Date(scheduledFor)
+      if (isNaN(scheduledForDate.getTime())) {
+        return apiError.badRequest('Invalid scheduledFor datetime', ERROR_CODES.VALIDATION_ERROR)
+      }
+      const now = new Date()
+      if (scheduledForDate <= now) {
+        return apiError.badRequest('scheduledFor must be in the future', ERROR_CODES.VALIDATION_ERROR)
+      }
+      const preOrderSettings = parsedLocSettings?.preOrders
+      if (preOrderSettings?.enabled) {
+        const msAhead = scheduledForDate.getTime() - now.getTime()
+        const maxMs = (preOrderSettings.maxAdvanceHours ?? 72) * 60 * 60 * 1000
+        const minMs = (preOrderSettings.minAdvanceMinutes ?? 30) * 60 * 1000
+        if (msAhead > maxMs) {
+          return apiError.badRequest(`Cannot schedule more than ${preOrderSettings.maxAdvanceHours ?? 72} hours ahead`, ERROR_CODES.VALIDATION_ERROR)
+        }
+        if (msAhead < minMs) {
+          return apiError.badRequest(`Must be at least ${preOrderSettings.minAdvanceMinutes ?? 30} minutes in the future`, ERROR_CODES.VALIDATION_ERROR)
+        }
+      }
+    }
 
     // === FAST PATH: Draft shell creation (no items) ===
     // When items is empty, create a lightweight order shell without tax/commission/totals computation.
@@ -163,15 +188,26 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
       timing.end('db-draft', 'Draft order create')
 
+      // Stamp scheduledFor for pre-orders (fire-and-forget, column added by migration 027)
+      if (scheduledForDate) {
+        void db.$executeRawUnsafe(
+          `UPDATE "Order" SET "scheduledFor" = $1 WHERE id = $2`,
+          scheduledForDate, order.id
+        ).catch(console.error)
+      }
+
       // Fire-and-forget audit log
       db.auditLog.create({
         data: {
           locationId,
           employeeId,
-          action: 'order_draft_created',
+          action: scheduledForDate ? 'order_scheduled' : 'order_draft_created',
           entityType: 'order',
           entityId: order.id,
-          details: { orderNumber: order.orderNumber, orderType, tableId: tableId || null },
+          details: {
+            orderNumber: order.orderNumber, orderType, tableId: tableId || null,
+            ...(scheduledForDate ? { scheduledFor: scheduledForDate.toISOString() } : {}),
+          },
         },
       }).catch(() => {})
 
@@ -534,6 +570,14 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     timing.end('db', 'Order create with items')
 
+    // Stamp scheduledFor for pre-orders (fire-and-forget, column added by migration 027)
+    if (scheduledForDate) {
+      void db.$executeRawUnsafe(
+        `UPDATE "Order" SET "scheduledFor" = $1 WHERE id = $2`,
+        scheduledForDate, order.id
+      ).catch(console.error)
+    }
+
     // Link reservation to this order (fire-and-forget)
     if (reservationId) {
       void (async () => {
@@ -567,7 +611,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       data: {
         locationId,
         employeeId,
-        action: 'order_created',
+        action: scheduledForDate ? 'order_scheduled' : 'order_created',
         entityType: 'order',
         entityId: order.id,
         details: {
@@ -576,6 +620,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           tableId: tableId || null,
           tabName: tabName || null,
           itemCount: items.length,
+          ...(scheduledForDate ? { scheduledFor: scheduledForDate.toISOString() } : {}),
         },
       },
     })

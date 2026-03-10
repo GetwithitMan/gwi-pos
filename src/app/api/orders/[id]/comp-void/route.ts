@@ -665,6 +665,33 @@ export const POST = withVenue(async function POST(
       console.error('[CompVoid] Failed to dispatch KDS void event:', err)
     })
 
+    // Fire-and-forget: Track employee meal if comp reason is employee_meal
+    if (action === 'comp') {
+      const normalizedMealReason = reason.toLowerCase().replace(/[\s_-]+/g, '_')
+      const isEmployeeMeal = normalizedMealReason === 'employee_meal' || normalizedMealReason === 'emp_meal'
+        || reason.toLowerCase() === 'employee meal' || reason.toLowerCase() === 'emp meal'
+      if (isEmployeeMeal && settings.employeeMeals?.enabled) {
+        void db.auditLog.create({
+          data: {
+            locationId: order.locationId,
+            employeeId,
+            action: 'employee_meal',
+            entityType: 'order',
+            entityId: orderId,
+            details: {
+              itemId,
+              itemName: item.name,
+              amount: itemTotal,
+              source: 'comp_void',
+              approvedBy: effectiveApprovedById || null,
+            },
+          },
+        }).catch(err => {
+          console.error('[CompVoid] Failed to log employee meal tracking:', err)
+        })
+      }
+    }
+
     // Fire-and-forget side effects OUTSIDE the transaction
 
     // BUG #378: Reset entertainment status when voiding a timed_rental item

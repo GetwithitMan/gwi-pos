@@ -192,6 +192,16 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
       timing.end('db', 'Summary query')
 
+      // Fetch scheduledFor for these orders (raw column, not in Prisma schema)
+      const summaryOrderIds = summaryOrders.map(o => o.id)
+      const scheduledRows = summaryOrderIds.length > 0
+        ? await db.$queryRawUnsafe<{ id: string; scheduledFor: Date | null }[]>(
+            `SELECT id, "scheduledFor" FROM "Order" WHERE id = ANY($1) AND "scheduledFor" IS NOT NULL`,
+            summaryOrderIds
+          )
+        : []
+      const scheduledMap = new Map(scheduledRows.map(r => [r.id, r.scheduledFor?.toISOString?.() || null]))
+
       return NextResponse.json({ data: {
         orders: summaryOrders.map(o => ({
           id: o.id,
@@ -257,6 +267,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           openedAt: o.openedAt,
           reopenedAt: o.reopenedAt?.toISOString() || null,
           reopenReason: o.reopenReason || null,
+          // Pre-order / scheduled
+          scheduledFor: scheduledMap.get(o.id) || null,
           // Claim info
           claimedByEmployeeId: (o as any).claimedByEmployeeId || null,
           claimedByTerminalId: (o as any).claimedByTerminalId || null,
@@ -410,6 +422,15 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // not tab/order based. Waitlist entries link to FloorPlanElement via elementId.
     // Tab-linked waitlist functionality has been removed.
 
+    // Fetch scheduledFor for these orders (raw column, not in Prisma schema)
+    const scheduledFullRows = orderIds.length > 0
+      ? await db.$queryRawUnsafe<{ id: string; scheduledFor: Date | null }[]>(
+          `SELECT id, "scheduledFor" FROM "Order" WHERE id = ANY($1) AND "scheduledFor" IS NOT NULL`,
+          orderIds
+        )
+      : []
+    const scheduledFullMap = new Map(scheduledFullRows.map(r => [r.id, r.scheduledFor?.toISOString?.() || null]))
+
     return NextResponse.json({ data: {
       orders: orders.map(order => ({
         id: order.id,
@@ -500,6 +521,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         openedAt: order.openedAt.toISOString(),
         reopenedAt: order.reopenedAt?.toISOString() || null,
         reopenReason: order.reopenReason || null,
+        // Pre-order / scheduled
+        scheduledFor: scheduledFullMap.get(order.id) || null,
         // Claim info
         claimedByEmployeeId: (order as any).claimedByEmployeeId || null,
         claimedByTerminalId: (order as any).claimedByTerminalId || null,

@@ -117,6 +117,7 @@ interface OpenOrder {
   claimedByTerminalId?: string | null
   claimedAt?: string | null
   claimedByEmployee?: { displayName: string | null } | null
+  scheduledFor?: string | null
   parentOrderId?: string | null
   hasSplits?: boolean
   splitCount?: number
@@ -234,7 +235,7 @@ export function OpenOrdersPanel({
   const deferredSearchQuery = useDeferredValue(searchQuery)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [showSortMenu, setShowSortMenu] = useState(false)
-  const [ageFilter, setAgeFilter] = useState<'all' | 'today' | 'previous' | 'declined'>('all')
+  const [ageFilter, setAgeFilter] = useState<'all' | 'today' | 'previous' | 'declined' | 'scheduled'>('all')
   const [previousDayCount, setPreviousDayCount] = useState<number | null>(null)
   const [viewStyle, setViewStyle] = useState<'card' | 'condensed'>('card')
   const [datePreset, setDatePreset] = useState<DatePreset>('today')
@@ -586,6 +587,9 @@ export function OpenOrdersPanel({
     if (ageFilter === 'declined') {
       result = result.filter(o => o.isCaptureDeclined)
     }
+    if (ageFilter === 'scheduled') {
+      result = result.filter(o => !!o.scheduledFor)
+    }
     if (deferredSearchQuery.trim()) {
       const query = deferredSearchQuery.toLowerCase().trim()
       result = result.filter(o => {
@@ -762,7 +766,12 @@ export function OpenOrdersPanel({
             )}
             {(ageFilter === 'previous' || order.isRolledOver) && (
               <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold ${dark ? 'bg-red-600/30 text-red-300' : 'bg-red-100 text-red-700'}`}>
-                📅 {formatDateStarted(order.createdAt)}
+                {formatDateStarted(order.createdAt)}
+              </span>
+            )}
+            {order.scheduledFor && (
+              <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold ${dark ? 'bg-purple-600/30 text-purple-300' : 'bg-purple-100 text-purple-700'}`}>
+                Scheduled: {new Date(order.scheduledFor).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
               </span>
             )}
             {isClaimedByOther && (
@@ -907,7 +916,12 @@ export function OpenOrdersPanel({
           })()}
           {(ageFilter === 'previous' || order.isRolledOver) && (
             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${dark ? 'bg-red-600/30 text-red-300' : 'bg-red-100 text-red-700'}`}>
-              📅 {formatDateStarted(order.createdAt)}
+              {formatDateStarted(order.createdAt)}
+            </span>
+          )}
+          {order.scheduledFor && (
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${dark ? 'bg-purple-600/30 text-purple-300' : 'bg-purple-100 text-purple-700'}`}>
+              Scheduled: {new Date(order.scheduledFor).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </span>
           )}
           {order.isCaptureDeclined && (
@@ -1162,19 +1176,27 @@ export function OpenOrdersPanel({
           <>
             <div className={`w-px h-6 mx-1 ${dark ? 'bg-white/10' : 'bg-gray-200'}`} />
             <div className="flex gap-1">
-              {(['all', 'today', 'previous', 'declined'] as const).map(f => (
+              {(['all', 'today', 'previous', 'declined', 'scheduled'] as const).map(f => {
+                // Count scheduled orders for the pill badge
+                const scheduledCount = f === 'scheduled' ? orders.filter(o => !!o.scheduledFor).length : 0
+                // Hide scheduled pill if no scheduled orders
+                if (f === 'scheduled' && scheduledCount === 0) return null
+                return (
                 <button
                   key={f}
                   onClick={() => setAgeFilter(f)}
                   className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
                     ageFilter === f
                       ? dark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
-                      : dark ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      : f === 'scheduled'
+                        ? dark ? 'bg-purple-700 text-purple-200 hover:bg-purple-600' : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                        : dark ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                 >
-                  {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'previous' ? `Previous Day${previousDayCount != null && previousDayCount > 0 ? ` (${previousDayCount})` : ''}` : 'Declined'}
+                  {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'previous' ? `Previous Day${previousDayCount != null && previousDayCount > 0 ? ` (${previousDayCount})` : ''}` : f === 'scheduled' ? `Scheduled (${scheduledCount})` : 'Declined'}
                 </button>
-              ))}
+                )
+              })}
             </div>
           </>
         )}

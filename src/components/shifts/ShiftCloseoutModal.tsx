@@ -136,6 +136,9 @@ export function ShiftCloseoutModal({
   const canSeeExpectedFirst = hasPermission(permissions, PERMISSIONS.MGR_CASH_DRAWER_FULL)
   const mode = cashHandlingMode || 'drawer'
 
+  // Server banking: enhanced over/short tracking for purse mode
+  const isServerBanking = mode === 'purse' // Server banking uses purse mode
+
   // Start at 'count' for blind mode (default), or 'summary' if manager with full access
   const [step, setStep] = useState<'count' | 'summary' | 'reveal' | 'tips' | 'payout' | 'complete'>('count')
   const [isLoading, setIsLoading] = useState(false)
@@ -903,6 +906,41 @@ export function ShiftCloseoutModal({
                       </div>
                     </div>
                   </Card>
+
+                  {/* Server Banking: Bank Reconciliation Breakdown */}
+                  {isServerBanking && (
+                    <Card className="p-4 bg-green-50 border-green-200">
+                      <div className="text-sm font-medium mb-2 text-green-800">Bank Reconciliation</div>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-green-700">Starting Bank (Buy-In)</span>
+                          <span className="font-medium">{formatCurrency(shift?.startingCash || 0)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-green-700">+ Cash Sales</span>
+                          <span className="font-medium">{formatCurrency(summary.cashSales)}</span>
+                        </div>
+                        {(summary.cashReceived - summary.cashSales) < 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-green-700">- Cash Refunds</span>
+                            <span className="font-medium">{formatCurrency(Math.abs(summary.netCashReceived - summary.cashSales))}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between border-t border-green-300 pt-1 font-bold text-green-800">
+                          <span>Expected Bank</span>
+                          <span>{formatCurrency(expectedCash)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-green-700">Your Count</span>
+                          <span className="font-medium">{formatCurrency(actualCash)}</span>
+                        </div>
+                        <div className={`flex justify-between border-t border-green-300 pt-1 font-bold ${variance === 0 ? 'text-green-600' : variance > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          <span>Over / Short</span>
+                          <span>{variance >= 0 ? '+' : ''}{formatCurrency(variance)}</span>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
 
                   {/* Shift Summary - now visible */}
                   <Card className="p-4">

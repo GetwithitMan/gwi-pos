@@ -117,6 +117,15 @@ export const GET = withVenue(async function GET(
         allergens: item.allergens || [],
         // Age verification
         isAgeRestricted: item.isAgeRestricted ?? false,
+        // Nutritional info (optional — fields may not exist on schema yet)
+        calories: (item as any).calories ?? null,
+        caloriesFromFat: (item as any).caloriesFromFat ?? null,
+        protein: (item as any).protein != null ? Number((item as any).protein) : null,
+        carbs: (item as any).carbs != null ? Number((item as any).carbs) : null,
+        fat: (item as any).fat != null ? Number((item as any).fat) : null,
+        fiber: (item as any).fiber != null ? Number((item as any).fiber) : null,
+        sodium: (item as any).sodium != null ? Number((item as any).sodium) : null,
+        allergenNotes: (item as any).allergenNotes ?? null,
         // Pricing option groups (size/variant pricing)
         pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
           id: group.id,
@@ -216,6 +225,15 @@ export const PUT = withVenue(async function PUT(
       allergens,
       // Age verification
       isAgeRestricted,
+      // Nutritional info (optional — schema fields may not exist yet)
+      calories,
+      caloriesFromFat,
+      protein,
+      carbs,
+      fat,
+      fiber,
+      sodium,
+      allergenNotes,
     } = body
 
     // Get old item to detect stock changes (fetch availability fields for computeIsOrderableOnline)
@@ -302,6 +320,15 @@ export const PUT = withVenue(async function PUT(
         ...(allergens !== undefined && { allergens: Array.isArray(allergens) ? allergens : [] }),
         // Age verification
         ...(isAgeRestricted !== undefined && { isAgeRestricted }),
+        // Nutritional info (safe — Prisma ignores unknown fields if columns don't exist yet)
+        ...(calories !== undefined && { calories: calories != null ? parseInt(calories) : null }),
+        ...(caloriesFromFat !== undefined && { caloriesFromFat: caloriesFromFat != null ? parseInt(caloriesFromFat) : null }),
+        ...(protein !== undefined && { protein: protein != null ? new Prisma.Decimal(protein) : null }),
+        ...(carbs !== undefined && { carbs: carbs != null ? new Prisma.Decimal(carbs) : null }),
+        ...(fat !== undefined && { fat: fat != null ? new Prisma.Decimal(fat) : null }),
+        ...(fiber !== undefined && { fiber: fiber != null ? new Prisma.Decimal(fiber) : null }),
+        ...(sodium !== undefined && { sodium: sodium != null ? new Prisma.Decimal(sodium) : null }),
+        ...(allergenNotes !== undefined && { allergenNotes: allergenNotes || null }),
       }
     })
 

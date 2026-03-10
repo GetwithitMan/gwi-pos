@@ -79,6 +79,7 @@ const ORDER_TYPE_LABELS: Record<string, string> = {
   takeout: 'Takeout',
   delivery: 'Delivery',
   drive_thru: 'Drive Thru',
+  boh_sale: 'BOH Sale',
 }
 
 function formatOrderType(type: string): string {

@@ -8,6 +8,15 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 
+// Parse category from stored reason format: "[Category] Reason text"
+function parseCategoryFromReason(reason: string): { category: string | null; reason: string } {
+  const match = reason.match(/^\[([^\]]+)\]\s*(.*)$/)
+  if (match) {
+    return { category: match[1], reason: match[2] || '' }
+  }
+  return { category: null, reason }
+}
+
 // GET /api/paid-in-out — list paid in/out records for location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -19,6 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
     const type = searchParams.get('type') // 'in' | 'out'
     const employeeId = searchParams.get('filterEmployeeId')
+    const categoryFilter = searchParams.get('category')
 
     if (!locationId) {
       return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
@@ -41,6 +51,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (drawerId) where.drawerId = drawerId
     if (type === 'in' || type === 'out') where.type = type
     if (employeeId) where.employeeId = employeeId
+    // Category filter: encoded as "[Category] " prefix in reason field
+    if (categoryFilter) {
+      where.reason = { startsWith: `[${categoryFilter}]` }
+    }
 
     // Date filtering
     if (startDate && endDate) {
@@ -87,22 +101,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     return NextResponse.json({
       data: {
-        records: records.map(r => ({
-          id: r.id,
-          type: r.type === 'in' ? 'paid_in' : 'paid_out',
-          amount: Number(r.amount),
-          reason: r.reason,
-          reference: r.reference,
-          employeeId: r.employeeId,
-          employeeName: r.employee.displayName || `${r.employee.firstName} ${r.employee.lastName}`,
-          approvedBy: r.approvedBy,
-          approverName: r.approver
-            ? r.approver.displayName || `${r.approver.firstName} ${r.approver.lastName}`
-            : null,
-          drawerId: r.drawerId,
-          drawerName: r.drawer.name,
-          createdAt: r.createdAt.toISOString(),
-        })),
+        records: records.map(r => {
+          const parsed = parseCategoryFromReason(r.reason)
+          return {
+            id: r.id,
+            type: r.type === 'in' ? 'paid_in' : 'paid_out',
+            amount: Number(r.amount),
+            reason: parsed.reason,
+            category: parsed.category,
+            reference: r.reference,
+            employeeId: r.employeeId,
+            employeeName: r.employee.displayName || `${r.employee.firstName} ${r.employee.lastName}`,
+            approvedBy: r.approvedBy,
+            approverName: r.approver
+              ? r.approver.displayName || `${r.approver.firstName} ${r.approver.lastName}`
+              : null,
+            drawerId: r.drawerId,
+            drawerName: r.drawer.name,
+            createdAt: r.createdAt.toISOString(),
+          }
+        }),
         summary: {
           totalPaidIn: Math.round(totalPaidIn * 100) / 100,
           totalPaidOut: Math.round(totalPaidOut * 100) / 100,
@@ -127,6 +145,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       amount,
       reason,
       reference,
+      category, // Optional category: 'Cash Advance', 'Vendor Payment', etc.
       drawerId,
       employeeId,
       approvedBy,
@@ -193,13 +212,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Map type to enum value
     const dbType = type === 'paid_in' ? 'in' : 'out'
 
+    // Store category in reason with bracket prefix: "[Category] Reason"
+    // This encodes category without requiring a schema migration
+    const formattedReason = category
+      ? `[${category.trim()}] ${reason.trim()}`
+      : reason.trim()
+
     const record = await db.paidInOut.create({
       data: {
         locationId,
         drawerId: resolvedDrawerId,
         type: dbType,
         amount: Number(amount),
-        reason: reason.trim(),
+        reason: formattedReason,
         reference: reference?.trim() || null,
         employeeId,
         approvedBy: approvedBy || null,
@@ -233,12 +258,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       createdAt: record.createdAt.toISOString(),
     }).catch(console.error)
 
+    const parsedRecord = parseCategoryFromReason(record.reason)
     return NextResponse.json({
       data: {
         id: record.id,
         type: type,
         amount: Number(record.amount),
-        reason: record.reason,
+        reason: parsedRecord.reason,
+        category: parsedRecord.category,
         reference: record.reference,
         employeeId: record.employeeId,
         employeeName: record.employee.displayName || `${record.employee.firstName} ${record.employee.lastName}`,

@@ -45,7 +45,10 @@ export default function OrderSettingsPage() {
   const [isDirty, setIsDirty] = useState(false)
 
   const [posDisplay, setPosDisplay] = useState<POSDisplaySettings | null>(null)
+  const [sendBehavior, setSendBehavior] = useState<'stay' | 'return_to_floor' | 'return_to_orders'>('return_to_floor')
   const [eodConfirmOpen, setEodConfirmOpen] = useState(false)
+  const [eodStatus, setEodStatus] = useState<{ orphanedTables: number; staleOrders: number; currentOpenOrders: number } | null>(null)
+  const [eodStatusLoading, setEodStatusLoading] = useState(false)
 
   const permissions = employee?.permissions ?? []
   const canCloseDay = hasPermission(permissions as string[], PERMISSIONS.MGR_CLOSE_DAY)
@@ -59,6 +62,7 @@ export default function OrderSettingsPage() {
         setIsLoading(true)
         const data = await loadSettingsApi(controller.signal)
         setPosDisplay(data.settings.posDisplay)
+        setSendBehavior(data.settings.sendBehavior ?? 'return_to_floor')
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load settings')
@@ -79,8 +83,9 @@ export default function OrderSettingsPage() {
     if (!posDisplay) return
     try {
       setIsSaving(true)
-      const data = await saveSettingsApi({ posDisplay }, employee?.id)
+      const data = await saveSettingsApi({ posDisplay, sendBehavior }, employee?.id)
       setPosDisplay(data.settings.posDisplay)
+      setSendBehavior(data.settings.sendBehavior ?? 'return_to_floor')
       setIsDirty(false)
       toast.success('Order settings saved')
     } catch (err) {
@@ -290,6 +295,36 @@ export default function OrderSettingsPage() {
         </section>
 
         {/* ═══════════════════════════════════════════
+            Card 2.5: Send Behavior
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">After Send Behavior</h2>
+          <p className="text-sm text-gray-500 mb-5">What happens after an order is sent to the kitchen.</p>
+
+          <div className="space-y-2">
+            {([
+              { value: 'return_to_floor' as const, label: 'Return to Floor Plan', desc: 'Navigate back to the floor plan (default)' },
+              { value: 'return_to_orders' as const, label: 'Return to Orders', desc: 'Clear the order and show the order list' },
+              { value: 'stay' as const, label: 'Stay on Order', desc: 'Reload and stay on the current order' },
+            ]).map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => { setSendBehavior(opt.value); setIsDirty(true) }}
+                className={`w-full text-left p-3 rounded-lg border transition-all ${
+                  sendBehavior === opt.value
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className={`text-sm font-medium ${sendBehavior === opt.value ? 'text-indigo-700' : 'text-gray-700'}`}>{opt.label}</div>
+                <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
             Card 3: Closed Orders
             ═══════════════════════════════════════════ */}
         <Link
@@ -318,19 +353,42 @@ export default function OrderSettingsPage() {
             </p>
             <button
               type="button"
-              onClick={() => setEodConfirmOpen(true)}
-              className="px-5 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 shadow-sm transition-all"
+              disabled={eodStatusLoading}
+              onClick={async () => {
+                setEodStatusLoading(true)
+                try {
+                  const res = await fetch(`/api/eod/reset?locationId=${employee?.location?.id}&employeeId=${employee?.id}`)
+                  const json = await res.json()
+                  if (res.ok) {
+                    const summary = json.data?.summary
+                    setEodStatus({
+                      orphanedTables: summary?.occupiedTablesWithoutOrders ?? 0,
+                      staleOrders: summary?.staleOrders ?? 0,
+                      currentOpenOrders: summary?.currentOpenOrders ?? 0,
+                    })
+                  }
+                } catch {
+                  // Proceed without status — dialog will still show
+                }
+                setEodStatusLoading(false)
+                setEodConfirmOpen(true)
+              }}
+              className="px-5 py-2 rounded-lg text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 shadow-sm transition-all disabled:opacity-50"
             >
-              Run EOD Reset
+              {eodStatusLoading ? 'Checking...' : 'Run EOD Reset'}
             </button>
             <ConfirmDialog
               open={eodConfirmOpen}
               title="Run End of Day Reset?"
-              description="This will reset all orphaned table statuses to available and flag stale open orders from previous business days. Orders with balances are rolled forward — no revenue data is deleted. This action is logged in the audit trail."
+              description={
+                eodStatus
+                  ? `Status check: ${eodStatus.orphanedTables} orphaned table(s), ${eodStatus.staleOrders} stale order(s), ${eodStatus.currentOpenOrders} currently open order(s). This will reset orphaned table statuses and flag stale orders. Orders with balances are rolled forward — no revenue data is deleted.`
+                  : 'This will reset all orphaned table statuses to available and flag stale open orders from previous business days. Orders with balances are rolled forward — no revenue data is deleted. This action is logged in the audit trail.'
+              }
               confirmLabel="Run EOD Reset"
               cancelLabel="Cancel"
               destructive
-              onCancel={() => setEodConfirmOpen(false)}
+              onCancel={() => { setEodConfirmOpen(false); setEodStatus(null) }}
               onConfirm={async () => {
                 try {
                   const res = await fetch('/api/eod/reset', {
@@ -339,6 +397,7 @@ export default function OrderSettingsPage() {
                     body: JSON.stringify({
                       locationId: employee?.location?.id,
                       employeeId: employee?.id,
+                      confirm: true,
                     }),
                   })
                   const json = await res.json()
@@ -351,6 +410,7 @@ export default function OrderSettingsPage() {
                   toast.error(err instanceof Error ? err.message : 'EOD reset failed')
                 } finally {
                   setEodConfirmOpen(false)
+                  setEodStatus(null)
                 }
               }}
             />

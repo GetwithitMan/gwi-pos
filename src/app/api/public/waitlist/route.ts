@@ -1,0 +1,208 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
+import { getLocationSettings } from '@/lib/location-cache'
+import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
+import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
+
+export const dynamic = 'force-dynamic'
+
+// ─── In-memory rate limiter (per IP, 3 per minute) ──────────────────────────
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_WINDOW_MS = 60_000
+const RATE_LIMIT_MAX = 3
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return true
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX) {
+    return false
+  }
+
+  entry.count++
+  return true
+}
+
+// Periodic cleanup (every 5 minutes)
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of rateLimitMap.entries()) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip)
+  }
+}, 5 * 60_000)
+
+/**
+ * GET /api/public/waitlist — Check waitlist position by phone number (no auth)
+ */
+export const GET = withVenue(async function GET(request: NextRequest) {
+  try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const rawSettings = await getLocationSettings(locationId)
+    const settings = mergeWithDefaults(rawSettings as any)
+    const waitlistConfig = settings.waitlist ?? DEFAULT_WAITLIST_SETTINGS
+
+    if (!waitlistConfig.enabled) {
+      return NextResponse.json({ error: 'Waitlist is not enabled' }, { status: 400 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const phone = searchParams.get('phone')?.trim()
+
+    if (!phone) {
+      return NextResponse.json({ error: 'Phone number is required (?phone=XXX)' }, { status: 400 })
+    }
+
+    // Look up active entry by phone
+    const entries: any[] = await db.$queryRawUnsafe(`
+      SELECT id, "customerName", "partySize", status, position, "quotedWaitMinutes", "createdAt"
+      FROM "WaitlistEntry"
+      WHERE "locationId" = $1
+        AND phone = $2
+        AND status IN ('waiting', 'notified')
+      ORDER BY "createdAt" DESC
+      LIMIT 1
+    `, locationId, phone)
+
+    if (!entries.length) {
+      return NextResponse.json({
+        found: false,
+        message: 'No active waitlist entry found for this phone number.',
+      })
+    }
+
+    const entry = entries[0]
+
+    // Calculate live position among active entries
+    const positionResult: any[] = await db.$queryRawUnsafe(`
+      SELECT COUNT(*)::int + 1 as position
+      FROM "WaitlistEntry"
+      WHERE "locationId" = $1
+        AND status IN ('waiting', 'notified')
+        AND position < $2
+    `, locationId, entry.position)
+
+    const livePosition = positionResult[0]?.position ?? entry.position
+    const estimatedWaitMinutes = Math.max(0, (livePosition - 1) * waitlistConfig.estimateMinutesPerTurn)
+
+    return NextResponse.json({
+      found: true,
+      position: livePosition,
+      status: entry.status,
+      estimatedWaitMinutes,
+      partySize: entry.partySize,
+      customerName: entry.customerName,
+    })
+  } catch (error) {
+    console.error('[PublicWaitlist] GET error:', error)
+    return NextResponse.json({ error: 'Failed to check waitlist' }, { status: 500 })
+  }
+})
+
+/**
+ * POST /api/public/waitlist — Public endpoint for guests to add themselves (no auth)
+ * Rate limited: 3 per minute per IP
+ */
+export const POST = withVenue(async function POST(request: NextRequest) {
+  try {
+    // Rate limit check
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown'
+
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a moment and try again.' },
+        { status: 429 }
+      )
+    }
+
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const rawSettings = await getLocationSettings(locationId)
+    const settings = mergeWithDefaults(rawSettings as any)
+    const waitlistConfig = settings.waitlist ?? DEFAULT_WAITLIST_SETTINGS
+
+    if (!waitlistConfig.enabled) {
+      return NextResponse.json({ error: 'Waitlist is not available at this time.' }, { status: 400 })
+    }
+
+    const body = await request.json()
+    const { customerName, partySize, phone, notes } = body
+
+    if (!customerName || typeof customerName !== 'string' || customerName.trim().length === 0) {
+      return NextResponse.json({ error: 'Your name is required.' }, { status: 400 })
+    }
+
+    const size = Number(partySize)
+    if (!size || size < 1 || size > waitlistConfig.maxPartySize) {
+      return NextResponse.json(
+        { error: `Party size must be between 1 and ${waitlistConfig.maxPartySize}.` },
+        { status: 400 }
+      )
+    }
+
+    // Check waitlist capacity
+    const countResult: any[] = await db.$queryRawUnsafe(`
+      SELECT COUNT(*)::int as count
+      FROM "WaitlistEntry"
+      WHERE "locationId" = $1
+        AND status IN ('waiting', 'notified')
+    `, locationId)
+
+    const currentCount = countResult[0]?.count ?? 0
+    if (currentCount >= waitlistConfig.maxWaitlistSize) {
+      return NextResponse.json(
+        { error: 'The waitlist is currently full. Please try again later.' },
+        { status: 409 }
+      )
+    }
+
+    const position = currentCount + 1
+    const quotedWaitMinutes = (position - 1) * waitlistConfig.estimateMinutesPerTurn
+
+    const inserted: any[] = await db.$queryRawUnsafe(`
+      INSERT INTO "WaitlistEntry" ("locationId", "customerName", "partySize", phone, notes, status, position, "quotedWaitMinutes")
+      VALUES ($1, $2, $3, $4, $5, 'waiting', $6, $7)
+      RETURNING id, "customerName", "partySize", phone, status, position, "quotedWaitMinutes", "createdAt"
+    `, locationId, customerName.trim(), size, phone?.trim() || null, notes?.trim() || null, position, quotedWaitMinutes)
+
+    const entry = inserted[0]
+
+    // Fire-and-forget socket dispatch
+    void dispatchWaitlistChanged(locationId, {
+      action: 'added',
+      entryId: entry.id,
+      customerName: entry.customerName,
+      partySize: entry.partySize,
+    }).catch(console.error)
+
+    return NextResponse.json({
+      data: {
+        position,
+        estimatedWaitMinutes: quotedWaitMinutes,
+        customerName: entry.customerName,
+        partySize: entry.partySize,
+      },
+      message: quotedWaitMinutes > 0
+        ? `You're #${position} on the waitlist! Estimated wait: ~${quotedWaitMinutes} minutes.`
+        : `You're next! We'll seat you shortly.`,
+    }, { status: 201 })
+  } catch (error) {
+    console.error('[PublicWaitlist] POST error:', error)
+    return NextResponse.json({ error: 'Failed to join waitlist' }, { status: 500 })
+  }
+})

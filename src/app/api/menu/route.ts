@@ -311,6 +311,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         stockStatus: item.stockStatus,
         stockCount: item.stockCount,
         stockIngredientName: item.stockIngredientName,
+        // Nutritional info (optional — columns may not exist yet)
+        calories: (item as any).calories ?? null,
       }))
     }
     timing.end('map', 'Response mapping')

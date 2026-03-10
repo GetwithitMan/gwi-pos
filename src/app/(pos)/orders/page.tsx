@@ -109,7 +109,7 @@ export default function OrdersPage() {
     editingPizzaItem, setEditingPizzaItem } = usePizzaBuilder()
 
   const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings,
-    taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification } = useOrderSettings()
+    taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification, sendBehavior } = useOrderSettings()
 
   const { settings: displaySettings, menuItemClass, gridColsClass, orderPanelClass,
     categorySize, categoryColorMode, categoryButtonBgColor, categoryButtonTextColor,
@@ -428,6 +428,7 @@ export default function OrdersPage() {
     setMode, addTableOrder, requireCardForTab,
     setShowAgeVerification, setAgeVerificationItem, setAgeVerificationCallback, setAllergenNotice,
     ageVerificationSettings: ageVerification,
+    sendBehavior: sendBehavior ?? 'return_to_floor',
   })
 
   // Wire up modifier ref

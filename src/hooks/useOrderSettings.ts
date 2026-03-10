@@ -70,6 +70,8 @@ const DEFAULT_PRICE_ROUNDING: PriceRoundingSettings = {
 }
 
 // Module-level cache — shared across all useOrderSettings() consumers
+type SendBehavior = 'stay' | 'return_to_floor' | 'return_to_orders'
+
 interface SettingsCache {
   dualPricing: DualPricingSettings
   paymentSettings: PaymentSettings
@@ -82,6 +84,7 @@ interface SettingsCache {
   allowNameOnlyTab: boolean
   pricingProgram: PricingProgram
   ageVerification: AgeVerificationSettings
+  sendBehavior: SendBehavior
 }
 
 const DEFAULT_PRICING_PROGRAM: PricingProgram = { model: 'none', enabled: false }
@@ -114,6 +117,9 @@ export function useOrderSettings() {
   const [ageVerification, setAgeVerification] = useState<AgeVerificationSettings>(
     cachedSettings?.ageVerification ?? DEFAULT_AGE_VERIFICATION
   )
+  const [sendBehavior, setSendBehavior] = useState<SendBehavior>(
+    cachedSettings?.sendBehavior ?? 'return_to_floor'
+  )
   const [isLoading, setIsLoading] = useState(!cachedSettings)
 
   const applySettings = (settings: {
@@ -125,6 +131,7 @@ export function useOrderSettings() {
     barTabs?: { requireCardForTab?: boolean; allowNameOnlyTab?: boolean }
     pricingProgram?: PricingProgram
     ageVerification?: AgeVerificationSettings
+    sendBehavior?: SendBehavior
   }) => {
     const effectiveDualPricing = settings.dualPricing || DEFAULT_DUAL_PRICING
     const derivedPricingProgram = settings.pricingProgram
@@ -142,6 +149,7 @@ export function useOrderSettings() {
       allowNameOnlyTab: settings.barTabs?.allowNameOnlyTab ?? true,
       pricingProgram: derivedPricingProgram,
       ageVerification: settings.ageVerification ?? DEFAULT_AGE_VERIFICATION,
+      sendBehavior: settings.sendBehavior ?? 'return_to_floor',
     }
 
     if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
@@ -175,6 +183,7 @@ export function useOrderSettings() {
     setAllowNameOnlyTab(result.allowNameOnlyTab)
     setPricingProgram(result.pricingProgram)
     setAgeVerification(result.ageVerification)
+    setSendBehavior(result.sendBehavior)
   }
 
   const loadSettings = async () => {
@@ -193,6 +202,7 @@ export function useOrderSettings() {
         barTabs: { requireCardForTab: cachedSettings.requireCardForTab, allowNameOnlyTab: cachedSettings.allowNameOnlyTab },
         pricingProgram: cachedSettings.pricingProgram,
         ageVerification: cachedSettings.ageVerification,
+        sendBehavior: cachedSettings.sendBehavior,
       })
       setIsLoading(false)
       return
@@ -215,6 +225,7 @@ export function useOrderSettings() {
           barTabs: { requireCardForTab: result.requireCardForTab, allowNameOnlyTab: result.allowNameOnlyTab },
           pricingProgram: result.pricingProgram,
           ageVerification: result.ageVerification,
+          sendBehavior: result.sendBehavior,
         })
       }
       setIsLoading(false)
@@ -266,6 +277,7 @@ export function useOrderSettings() {
     allowNameOnlyTab,
     pricingProgram,
     ageVerification,
+    sendBehavior,
     isLoading,
     reloadSettings: forceReload,
   }

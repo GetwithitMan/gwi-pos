@@ -15,6 +15,12 @@ interface DrawerOption {
   } | null
 }
 
+interface ServerBankingConfig {
+  enabled: boolean
+  defaultBankAmount: number
+  requireExactBuyIn: boolean
+}
+
 interface ShiftStartModalProps {
   isOpen: boolean
   onClose: () => void
@@ -24,6 +30,7 @@ interface ShiftStartModalProps {
   cashHandlingMode: string // "drawer" | "purse" | "none"
   workingRoleId?: string | null
   onShiftStarted: (shiftId: string) => void
+  serverBanking?: ServerBankingConfig | null
 }
 
 // Quick amount buttons
@@ -38,6 +45,7 @@ export function ShiftStartModal({
   cashHandlingMode,
   workingRoleId,
   onShiftStarted,
+  serverBanking,
 }: ShiftStartModalProps) {
   const [startingCash, setStartingCash] = useState<string>('')
   const [notes, setNotes] = useState('')
@@ -74,15 +82,22 @@ export function ShiftStartModal({
     }
   }, [mode, locationId])
 
+  const isServerBanking = serverBanking?.enabled && mode === 'purse'
+
   useEffect(() => {
     if (isOpen) {
       loadDrawers()
-      setStartingCash('')
+      // Pre-fill with default bank amount when server banking is enabled
+      if (isServerBanking && serverBanking?.defaultBankAmount) {
+        setStartingCash(serverBanking.defaultBankAmount.toString())
+      } else {
+        setStartingCash('')
+      }
       setNotes('')
       setSelectedDrawerId(null)
       setError(null)
     }
-  }, [isOpen, loadDrawers])
+  }, [isOpen, loadDrawers, isServerBanking, serverBanking?.defaultBankAmount])
 
   // Auto-start for "none" mode
   useEffect(() => {
@@ -107,7 +122,12 @@ export function ShiftStartModal({
     } else if (mode === 'purse') {
       const amount = parseFloat(startingCash)
       if (isNaN(amount) || amount < 0) {
-        setError('Please enter a valid starting purse amount')
+        setError(isServerBanking ? 'Please enter a valid bank buy-in amount' : 'Please enter a valid starting purse amount')
+        return
+      }
+      // Server banking: enforce exact buy-in if required
+      if (isServerBanking && serverBanking?.requireExactBuyIn && amount !== serverBanking.defaultBankAmount) {
+        setError(`Bank buy-in must be exactly ${formatCurrency(serverBanking.defaultBankAmount)}`)
         return
       }
     }
@@ -180,11 +200,28 @@ export function ShiftStartModal({
     return null
   }
 
-  // "purse" mode — just ask for starting cash amount
+  // "purse" mode — just ask for starting cash amount (or bank buy-in if server banking)
   if (mode === 'purse') {
     return (
-      <Modal isOpen={isOpen} onClose={onClose} title="Start Your Purse" size="md" variant="default">
+      <Modal isOpen={isOpen} onClose={onClose} title={isServerBanking ? 'Bank Buy-In' : 'Start Your Purse'} size="md" variant="default">
           <p className="text-sm text-gray-500 -mt-3 mb-4">{employeeName}</p>
+
+            {isServerBanking && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-800 text-sm mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <span className="font-medium">Server Banking</span>
+                  <p className="text-xs text-green-600">
+                    Enter the cash amount you are buying in with.
+                    {serverBanking?.requireExactBuyIn
+                      ? ` Must be exactly ${formatCurrency(serverBanking.defaultBankAmount)}.`
+                      : ' This will be your starting bank for the shift.'}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
@@ -195,7 +232,7 @@ export function ShiftStartModal({
             <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Starting Cash in Purse
+                {isServerBanking ? 'Bank Buy-In Amount' : 'Starting Cash in Purse'}
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-3 text-gray-500 text-xl">$</span>

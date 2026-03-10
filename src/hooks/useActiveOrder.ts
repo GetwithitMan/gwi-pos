@@ -59,6 +59,7 @@ interface StartOrderOptions {
   guestCount?: number
   orderTypeId?: string
   customFields?: Record<string, string>
+  scheduledFor?: string // ISO datetime for pre-orders / future orders
 }
 
 interface UseActiveOrderReturn {
@@ -276,6 +277,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           items: [],  // Empty = draft shell
           customFields: opts.customFields,
           idempotencyKey: draftIdempotencyKey,
+          ...(opts.scheduledFor ? { scheduledFor: opts.scheduledFor } : {}),
         }),
       }).then(async (res) => {
         // Stale check: if generation changed, another startOrder/clearOrder ran — discard
@@ -469,6 +471,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             customFields: order.customFields,
             items: order.items.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
             idempotencyKey: ensureIdempotencyKey,
+            ...(order.scheduledFor ? { scheduledFor: order.scheduledFor } : {}),
           }),
         })
 

@@ -144,6 +144,7 @@ export const createOrderSchema = z.object({
   notes: z.string().max(500).nullish(),
   customFields: z.record(z.string(), z.string()).optional(), // Custom fields for configurable order types
   idempotencyKey: z.string().max(128).nullish(), // Client-generated UUID to prevent double-tap duplicates
+  scheduledFor: z.string().nullish(), // ISO datetime for pre-orders / future orders
 })
 
 export const updateOrderSchema = z.object({

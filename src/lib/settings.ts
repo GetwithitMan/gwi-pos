@@ -768,6 +768,50 @@ export interface LocationSettings {
   loginMessages?: LoginMessageSettings        // Configurable messages shown on the login screen (optional for backward compat)
   training?: TrainingSettings                 // Training mode — suppress payments/printing/inventory for training employees (optional for backward compat)
   comboAutoSuggest?: boolean                   // Auto-suggest combo conversions when individual items match a combo template (default: true)
+  sendBehavior?: 'stay' | 'return_to_floor' | 'return_to_orders'  // Post-send navigation behavior (default: 'return_to_floor')
+  paidInOutCategories?: string[]               // Available categories for paid in/out records
+  serverBanking?: ServerBankingSettings        // Per-server cash float (buy-in at shift start, settle at shift end) (optional for backward compat)
+  preOrders?: PreOrderSettings                 // Pre-order / future order scheduling (optional for backward compat)
+  employeeMeals?: EmployeeMealSettings         // Employee meal tracking — separate from comps (optional for backward compat)
+  showNutritionalInfo?: boolean                 // Display nutritional info on menu items (default: false)
+  coverCharge?: CoverChargeSettings             // Door entry / cover charge management (optional for backward compat)
+  qrOrdering?: QrOrderingSettings               // QR code dine-in ordering (optional for backward compat)
+  waitlist?: WaitlistSettings                    // Public-facing waitlist management (optional for backward compat)
+  menuRestorePoints?: MenuRestorePointSettings   // Menu snapshot restore points (optional for backward compat)
+}
+
+// ─── Waitlist Settings ────────────────────────────────────────────────────────
+
+export interface WaitlistSettings {
+  enabled: boolean                     // Master toggle (default: false)
+  maxPartySize: number                 // Maximum party size allowed (default: 20)
+  estimateMinutesPerTurn: number       // Average wait per party ahead (default: 45)
+  smsNotifications: boolean            // Send SMS via Twilio when table ready (default: true)
+  maxWaitlistSize: number              // Max concurrent entries before full (default: 50)
+  autoRemoveAfterMinutes: number       // Remove if not seated within X min of notification (default: 15)
+}
+
+export const DEFAULT_WAITLIST_SETTINGS: WaitlistSettings = {
+  enabled: false,
+  maxPartySize: 20,
+  estimateMinutesPerTurn: 45,
+  smsNotifications: true,
+  maxWaitlistSize: 50,
+  autoRemoveAfterMinutes: 15,
+}
+
+// ─── Menu Restore Point Settings ──────────────────────────────────────────────
+
+export interface MenuRestorePointSettings {
+  enabled: boolean                     // Master toggle (default: true)
+  maxSnapshots: number                 // Keep last N snapshots (default: 10)
+  autoSnapshotOnBulkEdit: boolean      // Auto-create before bulk operations (default: true)
+}
+
+export const DEFAULT_MENU_RESTORE_POINT_SETTINGS: MenuRestorePointSettings = {
+  enabled: true,
+  maxSnapshots: 10,
+  autoSnapshotOnBulkEdit: true,
 }
 
 // ─── Cash Management Settings ─────────────────────────────────────────────────
@@ -822,6 +866,94 @@ export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
   suppressInventory: true,
   suppressPayments: true,
   suppressPrinting: true,
+}
+
+// ─── Employee Meal Settings ─────────────────────────────────────────────────
+
+export interface EmployeeMealSettings {
+  enabled: boolean                 // Master toggle (default: false)
+  maxMealValue: number             // Maximum meal value in dollars (default: 15.00)
+  mealAllowancePerShift: number    // Number of meals allowed per shift (default: 1)
+  trackForPayroll: boolean         // Include in payroll deduction reports (default: false)
+  requireManagerApproval: boolean  // Require manager approval for meals exceeding maxMealValue (default: false)
+}
+
+export const DEFAULT_EMPLOYEE_MEAL_SETTINGS: EmployeeMealSettings = {
+  enabled: false,
+  maxMealValue: 15.00,
+  mealAllowancePerShift: 1,
+  trackForPayroll: false,
+  requireManagerApproval: false,
+}
+
+// ─── Server Banking Settings ─────────────────────────────────────────────────
+
+export interface ServerBankingSettings {
+  enabled: boolean                // Master toggle (default: false)
+  defaultBankAmount: number       // Pre-filled buy-in amount in dollars (default: 100.00)
+  requireExactBuyIn: boolean      // If true, buy-in must match defaultBankAmount exactly (default: false)
+  trackOverShort: boolean         // Track over/short variance at shift close (default: true)
+}
+
+export const DEFAULT_SERVER_BANKING: ServerBankingSettings = {
+  enabled: false,
+  defaultBankAmount: 100.00,
+  requireExactBuyIn: false,
+  trackOverShort: true,
+}
+
+// ─── Pre-Order / Future Order Settings ──────────────────────────────────────
+
+export interface PreOrderSettings {
+  enabled: boolean                // Master toggle (default: false)
+  maxAdvanceHours: number         // How far ahead can you schedule an order, in hours (default: 72)
+  minAdvanceMinutes: number       // Minimum lead time in minutes from now (default: 30)
+  allowedOrderTypes: string[]     // Which order types support pre-order (default: ['pickup', 'delivery'])
+}
+
+export const DEFAULT_PRE_ORDER: PreOrderSettings = {
+  enabled: false,
+  maxAdvanceHours: 72,
+  minAdvanceMinutes: 30,
+  allowedOrderTypes: ['pickup', 'delivery'],
+}
+
+// ─── Cover Charge Settings ─────────────────────────────────────────────────
+
+export interface CoverChargeSettings {
+  enabled: boolean               // Master toggle (default: false)
+  defaultAmount: number          // Default cover charge in dollars (default: 10.00)
+  vipBypass: boolean             // VIP customers skip cover charge (default: true)
+  trackDoorCount: boolean        // Track running door count (default: true)
+  maxCapacity: number            // 0 = unlimited (default: 0)
+}
+
+export const DEFAULT_COVER_CHARGE: CoverChargeSettings = {
+  enabled: false,
+  defaultAmount: 10.00,
+  vipBypass: true,
+  trackDoorCount: true,
+  maxCapacity: 0,
+}
+
+// ─── QR Ordering Settings ──────────────────────────────────────────────────
+
+export interface QrOrderingSettings {
+  enabled: boolean                 // Master toggle (default: false)
+  requireTableAssignment: boolean  // Order must be tied to a table (default: true)
+  allowPayment: boolean            // Allow payment from phone (default: false)
+  showPrices: boolean              // Show prices on public menu (default: true)
+  maxItemsPerOrder: number         // Max items per QR order (default: 50)
+  menuCategoryFilter: string[]     // Empty = all categories (default: [])
+}
+
+export const DEFAULT_QR_ORDERING: QrOrderingSettings = {
+  enabled: false,
+  requireTableAssignment: true,
+  allowPayment: false,
+  showPrices: true,
+  maxItemsPerOrder: 50,
+  menuCategoryFilter: [],
 }
 
 // ─── KDS Settings ──────────────────────────────────────────────────────────────
@@ -1043,6 +1175,8 @@ export const DEFAULT_SETTINGS: LocationSettings = {
   },
   localDataRetention: 'monthly',
   cashManagement: DEFAULT_CASH_MANAGEMENT,
+  sendBehavior: 'return_to_floor',
+  paidInOutCategories: ['Cash Advance', 'Vendor Payment', 'Refund', 'Restock', 'Tip Payout', 'Other'],
 }
 
 // Merge partial settings with defaults
@@ -1180,6 +1314,30 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ? { ...DEFAULT_TRAINING_SETTINGS, ...partial.training, trainingEmployeeIds: partial.training.trainingEmployeeIds ?? [] }
       : undefined,
     comboAutoSuggest: partial.comboAutoSuggest ?? true,
+    sendBehavior: partial.sendBehavior ?? DEFAULT_SETTINGS.sendBehavior,
+    paidInOutCategories: partial.paidInOutCategories ?? DEFAULT_SETTINGS.paidInOutCategories,
+    serverBanking: partial.serverBanking
+      ? { ...DEFAULT_SERVER_BANKING, ...partial.serverBanking }
+      : undefined,
+    preOrders: partial.preOrders
+      ? { ...DEFAULT_PRE_ORDER, ...partial.preOrders, allowedOrderTypes: partial.preOrders.allowedOrderTypes ?? DEFAULT_PRE_ORDER.allowedOrderTypes }
+      : undefined,
+    coverCharge: partial.coverCharge
+      ? { ...DEFAULT_COVER_CHARGE, ...partial.coverCharge }
+      : undefined,
+    qrOrdering: partial.qrOrdering
+      ? { ...DEFAULT_QR_ORDERING, ...partial.qrOrdering, menuCategoryFilter: partial.qrOrdering.menuCategoryFilter ?? DEFAULT_QR_ORDERING.menuCategoryFilter }
+      : undefined,
+    employeeMeals: partial.employeeMeals
+      ? { ...DEFAULT_EMPLOYEE_MEAL_SETTINGS, ...partial.employeeMeals }
+      : undefined,
+    showNutritionalInfo: partial.showNutritionalInfo ?? false,
+    waitlist: partial.waitlist
+      ? { ...DEFAULT_WAITLIST_SETTINGS, ...partial.waitlist }
+      : undefined,
+    menuRestorePoints: partial.menuRestorePoints
+      ? { ...DEFAULT_MENU_RESTORE_POINT_SETTINGS, ...partial.menuRestorePoints }
+      : undefined,
   }
 }
 

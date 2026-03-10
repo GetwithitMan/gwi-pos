@@ -65,6 +65,9 @@ interface OrderPanelActionsProps {
   orderType?: string  // 'bar_tab', 'dine_in', etc. — table orders show Send instead of Start Tab
   onTransferItems?: () => void
   onMergeOrders?: () => void
+  onSchedule?: () => void  // Schedule order for later (pre-order)
+  isScheduled?: boolean    // Whether this order is already scheduled
+  scheduledForDisplay?: string | null // Display string for scheduled time
 }
 
 export const OrderPanelActions = memo(function OrderPanelActions({
@@ -115,6 +118,9 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   orderType,
   onTransferItems,
   onMergeOrders,
+  onSchedule,
+  isScheduled = false,
+  scheduledForDisplay,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
@@ -615,6 +621,29 @@ export const OrderPanelActions = memo(function OrderPanelActions({
             >
               {label}
             </button>
+            {/* Schedule for Later button (pre-orders) */}
+            {onSchedule && !isBarTab && hasPendingItems && !isSending && !justSent && (
+              <button
+                onClick={onSchedule}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: '2px solid rgba(139, 92, 246, 0.4)',
+                  background: isScheduled ? 'rgba(139, 92, 246, 0.15)' : 'transparent',
+                  color: '#a78bfa',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  marginBottom: '6px',
+                }}
+              >
+                {isScheduled && scheduledForDisplay
+                  ? `Scheduled: ${scheduledForDisplay}`
+                  : 'Schedule for Later'}
+              </button>
+            )}
             {justSent && !hasPendingItems && (
               <button
                 onClick={() => setJustSent(false)}

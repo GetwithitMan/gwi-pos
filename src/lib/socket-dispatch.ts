@@ -1445,3 +1445,73 @@ export async function dispatchOrderReleased(
 
   return doEmit()
 }
+
+/**
+ * Dispatch waitlist changed event
+ * Emitted on any waitlist mutation (add, status change, remove)
+ */
+export async function dispatchWaitlistChanged(
+  locationId: string,
+  payload: {
+    action: 'added' | 'notified' | 'seated' | 'cancelled' | 'no_show' | 'removed'
+    entryId: string
+    customerName: string
+    partySize: number
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'waitlist:changed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch waitlist:changed:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async waitlist:changed failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch cover charge entry recorded event.
+ *
+ * Called when a new cover charge / door entry is recorded.
+ * Updates the Door Count dashboard widget in real-time.
+ */
+export async function dispatchCoverEntryRecorded(
+  locationId: string,
+  payload: {
+    id: string
+    amount: number
+    paymentMethod: string
+    guestCount: number
+    isVip: boolean
+    isComped: boolean
+    employeeId: string
+    createdAt: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'cover:entry-recorded', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch cover:entry-recorded:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async cover:entry-recorded failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
