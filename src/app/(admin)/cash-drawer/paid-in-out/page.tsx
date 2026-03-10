@@ -140,7 +140,7 @@ export default function PaidInOutPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Paid In / Out</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Today&apos;s cash drawer adjustments</p>
+          <p className="text-sm text-gray-900 mt-0.5">Today&apos;s cash drawer adjustments</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -161,15 +161,15 @@ export default function PaidInOutPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total In</p>
+          <p className="text-xs font-medium text-gray-900 uppercase tracking-wider">Total In</p>
           <p className="text-2xl font-bold text-green-600 mt-1">{formatCurrency(summary.totalPaidIn)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Out</p>
+          <p className="text-xs font-medium text-gray-900 uppercase tracking-wider">Total Out</p>
           <p className="text-2xl font-bold text-red-600 mt-1">{formatCurrency(summary.totalPaidOut)}</p>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Net</p>
+          <p className="text-xs font-medium text-gray-900 uppercase tracking-wider">Net</p>
           <p className={`text-2xl font-bold mt-1 ${summary.net >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
             {formatCurrency(summary.net)}
           </p>
@@ -188,7 +188,7 @@ export default function PaidInOutPage() {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               {/* Type toggle */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">Type</label>
                 <div className="flex rounded-lg overflow-hidden border border-gray-200">
                   <button
                     type="button"
@@ -217,11 +217,11 @@ export default function PaidInOutPage() {
 
               {/* Amount */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Amount <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-900 font-medium">$</span>
                   <input
                     type="number"
                     step="0.01"
@@ -237,7 +237,7 @@ export default function PaidInOutPage() {
 
               {/* Reason */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Reason <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -252,8 +252,8 @@ export default function PaidInOutPage() {
 
               {/* Reference (optional) */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reference <span className="text-gray-400 font-normal">(optional)</span>
+                <label className="block text-sm font-medium text-gray-900 mb-1">
+                  Reference <span className="text-gray-900 font-normal">(optional)</span>
                 </label>
                 <input
                   type="text"
@@ -272,7 +272,7 @@ export default function PaidInOutPage() {
                 <button
                   type="button"
                   onClick={() => { setShowForm(false); setError(null) }}
-                  className="flex-1 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors min-h-[44px]"
+                  className="flex-1 py-2 border border-gray-200 text-gray-900 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors min-h-[44px]"
                 >
                   Cancel
                 </button>
@@ -300,14 +300,14 @@ export default function PaidInOutPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-12 text-gray-400">Loading...</div>
+          <div className="text-center py-12 text-gray-900">Loading...</div>
         ) : records.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">No transactions today</div>
+          <div className="text-center py-12 text-gray-900">No transactions today</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                <tr className="text-left text-xs font-medium text-gray-900 uppercase tracking-wider border-b border-gray-100">
                   <th className="px-5 py-3">Time</th>
                   <th className="px-5 py-3">Type</th>
                   <th className="px-5 py-3 text-right">Amount</th>
@@ -330,14 +330,14 @@ export default function PaidInOutPage() {
                     }`}>
                       {r.type === 'paid_out' ? '-' : ''}{formatCurrency(r.amount)}
                     </td>
-                    <td className="px-5 py-3 text-gray-700">
+                    <td className="px-5 py-3 text-gray-900">
                       {r.reason}
                       {r.reference && (
-                        <span className="ml-2 text-xs text-gray-400">({r.reference})</span>
+                        <span className="ml-2 text-xs text-gray-900">({r.reference})</span>
                       )}
                     </td>
                     <td className="px-5 py-3 text-gray-600">{r.employeeName}</td>
-                    <td className="px-5 py-3 text-gray-500 text-xs">{r.drawerName}</td>
+                    <td className="px-5 py-3 text-gray-900 text-xs">{r.drawerName}</td>
                   </tr>
                 ))}
               </tbody>

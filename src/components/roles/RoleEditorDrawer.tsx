@@ -174,7 +174,7 @@ export function RoleEditorDrawer({
           </svg>
           All Roles
         </button>
-        <span className="text-sm font-medium text-gray-700">
+        <span className="text-sm font-medium text-gray-900">
           {isCreating ? 'New Role' : `Editing: ${roleName || 'Edit Role'}`}
         </span>
         <div className="flex gap-2">
@@ -202,7 +202,7 @@ export function RoleEditorDrawer({
           <div className="p-5 space-y-4">
             {/* Role Name */}
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">Role Name *</label>
+              <label className="text-sm font-medium text-gray-900 block mb-1">Role Name *</label>
               <Input
                 value={roleName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setRoleName(e.target.value); setLocalError(null) }}
@@ -274,7 +274,7 @@ export function RoleEditorDrawer({
                     }`}
                   >
                     <div className="font-medium text-sm">{opt.label}</div>
-                    <div className="text-xs text-gray-500">{opt.desc}</div>
+                    <div className="text-xs text-gray-900">{opt.desc}</div>
                   </button>
                 ))}
               </div>
@@ -286,14 +286,14 @@ export function RoleEditorDrawer({
                 <input type="checkbox" checked={isTipped} onChange={e => setIsTipped(e.target.checked)} className="rounded border-gray-300" />
                 <div>
                   <span className="text-sm font-medium">Tipped Role</span>
-                  <p className="text-xs text-gray-500">Eligible for tip-out rules</p>
+                  <p className="text-xs text-gray-900">Eligible for tip-out rules</p>
                 </div>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={trackLaborCost} onChange={e => setTrackLaborCost(e.target.checked)} className="rounded border-gray-300" />
                 <div>
                   <span className="text-sm font-medium">Track Labor Cost</span>
-                  <p className="text-xs text-gray-500">Include hours in labor reports</p>
+                  <p className="text-xs text-gray-900">Include hours in labor reports</p>
                 </div>
               </label>
             </div>
@@ -304,7 +304,7 @@ export function RoleEditorDrawer({
             <EffectiveAccessPreview permissions={selectedPermissions} />
 
             {roleToEdit && roleToEdit.employeeCount > 0 && (
-              <p className="text-xs text-gray-500 text-center">
+              <p className="text-xs text-gray-900 text-center">
                 {roleToEdit.employeeCount} employee{roleToEdit.employeeCount !== 1 ? 's' : ''} use this role
               </p>
             )}
@@ -361,7 +361,7 @@ export function RoleEditorDrawer({
                             : tab.color === 'green'
                             ? 'border-green-500 text-green-600'
                             : 'border-blue-500 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700'
+                          : 'border-transparent text-gray-900 hover:text-gray-900'
                       }`}
                     >
                       <span>{tab.label}</span>

@@ -79,7 +79,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-700">Loading ingredient library...</div>
+        <div className="text-gray-900">Loading ingredient library...</div>
       </div>
     )
   }
@@ -110,7 +110,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
 
       {/* Category Sections */}
       {filteredGroups.length === 0 && ingredients.length === 0 ? (
-        <div className="text-center py-12 text-gray-700">
+        <div className="text-center py-12 text-gray-900">
           <p>No ingredients found</p>
           <Button className="mt-4" onClick={actions.handleCreateIngredient}>
             Create your first ingredient

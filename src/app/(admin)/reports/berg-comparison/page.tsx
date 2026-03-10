@@ -114,7 +114,7 @@ export default function BergComparisonReportPage() {
             onChange={e => setStartDate(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
           />
-          <span className="text-gray-400">to</span>
+          <span className="text-gray-900">to</span>
           <input
             type="date"
             value={endDate}
@@ -132,7 +132,7 @@ export default function BergComparisonReportPage() {
 
       {/* Empty state */}
       {!report && !loading && (
-        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-900">
           No PLU mappings configured. Go to Settings &rarr; Integrations &rarr; Berg to set up PLU mappings.
         </div>
       )}
@@ -143,25 +143,25 @@ export default function BergComparisonReportPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Total Pours</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Total Pours</div>
                 <div className="text-2xl font-bold mt-1">{report.summary.totalPours}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Total Oz</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Total Oz</div>
                 <div className="text-2xl font-bold mt-1">{report.summary.totalOz.toFixed(1)}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Total Revenue</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Total Revenue</div>
                 <div className="text-2xl font-bold mt-1">{fmtMoney(report.summary.totalRevenue)}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Mappings Count</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Mappings Count</div>
                 <div className="text-2xl font-bold mt-1">{report.summary.mappingsCount}</div>
               </CardContent>
             </Card>
@@ -169,7 +169,7 @@ export default function BergComparisonReportPage() {
 
           {/* Manual mode toggle */}
           <div className="flex items-center gap-3 mb-4">
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-gray-900 cursor-pointer">
               <button
                 type="button"
                 role="switch"
@@ -189,7 +189,7 @@ export default function BergComparisonReportPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-left text-gray-500">
+                    <tr className="border-b bg-gray-50 text-left text-gray-900">
                       <th className="py-2 px-3 font-medium">PLU #</th>
                       <th className="py-2 px-3 font-medium">Description</th>
                       <th className="py-2 px-3 font-medium">Mapped Item</th>
@@ -220,7 +220,7 @@ export default function BergComparisonReportPage() {
                         <tr key={row.pluNumber} className={rowClass}>
                           <td className="py-2 px-3 font-mono">{row.pluNumber}</td>
                           <td className="py-2 px-3">{row.description}</td>
-                          <td className="py-2 px-3 text-gray-500">{row.menuItemName ?? '—'}</td>
+                          <td className="py-2 px-3 text-gray-900">{row.menuItemName ?? '—'}</td>
                           <td className="py-2 px-3 text-right">{row.posCount}</td>
                           <td className="py-2 px-3 text-right">{row.posOz.toFixed(1)}</td>
                           <td className="py-2 px-3 text-right">{fmtMoney(row.revenue)}</td>
@@ -262,7 +262,7 @@ export default function BergComparisonReportPage() {
                     })}
                     {report.rows.length === 0 && (
                       <tr>
-                        <td colSpan={manualMode ? 12 : 7} className="py-8 text-center text-gray-400">
+                        <td colSpan={manualMode ? 12 : 7} className="py-8 text-center text-gray-900">
                           No data for this date range.
                         </td>
                       </tr>

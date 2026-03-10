@@ -286,9 +286,9 @@ export default function CateringPage() {
           {/* Orders List */}
           <div className="lg:col-span-1 space-y-2">
             {isLoading ? (
-              <div className="bg-white rounded-xl border p-8 text-center text-gray-500">Loading...</div>
+              <div className="bg-white rounded-xl border p-8 text-center text-gray-900">Loading...</div>
             ) : orders.length === 0 ? (
-              <div className="bg-white rounded-xl border p-8 text-center text-gray-500">
+              <div className="bg-white rounded-xl border p-8 text-center text-gray-900">
                 No catering orders found.
               </div>
             ) : (
@@ -306,7 +306,7 @@ export default function CateringPage() {
                       {STATUS_LABELS[order.status] || order.status}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-900">
                     {formatDate(order.eventDate)} | {order.guestCount} guests | {formatCurrency(Number(order.total))}
                   </div>
                 </button>
@@ -336,43 +336,43 @@ export default function CateringPage() {
 
                 {/* Event Details */}
                 <div className="p-6 border-b border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Event Details</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Event Details</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
-                      <div className="text-xs text-gray-500">Date</div>
+                      <div className="text-xs text-gray-900">Date</div>
                       <div className="text-sm font-medium">{formatDate(selectedOrder.eventDate)}</div>
                     </div>
                     {selectedOrder.eventTime && (
                       <div>
-                        <div className="text-xs text-gray-500">Time</div>
+                        <div className="text-xs text-gray-900">Time</div>
                         <div className="text-sm font-medium">{selectedOrder.eventTime}</div>
                       </div>
                     )}
                     <div>
-                      <div className="text-xs text-gray-500">Guests</div>
+                      <div className="text-xs text-gray-900">Guests</div>
                       <div className="text-sm font-medium">{selectedOrder.guestCount}</div>
                     </div>
                     {selectedOrder.deliveryAddress && (
                       <div className="col-span-2">
-                        <div className="text-xs text-gray-500">Delivery Address</div>
+                        <div className="text-xs text-gray-900">Delivery Address</div>
                         <div className="text-sm font-medium">{selectedOrder.deliveryAddress}</div>
                       </div>
                     )}
                   </div>
                   {selectedOrder.notes && (
                     <div className="mt-3">
-                      <div className="text-xs text-gray-500">Notes</div>
-                      <div className="text-sm text-gray-700 mt-1">{selectedOrder.notes}</div>
+                      <div className="text-xs text-gray-900">Notes</div>
+                      <div className="text-sm text-gray-900 mt-1">{selectedOrder.notes}</div>
                     </div>
                   )}
                 </div>
 
                 {/* Items */}
                 <div className="p-6 border-b border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Items</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Items</h3>
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-gray-500 border-b border-gray-100">
+                      <tr className="text-left text-gray-900 border-b border-gray-100">
                         <th className="pb-2 pr-4">Item</th>
                         <th className="pb-2 pr-4 text-right">Qty</th>
                         <th className="pb-2 pr-4 text-right">Unit Price</th>
@@ -386,7 +386,7 @@ export default function CateringPage() {
                           <td className="py-2 pr-4">
                             <div className="text-gray-900">{item.name}</div>
                             {item.specialInstructions && (
-                              <div className="text-xs text-gray-500 italic">{item.specialInstructions}</div>
+                              <div className="text-xs text-gray-900 italic">{item.specialInstructions}</div>
                             )}
                           </td>
                           <td className="py-2 pr-4 text-right">{item.quantity}</td>
@@ -438,7 +438,7 @@ export default function CateringPage() {
                     </div>
                     {Number(selectedOrder.depositRequired) > 0 && (
                       <div className="flex justify-between text-xs pt-1">
-                        <span className="text-gray-500">Deposit Required</span>
+                        <span className="text-gray-900">Deposit Required</span>
                         <span className={Number(selectedOrder.depositPaid) >= Number(selectedOrder.depositRequired) ? 'text-green-600' : 'text-amber-600'}>
                           {formatCurrency(Number(selectedOrder.depositPaid))} / {formatCurrency(Number(selectedOrder.depositRequired))}
                         </span>
@@ -470,40 +470,40 @@ export default function CateringPage() {
 
                 {/* Timeline */}
                 <div className="p-6 bg-gray-50 border-t border-gray-100">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Timeline</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-3">Timeline</h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex gap-3">
-                      <span className="text-gray-400 w-28 flex-shrink-0">Created</span>
-                      <span className="text-gray-700">{new Date(selectedOrder.createdAt).toLocaleString()}</span>
+                      <span className="text-gray-900 w-28 flex-shrink-0">Created</span>
+                      <span className="text-gray-900">{new Date(selectedOrder.createdAt).toLocaleString()}</span>
                     </div>
                     {selectedOrder.quotedAt && (
                       <div className="flex gap-3">
-                        <span className="text-gray-400 w-28 flex-shrink-0">Quoted</span>
-                        <span className="text-gray-700">{new Date(selectedOrder.quotedAt).toLocaleString()}</span>
+                        <span className="text-gray-900 w-28 flex-shrink-0">Quoted</span>
+                        <span className="text-gray-900">{new Date(selectedOrder.quotedAt).toLocaleString()}</span>
                       </div>
                     )}
                     {selectedOrder.confirmedAt && (
                       <div className="flex gap-3">
-                        <span className="text-gray-400 w-28 flex-shrink-0">Confirmed</span>
-                        <span className="text-gray-700">{new Date(selectedOrder.confirmedAt).toLocaleString()}</span>
+                        <span className="text-gray-900 w-28 flex-shrink-0">Confirmed</span>
+                        <span className="text-gray-900">{new Date(selectedOrder.confirmedAt).toLocaleString()}</span>
                       </div>
                     )}
                     {selectedOrder.prepStartedAt && (
                       <div className="flex gap-3">
-                        <span className="text-gray-400 w-28 flex-shrink-0">Prep Started</span>
-                        <span className="text-gray-700">{new Date(selectedOrder.prepStartedAt).toLocaleString()}</span>
+                        <span className="text-gray-900 w-28 flex-shrink-0">Prep Started</span>
+                        <span className="text-gray-900">{new Date(selectedOrder.prepStartedAt).toLocaleString()}</span>
                       </div>
                     )}
                     {selectedOrder.deliveredAt && (
                       <div className="flex gap-3">
-                        <span className="text-gray-400 w-28 flex-shrink-0">Delivered</span>
-                        <span className="text-gray-700">{new Date(selectedOrder.deliveredAt).toLocaleString()}</span>
+                        <span className="text-gray-900 w-28 flex-shrink-0">Delivered</span>
+                        <span className="text-gray-900">{new Date(selectedOrder.deliveredAt).toLocaleString()}</span>
                       </div>
                     )}
                     {selectedOrder.completedAt && (
                       <div className="flex gap-3">
-                        <span className="text-gray-400 w-28 flex-shrink-0">Completed</span>
-                        <span className="text-gray-700">{new Date(selectedOrder.completedAt).toLocaleString()}</span>
+                        <span className="text-gray-900 w-28 flex-shrink-0">Completed</span>
+                        <span className="text-gray-900">{new Date(selectedOrder.completedAt).toLocaleString()}</span>
                       </div>
                     )}
                     {selectedOrder.cancelledAt && (
@@ -519,7 +519,7 @@ export default function CateringPage() {
                 </div>
               </div>
             ) : (
-              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
+              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-900">
                 Select a catering order to view details, or create a new one.
               </div>
             )}
@@ -533,7 +533,7 @@ export default function CateringPage() {
           {/* Customer Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name *</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Customer Name *</label>
               <input
                 type="text"
                 value={form.customerName}
@@ -543,7 +543,7 @@ export default function CateringPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Phone</label>
               <input
                 type="tel"
                 value={form.customerPhone}
@@ -553,7 +553,7 @@ export default function CateringPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Email</label>
               <input
                 type="email"
                 value={form.customerEmail}
@@ -563,7 +563,7 @@ export default function CateringPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Guest Count *</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Guest Count *</label>
               <input
                 type="number"
                 value={form.guestCount}
@@ -577,7 +577,7 @@ export default function CateringPage() {
           {/* Event Details */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Event Date *</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Event Date *</label>
               <input
                 type="date"
                 value={form.eventDate}
@@ -586,7 +586,7 @@ export default function CateringPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Event Time</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Event Time</label>
               <input
                 type="time"
                 value={form.eventTime}
@@ -597,7 +597,7 @@ export default function CateringPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Address</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Delivery Address</label>
             <input
               type="text"
               value={form.deliveryAddress}
@@ -608,7 +608,7 @@ export default function CateringPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Notes</label>
             <textarea
               value={form.notes}
               onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
@@ -621,7 +621,7 @@ export default function CateringPage() {
           {/* Items */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">Items *</label>
+              <label className="text-sm font-medium text-gray-900">Items *</label>
               <button
                 onClick={addFormItem}
                 className="text-xs text-indigo-600 font-medium hover:text-indigo-700"
@@ -648,7 +648,7 @@ export default function CateringPage() {
                     min={1}
                   />
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-900 text-sm">$</span>
                     <input
                       type="number"
                       value={item.unitPrice || ''}
@@ -669,7 +669,7 @@ export default function CateringPage() {
                 </div>
               ))}
             </div>
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-gray-900">
               Volume discounts: 10+ items = 10% off, 25+ = 15% off, 50+ = 20% off (per line item)
             </div>
           </div>

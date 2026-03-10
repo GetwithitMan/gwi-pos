@@ -53,7 +53,7 @@ interface ReceiveItem {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
+  draft: 'bg-gray-100 text-gray-900',
   sent: 'bg-blue-50 text-blue-700',
   confirmed: 'bg-purple-50 text-purple-700',
   partially_received: 'bg-yellow-50 text-yellow-700',
@@ -225,7 +225,7 @@ export default function PurchaseOrderDetailPage() {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">Loading...</CardContent>
+          <CardContent className="p-8 text-center text-gray-900">Loading...</CardContent>
         </Card>
       </div>
     )
@@ -257,7 +257,7 @@ export default function PurchaseOrderDetailPage() {
           <span className={`inline-block px-3 py-1 rounded text-sm font-medium ${STATUS_COLORS[order.status] || 'bg-gray-100'}`}>
             {order.status.replace('_', ' ')}
           </span>
-          <span className="text-gray-500 text-sm">{order.vendorName}</span>
+          <span className="text-gray-900 text-sm">{order.vendorName}</span>
         </div>
       </div>
 
@@ -286,26 +286,26 @@ export default function PurchaseOrderDetailPage() {
           <h2 className="font-semibold text-gray-900 mb-3">Order Information</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
-              <p className="text-gray-500">Vendor</p>
+              <p className="text-gray-900">Vendor</p>
               <p className="font-medium text-gray-900">{order.vendorName}</p>
             </div>
             <div>
-              <p className="text-gray-500">Order Date</p>
+              <p className="text-gray-900">Order Date</p>
               <p className="font-medium text-gray-900">{new Date(order.orderDate).toLocaleDateString()}</p>
             </div>
             <div>
-              <p className="text-gray-500">Expected Delivery</p>
+              <p className="text-gray-900">Expected Delivery</p>
               <p className="font-medium text-gray-900">
                 {order.expectedDelivery ? new Date(order.expectedDelivery).toLocaleDateString() : '—'}
               </p>
             </div>
             <div>
-              <p className="text-gray-500">Created By</p>
+              <p className="text-gray-900">Created By</p>
               <p className="font-medium text-gray-900">{order.createdByName || '—'}</p>
             </div>
             {order.notes && (
               <div className="col-span-full">
-                <p className="text-gray-500">Notes</p>
+                <p className="text-gray-900">Notes</p>
                 <p className="font-medium text-gray-900">{order.notes}</p>
               </div>
             )}
@@ -347,25 +347,25 @@ export default function PurchaseOrderDetailPage() {
                       <td className="px-4 py-3 font-medium text-gray-900">
                         {li.inventoryItemName}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-500 text-xs">
+                      <td className="px-4 py-3 text-right text-gray-900 text-xs">
                         {li.inventoryItem?.currentStock != null
                           ? `${li.inventoryItem.currentStock} ${li.inventoryItem?.storageUnit ?? ''}`
                           : '—'}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-700">
+                      <td className="px-4 py-3 text-right text-gray-900">
                         {li.quantity}
                       </td>
                       <td className="px-4 py-3 text-center text-gray-600">
                         {li.unit}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-700">
+                      <td className="px-4 py-3 text-right text-gray-900">
                         {formatCurrency(li.estimatedCost)}
                       </td>
                       <td className="px-4 py-3 text-right font-medium">
-                        <span className={li.receivedQty > 0 ? 'text-green-700' : 'text-gray-400'}>
+                        <span className={li.receivedQty > 0 ? 'text-green-700' : 'text-gray-900'}>
                           {li.receivedQty}
                         </span>
-                        <span className="text-gray-400"> / {li.quantity}</span>
+                        <span className="text-gray-900"> / {li.quantity}</span>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${status.color}`}>
@@ -378,7 +378,7 @@ export default function PurchaseOrderDetailPage() {
               </tbody>
               <tfoot className="bg-gray-50 border-t-2">
                 <tr>
-                  <td colSpan={4} className="px-4 py-3 font-semibold text-gray-700 text-right">
+                  <td colSpan={4} className="px-4 py-3 font-semibold text-gray-900 text-right">
                     Estimated Total
                   </td>
                   <td className="px-4 py-3 text-right font-bold text-gray-900">
@@ -398,18 +398,18 @@ export default function PurchaseOrderDetailPage() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900">Receive Shipment</h2>
-              <button onClick={() => setReceiving(false)} className="text-gray-400 hover:text-gray-600 text-lg">
+              <button onClick={() => setReceiving(false)} className="text-gray-900 hover:text-gray-600 text-lg">
                 &times;
               </button>
             </div>
 
             {receiveItems.length === 0 ? (
-              <p className="text-gray-500 text-sm py-4 text-center">All items have been fully received.</p>
+              <p className="text-gray-900 text-sm py-4 text-center">All items have been fully received.</p>
             ) : (
               <>
                 {/* Barcode Scan */}
                 <div className="mb-4 p-3 bg-blue-50/50 rounded-lg">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Scan Barcode to Find Line Item</label>
+                  <label className="block text-xs font-medium text-gray-900 mb-1">Scan Barcode to Find Line Item</label>
                   <BarcodeScanField
                     locationId={locationId || ''}
                     placeholder="Scan barcode to jump to line item..."
@@ -459,7 +459,7 @@ export default function PurchaseOrderDetailPage() {
                         <tr key={ri.lineItemId}>
                           <td className="px-3 py-2 font-medium text-gray-900">
                             {ri.itemName}
-                            <span className="text-xs text-gray-500 ml-1">({ri.unit})</span>
+                            <span className="text-xs text-gray-900 ml-1">({ri.unit})</span>
                           </td>
                           <td className="px-3 py-2 text-right text-gray-600">{ri.orderedQty}</td>
                           <td className="px-3 py-2 text-right text-gray-600">{ri.alreadyReceived}</td>
@@ -493,7 +493,7 @@ export default function PurchaseOrderDetailPage() {
 
                 <div className="mt-4 space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                    <label className="block text-sm font-medium text-gray-900 mb-1">Notes</label>
                     <textarea
                       value={receiveNotes}
                       onChange={(e) => setReceiveNotes(e.target.value)}
@@ -510,7 +510,7 @@ export default function PurchaseOrderDetailPage() {
                       onChange={(e) => setCreateInvoice(e.target.checked)}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-gray-700">Create invoice from this receipt</span>
+                    <span className="text-gray-900">Create invoice from this receipt</span>
                   </label>
 
                   <div className="flex gap-2">

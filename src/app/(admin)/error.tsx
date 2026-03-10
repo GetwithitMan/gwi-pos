@@ -42,7 +42,7 @@ export default function AdminError({
         </p>
 
         {error.digest && (
-          <p className="text-gray-500 text-xs text-center mb-4">
+          <p className="text-gray-900 text-xs text-center mb-4">
             Reference: {error.digest}
           </p>
         )}

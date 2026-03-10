@@ -109,7 +109,7 @@ export default function OrderSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading order settings...</div>
+          <div className="text-gray-900 text-lg">Loading order settings...</div>
         </div>
       </div>
     )
@@ -133,7 +133,7 @@ export default function OrderSettingsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -149,7 +149,7 @@ export default function OrderSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Order Numbering</h2>
-          <p className="text-sm text-gray-500 mb-5">Current order numbering behavior.</p>
+          <p className="text-sm text-gray-900 mb-5">Current order numbering behavior.</p>
 
           <div className="space-y-3">
             <div className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
@@ -159,8 +159,8 @@ export default function OrderSettingsPage() {
                 </svg>
               </div>
               <div>
-                <div className="text-sm text-gray-700">Order numbers reset daily, starting from 1</div>
-                <div className="text-xs text-gray-400 mt-0.5">Each new business day starts with order #1. The business day resets at midnight in your venue&apos;s timezone (configured in Venue settings).</div>
+                <div className="text-sm text-gray-900">Order numbers reset daily, starting from 1</div>
+                <div className="text-xs text-gray-900 mt-0.5">Each new business day starts with order #1. The business day resets at midnight in your venue&apos;s timezone (configured in Venue settings).</div>
               </div>
             </div>
 
@@ -171,8 +171,8 @@ export default function OrderSettingsPage() {
                 </svg>
               </div>
               <div>
-                <div className="text-sm text-gray-700">Format: Sequential (1, 2, 3...)</div>
-                <div className="text-xs text-gray-400 mt-0.5">Simple sequential numbering for easy reference</div>
+                <div className="text-sm text-gray-900">Format: Sequential (1, 2, 3...)</div>
+                <div className="text-xs text-gray-900 mt-0.5">Simple sequential numbering for easy reference</div>
               </div>
             </div>
 
@@ -189,7 +189,7 @@ export default function OrderSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">POS Display Defaults</h2>
-          <p className="text-sm text-gray-500 mb-5">Default display settings for all POS terminals. Employees can override with personal settings.</p>
+          <p className="text-sm text-gray-900 mb-5">Default display settings for all POS terminals. Employees can override with personal settings.</p>
 
           <div className="space-y-6">
             {/* Menu Item Size */}
@@ -211,13 +211,13 @@ export default function OrderSettingsPage() {
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-gray-400 mt-1">Compact fits more items on screen. Large is easier to tap on touchscreens.</p>
+              <p className="text-xs text-gray-900 mt-1">Compact fits more items on screen. Large is easier to tap on touchscreens.</p>
             </div>
 
             {/* Items Per Row */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">Menu Items Per Row</label>
-              <p className="text-xs text-gray-400 mb-2">More columns = smaller buttons and more items visible. Fewer columns = larger buttons, easier to tap. Most venues use 4 or 5.</p>
+              <p className="text-xs text-gray-900 mb-2">More columns = smaller buttons and more items visible. Fewer columns = larger buttons, easier to tap. Most venues use 4 or 5.</p>
               <div className="flex gap-2">
                 {ITEMS_PER_ROW_OPTIONS.map(opt => (
                   <button
@@ -239,7 +239,7 @@ export default function OrderSettingsPage() {
             {/* Category Size */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">Category Button Size</label>
-              <p className="text-xs text-gray-400 mb-2">Match this to your Menu Item Button Size for a consistent look.</p>
+              <p className="text-xs text-gray-900 mb-2">Match this to your Menu Item Button Size for a consistent look.</p>
               <div className="flex gap-2">
                 {CATEGORY_SIZE_OPTIONS.map(opt => (
                   <button
@@ -261,7 +261,7 @@ export default function OrderSettingsPage() {
             {/* Order Panel Width */}
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-2">Order Panel Width</label>
-              <p className="text-xs text-gray-400 mb-2">Controls the size of the right-side panel showing your current order items.</p>
+              <p className="text-xs text-gray-900 mb-2">Controls the size of the right-side panel showing your current order items.</p>
               <div className="flex gap-2">
                 {ORDER_PANEL_WIDTH_OPTIONS.map(opt => (
                   <button
@@ -283,8 +283,8 @@ export default function OrderSettingsPage() {
             {/* Show Price Toggle */}
             <div className="flex items-center justify-between py-3 border-t border-gray-100">
               <div>
-                <div className="text-sm text-gray-700">Show Prices on Menu Item Buttons</div>
-                <div className="text-xs text-gray-400">If OFF, prices only show in the item detail view. Useful if your menu prices change frequently.</div>
+                <div className="text-sm text-gray-900">Show Prices on Menu Item Buttons</div>
+                <div className="text-xs text-gray-900">If OFF, prices only show in the item detail view. Useful if your menu prices change frequently.</div>
               </div>
               <ToggleSwitch
                 checked={posDisplay.showPriceOnMenuItems}
@@ -299,7 +299,7 @@ export default function OrderSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">After Send Behavior</h2>
-          <p className="text-sm text-gray-500 mb-5">What happens after an order is sent to the kitchen.</p>
+          <p className="text-sm text-gray-900 mb-5">What happens after an order is sent to the kitchen.</p>
 
           <div className="space-y-2">
             {([
@@ -317,8 +317,8 @@ export default function OrderSettingsPage() {
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                <div className={`text-sm font-medium ${sendBehavior === opt.value ? 'text-indigo-700' : 'text-gray-700'}`}>{opt.label}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{opt.desc}</div>
+                <div className={`text-sm font-medium ${sendBehavior === opt.value ? 'text-indigo-700' : 'text-gray-900'}`}>{opt.label}</div>
+                <div className="text-xs text-gray-900 mt-0.5">{opt.desc}</div>
               </button>
             ))}
           </div>
@@ -334,9 +334,9 @@ export default function OrderSettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-gray-900 mb-1">Closed Orders</h2>
-              <p className="text-sm text-gray-500">Search, review, reopen, adjust tips, and reprint receipts for closed orders</p>
+              <p className="text-sm text-gray-900">Search, review, reopen, adjust tips, and reprint receipts for closed orders</p>
             </div>
-            <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-gray-500 group-hover:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </div>
@@ -348,7 +348,7 @@ export default function OrderSettingsPage() {
         {canCloseDay && (
           <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-1">End of Day Reset</h2>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm text-gray-900 mb-4">
               Resets orphaned table statuses to available, detects stale open orders from a previous business day, and creates audit log entries. Orders with balances are rolled forward for manual review — no revenue data is lost.
             </p>
             <button

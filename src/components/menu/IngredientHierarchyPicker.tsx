@@ -194,7 +194,7 @@ function InlinePrepItemForm({
         </button>
         <button
           onClick={onCancel}
-          className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+          className="px-2 py-1 text-xs bg-gray-300 text-gray-900 rounded hover:bg-gray-400"
           disabled={creatingIngredientLoading}
         >
           Cancel
@@ -335,7 +335,7 @@ export function IngredientHierarchyPicker({
               </button>
               <button
                 onClick={() => { setCreatingNewCategory(false); setNewCategoryName('') }}
-                className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                className="px-2 py-1 text-xs bg-gray-300 text-gray-900 rounded hover:bg-gray-400"
                 disabled={creatingIngredientLoading}
               >
                 Cancel
@@ -354,7 +354,7 @@ export function IngredientHierarchyPicker({
 
       <div className={`${maxHeight} overflow-y-auto space-y-0.5`}>
         {sortedCategories.length === 0 ? (
-          <div className="text-xs text-gray-400 text-center py-2">
+          <div className="text-xs text-gray-600 text-center py-2">
             {searchTerm ? 'No matching ingredients' : 'No ingredient categories found'}
           </div>
         ) : (
@@ -394,7 +394,7 @@ export function IngredientHierarchyPicker({
             return (
               <div key={category.id}>
                 {/* Category Header */}
-                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 uppercase tracking-wider px-2 py-1.5 bg-gray-100 sticky top-0 border-b border-gray-200">
+                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-900 uppercase tracking-wider px-2 py-1.5 bg-gray-100 sticky top-0 border-b border-gray-200">
                   <button
                     onClick={() => toggleCategory(category.id)}
                     className="hover:bg-gray-200 rounded px-1"
@@ -404,7 +404,7 @@ export function IngredientHierarchyPicker({
                   <span className="flex-1">{category.name}</span>
 
                   {showAvailableCount && (
-                    <span className="text-[9px] text-gray-400 font-normal">{totalAvailable}</span>
+                    <span className="text-[9px] text-gray-600 font-normal">{totalAvailable}</span>
                   )}
 
                   {/* Unverified count badge */}
@@ -469,7 +469,7 @@ export function IngredientHierarchyPicker({
                           setCreatingInventoryInCategory(null)
                           setNewInventoryName('')
                         }}
-                        className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                        className="px-2 py-1 text-xs bg-gray-300 text-gray-900 rounded hover:bg-gray-400"
                         disabled={creatingIngredientLoading}
                       >
                         Cancel
@@ -500,7 +500,7 @@ export function IngredientHierarchyPicker({
                               <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
                             )}
                             {hasChildren && (
-                              <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
+                              <span className="text-[9px] text-blue-600 shrink-0">{children.length} prep</span>
                             )}
                             <button
                               onClick={(e) => { e.stopPropagation(); if (!isBaseExpanded) toggleParent(base.id); setCreatingPrepUnderParent(base.id) }}
@@ -512,9 +512,9 @@ export function IngredientHierarchyPicker({
                             <div className="ml-5 border-l-2 border-green-300">
                               {children.map(prep => (
                                 <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
-                                  <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
+                                  <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-600 shrink-0">·</span>
                                   <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-                                  <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
+                                  <span className="flex-1 text-xs truncate text-gray-900">{prep.name}</span>
                                   {prep.needsVerification && (
                                     <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
                                   )}
@@ -566,15 +566,15 @@ export function IngredientHierarchyPicker({
                             </span>
                             <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
                             <span className="flex-1 text-xs font-medium truncate text-gray-900">{p?.name || 'Unknown'}</span>
-                            <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
+                            <span className="text-[9px] text-blue-600 shrink-0">{children.length} prep</span>
                           </div>
                           {isOpExpanded && (
                             <div className="ml-5 border-l-2 border-green-300">
                               {children.map(prep => (
                                 <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
-                                  <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
+                                  <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-600 shrink-0">·</span>
                                   <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-                                  <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
+                                  <span className="flex-1 text-xs truncate text-gray-900">{prep.name}</span>
                                   {prep.needsVerification && (
                                     <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
                                   )}

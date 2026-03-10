@@ -348,7 +348,7 @@ export default function NewInvoicePage() {
         <CardContent>
           <div className="space-y-3">
             {/* Header */}
-            <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
+            <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-900 px-1">
               <div className="col-span-4">Item</div>
               <div className="col-span-2">Quantity</div>
               <div className="col-span-1">Unit</div>
@@ -375,7 +375,7 @@ export default function NewInvoicePage() {
                         {!isReadOnly && (
                           <button
                             onClick={() => updateLineItem(li.key, 'inventoryItemId', '')}
-                            className="text-gray-400 hover:text-gray-600 ml-2 shrink-0"
+                            className="text-gray-900 hover:text-gray-600 ml-2 shrink-0"
                           >
                             &times;
                           </button>
@@ -407,7 +407,7 @@ export default function NewInvoicePage() {
                                 onClick={() => selectInventoryItem(li.key, item)}
                               >
                                 <span>{item.name}</span>
-                                <span className="text-xs text-gray-400">
+                                <span className="text-xs text-gray-900">
                                   ${item.purchaseCost.toFixed(2)}/{item.purchaseUnit}
                                 </span>
                               </button>
@@ -457,7 +457,7 @@ export default function NewInvoicePage() {
                     />
                     {li.previousCost !== null && li.previousCost > 0 && (
                       <div className="mt-0.5 flex items-center gap-1">
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-900">
                           Was: ${li.previousCost.toFixed(2)}
                         </span>
                         {costChangePct !== null && Math.abs(costChangePct) > 0.5 && (
@@ -485,7 +485,7 @@ export default function NewInvoicePage() {
                     {!isReadOnly && lineItems.length > 1 && (
                       <button
                         onClick={() => removeLineItem(li.key)}
-                        className="text-gray-400 hover:text-red-500 text-lg"
+                        className="text-gray-900 hover:text-red-500 text-lg"
                       >
                         &times;
                       </button>

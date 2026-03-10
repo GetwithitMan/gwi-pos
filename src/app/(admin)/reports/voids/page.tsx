@@ -196,7 +196,7 @@ export default function VoidReportsPage() {
         <Card className="p-4">
           <div className="flex flex-wrap gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
               <input
                 type="date"
                 value={startDate}
@@ -205,7 +205,7 @@ export default function VoidReportsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
               <input
                 type="date"
                 value={endDate}
@@ -214,7 +214,7 @@ export default function VoidReportsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Employee</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Employee</label>
               <select
                 value={selectedEmployeeId}
                 onChange={(e) => setSelectedEmployeeId(e.target.value)}
@@ -301,12 +301,12 @@ export default function VoidReportsPage() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-4 pb-8">
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading...</div>
+          <div className="text-center py-12 text-gray-900">Loading...</div>
         ) : viewMode === 'logs' ? (
           /* All Logs View */
           logs.length === 0 ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">No voids or comps found for this period.</p>
+              <p className="text-gray-900">No voids or comps found for this period.</p>
             </Card>
           ) : (
             <div className="space-y-2">
@@ -326,14 +326,14 @@ export default function VoidReportsPage() {
                         </span>
                         <span className="font-medium">
                           Order #{log.orderNumber}
-                          {log.tabName && <span className="text-gray-500"> ({log.tabName})</span>}
+                          {log.tabName && <span className="text-gray-900"> ({log.tabName})</span>}
                         </span>
                       </div>
                       {log.itemName && (
-                        <p className="text-sm text-gray-700 mt-1">Item: {log.itemName}</p>
+                        <p className="text-sm text-gray-900 mt-1">Item: {log.itemName}</p>
                       )}
                       <p className="text-sm text-gray-600 mt-1">Reason: {log.reason}</p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-gray-900 mt-1">
                         By {log.employeeName} at {formatDateTime(log.createdAt)}
                       </p>
                     </div>
@@ -358,11 +358,11 @@ export default function VoidReportsPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">{emp.name}</p>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-900">
                           {emp.voids} void(s), {emp.comps} comp(s)
                         </p>
                       </div>
-                      <p className="text-lg font-bold text-gray-700">
+                      <p className="text-lg font-bold text-gray-900">
                         {formatCurrency(emp.amount)}
                       </p>
                     </div>
@@ -371,7 +371,7 @@ export default function VoidReportsPage() {
             </div>
           ) : (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">No data available.</p>
+              <p className="text-gray-900">No data available.</p>
             </Card>
           )
         ) : (
@@ -385,9 +385,9 @@ export default function VoidReportsPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium">{item.reason}</p>
-                        <p className="text-sm text-gray-500">{item.count} occurrence(s)</p>
+                        <p className="text-sm text-gray-900">{item.count} occurrence(s)</p>
                       </div>
-                      <p className="text-lg font-bold text-gray-700">
+                      <p className="text-lg font-bold text-gray-900">
                         {formatCurrency(item.amount)}
                       </p>
                     </div>
@@ -396,7 +396,7 @@ export default function VoidReportsPage() {
             </div>
           ) : (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">No data available.</p>
+              <p className="text-gray-900">No data available.</p>
             </Card>
           )
         )}

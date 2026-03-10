@@ -67,7 +67,7 @@ export default function PrintSettingsEditor({
               className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${
                 activeTab === tab.id
                   ? 'bg-blue-600 text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                  : 'text-gray-900 hover:text-white hover:bg-gray-700'
               }`}
             >
               {tab.label}
@@ -533,14 +533,14 @@ export default function PrintSettingsEditor({
         <div className="px-6 py-4 border-t border-gray-700 flex items-center justify-between bg-gray-800 rounded-b-2xl">
           <button
             onClick={handleReset}
-            className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white"
+            className="px-4 py-2 text-sm font-medium text-gray-900 hover:text-white"
           >
             Reset to Defaults
           </button>
           <div className="flex gap-3">
             <button
               onClick={onCancel}
-              className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 rounded-md hover:bg-gray-600"
+              className="px-4 py-2 text-sm font-medium text-gray-900 bg-gray-700 rounded-md hover:bg-gray-600"
             >
               Cancel
             </button>
@@ -603,7 +603,7 @@ function Select({
 }) {
   return (
     <div className="p-3 bg-gray-700/50 rounded-lg">
-      <label className="block text-sm text-gray-400 mb-2">{label}</label>
+      <label className="block text-sm text-gray-900 mb-2">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -632,7 +632,7 @@ function TextInput({
 }) {
   return (
     <div className="p-3 bg-gray-700/50 rounded-lg">
-      <label className="block text-sm text-gray-400 mb-2">{label}</label>
+      <label className="block text-sm text-gray-900 mb-2">{label}</label>
       <input
         type="text"
         value={value}
@@ -659,7 +659,7 @@ function NumberInput({
 }) {
   return (
     <div className="p-3 bg-gray-700/50 rounded-lg">
-      <label className="block text-sm text-gray-400 mb-2">{label}</label>
+      <label className="block text-sm text-gray-900 mb-2">{label}</label>
       <input
         type="number"
         value={value}

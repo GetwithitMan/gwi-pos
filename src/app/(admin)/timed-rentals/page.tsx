@@ -493,10 +493,10 @@ function TimedRentalsContent() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <p className="text-gray-500">Loading...</p>
+              <p className="text-gray-900">Loading...</p>
             ) : timedItems.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-gray-500 mb-4">No entertainment items configured yet.</p>
+                <p className="text-gray-900 mb-4">No entertainment items configured yet.</p>
                 <Button onClick={() => router.push('/timed-rentals?item=new')}>
                   Create Your First Entertainment Item
                 </Button>
@@ -521,18 +521,18 @@ function TimedRentalsContent() {
                       </span>
                       <div>
                         <div className="font-medium">{item.name}</div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-gray-900">
                           {formatCurrency(item.timedPricing?.perHour || item.price)}/hr
                         </div>
                         {isDualPricingEnabled && (item.timedPricing?.perHour || item.price) > 0 && (
-                          <div className="text-xs text-gray-400">
+                          <div className="text-xs text-gray-900">
                             Card: {formatCurrency(calculateCardPrice(item.timedPricing?.perHour || item.price, cashDiscountPct))}/hr
                           </div>
                         )}
                       </div>
                     </div>
                     {item.blockTimeMinutes && (
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-gray-900">
                         {item.blockTimeMinutes} min blocks
                       </div>
                     )}
@@ -555,9 +555,9 @@ function TimedRentalsContent() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <p className="text-gray-500">Loading...</p>
+              <p className="text-gray-900">Loading...</p>
             ) : activeItems.length === 0 ? (
-              <p className="text-gray-500">No active sessions</p>
+              <p className="text-gray-900">No active sessions</p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {activeItems.map(item => (
@@ -581,7 +581,7 @@ function TimedRentalsContent() {
           </CardHeader>
           <CardContent>
             <div className="text-center py-6">
-              <p className="text-gray-500 mb-3">
+              <p className="text-gray-900 mb-3">
                 Session history is available on the Entertainment Center, which manages
                 all active and completed entertainment sessions tied to customer orders.
               </p>
@@ -609,7 +609,7 @@ function TimedRentalsContent() {
               {/* Name + Visual Type Row */}
               <div className="flex gap-4 items-end">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <label className="block text-sm font-medium text-gray-900 mb-1">Name</label>
                   <input
                     type="text"
                     value={builderForm.name}
@@ -619,7 +619,7 @@ function TimedRentalsContent() {
                   />
                 </div>
                 <div className="w-48">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Visual</label>
+                  <label className="block text-sm font-medium text-gray-900 mb-1">Visual</label>
                   <select
                     value={builderForm.visualType}
                     onChange={(e) => setBuilderForm({...builderForm, visualType: e.target.value as EntertainmentVisualType})}
@@ -636,12 +636,12 @@ function TimedRentalsContent() {
 
               {/* Pricing */}
               <div className="border-t pt-3 mt-3">
-                <div className="text-sm font-medium text-gray-700 mb-2">Pricing</div>
+                <div className="text-sm font-medium text-gray-900 mb-2">Pricing</div>
 
                 {/* Rate + Grace inline */}
                 <div className="flex items-center gap-4 mb-2">
                   <div className="flex items-center gap-1">
-                    <span className="text-gray-500">$</span>
+                    <span className="text-gray-900">$</span>
                     <input
                       type="number"
                       step="0.01"
@@ -650,14 +650,14 @@ function TimedRentalsContent() {
                       onChange={e => setBuilderForm({...builderForm, ratePerMinute: parseFloat(e.target.value) || 0.25})}
                       className="w-16 px-2 py-1 border rounded text-right text-sm"
                     />
-                    <span className="text-gray-500 text-sm">/min</span>
-                    <span className="text-gray-400 text-sm ml-1">(${(builderForm.ratePerMinute * 60).toFixed(2)}/hr)</span>
+                    <span className="text-gray-900 text-sm">/min</span>
+                    <span className="text-gray-900 text-sm ml-1">(${(builderForm.ratePerMinute * 60).toFixed(2)}/hr)</span>
                     {isDualPricingEnabled && builderForm.ratePerMinute > 0 && (
-                      <span className="text-xs text-gray-400 ml-1">Card: ${calculateCardPrice(builderForm.ratePerMinute * 60, cashDiscountPct).toFixed(2)}/hr</span>
+                      <span className="text-xs text-gray-900 ml-1">Card: ${calculateCardPrice(builderForm.ratePerMinute * 60, cashDiscountPct).toFixed(2)}/hr</span>
                     )}
                   </div>
                   <div className="flex items-center gap-1 ml-auto">
-                    <span className="text-gray-500 text-sm">Grace:</span>
+                    <span className="text-gray-900 text-sm">Grace:</span>
                     <input
                       type="number"
                       min="0"
@@ -666,7 +666,7 @@ function TimedRentalsContent() {
                       onChange={e => setBuilderForm({...builderForm, gracePeriodMinutes: parseInt(e.target.value) || 0})}
                       className="w-12 px-2 py-1 border rounded text-right text-sm"
                     />
-                    <span className="text-gray-500 text-sm">min</span>
+                    <span className="text-gray-900 text-sm">min</span>
                   </div>
                 </div>
 
@@ -681,7 +681,7 @@ function TimedRentalsContent() {
                   <span className="text-amber-700">Happy Hour:</span>
                   {builderForm.happyHourEnabled && (
                     <>
-                      <span className="text-gray-500">$</span>
+                      <span className="text-gray-900">$</span>
                       <input
                         type="number"
                         step="0.01"
@@ -690,10 +690,10 @@ function TimedRentalsContent() {
                         onChange={e => setBuilderForm({...builderForm, happyHourPrice: parseFloat(e.target.value) || 0})}
                         className="w-16 px-2 py-1 border rounded text-right text-sm"
                       />
-                      <span className="text-gray-500 text-sm">/min</span>
+                      <span className="text-gray-900 text-sm">/min</span>
                       <span className="text-amber-600 text-sm ml-1">(${((builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) * 60).toFixed(2)}/hr)</span>
                       {isDualPricingEnabled && (builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) > 0 && (
-                        <span className="text-xs text-gray-400 ml-1">Card: ${calculateCardPrice((builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) * 60, cashDiscountPct).toFixed(2)}/hr</span>
+                        <span className="text-xs text-gray-900 ml-1">Card: ${calculateCardPrice((builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) * 60, cashDiscountPct).toFixed(2)}/hr</span>
                       )}
                     </>
                   )}
@@ -704,14 +704,14 @@ function TimedRentalsContent() {
                   <div className="ml-6 mt-2 space-y-2">
                     {/* Time range */}
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-500">From</span>
+                      <span className="text-gray-900">From</span>
                       <input
                         type="time"
                         value={builderForm.happyHourStart}
                         onChange={e => setBuilderForm({...builderForm, happyHourStart: e.target.value})}
                         className="px-2 py-1 border rounded text-sm"
                       />
-                      <span className="text-gray-500">to</span>
+                      <span className="text-gray-900">to</span>
                       <input
                         type="time"
                         value={builderForm.happyHourEnd}
@@ -734,7 +734,7 @@ function TimedRentalsContent() {
                           className={`px-2 py-0.5 rounded text-xs font-medium ${
                             builderForm.happyHourDays.includes(day)
                               ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                              : 'bg-gray-100 text-gray-500 border border-gray-200'
+                              : 'bg-gray-100 text-gray-900 border border-gray-200'
                           }`}
                         >
                           {day.charAt(0).toUpperCase() + day.slice(1, 3)}
@@ -759,14 +759,14 @@ function TimedRentalsContent() {
                     onChange={e => setBuilderForm({...builderForm, overtimeEnabled: e.target.checked})}
                     className="rounded"
                   />
-                  <span className="font-medium text-gray-700">Enable Overtime Charges</span>
+                  <span className="font-medium text-gray-900">Enable Overtime Charges</span>
                 </label>
 
                 {builderForm.overtimeEnabled && (
                   <div className="ml-6 space-y-3">
                     {/* Mode selector pills */}
                     <div>
-                      <div className="text-xs text-gray-500 mb-1">Overtime Mode</div>
+                      <div className="text-xs text-gray-900 mb-1">Overtime Mode</div>
                       <div className="flex flex-wrap gap-1">
                         {([
                           { value: 'multiplier' as OvertimeMode, label: 'Rate Multiplier' },
@@ -781,7 +781,7 @@ function TimedRentalsContent() {
                             className={`px-3 py-1 rounded text-xs font-medium ${
                               builderForm.overtimeMode === mode.value
                                 ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                                : 'bg-gray-100 text-gray-500 border border-gray-200'
+                                : 'bg-gray-100 text-gray-900 border border-gray-200'
                             }`}
                           >
                             {mode.label}
@@ -794,7 +794,7 @@ function TimedRentalsContent() {
                     <div>
                       {builderForm.overtimeMode === 'multiplier' && (
                         <div className="flex items-center gap-1 text-sm">
-                          <span className="text-gray-500">Multiplier:</span>
+                          <span className="text-gray-900">Multiplier:</span>
                           <input
                             type="number"
                             step="0.1"
@@ -803,8 +803,8 @@ function TimedRentalsContent() {
                             onChange={e => setBuilderForm({...builderForm, overtimeMultiplier: parseFloat(e.target.value) || 1.5})}
                             className="w-16 px-2 py-1 border rounded text-right text-sm"
                           />
-                          <span className="text-gray-500">x base rate</span>
-                          <span className="text-gray-400 text-xs ml-1">
+                          <span className="text-gray-900">x base rate</span>
+                          <span className="text-gray-900 text-xs ml-1">
                             (${(builderForm.ratePerMinute * builderForm.overtimeMultiplier).toFixed(2)}/min)
                           </span>
                         </div>
@@ -812,7 +812,7 @@ function TimedRentalsContent() {
 
                       {builderForm.overtimeMode === 'custom_rate' && (
                         <div className="flex items-center gap-1 text-sm">
-                          <span className="text-gray-500">Rate: $</span>
+                          <span className="text-gray-900">Rate: $</span>
                           <input
                             type="number"
                             step="0.01"
@@ -821,8 +821,8 @@ function TimedRentalsContent() {
                             onChange={e => setBuilderForm({...builderForm, overtimePerMinuteRate: parseFloat(e.target.value) || 0.50})}
                             className="w-16 px-2 py-1 border rounded text-right text-sm"
                           />
-                          <span className="text-gray-500">/min</span>
-                          <span className="text-gray-400 text-xs ml-1">
+                          <span className="text-gray-900">/min</span>
+                          <span className="text-gray-900 text-xs ml-1">
                             (${(builderForm.overtimePerMinuteRate * 60).toFixed(2)}/hr)
                           </span>
                         </div>
@@ -830,7 +830,7 @@ function TimedRentalsContent() {
 
                       {builderForm.overtimeMode === 'per_minute' && (
                         <div className="flex items-center gap-1 text-sm">
-                          <span className="text-gray-500">Rate: $</span>
+                          <span className="text-gray-900">Rate: $</span>
                           <input
                             type="number"
                             step="0.01"
@@ -839,8 +839,8 @@ function TimedRentalsContent() {
                             onChange={e => setBuilderForm({...builderForm, overtimePerMinuteRate: parseFloat(e.target.value) || 0.35})}
                             className="w-16 px-2 py-1 border rounded text-right text-sm"
                           />
-                          <span className="text-gray-500">/min (exact)</span>
-                          <span className="text-gray-400 text-xs ml-1">
+                          <span className="text-gray-900">/min (exact)</span>
+                          <span className="text-gray-900 text-xs ml-1">
                             (${(builderForm.overtimePerMinuteRate * 60).toFixed(2)}/hr)
                           </span>
                         </div>
@@ -848,7 +848,7 @@ function TimedRentalsContent() {
 
                       {builderForm.overtimeMode === 'flat_fee' && (
                         <div className="flex items-center gap-1 text-sm">
-                          <span className="text-gray-500">Fee: $</span>
+                          <span className="text-gray-900">Fee: $</span>
                           <input
                             type="number"
                             step="1"
@@ -857,14 +857,14 @@ function TimedRentalsContent() {
                             onChange={e => setBuilderForm({...builderForm, overtimeFlatFee: parseFloat(e.target.value) || 10})}
                             className="w-16 px-2 py-1 border rounded text-right text-sm"
                           />
-                          <span className="text-gray-500">one-time</span>
+                          <span className="text-gray-900">one-time</span>
                         </div>
                       )}
                     </div>
 
                     {/* Grace period */}
                     <div className="flex items-center gap-1 text-sm">
-                      <span className="text-gray-500">Grace period:</span>
+                      <span className="text-gray-900">Grace period:</span>
                       <input
                         type="number"
                         min="0"
@@ -873,7 +873,7 @@ function TimedRentalsContent() {
                         onChange={e => setBuilderForm({...builderForm, overtimeGraceMinutes: parseInt(e.target.value) || 0})}
                         className="w-12 px-2 py-1 border rounded text-right text-sm"
                       />
-                      <span className="text-gray-500">min before overtime starts</span>
+                      <span className="text-gray-900">min before overtime starts</span>
                     </div>
 
                     {/* Preview text */}
@@ -902,7 +902,7 @@ function TimedRentalsContent() {
               {/* Prepaid Packages */}
               <div className="border-t pt-3 mt-3">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Prepaid Packages</span>
+                  <span className="text-sm font-medium text-gray-900">Prepaid Packages</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -930,7 +930,7 @@ function TimedRentalsContent() {
                           }}
                           className="w-12 px-1 py-0.5 border rounded text-right text-sm"
                         />
-                        <span className="text-gray-500">min = $</span>
+                        <span className="text-gray-900">min = $</span>
                         <input
                           type="number"
                           step="0.50"
@@ -946,7 +946,7 @@ function TimedRentalsContent() {
                           <span className="text-green-600 text-xs">(saves ${savings.toFixed(2)})</span>
                         )}
                         {isDualPricingEnabled && pkg.price > 0 && (
-                          <span className="text-xs text-gray-400">Card: ${calculateCardPrice(pkg.price, cashDiscountPct).toFixed(2)}</span>
+                          <span className="text-xs text-gray-900">Card: ${calculateCardPrice(pkg.price, cashDiscountPct).toFixed(2)}</span>
                         )}
                         <button
                           type="button"
@@ -966,7 +966,7 @@ function TimedRentalsContent() {
 
               {/* Inline Status Radio Buttons */}
               <div className="flex items-center gap-6 border-t pt-3 mt-3">
-                <span className="text-sm font-medium text-gray-700">Status:</span>
+                <span className="text-sm font-medium text-gray-900">Status:</span>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="radio"
@@ -1072,7 +1072,7 @@ function ActiveSessionCard({
           <div>
             <h3 className="font-bold">{item.displayName}</h3>
             {item.currentOrder && (
-              <p className="text-sm text-gray-500">Tab: {item.currentOrder.tabName}</p>
+              <p className="text-sm text-gray-900">Tab: {item.currentOrder.tabName}</p>
             )}
           </div>
           <span className="px-2 py-1 rounded text-xs bg-red-100 text-red-800">
@@ -1097,7 +1097,7 @@ function ActiveSessionCard({
         {/* Estimated charge based on per-minute rate */}
         {item.price > 0 && item.timeInfo?.minutesElapsed != null && (
           <div className="text-center mb-3">
-            <p className="text-sm text-gray-500">Est. charge</p>
+            <p className="text-sm text-gray-900">Est. charge</p>
             <p className="text-lg font-bold text-green-600">
               {formatCurrency(item.price * (item.timeInfo.minutesElapsed / 60))}
             </p>

@@ -115,22 +115,22 @@ export default function FeedbackDashboardPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-6">
         <div>
-          <label className="text-xs text-gray-500 block mb-1">From</label>
+          <label className="text-xs text-gray-900 block mb-1">From</label>
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border rounded px-3 py-1.5 text-sm" />
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">To</label>
+          <label className="text-xs text-gray-900 block mb-1">To</label>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border rounded px-3 py-1.5 text-sm" />
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Rating</label>
+          <label className="text-xs text-gray-900 block mb-1">Rating</label>
           <select value={ratingFilter} onChange={e => setRatingFilter(e.target.value)} className="border rounded px-3 py-1.5 text-sm">
             <option value="">All</option>
             {[1, 2, 3, 4, 5].map(r => <option key={r} value={r}>{r} Star{r > 1 ? 's' : ''}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Source</label>
+          <label className="text-xs text-gray-900 block mb-1">Source</label>
           <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="border rounded px-3 py-1.5 text-sm">
             <option value="">All</option>
             <option value="in_store">In-Store</option>
@@ -151,7 +151,7 @@ export default function FeedbackDashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-500">Average Rating</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-900">Average Rating</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold">{agg?.averageRating?.toFixed(1) ?? '—'}</div>
@@ -161,13 +161,13 @@ export default function FeedbackDashboardPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-500">NPS Score</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-900">NPS Score</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold" style={{ color: (agg?.npsScore ?? 0) >= 0 ? '#16a34a' : '#dc2626' }}>
                   {agg?.npsScore ?? 0}
                 </div>
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-900 mt-1">
                   {(agg?.npsScore ?? 0) >= 50 ? 'Excellent' : (agg?.npsScore ?? 0) >= 0 ? 'Good' : 'Needs improvement'}
                 </p>
               </CardContent>
@@ -175,7 +175,7 @@ export default function FeedbackDashboardPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-500">Total Responses</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-900">Total Responses</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold">{agg?.totalCount ?? 0}</div>
@@ -184,7 +184,7 @@ export default function FeedbackDashboardPage() {
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-gray-500">Low Ratings (1-2)</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-900">Low Ratings (1-2)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-red-600">
@@ -199,7 +199,7 @@ export default function FeedbackDashboardPage() {
             {/* Distribution */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-gray-500">Rating Distribution</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-900">Rating Distribution</CardTitle>
               </CardHeader>
               <CardContent>
                 {[5, 4, 3, 2, 1].map(star => (
@@ -215,7 +215,7 @@ export default function FeedbackDashboardPage() {
                         }}
                       />
                     </div>
-                    <span className="text-sm text-gray-500 w-8">{dist[star] ?? 0}</span>
+                    <span className="text-sm text-gray-900 w-8">{dist[star] ?? 0}</span>
                   </div>
                 ))}
               </CardContent>
@@ -224,11 +224,11 @@ export default function FeedbackDashboardPage() {
             {/* Tags */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm font-medium text-gray-500">Top Feedback Tags</CardTitle>
+                <CardTitle className="text-sm font-medium text-gray-900">Top Feedback Tags</CardTitle>
               </CardHeader>
               <CardContent>
                 {(agg?.topTags ?? []).length === 0 ? (
-                  <p className="text-gray-400 text-sm">No tagged feedback yet</p>
+                  <p className="text-gray-900 text-sm">No tagged feedback yet</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {agg!.topTags.map(t => (
@@ -252,11 +252,11 @@ export default function FeedbackDashboardPage() {
           {/* Recent Comments */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm font-medium text-gray-500">Recent Feedback</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-900">Recent Feedback</CardTitle>
             </CardHeader>
             <CardContent>
               {entries.length === 0 ? (
-                <p className="text-gray-400 text-sm py-4 text-center">No feedback yet</p>
+                <p className="text-gray-900 text-sm py-4 text-center">No feedback yet</p>
               ) : (
                 <div className="divide-y">
                   {entries.map(entry => (
@@ -266,11 +266,11 @@ export default function FeedbackDashboardPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         {entry.comment && (
-                          <p className="text-sm text-gray-700 mb-1">{entry.comment}</p>
+                          <p className="text-sm text-gray-900 mb-1">{entry.comment}</p>
                         )}
-                        <div className="flex items-center gap-2 text-xs text-gray-400">
+                        <div className="flex items-center gap-2 text-xs text-gray-900">
                           <span>{formatDate(entry.createdAt)}</span>
-                          <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{entry.source.replace('_', ' ')}</span>
+                          <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-900">{entry.source.replace('_', ' ')}</span>
                           {entry.tags.length > 0 && entry.tags.map(tag => (
                             <span key={tag} className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600">{tag.replace(/_/g, ' ')}</span>
                           ))}

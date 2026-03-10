@@ -141,7 +141,7 @@ export default function DaypartReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -150,7 +150,7 @@ export default function DaypartReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -166,40 +166,40 @@ export default function DaypartReportPage() {
         </Card>
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading report...</div>
+          <div className="text-center py-12 text-gray-900">Loading report...</div>
         ) : !report ? (
-          <div className="text-center py-12 text-gray-500">No data available</div>
+          <div className="text-center py-12 text-gray-900">No data available</div>
         ) : (
           <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Total Revenue</p>
+                  <p className="text-xs text-gray-900">Total Revenue</p>
                   <p className="text-xl font-bold text-green-600">{formatCurrency(report.totals.revenue)}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Total Orders</p>
+                  <p className="text-xs text-gray-900">Total Orders</p>
                   <p className="text-xl font-bold text-blue-600">{report.totals.orderCount}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Avg Check</p>
+                  <p className="text-xs text-gray-900">Avg Check</p>
                   <p className="text-xl font-bold text-purple-600">{formatCurrency(report.totals.avgCheck)}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Total Covers</p>
-                  <p className="text-xl font-bold text-gray-700">{report.totals.covers}</p>
+                  <p className="text-xs text-gray-900">Total Covers</p>
+                  <p className="text-xl font-bold text-gray-900">{report.totals.covers}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Total Tips</p>
+                  <p className="text-xs text-gray-900">Total Tips</p>
                   <p className="text-xl font-bold text-orange-600">{formatCurrency(report.totals.tipTotal)}</p>
                 </CardContent>
               </Card>
@@ -216,8 +216,8 @@ export default function DaypartReportPage() {
                     const percentage = maxRevenue > 0 ? (dp.revenue / maxRevenue) * 100 : 0
                     return (
                       <div key={dp.name} className="flex items-center gap-4">
-                        <div className="w-24 text-sm font-medium text-gray-700">{dp.name}</div>
-                        <div className="text-xs text-gray-400 w-20">
+                        <div className="w-24 text-sm font-medium text-gray-900">{dp.name}</div>
+                        <div className="text-xs text-gray-900 w-20">
                           {formatHour(dp.startHour)}–{formatHour(dp.endHour)}
                         </div>
                         <div className="flex-1 h-10 bg-gray-100 rounded-lg overflow-hidden relative">
@@ -251,14 +251,14 @@ export default function DaypartReportPage() {
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Daypart</th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Hours</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Orders</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Revenue</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Avg Check</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Covers</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Tips</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">% of Total</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Daypart</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Hours</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Orders</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Revenue</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Avg Check</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Covers</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Tips</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">% of Total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -270,7 +270,7 @@ export default function DaypartReportPage() {
                               <span className="font-medium">{dp.name}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-gray-500 text-sm">
+                          <td className="px-4 py-3 text-gray-900 text-sm">
                             {formatHour(dp.startHour)}–{formatHour(dp.endHour)}
                           </td>
                           <td className="px-4 py-3 text-right">{dp.orderCount}</td>
@@ -278,7 +278,7 @@ export default function DaypartReportPage() {
                           <td className="px-4 py-3 text-right">{formatCurrency(dp.avgCheck)}</td>
                           <td className="px-4 py-3 text-right">{dp.covers}</td>
                           <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(dp.tipTotal)}</td>
-                          <td className="px-4 py-3 text-right text-gray-500">
+                          <td className="px-4 py-3 text-right text-gray-900">
                             {report.totals.revenue > 0 ? Math.round((dp.revenue / report.totals.revenue) * 100) : 0}%
                           </td>
                         </tr>
@@ -301,7 +301,7 @@ export default function DaypartReportPage() {
             </Card>
 
             {/* Footer */}
-            <div className="text-center text-xs text-gray-500 pt-4">
+            <div className="text-center text-xs text-gray-900 pt-4">
               {report.filters.startDate} to {report.filters.endDate} — Generated on {new Date().toLocaleString()}
             </div>
           </div>

@@ -104,7 +104,7 @@ export function CategoriesBar({
   return (
     <div className="bg-white border-b px-4 py-1.5 shrink-0">
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-medium text-gray-700">Categories</span>
+        <span className="text-xs font-medium text-gray-900">Categories</span>
         {isDraggingItem && (
           <span className="text-xs text-green-600 font-medium animate-pulse">
             Drop on a category to move
@@ -141,8 +141,8 @@ export function CategoriesBar({
             `}</style>
           </div>
         ) : categories.length === 0 ? (
-          <div className="flex flex-col items-center py-8 text-gray-400">
-            <svg className="w-10 h-10 mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <div className="flex flex-col items-center py-8 text-gray-900">
+            <svg className="w-10 h-10 mb-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6z" />
             </svg>
             <p className="text-sm font-medium">No categories yet</p>

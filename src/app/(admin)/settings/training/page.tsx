@@ -72,7 +72,7 @@ function LoginMessageEditor({
           </div>
           <button
             onClick={() => handleRemove(i)}
-            className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
+            className="text-gray-900 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
             title="Remove message"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -84,7 +84,7 @@ function LoginMessageEditor({
 
       {/* Add new message */}
       <div className="border border-dashed border-gray-300 rounded-lg p-4 space-y-3">
-        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">New Message</div>
+        <div className="text-xs font-medium text-gray-900 uppercase tracking-wide">New Message</div>
         <textarea
           value={newText}
           onChange={e => setNewText(e.target.value)}
@@ -145,7 +145,7 @@ function TrainingEmployeeList({
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <p className="text-sm text-gray-500">Loading employees...</p>
+  if (loading) return <p className="text-sm text-gray-900">Loading employees...</p>
 
   return (
     <div className="space-y-1 max-h-64 overflow-y-auto">
@@ -163,7 +163,7 @@ function TrainingEmployeeList({
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 isTraining
                   ? 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
               }`}
             >
               {isTraining ? 'In Training' : 'Normal'}
@@ -270,7 +270,7 @@ export default function TrainingSettingsPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-700">Loading...</p>
+        <p className="text-gray-900">Loading...</p>
       </div>
     )
   }
@@ -284,7 +284,7 @@ export default function TrainingSettingsPage() {
         {/* ─── Login Messages Section ─── */}
         <section className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Login Screen Messages</h2>
-          <p className="text-sm text-gray-500 mb-4">Display announcements, reminders, or alerts on the login screen for all staff.</p>
+          <p className="text-sm text-gray-900 mb-4">Display announcements, reminders, or alerts on the login screen for all staff.</p>
 
           <ToggleRow
             label="Enable Login Messages"
@@ -306,7 +306,7 @@ export default function TrainingSettingsPage() {
         {/* ─── Training Mode Section ─── */}
         <section className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Training Mode</h2>
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-gray-900 mb-4">
             Enable training mode for new employees. Training orders will not hit real payment processors,
             print kitchen tickets, or deduct inventory.
           </p>
@@ -344,7 +344,7 @@ export default function TrainingSettingsPage() {
 
               <div className="pt-4 border-t border-gray-100">
                 <h3 className="text-sm font-medium text-gray-900 mb-2">Training Employees</h3>
-                <p className="text-xs text-gray-500 mb-3">
+                <p className="text-xs text-gray-900 mb-3">
                   Select which employees are in training mode. Their orders will be flagged as training
                   and handled according to the settings above.
                 </p>

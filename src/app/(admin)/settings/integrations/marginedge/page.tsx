@@ -266,7 +266,7 @@ export default function MarginEdgeIntegrationPage() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">MarginEdge</h1>
-          <p className="text-gray-500">
+          <p className="text-gray-900">
             Sync invoice and product data from MarginEdge to keep ingredient costs
             current automatically. One-way sync: MarginEdge to GWI POS.
           </p>
@@ -313,7 +313,7 @@ export default function MarginEdgeIntegrationPage() {
               </Button>
             </div>
             {!hasApiKey && !loading && (
-              <p className="text-xs text-gray-400">Enter your API key below and save before testing.</p>
+              <p className="text-xs text-gray-900">Enter your API key below and save before testing.</p>
             )}
           </CardContent>
         </Card>
@@ -324,7 +324,7 @@ export default function MarginEdgeIntegrationPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">API Key</label>
                 {hasApiKey && (
                   <div className="flex items-center gap-1.5 text-xs text-green-700 mb-1.5">
                     <span>✓ Configured</span>
@@ -338,11 +338,11 @@ export default function MarginEdgeIntegrationPage() {
                   autoComplete="new-password"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">Write-only — never displayed after saving</p>
+                <p className="text-xs text-gray-900 mt-1">Write-only — never displayed after saving</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Restaurant ID (Optional)</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Restaurant ID (Optional)</label>
                 <input
                   type="text"
                   value={form.restaurantId || ''}
@@ -350,7 +350,7 @@ export default function MarginEdgeIntegrationPage() {
                   placeholder="MarginEdge restaurant ID"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">Only needed if your account has multiple restaurants</p>
+                <p className="text-xs text-gray-900 mt-1">Only needed if your account has multiple restaurants</p>
               </div>
             </div>
           </CardContent>
@@ -379,7 +379,7 @@ export default function MarginEdgeIntegrationPage() {
               onChange={v => updateSyncOption('autoUpdateCosts', v)}
             />
             <div className="pt-2 border-t">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Cost Change Alert Threshold</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Cost Change Alert Threshold</label>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -389,9 +389,9 @@ export default function MarginEdgeIntegrationPage() {
                   onChange={e => updateSyncOption('costChangeAlertThreshold', Number(e.target.value) || 5)}
                   className="w-20 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-500">%</span>
+                <span className="text-sm text-gray-900">%</span>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Only update costs when the change exceeds this percentage.</p>
+              <p className="text-xs text-gray-900 mt-1">Only update costs when the change exceeds this percentage.</p>
             </div>
           </CardContent>
         </Card>
@@ -402,8 +402,8 @@ export default function MarginEdgeIntegrationPage() {
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-gray-700">Sync Products</div>
-                <p className="text-xs text-gray-500">
+                <div className="text-sm font-medium text-gray-900">Sync Products</div>
+                <p className="text-xs text-gray-900">
                   Fetch product catalog from MarginEdge.
                   {status?.productMappings != null && ` ${status.productMappings} products currently mapped.`}
                 </p>
@@ -420,8 +420,8 @@ export default function MarginEdgeIntegrationPage() {
 
             <div className="flex items-center justify-between pt-2 border-t">
               <div>
-                <div className="text-sm font-medium text-gray-700">Sync Invoices</div>
-                <p className="text-xs text-gray-500">
+                <div className="text-sm font-medium text-gray-900">Sync Invoices</div>
+                <p className="text-xs text-gray-900">
                   Import invoices from the last 30 days.
                   {status?.lastInvoiceSyncAt && ` Last sync: ${new Date(status.lastInvoiceSyncAt).toLocaleDateString()}`}
                 </p>
@@ -437,7 +437,7 @@ export default function MarginEdgeIntegrationPage() {
             </div>
 
             {status?.lastSyncAt && (
-              <div className="pt-2 border-t text-xs text-gray-500">
+              <div className="pt-2 border-t text-xs text-gray-900">
                 Last sync: {new Date(status.lastSyncAt).toLocaleString()}
                 {status.lastSyncStatus && (
                   <span className={status.lastSyncStatus === 'success' ? ' text-green-600' : ' text-red-600'}>
@@ -457,7 +457,7 @@ export default function MarginEdgeIntegrationPage() {
           <Card>
             <CardHeader>
               <CardTitle>Product Mapping ({unmappedProducts.length} unmapped)</CardTitle>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-900 mt-1">
                 Link MarginEdge products to GWI inventory items so invoice costs update automatically.
               </p>
             </CardHeader>
@@ -467,7 +467,7 @@ export default function MarginEdgeIntegrationPage() {
                   <div key={p.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-800 truncate">{p.name}</div>
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs text-gray-900">
                         {[p.category, p.vendorName, p.unit].filter(Boolean).join(' · ')}
                       </div>
                     </div>
@@ -480,7 +480,7 @@ export default function MarginEdgeIntegrationPage() {
                         className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                       {mappingLoading[p.id] && (
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400">...</div>
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-900">...</div>
                       )}
                       {(mappingOptions[p.id] ?? []).length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -492,7 +492,7 @@ export default function MarginEdgeIntegrationPage() {
                               className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center justify-between"
                             >
                               <span className="font-medium truncate">{item.name}</span>
-                              <span className="text-xs text-gray-400 ml-2 flex-shrink-0">{item.itemType}{item.unit ? ` · ${item.unit}` : ''}</span>
+                              <span className="text-xs text-gray-900 ml-2 flex-shrink-0">{item.itemType}{item.unit ? ` · ${item.unit}` : ''}</span>
                             </button>
                           ))}
                         </div>

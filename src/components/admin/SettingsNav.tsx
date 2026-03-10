@@ -114,6 +114,18 @@ const settingsSections: SettingsSection[] = [
     ],
   },
   {
+    title: 'Memberships',
+    icon: '🔄',
+    permission: PERMISSIONS.SETTINGS_CUSTOMERS,
+    items: [
+      { name: 'Dashboard', href: '/memberships' },
+      { name: 'Plans', href: '/memberships?tab=plans' },
+      { name: 'Members', href: '/memberships?tab=members' },
+      { name: 'Reports', href: '/reports/memberships' },
+      { name: 'Settings', href: '/settings/memberships' },
+    ],
+  },
+  {
     title: 'Team',
     icon: '👔',
     permission: PERMISSIONS.SETTINGS_TEAM,
@@ -328,7 +340,7 @@ export function SettingsNav() {
         {/* Expand button */}
         <button
           onClick={toggleCollapse}
-          className="flex items-center justify-center h-10 border-b text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors flex-shrink-0"
+          className="flex items-center justify-center h-10 border-b text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors flex-shrink-0"
           title="Expand navigation"
           aria-label="Expand navigation"
         >
@@ -356,7 +368,7 @@ export function SettingsNav() {
                 className={`w-10 h-9 flex items-center justify-center rounded-lg text-base my-0.5 transition-colors ${
                   hasSectionActive
                     ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                    : 'text-gray-900 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
                 <span aria-hidden="true">{section.icon}</span>
@@ -377,7 +389,7 @@ export function SettingsNav() {
           {isCloud ? (
             <a
               href={MISSION_CONTROL_URL}
-              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1"
+              className="flex items-center gap-2 text-sm text-gray-900 hover:text-gray-900 mb-1"
             >
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -385,7 +397,7 @@ export function SettingsNav() {
               Mission Control
             </a>
           ) : (
-            <Link href="/orders" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1">
+            <Link href="/orders" className="flex items-center gap-2 text-sm text-gray-900 hover:text-gray-900 mb-1">
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
@@ -398,7 +410,7 @@ export function SettingsNav() {
         {/* Collapse button */}
         <button
           onClick={toggleCollapse}
-          className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0 mt-0.5"
+          className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors flex-shrink-0 mt-0.5"
           title="Collapse navigation"
           aria-label="Collapse navigation"
         >
@@ -422,7 +434,7 @@ export function SettingsNav() {
                 className={`w-full px-3 py-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wider transition-colors ${
                   hasSectionActive
                     ? 'text-blue-700 bg-blue-50/50'
-                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    : 'text-gray-900 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 <span className="flex items-center gap-1.5">

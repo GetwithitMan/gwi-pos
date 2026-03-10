@@ -206,7 +206,7 @@ export default function ProductMixReportPage() {
               setStartDate(d.toISOString().split('T')[0])
               setEndDate(new Date().toISOString().split('T')[0])
             }}
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-900"
           >
             7 Days
           </button>
@@ -217,7 +217,7 @@ export default function ProductMixReportPage() {
               setStartDate(d.toISOString().split('T')[0])
               setEndDate(new Date().toISOString().split('T')[0])
             }}
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-900"
           >
             30 Days
           </button>
@@ -228,7 +228,7 @@ export default function ProductMixReportPage() {
               setStartDate(d.toISOString().split('T')[0])
               setEndDate(new Date().toISOString().split('T')[0])
             }}
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-900"
           >
             90 Days
           </button>
@@ -272,25 +272,25 @@ export default function ProductMixReportPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-          <div className="text-gray-500 text-sm">Total Revenue</div>
+          <div className="text-gray-900 text-sm">Total Revenue</div>
           <div className="text-2xl font-bold text-gray-900">${report.summary.totalRevenue.toFixed(2)}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-          <div className="text-gray-500 text-sm">Total Cost</div>
+          <div className="text-gray-900 text-sm">Total Cost</div>
           <div className="text-2xl font-bold text-gray-900">${report.summary.totalCost.toFixed(2)}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-          <div className="text-gray-500 text-sm">Gross Profit</div>
+          <div className="text-gray-900 text-sm">Gross Profit</div>
           <div className="text-2xl font-bold text-green-600">
             ${report.summary.totalProfit.toFixed(2)}
           </div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-          <div className="text-gray-500 text-sm">Items Sold</div>
+          <div className="text-gray-900 text-sm">Items Sold</div>
           <div className="text-2xl font-bold text-gray-900">{report.summary.totalQuantity}</div>
         </div>
         <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-          <div className="text-gray-500 text-sm">Profit Margin</div>
+          <div className="text-gray-900 text-sm">Profit Margin</div>
           <div className="text-2xl font-bold text-gray-900">{report.summary.profitMargin.toFixed(1)}%</div>
         </div>
       </div>
@@ -304,7 +304,7 @@ export default function ProductMixReportPage() {
             className={`px-4 py-2 rounded-lg capitalize font-medium ${
               view === v
                 ? 'bg-blue-600 text-white'
-                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
             }`}
           >
             {v === 'pairings' ? 'Item Pairings' : v}
@@ -363,14 +363,14 @@ export default function ProductMixReportPage() {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="text-left p-4 text-gray-700 font-semibold">Item</th>
-                  <th className="text-left p-4 text-gray-700 font-semibold">Category</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Qty</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Revenue</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Cost</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Profit</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Margin</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">% of Sales</th>
+                  <th className="text-left p-4 text-gray-900 font-semibold">Item</th>
+                  <th className="text-left p-4 text-gray-900 font-semibold">Category</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Qty</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Revenue</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Cost</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Profit</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Margin</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">% of Sales</th>
                 </tr>
               </thead>
               <tbody>
@@ -408,14 +408,14 @@ export default function ProductMixReportPage() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="text-left p-4 text-gray-700 font-semibold">Category</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">Items</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">Qty Sold</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">Revenue</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">Cost</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">Profit</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">Margin</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">% of Sales</th>
+                <th className="text-left p-4 text-gray-900 font-semibold">Category</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">Items</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">Qty Sold</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">Revenue</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">Cost</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">Profit</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">Margin</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">% of Sales</th>
               </tr>
             </thead>
             <tbody>
@@ -483,15 +483,15 @@ export default function ProductMixReportPage() {
         <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Frequently Ordered Together</h3>
           {report.pairings.length === 0 ? (
-            <p className="text-gray-500">No significant pairings found</p>
+            <p className="text-gray-900">No significant pairings found</p>
           ) : (
             <div className="space-y-3">
               {report.pairings.map((pairing, i) => (
                 <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
                   <div className="flex items-center gap-3">
-                    <span className="text-gray-500 font-medium">{i + 1}.</span>
+                    <span className="text-gray-900 font-medium">{i + 1}.</span>
                     <span className="font-medium text-gray-900">{pairing.names[0]}</span>
-                    <span className="text-gray-400">+</span>
+                    <span className="text-gray-900">+</span>
                     <span className="font-medium text-gray-900">{pairing.names[1]}</span>
                   </div>
                   <span className="text-blue-600 font-semibold">{pairing.count} orders</span>

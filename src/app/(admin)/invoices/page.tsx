@@ -31,7 +31,7 @@ interface Vendor {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
+  draft: 'bg-gray-100 text-gray-900',
   pending: 'bg-yellow-100 text-yellow-800',
   posted: 'bg-green-100 text-green-800',
   approved: 'bg-blue-100 text-blue-800',
@@ -216,7 +216,7 @@ export default function InvoicesPage() {
           className="border rounded px-3 py-2 text-sm"
           placeholder="Start date"
         />
-        <span className="text-gray-400 text-sm">to</span>
+        <span className="text-gray-900 text-sm">to</span>
         <input
           type="date"
           value={endDate}
@@ -244,10 +244,10 @@ export default function InvoicesPage() {
 
       {/* Table */}
       {isLoading ? (
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-900">Loading...</p>
       ) : invoices.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             No invoices found. Create your first invoice to start tracking costs.
           </CardContent>
         </Card>

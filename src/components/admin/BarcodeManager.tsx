@@ -129,7 +129,7 @@ export function BarcodeManager({ menuItemId, inventoryItemId, locationId }: Barc
   }
 
   const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-  const labelClass = 'block text-xs font-semibold text-gray-700 mb-1'
+  const labelClass = 'block text-xs font-semibold text-gray-900 mb-1'
 
   if (loading) {
     return <div className="py-8 text-center text-sm text-gray-600">Loading barcodes...</div>
@@ -140,7 +140,7 @@ export function BarcodeManager({ menuItemId, inventoryItemId, locationId }: Barc
       {/* Barcode List */}
       {barcodes.length === 0 && !showForm ? (
         <div className="bg-gray-50 rounded-lg p-6 text-center">
-          <p className="text-sm text-gray-700">No barcodes assigned</p>
+          <p className="text-sm text-gray-900">No barcodes assigned</p>
           <p className="text-xs text-gray-600 mt-1">Add barcodes for different pack sizes (single, 6-pack, case, etc.)</p>
         </div>
       ) : (
@@ -157,10 +157,10 @@ export function BarcodeManager({ menuItemId, inventoryItemId, locationId }: Barc
                   )}
                 </div>
                 <div className="flex items-center gap-3 mt-0.5">
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-900">
                     Pack: {bc.packSize}
                   </span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-900">
                     {bc.price != null ? `$${Number(bc.price).toFixed(2)}` : 'Base price'}
                   </span>
                 </div>

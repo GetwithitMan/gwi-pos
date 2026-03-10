@@ -300,7 +300,7 @@ export function PricingOptionInventoryLinker({
           </span>
         )}
         {totalCost > 0 && (
-          <span className="text-[10px] text-gray-700 font-normal ml-1">
+          <span className="text-[10px] text-gray-900 font-normal ml-1">
             (${totalCost.toFixed(2)})
           </span>
         )}
@@ -309,7 +309,7 @@ export function PricingOptionInventoryLinker({
       {expanded && (
         <div className="mt-1.5 ml-2 border-l-2 border-purple-200 pl-2 space-y-1.5">
           {loading ? (
-            <div className="text-[11px] text-gray-600 py-1">Loading...</div>
+            <div className="text-[11px] text-gray-900 py-1">Loading...</div>
           ) : (
             <>
               {/* Linked items list */}
@@ -325,13 +325,13 @@ export function PricingOptionInventoryLinker({
                   ))}
                   {totalCost > 0 && (
                     <div className="flex items-center justify-between pt-1 border-t border-purple-100">
-                      <span className="text-[10px] font-semibold text-gray-700">Total cost</span>
-                      <span className="text-[11px] font-bold text-gray-700">${totalCost.toFixed(2)}</span>
+                      <span className="text-[10px] font-semibold text-gray-900">Total cost</span>
+                      <span className="text-[11px] font-bold text-gray-900">${totalCost.toFixed(2)}</span>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-[10px] text-gray-600 py-0.5">No inventory linked yet.</p>
+                <p className="text-[10px] text-gray-900 py-0.5">No inventory linked yet.</p>
               )}
 
               {/* Add button / picker toggle */}
@@ -342,7 +342,7 @@ export function PricingOptionInventoryLinker({
                     <button
                       type="button"
                       onClick={() => { setShowPicker(false); setSearchTerm('') }}
-                      className="text-[10px] text-gray-400 hover:text-red-500"
+                      className="text-[10px] text-gray-600 hover:text-red-500"
                     >
                       Close
                     </button>
@@ -443,7 +443,7 @@ function LinkedItemRow({
   return (
     <div className={`flex items-center gap-1.5 py-0.5 ${isTemp ? 'opacity-50' : ''}`}>
       <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-      <span className="text-[11px] text-gray-700 truncate flex-1 min-w-0" title={name}>
+      <span className="text-[11px] text-gray-900 truncate flex-1 min-w-0" title={name}>
         {name}
       </span>
 
@@ -474,11 +474,11 @@ function LinkedItemRow({
 
       {/* Cost display */}
       {link.calculatedCost != null && link.calculatedCost > 0 ? (
-        <span className="text-[10px] text-gray-700 shrink-0 w-12 text-right">
+        <span className="text-[10px] text-gray-900 shrink-0 w-12 text-right">
           ${link.calculatedCost.toFixed(2)}
         </span>
       ) : (
-        <span className="text-[10px] text-gray-300 shrink-0 w-12 text-right">--</span>
+        <span className="text-[10px] text-gray-500 shrink-0 w-12 text-right">--</span>
       )}
 
       {/* Remove button */}
@@ -486,7 +486,7 @@ function LinkedItemRow({
         type="button"
         onClick={onRemove}
         disabled={isTemp}
-        className="p-0.5 text-gray-300 hover:text-red-500 transition-colors shrink-0 disabled:opacity-30"
+        className="p-0.5 text-gray-500 hover:text-red-500 transition-colors shrink-0 disabled:opacity-30"
         title="Remove link"
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

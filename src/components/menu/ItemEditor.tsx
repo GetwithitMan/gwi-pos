@@ -312,7 +312,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
         }}
       >
         <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-sm">
-          <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs" title="Drag to reorder">⠿</span>
+          <span className="cursor-grab text-gray-500 hover:text-gray-900 text-xs" title="Drag to reorder">⠿</span>
           <span className="text-amber-500 text-xs">📁</span>
           {editingModifierId === mod.id ? (
             <input
@@ -412,7 +412,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
         }}
       >
         <div className={`flex items-center gap-1.5 px-2 py-1.5 border rounded text-sm ${isGroupDragOverThis ? 'bg-green-50 border-green-300' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
-          <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs shrink-0" title="Drag to reorder">⠿</span>
+          <span className="cursor-grab text-gray-500 hover:text-gray-900 text-xs shrink-0" title="Drag to reorder">⠿</span>
 
           {/* LEFT SIDE: Name + Upcharge price only */}
           {editingModifierId === mod.id ? (
@@ -439,7 +439,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 onClick={(e) => e.stopPropagation()}
               />
               <div className="flex items-center gap-0.5 shrink-0">
-                <span className="text-[9px] text-gray-700">$</span>
+                <span className="text-[9px] text-gray-900">$</span>
                 <input
                   type="number"
                   value={editModValues.price}
@@ -483,7 +483,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               {mod.isDefault && (
                 <span className="text-[8px] px-1 py-0.5 bg-amber-100 text-amber-700 rounded font-semibold shrink-0">DEFAULT</span>
               )}
-              <span className="text-gray-300 group-hover/name:text-indigo-400 text-[10px] shrink-0 transition-colors">✏️</span>
+              <span className="text-gray-500 group-hover/name:text-indigo-400 text-[10px] shrink-0 transition-colors">✏️</span>
             </span>
           )}
 
@@ -532,7 +532,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           {/* Default Selection Toggle */}
           <button
             onClick={() => toggleDefault(groupId, mod.id, !!mod.isDefault)}
-            className={`w-5 h-5 rounded text-[9px] font-bold shrink-0 ${mod.isDefault ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-amber-100 hover:text-amber-500'}`}
+            className={`w-5 h-5 rounded text-[9px] font-bold shrink-0 ${mod.isDefault ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-amber-100 hover:text-amber-500'}`}
             title={mod.isDefault ? 'Default: ON' : 'Default: OFF'}
           >
             ★
@@ -679,7 +679,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               className={`printer-routing-button w-5 h-5 rounded text-xs shrink-0 ${
                 mod.printerRouting === 'only' ? 'bg-orange-500 text-white' :
                 mod.printerRouting === 'also' ? 'bg-blue-500 text-white' :
-                'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
               title={
                 mod.printerRouting === 'only' ? 'Prints ONLY to specific printers' :
@@ -734,7 +734,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 {/* Printer Selection (only show for "also" or "only") */}
                 {(mod.printerRouting === 'also' || mod.printerRouting === 'only') && (
                   <div className="border-t pt-2">
-                    <div className="text-[10px] text-gray-700 mb-1">Select Printers:</div>
+                    <div className="text-[10px] text-gray-900 mb-1">Select Printers:</div>
                     {printers.length === 0 ? (
                       <div className="text-xs text-gray-600 py-2 text-center">
                         No printers configured
@@ -926,9 +926,9 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             }}
           >
             {/* Drag handle */}
-            <span className="cursor-grab text-gray-400 hover:text-gray-600 mr-1 text-xs" title="Drag to move group" onClick={(e) => e.stopPropagation()}>⠿</span>
+            <span className="cursor-grab text-gray-500 hover:text-gray-600 mr-1 text-xs" title="Drag to move group" onClick={(e) => e.stopPropagation()}>⠿</span>
             {/* Expand/collapse arrow */}
-            <span className={`text-xs transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''} ${childGroup.isRequired && isEmpty ? 'text-red-500' : isEmpty ? 'text-gray-300' : 'text-green-500'}`}>
+            <span className={`text-xs transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''} ${childGroup.isRequired && isEmpty ? 'text-red-500' : isEmpty ? 'text-gray-500' : 'text-green-500'}`}>
               ▶
             </span>
 
@@ -968,7 +968,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             {/* Promote to top-level button */}
             <button
               onClick={(e) => { e.stopPropagation(); reparentGroup(childGroup.id, null) }}
-              className="text-gray-400 hover:text-green-600 text-xs px-0.5"
+              className="text-gray-500 hover:text-green-600 text-xs px-0.5"
               title="Promote to top-level group"
               disabled={saving}
             >
@@ -978,7 +978,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             {/* Action buttons */}
             <button
               onClick={(e) => { e.stopPropagation(); startRename(childGroup.id, childGroup.name) }}
-              className="text-gray-400 hover:text-indigo-600 text-xs px-0.5"
+              className="text-gray-500 hover:text-indigo-600 text-xs px-0.5"
               title="Rename"
               disabled={saving}
             >
@@ -986,7 +986,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); duplicateGroup(childGroup.id) }}
-              className="text-gray-400 hover:text-indigo-600 text-xs px-0.5"
+              className="text-gray-500 hover:text-indigo-600 text-xs px-0.5"
               title="Duplicate Group"
               disabled={saving}
             >
@@ -994,7 +994,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); deleteGroup(childGroup.id) }}
-              className="text-gray-400 hover:text-red-600 text-xs px-0.5"
+              className="text-gray-500 hover:text-red-600 text-xs px-0.5"
               title="Delete Group"
               disabled={saving}
             >
@@ -1017,7 +1017,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 {/* Drop zone: nest a group inside this child group */}
                 {draggedGroupId && draggedGroupId !== childGroup.id && !isDescendantOf(draggedGroupId, childGroup.id) && (
                   <div
-                    className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === `nest-${childGroup.id}` ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-400'}`}
+                    className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === `nest-${childGroup.id}` ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-500'}`}
                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverDropZone(`nest-${childGroup.id}`) }}
                     onDragLeave={() => setDragOverDropZone(null)}
                     onDrop={async (e) => {
@@ -1151,9 +1151,9 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 <span className="text-2xl font-bold">{formatCurrency(item.price)}</span>
                 {isDualPricingEnabled && (
                   <>
-                    <span className="text-xs text-gray-700">cash</span>
+                    <span className="text-xs text-gray-900">cash</span>
                     <span className="text-lg font-semibold text-indigo-400">{formatCurrency(itemCardPrice)}</span>
-                    <span className="text-xs text-gray-700">card</span>
+                    <span className="text-xs text-gray-900">card</span>
                   </>
                 )}
               </div>
@@ -1277,8 +1277,8 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                               {/* Level 1: Category */}
                               {categoryName && (
                                 <>
-                                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded font-semibold">{categoryName}</span>
-                                  <span className="text-gray-300 mx-0.5">›</span>
+                                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-900 rounded font-semibold">{categoryName}</span>
+                                  <span className="text-gray-500 mx-0.5">›</span>
                                 </>
                               )}
                               {/* Level 2: Inventory item (parent) — clickable link */}
@@ -1294,7 +1294,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                                     {parentName}
                                     <span className="text-[7px] text-blue-400">↗</span>
                                   </a>
-                                  <span className="text-gray-300 mx-0.5">›</span>
+                                  <span className="text-gray-500 mx-0.5">›</span>
                                 </>
                               ) : !isPrepItem && (
                                 <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded font-semibold">{ing.name}</span>
@@ -1365,7 +1365,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                                 <span className="text-[10px] text-gray-600 flex-1">expand → tap Link</span>
                                 <button
                                   onClick={() => { setRelinkingIngredientId(null); setIngredientSearch('') }}
-                                  className="text-xs text-gray-400 hover:text-red-500 px-1"
+                                  className="text-xs text-gray-500 hover:text-red-500 px-1"
                                 >✕</button>
                               </div>
                               <IngredientHierarchyPicker
@@ -1517,7 +1517,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                   if (!isChild) return null
                   return (
                     <div
-                      className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === 'top-level' ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 text-gray-400'}`}
+                      className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === 'top-level' ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 text-gray-500'}`}
                       onDragOver={(e) => { e.preventDefault(); setDragOverDropZone('top-level') }}
                       onDragLeave={() => setDragOverDropZone(null)}
                       onDrop={async (e) => {
@@ -1587,7 +1587,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                             onSelectGroup?.(isExpanded ? null : group.id)
                           }}
                         >
-                          <span className="cursor-grab text-gray-400 hover:text-gray-600 mr-1" title="Drag to reorder">⠿</span>
+                          <span className="cursor-grab text-gray-500 hover:text-gray-600 mr-1" title="Drag to reorder">⠿</span>
                           <span className={`text-xs transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
                           {renamingGroupId === group.id ? (
                             <input
@@ -1627,7 +1627,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                           <span className="text-xs text-gray-600">{group.modifiers.length}</span>
                           <button
                             onClick={(e) => { e.stopPropagation(); startRename(group.id, group.name) }}
-                            className="text-gray-400 hover:text-indigo-600 text-xs px-0.5"
+                            className="text-gray-500 hover:text-indigo-600 text-xs px-0.5"
                             title="Rename"
                             disabled={saving}
                           >
@@ -1635,7 +1635,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); duplicateGroup(group.id) }}
-                            className="text-gray-400 hover:text-indigo-600 text-xs px-1"
+                            className="text-gray-500 hover:text-indigo-600 text-xs px-1"
                             title="Duplicate Group"
                             disabled={saving}
                           >
@@ -1659,7 +1659,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                               {/* Drop zone: nest a group inside this group */}
                               {draggedGroupId && draggedGroupId !== group.id && !isDescendantOf(draggedGroupId, group.id) && (
                                 <div
-                                  className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === `nest-${group.id}` ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-400'}`}
+                                  className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === `nest-${group.id}` ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-500'}`}
                                   onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverDropZone(`nest-${group.id}`) }}
                                   onDragLeave={() => setDragOverDropZone(null)}
                                   onDrop={async (e) => {

@@ -287,11 +287,11 @@ export default function ScalesPage() {
           </div>
         ) : scales.length === 0 ? (
           <div className="rounded-xl bg-white p-8 text-center shadow">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="mx-auto h-12 w-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
             </svg>
             <h3 className="mt-2 text-lg font-medium text-gray-900">No scales configured</h3>
-            <p className="mt-1 text-gray-500">Add your first scale to enable weight-based selling</p>
+            <p className="mt-1 text-gray-900">Add your first scale to enable weight-based selling</p>
             <button
               onClick={handleAddScale}
               className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
@@ -329,7 +329,7 @@ export default function ScalesPage() {
                         {scale.maxCapacity != null && ` • max ${scale.maxCapacity}${scale.weightUnit}`}
                       </p>
                       {scale.lastSeenAt && (
-                        <p className="mt-1 text-xs text-gray-400">
+                        <p className="mt-1 text-xs text-gray-900">
                           Last seen: {new Date(scale.lastSeenAt).toLocaleString()}
                         </p>
                       )}
@@ -343,7 +343,7 @@ export default function ScalesPage() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleEditScale(scale)}
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                      className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-gray-600"
                     >
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -351,7 +351,7 @@ export default function ScalesPage() {
                     </button>
                     <button
                       onClick={() => handleDelete(scale)}
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                      className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-red-600"
                     >
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -385,7 +385,7 @@ export default function ScalesPage() {
                   <button
                     onClick={() => handleTestConnection(scale)}
                     disabled={testingId === scale.id}
-                    className="rounded bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                    className="rounded bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-200 disabled:opacity-50"
                   >
                     {testingId === scale.id ? 'Testing...' : 'Test Connection'}
                   </button>
@@ -405,7 +405,7 @@ export default function ScalesPage() {
         <div className="space-y-4">
           {/* Name */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
+            <label className="mb-1 block text-sm font-medium text-gray-900">Name</label>
             <input
               type="text"
               value={formData.name}
@@ -417,7 +417,7 @@ export default function ScalesPage() {
 
           {/* Scale Type */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Scale Type</label>
+            <label className="mb-1 block text-sm font-medium text-gray-900">Scale Type</label>
             <select
               value={formData.scaleType}
               onChange={(e) => handleScaleTypeChange(e.target.value)}
@@ -425,12 +425,12 @@ export default function ScalesPage() {
             >
               <option value="CAS_PD_II">CAS PD-II</option>
             </select>
-            <p className="mt-1 text-xs text-gray-400">Serial settings auto-fill based on scale type</p>
+            <p className="mt-1 text-xs text-gray-900">Serial settings auto-fill based on scale type</p>
           </div>
 
           {/* Port Path */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Serial Port</label>
+            <label className="mb-1 block text-sm font-medium text-gray-900">Serial Port</label>
             {!manualPort ? (
               <div className="space-y-2">
                 <select
@@ -477,7 +477,7 @@ export default function ScalesPage() {
           {/* Serial Settings */}
           <div className="grid grid-cols-4 gap-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Baud Rate</label>
+              <label className="mb-1 block text-sm font-medium text-gray-900">Baud Rate</label>
               <input
                 type="number"
                 value={formData.baudRate}
@@ -486,7 +486,7 @@ export default function ScalesPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Data Bits</label>
+              <label className="mb-1 block text-sm font-medium text-gray-900">Data Bits</label>
               <select
                 value={formData.dataBits}
                 onChange={(e) => setFormData({ ...formData, dataBits: parseInt(e.target.value) })}
@@ -499,7 +499,7 @@ export default function ScalesPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Parity</label>
+              <label className="mb-1 block text-sm font-medium text-gray-900">Parity</label>
               <select
                 value={formData.parity}
                 onChange={(e) => setFormData({ ...formData, parity: e.target.value })}
@@ -511,7 +511,7 @@ export default function ScalesPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Stop Bits</label>
+              <label className="mb-1 block text-sm font-medium text-gray-900">Stop Bits</label>
               <select
                 value={formData.stopBits}
                 onChange={(e) => setFormData({ ...formData, stopBits: parseInt(e.target.value) })}
@@ -526,7 +526,7 @@ export default function ScalesPage() {
           {/* Weight Settings */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Weight Unit</label>
+              <label className="mb-1 block text-sm font-medium text-gray-900">Weight Unit</label>
               <select
                 value={formData.weightUnit}
                 onChange={(e) => setFormData({ ...formData, weightUnit: e.target.value })}
@@ -539,7 +539,7 @@ export default function ScalesPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Max Capacity</label>
+              <label className="mb-1 block text-sm font-medium text-gray-900">Max Capacity</label>
               <input
                 type="number"
                 value={formData.maxCapacity}
@@ -551,7 +551,7 @@ export default function ScalesPage() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Precision</label>
+              <label className="mb-1 block text-sm font-medium text-gray-900">Precision</label>
               <select
                 value={formData.precision}
                 onChange={(e) => setFormData({ ...formData, precision: parseInt(e.target.value) })}
@@ -570,7 +570,7 @@ export default function ScalesPage() {
         <div className="mt-6 flex justify-end gap-3">
           <button
             onClick={() => setShowModal(false)}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100"
           >
             Cancel
           </button>

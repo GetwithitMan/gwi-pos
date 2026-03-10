@@ -50,7 +50,7 @@ interface HouseAccountTransaction {
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
   suspended: 'bg-yellow-100 text-yellow-700',
-  closed: 'bg-gray-100 text-gray-700',
+  closed: 'bg-gray-100 text-gray-900',
 }
 
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
@@ -324,9 +324,9 @@ export default function HouseAccountsPage() {
         <div className="lg:col-span-2">
           <Card className="p-4">
             {loading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
+              <div className="text-center py-8 text-gray-900">Loading...</div>
             ) : filteredAccounts.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No house accounts found</div>
+              <div className="text-center py-8 text-gray-900">No house accounts found</div>
             ) : (
               <div className="divide-y">
                 {filteredAccounts.map((account) => (
@@ -341,7 +341,7 @@ export default function HouseAccountsPage() {
                       <div>
                         <div className="font-medium">{account.name}</div>
                         {account.contactName && (
-                          <div className="text-sm text-gray-500">{account.contactName}</div>
+                          <div className="text-sm text-gray-900">{account.contactName}</div>
                         )}
                       </div>
                       <div className="text-right">
@@ -351,7 +351,7 @@ export default function HouseAccountsPage() {
                       </div>
                     </div>
                     <div className="flex justify-between mt-2 text-sm">
-                      <span className="text-gray-500">
+                      <span className="text-gray-900">
                         Limit: {account.creditLimit > 0 ? formatCurrency(account.creditLimit) : 'Unlimited'}
                       </span>
                       <span className={`font-medium ${account.currentBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -376,20 +376,20 @@ export default function HouseAccountsPage() {
 
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-gray-500">Account Name</label>
+                  <label className="text-xs text-gray-900">Account Name</label>
                   <div className="font-medium">{selectedAccount.name}</div>
                 </div>
 
                 {selectedAccount.contactName && (
                   <div>
-                    <label className="text-xs text-gray-500">Contact</label>
+                    <label className="text-xs text-gray-900">Contact</label>
                     <div>{selectedAccount.contactName}</div>
                   </div>
                 )}
 
                 {(selectedAccount.email || selectedAccount.phone) && (
                   <div>
-                    <label className="text-xs text-gray-500">Contact Info</label>
+                    <label className="text-xs text-gray-900">Contact Info</label>
                     {selectedAccount.email && <div className="text-sm">{selectedAccount.email}</div>}
                     {selectedAccount.phone && <div className="text-sm">{selectedAccount.phone}</div>}
                   </div>
@@ -397,18 +397,18 @@ export default function HouseAccountsPage() {
 
                 {selectedAccount.address && (
                   <div>
-                    <label className="text-xs text-gray-500">Address</label>
+                    <label className="text-xs text-gray-900">Address</label>
                     <div className="text-sm">{selectedAccount.address}</div>
                   </div>
                 )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs text-gray-500">Credit Limit</label>
+                    <label className="text-xs text-gray-900">Credit Limit</label>
                     <div>{selectedAccount.creditLimit > 0 ? formatCurrency(selectedAccount.creditLimit) : 'Unlimited'}</div>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500">Balance</label>
+                    <label className="text-xs text-gray-900">Balance</label>
                     <div className={`text-xl font-bold ${selectedAccount.currentBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                       {formatCurrency(selectedAccount.currentBalance)}
                     </div>
@@ -417,18 +417,18 @@ export default function HouseAccountsPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs text-gray-500">Terms</label>
+                    <label className="text-xs text-gray-900">Terms</label>
                     <div>Net {selectedAccount.paymentTerms}</div>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500">Billing</label>
+                    <label className="text-xs text-gray-900">Billing</label>
                     <div className="capitalize">{selectedAccount.billingCycle}</div>
                   </div>
                 </div>
 
                 {selectedAccount.taxExempt && (
                   <div>
-                    <label className="text-xs text-gray-500">Tax Status</label>
+                    <label className="text-xs text-gray-900">Tax Status</label>
                     <div className="text-green-600">
                       Tax Exempt {selectedAccount.taxId && `(${selectedAccount.taxId})`}
                     </div>
@@ -436,7 +436,7 @@ export default function HouseAccountsPage() {
                 )}
 
                 <div>
-                  <label className="text-xs text-gray-500">Status</label>
+                  <label className="text-xs text-gray-900">Status</label>
                   <div>
                     <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[selectedAccount.status]}`}>
                       {selectedAccount.status.toUpperCase()}
@@ -476,7 +476,7 @@ export default function HouseAccountsPage() {
               <div className="mt-4 pt-4 border-t">
                 <h3 className="font-medium mb-2">Recent Activity</h3>
                 {accountTransactions.length === 0 ? (
-                  <div className="text-sm text-gray-500">No transactions</div>
+                  <div className="text-sm text-gray-900">No transactions</div>
                 ) : (
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {accountTransactions.map((txn) => (
@@ -488,10 +488,10 @@ export default function HouseAccountsPage() {
                           </span>
                         </div>
                         {txn.notes && (
-                          <div className="text-xs text-gray-500">{txn.notes}</div>
+                          <div className="text-xs text-gray-900">{txn.notes}</div>
                         )}
                         {txn.referenceNumber && (
-                          <div className="text-xs text-gray-500">Ref: {txn.referenceNumber}</div>
+                          <div className="text-xs text-gray-900">Ref: {txn.referenceNumber}</div>
                         )}
                         <div className="text-xs text-gray-600 flex justify-between">
                           <span>{formatDate(txn.createdAt)}</span>
@@ -504,7 +504,7 @@ export default function HouseAccountsPage() {
               </div>
             </Card>
           ) : (
-            <Card className="p-8 text-center text-gray-500">
+            <Card className="p-8 text-center text-gray-900">
               Select an account to view details
             </Card>
           )}
@@ -581,7 +581,7 @@ export default function HouseAccountsPage() {
                 <div>
                   <label className="text-sm font-medium block mb-1">Credit Limit</label>
                   <div className="relative">
-                    <span className="absolute left-3 top-2 text-gray-500">$</span>
+                    <span className="absolute left-3 top-2 text-gray-900">$</span>
                     <input
                       type="number"
                       value={formCreditLimit}
@@ -668,7 +668,7 @@ export default function HouseAccountsPage() {
       <Modal isOpen={showPaymentModal && !!selectedAccount} onClose={() => { setShowPaymentModal(false); resetPaymentForm() }} title="Record Payment" size="sm">
         {selectedAccount && (
           <>
-            <div className="mb-4 text-sm text-gray-500">
+            <div className="mb-4 text-sm text-gray-900">
               {selectedAccount.name}
               <br />
               Current Balance: <span className="font-medium text-red-600">{formatCurrency(selectedAccount.currentBalance)}</span>
@@ -677,7 +677,7 @@ export default function HouseAccountsPage() {
               <div>
                 <label className="text-sm font-medium block mb-1">Payment Amount *</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2 text-gray-500">$</span>
+                  <span className="absolute left-3 top-2 text-gray-900">$</span>
                   <input
                     type="number"
                     value={paymentAmount}

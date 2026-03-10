@@ -214,7 +214,7 @@ export default function ThirdPartyDeliveryPage() {
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-4">Third-Party Delivery Orders</h1>
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-gray-900">Loading...</div>
       </div>
     )
   }
@@ -222,7 +222,7 @@ export default function ThirdPartyDeliveryPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold mb-1">Third-Party Delivery Orders</h1>
-      <p className="text-sm text-gray-500 mb-6">DoorDash, UberEats, and Grubhub orders</p>
+      <p className="text-sm text-gray-900 mb-6">DoorDash, UberEats, and Grubhub orders</p>
 
       {/* ── Summary Cards ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -236,7 +236,7 @@ export default function ThirdPartyDeliveryPage() {
                 </span>
               </div>
               <div className="text-2xl font-bold">{stats?.orderCount || 0}</div>
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-gray-900">
                 orders today / ${(stats?.total || 0).toFixed(2)} revenue
               </div>
             </div>
@@ -283,7 +283,7 @@ export default function ThirdPartyDeliveryPage() {
 
       {/* ── Order List ──────────────────────────────────────────────────── */}
       {orders.length === 0 ? (
-        <div className="bg-white rounded-xl border p-8 text-center text-gray-500">
+        <div className="bg-white rounded-xl border p-8 text-center text-gray-900">
           No delivery orders found for the selected filters.
         </div>
       ) : (
@@ -298,14 +298,14 @@ export default function ThirdPartyDeliveryPage() {
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[order.status] || 'bg-gray-100'}`}>
                     {order.status.replace(/_/g, ' ')}
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-gray-900">
                     #{order.externalOrderId.slice(-6)}
                   </span>
                 </div>
 
                 <div className="text-right">
                   <div className="text-lg font-bold">${order.total.toFixed(2)}</div>
-                  <div className="text-xs text-gray-400">
+                  <div className="text-xs text-gray-900">
                     {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>
@@ -313,9 +313,9 @@ export default function ThirdPartyDeliveryPage() {
 
               {/* Customer */}
               {order.customerName && (
-                <div className="text-sm text-gray-700 mb-2">
+                <div className="text-sm text-gray-900 mb-2">
                   {order.customerName}
-                  {order.customerPhone && <span className="text-gray-400 ml-2">{order.customerPhone}</span>}
+                  {order.customerPhone && <span className="text-gray-900 ml-2">{order.customerPhone}</span>}
                 </div>
               )}
 
@@ -326,15 +326,15 @@ export default function ThirdPartyDeliveryPage() {
                     <span className="font-medium">{item.quantity}x</span>{' '}
                     {item.name}
                     {item.modifiers && item.modifiers.length > 0 && (
-                      <span className="text-gray-400 ml-1">
+                      <span className="text-gray-900 ml-1">
                         ({item.modifiers.join(', ')})
                       </span>
                     )}
-                    <span className="text-gray-400 ml-1">${(item.price * item.quantity).toFixed(2)}</span>
+                    <span className="text-gray-900 ml-1">${(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
                 {(order.items || []).length > 5 && (
-                  <div className="text-xs text-gray-400 mt-1">
+                  <div className="text-xs text-gray-900 mt-1">
                     +{order.items.length - 5} more items
                   </div>
                 )}
@@ -348,7 +348,7 @@ export default function ThirdPartyDeliveryPage() {
               )}
 
               {/* Price breakdown */}
-              <div className="flex gap-4 text-xs text-gray-500 mb-3">
+              <div className="flex gap-4 text-xs text-gray-900 mb-3">
                 <span>Subtotal: ${order.subtotal.toFixed(2)}</span>
                 <span>Tax: ${order.tax.toFixed(2)}</span>
                 {order.deliveryFee > 0 && <span>Delivery: ${order.deliveryFee.toFixed(2)}</span>}
@@ -357,7 +357,7 @@ export default function ThirdPartyDeliveryPage() {
 
               {/* Estimated pickup */}
               {order.estimatedPickupAt && (
-                <div className="text-xs text-gray-500 mb-3">
+                <div className="text-xs text-gray-900 mb-3">
                   Est. pickup: {new Date(order.estimatedPickupAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
               )}

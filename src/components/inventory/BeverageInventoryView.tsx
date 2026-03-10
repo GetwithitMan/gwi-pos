@@ -53,7 +53,7 @@ const TIER_LABELS: Record<string, string> = {
 }
 
 const TIER_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  well: { bg: 'bg-gray-500/20', text: 'text-gray-300', border: 'border-gray-500/30' },
+  well: { bg: 'bg-gray-500/20', text: 'text-gray-900', border: 'border-gray-500/30' },
   call: { bg: 'bg-blue-500/20', text: 'text-blue-300', border: 'border-blue-500/30' },
   premium: { bg: 'bg-purple-500/20', text: 'text-purple-300', border: 'border-purple-500/30' },
   top_shelf: { bg: 'bg-amber-500/20', text: 'text-amber-300', border: 'border-amber-500/30' },

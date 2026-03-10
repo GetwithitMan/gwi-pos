@@ -312,7 +312,7 @@ export default function TimeClockPage() {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
         <AdminPageHeader title="Time Clock" backHref="/employees" />
-        <p className="text-center text-gray-500 mt-12">You do not have permission to view time clock data.</p>
+        <p className="text-center text-gray-900 mt-12">You do not have permission to view time clock data.</p>
       </div>
     )
   }
@@ -337,7 +337,7 @@ export default function TimeClockPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap items-end gap-4">
               <div>
-                <label className="block text-xs text-gray-700 mb-1">Start Date</label>
+                <label className="block text-xs text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -346,7 +346,7 @@ export default function TimeClockPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-700 mb-1">End Date</label>
+                <label className="block text-xs text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -355,7 +355,7 @@ export default function TimeClockPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-700 mb-1">Employee</label>
+                <label className="block text-xs text-gray-900 mb-1">Employee</label>
                 <select
                   value={filterEmployeeId}
                   onChange={e => setFilterEmployeeId(e.target.value)}
@@ -370,7 +370,7 @@ export default function TimeClockPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-700 mb-1">Status</label>
+                <label className="block text-xs text-gray-900 mb-1">Status</label>
                 <select
                   value={statusFilter}
                   onChange={e => setStatusFilter(e.target.value as StatusFilter)}
@@ -393,25 +393,25 @@ export default function TimeClockPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-sm text-gray-500">{isToday ? "Today's" : 'Total'} Clock-Ins</div>
+              <div className="text-sm text-gray-900">{isToday ? "Today's" : 'Total'} Clock-Ins</div>
               <div className="text-2xl font-bold">{totalClockIns}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-sm text-gray-500">Currently Active</div>
+              <div className="text-sm text-gray-900">Currently Active</div>
               <div className="text-2xl font-bold text-green-600">{currentlyActive}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-sm text-gray-500">On Break</div>
+              <div className="text-sm text-gray-900">On Break</div>
               <div className="text-2xl font-bold text-amber-600">{onBreak}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <div className="text-sm text-gray-500">Total Hours</div>
+              <div className="text-sm text-gray-900">Total Hours</div>
               <div className="text-2xl font-bold">{totalHours.toFixed(1)}</div>
             </CardContent>
           </Card>
@@ -424,13 +424,13 @@ export default function TimeClockPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
                 Loading time clock data...
               </div>
             ) : filteredEntries.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">
-                <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="text-center py-12 text-gray-900">
+                <svg className="w-12 h-12 mx-auto mb-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 No punches found for this date range
@@ -439,7 +439,7 @@ export default function TimeClockPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-gray-500">
+                    <tr className="border-b text-left text-gray-900">
                       <th className="py-2 pr-3">Employee</th>
                       <th className="py-2 pr-3">Date</th>
                       <th className="py-2 pr-3">Clock In</th>
@@ -469,7 +469,7 @@ export default function TimeClockPage() {
                           <td className="py-2 pr-3 text-right">{entry.regularHours?.toFixed(1) ?? '—'}</td>
                           <td className="py-2 pr-3 text-right">{entry.overtimeHours?.toFixed(1) ?? '—'}</td>
                           <td className="py-2 pr-3 text-right">{calcEstPay(entry)}</td>
-                          <td className="py-2 pr-3 max-w-[120px] truncate text-gray-500">{entry.notes || '—'}</td>
+                          <td className="py-2 pr-3 max-w-[120px] truncate text-gray-900">{entry.notes || '—'}</td>
                           <td className="py-2 pr-3">
                             <span className="flex items-center gap-1.5">
                               {statusBadge(entry)}
@@ -509,19 +509,19 @@ export default function TimeClockPage() {
                           <tr key={`${entry.id}-breaks`}>
                             <td colSpan={canEdit ? 11 : 10} className="bg-gray-50 px-6 py-3">
                               {!breaksByEntry[entry.id] ? (
-                                <span className="text-xs text-gray-400">Loading breaks...</span>
+                                <span className="text-xs text-gray-900">Loading breaks...</span>
                               ) : breaksByEntry[entry.id].length === 0 ? (
-                                <span className="text-xs text-gray-400">No breaks recorded</span>
+                                <span className="text-xs text-gray-900">No breaks recorded</span>
                               ) : (
                                 <div className="space-y-1">
-                                  <div className="text-xs font-medium text-gray-500 mb-2">Breaks</div>
+                                  <div className="text-xs font-medium text-gray-900 mb-2">Breaks</div>
                                   {breaksByEntry[entry.id].map(b => (
                                     <div key={b.id} className="flex items-center gap-4 text-xs">
                                       {breakTypeBadge(b.breakType)}
                                       <span>{formatTime(b.startedAt)}</span>
-                                      <span className="text-gray-400">to</span>
+                                      <span className="text-gray-900">to</span>
                                       <span>{b.endedAt ? formatTime(b.endedAt) : 'ongoing'}</span>
-                                      <span className="text-gray-500">{b.duration ? `${b.duration}m` : '—'}</span>
+                                      <span className="text-gray-900">{b.duration ? `${b.duration}m` : '—'}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -553,7 +553,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-700 mb-1">Clock In</label>
+              <label className="block text-xs text-gray-900 mb-1">Clock In</label>
               <input
                 type="datetime-local"
                 value={editForm.clockIn}
@@ -563,7 +563,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-700 mb-1">Clock Out</label>
+              <label className="block text-xs text-gray-900 mb-1">Clock Out</label>
               <input
                 type="datetime-local"
                 value={editForm.clockOut}
@@ -573,7 +573,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-700 mb-1">Break Minutes</label>
+              <label className="block text-xs text-gray-900 mb-1">Break Minutes</label>
               <input
                 type="number"
                 value={editForm.breakMinutes}
@@ -584,7 +584,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-700 mb-1">Notes</label>
+              <label className="block text-xs text-gray-900 mb-1">Notes</label>
               <textarea
                 value={editForm.notes}
                 onChange={e => setEditForm({ ...editForm, notes: e.target.value })}
@@ -594,7 +594,7 @@ export default function TimeClockPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-gray-700 mb-1">Reason for Edit *</label>
+              <label className="block text-xs text-gray-900 mb-1">Reason for Edit *</label>
               <textarea
                 value={editForm.reason}
                 onChange={e => setEditForm({ ...editForm, reason: e.target.value })}
@@ -605,7 +605,7 @@ export default function TimeClockPage() {
             </div>
 
             {editEntry.clockIn !== editEntry.clockOut && (
-              <p className="text-xs text-gray-400 italic">
+              <p className="text-xs text-gray-900 italic">
                 {new Date(editEntry.clockIn).getTime() !== new Date(editEntry.clockIn).getTime()
                   ? ''
                   : `Last updated: ${new Date(editEntry.clockIn).toLocaleString()}`}

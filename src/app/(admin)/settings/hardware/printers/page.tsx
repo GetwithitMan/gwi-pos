@@ -363,7 +363,7 @@ export default function PrintersPage() {
               <button
                 onClick={handleBatchTest}
                 disabled={batchTesting}
-                className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                className="flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-200 disabled:opacity-50"
               >
                 {batchTesting ? 'Testing...' : 'Test All Printers'}
               </button>
@@ -386,11 +386,11 @@ export default function PrintersPage() {
           </div>
         ) : printers.length === 0 ? (
           <div className="rounded-xl bg-white p-8 text-center shadow">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="mx-auto h-12 w-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
             <h3 className="mt-2 text-lg font-medium text-gray-900">No printers configured</h3>
-            <p className="mt-1 text-gray-500">Add your first printer to get started</p>
+            <p className="mt-1 text-gray-900">Add your first printer to get started</p>
             <button
               onClick={handleAddPrinter}
               className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
@@ -436,7 +436,7 @@ export default function PrintersPage() {
                         {printer.model && ` • ${printer.model}`} • {printer.paperWidth}mm
                       </p>
                       {printer.lastPingAt && (
-                        <p className="mt-1 text-xs text-gray-400">
+                        <p className="mt-1 text-xs text-gray-900">
                           Last ping: {new Date(printer.lastPingAt).toLocaleString()}
                         </p>
                       )}
@@ -445,7 +445,7 @@ export default function PrintersPage() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleEditPrinter(printer)}
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                      className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-gray-600"
                     >
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -453,7 +453,7 @@ export default function PrintersPage() {
                     </button>
                     <button
                       onClick={() => handleDelete(printer)}
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                      className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-red-600"
                     >
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -487,7 +487,7 @@ export default function PrintersPage() {
                   <button
                     onClick={() => handleTestConnection(printer)}
                     disabled={testingId === printer.id}
-                    className="rounded bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                    className="rounded bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-200 disabled:opacity-50"
                   >
                     {testingId === printer.id ? 'Testing...' : 'Test Connection'}
                   </button>
@@ -528,7 +528,7 @@ export default function PrintersPage() {
             <div className="space-y-4">
               {/* Name */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Name</label>
                 <input
                   type="text"
                   value={formData.name}
@@ -541,7 +541,7 @@ export default function PrintersPage() {
               {/* Type & Role */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Type</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Type</label>
                   <select
                     value={formData.printerType}
                     onChange={(e) =>
@@ -558,7 +558,7 @@ export default function PrintersPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Role</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Role</label>
                   <select
                     value={formData.printerRole}
                     onChange={(e) =>
@@ -579,7 +579,7 @@ export default function PrintersPage() {
 
               {/* Model */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Model</label>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Model</label>
                 <input
                   type="text"
                   value={formData.model}
@@ -592,7 +592,7 @@ export default function PrintersPage() {
               {/* IP & Port */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-gray-700">IP Address</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">IP Address</label>
                   <input
                     type="text"
                     value={formData.ipAddress}
@@ -602,7 +602,7 @@ export default function PrintersPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Port</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Port</label>
                   <input
                     type="number"
                     value={formData.port}
@@ -611,13 +611,13 @@ export default function PrintersPage() {
                   />
                 </div>
               </div>
-              <p className="text-xs text-gray-500 -mt-2">
+              <p className="text-xs text-gray-900 -mt-2">
                 Default port is 9100 (standard for network receipt printers). Check your printer&apos;s manual or network settings if unsure.
               </p>
 
               {/* Paper Width */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Paper Width</label>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Paper Width</label>
                 <select
                   value={formData.paperWidth}
                   onChange={(e) => setFormData({ ...formData, paperWidth: parseInt(e.target.value) })}
@@ -638,7 +638,7 @@ export default function PrintersPage() {
                     onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
                     className="h-4 w-4 rounded border-gray-300"
                   />
-                  <span className="text-sm text-gray-700">Default for role</span>
+                  <span className="text-sm text-gray-900">Default for role</span>
                 </label>
                 <div>
                   <label className="flex items-center gap-2">
@@ -648,9 +648,9 @@ export default function PrintersPage() {
                       onChange={(e) => setFormData({ ...formData, supportsCut: e.target.checked })}
                       className="h-4 w-4 rounded border-gray-300"
                     />
-                    <span className="text-sm text-gray-700">Supports paper cut</span>
+                    <span className="text-sm text-gray-900">Supports paper cut</span>
                   </label>
-                  <p className="ml-6 text-xs text-gray-500 mt-0.5">
+                  <p className="ml-6 text-xs text-gray-900 mt-0.5">
                     Enable if this printer has an auto-cutter that separates receipts automatically. Most thermal printers support this.
                   </p>
                 </div>
@@ -661,7 +661,7 @@ export default function PrintersPage() {
             <div className="mt-6 flex justify-end gap-3">
               <button
                 onClick={() => setShowModal(false)}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                className="rounded-lg px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100"
               >
                 Cancel
               </button>

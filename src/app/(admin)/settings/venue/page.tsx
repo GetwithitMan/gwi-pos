@@ -144,7 +144,7 @@ export default function VenueSettingsPage() {
           <CardContent>
             <div className="space-y-4">
               <div>
-                <label htmlFor="venue-name" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="venue-name" className="block text-sm font-medium text-gray-900 mb-1">
                   Business Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -158,10 +158,10 @@ export default function VenueSettingsPage() {
               </div>
 
               <div>
-                <label htmlFor="venue-address" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="venue-address" className="block text-sm font-medium text-gray-900 mb-1">
                   Address
                 </label>
-                <p className="text-xs text-gray-400 mb-1">Printed on customer receipts and displayed on your online ordering page.</p>
+                <p className="text-xs text-gray-900 mb-1">Printed on customer receipts and displayed on your online ordering page.</p>
                 <input
                   id="venue-address"
                   type="text"
@@ -173,10 +173,10 @@ export default function VenueSettingsPage() {
               </div>
 
               <div>
-                <label htmlFor="venue-phone" className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="venue-phone" className="block text-sm font-medium text-gray-900 mb-1">
                   Phone
                 </label>
-                <p className="text-xs text-gray-400 mb-1">Printed on customer receipts and displayed on your online ordering page.</p>
+                <p className="text-xs text-gray-900 mb-1">Printed on customer receipts and displayed on your online ordering page.</p>
                 <input
                   id="venue-phone"
                   type="tel"
@@ -197,10 +197,10 @@ export default function VenueSettingsPage() {
           </CardHeader>
           <CardContent>
             <div>
-              <label htmlFor="venue-timezone" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="venue-timezone" className="block text-sm font-medium text-gray-900 mb-1">
                 Timezone
               </label>
-              <p className="text-xs text-gray-400 mb-1">Affects report dates, shift times, and when your business day resets. Always set to your venue&apos;s local time zone.</p>
+              <p className="text-xs text-gray-900 mb-1">Affects report dates, shift times, and when your business day resets. Always set to your venue&apos;s local time zone.</p>
               <select
                 id="venue-timezone"
                 value={timezone}

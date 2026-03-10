@@ -101,7 +101,7 @@ export function BulkActionBar({
 
       <button
         onClick={onClearSelection}
-        className="text-gray-400 hover:text-white transition-colors text-sm"
+        className="text-gray-900 hover:text-white transition-colors text-sm"
         aria-label="Clear selection"
       >
         ✕ Clear

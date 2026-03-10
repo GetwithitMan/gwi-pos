@@ -291,10 +291,10 @@ export default function MenuImportPage() {
                 </div>
               ) : (
                 <div>
-                  <svg className="mx-auto h-10 w-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="mx-auto h-10 w-10 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                   </svg>
-                  <p className="mt-2 text-sm font-medium text-gray-700">
+                  <p className="mt-2 text-sm font-medium text-gray-900">
                     Drop a CSV file here or click to browse
                   </p>
                   <p className="text-xs text-gray-600 mt-1">
@@ -307,7 +307,7 @@ export default function MenuImportPage() {
             {/* Column Detection */}
             {headers.length > 0 && (
               <div className="mt-4 flex flex-wrap gap-2">
-                <span className="text-xs text-gray-700 leading-6">Detected columns:</span>
+                <span className="text-xs text-gray-900 leading-6">Detected columns:</span>
                 {headers.map((h) => {
                   const recognized = ['name', 'price', 'category', 'cost', 'sku', 'description'].includes(h)
                   return (
@@ -348,7 +348,7 @@ export default function MenuImportPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                  <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-900 uppercase tracking-wider">
                     <th className="px-4 py-3">#</th>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Price</th>
@@ -363,11 +363,11 @@ export default function MenuImportPage() {
                     <tr key={i} className="hover:bg-gray-50">
                       <td className="px-4 py-2 text-gray-600">{i + 1}</td>
                       <td className="px-4 py-2 font-medium text-gray-900">{row.name || <span className="text-red-400 italic">empty</span>}</td>
-                      <td className="px-4 py-2 text-gray-700">{row.price || <span className="text-red-400 italic">empty</span>}</td>
-                      <td className="px-4 py-2 text-gray-600">{row.category || <span className="text-gray-300">-</span>}</td>
-                      {headers.includes('cost') && <td className="px-4 py-2 text-gray-600">{row.cost || <span className="text-gray-300">-</span>}</td>}
-                      {headers.includes('sku') && <td className="px-4 py-2 text-gray-600">{row.sku || <span className="text-gray-300">-</span>}</td>}
-                      {headers.includes('description') && <td className="px-4 py-2 text-gray-600 max-w-xs truncate">{row.description || <span className="text-gray-300">-</span>}</td>}
+                      <td className="px-4 py-2 text-gray-900">{row.price || <span className="text-red-400 italic">empty</span>}</td>
+                      <td className="px-4 py-2 text-gray-600">{row.category || <span className="text-gray-900">-</span>}</td>
+                      {headers.includes('cost') && <td className="px-4 py-2 text-gray-600">{row.cost || <span className="text-gray-900">-</span>}</td>}
+                      {headers.includes('sku') && <td className="px-4 py-2 text-gray-600">{row.sku || <span className="text-gray-900">-</span>}</td>}
+                      {headers.includes('description') && <td className="px-4 py-2 text-gray-600 max-w-xs truncate">{row.description || <span className="text-gray-900">-</span>}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -439,7 +439,7 @@ export default function MenuImportPage() {
             <div className="flex items-center gap-3">
               <button
                 onClick={handleReset}
-                className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+                className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-200"
               >
                 Import Another File
               </button>

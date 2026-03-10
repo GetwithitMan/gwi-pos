@@ -64,7 +64,7 @@ interface Summary {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  draft: { label: 'Draft', color: 'bg-gray-100 text-gray-700' },
+  draft: { label: 'Draft', color: 'bg-gray-100 text-gray-900' },
   pending: { label: 'Sent', color: 'bg-blue-100 text-blue-700' },
   approved: { label: 'Viewed', color: 'bg-indigo-100 text-indigo-700' },
   paid: { label: 'Paid', color: 'bg-emerald-100 text-emerald-800' },
@@ -72,7 +72,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 }
 
 function getStatusInfo(status: string) {
-  return STATUS_MAP[status] || { label: status, color: 'bg-gray-100 text-gray-700' }
+  return STATUS_MAP[status] || { label: status, color: 'bg-gray-100 text-gray-900' }
 }
 
 function isOverdue(invoice: Invoice): boolean {
@@ -376,23 +376,23 @@ export default function BillingInvoicesPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
-              <div className="text-sm text-gray-500">Outstanding</div>
+              <div className="text-sm text-gray-900">Outstanding</div>
               <div className="text-2xl font-bold text-blue-600">{formatCurrency(summary.outstanding.total)}</div>
-              <div className="text-xs text-gray-400">{summary.outstanding.count} invoice{summary.outstanding.count !== 1 ? 's' : ''}</div>
+              <div className="text-xs text-gray-900">{summary.outstanding.count} invoice{summary.outstanding.count !== 1 ? 's' : ''}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-sm text-gray-500">Overdue</div>
+              <div className="text-sm text-gray-900">Overdue</div>
               <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.overdue.total)}</div>
-              <div className="text-xs text-gray-400">{summary.overdue.count} invoice{summary.overdue.count !== 1 ? 's' : ''}</div>
+              <div className="text-xs text-gray-900">{summary.overdue.count} invoice{summary.overdue.count !== 1 ? 's' : ''}</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-sm text-gray-500">Paid This Month</div>
+              <div className="text-sm text-gray-900">Paid This Month</div>
               <div className="text-2xl font-bold text-emerald-600">{formatCurrency(summary.paidThisMonth.total)}</div>
-              <div className="text-xs text-gray-400">{summary.paidThisMonth.count} invoice{summary.paidThisMonth.count !== 1 ? 's' : ''}</div>
+              <div className="text-xs text-gray-900">{summary.paidThisMonth.count} invoice{summary.paidThisMonth.count !== 1 ? 's' : ''}</div>
             </CardContent>
           </Card>
         </div>
@@ -431,10 +431,10 @@ export default function BillingInvoicesPage() {
 
       {/* Invoice Table */}
       {isLoading ? (
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-900">Loading...</p>
       ) : invoices.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             No invoices found. Create your first billing invoice to get started.
           </CardContent>
         </Card>
@@ -464,7 +464,7 @@ export default function BillingInvoicesPage() {
                       <td className="px-4 py-3">
                         <div>{inv.customerName}</div>
                         {inv.customerEmail && (
-                          <div className="text-xs text-gray-400">{inv.customerEmail}</div>
+                          <div className="text-xs text-gray-900">{inv.customerEmail}</div>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-600">{formatDate(inv.invoiceDate)}</td>
@@ -554,7 +554,7 @@ export default function BillingInvoicesPage() {
           {/* Customer Info */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name *</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Customer Name *</label>
               <Input
                 value={formCustomerName}
                 onChange={(e) => setFormCustomerName(e.target.value)}
@@ -562,7 +562,7 @@ export default function BillingInvoicesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Email</label>
               <Input
                 type="email"
                 value={formCustomerEmail}
@@ -571,7 +571,7 @@ export default function BillingInvoicesPage() {
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Address</label>
               <Input
                 value={formCustomerAddress}
                 onChange={(e) => setFormCustomerAddress(e.target.value)}
@@ -579,24 +579,24 @@ export default function BillingInvoicesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Due Date</label>
               <Input
                 type="date"
                 value={formDueDate}
                 onChange={(e) => setFormDueDate(e.target.value)}
               />
-              <p className="text-xs text-gray-400 mt-1">Leave blank for default payment terms</p>
+              <p className="text-xs text-gray-900 mt-1">Leave blank for default payment terms</p>
             </div>
           </div>
 
           {/* Line Items */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700">Line Items</label>
+              <label className="text-sm font-medium text-gray-900">Line Items</label>
               <Button variant="outline" size="sm" onClick={addFormLine}>+ Add Item</Button>
             </div>
             <div className="space-y-2">
-              <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-500 px-1">
+              <div className="grid grid-cols-12 gap-2 text-xs font-medium text-gray-900 px-1">
                 <div className="col-span-5">Description</div>
                 <div className="col-span-2">Qty</div>
                 <div className="col-span-2">Price</div>
@@ -641,7 +641,7 @@ export default function BillingInvoicesPage() {
                       {formLineItems.length > 1 && (
                         <button
                           onClick={() => removeFormLine(li.key)}
-                          className="text-gray-400 hover:text-red-500 text-lg"
+                          className="text-gray-900 hover:text-red-500 text-lg"
                         >
                           &times;
                         </button>
@@ -658,7 +658,7 @@ export default function BillingInvoicesPage() {
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Notes</label>
             <textarea
               value={formNotes}
               onChange={(e) => setFormNotes(e.target.value)}
@@ -700,15 +700,15 @@ export default function BillingInvoicesPage() {
                     {overdue ? 'Overdue' : statusInfo.label}
                   </span>
                   <h3 className="mt-2 text-lg font-semibold">{inv.customerName}</h3>
-                  {inv.customerEmail && <p className="text-sm text-gray-500">{inv.customerEmail}</p>}
-                  {inv.customerAddress && <p className="text-sm text-gray-500">{inv.customerAddress}</p>}
+                  {inv.customerEmail && <p className="text-sm text-gray-900">{inv.customerEmail}</p>}
+                  {inv.customerAddress && <p className="text-sm text-gray-900">{inv.customerAddress}</p>}
                 </div>
                 <div className="text-right">
-                  <div className="text-sm text-gray-500">Invoice Date</div>
+                  <div className="text-sm text-gray-900">Invoice Date</div>
                   <div className="font-medium">{formatDate(inv.invoiceDate)}</div>
                   {inv.dueDate && (
                     <>
-                      <div className="text-sm text-gray-500 mt-2">Due Date</div>
+                      <div className="text-sm text-gray-900 mt-2">Due Date</div>
                       <div className={`font-medium ${overdue ? 'text-red-600' : ''}`}>
                         {formatDate(inv.dueDate)}
                       </div>
@@ -719,7 +719,7 @@ export default function BillingInvoicesPage() {
 
               {/* Line Items */}
               <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Line Items</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-2">Line Items</h4>
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
@@ -748,12 +748,12 @@ export default function BillingInvoicesPage() {
               <div className="flex justify-end">
                 <div className="w-64 space-y-1">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Subtotal</span>
+                    <span className="text-gray-900">Subtotal</span>
                     <span>{formatCurrency(inv.subtotal)}</span>
                   </div>
                   {inv.taxAmount > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Tax</span>
+                      <span className="text-gray-900">Tax</span>
                       <span>{formatCurrency(inv.taxAmount)}</span>
                     </div>
                   )}
@@ -777,14 +777,14 @@ export default function BillingInvoicesPage() {
               {/* Payment History */}
               {inv.paymentHistory && inv.paymentHistory.length > 0 && (
                 <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Payment History</h4>
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">Payment History</h4>
                   <div className="space-y-2">
                     {inv.paymentHistory.map((p, idx) => (
                       <div key={idx} className="flex items-center justify-between bg-emerald-50 rounded px-3 py-2 text-sm">
                         <div>
                           <span className="font-medium capitalize">{p.paymentMethod}</span>
-                          {p.reference && <span className="text-gray-500 ml-2">Ref: {p.reference}</span>}
-                          <span className="text-gray-400 ml-2">{formatDate(p.date)}</span>
+                          {p.reference && <span className="text-gray-900 ml-2">Ref: {p.reference}</span>}
+                          <span className="text-gray-900 ml-2">{formatDate(p.date)}</span>
                         </div>
                         <span className="font-semibold text-emerald-700">{formatCurrency(p.amount)}</span>
                       </div>
@@ -796,7 +796,7 @@ export default function BillingInvoicesPage() {
               {/* Notes */}
               {inv.notes && (
                 <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-1">Notes</h4>
+                  <h4 className="text-sm font-medium text-gray-900 mb-1">Notes</h4>
                   <p className="text-sm text-gray-600 whitespace-pre-wrap">{inv.notes}</p>
                 </div>
               )}
@@ -870,7 +870,7 @@ export default function BillingInvoicesPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Amount *</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Payment Amount *</label>
             <Input
               type="number"
               value={payAmount}
@@ -880,13 +880,13 @@ export default function BillingInvoicesPage() {
               step="0.01"
             />
             {selectedInvoice && (
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-gray-900 mt-1">
                 Balance due: {formatCurrency(selectedInvoice.balanceDue)}
               </p>
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method *</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Payment Method *</label>
             <select
               value={payMethod}
               onChange={(e) => setPayMethod(e.target.value)}
@@ -899,7 +899,7 @@ export default function BillingInvoicesPage() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reference #</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Reference #</label>
             <Input
               value={payReference}
               onChange={(e) => setPayReference(e.target.value)}
@@ -907,7 +907,7 @@ export default function BillingInvoicesPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Notes</label>
             <Input
               value={payNotes}
               onChange={(e) => setPayNotes(e.target.value)}

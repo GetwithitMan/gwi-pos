@@ -114,7 +114,7 @@ export function SizingOptionsInline({
             disabled={saving}
             className="w-4 h-4 rounded"
           />
-          <span className="text-sm font-medium text-gray-700">Size Options</span>
+          <span className="text-sm font-medium text-gray-900">Size Options</span>
           <span className="text-[11px] text-gray-600">(S/M/L, Bowl/Cup)</span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
@@ -125,7 +125,7 @@ export function SizingOptionsInline({
             disabled={saving}
             className="w-4 h-4 rounded"
           />
-          <span className="text-sm font-medium text-gray-700">Quick Pick</span>
+          <span className="text-sm font-medium text-gray-900">Quick Pick</span>
           <span className="text-[11px] text-gray-600">(Mild/Medium/Hot)</span>
         </label>
       </div>

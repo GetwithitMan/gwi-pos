@@ -72,7 +72,7 @@ export default function ApprovalsSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading approval settings...</div>
+          <div className="text-gray-900 text-lg">Loading approval settings...</div>
         </div>
       </div>
     )
@@ -96,7 +96,7 @@ export default function ApprovalsSettingsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -110,7 +110,7 @@ export default function ApprovalsSettingsPage() {
         {/* Card 1: Void Approval */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Void Approval</h2>
-          <p className="text-sm text-gray-500 mb-5">Require manager approval for voids exceeding a dollar amount.</p>
+          <p className="text-sm text-gray-900 mb-5">Require manager approval for voids exceeding a dollar amount.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -139,7 +139,7 @@ export default function ApprovalsSettingsPage() {
         {/* Card 2: Discount Approval */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Discount Approval</h2>
-          <p className="text-sm text-gray-500 mb-5">Require manager approval for discounts exceeding a percentage.</p>
+          <p className="text-sm text-gray-900 mb-5">Require manager approval for discounts exceeding a percentage.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -168,7 +168,7 @@ export default function ApprovalsSettingsPage() {
         {/* Card 3: Refund & Cash Drawer Approval */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Refund & Cash Drawer</h2>
-          <p className="text-sm text-gray-500 mb-5">Manager approval requirements for refunds and cash drawer access.</p>
+          <p className="text-sm text-gray-900 mb-5">Manager approval requirements for refunds and cash drawer access.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -192,7 +192,7 @@ export default function ApprovalsSettingsPage() {
         {/* Card 4: Discount Cap */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Discount Cap for Non-Managers</h2>
-          <p className="text-sm text-gray-500 mb-5">Set the maximum discount percentage non-managers can apply without approval.</p>
+          <p className="text-sm text-gray-900 mb-5">Set the maximum discount percentage non-managers can apply without approval.</p>
 
           <div className="space-y-0">
             <NumberRow

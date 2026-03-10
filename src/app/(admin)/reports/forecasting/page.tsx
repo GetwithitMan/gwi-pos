@@ -137,7 +137,7 @@ export default function ForecastingPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Lookback Period
                 </label>
                 <select
@@ -151,7 +151,7 @@ export default function ForecastingPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Forecast Horizon
                 </label>
                 <select
@@ -168,7 +168,7 @@ export default function ForecastingPage() {
               </Button>
             </div>
             {historical && !isLoading && (
-              <p className="mt-3 text-xs text-gray-500">
+              <p className="mt-3 text-xs text-gray-900">
                 Based on{' '}
                 <span className="font-medium">{historical.ordersAnalyzed.toLocaleString()} orders</span>{' '}
                 from {formatDate(historical.startDate)} to {formatDate(historical.endDate)}
@@ -189,7 +189,7 @@ export default function ForecastingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">Strongest Day</p>
+                <p className="text-xs text-gray-900 mb-1">Strongest Day</p>
                 <p className="text-xl font-bold text-yellow-600">
                   {summary.strongestDay.day}
                 </p>
@@ -200,7 +200,7 @@ export default function ForecastingPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">Weakest Day</p>
+                <p className="text-xs text-gray-900 mb-1">Weakest Day</p>
                 <p className="text-xl font-bold text-blue-600">
                   {summary.weakestDay.day}
                 </p>
@@ -211,11 +211,11 @@ export default function ForecastingPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 mb-1">Projected 7-Day Revenue</p>
+                <p className="text-xs text-gray-900 mb-1">Projected 7-Day Revenue</p>
                 <p className="text-xl font-bold text-green-600">
                   {formatCurrency(summary.projectedWeekRevenue)}
                 </p>
-                <p className="text-sm text-gray-500 mt-0.5">Mon — Sun average week</p>
+                <p className="text-sm text-gray-900 mt-0.5">Mon — Sun average week</p>
               </CardContent>
             </Card>
           </div>
@@ -228,9 +228,9 @@ export default function ForecastingPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading report...</div>
+              <div className="text-center py-8 text-gray-900">Loading report...</div>
             ) : patterns.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 No orders found in the lookback period.
               </div>
             ) : (
@@ -238,16 +238,16 @@ export default function ForecastingPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Day
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Avg Revenue
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Avg Orders
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Sample
                       </th>
                     </tr>
@@ -284,10 +284,10 @@ export default function ForecastingPage() {
                           >
                             {formatCurrency(pattern.avgRevenue)}
                           </td>
-                          <td className="px-4 py-3 text-right text-gray-700">
+                          <td className="px-4 py-3 text-right text-gray-900">
                             {pattern.avgOrders}
                           </td>
-                          <td className="px-4 py-3 text-right text-gray-500 text-sm">
+                          <td className="px-4 py-3 text-right text-gray-900 text-sm">
                             {pattern.sampleWeeks} {pattern.sampleWeeks === 1 ? 'week' : 'weeks'}
                           </td>
                         </tr>
@@ -309,9 +309,9 @@ export default function ForecastingPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading report...</div>
+              <div className="text-center py-8 text-gray-900">Loading report...</div>
             ) : forecast.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 No forecast data available.
               </div>
             ) : (
@@ -319,16 +319,16 @@ export default function ForecastingPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Date
                       </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Day
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Projected Revenue
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Projected Orders
                       </th>
                     </tr>
@@ -346,7 +346,7 @@ export default function ForecastingPage() {
                         >
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <span className={`text-sm ${highlight ? 'font-semibold text-blue-700' : 'text-gray-700'}`}>
+                              <span className={`text-sm ${highlight ? 'font-semibold text-blue-700' : 'text-gray-900'}`}>
                                 {formatDate(row.date)}
                               </span>
                               {isToday && (
@@ -367,7 +367,7 @@ export default function ForecastingPage() {
                           <td className="px-4 py-3 text-right font-medium text-green-600">
                             {formatCurrency(row.projectedRevenue)}
                           </td>
-                          <td className="px-4 py-3 text-right text-gray-700">
+                          <td className="px-4 py-3 text-right text-gray-900">
                             {row.projectedOrders}
                           </td>
                         </tr>

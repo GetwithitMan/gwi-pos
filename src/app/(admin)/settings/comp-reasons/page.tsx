@@ -136,10 +136,10 @@ export default function CompReasonsPage() {
 
       <main>
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading comp reasons...</div>
+          <div className="text-center py-12 text-gray-900">Loading comp reasons...</div>
         ) : reasons.length === 0 ? (
           <Card className="p-8 text-center">
-            <p className="text-gray-500 mb-4">No comp reasons created yet.</p>
+            <p className="text-gray-900 mb-4">No comp reasons created yet.</p>
             <Button
               variant="primary"
               onClick={() => {
@@ -155,11 +155,11 @@ export default function CompReasonsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Name</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Description</th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Flags</th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Name</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Description</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Flags</th>
+                  <th className="text-center px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Status</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-900 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -168,8 +168,8 @@ export default function CompReasonsPage() {
                     <td className="px-4 py-3">
                       <span className="font-medium text-gray-900">{reason.name}</span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {reason.description || <span className="italic text-gray-300">--</span>}
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      {reason.description || <span className="italic text-gray-900">--</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
@@ -190,7 +190,7 @@ export default function CompReasonsPage() {
                         className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                           reason.isActive
                             ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-500'
+                            : 'bg-gray-100 text-gray-900'
                         }`}
                       >
                         {reason.isActive ? 'Active' : 'Inactive'}
@@ -237,7 +237,7 @@ export default function CompReasonsPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Name</label>
               <input
                 type="text"
                 value={formData.name}
@@ -249,7 +249,7 @@ export default function CompReasonsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Description (optional)</label>
               <input
                 type="text"
                 value={formData.description}
@@ -260,7 +260,7 @@ export default function CompReasonsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Sort Order</label>
               <input
                 type="number"
                 value={formData.sortOrder}
@@ -279,7 +279,7 @@ export default function CompReasonsPage() {
                   onChange={(e) => setFormData({ ...formData, requiresManager: e.target.checked })}
                   className="w-4 h-4 rounded"
                 />
-                <span className="text-sm text-gray-700">Requires manager PIN</span>
+                <span className="text-sm text-gray-900">Requires manager PIN</span>
               </label>
 
               <label className="flex items-center gap-2">
@@ -289,7 +289,7 @@ export default function CompReasonsPage() {
                   onChange={(e) => setFormData({ ...formData, deductInventory: e.target.checked })}
                   className="w-4 h-4 rounded"
                 />
-                <span className="text-sm text-gray-700">Auto-deduct from inventory</span>
+                <span className="text-sm text-gray-900">Auto-deduct from inventory</span>
               </label>
 
               <label className="flex items-center gap-2">
@@ -299,7 +299,7 @@ export default function CompReasonsPage() {
                   onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                   className="w-4 h-4 rounded"
                 />
-                <span className="text-sm text-gray-700">Active</span>
+                <span className="text-sm text-gray-900">Active</span>
               </label>
             </div>
           </div>

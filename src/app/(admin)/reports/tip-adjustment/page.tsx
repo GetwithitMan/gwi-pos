@@ -275,7 +275,7 @@ export default function TipAdjustmentReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Start Date
                 </label>
                 <input
@@ -286,7 +286,7 @@ export default function TipAdjustmentReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   End Date
                 </label>
                 <input
@@ -314,7 +314,7 @@ export default function TipAdjustmentReportPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Transactions</p>
+                <p className="text-xs text-gray-900">Total Transactions</p>
                 <p className="text-2xl font-bold text-blue-600">
                   {summary.totalTransactions}
                 </p>
@@ -322,7 +322,7 @@ export default function TipAdjustmentReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Tips</p>
+                <p className="text-xs text-gray-900">Total Tips</p>
                 <p className="text-2xl font-bold text-green-600">
                   {formatCurrency(summary.totalTips)}
                 </p>
@@ -330,7 +330,7 @@ export default function TipAdjustmentReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Avg Tip %</p>
+                <p className="text-xs text-gray-900">Avg Tip %</p>
                 <p className="text-2xl font-bold text-orange-600">
                   {summary.avgTipPct.toFixed(1)}%
                 </p>
@@ -350,10 +350,10 @@ export default function TipAdjustmentReportPage() {
             {isLoading ? (
               <div className="p-8 text-center">
                 <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-3" />
-                <p className="text-gray-500">Loading transactions...</p>
+                <p className="text-gray-900">Loading transactions...</p>
               </div>
             ) : transactions.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
+              <div className="p-8 text-center text-gray-900">
                 No card transactions found for the selected date range.
               </div>
             ) : (
@@ -361,34 +361,34 @@ export default function TipAdjustmentReportPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Time
                       </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Order #
                       </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Table
                       </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Server
                       </th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Card
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Subtotal
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Original Tip
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Adjusted Tip
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Total
                       </th>
-                      <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-center text-sm font-medium text-gray-900">
                         Action
                       </th>
                     </tr>
@@ -405,7 +405,7 @@ export default function TipAdjustmentReportPage() {
                           className="border-t hover:bg-gray-50"
                         >
                           {/* Time */}
-                          <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                          <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
                             {formatTime(tx.paidAt)}
                           </td>
 
@@ -415,12 +415,12 @@ export default function TipAdjustmentReportPage() {
                           </td>
 
                           {/* Table */}
-                          <td className="px-4 py-3 text-sm text-gray-700">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {tx.tableName ?? (tx.tableId ? tx.tableId : '—')}
                           </td>
 
                           {/* Server */}
-                          <td className="px-4 py-3 text-sm text-gray-700">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {tx.employeeName}
                           </td>
 
@@ -430,7 +430,7 @@ export default function TipAdjustmentReportPage() {
                               {tx.cardBrand || 'Card'}
                             </span>
                             {tx.cardLast4 && (
-                              <span className="text-gray-400 ml-1">
+                              <span className="text-gray-900 ml-1">
                                 ***{tx.cardLast4}
                               </span>
                             )}
@@ -471,7 +471,7 @@ export default function TipAdjustmentReportPage() {
                                 }}
                               />
                             ) : (
-                              <span className="text-gray-400 text-sm">—</span>
+                              <span className="text-gray-900 text-sm">—</span>
                             )}
                           </td>
 

@@ -220,7 +220,7 @@ export default function HardwareDashboard() {
               </div>
 
               {printers.length === 0 ? (
-                <div className="py-8 text-center text-gray-500">
+                <div className="py-8 text-center text-gray-900">
                   <p>No printers configured</p>
                   <Link
                     href="/settings/hardware/printers"
@@ -256,7 +256,7 @@ export default function HardwareDashboard() {
                         </p>
                         <p className="capitalize">{printer.printerType}</p>
                         {printer.lastPingAt && (
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-900">
                             Last ping: {new Date(printer.lastPingAt).toLocaleString()}
                           </p>
                         )}
@@ -280,7 +280,7 @@ export default function HardwareDashboard() {
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Kitchen Display Screens (KDS)</h2>
-                  <p className="text-sm text-gray-500">Digital screens mounted in the kitchen that show incoming orders. Replace printed kitchen tickets.</p>
+                  <p className="text-sm text-gray-900">Digital screens mounted in the kitchen that show incoming orders. Replace printed kitchen tickets.</p>
                 </div>
                 <Link
                   href="/settings/hardware/kds-screens"
@@ -291,7 +291,7 @@ export default function HardwareDashboard() {
               </div>
 
               {kdsScreens.length === 0 ? (
-                <div className="py-8 text-center text-gray-500">
+                <div className="py-8 text-center text-gray-900">
                   <p>No KDS screens configured</p>
                   <Link
                     href="/settings/hardware/kds-screens"
@@ -336,7 +336,7 @@ export default function HardwareDashboard() {
                           assigned
                         </p>
                         {screen.lastSeenAt && (
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-900">
                             Last seen: {new Date(screen.lastSeenAt).toLocaleString()}
                             {screen.lastKnownIp && ` (${screen.lastKnownIp})`}
                           </p>
@@ -369,7 +369,7 @@ export default function HardwareDashboard() {
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">POS Terminals</h2>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-900">
                     Configure terminals with role-based print skip rules
                   </p>
                 </div>
@@ -382,7 +382,7 @@ export default function HardwareDashboard() {
               </div>
 
               {terminals.length === 0 ? (
-                <div className="py-8 text-center text-gray-500">
+                <div className="py-8 text-center text-gray-900">
                   <p>No terminals configured</p>
                   <Link
                     href="/settings/hardware/terminals"
@@ -437,7 +437,7 @@ export default function HardwareDashboard() {
                           <p className="font-medium text-orange-600">Force All Prints ON</p>
                         )}
                         {terminal.lastSeenAt && (
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-900">
                             Last seen: {new Date(terminal.lastSeenAt).toLocaleString()}
                             {terminal.lastKnownIp && ` (${terminal.lastKnownIp})`}
                           </p>
@@ -455,7 +455,7 @@ export default function HardwareDashboard() {
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Payment Readers</h2>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-900">
                     Datacap Direct card readers for payment processing
                   </p>
                 </div>
@@ -468,7 +468,7 @@ export default function HardwareDashboard() {
               </div>
 
               {paymentReaders.length === 0 ? (
-                <div className="py-8 text-center text-gray-500">
+                <div className="py-8 text-center text-gray-900">
                   <p>No payment readers configured</p>
                   <Link
                     href="/settings/hardware/payment-readers"
@@ -508,7 +508,7 @@ export default function HardwareDashboard() {
                         <p className="font-mono text-xs">
                           {reader.ipAddress}:{reader.port}
                         </p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-900">
                           SN: {reader.serialNumberMasked}
                         </p>
                         {reader.terminals.length > 0 && (
@@ -517,7 +517,7 @@ export default function HardwareDashboard() {
                           </p>
                         )}
                         {reader.lastSeenAt && (
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-gray-900">
                             Last seen: {new Date(reader.lastSeenAt).toLocaleString()}
                           </p>
                         )}
@@ -533,7 +533,7 @@ export default function HardwareDashboard() {
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Scales</h2>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-900">
                     Scales connect to a terminal and automatically calculate price for items sold by weight — such as deli items, bulk goods, or specialty cuts.
                   </p>
                 </div>
@@ -551,7 +551,7 @@ export default function HardwareDashboard() {
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Print Routing Rules</h2>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-900">
                     Configure where items and modifiers print
                   </p>
                 </div>

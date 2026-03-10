@@ -193,9 +193,9 @@ export default function TaxRulesPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <p className="text-gray-500">Loading...</p>
+              <p className="text-gray-900">Loading...</p>
             ) : taxRules.length === 0 ? (
-              <p className="text-gray-500">No tax rules configured</p>
+              <p className="text-gray-900">No tax rules configured</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -218,7 +218,7 @@ export default function TaxRulesPage() {
                         <td className="p-3">
                           <span className="capitalize">{rule.appliesTo}</span>
                           {rule.appliesTo === 'category' && rule.categoryIds && (
-                            <span className="text-sm text-gray-500 ml-1">
+                            <span className="text-sm text-gray-900 ml-1">
                               ({(rule.categoryIds as string[]).length} categories)
                             </span>
                           )}
@@ -352,7 +352,7 @@ export default function TaxRulesPage() {
                 onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
                 className="w-full border rounded px-3 py-2"
               />
-              <p className="text-xs text-gray-400 mt-1">Lower numbers are applied first. Only matters if you have Compounded taxes — the first tax becomes part of the base for the next.</p>
+              <p className="text-xs text-gray-900 mt-1">Lower numbers are applied first. Only matters if you have Compounded taxes — the first tax becomes part of the base for the next.</p>
             </div>
             <div className="space-y-2 pt-6">
               <label className="flex items-start gap-2 text-sm">
@@ -364,7 +364,7 @@ export default function TaxRulesPage() {
                 />
                 <span>
                   Compounded (tax on tax)
-                  <span className="block text-xs text-gray-400 mt-0.5">This tax is calculated on top of other taxes, not just the subtotal. Example: 7% state tax on $100 = $7.00, then 1% county tax on $107.00 = $1.07. Most US venues leave this OFF.</span>
+                  <span className="block text-xs text-gray-900 mt-0.5">This tax is calculated on top of other taxes, not just the subtotal. Example: 7% state tax on $100 = $7.00, then 1% county tax on $107.00 = $1.07. Most US venues leave this OFF.</span>
                 </span>
               </label>
               <label className="flex items-start gap-2 text-sm">
@@ -376,7 +376,7 @@ export default function TaxRulesPage() {
                 />
                 <span>
                   Tax-inclusive pricing
-                  <span className="block text-xs text-gray-400 mt-0.5">The prices you show customers already include tax (common in UK/EU/Australia). Leave OFF if you add tax at checkout like most US venues.</span>
+                  <span className="block text-xs text-gray-900 mt-0.5">The prices you show customers already include tax (common in UK/EU/Australia). Leave OFF if you add tax at checkout like most US venues.</span>
                 </span>
               </label>
             </div>

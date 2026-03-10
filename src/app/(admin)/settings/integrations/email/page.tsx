@@ -56,7 +56,7 @@ export default function EmailIntegrationPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">Email Integration (Resend)</h1>
-          <p className="text-gray-500">Send transactional emails and reports via Resend.</p>
+          <p className="text-gray-900">Send transactional emails and reports via Resend.</p>
         </div>
         {!loading && (
           <span className={`px-3 py-1 rounded-full text-sm font-medium ${
@@ -129,7 +129,7 @@ export default function EmailIntegrationPage() {
             <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto mt-3">
 {`RESEND_API_KEY=re_your_key_here`}
             </pre>
-            <p className="text-sm text-gray-500 mt-3">4. Restart the POS server for changes to take effect.</p>
+            <p className="text-sm text-gray-900 mt-3">4. Restart the POS server for changes to take effect.</p>
           </CardContent>
         </Card>
       </div>

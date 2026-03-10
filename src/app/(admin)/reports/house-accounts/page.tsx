@@ -235,7 +235,7 @@ export default function HouseAccountsReportPage() {
                   onChange={e => setIncludeZeroBalance(e.target.checked)}
                   className="w-4 h-4"
                 />
-                <span className="text-sm text-gray-700">Include $0 balances</span>
+                <span className="text-sm text-gray-900">Include $0 balances</span>
               </label>
             </div>
           </CardContent>
@@ -246,38 +246,38 @@ export default function HouseAccountsReportPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Outstanding</p>
+                <p className="text-xs text-gray-900">Total Outstanding</p>
                 <p className="text-xl font-bold text-blue-600">{formatCurrency(summary.totalOutstanding)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Current (0-30)</p>
+                <p className="text-xs text-gray-900">Current (0-30)</p>
                 <p className="text-xl font-bold text-green-600">{formatCurrency(summary.totalCurrent)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">30 Days</p>
+                <p className="text-xs text-gray-900">30 Days</p>
                 <p className="text-xl font-bold text-amber-600">{formatCurrency(summary.total30)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">60 Days</p>
+                <p className="text-xs text-gray-900">60 Days</p>
                 <p className="text-xl font-bold text-orange-600">{formatCurrency(summary.total60)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">90+ Days</p>
+                <p className="text-xs text-gray-900">90+ Days</p>
                 <p className="text-xl font-bold text-red-600">{formatCurrency(summary.total90 + summary.totalOver90)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Accounts Overdue</p>
-                <p className={`text-xl font-bold ${summary.overdueCount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                <p className="text-xs text-gray-900">Accounts Overdue</p>
+                <p className={`text-xl font-bold ${summary.overdueCount > 0 ? 'text-red-600' : 'text-gray-900'}`}>
                   {summary.overdueCount}
                 </p>
               </CardContent>
@@ -291,7 +291,7 @@ export default function HouseAccountsReportPage() {
             {isLoading ? (
               <div className="p-8 text-center">
                 <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
-                <p className="text-gray-500">Loading accounts...</p>
+                <p className="text-gray-900">Loading accounts...</p>
               </div>
             ) : accounts.length === 0 ? (
               <div className="p-8 text-center">
@@ -300,8 +300,8 @@ export default function HouseAccountsReportPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <p className="text-gray-500 font-medium">No outstanding balances</p>
-                <p className="text-sm text-gray-400 mt-1">All house accounts are current</p>
+                <p className="text-gray-900 font-medium">No outstanding balances</p>
+                <p className="text-sm text-gray-900 mt-1">All house accounts are current</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -331,13 +331,13 @@ export default function HouseAccountsReportPage() {
                           <td className="px-4 py-3">
                             <div className="font-medium text-gray-900">{account.name}</div>
                             {account.email && (
-                              <div className="text-xs text-gray-400">{account.email}</div>
+                              <div className="text-xs text-gray-900">{account.email}</div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {account.contactName || '-'}
                             {account.phone && (
-                              <div className="text-xs text-gray-400">{account.phone}</div>
+                              <div className="text-xs text-gray-900">{account.phone}</div>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right">
@@ -348,13 +348,13 @@ export default function HouseAccountsReportPage() {
                               <div className="text-xs text-red-500">{utilizationPct}% of limit</div>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm text-gray-500">
+                          <td className="px-4 py-3 text-right font-mono text-sm text-gray-900">
                             {formatCurrency(account.creditLimit)}
                           </td>
-                          <td className="px-4 py-3 text-center text-sm text-gray-500">
+                          <td className="px-4 py-3 text-center text-sm text-gray-900">
                             {account.paymentTerms}d
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {account.lastPaymentDate ? (
                               <div>
                                 <div>{new Date(account.lastPaymentDate).toLocaleDateString()}</div>
@@ -463,7 +463,7 @@ export default function HouseAccountsReportPage() {
                   </tbody>
                   <tfoot>
                     <tr className="bg-gray-50 border-t-2 border-gray-300">
-                      <td className="px-4 py-3 font-bold text-gray-700" colSpan={2}>
+                      <td className="px-4 py-3 font-bold text-gray-900" colSpan={2}>
                         Total ({accounts.length} account{accounts.length !== 1 ? 's' : ''})
                       </td>
                       <td className="px-4 py-3 text-right font-mono font-bold text-gray-900">

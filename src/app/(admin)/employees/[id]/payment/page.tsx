@@ -190,7 +190,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-gray-900">Loading...</div>
       </div>
     )
   }
@@ -210,7 +210,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.push('/employees')}
-            className="text-gray-500 hover:text-gray-700"
+            className="text-gray-900 hover:text-gray-900"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -218,7 +218,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
           </button>
           <div>
             <h1 className="text-2xl font-bold">Payment & Tax Preferences</h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-900">
               {employee.displayName || `${employee.firstName} ${employee.lastName}`}
               {employee.hourlyRate && (
                 <span className="ml-2">{formatCurrency(employee.hourlyRate)}/hr</span>
@@ -274,7 +274,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
         <Card>
           <CardHeader>
             <CardTitle>Address</CardTitle>
-            <p className="text-sm text-gray-500">Required for tax documents (W-2, etc.)</p>
+            <p className="text-sm text-gray-900">Required for tax documents (W-2, etc.)</p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -333,12 +333,12 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
         <Card>
           <CardHeader>
             <CardTitle>Tax Withholding (W-4)</CardTitle>
-            <p className="text-sm text-gray-500">Federal and state tax withholding settings</p>
+            <p className="text-sm text-gray-900">Federal and state tax withholding settings</p>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Federal */}
             <div className="space-y-4">
-              <h4 className="font-medium text-gray-700">Federal Tax</h4>
+              <h4 className="font-medium text-gray-900">Federal Tax</h4>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -388,7 +388,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
                   <div>
                     <Label htmlFor="additionalFederalWithholding">Additional Withholding</Label>
                     <div className="relative mt-1">
-                      <span className="absolute left-3 top-2.5 text-gray-500">$</span>
+                      <span className="absolute left-3 top-2.5 text-gray-900">$</span>
                       <Input
                         id="additionalFederalWithholding"
                         type="number"
@@ -408,7 +408,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
 
             {/* State */}
             <div className="space-y-4 pt-4 border-t">
-              <h4 className="font-medium text-gray-700">State Tax</h4>
+              <h4 className="font-medium text-gray-900">State Tax</h4>
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -457,7 +457,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
                   <div>
                     <Label htmlFor="additionalStateWithholding">Additional Withholding</Label>
                     <div className="relative mt-1">
-                      <span className="absolute left-3 top-2.5 text-gray-500">$</span>
+                      <span className="absolute left-3 top-2.5 text-gray-900">$</span>
                       <Input
                         id="additionalStateWithholding"
                         type="number"
@@ -481,7 +481,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
         <Card>
           <CardHeader>
             <CardTitle>Payment Method</CardTitle>
-            <p className="text-sm text-gray-500">How you receive your pay</p>
+            <p className="text-sm text-gray-900">How you receive your pay</p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -500,9 +500,9 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
 
             {formData.paymentMethod === 'direct_deposit' && (
               <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-                <h4 className="font-medium text-gray-700">Bank Account Information</h4>
+                <h4 className="font-medium text-gray-900">Bank Account Information</h4>
                 {employee.bankAccountLast4 && (
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-900">
                     Current account ending in: ****{employee.bankAccountLast4}
                   </p>
                 )}
@@ -539,7 +539,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
                     <Label htmlFor="bankRoutingNumber">
                       Routing Number
                       {employee.bankRoutingNumber && (
-                        <span className="text-gray-400 text-xs ml-1">(leave blank to keep)</span>
+                        <span className="text-gray-900 text-xs ml-1">(leave blank to keep)</span>
                       )}
                     </Label>
                     <Input
@@ -559,7 +559,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
                     <Label htmlFor="bankAccountNumber">
                       Account Number
                       {employee.bankAccountLast4 && (
-                        <span className="text-gray-400 text-xs ml-1">(leave blank to keep)</span>
+                        <span className="text-gray-900 text-xs ml-1">(leave blank to keep)</span>
                       )}
                     </Label>
                     <Input
@@ -577,7 +577,7 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
                     />
                   </div>
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-900">
                   Bank account information is securely stored and only used for direct deposit payments.
                 </p>
               </div>

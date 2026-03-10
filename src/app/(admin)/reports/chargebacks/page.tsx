@@ -124,7 +124,7 @@ export default function ChargebacksPage() {
 
       {/* Filter bar */}
       <div className="flex items-center gap-3 mb-4">
-        <label className="text-sm font-medium text-gray-700">Status:</label>
+        <label className="text-sm font-medium text-gray-900">Status:</label>
         <select
           value={filterStatus}
           onChange={e => setFilterStatus(e.target.value)}
@@ -135,27 +135,27 @@ export default function ChargebacksPage() {
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
         </select>
-        <span className="text-sm text-gray-500">{cases.length} case{cases.length !== 1 ? 's' : ''}</span>
+        <span className="text-sm text-gray-900">{cases.length} case{cases.length !== 1 ? 's' : ''}</span>
       </div>
 
       {/* Cases table */}
       {loading ? (
-        <div className="text-center py-12 text-gray-500">Loading...</div>
+        <div className="text-center py-12 text-gray-900">Loading...</div>
       ) : cases.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">No chargeback cases found.</div>
+        <div className="text-center py-12 text-gray-900">No chargeback cases found.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Card</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deadline</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Date</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Card</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-900 uppercase">Amount</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Reason</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Deadline</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Notes</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -220,7 +220,7 @@ export default function ChargebacksPage() {
                         </button>
                         <button
                           onClick={cancelEditing}
-                          className="px-2 py-1 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300"
+                          className="px-2 py-1 bg-gray-200 text-gray-900 text-xs rounded hover:bg-gray-300"
                         >
                           Cancel
                         </button>
@@ -228,7 +228,7 @@ export default function ChargebacksPage() {
                     ) : (
                       <button
                         onClick={() => startEditing(c)}
-                        className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200"
+                        className="px-2 py-1 bg-gray-100 text-gray-900 text-xs rounded hover:bg-gray-200"
                       >
                         Edit
                       </button>

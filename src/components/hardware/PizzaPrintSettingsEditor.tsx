@@ -54,7 +54,7 @@ function ReceiptPreview({ settings }: { settings: PizzaPrintSettings }) {
       </div>
 
       {/* Divider */}
-      <div className="text-center text-gray-400 my-1">
+      <div className="text-center text-gray-900 my-1">
         {settings.sections?.sectionDivider === 'dashes' && '------------------------'}
         {settings.sections?.sectionDivider === 'equals' && '========================'}
         {settings.sections?.sectionDivider === 'stars' && '************************'}
@@ -135,14 +135,14 @@ function ReceiptPreview({ settings }: { settings: PizzaPrintSettings }) {
       )}
 
       {/* Divider */}
-      <div className="text-center text-gray-400 mt-2">
+      <div className="text-center text-gray-900 mt-2">
         {settings.sections?.sectionDivider === 'dashes' && '------------------------'}
         {settings.sections?.sectionDivider === 'equals' && '========================'}
         {settings.sections?.sectionDivider === 'stars' && '************************'}
         {settings.sections?.sectionDivider === 'double-line' && '════════════════════════'}
       </div>
 
-      <div className="text-center text-xs text-gray-500 mt-2">
+      <div className="text-center text-xs text-gray-900 mt-2">
         {new Date().toLocaleTimeString()}
       </div>
     </div>
@@ -185,7 +185,7 @@ export function PizzaPrintSettingsEditor({ settings, onSave, onClose }: PizzaPri
         <div className="p-3 border-b flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold">Pizza Print Settings</h2>
-            <p className="text-xs text-gray-500">Configure kitchen ticket appearance - preview updates live</p>
+            <p className="text-xs text-gray-900">Configure kitchen ticket appearance - preview updates live</p>
           </div>
           <div className="flex items-center gap-2">
             <select
@@ -652,9 +652,9 @@ export function PizzaPrintSettingsEditor({ settings, onSave, onClose }: PizzaPri
 
           {/* Right: Preview */}
           <div className="p-4 bg-gray-100 flex flex-col items-center">
-            <div className="text-sm font-bold text-gray-700 mb-2">LIVE PREVIEW</div>
+            <div className="text-sm font-bold text-gray-900 mb-2">LIVE PREVIEW</div>
             <ReceiptPreview settings={localSettings} />
-            <p className="text-xs text-gray-500 mt-2 text-center max-w-[200px]">
+            <p className="text-xs text-gray-900 mt-2 text-center max-w-[200px]">
               Changes update instantly. Red text shows what will print in red on TM-U220.
             </p>
           </div>

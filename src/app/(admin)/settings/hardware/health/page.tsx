@@ -39,28 +39,28 @@ function formatLastSeen(dateString: string | null): string {
 // ─── Color coding helpers ─────────────────────────────────────────────────────
 
 function responseTimeColor(ms: number | null): string {
-  if (ms == null) return 'text-gray-400'
+  if (ms == null) return 'text-gray-900'
   if (ms < 500) return 'text-green-600'
   if (ms <= 2000) return 'text-amber-600'
   return 'text-red-600'
 }
 
 function responseTimeBg(ms: number | null): string {
-  if (ms == null) return 'bg-gray-50 text-gray-400'
+  if (ms == null) return 'bg-gray-50 text-gray-900'
   if (ms < 500) return 'bg-green-50 text-green-700'
   if (ms <= 2000) return 'bg-amber-50 text-amber-700'
   return 'bg-red-50 text-red-700'
 }
 
 function successRateColor(rate: number | null): string {
-  if (rate == null) return 'text-gray-400'
+  if (rate == null) return 'text-gray-900'
   if (rate > 95) return 'text-green-600'
   if (rate >= 85) return 'text-amber-600'
   return 'text-red-600'
 }
 
 function successRateBg(rate: number | null): string {
-  if (rate == null) return 'bg-gray-50 text-gray-400'
+  if (rate == null) return 'bg-gray-50 text-gray-900'
   if (rate > 95) return 'bg-green-50 text-green-700'
   if (rate >= 85) return 'bg-amber-50 text-amber-700'
   return 'bg-red-50 text-red-700'
@@ -75,7 +75,7 @@ function ReaderCard({ reader }: { reader: ReaderHealth }) {
       <div className="flex items-center gap-4 px-5 py-4">
         {/* Icon + status dot */}
         <div className="relative flex-shrink-0">
-          <CreditCardIcon className="w-9 h-9 text-gray-300" />
+          <CreditCardIcon className="w-9 h-9 text-gray-500" />
           <span
             className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
               reader.isOnline ? 'bg-green-500' : 'bg-red-400'
@@ -102,7 +102,7 @@ function ReaderCard({ reader }: { reader: ReaderHealth }) {
               {reader.isOnline ? 'Online' : 'Offline'}
             </span>
           </div>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-xs text-gray-900 mt-0.5">
             Last seen: {formatLastSeen(reader.lastSeenAt)}
           </p>
         </div>
@@ -112,13 +112,13 @@ function ReaderCard({ reader }: { reader: ReaderHealth }) {
       <div className="grid grid-cols-2 divide-x divide-gray-100 border-t border-gray-100">
         {/* Avg Response Time */}
         <div className="px-5 py-3">
-          <p className="text-xs text-gray-500 font-medium mb-1">Avg Response Time</p>
+          <p className="text-xs text-gray-900 font-medium mb-1">Avg Response Time</p>
           {reader.avgResponseTime != null ? (
             <div className="flex items-baseline gap-1">
               <span className={`text-lg font-bold ${responseTimeColor(reader.avgResponseTime)}`}>
                 {reader.avgResponseTime}
               </span>
-              <span className="text-xs text-gray-400">ms</span>
+              <span className="text-xs text-gray-900">ms</span>
               <span
                 className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium ${responseTimeBg(reader.avgResponseTime)}`}
               >
@@ -130,19 +130,19 @@ function ReaderCard({ reader }: { reader: ReaderHealth }) {
               </span>
             </div>
           ) : (
-            <span className="text-sm text-gray-400">No data</span>
+            <span className="text-sm text-gray-900">No data</span>
           )}
         </div>
 
         {/* Success Rate */}
         <div className="px-5 py-3">
-          <p className="text-xs text-gray-500 font-medium mb-1">Success Rate</p>
+          <p className="text-xs text-gray-900 font-medium mb-1">Success Rate</p>
           {reader.successRate != null ? (
             <div className="flex items-baseline gap-1">
               <span className={`text-lg font-bold ${successRateColor(reader.successRate)}`}>
                 {reader.successRate.toFixed(1)}
               </span>
-              <span className="text-xs text-gray-400">%</span>
+              <span className="text-xs text-gray-900">%</span>
               <span
                 className={`ml-2 px-1.5 py-0.5 rounded text-xs font-medium ${successRateBg(reader.successRate)}`}
               >
@@ -154,7 +154,7 @@ function ReaderCard({ reader }: { reader: ReaderHealth }) {
               </span>
             </div>
           ) : (
-            <span className="text-sm text-gray-400">No data</span>
+            <span className="text-sm text-gray-900">No data</span>
           )}
         </div>
       </div>
@@ -236,7 +236,7 @@ export default function ReaderHealthPage() {
           actions={
             <div className="flex items-center gap-3">
               {lastRefresh && (
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-gray-900">
                   Updated {formatLastSeen(lastRefresh.toISOString())}
                 </span>
               )}
@@ -266,9 +266,9 @@ export default function ReaderHealthPage() {
         {/* No readers */}
         {readers.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border-2 border-dashed border-gray-200">
-            <CreditCardIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-500 font-medium mb-1">No readers registered</p>
-            <p className="text-sm text-gray-400">
+            <CreditCardIcon className="w-12 h-12 mx-auto text-gray-500 mb-3" />
+            <p className="text-gray-900 font-medium mb-1">No readers registered</p>
+            <p className="text-sm text-gray-900">
               Register readers on the{' '}
               <Link href="/settings/hardware/payment-readers" className="text-blue-600 hover:underline">
                 Payment Readers
@@ -282,25 +282,25 @@ export default function ReaderHealthPage() {
             <div className="grid grid-cols-3 gap-4 mb-5">
               <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
                 <p className="text-2xl font-bold text-gray-900">{readers.length}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Total Readers</p>
+                <p className="text-xs text-gray-900 mt-0.5">Total Readers</p>
               </div>
               <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
                 <p className="text-2xl font-bold text-green-600">
                   {readers.filter(r => r.isOnline).length}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">Online</p>
+                <p className="text-xs text-gray-900 mt-0.5">Online</p>
               </div>
               <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
                 <p className="text-2xl font-bold text-red-500">
                   {readers.filter(r => !r.isOnline).length}
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">Offline</p>
+                <p className="text-xs text-gray-900 mt-0.5">Offline</p>
               </div>
             </div>
 
             {/* Reader cards */}
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              <p className="text-xs font-semibold text-gray-900 uppercase tracking-wider">
                 Readers ({readers.length})
               </p>
               {readers.map(reader => (

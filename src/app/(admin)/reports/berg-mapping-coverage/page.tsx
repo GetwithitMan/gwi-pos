@@ -72,7 +72,7 @@ export default function BergMappingCoveragePage() {
         <h1 className="text-2xl font-bold">Berg PLU Mapping Coverage</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={dateClass} />
-          <span className="text-gray-400">to</span>
+          <span className="text-gray-900">to</span>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={dateClass} />
           <Button onClick={runReport} disabled={loading}>
             {loading ? 'Running...' : 'Run Report'}
@@ -82,7 +82,7 @@ export default function BergMappingCoveragePage() {
 
       {/* Empty state */}
       {!report && !loading && (
-        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-900">
           Select a date range and run the report to see PLU mapping coverage.
         </div>
       )}
@@ -101,7 +101,7 @@ export default function BergMappingCoveragePage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             <Card className={`border ${coverageBg(report.coveragePct)}`}>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Coverage</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Coverage</div>
                 <div className={`text-3xl font-bold mt-1 ${coverageColor(report.coveragePct)}`}>
                   {report.coveragePct.toFixed(1)}%
                 </div>
@@ -109,23 +109,23 @@ export default function BergMappingCoveragePage() {
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Mapped PLUs</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Mapped PLUs</div>
                 <div className="text-2xl font-bold mt-1 text-green-600">{report.mappedCount}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{report.totalActiveMappings} active mappings</div>
+                <div className="text-xs text-gray-900 mt-0.5">{report.totalActiveMappings} active mappings</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Unmapped PLUs</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Unmapped PLUs</div>
                 <div className="text-2xl font-bold mt-1 text-red-600">{report.unmappedCount}</div>
-                <div className="text-xs text-gray-400 mt-0.5">{report.summary.unmappedPours} pours untracked</div>
+                <div className="text-xs text-gray-900 mt-0.5">{report.summary.unmappedPours} pours untracked</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Unmapped Exposure</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Unmapped Exposure</div>
                 <div className="text-2xl font-bold mt-1 text-red-600">{fmtMoney(report.summary.unmappedExposure)}</div>
-                <div className="text-xs text-gray-400 mt-0.5">est. at $10/oz</div>
+                <div className="text-xs text-gray-900 mt-0.5">est. at $10/oz</div>
               </CardContent>
             </Card>
           </div>
@@ -136,7 +136,7 @@ export default function BergMappingCoveragePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-left text-gray-500">
+                    <tr className="border-b bg-gray-50 text-left text-gray-900">
                       <th className="py-2 px-3 font-medium">PLU #</th>
                       <th className="py-2 px-3 font-medium">Description</th>
                       <th className="py-2 px-3 font-medium">Status</th>
@@ -150,7 +150,7 @@ export default function BergMappingCoveragePage() {
                     {report.plus.map(row => (
                       <tr key={row.pluNumber} className={row.isMapped ? '' : 'bg-red-50/50'}>
                         <td className="py-2 px-3 font-mono">{row.pluNumber}</td>
-                        <td className="py-2 px-3">{row.description || <span className="text-gray-400 italic">Unknown</span>}</td>
+                        <td className="py-2 px-3">{row.description || <span className="text-gray-900 italic">Unknown</span>}</td>
                         <td className="py-2 px-3">
                           {row.isMapped ? (
                             <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Mapped</span>
@@ -164,7 +164,7 @@ export default function BergMappingCoveragePage() {
                           {row.estimatedExposure != null ? (
                             <span className="text-red-600 font-medium">{fmtMoney(row.estimatedExposure)}</span>
                           ) : (
-                            <span className="text-gray-300">&mdash;</span>
+                            <span className="text-gray-900">&mdash;</span>
                           )}
                         </td>
                         <td className="py-2 px-3 text-right">
@@ -181,7 +181,7 @@ export default function BergMappingCoveragePage() {
                     ))}
                     {report.plus.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-400">
+                        <td colSpan={7} className="py-8 text-center text-gray-900">
                           No dispense events found for this date range.
                         </td>
                       </tr>

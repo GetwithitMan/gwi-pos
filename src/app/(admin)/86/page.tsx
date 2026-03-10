@@ -212,7 +212,7 @@ export default function Quick86Page() {
                 </button>
               )}
               {isPrepItem && (
-                <span className="text-gray-500 text-xs">└</span>
+                <span className="text-gray-900 text-xs">└</span>
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -268,9 +268,9 @@ export default function Quick86Page() {
               disabled={isUpdating || item.parentIs86d}
               className={`px-3 py-1.5 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
                 isUpdating
-                  ? 'bg-gray-200 text-gray-500 cursor-wait'
+                  ? 'bg-gray-200 text-gray-900 cursor-wait'
                   : item.parentIs86d
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    ? 'bg-gray-100 text-gray-900 cursor-not-allowed'
                     : item.is86d
                       ? 'bg-green-50 text-green-600 hover:bg-green-100'
                       : 'bg-red-50 text-red-600 hover:bg-red-100'
@@ -313,7 +313,7 @@ export default function Quick86Page() {
           <div className="flex items-center gap-3">
             <Link
               href="/orders"
-              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700"
+              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-900"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -344,7 +344,7 @@ export default function Quick86Page() {
               className="w-full px-4 py-2 pl-10 bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
             />
             <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-900"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -358,7 +358,7 @@ export default function Quick86Page() {
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
               showOnly86d
                 ? 'bg-red-500 text-white'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                : 'bg-white text-gray-900 border border-gray-300 hover:bg-gray-50'
             }`}
           >
             {showOnly86d ? "86'd Only" : 'Show All'}
@@ -369,7 +369,7 @@ export default function Quick86Page() {
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
               editingQuickList
                 ? 'bg-amber-500 text-white'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                : 'bg-white text-gray-900 border border-gray-300 hover:bg-gray-50'
             }`}
           >
             {editingQuickList ? '✓ Done' : '⭐ Edit List'}

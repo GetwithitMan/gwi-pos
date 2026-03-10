@@ -63,7 +63,7 @@ export function RoleCard({ role, onEdit, onDelete }: RoleCardProps) {
             )}
           </div>
           {/* Meta row */}
-          <p className="text-sm text-gray-500 mb-1">
+          <p className="text-sm text-gray-900 mb-1">
             {role.employeeCount} employee{role.employeeCount !== 1 ? 's' : ''}
           </p>
           {/* Badges row */}
@@ -81,7 +81,7 @@ export function RoleCard({ role, onEdit, onDelete }: RoleCardProps) {
         </div>
         {/* Action buttons */}
         <div className="flex gap-1 ml-2 flex-shrink-0">
-          <button onClick={onEdit} className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded">
+          <button onClick={onEdit} className="p-1.5 text-gray-900 hover:text-blue-600 hover:bg-blue-50 rounded">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
             </svg>
@@ -89,7 +89,7 @@ export function RoleCard({ role, onEdit, onDelete }: RoleCardProps) {
           <button
             onClick={onDelete}
             disabled={role.employeeCount > 0}
-            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-1.5 text-gray-900 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
             title={role.employeeCount > 0 ? `${role.employeeCount} employee(s) assigned — reassign first` : 'Delete role'}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,7 +110,7 @@ export function RoleCard({ role, onEdit, onDelete }: RoleCardProps) {
           )
         })}
         {role.permissions.length > 4 && (
-          <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">
+          <span className="px-2 py-0.5 bg-gray-100 text-gray-900 rounded text-xs">
             +{role.permissions.length - 4} more
           </span>
         )}

@@ -136,7 +136,7 @@ export function Modal({
                 <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
                 <motion.button
                   onClick={onClose}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-white/60 transition-colors"
+                  className="p-1.5 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-white/60 transition-colors"
                   whileHover={{ scale: 1.1 }}
                   whileTap={{ scale: 0.95 }}
                 >

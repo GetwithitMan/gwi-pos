@@ -181,7 +181,7 @@ export function PizzaIngredientLinker({
   if (selectedItemName && inventoryItemId) {
     return (
       <div className="border-t pt-4 mt-2">
-        <p className="text-sm font-semibold text-gray-700 mb-3">Inventory & Cost Tracking</p>
+        <p className="text-sm font-semibold text-gray-900 mb-3">Inventory & Cost Tracking</p>
         <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-lg mb-3">
           <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold">LINKED</span>
           <span className="flex-1 text-sm font-medium text-green-800">{selectedItemName}</span>
@@ -235,8 +235,8 @@ export function PizzaIngredientLinker({
 
   return (
     <div className="border-t pt-4 mt-2">
-      <p className="text-sm font-semibold text-gray-700 mb-3">Inventory & Cost Tracking</p>
-      <p className="text-xs text-gray-500 mb-2">
+      <p className="text-sm font-semibold text-gray-900 mb-3">Inventory & Cost Tracking</p>
+      <p className="text-xs text-gray-900 mb-2">
         Browse ingredients below and click &quot;Link&quot; to connect this {componentLabel} to an inventory item for cost tracking and automatic deductions.
       </p>
       <IngredientHierarchyPicker

@@ -170,7 +170,7 @@ export function ItemsBar({
   return (
     <div className="bg-white border-b px-4 py-1.5 shrink-0">
       <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-medium text-gray-700">
+        <span className="text-xs font-medium text-gray-900">
           {selectedCategoryData?.name} Items
         </span>
         {selectedCategoryData?.categoryType === 'liquor' && (
@@ -224,7 +224,7 @@ export function ItemsBar({
         >
           + Add Item
         </Button>
-        <span className="text-[10px] text-gray-400 ml-auto">
+        <span className="text-[10px] text-gray-900 ml-auto">
           Drag items to categories above
         </span>
       </div>
@@ -233,8 +233,8 @@ export function ItemsBar({
         className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-300"
       >
         {filteredItems.length === 0 ? (
-          <div className="flex flex-col items-center py-8 text-gray-400">
-            <svg className="w-10 h-10 mb-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <div className="flex flex-col items-center py-8 text-gray-900">
+            <svg className="w-10 h-10 mb-2 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <p className="text-sm font-medium">No menu items</p>

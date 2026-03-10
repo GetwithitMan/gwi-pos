@@ -191,7 +191,7 @@ export default function CouponReportsPage() {
         />
 
         {isLoading ? (
-          <div className="text-center py-8 text-gray-500">Loading report...</div>
+          <div className="text-center py-8 text-gray-900">Loading report...</div>
         ) : (
           <>
             {/* Summary Cards */}
@@ -267,7 +267,7 @@ export default function CouponReportsPage() {
                   </CardHeader>
                   <CardContent>
                     {dailyTrend.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No data for period</p>
+                      <p className="text-gray-900 text-center py-4">No data for period</p>
                     ) : (
                       <div className="space-y-2 max-h-64 overflow-y-auto">
                         {dailyTrend.map(d => (
@@ -275,7 +275,7 @@ export default function CouponReportsPage() {
                             <span className="text-sm">{d.date}</span>
                             <div className="text-right">
                               <span className="text-sm font-medium">{d.count} redemptions</span>
-                              <span className="text-sm text-gray-500 ml-2">({formatCurrency(d.discount)})</span>
+                              <span className="text-sm text-gray-900 ml-2">({formatCurrency(d.discount)})</span>
                             </div>
                           </div>
                         ))}
@@ -291,7 +291,7 @@ export default function CouponReportsPage() {
                   </CardHeader>
                   <CardContent>
                     {byType.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">No data</p>
+                      <p className="text-gray-900 text-center py-4">No data</p>
                     ) : (
                       <div className="space-y-3">
                         {byType.map(t => (
@@ -299,7 +299,7 @@ export default function CouponReportsPage() {
                             <span className="capitalize font-medium">{t.type.replace('_', ' ')}</span>
                             <div className="text-right">
                               <span className="font-medium">{t.count}</span>
-                              <span className="text-gray-500 ml-2">({formatCurrency(t.discount)})</span>
+                              <span className="text-gray-900 ml-2">({formatCurrency(t.discount)})</span>
                             </div>
                           </div>
                         ))}
@@ -328,11 +328,11 @@ export default function CouponReportsPage() {
                           <p className="text-sm text-gray-600 mb-2">{coupon.name}</p>
                           <div className="grid grid-cols-2 gap-2 text-sm">
                             <div>
-                              <p className="text-gray-500">Redemptions</p>
+                              <p className="text-gray-900">Redemptions</p>
                               <p className="font-bold">{coupon.periodRedemptions}</p>
                             </div>
                             <div>
-                              <p className="text-gray-500">Discount</p>
+                              <p className="text-gray-900">Discount</p>
                               <p className="font-bold">{formatCurrency(coupon.totalDiscount)}</p>
                             </div>
                           </div>
@@ -409,7 +409,7 @@ export default function CouponReportsPage() {
                             <td className="p-3 text-sm">{formatDateTime(r.redeemedAt)}</td>
                             <td className="p-3">
                               <span className="font-mono font-bold">{r.couponCode}</span>
-                              <span className="text-sm text-gray-500 ml-2">{r.couponName}</span>
+                              <span className="text-sm text-gray-900 ml-2">{r.couponName}</span>
                             </td>
                             <td className="p-3 font-mono">#{r.orderNumber}</td>
                             <td className="p-3 text-right">{formatCurrency(r.orderTotal)}</td>

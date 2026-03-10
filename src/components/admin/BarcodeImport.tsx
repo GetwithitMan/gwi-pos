@@ -187,7 +187,7 @@ export function BarcodeImport({ locationId, onComplete }: BarcodeImportProps) {
         <div className="flex items-center justify-between mb-3">
           <div>
             <h4 className="text-sm font-semibold text-gray-900">CSV Import</h4>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-gray-900 mt-0.5">
               Upload a CSV with columns: barcode, menuItemName, inventoryItemName, packSize, price, label
             </p>
           </div>
@@ -204,7 +204,7 @@ export function BarcodeImport({ locationId, onComplete }: BarcodeImportProps) {
           type="file"
           accept=".csv,text/csv"
           onChange={handleFile}
-          className="block w-full text-sm text-gray-500
+          className="block w-full text-sm text-gray-900
             file:mr-3 file:py-2 file:px-4
             file:rounded-lg file:border-0
             file:text-sm file:font-semibold
@@ -220,12 +220,12 @@ export function BarcodeImport({ locationId, onComplete }: BarcodeImportProps) {
           <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
             <span className="text-sm font-semibold text-gray-900">
               Preview ({parsedRows.length} row{parsedRows.length !== 1 ? 's' : ''})
-              {parsedRows.length > 10 && <span className="text-gray-500 font-normal"> — showing first 10</span>}
+              {parsedRows.length > 10 && <span className="text-gray-900 font-normal"> — showing first 10</span>}
             </span>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleClear}
-                className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                className="text-xs text-gray-900 hover:text-gray-900 font-medium"
               >
                 Clear
               </button>
@@ -243,9 +243,9 @@ export function BarcodeImport({ locationId, onComplete }: BarcodeImportProps) {
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">#</th>
                   {parsedHeaders.map((h) => (
-                    <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                    <th key={h} className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">
                       {h}
                     </th>
                   ))}
@@ -257,7 +257,7 @@ export function BarcodeImport({ locationId, onComplete }: BarcodeImportProps) {
                     <td className="px-3 py-2 text-xs text-gray-600">{i + 1}</td>
                     {parsedHeaders.map((h) => (
                       <td key={h} className="px-3 py-2 text-sm text-gray-900 font-mono">
-                        {row[h] || <span className="text-gray-300">—</span>}
+                        {row[h] || <span className="text-gray-500">—</span>}
                       </td>
                     ))}
                   </tr>
@@ -276,15 +276,15 @@ export function BarcodeImport({ locationId, onComplete }: BarcodeImportProps) {
           <div className="flex gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-green-600">{result.created}</div>
-              <div className="text-xs text-gray-500">Created</div>
+              <div className="text-xs text-gray-900">Created</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-yellow-600">{result.skipped}</div>
-              <div className="text-xs text-gray-500">Skipped</div>
+              <div className="text-xs text-gray-900">Skipped</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-red-600">{result.errors.length}</div>
-              <div className="text-xs text-gray-500">Errors</div>
+              <div className="text-xs text-gray-900">Errors</div>
             </div>
           </div>
 

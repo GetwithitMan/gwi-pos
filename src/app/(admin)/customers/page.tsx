@@ -338,7 +338,7 @@ export default function CustomersPage() {
       vip_platinum: 'bg-purple-100 text-purple-800',
       banned: 'bg-red-600 text-white',
     }
-    return colors[tag] || 'bg-gray-100 text-gray-700'
+    return colors[tag] || 'bg-gray-100 text-gray-900'
   }
 
   const getTagDisplayName = (tag: string) => {
@@ -405,7 +405,7 @@ export default function CustomersPage() {
         {isLoading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-500">Loading customers...</p>
+            <p className="mt-4 text-gray-900">Loading customers...</p>
           </div>
         ) : customers.length === 0 ? (
           <Card className="p-12 text-center">
@@ -415,7 +415,7 @@ export default function CustomersPage() {
             <h3 className="text-lg font-medium text-gray-900 mb-2">
               {searchTerm || tagFilter ? 'No customers found' : 'No customers yet'}
             </h3>
-            <p className="text-gray-500 mb-4">
+            <p className="text-gray-900 mb-4">
               {searchTerm || tagFilter
                 ? 'Try adjusting your search or filters'
                 : 'Add your first customer to start tracking visits and preferences'}
@@ -459,17 +459,17 @@ export default function CustomersPage() {
                       )}
                     </div>
                     {customer.email && (
-                      <p className="text-sm text-gray-500">{customer.email}</p>
+                      <p className="text-sm text-gray-900">{customer.email}</p>
                     )}
                     {customer.phone && (
-                      <p className="text-sm text-gray-500">{customer.phone}</p>
+                      <p className="text-sm text-gray-900">{customer.phone}</p>
                     )}
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-green-600">
                       {formatCurrency(customer.totalSpent)}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-900">
                       {customer.totalOrders} order{customer.totalOrders !== 1 ? 's' : ''}
                     </p>
                   </div>
@@ -499,7 +499,7 @@ export default function CustomersPage() {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between text-xs text-gray-500">
+                <div className="flex items-center justify-between text-xs text-gray-900">
                   <span>
                     Avg: {formatCurrency(customer.averageTicket)}
                   </span>
@@ -557,7 +557,7 @@ export default function CustomersPage() {
               onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
               placeholder="Johnny"
             />
-            <p className="text-xs text-gray-500 mt-1">How they prefer to be called</p>
+            <p className="text-xs text-gray-900 mt-1">How they prefer to be called</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -773,7 +773,7 @@ export default function CustomersPage() {
                   <p className="text-gray-600">{viewingCustomer.phone}</p>
                 )}
                 {viewingCustomer.birthday && (
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm text-gray-900">
                     Birthday: {formatDate(viewingCustomer.birthday)}
                     {(() => {
                       const daysUntil = isBirthdayUpcoming(viewingCustomer.birthday)
@@ -791,10 +791,10 @@ export default function CustomersPage() {
                 <p className="text-2xl font-bold text-green-600">
                   {formatCurrency(viewingCustomer.totalSpent)}
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-900">
                   {viewingCustomer.totalOrders} orders
                 </p>
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-gray-900">
                   Avg: {formatCurrency(viewingCustomer.averageTicket)}
                 </p>
               </div>
@@ -803,11 +803,11 @@ export default function CustomersPage() {
             {/* Customer Stats */}
             <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg">
               <div className="text-center">
-                <p className="text-xs text-gray-500">Customer Since</p>
+                <p className="text-xs text-gray-900">Customer Since</p>
                 <p className="text-sm font-medium">{formatDate(viewingCustomer.createdAt)}</p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500">Visit Frequency</p>
+                <p className="text-xs text-gray-900">Visit Frequency</p>
                 <p className="text-sm font-medium">
                   {(() => {
                     const months = Math.max(1, Math.floor((Date.now() - new Date(viewingCustomer.createdAt).getTime()) / (1000 * 60 * 60 * 24 * 30)))
@@ -817,7 +817,7 @@ export default function CustomersPage() {
                 </p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-gray-500">Avg Check</p>
+                <p className="text-xs text-gray-900">Avg Check</p>
                 <p className="text-sm font-medium">{formatCurrency(viewingCustomer.averageTicket)}</p>
               </div>
             </div>
@@ -900,7 +900,7 @@ export default function CustomersPage() {
                   {viewingCustomer.favoriteItems.map(item => (
                     <div key={item.menuItemId} className="flex justify-between text-sm">
                       <span>{item.name}</span>
-                      <span className="text-gray-500">
+                      <span className="text-gray-900">
                         {item.totalQuantity}x ({item.orderCount} orders)
                       </span>
                     </div>
@@ -908,6 +908,9 @@ export default function CustomersPage() {
                 </div>
               </div>
             )}
+
+            {/* Memberships */}
+            <CustomerMemberships customerId={viewingCustomer.id} locationId={employee?.location?.id || ''} employeeId={employee?.id || ''} />
 
             {/* Recent Orders */}
             <div>
@@ -919,14 +922,14 @@ export default function CustomersPage() {
                   type="date"
                   value={pendingDateFilter.startDate}
                   onChange={(e) => setPendingDateFilter(prev => ({ ...prev, startDate: e.target.value }))}
-                  className="text-xs border rounded px-2 py-1 text-gray-700"
+                  className="text-xs border rounded px-2 py-1 text-gray-900"
                 />
-                <span className="text-xs text-gray-400">to</span>
+                <span className="text-xs text-gray-900">to</span>
                 <input
                   type="date"
                   value={pendingDateFilter.endDate}
                   onChange={(e) => setPendingDateFilter(prev => ({ ...prev, endDate: e.target.value }))}
-                  className="text-xs border rounded px-2 py-1 text-gray-700"
+                  className="text-xs border rounded px-2 py-1 text-gray-900"
                 />
                 <button
                   className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -965,7 +968,7 @@ export default function CustomersPage() {
                         <p className="text-sm font-medium">
                           #{order.orderNumber} - {order.orderType.replace('_', ' ')}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-900">
                           {formatDate(order.createdAt)} - {order.itemCount} items
                         </p>
                       </div>
@@ -974,7 +977,7 @@ export default function CustomersPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-400 py-2">No orders found.</p>
+                <p className="text-sm text-gray-900 py-2">No orders found.</p>
               )}
 
               {/* Pagination controls */}
@@ -1010,7 +1013,7 @@ export default function CustomersPage() {
             </div>
 
             {/* Last Visit */}
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-gray-900">
               {viewingCustomer.lastVisit
                 ? `Last visit: ${formatDate(viewingCustomer.lastVisit)}`
                 : 'No visits recorded'}
@@ -1039,6 +1042,46 @@ export default function CustomersPage() {
           </div>
         )}
       </Modal>
+    </div>
+  )
+}
+
+function CustomerMemberships({ customerId, locationId, employeeId }: { customerId: string; locationId: string; employeeId: string }) {
+  const [memberships, setMemberships] = useState<any[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!customerId || !locationId || !employeeId) return
+    fetch(`/api/memberships?locationId=${locationId}&requestingEmployeeId=${employeeId}&customerId=${customerId}`)
+      .then(r => r.json())
+      .then(j => { setMemberships(j.data || []); setLoaded(true) })
+      .catch(() => setLoaded(true))
+  }, [customerId, locationId, employeeId])
+
+  if (!loaded || memberships.length === 0) return null
+
+  const statusColors: Record<string, string> = {
+    trial: 'bg-blue-100 text-blue-800', active: 'bg-green-100 text-green-800',
+    paused: 'bg-yellow-100 text-yellow-800', cancelled: 'bg-gray-100 text-gray-800', expired: 'bg-red-100 text-red-800',
+  }
+
+  return (
+    <div>
+      <h4 className="font-medium text-gray-900 mb-2">Memberships</h4>
+      <div className="space-y-2">
+        {memberships.map((m: any) => (
+          <div key={m.id} className="flex items-center justify-between bg-gray-50 rounded p-2 text-sm">
+            <div>
+              <span className="font-medium">{m.planName}</span>
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${statusColors[m.status] || ''}`}>{m.status}</span>
+            </div>
+            <div className="text-gray-900">
+              {formatCurrency(Number(m.priceAtSignup))}/{m.billingCycle?.[0] || 'm'}
+              {m.nextBillingDate && <span className="ml-2">Next: {formatDate(m.nextBillingDate)}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

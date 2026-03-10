@@ -273,7 +273,7 @@ export function PrepItemEditor({
             <button
               type="button"
               onClick={onChangeType}
-              className="text-xs text-gray-500 hover:text-blue-600 underline"
+              className="text-xs text-gray-900 hover:text-blue-600 underline"
             >
               Change to Inventory Item
             </button>
@@ -288,21 +288,21 @@ export function PrepItemEditor({
             <p className="text-sm text-gray-600">
               Made from: <strong className="text-blue-600">{parentName}</strong>
               {transformationText && (
-                <span className="text-gray-500 ml-2">({transformationText})</span>
+                <span className="text-gray-900 ml-2">({transformationText})</span>
               )}
             </p>
             {onChangeParent && (
               <button
                 type="button"
                 onClick={onChangeParent}
-                className="text-xs text-gray-500 hover:text-blue-600 underline"
+                className="text-xs text-gray-900 hover:text-blue-600 underline"
               >
                 Change parent
               </button>
             )}
           </div>
         )}
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-gray-900 mt-1">
           Define how much of the parent item is used to make this prep item. Cost is calculated automatically.
         </p>
       </div>
@@ -441,7 +441,7 @@ export function PrepItemEditor({
               <span className="text-lg font-bold">${previewCost.toFixed(2)}</span>{' '}
               per {formData.outputUnit}
               {derivedYield !== null && (
-                <span className="text-gray-500 ml-2">
+                <span className="text-gray-900 ml-2">
                   ({derivedYield.toFixed(1)}% yield)
                 </span>
               )}
@@ -601,7 +601,7 @@ export function PrepItemEditor({
           <h3 className="font-semibold text-gray-900 border-b pb-2">Basic Info</h3>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Name *
             </label>
             <input
@@ -615,7 +615,7 @@ export function PrepItemEditor({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Description (optional)
             </label>
             <input
@@ -648,7 +648,7 @@ export function PrepItemEditor({
 
         {/* ========== Visibility ========== */}
         <details className="border rounded-lg">
-          <summary className="px-4 py-3 cursor-pointer font-medium text-gray-700 hover:bg-gray-50">
+          <summary className="px-4 py-3 cursor-pointer font-medium text-gray-900 hover:bg-gray-50">
             Visibility & Status
           </summary>
           <div className="px-4 pb-4 space-y-4">

@@ -63,7 +63,7 @@ const COUNT_TYPES = [
 ]
 
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  pending: { bg: 'bg-gray-100', text: 'text-gray-700' },
+  pending: { bg: 'bg-gray-100', text: 'text-gray-900' },
   in_progress: { bg: 'bg-blue-100', text: 'text-blue-700' },
   completed: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
   reviewed: { bg: 'bg-green-100', text: 'text-green-700' },
@@ -322,9 +322,9 @@ export default function CountsPage() {
         {/* Count List */}
         <div className="flex-1 overflow-y-auto space-y-2">
           {isLoading ? (
-            <p className="text-sm text-gray-500 p-4">Loading...</p>
+            <p className="text-sm text-gray-900 p-4">Loading...</p>
           ) : counts.length === 0 ? (
-            <p className="text-sm text-gray-500 p-4">No counts found</p>
+            <p className="text-sm text-gray-900 p-4">No counts found</p>
           ) : (
             counts.map(count => {
               const statusStyle = STATUS_COLORS[count.status] || STATUS_COLORS.pending
@@ -346,11 +346,11 @@ export default function CountsPage() {
                       {count.status.replace('_', ' ')}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-900">
                     {formatDate(count.countDate)} &middot; {count._count.items} items
                   </div>
                   {count.storageLocation && (
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-900">
                       {count.storageLocation.name}
                     </div>
                   )}
@@ -370,14 +370,14 @@ export default function CountsPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {!selectedCountId ? (
           <Card className="flex-1 flex items-center justify-center">
-            <CardContent className="text-center text-gray-500">
+            <CardContent className="text-center text-gray-900">
               <p>Select a count to view details</p>
               <p className="text-sm mt-2">or create a new count</p>
             </CardContent>
           </Card>
         ) : isLoadingDetail ? (
           <Card className="flex-1 flex items-center justify-center">
-            <CardContent className="text-gray-500">Loading count details...</CardContent>
+            <CardContent className="text-gray-900">Loading count details...</CardContent>
           </Card>
         ) : countDetail ? (
           <Card className="flex-1 flex flex-col overflow-hidden">
@@ -388,7 +388,7 @@ export default function CountsPage() {
                   <CardTitle>
                     {COUNT_TYPES.find(t => t.value === countDetail.countType)?.label || countDetail.countType}
                   </CardTitle>
-                  <p className="text-sm text-gray-500 mt-1">
+                  <p className="text-sm text-gray-900 mt-1">
                     {formatDateTime(countDetail.countDate)}
                     {countDetail.storageLocation && ` • ${countDetail.storageLocation.name}`}
                   </p>
@@ -397,7 +397,7 @@ export default function CountsPage() {
                   <span className={`px-2 py-1 text-sm font-medium rounded ${STATUS_COLORS[countDetail.status]?.bg} ${STATUS_COLORS[countDetail.status]?.text}`}>
                     {countDetail.status.replace('_', ' ')}
                   </span>
-                  <p className="text-sm text-gray-500 mt-2">
+                  <p className="text-sm text-gray-900 mt-2">
                     {countProgress.counted}/{countProgress.total} counted ({countProgress.percent}%)
                   </p>
                 </div>
@@ -407,7 +407,7 @@ export default function CountsPage() {
             {/* Barcode Scan */}
             {countDetail.status === 'in_progress' && (
               <div className="flex-shrink-0 border-b px-4 py-2 bg-blue-50/50">
-                <label className="block text-xs font-medium text-gray-500 mb-1">Scan Barcode to Find Item</label>
+                <label className="block text-xs font-medium text-gray-900 mb-1">Scan Barcode to Find Item</label>
                 <BarcodeScanField
                   locationId={employee?.location?.id || ''}
                   placeholder="Scan barcode to jump to item..."
@@ -436,14 +436,14 @@ export default function CountsPage() {
             {/* Count Sheet - Virtualized */}
             <CardContent className="flex-1 overflow-hidden p-0">
               {flatItems.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">No items in this count</div>
+                <div className="p-8 text-center text-gray-900">No items in this count</div>
               ) : (
                 <GroupedVirtuoso
                   ref={virtuosoRef}
                   style={{ height: '100%' }}
                   groupCounts={groupCounts}
                   groupContent={(index) => (
-                    <div className="bg-gray-100 px-4 py-2 font-medium text-sm text-gray-700 border-b">
+                    <div className="bg-gray-100 px-4 py-2 font-medium text-sm text-gray-900 border-b">
                       {groups[index]}
                     </div>
                   )}
@@ -463,7 +463,7 @@ export default function CountsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate">{item.inventoryItem.name}</div>
                           {item.inventoryItem.sku && (
-                            <div className="text-xs text-gray-500">{item.inventoryItem.sku}</div>
+                            <div className="text-xs text-gray-900">{item.inventoryItem.sku}</div>
                           )}
                         </div>
 
@@ -499,7 +499,7 @@ export default function CountsPage() {
                         <div className={`w-20 text-right text-sm font-medium flex-shrink-0 ${
                           hasVariance
                             ? variance! < 0 ? 'text-red-600' : 'text-green-600'
-                            : 'text-gray-400'
+                            : 'text-gray-900'
                         }`}>
                           {variance !== null
                             ? `${variance >= 0 ? '+' : ''}${variance.toFixed(2)}`
@@ -539,7 +539,7 @@ export default function CountsPage() {
                 </div>
               )}
               {countDetail.status === 'reviewed' && (
-                <div className="text-center text-sm text-gray-500">
+                <div className="text-center text-sm text-gray-900">
                   Approved and applied to inventory
                   {countDetail.reviewedAt && ` on ${formatDateTime(countDetail.reviewedAt)}`}
                 </div>
@@ -633,7 +633,7 @@ function NewCountModal({
                   className={`px-3 py-2 text-sm font-medium rounded border ${
                     countType === t.value
                       ? 'bg-blue-50 border-blue-300 text-blue-700'
-                      : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                      : 'bg-white border-gray-300 text-gray-900 hover:bg-gray-50'
                   }`}
                 >
                   {t.label}
@@ -659,7 +659,7 @@ function NewCountModal({
                 </option>
               ))}
             </select>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-900 mt-1">
               Filter count to items in a specific storage area
             </p>
           </div>

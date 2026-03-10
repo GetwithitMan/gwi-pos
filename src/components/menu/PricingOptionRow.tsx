@@ -87,7 +87,7 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
       {/* Price */}
       <div className="shrink-0">
         <div className="relative w-20">
-          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-700">$</span>
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-gray-900">$</span>
           <input
             type="number"
             value={price}
@@ -140,7 +140,7 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
                   onUpdate({ color: null })
                   setShowColors(false)
                 }}
-                className="col-span-4 text-xs text-gray-700 hover:text-gray-900 py-1"
+                className="col-span-4 text-xs text-gray-900 hover:text-gray-900 py-1"
               >
                 Remove color
               </button>
@@ -158,7 +158,7 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
           option.showOnPos
             ? 'text-blue-600'
             : canToggleShowOnPos
-              ? 'text-gray-300 hover:text-gray-400'
+              ? 'text-gray-500 hover:text-gray-600'
               : 'text-gray-200 cursor-not-allowed'
         }`}
         title={option.showOnPos ? 'Shown on POS' : showOnPosCount >= 4 ? 'Max 4 shown on POS' : 'Show on POS'}
@@ -176,7 +176,7 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
       <button
         type="button"
         onClick={() => onUpdate({ isDefault: !option.isDefault })}
-        className={`p-1 rounded transition-colors shrink-0 ${option.isDefault ? 'text-amber-500' : 'text-gray-300 hover:text-gray-400'}`}
+        className={`p-1 rounded transition-colors shrink-0 ${option.isDefault ? 'text-amber-500' : 'text-gray-500 hover:text-gray-600'}`}
         title={option.isDefault ? 'Default option' : 'Set as default'}
       >
         <svg className="w-5 h-5" fill={option.isDefault ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
@@ -188,7 +188,7 @@ export function PricingOptionRow({ option, showOnPosCount = 0, onUpdate, onDelet
       <button
         type="button"
         onClick={onDelete}
-        className="p-1 text-gray-300 hover:text-red-500 transition-colors shrink-0"
+        className="p-1 text-gray-500 hover:text-red-500 transition-colors shrink-0"
         title="Delete option"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

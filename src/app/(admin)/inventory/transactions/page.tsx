@@ -44,7 +44,7 @@ const TYPE_COLORS: Record<string, { bg: string; text: string; label: string }> =
   adjustment: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Adjustment' },
   waste: { bg: 'bg-red-100', text: 'text-red-700', label: 'Waste' },
   transfer: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Transfer' },
-  count: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Count' },
+  count: { bg: 'bg-gray-100', text: 'text-gray-900', label: 'Count' },
 }
 
 const TRANSACTION_TYPES = [
@@ -169,7 +169,7 @@ export default function TransactionsPage() {
         <CardContent className="p-4">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Search Item</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Search Item</label>
               <input
                 type="text"
                 placeholder="Search by item name..."
@@ -179,7 +179,7 @@ export default function TransactionsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Type</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
@@ -191,7 +191,7 @@ export default function TransactionsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
               <input
                 type="date"
                 value={startDate}
@@ -200,7 +200,7 @@ export default function TransactionsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
               <input
                 type="date"
                 value={endDate}
@@ -225,13 +225,13 @@ export default function TransactionsPage() {
       {/* Transactions Table */}
       {isLoading ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             Loading transactions...
           </CardContent>
         </Card>
       ) : transactions.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             No transactions found for the selected filters.
           </CardContent>
         </Card>
@@ -241,14 +241,14 @@ export default function TransactionsPage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Change</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Before</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">After</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cost</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Item</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Type</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-900 uppercase">Change</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-900 uppercase">Before</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-900 uppercase">After</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-900 uppercase">Cost</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Reason</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -262,7 +262,7 @@ export default function TransactionsPage() {
                       <td className="px-4 py-3">
                         <div className="font-medium text-gray-900">{tx.inventoryItem.name}</div>
                         {tx.inventoryItem.sku && (
-                          <div className="text-xs text-gray-500">{tx.inventoryItem.sku}</div>
+                          <div className="text-xs text-gray-900">{tx.inventoryItem.sku}</div>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -297,7 +297,7 @@ export default function TransactionsPage() {
           {/* Pagination */}
           {pagination && pagination.total > limit && (
             <div className="px-4 py-3 border-t flex items-center justify-between">
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-gray-900">
                 Page {page + 1} of {Math.ceil(pagination.total / limit)}
               </div>
               <div className="flex gap-2">

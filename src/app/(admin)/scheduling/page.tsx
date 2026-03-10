@@ -87,7 +87,7 @@ function SwapStatusBadge({ status }: { status: string }) {
     accepted: 'bg-blue-100 text-blue-800',
     approved: 'bg-green-100 text-green-800',
     rejected: 'bg-gray-100 text-gray-600',
-    cancelled: 'bg-gray-100 text-gray-500',
+    cancelled: 'bg-gray-100 text-gray-900',
   }
   const labels: Record<string, string> = {
     pending: 'Pending',
@@ -182,12 +182,12 @@ function ShiftSwapRequestModal({
           <div className="bg-gray-50 rounded-lg p-3 text-sm">
             <p className="font-medium text-gray-900">{formatShiftDate(shift.date)}</p>
             <p className="text-gray-600">{shift.startTime} – {shift.endTime}</p>
-            <p className="text-gray-500 mt-0.5">Currently: {shift.employee.name}</p>
+            <p className="text-gray-900 mt-0.5">Currently: {shift.employee.name}</p>
           </div>
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-900 mb-1">
             Offer this shift to (optional)
           </label>
           <select
@@ -207,7 +207,7 @@ function ShiftSwapRequestModal({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-900 mb-1">
             Notes (optional)
           </label>
           <textarea
@@ -731,9 +731,9 @@ export default function SchedulingPage() {
         <Card>
           <CardContent className="p-0">
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
+              <div className="text-center py-8 text-gray-900">Loading...</div>
             ) : !selectedSchedule ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-gray-900">
                 <p className="mb-4">No schedule for this week yet.</p>
                 <Button variant="primary" onClick={createSchedule}>
                   Create Schedule
@@ -749,7 +749,7 @@ export default function SchedulingPage() {
                           <div className="text-sm font-medium text-gray-900">
                             {DAYS[date.getDay()]}
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-900">
                             {formatDate(date)}
                           </div>
                         </th>
@@ -778,7 +778,7 @@ export default function SchedulingPage() {
                                     {shift.startTime} - {shift.endTime}
                                   </div>
                                   {shift.role && (
-                                    <div className="text-gray-500">{shift.role.name}</div>
+                                    <div className="text-gray-900">{shift.role.name}</div>
                                   )}
                                   {/* Action buttons — visible on hover */}
                                   <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -834,7 +834,7 @@ export default function SchedulingPage() {
                               ))}
                               {selectedSchedule.status === 'draft' && (
                                 <button
-                                  className="w-full p-2 border-2 border-dashed border-gray-300 rounded text-gray-400 text-xs hover:border-blue-400 hover:text-blue-600 transition-colors"
+                                  className="w-full p-2 border-2 border-dashed border-gray-300 rounded text-gray-900 text-xs hover:border-blue-400 hover:text-blue-600 transition-colors"
                                   onClick={() => {
                                     setSelectedDate(date)
                                     setShowAddShiftModal(true)
@@ -864,17 +864,17 @@ export default function SchedulingPage() {
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-xs text-gray-500">Total Shifts</p>
+                  <p className="text-xs text-gray-900">Total Shifts</p>
                   <p className="text-xl font-bold">{selectedSchedule.shifts.length}</p>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-xs text-gray-500">Employees Scheduled</p>
+                  <p className="text-xs text-gray-900">Employees Scheduled</p>
                   <p className="text-xl font-bold">
                     {new Set(selectedSchedule.shifts.map(s => s.employee.id)).size}
                   </p>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-xs text-gray-500">Total Hours</p>
+                  <p className="text-xs text-gray-900">Total Hours</p>
                   <p className="text-xl font-bold">
                     {selectedSchedule.shifts.reduce((sum, s) => {
                       const [startH, startM] = s.startTime.split(':').map(Number)
@@ -886,7 +886,7 @@ export default function SchedulingPage() {
                   </p>
                 </div>
                 <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="text-xs text-gray-500">Status</p>
+                  <p className="text-xs text-gray-900">Status</p>
                   <div className="mt-1">{getStatusBadge(selectedSchedule.status)}</div>
                 </div>
               </div>
@@ -909,7 +909,7 @@ export default function SchedulingPage() {
                 </CardTitle>
                 <button
                   onClick={loadSwapRequests}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className="text-gray-900 hover:text-gray-600 transition-colors"
                   aria-label="Refresh swap requests"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -921,9 +921,9 @@ export default function SchedulingPage() {
             </CardHeader>
             <CardContent>
               {swapRequestsLoading ? (
-                <div className="text-center py-6 text-gray-400 text-sm">Loading swap requests...</div>
+                <div className="text-center py-6 text-gray-900 text-sm">Loading swap requests...</div>
               ) : swapRequests.length === 0 ? (
-                <div className="text-center py-6 text-gray-400 text-sm">
+                <div className="text-center py-6 text-gray-900 text-sm">
                   No swap requests for this schedule.
                 </div>
               ) : (
@@ -947,7 +947,7 @@ export default function SchedulingPage() {
                     <>
                       {activeSwapRequests.length > 0 && (
                         <div className="border-t pt-3 mt-3">
-                          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Resolved</p>
+                          <p className="text-xs font-medium text-gray-900 uppercase tracking-wide mb-2">Resolved</p>
                         </div>
                       )}
                       <div className="space-y-2">
@@ -1001,7 +1001,7 @@ export default function SchedulingPage() {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Employee
             </label>
             <select
@@ -1019,7 +1019,7 @@ export default function SchedulingPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Start Time
               </label>
               <select
@@ -1033,7 +1033,7 @@ export default function SchedulingPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 End Time
               </label>
               <select
@@ -1072,7 +1072,7 @@ export default function SchedulingPage() {
         <div className="space-y-4">
           {/* Employee */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Employee
             </label>
             <select
@@ -1091,7 +1091,7 @@ export default function SchedulingPage() {
 
           {/* Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Date
             </label>
             <input
@@ -1105,7 +1105,7 @@ export default function SchedulingPage() {
           {/* Start / End time */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Start Time
               </label>
               <select
@@ -1119,7 +1119,7 @@ export default function SchedulingPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 End Time
               </label>
               <select
@@ -1136,7 +1136,7 @@ export default function SchedulingPage() {
 
           {/* Role */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Role (optional)
             </label>
             <select
@@ -1154,7 +1154,7 @@ export default function SchedulingPage() {
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Notes (optional)
             </label>
             <textarea
@@ -1222,17 +1222,17 @@ function SwapRequestRow({
           <span className="text-sm font-medium text-gray-900">
             {formatShiftDate(req.shift.date)}
           </span>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-900">
             {req.shift.startTime} – {req.shift.endTime}
           </span>
         </div>
         <div className="flex items-center gap-1.5 mt-0.5 text-sm text-gray-600">
           <span>{employeeDisplayName(req.requestedByEmployee)}</span>
-          <span className="text-gray-400">→</span>
+          <span className="text-gray-900">→</span>
           <span>{req.requestedToEmployee ? employeeDisplayName(req.requestedToEmployee) : 'Open'}</span>
         </div>
         {req.notes && (
-          <p className="text-xs text-gray-400 mt-0.5 truncate">{req.notes}</p>
+          <p className="text-xs text-gray-900 mt-0.5 truncate">{req.notes}</p>
         )}
       </div>
 

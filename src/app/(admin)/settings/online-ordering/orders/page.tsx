@@ -154,7 +154,7 @@ export default function OrderConfigPage() {
 
           {/* Prep Time */}
           <div className="mb-5">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Prep Time
             </label>
             <div className="flex items-center gap-2">
@@ -166,14 +166,14 @@ export default function OrderConfigPage() {
                 onChange={(e) => setPrepTime(Math.max(1, Math.min(120, Number(e.target.value))))}
                 className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
               />
-              <span className="text-sm text-gray-500">minutes</span>
+              <span className="text-sm text-gray-900">minutes</span>
             </div>
-            <p className="text-xs text-gray-400 mt-1">Approximate time to prepare an order</p>
+            <p className="text-xs text-gray-900 mt-1">Approximate time to prepare an order</p>
           </div>
 
           {/* Order Types */}
           <div className="mb-5">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-900 mb-2">
               Order Types
             </label>
             <div className="space-y-2">
@@ -184,7 +184,7 @@ export default function OrderConfigPage() {
                   onChange={() => handleOrderTypeToggle('takeout')}
                   className="rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-700">Takeout</span>
+                <span className="text-sm text-gray-900">Takeout</span>
               </label>
               <label className="flex items-center gap-3 opacity-50 cursor-not-allowed">
                 <input
@@ -192,7 +192,7 @@ export default function OrderConfigPage() {
                   disabled
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm text-gray-500">Delivery</span>
+                <span className="text-sm text-gray-900">Delivery</span>
                 <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded font-medium">
                   Coming soon
                 </span>
@@ -203,7 +203,7 @@ export default function OrderConfigPage() {
                   disabled
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm text-gray-500">Dine-in QR</span>
+                <span className="text-sm text-gray-900">Dine-in QR</span>
                 <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded font-medium">
                   Coming soon
                 </span>
@@ -214,8 +214,8 @@ export default function OrderConfigPage() {
           {/* Special Requests */}
           <div className="flex items-center justify-between py-3 border-t border-gray-100">
             <div>
-              <span className="text-sm font-medium text-gray-700">Allow Special Requests</span>
-              <p className="text-xs text-gray-400">Let customers add notes to their order</p>
+              <span className="text-sm font-medium text-gray-900">Allow Special Requests</span>
+              <p className="text-xs text-gray-900">Let customers add notes to their order</p>
             </div>
             <button
               onClick={() => setAllowSpecialRequests(!allowSpecialRequests)}
@@ -235,11 +235,11 @@ export default function OrderConfigPage() {
         {/* Throttling */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Order Throttling</h2>
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-gray-900 mb-4">
             Limit the number of orders accepted in a time window. Leave blank to accept unlimited orders.
           </p>
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-gray-700">Max</span>
+            <span className="text-sm text-gray-900">Max</span>
             <input
               type="number"
               min={1}
@@ -248,7 +248,7 @@ export default function OrderConfigPage() {
               placeholder="Unlimited"
               className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
-            <span className="text-sm text-gray-700">orders per</span>
+            <span className="text-sm text-gray-900">orders per</span>
             <select
               value={windowMinutes}
               onChange={(e) => setWindowMinutes(Number(e.target.value))}
@@ -266,7 +266,7 @@ export default function OrderConfigPage() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Online Surcharge</h2>
 
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Surcharge Name
             </label>
             <input
@@ -279,7 +279,7 @@ export default function OrderConfigPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Type
               </label>
               <select
@@ -294,7 +294,7 @@ export default function OrderConfigPage() {
             </div>
             {surchargeType !== 'none' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Amount {surchargeType === 'flat' ? '($)' : '(%)'}
                 </label>
                 <input
@@ -316,7 +316,7 @@ export default function OrderConfigPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Min Order Amount ($)
               </label>
               <input
@@ -330,7 +330,7 @@ export default function OrderConfigPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Max Order Amount ($)
               </label>
               <input

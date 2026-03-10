@@ -204,12 +204,12 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
               {isEdit ? 'Edit Reader' : 'Register Reader'}
             </h2>
             {prefilled && (
-              <p className="text-sm text-gray-700 font-mono mt-0.5">
+              <p className="text-sm text-gray-900 font-mono mt-0.5">
                 SN: {isEdit ? existing?.serialNumber : scanned?.serialNumber}
               </p>
             )}
           </div>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg">
+          <button onClick={onClose} className="p-1.5 text-gray-900 hover:text-gray-600 rounded-lg">
             <XCircleIcon className="w-5 h-5" />
           </button>
         </div>
@@ -232,7 +232,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
 
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reader Name <span className="text-red-500">*</span></label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Reader Name <span className="text-red-500">*</span></label>
             <input
               type="text"
               value={form.name}
@@ -246,15 +246,15 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
           {/* Connection type — always selectable */}
           {scanned ? (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Connection Type</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Connection Type</label>
               <div className="flex items-center gap-2">
                 <ConnectionBadge type={form.connectionType} />
-                <span className="text-xs text-gray-700">(detected from scan)</span>
+                <span className="text-xs text-gray-900">(detected from scan)</span>
               </div>
             </div>
           ) : (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Connection Type</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Connection Type</label>
               <select
                 value={form.connectionType}
                 onChange={e => setForm(f => ({ ...f, connectionType: e.target.value as ConnectionType }))}
@@ -272,7 +272,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
           {isNetworkType && (
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">IP Address <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">IP Address <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={form.ipAddress}
@@ -282,7 +282,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Port</label>
                 <input
                   type="number"
                   value={form.port}
@@ -302,7 +302,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
 
           {/* Assign to Terminals */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Assign to Terminals</label>
+            <label className="block text-sm font-medium text-gray-900 mb-2">Assign to Terminals</label>
             {terminals.length === 0 ? (
               <p className="text-sm text-gray-600 italic">No terminals configured yet</p>
             ) : (
@@ -340,7 +340,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
         <div className="flex gap-2 p-5 pt-0">
           <button
             onClick={onClose}
-            className="flex-1 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium"
+            className="flex-1 py-2 px-4 border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 text-sm font-medium"
           >
             Cancel
           </button>
@@ -640,18 +640,18 @@ export default function PaymentReadersPage() {
 
                 {unregisteredScanned.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">New — Ready to Register</p>
+                    <p className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">New — Ready to Register</p>
                     <div className="space-y-2">
                       {unregisteredScanned.map(d => (
                         <div key={d.serialNumber} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg">
                           <div className="flex items-center gap-3">
-                            <CreditCardIcon className="w-8 h-8 text-gray-300" />
+                            <CreditCardIcon className="w-8 h-8 text-gray-500" />
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold text-gray-900">{d.model || 'Payment Reader'}</span>
                                 <ConnectionBadge type={d.connectionType} />
                               </div>
-                              <p className="text-xs text-gray-700 font-mono mt-0.5">
+                              <p className="text-xs text-gray-900 font-mono mt-0.5">
                                 SN: {d.serialNumber}
                                 {d.ipAddress && ` · ${d.ipAddress}:${d.port}`}
                               </p>
@@ -673,12 +673,12 @@ export default function PaymentReadersPage() {
 
                 {alreadyRegisteredScanned.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">Already Registered</p>
+                    <p className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">Already Registered</p>
                     <div className="space-y-1">
                       {alreadyRegisteredScanned.map(d => (
                         <div key={d.serialNumber} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg">
                           <CheckCircleIcon className="w-4 h-4 text-green-500 flex-shrink-0" />
-                          <span className="text-sm text-gray-700 font-medium">{d.registeredAs}</span>
+                          <span className="text-sm text-gray-900 font-medium">{d.registeredAs}</span>
                           <ConnectionBadge type={d.connectionType} />
                           <span className="text-xs text-gray-600 font-mono">...{d.serialNumber.slice(-8)}</span>
                         </div>
@@ -694,15 +694,15 @@ export default function PaymentReadersPage() {
         {/* ── Registered Readers ── */}
         {readers.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-xl border-2 border-dashed border-gray-200">
-            <CreditCardIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-            <p className="text-gray-700 font-medium mb-1">No readers registered</p>
+            <CreditCardIcon className="w-12 h-12 mx-auto text-gray-500 mb-3" />
+            <p className="text-gray-900 font-medium mb-1">No readers registered</p>
             <p className="text-sm text-gray-600">
               Click <strong>Scan for Readers</strong> to find connected devices
             </p>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+            <p className="text-xs font-semibold text-gray-900 uppercase tracking-wider">
               Registered Readers ({readers.length})
             </p>
             {readers.map(reader => (
@@ -714,30 +714,30 @@ export default function PaymentReadersPage() {
                 <div className="flex items-center gap-4 px-5 py-4">
                   {/* Status + Icon */}
                   <div className="relative flex-shrink-0">
-                    <CreditCardIcon className="w-9 h-9 text-gray-300" />
+                    <CreditCardIcon className="w-9 h-9 text-gray-500" />
                     <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${reader.isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
                   </div>
 
                   {/* Name + badges */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-base font-semibold ${reader.isActive ? 'text-gray-900' : 'text-gray-400'}`}>{reader.name}</span>
+                      <span className={`text-base font-semibold ${reader.isActive ? 'text-gray-900' : 'text-gray-900'}`}>{reader.name}</span>
                       <ConnectionBadge type={reader.connectionType} />
                       {!reader.isActive && (
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">Disabled</span>
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-900 text-xs rounded-full">Disabled</span>
                       )}
                     </div>
 
                     {/* Serial + connection details */}
                     <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                      <span className="text-xs text-gray-700 font-mono">
+                      <span className="text-xs text-gray-900 font-mono">
                         SN: ...{reader.serialNumber.slice(-8)}
                       </span>
                       {(reader.connectionType === 'IP' || reader.connectionType === 'WIFI') && (
                         <span className="text-xs text-gray-600 font-mono">{reader.ipAddress}:{reader.port}</span>
                       )}
                       {reader.merchantId ? (
-                        <span className="text-xs font-mono text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded" title="Datacap Merchant ID — managed by GWI">
+                        <span className="text-xs font-mono text-gray-900 bg-gray-100 px-1.5 py-0.5 rounded" title="Datacap Merchant ID — managed by GWI">
                           MID: {reader.merchantId}
                         </span>
                       ) : (
@@ -761,7 +761,7 @@ export default function PaymentReadersPage() {
                       onClick={() => handlePing(reader)}
                       disabled={pingingId === reader.id}
                       title="Ping reader"
-                      className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-2 text-gray-900 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
                     >
                       {pingingId === reader.id
                         ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
@@ -772,7 +772,7 @@ export default function PaymentReadersPage() {
                       onClick={() => handleVerify(reader)}
                       disabled={verifyingId === reader.id}
                       title="Verify serial (beep)"
-                      className="p-2 text-gray-400 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-2 text-gray-900 hover:text-cyan-600 hover:bg-cyan-50 rounded-lg transition-colors disabled:opacity-50"
                     >
                       {verifyingId === reader.id
                         ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
@@ -787,7 +787,7 @@ export default function PaymentReadersPage() {
                       className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
                         reader.isActive
                           ? 'text-green-600 hover:text-gray-500 hover:bg-gray-100'
-                          : 'text-gray-400 hover:text-green-600 hover:bg-green-50'
+                          : 'text-gray-900 hover:text-green-600 hover:bg-green-50'
                       }`}
                     >
                       {togglingId === reader.id
@@ -799,7 +799,7 @@ export default function PaymentReadersPage() {
                       onClick={() => handleInitialize(reader)}
                       disabled={initializingId === reader.id}
                       title="Initialize reader (EMVParamDownload) — run once on first setup or after factory reset"
-                      className="p-2 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-2 text-gray-900 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-50"
                     >
                       {initializingId === reader.id
                         ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
@@ -809,7 +809,7 @@ export default function PaymentReadersPage() {
                     <button
                       onClick={() => setModal({ mode: 'edit', existing: reader })}
                       title="Edit reader"
-                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                      className="p-2 text-gray-900 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                     >
                       <PencilIcon className="w-4 h-4" />
                     </button>
@@ -817,7 +817,7 @@ export default function PaymentReadersPage() {
                       onClick={() => handleDelete(reader)}
                       disabled={deletingId === reader.id}
                       title="Remove reader"
-                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                      className="p-2 text-gray-900 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
                     >
                       {deletingId === reader.id
                         ? <ArrowPathIcon className="w-4 h-4 animate-spin" />
@@ -837,7 +837,7 @@ export default function PaymentReadersPage() {
 
                 {/* Terminal assignments */}
                 <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-3">
-                  <span className="text-xs text-gray-700 font-medium flex-shrink-0">
+                  <span className="text-xs text-gray-900 font-medium flex-shrink-0">
                     {reader.terminals.length > 0 ? 'Assigned to:' : 'Not assigned'}
                   </span>
                   {reader.terminals.length > 0 ? (

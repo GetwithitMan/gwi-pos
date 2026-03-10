@@ -86,10 +86,10 @@ export default function BergVarianceReportPage() {
         <h1 className="text-2xl font-bold">Berg Variance Report</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={dateClass} />
-          <span className="text-gray-400">to</span>
+          <span className="text-gray-900">to</span>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={dateClass} />
           <div className="flex items-center gap-1.5">
-            <label className="text-xs text-gray-500">Alert %</label>
+            <label className="text-xs text-gray-900">Alert %</label>
             <input
               type="number"
               value={threshold}
@@ -110,7 +110,7 @@ export default function BergVarianceReportPage() {
 
       {/* Empty state */}
       {!report && !loading && (
-        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-900">
           No PLU mappings configured. Set up mappings in Settings &rarr; Berg Controls.
         </div>
       )}
@@ -128,25 +128,25 @@ export default function BergVarianceReportPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Total POS Rings</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Total POS Rings</div>
                 <div className="text-2xl font-bold mt-1">{report.summary.totalPosRings}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Total Berg Pours</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Total Berg Pours</div>
                 <div className="text-2xl font-bold mt-1">{report.summary.totalBergPours}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Items Over Threshold</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Items Over Threshold</div>
                 <div className="text-2xl font-bold mt-1 text-red-600">{report.summary.itemsOverThreshold}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Data Quality</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Data Quality</div>
                 <div className="text-2xl font-bold mt-1">
                   {report.summary.unknownPluCount > 0
                     ? <span className="text-amber-600">Warning</span>
@@ -162,7 +162,7 @@ export default function BergVarianceReportPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-left text-gray-500">
+                    <tr className="border-b bg-gray-50 text-left text-gray-900">
                       <th className="py-2 px-3 font-medium">PLU #</th>
                       <th className="py-2 px-3 font-medium">Description</th>
                       <th className="py-2 px-3 font-medium text-right">POS Rings</th>
@@ -200,7 +200,7 @@ export default function BergVarianceReportPage() {
                     ))}
                     {report.rows.length === 0 && (
                       <tr>
-                        <td colSpan={11} className="py-8 text-center text-gray-400">
+                        <td colSpan={11} className="py-8 text-center text-gray-900">
                           No variance data for this date range.
                         </td>
                       </tr>

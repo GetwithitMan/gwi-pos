@@ -511,7 +511,7 @@ export default function ReportsHubPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-500">Today&apos;s Sales</p>
+                      <p className="text-sm text-gray-900">Today&apos;s Sales</p>
                       <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.totalSales)}</p>
                     </div>
                   </div>
@@ -526,7 +526,7 @@ export default function ReportsHubPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-500">Orders</p>
+                      <p className="text-sm text-gray-900">Orders</p>
                       <p className="text-2xl font-bold text-blue-600">{stats.orderCount}</p>
                     </div>
                   </div>
@@ -541,7 +541,7 @@ export default function ReportsHubPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-500">Avg. Order</p>
+                      <p className="text-sm text-gray-900">Avg. Order</p>
                       <p className="text-2xl font-bold text-purple-600">{formatCurrency(stats.avgOrderValue)}</p>
                     </div>
                   </div>
@@ -556,7 +556,7 @@ export default function ReportsHubPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-500">Tips</p>
+                      <p className="text-sm text-gray-900">Tips</p>
                       <p className="text-2xl font-bold text-orange-600">{formatCurrency(stats.tipsCollected)}</p>
                     </div>
                   </div>
@@ -615,9 +615,9 @@ export default function ReportsHubPage() {
                           </div>
                           <div className="flex-1">
                             <h3 className="font-medium text-gray-900">{report.name}</h3>
-                            <p className="text-sm text-gray-500 mt-1">{report.description}</p>
+                            <p className="text-sm text-gray-900 mt-1">{report.description}</p>
                           </div>
-                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                           </svg>
                         </div>
@@ -645,9 +645,9 @@ export default function ReportsHubPage() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-medium text-gray-900">My Sales</h3>
-                      <p className="text-sm text-gray-500 mt-1">Your personal sales and performance</p>
+                      <p className="text-sm text-gray-900 mt-1">Your personal sales and performance</p>
                     </div>
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
@@ -665,9 +665,9 @@ export default function ReportsHubPage() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-medium text-gray-900">My Commission</h3>
-                      <p className="text-sm text-gray-500 mt-1">Your commission earnings and tips</p>
+                      <p className="text-sm text-gray-900 mt-1">Your commission earnings and tips</p>
                     </div>
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
@@ -685,9 +685,9 @@ export default function ReportsHubPage() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-medium text-gray-900">My Tips</h3>
-                      <p className="text-sm text-gray-500 mt-1">Your tip shares and banked tips</p>
+                      <p className="text-sm text-gray-900 mt-1">Your tip shares and banked tips</p>
                     </div>
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>

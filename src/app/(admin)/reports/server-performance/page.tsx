@@ -122,7 +122,7 @@ export default function ServerPerformancePage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Start Date
                 </label>
                 <input
@@ -133,7 +133,7 @@ export default function ServerPerformancePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   End Date
                 </label>
                 <input
@@ -163,7 +163,7 @@ export default function ServerPerformancePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Revenue</p>
+                <p className="text-xs text-gray-900">Total Revenue</p>
                 <p className="text-xl font-bold text-green-600">
                   {formatCurrency(summary.totalRevenue)}
                 </p>
@@ -171,7 +171,7 @@ export default function ServerPerformancePage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Tips</p>
+                <p className="text-xs text-gray-900">Total Tips</p>
                 <p className="text-xl font-bold text-orange-600">
                   {formatCurrency(summary.totalTips)}
                 </p>
@@ -179,7 +179,7 @@ export default function ServerPerformancePage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Orders</p>
+                <p className="text-xs text-gray-900">Total Orders</p>
                 <p className="text-xl font-bold text-blue-600">
                   {summary.totalOrders}
                 </p>
@@ -187,7 +187,7 @@ export default function ServerPerformancePage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Top Performer</p>
+                <p className="text-xs text-gray-900">Top Performer</p>
                 <p className="text-xl font-bold text-purple-600 truncate">
                   {summary.topServer ?? '—'}
                 </p>
@@ -203,11 +203,11 @@ export default function ServerPerformancePage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 Loading report...
               </div>
             ) : servers.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 No paid orders found for the selected period.
               </div>
             ) : (
@@ -215,22 +215,22 @@ export default function ServerPerformancePage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">
                         Server Name
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Orders
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Total Sales
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Total Tips
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Avg Check
                       </th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">
                         Table Turns
                       </th>
                     </tr>
@@ -262,10 +262,10 @@ export default function ServerPerformancePage() {
                         <td className="px-4 py-3 text-right text-orange-600">
                           {formatCurrency(server.totalTips)}
                         </td>
-                        <td className="px-4 py-3 text-right text-gray-700">
+                        <td className="px-4 py-3 text-right text-gray-900">
                           {formatCurrency(server.avgCheckSize)}
                         </td>
-                        <td className="px-4 py-3 text-right text-gray-700">
+                        <td className="px-4 py-3 text-right text-gray-900">
                           {server.tableTurns}
                         </td>
                       </tr>

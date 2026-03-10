@@ -248,13 +248,13 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
   return (
     <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
       <h2 className="text-lg font-semibold text-gray-900 mb-1">Group History & Timeline</h2>
-      <p className="text-sm text-gray-500 mb-5">
+      <p className="text-sm text-gray-900 mb-5">
         Select a group to view its membership changes and tip splits over time.
       </p>
 
       {/* Group selector */}
       {loading ? (
-        <p className="text-sm text-gray-400">Loading...</p>
+        <p className="text-sm text-gray-900">Loading...</p>
       ) : (
         <select
           className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:border-indigo-500"
@@ -272,12 +272,12 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
 
       {/* Loading detail */}
       {loadingDetail && (
-        <p className="mt-4 text-sm text-gray-400">Loading...</p>
+        <p className="mt-4 text-sm text-gray-900">Loading...</p>
       )}
 
       {/* Empty state */}
       {!selectedGroupId && !loading && (
-        <p className="mt-8 text-center text-sm text-gray-400">
+        <p className="mt-8 text-center text-sm text-gray-900">
           Select a group to view its timeline
         </p>
       )}
@@ -288,7 +288,7 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
           <div className="mt-4 p-4 rounded-xl bg-gray-50 border border-gray-100">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <div className="text-xs text-gray-500">Status</div>
+                <div className="text-xs text-gray-900">Status</div>
                 <div className="text-sm font-semibold">
                   {selectedGroup.status === 'active' ? (
                     <span className="inline-flex items-center gap-1 text-green-600">
@@ -296,18 +296,18 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
                       Active
                     </span>
                   ) : (
-                    <span className="text-gray-500">Closed</span>
+                    <span className="text-gray-900">Closed</span>
                   )}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-gray-500">Duration</div>
+                <div className="text-xs text-gray-900">Duration</div>
                 <div className="text-sm font-semibold">
                   {calculateDuration(selectedGroup.startedAt, selectedGroup.endedAt)}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-gray-500">Total Members</div>
+                <div className="text-xs text-gray-900">Total Members</div>
                 <div className="text-sm font-semibold">
                   {selectedGroup.memberships.length}
                 </div>
@@ -317,7 +317,7 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
 
           {/* Timeline */}
           {timeline.length === 0 && selectedGroup.segments.length === 0 ? (
-            <p className="mt-6 text-center text-sm text-gray-400">
+            <p className="mt-6 text-center text-sm text-gray-900">
               No segment history available
             </p>
           ) : (
@@ -362,7 +362,7 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
                   <div className="min-w-0 flex-1 pt-1">
                     <p className="text-sm font-medium text-gray-900">{event.label}</p>
                     {event.sublabel && (
-                      <p className="text-xs text-gray-500 mt-0.5">{event.sublabel}</p>
+                      <p className="text-xs text-gray-900 mt-0.5">{event.sublabel}</p>
                     )}
                     {/* Split badges for segment changes */}
                     {event.splitJson && (
@@ -377,7 +377,7 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
                         ))}
                       </div>
                     )}
-                    <p className="text-[10px] text-gray-400 mt-1">
+                    <p className="text-[10px] text-gray-900 mt-1">
                       {formatDateTime(event.timestamp)}
                     </p>
                   </div>
@@ -389,15 +389,15 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
           {/* Earnings summary table */}
           {sortedEarnings.length > 0 && (
             <div className="mt-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Member Earnings</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">Member Earnings</h3>
               <div className="rounded-xl border border-gray-200 overflow-hidden">
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="text-left text-xs font-medium text-gray-500 px-4 py-2">
+                      <th className="text-left text-xs font-medium text-gray-900 px-4 py-2">
                         Employee
                       </th>
-                      <th className="text-right text-xs font-medium text-gray-500 px-4 py-2">
+                      <th className="text-right text-xs font-medium text-gray-900 px-4 py-2">
                         Earned
                       </th>
                     </tr>
@@ -410,7 +410,7 @@ export function GroupHistoryTimeline({ locationId, employeeId }: GroupHistoryTim
                         </td>
                         <td
                           className={`px-4 py-2 text-sm text-right font-medium ${
-                            getEarningDollars(e) > 0 ? 'text-green-600' : 'text-gray-400'
+                            getEarningDollars(e) > 0 ? 'text-green-600' : 'text-gray-900'
                           }`}
                         >
                           {formatCurrencyFromCents(e.totalEarnedCents)}

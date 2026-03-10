@@ -128,7 +128,7 @@ export default function CreateEventPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <Link href="/events" className="text-gray-400 hover:text-white text-sm mb-4 inline-block">
+      <Link href="/events" className="text-gray-900 hover:text-white text-sm mb-4 inline-block">
         &larr; Back to Events
       </Link>
 
@@ -147,7 +147,7 @@ export default function CreateEventPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Event Name *</label>
+              <label className="block text-sm text-gray-900 mb-1">Event Name *</label>
               <input
                 type="text"
                 value={form.name}
@@ -159,7 +159,7 @@ export default function CreateEventPage() {
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Description</label>
+              <label className="block text-sm text-gray-900 mb-1">Description</label>
               <textarea
                 value={form.description}
                 onChange={e => setForm({ ...form, description: e.target.value })}
@@ -171,7 +171,7 @@ export default function CreateEventPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Event Type</label>
+                <label className="block text-sm text-gray-900 mb-1">Event Type</label>
                 <select
                   value={form.eventType}
                   onChange={e => setForm({ ...form, eventType: e.target.value })}
@@ -183,7 +183,7 @@ export default function CreateEventPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Total Capacity *</label>
+                <label className="block text-sm text-gray-900 mb-1">Total Capacity *</label>
                 <input
                   type="number"
                   value={form.totalCapacity}
@@ -203,7 +203,7 @@ export default function CreateEventPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Event Date *</label>
+              <label className="block text-sm text-gray-900 mb-1">Event Date *</label>
               <input
                 type="date"
                 value={form.eventDate}
@@ -213,7 +213,7 @@ export default function CreateEventPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Doors Open *</label>
+              <label className="block text-sm text-gray-900 mb-1">Doors Open *</label>
               <input
                 type="time"
                 value={form.doorsOpen}
@@ -223,7 +223,7 @@ export default function CreateEventPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Show Start *</label>
+              <label className="block text-sm text-gray-900 mb-1">Show Start *</label>
               <input
                 type="time"
                 value={form.startTime}
@@ -233,7 +233,7 @@ export default function CreateEventPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">End Time</label>
+              <label className="block text-sm text-gray-900 mb-1">End Time</label>
               <input
                 type="time"
                 value={form.endTime}
@@ -250,7 +250,7 @@ export default function CreateEventPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Ticketing Mode</label>
+              <label className="block text-sm text-gray-900 mb-2">Ticketing Mode</label>
               <div className="grid grid-cols-3 gap-4">
                 {TICKETING_MODES.map(mode => (
                   <label
@@ -270,7 +270,7 @@ export default function CreateEventPage() {
                       className="sr-only"
                     />
                     <div className="font-medium">{mode.label}</div>
-                    <div className="text-sm text-gray-400 mt-1">{mode.description}</div>
+                    <div className="text-sm text-gray-900 mt-1">{mode.description}</div>
                   </label>
                 ))}
               </div>
@@ -278,7 +278,7 @@ export default function CreateEventPage() {
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Max Per Order</label>
+                <label className="block text-sm text-gray-900 mb-1">Max Per Order</label>
                 <input
                   type="number"
                   value={form.maxTicketsPerOrder}
@@ -326,7 +326,7 @@ export default function CreateEventPage() {
             {pricingTiers.map((tier, index) => (
               <div key={index} className="bg-gray-700 rounded-lg p-4">
                 <div className="flex justify-between items-start mb-3">
-                  <div className="text-sm text-gray-400">Tier {index + 1}</div>
+                  <div className="text-sm text-gray-900">Tier {index + 1}</div>
                   {pricingTiers.length > 1 && (
                     <button
                       type="button"
@@ -340,7 +340,7 @@ export default function CreateEventPage() {
 
                 <div className="grid grid-cols-6 gap-4">
                   <div className="col-span-2">
-                    <label className="block text-xs text-gray-400 mb-1">Name *</label>
+                    <label className="block text-xs text-gray-900 mb-1">Name *</label>
                     <input
                       type="text"
                       value={tier.name}
@@ -350,7 +350,7 @@ export default function CreateEventPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Price *</label>
+                    <label className="block text-xs text-gray-900 mb-1">Price *</label>
                     <input
                       type="number"
                       value={tier.price}
@@ -361,7 +361,7 @@ export default function CreateEventPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Service Fee</label>
+                    <label className="block text-xs text-gray-900 mb-1">Service Fee</label>
                     <input
                       type="number"
                       value={tier.serviceFee}
@@ -372,7 +372,7 @@ export default function CreateEventPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Quantity</label>
+                    <label className="block text-xs text-gray-900 mb-1">Quantity</label>
                     <input
                       type="number"
                       value={tier.quantityAvailable || ''}
@@ -385,7 +385,7 @@ export default function CreateEventPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Color</label>
+                    <label className="block text-xs text-gray-900 mb-1">Color</label>
                     <input
                       type="color"
                       value={tier.color}
@@ -396,7 +396,7 @@ export default function CreateEventPage() {
                 </div>
 
                 <div className="mt-3">
-                  <label className="block text-xs text-gray-400 mb-1">Description</label>
+                  <label className="block text-xs text-gray-900 mb-1">Description</label>
                   <input
                     type="text"
                     value={tier.description}

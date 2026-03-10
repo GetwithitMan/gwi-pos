@@ -186,7 +186,7 @@ export default function SalesReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -195,7 +195,7 @@ export default function SalesReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -207,7 +207,7 @@ export default function SalesReportPage() {
                 {isLoading ? 'Loading...' : 'Apply Filters'}
               </Button>
               <div className="flex-1" />
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-gray-900">
                 {employee?.location?.name}
               </div>
             </div>
@@ -238,13 +238,13 @@ export default function SalesReportPage() {
 
         {isLoading ? (
           <Card>
-            <CardContent className="p-8 text-center text-gray-500">
+            <CardContent className="p-8 text-center text-gray-900">
               Loading sales report...
             </CardContent>
           </Card>
         ) : !report ? (
           <Card>
-            <CardContent className="p-8 text-center text-gray-500">
+            <CardContent className="p-8 text-center text-gray-900">
               No data available
             </CardContent>
           </Card>
@@ -257,7 +257,7 @@ export default function SalesReportPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Gross Sales</p>
+                      <p className="text-sm text-gray-900">Gross Sales</p>
                       <p className="text-2xl font-bold text-blue-600">
                         {formatCurrency(report.summary.grossSales)}
                       </p>
@@ -265,7 +265,7 @@ export default function SalesReportPage() {
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Net Sales</p>
+                      <p className="text-sm text-gray-900">Net Sales</p>
                       <p className="text-2xl font-bold text-green-600">
                         {formatCurrency(report.summary.netSales)}
                       </p>
@@ -273,7 +273,7 @@ export default function SalesReportPage() {
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Total (with Tax)</p>
+                      <p className="text-sm text-gray-900">Total (with Tax)</p>
                       <p className="text-2xl font-bold text-purple-600">
                         {formatCurrency(report.summary.total)}
                       </p>
@@ -281,7 +281,7 @@ export default function SalesReportPage() {
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Tips Collected</p>
+                      <p className="text-sm text-gray-900">Tips Collected</p>
                       <p className="text-2xl font-bold text-orange-600">
                         {formatCurrency(report.summary.tips)}
                       </p>
@@ -293,25 +293,25 @@ export default function SalesReportPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Orders</p>
+                      <p className="text-sm text-gray-900">Orders</p>
                       <p className="text-2xl font-bold">{report.summary.orderCount}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Items Sold</p>
+                      <p className="text-sm text-gray-900">Items Sold</p>
                       <p className="text-2xl font-bold">{report.summary.itemCount}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Avg Order Value</p>
+                      <p className="text-sm text-gray-900">Avg Order Value</p>
                       <p className="text-2xl font-bold">{formatCurrency(report.summary.averageOrderValue)}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-500">Tax Collected</p>
+                      <p className="text-sm text-gray-900">Tax Collected</p>
                       <p className="text-2xl font-bold">{formatCurrency(report.summary.tax)}</p>
                     </CardContent>
                   </Card>
@@ -333,7 +333,7 @@ export default function SalesReportPage() {
                         <div>
                           <p className="text-sm text-gray-600">Cash</p>
                           <p className="text-xl font-bold text-green-600">{formatCurrency(report.summary.cashSales)}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-gray-900">
                             {report.summary.cashSales + report.summary.cardSales > 0
                               ? Math.round((report.summary.cashSales / (report.summary.cashSales + report.summary.cardSales)) * 100)
                               : 0}%
@@ -349,7 +349,7 @@ export default function SalesReportPage() {
                         <div>
                           <p className="text-sm text-gray-600">Card</p>
                           <p className="text-xl font-bold text-blue-600">{formatCurrency(report.summary.cardSales)}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-gray-900">
                             {report.summary.cashSales + report.summary.cardSales > 0
                               ? Math.round((report.summary.cardSales / (report.summary.cashSales + report.summary.cardSales)) * 100)
                               : 0}%
@@ -366,7 +366,7 @@ export default function SalesReportPage() {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm text-gray-500">Discounts Applied</p>
+                          <p className="text-sm text-gray-900">Discounts Applied</p>
                           <p className="text-xl font-bold text-red-600">-{formatCurrency(report.summary.discounts)}</p>
                         </div>
                       </div>
@@ -384,18 +384,18 @@ export default function SalesReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.byDay.length === 0 ? (
-                    <p className="text-center py-8 text-gray-500">No daily data available</p>
+                    <p className="text-center py-8 text-gray-900">No daily data available</p>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Date</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Orders</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Gross</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Tax</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Tips</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Net Total</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Date</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Orders</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Gross</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Tax</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Tips</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Net Total</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -404,7 +404,7 @@ export default function SalesReportPage() {
                               <td className="px-4 py-3 font-medium">{formatDate(day.date)}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{day.orders}</td>
                               <td className="px-4 py-3 text-right">{formatCurrency(day.gross)}</td>
-                              <td className="px-4 py-3 text-right text-gray-500">{formatCurrency(day.tax)}</td>
+                              <td className="px-4 py-3 text-right text-gray-900">{formatCurrency(day.tax)}</td>
                               <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(day.tips)}</td>
                               <td className="px-4 py-3 text-right font-bold text-green-600">{formatCurrency(day.net)}</td>
                             </tr>
@@ -435,7 +435,7 @@ export default function SalesReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.byHour.length === 0 ? (
-                    <p className="text-center py-8 text-gray-500">No hourly data available</p>
+                    <p className="text-center py-8 text-gray-900">No hourly data available</p>
                   ) : (
                     <div className="space-y-2">
                       {report.byHour.map((hour) => {
@@ -471,16 +471,16 @@ export default function SalesReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.byCategory.length === 0 ? (
-                    <p className="text-center py-8 text-gray-500">No category data available</p>
+                    <p className="text-center py-8 text-gray-900">No category data available</p>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Category</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Qty Sold</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Gross Sales</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">% of Total</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Category</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Qty Sold</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Gross Sales</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">% of Total</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -489,7 +489,7 @@ export default function SalesReportPage() {
                               <td className="px-4 py-3 font-medium">{cat.name}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{cat.quantity}</td>
                               <td className="px-4 py-3 text-right font-medium">{formatCurrency(cat.gross)}</td>
-                              <td className="px-4 py-3 text-right text-gray-500">
+                              <td className="px-4 py-3 text-right text-gray-900">
                                 {report.summary.grossSales > 0
                                   ? Math.round((cat.gross / report.summary.grossSales) * 100)
                                   : 0}%
@@ -512,25 +512,25 @@ export default function SalesReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.byItem.length === 0 ? (
-                    <p className="text-center py-8 text-gray-500">No item data available</p>
+                    <p className="text-center py-8 text-gray-900">No item data available</p>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="bg-gray-50">
                           <tr>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">#</th>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Item</th>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Category</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Qty Sold</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Gross Sales</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">#</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Item</th>
+                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Category</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Qty Sold</th>
+                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Gross Sales</th>
                           </tr>
                         </thead>
                         <tbody>
                           {report.byItem.map((item, index) => (
                             <tr key={item.id} className="border-t hover:bg-gray-50">
-                              <td className="px-4 py-3 text-gray-400">{index + 1}</td>
+                              <td className="px-4 py-3 text-gray-900">{index + 1}</td>
                               <td className="px-4 py-3 font-medium">{item.name}</td>
-                              <td className="px-4 py-3 text-gray-500">{item.category}</td>
+                              <td className="px-4 py-3 text-gray-900">{item.category}</td>
                               <td className="px-4 py-3 text-right text-gray-600">
                                 {item.soldByWeight && item.totalWeight
                                   ? `${item.totalWeight.toFixed(1)} ${item.weightUnit || 'lb'}`
@@ -555,7 +555,7 @@ export default function SalesReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.byEmployee.length === 0 ? (
-                    <p className="text-center py-8 text-gray-500">No employee data available</p>
+                    <p className="text-center py-8 text-gray-900">No employee data available</p>
                   ) : (
                     <div className="space-y-3">
                       {report.byEmployee.map((emp, index) => (
@@ -565,11 +565,11 @@ export default function SalesReportPage() {
                           </div>
                           <div className="flex-1">
                             <p className="font-medium">{emp.name}</p>
-                            <p className="text-sm text-gray-500">{emp.orders} orders</p>
+                            <p className="text-sm text-gray-900">{emp.orders} orders</p>
                           </div>
                           <div className="text-right">
                             <p className="text-xl font-bold text-green-600">{formatCurrency(emp.gross)}</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-gray-900">
                               {report.summary.grossSales > 0
                                 ? Math.round((emp.gross / report.summary.grossSales) * 100)
                                 : 0}% of total

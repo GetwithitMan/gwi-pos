@@ -149,7 +149,7 @@ export default function WastePage() {
 
   const getReasonStyle = (reasonValue: string) => {
     const r = WASTE_REASONS.find(wr => wr.value === reasonValue)
-    return r?.color || 'bg-gray-100 text-gray-700'
+    return r?.color || 'bg-gray-100 text-gray-900'
   }
 
   const getReasonLabel = (reasonValue: string) => {
@@ -197,7 +197,7 @@ export default function WastePage() {
         <CardContent className="p-4">
           <div className="flex flex-wrap gap-4 items-end">
             <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Search Item</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Search Item</label>
               <input
                 type="text"
                 placeholder="Search by item name..."
@@ -207,7 +207,7 @@ export default function WastePage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Reason</label>
               <select
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
@@ -220,7 +220,7 @@ export default function WastePage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
               <input
                 type="date"
                 value={startDate}
@@ -229,7 +229,7 @@ export default function WastePage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
               <input
                 type="date"
                 value={endDate}
@@ -247,13 +247,13 @@ export default function WastePage() {
       {/* Waste Table */}
       {isLoading ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             Loading waste log...
           </CardContent>
         </Card>
       ) : filteredEntries.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             No waste entries found for the selected filters.
           </CardContent>
         </Card>
@@ -263,12 +263,12 @@ export default function WastePage() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cost Impact</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Date</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Item</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-900 uppercase">Quantity</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Reason</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-900 uppercase">Cost Impact</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -280,7 +280,7 @@ export default function WastePage() {
                     <td className="px-4 py-3">
                       <div className="font-medium text-gray-900">{entry.inventoryItem.name}</div>
                       {entry.inventoryItem.sku && (
-                        <div className="text-xs text-gray-500">{entry.inventoryItem.sku}</div>
+                        <div className="text-xs text-gray-900">{entry.inventoryItem.sku}</div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-right text-red-600 font-medium whitespace-nowrap">
@@ -303,7 +303,7 @@ export default function WastePage() {
               {/* Totals Row */}
               <tfoot className="bg-gray-50 border-t-2">
                 <tr>
-                  <td colSpan={4} className="px-4 py-3 text-sm font-medium text-gray-700">
+                  <td colSpan={4} className="px-4 py-3 text-sm font-medium text-gray-900">
                     Total ({filteredEntries.length} entries)
                   </td>
                   <td className="px-4 py-3 text-sm text-right text-red-700 font-bold whitespace-nowrap">
@@ -476,11 +476,11 @@ function WasteEntryModal({
               className="w-full border rounded px-3 py-2 mb-2"
             />
             {isLoadingItems ? (
-              <p className="text-sm text-gray-500">Loading items...</p>
+              <p className="text-sm text-gray-900">Loading items...</p>
             ) : (
               <div className="max-h-40 overflow-y-auto border rounded">
                 {filteredItems.length === 0 ? (
-                  <p className="p-2 text-sm text-gray-500">No items found</p>
+                  <p className="p-2 text-sm text-gray-900">No items found</p>
                 ) : (
                   filteredItems.slice(0, 20).map(item => (
                     <button
@@ -495,7 +495,7 @@ function WasteEntryModal({
                       }`}
                     >
                       <div className="font-medium">{item.name}</div>
-                      {item.sku && <div className="text-xs text-gray-500">{item.sku}</div>}
+                      {item.sku && <div className="text-xs text-gray-900">{item.sku}</div>}
                     </button>
                   ))
                 )}
@@ -515,7 +515,7 @@ function WasteEntryModal({
                   className={`px-3 py-2 text-sm font-medium rounded border ${
                     form.reason === r.value
                       ? r.color + ' border-current'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      : 'bg-white text-gray-900 border-gray-300 hover:bg-gray-50'
                   }`}
                 >
                   {r.label}

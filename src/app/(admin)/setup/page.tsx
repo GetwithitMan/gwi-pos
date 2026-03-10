@@ -118,7 +118,7 @@ export default function SetupPage() {
             <h2 className="text-lg font-semibold text-gray-900">
               {allComplete ? 'All set! Your venue is ready.' : `Setup ${completedCount}/${totalSteps} complete`}
             </h2>
-            <span className="text-sm font-medium text-gray-500">{progressPercent}%</span>
+            <span className="text-sm font-medium text-gray-900">{progressPercent}%</span>
           </div>
           <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden">
             <div
@@ -173,7 +173,7 @@ export default function SetupPage() {
                         </div>
                       ) : (
                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100">
-                          <span className="text-sm font-semibold text-gray-500">{index + 1}</span>
+                          <span className="text-sm font-semibold text-gray-900">{index + 1}</span>
                         </div>
                       )}
                     </div>
@@ -215,7 +215,7 @@ export default function SetupPage() {
         <div className="mt-8 text-center">
           <Link
             href="/orders"
-            className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-sm text-gray-900 hover:text-gray-600 transition-colors"
           >
             Skip setup and go to orders &rarr;
           </Link>

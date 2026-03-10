@@ -359,7 +359,7 @@ export default function PizzaAdminPage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 p-8">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center py-12 text-gray-500">Loading pizza configuration...</div>
+          <div className="text-center py-12 text-gray-900">Loading pizza configuration...</div>
         </div>
       </div>
     )
@@ -390,7 +390,7 @@ export default function PizzaAdminPage() {
               className={`px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${
                 activeTab === tab.id
                   ? 'bg-orange-500 text-white shadow-md'
-                  : 'bg-white/80 text-gray-700 hover:bg-orange-100'
+                  : 'bg-white/80 text-gray-900 hover:bg-orange-100'
               }`}
             >
               <span className="mr-2">{tab.icon}</span>

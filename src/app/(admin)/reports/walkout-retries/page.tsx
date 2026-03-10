@@ -92,7 +92,7 @@ export default function WalkoutRetriesPage() {
       />
 
       <div className="flex items-center gap-3">
-        <label className="text-sm font-medium text-gray-700">Status:</label>
+        <label className="text-sm font-medium text-gray-900">Status:</label>
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
@@ -107,22 +107,22 @@ export default function WalkoutRetriesPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-gray-500">Loading...</div>
+        <div className="text-center py-12 text-gray-900">Loading...</div>
       ) : retries.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">No walkout retries found.</div>
+        <div className="text-center py-12 text-gray-900">No walkout retries found.</div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Card</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Retries</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Error</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Order</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Card</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-900 uppercase">Amount</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-900 uppercase">Retries</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Last Error</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-900 uppercase">Created</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-900 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -133,13 +133,13 @@ export default function WalkoutRetriesPage() {
                     <td className="px-4 py-3 text-sm text-gray-900 font-mono">
                       {row.orderId ? row.orderId.slice(-6) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700">
+                    <td className="px-4 py-3 text-sm text-gray-900">
                       {row.cardType || ''} {row.cardLast4 ? `****${row.cardLast4}` : '-'}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">
                       {formatCurrency(row.amount)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-700 text-center">
+                    <td className="px-4 py-3 text-sm text-gray-900 text-center">
                       {row.retryCount} / {row.maxRetries}
                     </td>
                     <td className="px-4 py-3">
@@ -147,15 +147,15 @@ export default function WalkoutRetriesPage() {
                         {statusInfo.label}
                       </span>
                       {row.writtenOffAt && (
-                        <div className="text-xs text-gray-400 mt-0.5">
+                        <div className="text-xs text-gray-900 mt-0.5">
                           {new Date(row.writtenOffAt).toLocaleDateString()}
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500 max-w-[200px] truncate">
+                    <td className="px-4 py-3 text-xs text-gray-900 max-w-[200px] truncate">
                       {row.lastRetryError || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
+                    <td className="px-4 py-3 text-sm text-gray-900">
                       {new Date(row.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3 text-center">

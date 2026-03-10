@@ -136,28 +136,28 @@ export default function CashLiabilitiesPage() {
 
       <div className="max-w-6xl mx-auto">
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading report...</div>
+          <div className="text-center py-12 text-gray-900">Loading report...</div>
         ) : !report ? (
-          <div className="text-center py-12 text-gray-500">No data available</div>
+          <div className="text-center py-12 text-gray-900">No data available</div>
         ) : (
           <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card>
                 <CardContent className="p-6">
-                  <p className="text-sm text-gray-500">Total Cash on Hand</p>
+                  <p className="text-sm text-gray-900">Total Cash on Hand</p>
                   <p className="text-3xl font-bold text-green-600">{formatCurrency(report.totals.totalCash)}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-6">
-                  <p className="text-sm text-gray-500">Total Liabilities</p>
+                  <p className="text-sm text-gray-900">Total Liabilities</p>
                   <p className="text-3xl font-bold text-red-600">{formatCurrency(report.totals.totalLiabilities)}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-6">
-                  <p className="text-sm text-gray-500">Net Position</p>
+                  <p className="text-sm text-gray-900">Net Position</p>
                   <p className={`text-3xl font-bold ${report.totals.netPosition >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {formatCurrency(report.totals.netPosition)}
                   </p>
@@ -172,16 +172,16 @@ export default function CashLiabilitiesPage() {
               </CardHeader>
               <CardContent>
                 {report.cash.drawers.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No active cash drawers</p>
+                  <p className="text-gray-900 text-center py-4">No active cash drawers</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Employee</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Starting Cash</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Cash Sales</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Estimated Total</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Employee</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Starting Cash</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Cash Sales</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Estimated Total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -210,21 +210,21 @@ export default function CashLiabilitiesPage() {
               <CardHeader>
                 <CardTitle>
                   House Accounts
-                  <span className="text-sm font-normal text-gray-500 ml-2">({report.houseAccounts.count} accounts)</span>
+                  <span className="text-sm font-normal text-gray-900 ml-2">({report.houseAccounts.count} accounts)</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {report.houseAccounts.accounts.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No active house accounts</p>
+                  <p className="text-gray-900 text-center py-4">No active house accounts</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Account</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Balance Owed</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Credit Limit</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Available</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Account</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Balance Owed</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Credit Limit</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Available</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -232,7 +232,7 @@ export default function CashLiabilitiesPage() {
                           <tr key={ha.id} className="border-t hover:bg-gray-50">
                             <td className="px-4 py-3 font-medium">{ha.name}</td>
                             <td className="px-4 py-3 text-right text-red-600 font-medium">{formatCurrency(ha.balance)}</td>
-                            <td className="px-4 py-3 text-right text-gray-500">{formatCurrency(ha.creditLimit)}</td>
+                            <td className="px-4 py-3 text-right text-gray-900">{formatCurrency(ha.creditLimit)}</td>
                             <td className="px-4 py-3 text-right">{formatCurrency(ha.creditLimit - ha.balance)}</td>
                           </tr>
                         ))}
@@ -257,21 +257,21 @@ export default function CashLiabilitiesPage() {
               <CardHeader>
                 <CardTitle>
                   Gift Cards
-                  <span className="text-sm font-normal text-gray-500 ml-2">
+                  <span className="text-sm font-normal text-gray-900 ml-2">
                     ({report.giftCards.activeCount} active of {report.giftCards.count})
                   </span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {report.giftCards.cards.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No active gift card balances</p>
+                  <p className="text-gray-900 text-center py-4">No active gift card balances</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Card Number</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Balance</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Card Number</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Balance</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -301,14 +301,14 @@ export default function CashLiabilitiesPage() {
               </CardHeader>
               <CardContent>
                 {report.tips.balances.length === 0 ? (
-                  <p className="text-gray-500 text-center py-4">No unpaid tip balances</p>
+                  <p className="text-gray-900 text-center py-4">No unpaid tip balances</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Employee</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Balance Owed</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Employee</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Balance Owed</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -342,16 +342,16 @@ export default function CashLiabilitiesPage() {
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Employee</th>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Date</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Over / Short</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Employee</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Date</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Over / Short</th>
                         </tr>
                       </thead>
                       <tbody>
                         {report.variance.recent.map(v => (
                           <tr key={v.shiftId} className="border-t hover:bg-gray-50">
                             <td className="px-4 py-3 font-medium">{v.employee}</td>
-                            <td className="px-4 py-3 text-gray-500">
+                            <td className="px-4 py-3 text-gray-900">
                               {v.date ? new Date(v.date).toLocaleDateString() : '—'}
                             </td>
                             <td className={`px-4 py-3 text-right font-medium ${v.variance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -375,7 +375,7 @@ export default function CashLiabilitiesPage() {
             )}
 
             {/* Footer */}
-            <div className="text-center text-xs text-gray-500 pt-4">
+            <div className="text-center text-xs text-gray-900 pt-4">
               Generated on {new Date().toLocaleString()}
             </div>
           </div>

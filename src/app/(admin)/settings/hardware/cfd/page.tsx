@@ -205,7 +205,7 @@ export default function CfdSettingsPage() {
       <section className="mt-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-3">Paired CFD Devices</h2>
         {terminals.length === 0 ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center text-gray-500">
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center text-gray-900">
             No CFD terminals paired yet. Pair a PAX A3700 from the{' '}
             <Link href="/settings/hardware/terminals" className="text-blue-600 hover:underline">
               Terminals
@@ -221,7 +221,7 @@ export default function CfdSettingsPage() {
               >
                 <div>
                   <div className="font-medium text-gray-900">{t.name}</div>
-                  <div className="text-sm text-gray-500 space-x-3">
+                  <div className="text-sm text-gray-900 space-x-3">
                     {t.cfdConnectionMode && (
                       <span>Mode: {t.cfdConnectionMode.toUpperCase()}</span>
                     )}
@@ -234,7 +234,7 @@ export default function CfdSettingsPage() {
                     className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
                       t.isOnline
                         ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-500'
+                        : 'bg-gray-100 text-gray-900'
                     }`}
                   >
                     <span
@@ -259,7 +259,7 @@ export default function CfdSettingsPage() {
             {/* Idle Screen */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Welcome Text
                 </label>
                 <input
@@ -273,7 +273,7 @@ export default function CfdSettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Idle Promos
                 </label>
                 <label className="flex items-center gap-2 mt-2">
@@ -285,7 +285,7 @@ export default function CfdSettingsPage() {
                     }
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700">
+                  <span className="text-sm text-gray-900">
                     Show featured items on idle screen
                   </span>
                 </label>
@@ -297,7 +297,7 @@ export default function CfdSettingsPage() {
               <h3 className="text-sm font-semibold text-gray-800 mb-3">Tip Settings</h3>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Tip Mode
                   </label>
                   <select
@@ -310,7 +310,7 @@ export default function CfdSettingsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Tip Style
                   </label>
                   <select
@@ -323,7 +323,7 @@ export default function CfdSettingsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Tip Options
                   </label>
                   <input
@@ -333,7 +333,7 @@ export default function CfdSettingsPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                     placeholder="18,20,22,25"
                   />
-                  <p className="text-xs text-gray-400 mt-1">Comma-separated values</p>
+                  <p className="text-xs text-gray-900 mt-1">Comma-separated values</p>
                 </div>
               </div>
               <label className="flex items-center gap-2 mt-3">
@@ -345,7 +345,7 @@ export default function CfdSettingsPage() {
                   }
                   className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-700">Show &quot;No Tip&quot; button</span>
+                <span className="text-sm text-gray-900">Show &quot;No Tip&quot; button</span>
               </label>
             </div>
 
@@ -362,10 +362,10 @@ export default function CfdSettingsPage() {
                     }
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700">Require signature</span>
+                  <span className="text-sm text-gray-900">Require signature</span>
                 </label>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Signature Threshold ($)
                   </label>
                   <input
@@ -400,7 +400,7 @@ export default function CfdSettingsPage() {
                     }
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700">Email</span>
+                  <span className="text-sm text-gray-900">Email</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -411,7 +411,7 @@ export default function CfdSettingsPage() {
                     }
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700">SMS</span>
+                  <span className="text-sm text-gray-900">SMS</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -422,11 +422,11 @@ export default function CfdSettingsPage() {
                     }
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="text-sm text-gray-700">Print</span>
+                  <span className="text-sm text-gray-900">Print</span>
                 </label>
               </div>
               <div className="mt-3 w-48">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Timeout (seconds)
                 </label>
                 <input
@@ -462,7 +462,7 @@ export default function CfdSettingsPage() {
       {/* Featured Items Section */}
       <section className="mt-8">
         <h2 className="text-lg font-semibold text-gray-900 mb-1">Featured Items</h2>
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-gray-900 mb-4">
           Select menu items to promote on the CFD idle screen. Currently{' '}
           <strong>{featuredItems.length}</strong> item{featuredItems.length !== 1 ? 's' : ''}{' '}
           featured.
@@ -507,7 +507,7 @@ export default function CfdSettingsPage() {
           </div>
           <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
             {filteredItems.length === 0 ? (
-              <div className="p-6 text-center text-gray-400 text-sm">
+              <div className="p-6 text-center text-gray-900 text-sm">
                 No menu items found
               </div>
             ) : (
@@ -526,10 +526,10 @@ export default function CfdSettingsPage() {
                     />
                     <div>
                       <span className="text-sm font-medium text-gray-900">{item.name}</span>
-                      <span className="text-xs text-gray-400 ml-2">{item.category.name}</span>
+                      <span className="text-xs text-gray-900 ml-2">{item.category.name}</span>
                     </div>
                   </div>
-                  <span className="text-sm text-gray-500">${item.price.toFixed(2)}</span>
+                  <span className="text-sm text-gray-900">${item.price.toFixed(2)}</span>
                 </div>
               ))
             )}

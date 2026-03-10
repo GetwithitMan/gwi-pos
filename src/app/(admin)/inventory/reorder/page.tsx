@@ -144,14 +144,14 @@ export default function ReorderSuggestionsPage() {
           <CardContent className="p-4">
             <p className="text-sm text-gray-600">Total Items</p>
             <p className="text-3xl font-bold text-gray-900">{summary.total}</p>
-            <p className="text-xs text-gray-500">Need attention</p>
+            <p className="text-xs text-gray-900">Need attention</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-sm text-gray-600">Est. Reorder Cost</p>
             <p className="text-2xl font-bold text-gray-900">{formatCurrency(totalEstimatedCost)}</p>
-            <p className="text-xs text-gray-500">Based on last invoice</p>
+            <p className="text-xs text-gray-900">Based on last invoice</p>
           </CardContent>
         </Card>
       </div>
@@ -159,15 +159,15 @@ export default function ReorderSuggestionsPage() {
       {/* Content */}
       {isLoading ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             Loading reorder suggestions...
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center">
-            <p className="text-gray-500 text-lg mb-2">All stocked up!</p>
-            <p className="text-gray-400 text-sm">No items currently need reordering.</p>
+            <p className="text-gray-900 text-lg mb-2">All stocked up!</p>
+            <p className="text-gray-900 text-sm">No items currently need reordering.</p>
           </CardContent>
         </Card>
       ) : (
@@ -181,14 +181,14 @@ export default function ReorderSuggestionsPage() {
                     {group.vendor?.name || 'No Vendor Assigned'}
                   </h3>
                   {group.vendor && (
-                    <div className="flex gap-4 text-xs text-gray-500 mt-0.5">
+                    <div className="flex gap-4 text-xs text-gray-900 mt-0.5">
                       {group.vendor.phone && <span>{group.vendor.phone}</span>}
                       {group.vendor.email && <span>{group.vendor.email}</span>}
                     </div>
                   )}
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-500">{group.items.length} items</span>
+                  <span className="text-sm text-gray-900">{group.items.length} items</span>
                   {group.vendor && (
                     <Link href={`/inventory/orders/new?vendor=${group.vendor.id}&fromReorder=1`}>
                       <Button variant="outline" size="sm">Create PO</Button>
@@ -202,13 +202,13 @@ export default function ReorderSuggestionsPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Current</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Par Level</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Reorder Pt</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Order Qty</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Est. Cost</th>
-                      <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-900 uppercase">Item</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-900 uppercase">Current</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-900 uppercase">Par Level</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-900 uppercase">Reorder Pt</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-900 uppercase">Order Qty</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-900 uppercase">Est. Cost</th>
+                      <th className="px-4 py-2 text-center text-xs font-medium text-gray-900 uppercase">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -216,7 +216,7 @@ export default function ReorderSuggestionsPage() {
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">{item.name}</div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-900">
                             {item.category}
                             {item.sku && ` / ${item.sku}`}
                           </div>
@@ -225,7 +225,7 @@ export default function ReorderSuggestionsPage() {
                           <span className={item.severity === 'critical' ? 'text-red-600 font-bold' : 'text-amber-600 font-medium'}>
                             {item.currentStock.toFixed(1)}
                           </span>
-                          <span className="text-gray-400 ml-1">{item.storageUnit}</span>
+                          <span className="text-gray-900 ml-1">{item.storageUnit}</span>
                         </td>
                         <td className="px-4 py-3 text-right text-sm text-gray-600">
                           {item.parLevel !== null ? `${item.parLevel.toFixed(1)}` : '-'}

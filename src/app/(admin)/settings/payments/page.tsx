@@ -92,7 +92,7 @@ export default function PaymentSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-700 text-lg">Loading payment settings...</div>
+          <div className="text-gray-900 text-lg">Loading payment settings...</div>
         </div>
       </div>
     )
@@ -116,7 +116,7 @@ export default function PaymentSettingsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -336,8 +336,8 @@ export default function PaymentSettingsPage() {
 
               {/* Increment */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Round to Nearest</label>
-                <p className="text-xs text-gray-400 mb-2">The smallest unit cash totals are rounded to. $0.05 = round to nickels, $1.00 = round to whole dollars.</p>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Round to Nearest</label>
+                <p className="text-xs text-gray-900 mb-2">The smallest unit cash totals are rounded to. $0.05 = round to nickels, $1.00 = round to whole dollars.</p>
                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                   {(['none', '0.05', '0.10', '0.25', '0.50', '1.00'] as const).map(inc => (
                     <button
@@ -359,7 +359,7 @@ export default function PaymentSettingsPage() {
               {/* Direction */}
               {roundingForm.increment !== 'none' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Rounding Direction</label>
+                  <label className="block text-sm font-medium text-gray-900 mb-1">Rounding Direction</label>
                   <div className="grid grid-cols-3 gap-2">
                     {([
                       { value: 'nearest', label: 'Nearest', desc: 'Round to closest increment' },
@@ -376,7 +376,7 @@ export default function PaymentSettingsPage() {
                             : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                         }`}
                       >
-                        <div className={`text-sm font-medium ${roundingForm.direction === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>{opt.label}</div>
+                        <div className={`text-sm font-medium ${roundingForm.direction === opt.value ? 'text-indigo-600' : 'text-gray-900'}`}>{opt.label}</div>
                         <div className="text-xs text-gray-600 mt-0.5">{opt.desc}</div>
                       </button>
                     ))}

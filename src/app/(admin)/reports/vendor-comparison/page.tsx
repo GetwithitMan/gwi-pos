@@ -181,19 +181,19 @@ export default function VendorComparisonPage() {
         <div className="grid grid-cols-3 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Items with Vendor Data</p>
+              <p className="text-sm text-gray-900">Items with Vendor Data</p>
               <p className="text-2xl font-bold text-gray-900">{summary.totalItems}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Items with Multiple Vendors</p>
+              <p className="text-sm text-gray-900">Items with Multiple Vendors</p>
               <p className="text-2xl font-bold text-blue-600">{summary.itemsWithMultipleVendors}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Potential Savings (per unit)</p>
+              <p className="text-sm text-gray-900">Potential Savings (per unit)</p>
               <p className="text-2xl font-bold text-green-600">{formatCurrency(summary.totalPotentialSavings)}</p>
             </CardContent>
           </Card>
@@ -205,10 +205,10 @@ export default function VendorComparisonPage() {
             {isLoading ? (
               <div className="p-8 text-center">
                 <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
-                <p className="text-gray-500">Loading vendor comparison...</p>
+                <p className="text-gray-900">Loading vendor comparison...</p>
               </div>
             ) : sortedComparison.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
+              <div className="p-8 text-center text-gray-900">
                 No vendor pricing data found. Create purchase orders with received pricing to see comparisons.
               </div>
             ) : (
@@ -244,16 +244,16 @@ export default function VendorComparisonPage() {
                       <tr key={item.itemId} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm font-medium text-gray-900">
                           {item.itemName}
-                          <span className="block text-xs text-gray-400">per {item.purchaseUnit}</span>
+                          <span className="block text-xs text-gray-900">per {item.purchaseUnit}</span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">
+                        <td className="px-4 py-3 text-sm text-gray-900">
                           {item.category.charAt(0).toUpperCase() + item.category.slice(1)}
                         </td>
                         {activeVendors.map(v => {
                           const vendorPrice = item.prices.find(p => p.vendorId === v.id)
                           if (!vendorPrice) {
                             return (
-                              <td key={v.id} className="px-4 py-3 text-right text-sm text-gray-300">
+                              <td key={v.id} className="px-4 py-3 text-right text-sm text-gray-900">
                                 -
                               </td>
                             )
@@ -263,7 +263,7 @@ export default function VendorComparisonPage() {
                             <td
                               key={v.id}
                               className={`px-4 py-3 text-right text-sm font-mono ${
-                                isBest ? 'text-green-700 bg-green-50 font-bold' : 'text-gray-700'
+                                isBest ? 'text-green-700 bg-green-50 font-bold' : 'text-gray-900'
                               }`}
                             >
                               {formatPrice(vendorPrice.unitPrice)}
@@ -282,7 +282,7 @@ export default function VendorComparisonPage() {
                           {item.priceDifference > 0 ? (
                             <span className="text-amber-600">{formatPrice(item.priceDifference)}</span>
                           ) : (
-                            <span className="text-gray-400">-</span>
+                            <span className="text-gray-900">-</span>
                           )}
                         </td>
                       </tr>

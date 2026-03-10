@@ -76,7 +76,7 @@ export function CategorySection({
           <div>
             <h3 className="font-semibold text-gray-900">
               {category.name}
-              <span className="ml-2 text-sm font-normal text-gray-700">
+              <span className="ml-2 text-sm font-normal text-gray-900">
                 ({ingredients.length})
               </span>
               {selectedInCategory > 0 && (
@@ -115,7 +115,7 @@ export function CategorySection({
               Delete
             </Button>
           )}
-          <span className="text-gray-400 text-xl">
+          <span className="text-gray-900 text-xl">
             {isExpanded ? '▼' : '▶'}
           </span>
         </div>
@@ -125,7 +125,7 @@ export function CategorySection({
       {isExpanded && (
         <div className="border-t divide-y">
           {ingredients.length === 0 ? (
-            <div className="px-4 py-6 text-center text-gray-700">
+            <div className="px-4 py-6 text-center text-gray-900">
               No ingredients in this category
             </div>
           ) : (

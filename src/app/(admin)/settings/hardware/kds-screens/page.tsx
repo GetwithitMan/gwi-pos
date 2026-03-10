@@ -310,11 +310,11 @@ export default function KDSScreensPage() {
           </div>
         ) : screens.length === 0 ? (
           <div className="rounded-xl bg-white p-8 text-center shadow">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="mx-auto h-12 w-12 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
             <h3 className="mt-2 text-lg font-medium text-gray-900">No KDS screens configured</h3>
-            <p className="mt-1 text-gray-500">Add your first KDS screen to get started</p>
+            <p className="mt-1 text-gray-900">Add your first KDS screen to get started</p>
             <button
               onClick={handleAdd}
               className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
@@ -338,7 +338,7 @@ export default function KDSScreensPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium text-gray-900">{screen.name}</h3>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-900">
                           {screen.screenType}
                         </span>
                         {screen.isPaired ? (
@@ -376,29 +376,29 @@ export default function KDSScreensPage() {
                           </span>
                         ))}
                         {screen.stations.length === 0 && (
-                          <span className="text-xs text-gray-400">No stations assigned</span>
+                          <span className="text-xs text-gray-900">No stations assigned</span>
                         )}
                       </div>
                       {screen.lastSeenAt && (
-                        <p className="mt-1 text-xs text-gray-400">
+                        <p className="mt-1 text-xs text-gray-900">
                           Last seen: {new Date(screen.lastSeenAt).toLocaleString()}
                           {screen.lastKnownIp && (
-                            <span className="ml-2 text-gray-500">IP: {screen.lastKnownIp}</span>
+                            <span className="ml-2 text-gray-900">IP: {screen.lastKnownIp}</span>
                           )}
                           {screen.deviceInfo?.chromeVersion && (
-                            <span className="ml-2 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 font-medium">
+                            <span className="ml-2 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-gray-900 font-medium">
                               Chrome {screen.deviceInfo.chromeVersion}
                             </span>
                           )}
                         </p>
                       )}
                       {screen.slug && (
-                        <p className="mt-1 text-xs text-gray-400">
+                        <p className="mt-1 text-xs text-gray-900">
                           URL slug: <code className="bg-gray-100 px-1 rounded">{screen.slug}</code>
                         </p>
                       )}
                       {screen.staticIp && (
-                        <p className="mt-1 text-xs text-gray-400">
+                        <p className="mt-1 text-xs text-gray-900">
                           Static IP: <code className="bg-gray-100 px-1 rounded">{screen.staticIp}</code>
                           {screen.enforceStaticIp && (
                             <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-blue-700 font-medium">
@@ -413,7 +413,7 @@ export default function KDSScreensPage() {
                     {/* Pairing Controls */}
                     <button
                       onClick={() => handleGeneratePairingCode(screen)}
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-purple-600"
+                      className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-purple-600"
                       title="Generate Pairing Code"
                     >
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -425,7 +425,7 @@ export default function KDSScreensPage() {
                       className={`rounded p-2 transition-colors ${
                         copySuccess === screen.id
                           ? 'bg-green-100 text-green-600'
-                          : 'text-gray-400 hover:bg-gray-100 hover:text-blue-600'
+                          : 'text-gray-900 hover:bg-gray-100 hover:text-blue-600'
                       }`}
                       title={copySuccess === screen.id ? 'Copied!' : 'Copy KDS URL'}
                     >
@@ -442,7 +442,7 @@ export default function KDSScreensPage() {
                     <Link
                       href={`/kds?screen=${screen.slug || screen.id}`}
                       target="_blank"
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-blue-600"
+                      className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-blue-600"
                       title="Open KDS"
                     >
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -451,7 +451,7 @@ export default function KDSScreensPage() {
                     </Link>
                     <button
                       onClick={() => handleEdit(screen)}
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                      className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-gray-600"
                       title="Edit Screen"
                     >
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -461,7 +461,7 @@ export default function KDSScreensPage() {
                     {screen.isPaired && (
                       <button
                         onClick={() => handleUnpair(screen)}
-                        className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-orange-600"
+                        className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-orange-600"
                         title="Unpair Device"
                       >
                         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -471,7 +471,7 @@ export default function KDSScreensPage() {
                     )}
                     <button
                       onClick={() => handleDelete(screen)}
-                      className="rounded p-2 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                      className="rounded p-2 text-gray-900 hover:bg-gray-100 hover:text-red-600"
                       title="Delete Screen"
                     >
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -495,7 +495,7 @@ export default function KDSScreensPage() {
             <div className="space-y-4">
               {/* Name */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Name</label>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Name</label>
                 <input
                   type="text"
                   value={formData.name}
@@ -507,7 +507,7 @@ export default function KDSScreensPage() {
 
               {/* Type */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Screen Type</label>
+                <label className="mb-1 block text-sm font-medium text-gray-900">Screen Type</label>
                 <select
                   value={formData.screenType}
                   onChange={(e) =>
@@ -526,7 +526,7 @@ export default function KDSScreensPage() {
               {/* Display Settings */}
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Columns</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Columns</label>
                   <select
                     value={formData.columns}
                     onChange={(e) =>
@@ -542,7 +542,7 @@ export default function KDSScreensPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Font Size</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Font Size</label>
                   <select
                     value={formData.fontSize}
                     onChange={(e) =>
@@ -559,7 +559,7 @@ export default function KDSScreensPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Theme</label>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Theme</label>
                   <select
                     value={formData.colorScheme}
                     onChange={(e) =>
@@ -579,7 +579,7 @@ export default function KDSScreensPage() {
               {/* Timing */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                  <label className="mb-1 block text-sm font-medium text-gray-900">
                     Yellow Warning After (minutes)
                   </label>
                   <input
@@ -591,12 +591,12 @@ export default function KDSScreensPage() {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
                     min={1}
                   />
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-gray-900">
                     Orders turn yellow on the KDS screen after sitting this long. Alerts kitchen staff to prioritize.
                   </p>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                  <label className="mb-1 block text-sm font-medium text-gray-900">
                     Red Alert After (minutes)
                   </label>
                   <input
@@ -608,12 +608,12 @@ export default function KDSScreensPage() {
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
                     min={1}
                   />
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-gray-900">
                     Orders turn red after sitting this long. A more urgent alert that the order is overdue. Should be greater than the Yellow Warning time above.
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-gray-500 -mt-2">
+              <p className="text-xs text-gray-900 -mt-2">
                 Common values: Yellow at 8 minutes, Red at 15 minutes. Adjust based on your kitchen&apos;s typical prep time.
               </p>
 
@@ -627,9 +627,9 @@ export default function KDSScreensPage() {
                       onChange={(e) => setFormData({ ...formData, playSound: e.target.checked })}
                       className="h-4 w-4 rounded border-gray-300"
                     />
-                    <span className="text-sm text-gray-700">Play sound on new orders</span>
+                    <span className="text-sm text-gray-900">Play sound on new orders</span>
                   </label>
-                  <p className="ml-6 text-xs text-gray-500 mt-0.5">
+                  <p className="ml-6 text-xs text-gray-900 mt-0.5">
                     Play an audio alert when a new order arrives on this screen. Turn OFF for displays in quiet areas.
                   </p>
                 </div>
@@ -641,9 +641,9 @@ export default function KDSScreensPage() {
                       onChange={(e) => setFormData({ ...formData, flashOnNew: e.target.checked })}
                       className="h-4 w-4 rounded border-gray-300"
                     />
-                    <span className="text-sm text-gray-700">Flash on new orders</span>
+                    <span className="text-sm text-gray-900">Flash on new orders</span>
                   </label>
-                  <p className="ml-6 text-xs text-gray-500 mt-0.5">
+                  <p className="ml-6 text-xs text-gray-900 mt-0.5">
                     Briefly highlight the screen when a new order arrives. Turn OFF if the flashing is distracting.
                   </p>
                 </div>
@@ -651,12 +651,12 @@ export default function KDSScreensPage() {
 
               {/* Stations */}
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700">
+                <label className="mb-2 block text-sm font-medium text-gray-900">
                   Prep Stations
                 </label>
                 <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2">
                   {prepStations.length === 0 ? (
-                    <p className="py-2 text-center text-sm text-gray-500">
+                    <p className="py-2 text-center text-sm text-gray-900">
                       No prep stations configured
                     </p>
                   ) : (
@@ -676,10 +676,10 @@ export default function KDSScreensPage() {
                             className="inline-block h-3 w-3 rounded-full"
                             style={{ backgroundColor: station.color || '#9ca3af' }}
                           />
-                          <span className="text-sm text-gray-700">
+                          <span className="text-sm text-gray-900">
                             {station.displayName || station.name}
                           </span>
-                          <span className="text-xs text-gray-400">({station.stationType})</span>
+                          <span className="text-xs text-gray-900">({station.stationType})</span>
                         </label>
                       ))}
                     </div>
@@ -697,7 +697,7 @@ export default function KDSScreensPage() {
                 </div>
                 <div className="space-y-3">
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">
+                    <label className="mb-1 block text-sm font-medium text-gray-900">
                       Static IP Address
                     </label>
                     <div className="flex gap-2">
@@ -719,7 +719,7 @@ export default function KDSScreensPage() {
                         </button>
                       )}
                     </div>
-                    <p className="mt-1 text-xs text-gray-500">
+                    <p className="mt-1 text-xs text-gray-900">
                       Optional — only needed if your venue uses a UniFi network controller (Ubiquiti hardware). Locks this device to a specific network address.
                       {editingScreen?.lastKnownIp && (
                         <span className="ml-1">(Current: {editingScreen.lastKnownIp})</span>
@@ -735,15 +735,15 @@ export default function KDSScreensPage() {
                         className="h-4 w-4 rounded border-gray-300"
                         disabled={!formData.staticIp}
                       />
-                      <span className={`text-sm ${formData.staticIp ? 'text-gray-700' : 'text-gray-400'}`}>
+                      <span className={`text-sm ${formData.staticIp ? 'text-gray-900' : 'text-gray-900'}`}>
                         Enforce IP address
                       </span>
                     </label>
-                    <p className="ml-6 text-xs text-gray-500 mt-0.5">
+                    <p className="ml-6 text-xs text-gray-900 mt-0.5">
                       Reject connections from this device if its IP address changes. Only enable this if you&apos;ve assigned a permanent (static) IP to this device on your router.
                     </p>
                     {!formData.staticIp && (
-                      <p className="ml-6 text-xs text-gray-400 mt-0.5 italic">
+                      <p className="ml-6 text-xs text-gray-900 mt-0.5 italic">
                         Enter a static IP address above to enable this option.
                       </p>
                     )}
@@ -762,7 +762,7 @@ export default function KDSScreensPage() {
             <div className="mt-6 flex justify-end gap-3">
               <button
                 onClick={() => setShowModal(false)}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                className="rounded-lg px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100"
               >
                 Cancel
               </button>
@@ -784,7 +784,7 @@ export default function KDSScreensPage() {
               {pairingModal.loading ? (
                 <div className="py-8">
                   <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-purple-500 border-t-transparent"></div>
-                  <p className="mt-4 text-gray-500">Generating pairing code...</p>
+                  <p className="mt-4 text-gray-900">Generating pairing code...</p>
                 </div>
               ) : pairingModal.error ? (
                 <div className="py-4">
@@ -794,7 +794,7 @@ export default function KDSScreensPage() {
                 </div>
               ) : (
                 <>
-                  <p className="mb-6 text-gray-500">
+                  <p className="mb-6 text-gray-900">
                     Enter this code on the KDS display to pair it
                   </p>
 
@@ -814,7 +814,7 @@ export default function KDSScreensPage() {
 
                   {/* Expiration */}
                   {pairingModal.expiresAt && (
-                    <p className="mb-4 text-sm text-gray-500">
+                    <p className="mb-4 text-sm text-gray-900">
                       Code expires in 5 minutes
                     </p>
                   )}
@@ -835,7 +835,7 @@ export default function KDSScreensPage() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setPairingModal(null)}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                className="rounded-lg px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100"
               >
                 Close
               </button>

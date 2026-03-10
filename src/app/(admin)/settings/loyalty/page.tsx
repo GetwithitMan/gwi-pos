@@ -64,7 +64,7 @@ export default function LoyaltySettingsPage() {
   }
 
   if (isLoading) {
-    return <div className="p-8 text-center text-gray-400">Loading...</div>
+    return <div className="p-8 text-center text-gray-900">Loading...</div>
   }
 
   const loyalty = settings.loyalty
@@ -75,7 +75,7 @@ export default function LoyaltySettingsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Loyalty Program</h1>
-          <p className="text-sm text-gray-500 mt-1">Earn and redeem points on customer orders.</p>
+          <p className="text-sm text-gray-900 mt-1">Earn and redeem points on customer orders.</p>
         </div>
         <Button onClick={saveSettings} disabled={isSaving}>
           {isSaving ? 'Saving...' : 'Save Changes'}
@@ -93,7 +93,7 @@ export default function LoyaltySettingsPage() {
           />
           <div>
             <span className="text-base font-semibold">Enable Loyalty Program</span>
-            <p className="text-sm text-gray-500">Earn and redeem points on customer orders.</p>
+            <p className="text-sm text-gray-900">Earn and redeem points on customer orders.</p>
           </div>
         </label>
       </Card>
@@ -104,7 +104,7 @@ export default function LoyaltySettingsPage() {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Points earned per dollar spent</label>
+            <label className="block text-xs font-medium text-gray-900 mb-1">Points earned per dollar spent</label>
             <input
               type="number"
               min="0"
@@ -116,9 +116,9 @@ export default function LoyaltySettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Minimum order amount to earn points</label>
+            <label className="block text-xs font-medium text-gray-900 mb-1">Minimum order amount to earn points</label>
             <div className="relative">
-              <span className="absolute left-3 top-2 text-gray-400 text-sm">$</span>
+              <span className="absolute left-3 top-2 text-gray-900 text-sm">$</span>
               <input
                 type="number"
                 min="0"
@@ -144,7 +144,7 @@ export default function LoyaltySettingsPage() {
             />
             <div>
               <span className="text-sm">Earn on subtotal only</span>
-              <p className="text-xs text-gray-400">When off, points are earned on total including tax.</p>
+              <p className="text-xs text-gray-900">When off, points are earned on total including tax.</p>
             </div>
           </label>
 
@@ -178,7 +178,7 @@ export default function LoyaltySettingsPage() {
 
         <div className={`grid grid-cols-3 gap-4 ${!loyalty.redemptionEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Points required per $1 redemption</label>
+            <label className="block text-xs font-medium text-gray-900 mb-1">Points required per $1 redemption</label>
             <input
               type="number"
               min="1"
@@ -190,7 +190,7 @@ export default function LoyaltySettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Minimum points to redeem</label>
+            <label className="block text-xs font-medium text-gray-900 mb-1">Minimum points to redeem</label>
             <input
               type="number"
               min="0"
@@ -202,7 +202,7 @@ export default function LoyaltySettingsPage() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Maximum % of order payable with points</label>
+            <label className="block text-xs font-medium text-gray-900 mb-1">Maximum % of order payable with points</label>
             <div className="relative">
               <input
                 type="number"
@@ -214,7 +214,7 @@ export default function LoyaltySettingsPage() {
                 className="w-full px-3 py-2 border rounded-lg text-sm pr-7"
                 disabled={disabled || !loyalty.redemptionEnabled}
               />
-              <span className="absolute right-3 top-2 text-gray-400 text-sm">%</span>
+              <span className="absolute right-3 top-2 text-gray-900 text-sm">%</span>
             </div>
           </div>
         </div>
@@ -236,7 +236,7 @@ export default function LoyaltySettingsPage() {
         </label>
 
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Welcome bonus points</label>
+          <label className="block text-xs font-medium text-gray-900 mb-1">Welcome bonus points</label>
           <input
             type="number"
             min="0"
@@ -246,7 +246,7 @@ export default function LoyaltySettingsPage() {
             className="w-full max-w-xs px-3 py-2 border rounded-lg text-sm"
             disabled={disabled}
           />
-          <p className="text-xs text-gray-400 mt-1">Points awarded when a new customer is created.</p>
+          <p className="text-xs text-gray-900 mt-1">Points awarded when a new customer is created.</p>
         </div>
       </Card>
 

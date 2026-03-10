@@ -143,17 +143,17 @@ export default function VendorsPage() {
           />
           Show Inactive
         </label>
-        <span className="text-sm text-gray-500 ml-auto">
+        <span className="text-sm text-gray-900 ml-auto">
           {filteredVendors.length} vendor{filteredVendors.length !== 1 ? 's' : ''}
         </span>
       </div>
 
       {/* Vendor Grid */}
       {isLoading ? (
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-900">Loading...</p>
       ) : filteredVendors.length === 0 ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             {search ? 'No vendors match your search' : 'No vendors yet. Add your first vendor to get started.'}
           </CardContent>
         </Card>
@@ -169,7 +169,7 @@ export default function VendorsPage() {
                   <div>
                     <CardTitle className="text-lg">{vendor.name}</CardTitle>
                     {vendor.accountNum && (
-                      <p className="text-sm text-gray-500">Account: {vendor.accountNum}</p>
+                      <p className="text-sm text-gray-900">Account: {vendor.accountNum}</p>
                     )}
                   </div>
                   {!vendor.isActive && (
@@ -203,7 +203,7 @@ export default function VendorsPage() {
                 {/* Payment Terms */}
                 {vendor.paymentTerms && (
                   <div className="pt-2 border-t">
-                    <span className="text-xs text-gray-500">Payment Terms: </span>
+                    <span className="text-xs text-gray-900">Payment Terms: </span>
                     <span className="text-sm font-medium">
                       {PAYMENT_TERMS.find(t => t.value === vendor.paymentTerms)?.label || vendor.paymentTerms}
                     </span>

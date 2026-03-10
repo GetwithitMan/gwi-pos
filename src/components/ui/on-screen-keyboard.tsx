@@ -177,7 +177,7 @@ export function OnScreenKeyboard({
                     />
                   </svg>
                 ) : key.type === 'space' ? (
-                  <span className={isDark ? 'text-slate-500' : 'text-gray-400'}>space</span>
+                  <span className={isDark ? 'text-slate-500' : 'text-gray-900'}>space</span>
                 ) : (
                   getKeyLabel(key)
                 )}

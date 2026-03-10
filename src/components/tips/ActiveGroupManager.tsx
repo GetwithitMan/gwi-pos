@@ -331,15 +331,15 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
           Refresh
         </button>
       </div>
-      <p className="text-sm text-gray-500 mb-5">Manage active tip groups, add or remove members, and handle forgotten clock-outs.</p>
+      <p className="text-sm text-gray-900 mb-5">Manage active tip groups, add or remove members, and handle forgotten clock-outs.</p>
 
       {/* Loading */}
       {loading ? (
-        <div className="text-sm text-gray-400 text-center py-8">Loading active groups...</div>
+        <div className="text-sm text-gray-900 text-center py-8">Loading active groups...</div>
       ) : groups.length === 0 ? (
         /* Empty state */
         <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
-          <p className="text-sm text-gray-400">No active tip groups right now.</p>
+          <p className="text-sm text-gray-900">No active tip groups right now.</p>
         </div>
       ) : (
         /* Group cards */
@@ -374,11 +374,11 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                       )}
                     </div>
                     {ownerMember && (
-                      <p className="text-xs text-gray-400 mt-0.5">Owner: {getMemberName(ownerMember)}</p>
+                      <p className="text-xs text-gray-900 mt-0.5">Owner: {getMemberName(ownerMember)}</p>
                     )}
                   </div>
                   <svg
-                    className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    className={`w-4 h-4 text-gray-900 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -397,7 +397,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                         <div className="space-y-2">
                           {pendingMembers.map(m => (
                             <div key={m.id} className="flex items-center justify-between">
-                              <span className="text-sm text-gray-700">{getMemberName(m)}</span>
+                              <span className="text-sm text-gray-900">{getMemberName(m)}</span>
                               <div className="flex gap-1.5">
                                 <button
                                   onClick={() => handleApproveJoin(group.id, m.employeeId)}
@@ -407,7 +407,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                                 </button>
                                 <button
                                   onClick={() => handleRejectJoin(group.id, m.employeeId)}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-200 hover:bg-gray-300 text-gray-700 transition-colors"
+                                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-200 hover:bg-gray-300 text-gray-900 transition-colors"
                                 >
                                   Reject
                                 </button>
@@ -420,9 +420,9 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
 
                     {/* Active members */}
                     <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Active Members</p>
+                      <p className="text-xs font-medium text-gray-900 uppercase tracking-wider mb-2">Active Members</p>
                       {activeMembers.length === 0 ? (
-                        <p className="text-sm text-gray-400">No active members</p>
+                        <p className="text-sm text-gray-900">No active members</p>
                       ) : (
                         <div className="space-y-2">
                           {activeMembers.map(m => {
@@ -452,7 +452,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                                     )}
                                   </div>
                                   <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-xs text-gray-400">Joined {formatRelativeTime(m.joinedAt)}</span>
+                                    <span className="text-xs text-gray-900">Joined {formatRelativeTime(m.joinedAt)}</span>
                                     {splitPct !== undefined && (
                                       <span className="text-xs text-indigo-500 font-medium">
                                         {(splitPct * 100).toFixed(0)}%
@@ -503,7 +503,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                           setAdjustAmount('')
                           setAdjustReason('')
                         }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-200 hover:bg-gray-300 text-gray-700 transition-colors"
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-200 hover:bg-gray-300 text-gray-900 transition-colors"
                       >
                         Adjust Tips
                       </button>
@@ -548,7 +548,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
               })
 
               if (available.length === 0) {
-                return <p className="text-sm text-gray-400 py-4 text-center">No available employees found.</p>
+                return <p className="text-sm text-gray-900 py-4 text-center">No available employees found.</p>
               }
 
               return (
@@ -561,7 +561,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                       className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
                         addMemberSelected === emp.id
                           ? 'bg-indigo-50 border border-indigo-300 text-indigo-700 font-medium'
-                          : 'bg-gray-50 border border-gray-100 text-gray-700 hover:bg-gray-100'
+                          : 'bg-gray-50 border border-gray-100 text-gray-900 hover:bg-gray-100'
                       }`}
                     >
                       {getMemberName(emp)}
@@ -576,7 +576,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
               <button
                 type="button"
                 onClick={() => { setAddMemberGroupId(null); setAddMemberSelected(null) }}
-                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-all"
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-semibold transition-all"
               >
                 Cancel
               </button>
@@ -587,7 +587,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                 className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                   addMemberSelected
                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-200 text-gray-900 cursor-not-allowed'
                 }`}
               >
                 {addMemberSaving ? 'Adding...' : 'Add Member'}
@@ -597,14 +597,14 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
 
       {/* ── Close Group Confirmation Modal ────────────────────────────────────── */}
       <Modal isOpen={!!closeGroupId} onClose={() => setCloseGroupId(null)} title="Close Group" size="md" variant="default">
-            <p className="text-sm text-gray-500 mb-6">
+            <p className="text-sm text-gray-900 mb-6">
               This will close the group and end tip pooling for all members.
             </p>
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setCloseGroupId(null)}
-                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-all"
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-semibold transition-all"
               >
                 Cancel
               </button>
@@ -658,7 +658,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-indigo-500"
                 aria-label="Adjustment amount in dollars"
               />
-              <p className="text-xs text-gray-400 mt-1">Use negative values to deduct.</p>
+              <p className="text-xs text-gray-900 mt-1">Use negative values to deduct.</p>
             </div>
 
             {/* Reason */}
@@ -679,7 +679,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
               <button
                 type="button"
                 onClick={() => { setAdjustGroupId(null); setAdjustEmployeeId(''); setAdjustAmount(''); setAdjustReason('') }}
-                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-all"
+                className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-semibold transition-all"
               >
                 Cancel
               </button>
@@ -690,7 +690,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                 className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                   adjustEmployeeId && adjustAmount && adjustReason.trim()
                     ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : 'bg-gray-200 text-gray-900 cursor-not-allowed'
                 }`}
               >
                 {adjustSaving ? 'Saving...' : 'Save Adjustment'}

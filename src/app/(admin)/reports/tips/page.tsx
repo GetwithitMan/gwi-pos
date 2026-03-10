@@ -197,7 +197,7 @@ export default function TipsReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -206,7 +206,7 @@ export default function TipsReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -234,7 +234,7 @@ export default function TipsReportPage() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-sm text-gray-500">Gross Tips</p>
+                <p className="text-sm text-gray-900">Gross Tips</p>
                 <p className="text-2xl font-bold text-green-600">
                   {formatCurrency(report.summary.totalGrossTips)}
                 </p>
@@ -242,7 +242,7 @@ export default function TipsReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-sm text-gray-500">Tip-Outs</p>
+                <p className="text-sm text-gray-900">Tip-Outs</p>
                 <p className="text-2xl font-bold text-blue-600">
                   {formatCurrency(report.summary.totalTipOuts)}
                 </p>
@@ -250,7 +250,7 @@ export default function TipsReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-sm text-gray-500">Pending Banked</p>
+                <p className="text-sm text-gray-900">Pending Banked</p>
                 <p className="text-2xl font-bold text-yellow-600">
                   {formatCurrency(report.summary.totalBanked)}
                 </p>
@@ -258,7 +258,7 @@ export default function TipsReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-sm text-gray-500">Collected</p>
+                <p className="text-sm text-gray-900">Collected</p>
                 <p className="text-2xl font-bold text-gray-600">
                   {formatCurrency(report.summary.totalCollected)}
                 </p>
@@ -266,7 +266,7 @@ export default function TipsReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-sm text-gray-500">Paid Out</p>
+                <p className="text-sm text-gray-900">Paid Out</p>
                 <p className="text-2xl font-bold text-gray-600">
                   {formatCurrency(report.summary.totalPaidOut)}
                 </p>
@@ -285,7 +285,7 @@ export default function TipsReportPage() {
                 className={`pb-2 px-1 border-b-2 font-medium transition-colors ${
                   activeTab === tab
                     ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                    : 'border-transparent text-gray-900 hover:text-gray-900'
                 }`}
               >
                 {tab === 'summary' ? 'By Employee' : tab === 'shares' ? 'Tip Shares' : 'Banked Tips'}
@@ -298,10 +298,10 @@ export default function TipsReportPage() {
         {isLoading ? (
           <div className="text-center py-12">
             <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
-            <p className="text-gray-500">Loading report...</p>
+            <p className="text-gray-900">Loading report...</p>
           </div>
         ) : !report ? (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-gray-900">
             No data available
           </div>
         ) : (
@@ -311,7 +311,7 @@ export default function TipsReportPage() {
               <Card>
                 <CardContent className="p-0">
                   {report.byEmployee.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">
+                    <div className="p-8 text-center text-gray-900">
                       No tip data for the selected period
                     </div>
                   ) : (
@@ -332,7 +332,7 @@ export default function TipsReportPage() {
                           {report.byEmployee.map((emp) => (
                             <tr key={emp.employeeId} className="border-b hover:bg-gray-50">
                               <td className="px-4 py-3 font-medium">{emp.employeeName}</td>
-                              <td className="px-4 py-3 text-gray-500">{emp.roleName}</td>
+                              <td className="px-4 py-3 text-gray-900">{emp.roleName}</td>
                               <td className="px-4 py-3 text-right">{emp.shiftCount}</td>
                               <td className="px-4 py-3 text-right text-green-600">
                                 {formatCurrency(emp.grossTips)}
@@ -361,7 +361,7 @@ export default function TipsReportPage() {
               <Card>
                 <CardContent className="p-0">
                   {report.tipShares.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">
+                    <div className="p-8 text-center text-gray-900">
                       No tip shares for the selected period
                     </div>
                   ) : (
@@ -380,21 +380,21 @@ export default function TipsReportPage() {
                         <tbody>
                           {report.tipShares.map((share) => (
                             <tr key={share.id} className="border-b hover:bg-gray-50">
-                              <td className="px-4 py-3 text-sm text-gray-500">
+                              <td className="px-4 py-3 text-sm text-gray-900">
                                 {formatDate(share.date)}
                               </td>
                               <td className="px-4 py-3">
                                 <div className="font-medium">{share.from}</div>
-                                <div className="text-xs text-gray-500">{share.fromRole}</div>
+                                <div className="text-xs text-gray-900">{share.fromRole}</div>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="font-medium">{share.to}</div>
-                                <div className="text-xs text-gray-500">{share.toRole}</div>
+                                <div className="text-xs text-gray-900">{share.toRole}</div>
                               </td>
                               <td className="px-4 py-3">
                                 <span className="text-sm">{getTypeLabel(share.type)}</span>
                                 {share.percentage && (
-                                  <span className="text-xs text-gray-500 ml-1">({share.percentage}%)</span>
+                                  <span className="text-xs text-gray-900 ml-1">({share.percentage}%)</span>
                                 )}
                               </td>
                               <td className="px-4 py-3 text-right font-medium">
@@ -420,7 +420,7 @@ export default function TipsReportPage() {
               <Card>
                 <CardContent className="p-0">
                   {report.bankedTips.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">
+                    <div className="p-8 text-center text-gray-900">
                       No banked tips for the selected period
                     </div>
                   ) : (
@@ -439,12 +439,12 @@ export default function TipsReportPage() {
                         <tbody>
                           {report.bankedTips.map((tip) => (
                             <tr key={tip.id} className="border-b hover:bg-gray-50">
-                              <td className="px-4 py-3 text-sm text-gray-500">
+                              <td className="px-4 py-3 text-sm text-gray-900">
                                 {formatDate(tip.createdAt)}
                               </td>
                               <td className="px-4 py-3">
                                 <div className="font-medium">{tip.employeeName}</div>
-                                <div className="text-xs text-gray-500">{tip.roleName}</div>
+                                <div className="text-xs text-gray-900">{tip.roleName}</div>
                               </td>
                               <td className="px-4 py-3 text-sm">
                                 {tip.fromEmployee || '-'}
@@ -457,7 +457,7 @@ export default function TipsReportPage() {
                                   {tip.status}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-500">
+                              <td className="px-4 py-3 text-sm text-gray-900">
                                 {tip.collectedAt ? formatDate(tip.collectedAt) : '-'}
                               </td>
                             </tr>

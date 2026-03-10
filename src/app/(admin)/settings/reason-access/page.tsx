@@ -308,7 +308,7 @@ export default function ReasonAccessPage() {
             className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
               activeTab === tab.key
                 ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                : 'text-gray-900 hover:text-gray-900'
             }`}
           >
             {tab.label}
@@ -318,10 +318,10 @@ export default function ReasonAccessPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="text-center py-12 text-gray-500">Loading access rules...</div>
+        <div className="text-center py-12 text-gray-900">Loading access rules...</div>
       ) : reasons.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-8 text-center">
-          <p className="text-gray-500">
+          <p className="text-gray-900">
             No {activeTab === 'void_reason' ? 'void reasons' : activeTab === 'comp_reason' ? 'comp reasons' : 'discounts'} found.
             Create some first before configuring access.
           </p>
@@ -337,7 +337,7 @@ export default function ReasonAccessPage() {
                 <div className="flex items-center gap-2">
                   <h3 className="font-medium text-gray-900">{reason.name}</h3>
                   {!reason.isActive && (
-                    <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 rounded-full">
+                    <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-900 rounded-full">
                       Inactive
                     </span>
                   )}
@@ -347,7 +347,7 @@ export default function ReasonAccessPage() {
               {/* Access badges */}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {roleAllows.length === 0 && empAllows.length === 0 && empDenies.length === 0 ? (
-                  <span className="text-xs text-gray-400 italic">
+                  <span className="text-xs text-gray-900 italic">
                     No access rules (all employees can use)
                   </span>
                 ) : (
@@ -401,7 +401,7 @@ export default function ReasonAccessPage() {
           ))}
 
           {/* Legend */}
-          <div className="flex items-center gap-4 text-xs text-gray-400 pt-2">
+          <div className="flex items-center gap-4 text-xs text-gray-900 pt-2">
             <div className="flex items-center gap-1">
               <span className="w-3 h-3 rounded-full bg-green-100 border border-green-200" />
               Role allowed
@@ -432,7 +432,7 @@ export default function ReasonAccessPage() {
         <form onSubmit={handleAddRoleAccess}>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Role</label>
               <select
                 value={roleForm.roleId}
                 onChange={(e) => setRoleForm({ ...roleForm, roleId: e.target.value })}
@@ -447,7 +447,7 @@ export default function ReasonAccessPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-900 mb-2">
                 Select {activeTab === 'void_reason' ? 'Void Reasons' : activeTab === 'comp_reason' ? 'Comp Reasons' : 'Discounts'}
               </label>
               <div className="space-y-1.5 max-h-60 overflow-y-auto border rounded-lg p-3">
@@ -463,7 +463,7 @@ export default function ReasonAccessPage() {
                       )}
                       className="w-4 h-4 rounded"
                     />
-                    <span className="text-sm text-gray-700">{reason.name}</span>
+                    <span className="text-sm text-gray-900">{reason.name}</span>
                   </label>
                 ))}
               </div>
@@ -496,7 +496,7 @@ export default function ReasonAccessPage() {
         <form onSubmit={handleAddEmployeeOverride}>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Employee</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Employee</label>
               <select
                 value={empForm.employeeId}
                 onChange={(e) => setEmpForm({ ...empForm, employeeId: e.target.value })}
@@ -513,7 +513,7 @@ export default function ReasonAccessPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Access Type</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Access Type</label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -524,7 +524,7 @@ export default function ReasonAccessPage() {
                     onChange={() => setEmpForm({ ...empForm, accessType: 'allow' })}
                     className="w-4 h-4"
                   />
-                  <span className="text-sm text-gray-700">Allow (grant extra access)</span>
+                  <span className="text-sm text-gray-900">Allow (grant extra access)</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -535,13 +535,13 @@ export default function ReasonAccessPage() {
                     onChange={() => setEmpForm({ ...empForm, accessType: 'deny' })}
                     className="w-4 h-4"
                   />
-                  <span className="text-sm text-gray-700">Deny (restrict from role access)</span>
+                  <span className="text-sm text-gray-900">Deny (restrict from role access)</span>
                 </label>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-900 mb-2">
                 Select {activeTab === 'void_reason' ? 'Void Reasons' : activeTab === 'comp_reason' ? 'Comp Reasons' : 'Discounts'}
               </label>
               <div className="space-y-1.5 max-h-60 overflow-y-auto border rounded-lg p-3">
@@ -557,7 +557,7 @@ export default function ReasonAccessPage() {
                       )}
                       className="w-4 h-4 rounded"
                     />
-                    <span className="text-sm text-gray-700">{reason.name}</span>
+                    <span className="text-sm text-gray-900">{reason.name}</span>
                   </label>
                 ))}
               </div>

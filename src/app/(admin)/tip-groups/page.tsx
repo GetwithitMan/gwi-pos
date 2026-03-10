@@ -139,7 +139,7 @@ export default function TipGroupsPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Tip Groups</h1>
-        <p className="text-sm text-gray-400 mt-1">
+        <p className="text-sm text-gray-900 mt-1">
           View active and past tip-sharing groups
         </p>
       </div>
@@ -149,7 +149,7 @@ export default function TipGroupsPage() {
         <div className="flex flex-wrap items-end gap-4">
           {/* Status filter */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Status</label>
+            <label className="block text-xs text-gray-900 mb-1">Status</label>
             <div className="flex rounded-lg overflow-hidden border border-white/20">
               {(['all', 'active', 'closed'] as StatusFilter[]).map((s) => (
                 <button
@@ -158,7 +158,7 @@ export default function TipGroupsPage() {
                   className={`px-3 py-1.5 text-sm font-medium transition-colors ${
                     statusFilter === s
                       ? 'bg-white/20 text-white'
-                      : 'text-gray-400 hover:text-white hover:bg-white/10'
+                      : 'text-gray-900 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -169,7 +169,7 @@ export default function TipGroupsPage() {
 
           {/* Date from */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">From</label>
+            <label className="block text-xs text-gray-900 mb-1">From</label>
             <input
               type="date"
               value={dateFrom}
@@ -180,7 +180,7 @@ export default function TipGroupsPage() {
 
           {/* Date to */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">To</label>
+            <label className="block text-xs text-gray-900 mb-1">To</label>
             <input
               type="date"
               value={dateTo}
@@ -197,7 +197,7 @@ export default function TipGroupsPage() {
                 setDateTo('')
                 setStatusFilter('all')
               }}
-              className="text-sm text-gray-400 hover:text-white underline"
+              className="text-sm text-gray-900 hover:text-white underline"
             >
               Clear filters
             </button>
@@ -206,13 +206,13 @@ export default function TipGroupsPage() {
       </div>
 
       {/* Results summary */}
-      <div className="text-sm text-gray-400 mb-4">
+      <div className="text-sm text-gray-900 mb-4">
         Showing {filteredGroups.length} of {total} group{total !== 1 ? 's' : ''}
       </div>
 
       {/* Loading */}
       {isLoading && (
-        <div className="text-center py-16 text-gray-400">Loading tip groups...</div>
+        <div className="text-center py-16 text-gray-900">Loading tip groups...</div>
       )}
 
       {/* Error */}
@@ -224,7 +224,7 @@ export default function TipGroupsPage() {
 
       {/* Empty state */}
       {!isLoading && !error && filteredGroups.length === 0 && (
-        <div className="text-center py-16 text-gray-500">
+        <div className="text-center py-16 text-gray-900">
           <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
@@ -260,7 +260,7 @@ export default function TipGroupsPage() {
                       Active
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-500/20 text-gray-400">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-500/20 text-gray-900">
                       Closed
                     </span>
                   )}
@@ -271,14 +271,14 @@ export default function TipGroupsPage() {
                   </span>
 
                   {/* Dates */}
-                  <span className="text-xs text-gray-400 ml-auto">
+                  <span className="text-xs text-gray-900 ml-auto">
                     {formatDateTime(group.startedAt)}
                     {group.endedAt ? ` - ${formatDateTime(group.endedAt)}` : ' - Present'}
                   </span>
                 </div>
 
                 {/* Total earnings */}
-                <div className="mb-3 text-sm text-gray-300">
+                <div className="mb-3 text-sm text-gray-900">
                   Total group earnings:{' '}
                   <span className="font-semibold text-white">
                     {formatCurrency(totalEarnings)}
@@ -287,8 +287,8 @@ export default function TipGroupsPage() {
 
                 {/* Current segment info */}
                 {currentSegment && (
-                  <div className="mb-3 px-3 py-2 bg-white/5 rounded-lg border border-white/10 text-xs text-gray-400">
-                    <span className="font-medium text-gray-300">
+                  <div className="mb-3 px-3 py-2 bg-white/5 rounded-lg border border-white/10 text-xs text-gray-900">
+                    <span className="font-medium text-gray-900">
                       Current Segment:
                     </span>{' '}
                     {currentSegment.memberCount} member{currentSegment.memberCount !== 1 ? 's' : ''}
@@ -303,7 +303,7 @@ export default function TipGroupsPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-xs text-gray-500 border-b border-white/10">
+                      <tr className="text-left text-xs text-gray-900 border-b border-white/10">
                         <th className="pb-2 pr-4">Member</th>
                         <th className="pb-2 pr-4">Status</th>
                         <th className="pb-2 pr-4">Joined</th>
@@ -327,12 +327,12 @@ export default function TipGroupsPage() {
                               {m.status === 'active' ? (
                                 <span className="text-emerald-400 text-xs">Active</span>
                               ) : (
-                                <span className="text-gray-500 text-xs">
+                                <span className="text-gray-900 text-xs">
                                   Left {m.leftAt ? formatDateTime(m.leftAt) : ''}
                                 </span>
                               )}
                             </td>
-                            <td className="py-2 pr-4 text-gray-400 text-xs">
+                            <td className="py-2 pr-4 text-gray-900 text-xs">
                               {formatDateTime(m.joinedAt)}
                             </td>
                             <td className="py-2 text-right font-medium text-white">
@@ -346,7 +346,7 @@ export default function TipGroupsPage() {
                         <tr>
                           <td
                             colSpan={4}
-                            className="py-3 text-center text-gray-500 text-xs"
+                            className="py-3 text-center text-gray-900 text-xs"
                           >
                             No members
                           </td>

@@ -99,7 +99,7 @@ function StatusBadge({ payment }: { payment: LocalPayment }) {
 }
 
 function DatacapReturnBadge({ code, text }: { code: string | null; text: string | null }) {
-  if (!code) return <span className="text-xs text-gray-400">—</span>
+  if (!code) return <span className="text-xs text-gray-900">—</span>
   if (code === '000000') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
@@ -236,7 +236,7 @@ export default function DatacapTransactionReportPage() {
               ))}
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Start</label>
+              <label className="block text-xs font-medium text-gray-900 mb-1">Start</label>
               <input
                 type="date"
                 value={startDate}
@@ -245,7 +245,7 @@ export default function DatacapTransactionReportPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">End</label>
+              <label className="block text-xs font-medium text-gray-900 mb-1">End</label>
               <input
                 type="date"
                 value={endDate}
@@ -263,9 +263,9 @@ export default function DatacapTransactionReportPage() {
         {summary && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card className="p-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Card Payments</p>
+              <p className="text-xs text-gray-900 uppercase tracking-wide">Card Payments</p>
               <p className="text-2xl font-bold mt-1">{summary.totalCard}</p>
-              <p className="text-sm text-gray-500 mt-0.5">{formatCurrency(summary.totalAmount)}</p>
+              <p className="text-sm text-gray-900 mt-0.5">{formatCurrency(summary.totalAmount)}</p>
             </Card>
             <Card className="p-4 bg-green-50">
               <p className="text-xs text-green-600 uppercase tracking-wide">Live / Captured</p>
@@ -278,9 +278,9 @@ export default function DatacapTransactionReportPage() {
               <p className="text-xs text-yellow-700 mt-0.5">Awaiting settlement</p>
             </Card>
             <Card className="p-4 bg-gray-50">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Voided / Refunded</p>
-              <p className="text-2xl font-bold text-gray-700 mt-1">{summary.totalVoided}</p>
-              <p className="text-xs text-gray-500 mt-0.5">Reversed transactions</p>
+              <p className="text-xs text-gray-900 uppercase tracking-wide">Voided / Refunded</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{summary.totalVoided}</p>
+              <p className="text-xs text-gray-900 mt-0.5">Reversed transactions</p>
             </Card>
           </div>
         )}
@@ -299,9 +299,9 @@ export default function DatacapTransactionReportPage() {
               <p className="text-xs text-red-600 mt-0.5">Non-zero return codes</p>
             </Card>
             <Card className="p-4 border-gray-200">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">Datacap: Total</p>
-              <p className="text-2xl font-bold text-gray-700 mt-1">{summary.datacapTotal}</p>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-gray-900 uppercase tracking-wide">Datacap: Total</p>
+              <p className="text-2xl font-bold text-gray-900 mt-1">{summary.datacapTotal}</p>
+              <p className="text-xs text-gray-900 mt-0.5">
                 {datacapHasMore ? 'First 100 shown — more available' : 'All records shown'}
               </p>
             </Card>
@@ -336,7 +336,7 @@ export default function DatacapTransactionReportPage() {
             className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
               tab === 'local'
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                : 'border-transparent text-gray-900 hover:text-gray-900'
             }`}
           >
             Local Payments ({localPayments.length})
@@ -347,7 +347,7 @@ export default function DatacapTransactionReportPage() {
               className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'datacap'
                   ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  : 'border-transparent text-gray-900 hover:text-gray-900'
               }`}
             >
               Datacap Cloud ({datacapTransactions.length})
@@ -376,24 +376,24 @@ export default function DatacapTransactionReportPage() {
             </div>
 
             {isLoading ? (
-              <div className="text-center py-16 text-gray-400">Loading...</div>
+              <div className="text-center py-16 text-gray-900">Loading...</div>
             ) : filteredLocal.length === 0 ? (
               <Card className="p-10 text-center">
-                <p className="text-gray-500">No card payments found for this period.</p>
+                <p className="text-gray-900">No card payments found for this period.</p>
               </Card>
             ) : (
               <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Time</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Amount</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Card</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Entry</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Auth Code</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Time</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Amount</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Card</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Entry</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Auth Code</th>
                       {hasReportingKey && (
-                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Datacap</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Datacap</th>
                       )}
                     </tr>
                   </thead>
@@ -406,13 +406,13 @@ export default function DatacapTransactionReportPage() {
                         <td className="px-4 py-3">
                           <div className="font-medium">{formatCurrency(p.totalAmount)}</div>
                           {p.tipAmount > 0 && (
-                            <div className="text-xs text-gray-400">+{formatCurrency(p.tipAmount)} tip</div>
+                            <div className="text-xs text-gray-900">+{formatCurrency(p.tipAmount)} tip</div>
                           )}
                         </td>
                         <td className="px-4 py-3">
                           <div className="font-medium">{p.cardBrand || p.paymentMethod}</div>
                           {p.cardLast4 && (
-                            <div className="text-xs text-gray-400">••••{p.cardLast4}</div>
+                            <div className="text-xs text-gray-900">••••{p.cardLast4}</div>
                           )}
                         </td>
                         <td className="px-4 py-3 text-gray-600 capitalize">
@@ -423,15 +423,15 @@ export default function DatacapTransactionReportPage() {
                         </td>
                         <td className="px-4 py-3">
                           {p.authCode ? (
-                            <code className="text-xs font-mono text-gray-700">{p.authCode}</code>
+                            <code className="text-xs font-mono text-gray-900">{p.authCode}</code>
                           ) : (
-                            <span className="text-xs text-gray-400">—</span>
+                            <span className="text-xs text-gray-900">—</span>
                           )}
                         </td>
                         {hasReportingKey && (
                           <td className="px-4 py-3">
                             {p.isOfflineCapture ? (
-                              <span className="text-xs text-gray-400">Pending</span>
+                              <span className="text-xs text-gray-900">Pending</span>
                             ) : (
                               <DatacapReturnBadge
                                 code={p.datacapReturnCode}
@@ -453,10 +453,10 @@ export default function DatacapTransactionReportPage() {
         {tab === 'datacap' && hasReportingKey && (
           <>
             {isLoading ? (
-              <div className="text-center py-16 text-gray-400">Loading...</div>
+              <div className="text-center py-16 text-gray-900">Loading...</div>
             ) : datacapTransactions.length === 0 ? (
               <Card className="p-10 text-center">
-                <p className="text-gray-500">No transactions found in Datacap for this period.</p>
+                <p className="text-gray-900">No transactions found in Datacap for this period.</p>
                 {datacapError && (
                   <p className="text-sm text-red-500 mt-2">{datacapError}</p>
                 )}
@@ -467,12 +467,12 @@ export default function DatacapTransactionReportPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr>
-                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Time</th>
-                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Tran Code</th>
-                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Amount</th>
-                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Card Type</th>
-                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Auth Code</th>
-                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Result</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Time</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Tran Code</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Amount</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Card Type</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Auth Code</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-900 uppercase tracking-wide">Result</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -497,9 +497,9 @@ export default function DatacapTransactionReportPage() {
                             </td>
                             <td className="px-4 py-3">
                               {t.Response?.AuthCode ? (
-                                <code className="text-xs font-mono text-gray-700">{t.Response.AuthCode}</code>
+                                <code className="text-xs font-mono text-gray-900">{t.Response.AuthCode}</code>
                               ) : (
-                                <span className="text-xs text-gray-400">—</span>
+                                <span className="text-xs text-gray-900">—</span>
                               )}
                             </td>
                             <td className="px-4 py-3">
@@ -515,7 +515,7 @@ export default function DatacapTransactionReportPage() {
                                   {approved ? 'Approved' : t.Response.DSIXReturnCode}
                                 </span>
                               ) : (
-                                <span className="text-xs text-gray-400">—</span>
+                                <span className="text-xs text-gray-900">—</span>
                               )}
                             </td>
                           </tr>
@@ -525,7 +525,7 @@ export default function DatacapTransactionReportPage() {
                   </table>
                 </div>
                 {datacapHasMore && (
-                  <p className="text-sm text-gray-500 text-center py-2">
+                  <p className="text-sm text-gray-900 text-center py-2">
                     Showing first 100 records. Narrow your date range to see all transactions.
                   </p>
                 )}

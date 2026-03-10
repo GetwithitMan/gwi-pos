@@ -335,9 +335,9 @@ function RefundModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Refund Amount</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Refund Amount</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-900">$</span>
               <input
                 type="number"
                 step="0.01"
@@ -351,7 +351,7 @@ function RefundModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Reason *</label>
             <select
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -365,7 +365,7 @@ function RefundModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Notes</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -469,7 +469,7 @@ function OrderDetailPanel({
     return (
       <tr>
         <td colSpan={11} className="p-0">
-          <div className="bg-gray-50 border-t border-b border-gray-200 p-6 text-center text-gray-500">
+          <div className="bg-gray-50 border-t border-b border-gray-200 p-6 text-center text-gray-900">
             Loading order details...
           </div>
         </td>
@@ -527,7 +527,7 @@ function OrderDetailPanel({
                 <div className="border-y-2 border-gray-400 py-2 text-center">
                   <h3 className="text-lg font-bold tracking-wide">Ticket #{detail.orderNumber}</h3>
                 </div>
-                <div className="text-center text-[11px] text-gray-500 py-2 space-y-0.5">
+                <div className="text-center text-[11px] text-gray-900 py-2 space-y-0.5">
                   {(detail.tableName || detail.tabName) && (
                     <p className="text-gray-600">
                       {detail.tableName && `Table: ${detail.tableName}`}
@@ -536,7 +536,7 @@ function OrderDetailPanel({
                     </p>
                   )}
                   <p>
-                    Assigned: <span className="font-semibold text-gray-700">{formatEmployeeName(detail.openedBy)}</span>
+                    Assigned: <span className="font-semibold text-gray-900">{formatEmployeeName(detail.openedBy)}</span>
                     {' | '}Sold: <span className="font-semibold">{soldCount}</span>
                     {voidedCount > 0 && <>{' | '}Voided: <span className="font-semibold text-red-600">{voidedCount}</span></>}
                   </p>
@@ -554,7 +554,7 @@ function OrderDetailPanel({
                       <span className="text-red-600 text-xs font-bold uppercase tracking-wider">Walkout</span>
                     </div>
                     {walkoutRetries.length === 0 ? (
-                      <p className="text-[11px] text-gray-500">No retry records found.</p>
+                      <p className="text-[11px] text-gray-900">No retry records found.</p>
                     ) : (
                       <div className="space-y-1.5">
                         {walkoutRetries.map(retry => {
@@ -576,12 +576,12 @@ function OrderDetailPanel({
                                 <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusStyles[retry.status] || 'bg-gray-100 text-gray-600'}`}>
                                   {statusLabels[retry.status] || retry.status}
                                 </span>
-                                <span className="text-gray-700 font-medium">{formatCurrency(retry.amount)}</span>
+                                <span className="text-gray-900 font-medium">{formatCurrency(retry.amount)}</span>
                                 {retry.cardType && retry.cardLast4 && (
-                                  <span className="text-gray-500">{retry.cardType} ****{retry.cardLast4}</span>
+                                  <span className="text-gray-900">{retry.cardType} ****{retry.cardLast4}</span>
                                 )}
                               </div>
-                              <div className="text-gray-500 mt-0.5 space-y-0.5">
+                              <div className="text-gray-900 mt-0.5 space-y-0.5">
                                 <p>Retries: {retry.retryCount} / {retry.maxRetries}</p>
                                 {retry.nextRetryAt && retry.status === 'pending' && (
                                   <p>Next retry: {new Date(retry.nextRetryAt).toLocaleString()}</p>
@@ -613,7 +613,7 @@ function OrderDetailPanel({
                     return (
                       <div key={item.id}>
                         {/* Item name + price */}
-                        <div className={`flex justify-between gap-2 ${isStruck ? 'line-through text-gray-400' : ''}`}>
+                        <div className={`flex justify-between gap-2 ${isStruck ? 'line-through text-gray-900' : ''}`}>
                           <span className="flex-1 min-w-0">
                             {item.name}
                             {item.pourSize ? ` (${item.pourSize})` : ''}
@@ -629,13 +629,13 @@ function OrderDetailPanel({
                         </div>
                         {/* Quantity breakdown */}
                         {item.quantity > 1 && (
-                          <div className="text-[11px] text-gray-500 pl-3">
+                          <div className="text-[11px] text-gray-900 pl-3">
                             ({item.quantity} &times; {formatCurrency(item.price)})
                           </div>
                         )}
                         {/* Modifiers */}
                         {item.modifiers.map((mod, i) => (
-                          <div key={i} className={`flex justify-between pl-3 text-[11px] ${isStruck ? 'line-through text-gray-400' : 'text-gray-600'}`}>
+                          <div key={i} className={`flex justify-between pl-3 text-[11px] ${isStruck ? 'line-through text-gray-900' : 'text-gray-600'}`}>
                             <span>{mod.name}</span>
                             {mod.price !== 0 && (
                               <span className="tabular-nums">{formatCurrency(mod.price)}</span>
@@ -661,7 +661,7 @@ function OrderDetailPanel({
                           <div className="text-[11px] text-red-500 pl-3">Reason: {item.voidReason}</div>
                         )}
                         {/* Added by */}
-                        <div className="text-[11px] text-gray-400 pl-3">
+                        <div className="text-[11px] text-gray-900 pl-3">
                           &rarr; {formatEmployeeName(item.addedBy)}  {formatTime(item.addedAt)}
                         </div>
                       </div>
@@ -673,7 +673,7 @@ function OrderDetailPanel({
                 {detail.removedItems.length > 0 && (
                   <div className="mt-3">
                     <div className="border-t border-dashed border-gray-300 pt-2" />
-                    <label className="flex items-center gap-2 text-[11px] text-gray-500 cursor-pointer select-none font-sans">
+                    <label className="flex items-center gap-2 text-[11px] text-gray-900 cursor-pointer select-none font-sans">
                       <input
                         type="checkbox"
                         checked={showRemovedItems}
@@ -740,13 +740,13 @@ function OrderDetailPanel({
                         <span className="tabular-nums">{formatCurrency(detail.cashTotal + detail.tipTotal)}</span>
                       </div>
                       {detail.cashSubtotal != null && (
-                        <div className="flex justify-between text-xs text-gray-400">
+                        <div className="flex justify-between text-xs text-gray-900">
                           <span>Cash Subtotal</span>
                           <span className="tabular-nums">{formatCurrency(detail.cashSubtotal)}</span>
                         </div>
                       )}
                       {detail.cashTax != null && (
-                        <div className="flex justify-between text-xs text-gray-400">
+                        <div className="flex justify-between text-xs text-gray-900">
                           <span>Cash Tax</span>
                           <span className="tabular-nums">{formatCurrency(detail.cashTax)}</span>
                         </div>
@@ -773,7 +773,7 @@ function OrderDetailPanel({
                       {pmt.status === 'voided' && (
                         <div className="text-[11px] font-bold text-red-600 text-center">*** VOIDED ***</div>
                       )}
-                      <div className="text-[11px] text-gray-500 space-y-px">
+                      <div className="text-[11px] text-gray-900 space-y-px">
                         {pmt.authCode && <p>Auth: {pmt.authCode}</p>}
                         {pmt.transactionId && <p>Invoice #: {pmt.transactionId}</p>}
                         {pmt.datacapRecordNo && <p>Record: {pmt.datacapRecordNo}</p>}
@@ -830,7 +830,7 @@ function OrderDetailPanel({
                 {/* ── Voids/Comps ── */}
                 {detail.voids.length > 0 && (
                   <div className="space-y-1 mb-2">
-                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Voids & Comps</p>
+                    <p className="text-[10px] font-bold text-gray-900 uppercase tracking-wider">Voids & Comps</p>
                     {detail.voids.map(v => (
                       <div key={v.id} className="flex justify-between text-[11px]">
                         <span>
@@ -854,7 +854,7 @@ function OrderDetailPanel({
                 {/* ── Order-level Discounts ── */}
                 {detail.orderDiscounts.length > 0 && (
                   <div className="space-y-1 mb-2">
-                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Discounts</p>
+                    <p className="text-[10px] font-bold text-gray-900 uppercase tracking-wider">Discounts</p>
                     {detail.orderDiscounts.map(d => (
                       <div key={d.id} className="flex justify-between text-[11px] text-green-700">
                         <span>
@@ -872,7 +872,7 @@ function OrderDetailPanel({
                 {/* ── Tip details ── */}
                 {detail.tipTransactions.length > 0 && (
                   <div className="space-y-1 mb-2">
-                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tip Details</p>
+                    <p className="text-[10px] font-bold text-gray-900 uppercase tracking-wider">Tip Details</p>
                     {detail.tipTransactions.map(t => (
                       <div key={t.id} className="flex justify-between text-[11px]">
                         <span>
@@ -888,7 +888,7 @@ function OrderDetailPanel({
                 )}
 
                 {/* Footer */}
-                <div className="text-center text-[11px] text-gray-400 pt-1 pb-2 space-y-0.5">
+                <div className="text-center text-[11px] text-gray-900 pt-1 pb-2 space-y-0.5">
                   {detail.payments.length > 0 && (
                     <div>Paid by: {(() => {
                       const methods = [...new Set(detail.payments.map(p => {
@@ -1264,9 +1264,9 @@ export default function OrderHistoryPage() {
         <Card>
           <CardContent className="p-0">
             {isLoading ? (
-              <div className="p-8 text-center text-gray-500">Loading orders...</div>
+              <div className="p-8 text-center text-gray-900">Loading orders...</div>
             ) : orders.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No orders found</div>
+              <div className="p-8 text-center text-gray-900">No orders found</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -1295,7 +1295,7 @@ export default function OrderHistoryPage() {
                           <td className="p-3 font-mono">
                             <span className="flex items-center gap-1">
                               <svg
-                                className={`w-3 h-3 text-gray-400 transition-transform ${expandedOrderId === order.id ? 'rotate-90' : ''}`}
+                                className={`w-3 h-3 text-gray-900 transition-transform ${expandedOrderId === order.id ? 'rotate-90' : ''}`}
                                 fill="currentColor"
                                 viewBox="0 0 20 20"
                               >
@@ -1317,7 +1317,7 @@ export default function OrderHistoryPage() {
                               ? order.payments.reduce((sum, p) => sum + p.totalAmount, 0)
                               : order.total
                           )}</td>
-                          <td className="p-3 text-sm text-gray-500">
+                          <td className="p-3 text-sm text-gray-900">
                             {order.payments.length > 0 ? order.payments.map((p, i) => (
                               <span key={i}>
                                 {i > 0 && ', '}
@@ -1332,7 +1332,7 @@ export default function OrderHistoryPage() {
                               {order.status}
                             </span>
                           </td>
-                          <td className="p-3 text-sm text-gray-500">
+                          <td className="p-3 text-sm text-gray-900">
                             {formatDateTime(order.createdAt)}
                           </td>
                           <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>

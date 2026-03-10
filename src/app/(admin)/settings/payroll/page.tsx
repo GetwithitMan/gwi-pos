@@ -267,7 +267,7 @@ export default function PayrollExportSettingsPage() {
 
           <div className="flex flex-wrap items-end gap-4">
             <div>
-              <label className="block text-sm text-gray-700 mb-1">Start Date</label>
+              <label className="block text-sm text-gray-900 mb-1">Start Date</label>
               <input
                 type="date"
                 value={previewStartDate}
@@ -276,7 +276,7 @@ export default function PayrollExportSettingsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-700 mb-1">End Date</label>
+              <label className="block text-sm text-gray-900 mb-1">End Date</label>
               <input
                 type="date"
                 value={previewEndDate}
@@ -333,7 +333,7 @@ export default function PayrollExportSettingsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-gray-500 border-b border-gray-200">
+                    <tr className="text-left text-gray-900 border-b border-gray-200">
                       <th className="pb-2 pr-4">Employee</th>
                       <th className="pb-2 pr-4">Role</th>
                       <th className="pb-2 pr-4 text-right">Reg Hrs</th>

@@ -75,7 +75,7 @@ export default function SecuritySettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading security settings...</div>
+          <div className="text-gray-900 text-lg">Loading security settings...</div>
         </div>
       </div>
     )
@@ -99,7 +99,7 @@ export default function SecuritySettingsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -115,7 +115,7 @@ export default function SecuritySettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">PIN & Access</h2>
-          <p className="text-sm text-gray-500 mb-5">Current security policies for PIN login and void approval.</p>
+          <p className="text-sm text-gray-900 mb-5">Current security policies for PIN login and void approval.</p>
 
           <div className="space-y-3">
             <div className="flex items-start gap-3 p-3 rounded-lg bg-gray-50 border border-gray-200">
@@ -125,8 +125,8 @@ export default function SecuritySettingsPage() {
                 </svg>
               </div>
               <div>
-                <div className="text-sm text-gray-700">Manager PIN lockout after 3 failed attempts</div>
-                <div className="text-xs text-gray-400 mt-0.5">After 3 failed PIN attempts, the account is locked for 15 minutes. A manager can reset it from the employee&apos;s profile.</div>
+                <div className="text-sm text-gray-900">Manager PIN lockout after 3 failed attempts</div>
+                <div className="text-xs text-gray-900 mt-0.5">After 3 failed PIN attempts, the account is locked for 15 minutes. A manager can reset it from the employee&apos;s profile.</div>
               </div>
             </div>
 
@@ -137,8 +137,8 @@ export default function SecuritySettingsPage() {
                 </svg>
               </div>
               <div>
-                <div className="text-sm text-gray-700">Approval expiration</div>
-                <div className="text-xs text-gray-400 mt-0.5">When a manager approves via SMS, they receive a one-time code (valid 5 minutes). Approval links are valid for 30 minutes. Both can only be used once.</div>
+                <div className="text-sm text-gray-900">Approval expiration</div>
+                <div className="text-xs text-gray-900 mt-0.5">When a manager approves via SMS, they receive a one-time code (valid 5 minutes). Approval links are valid for 30 minutes. Both can only be used once.</div>
               </div>
             </div>
 
@@ -155,7 +155,7 @@ export default function SecuritySettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Screen Lock & Time Clock</h2>
-          <p className="text-sm text-gray-500 mb-5">Control idle lockout and buddy-punch detection for time clock events.</p>
+          <p className="text-sm text-gray-900 mb-5">Control idle lockout and buddy-punch detection for time clock events.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -168,8 +168,8 @@ export default function SecuritySettingsPage() {
 
             <div className="flex items-center justify-between py-3 border-b border-gray-100">
               <div>
-                <div className="text-sm text-gray-700">Lock Screen After Idle</div>
-                <div className="text-xs text-gray-400">Require PIN re-entry after period of inactivity (0 = disabled)</div>
+                <div className="text-sm text-gray-900">Lock Screen After Idle</div>
+                <div className="text-xs text-gray-900">Require PIN re-entry after period of inactivity (0 = disabled)</div>
               </div>
               <select
                 value={security.idleLockMinutes}
@@ -199,7 +199,7 @@ export default function SecuritySettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">SMS Manager Approval (2-Factor Security)</h2>
-          <p className="text-sm text-gray-500 mb-5">For high-value actions like large refunds or voids, a manager receives a text message with approval details. They must respond before the action proceeds.</p>
+          <p className="text-sm text-gray-900 mb-5">For high-value actions like large refunds or voids, a manager receives a text message with approval details. They must respond before the action proceeds.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -251,7 +251,7 @@ export default function SecuritySettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Business Day</h2>
-          <p className="text-sm text-gray-500 mb-3">Business Day settings have moved. Configure end-of-day rules in Staff &amp; Shifts settings.</p>
+          <p className="text-sm text-gray-900 mb-3">Business Day settings have moved. Configure end-of-day rules in Staff &amp; Shifts settings.</p>
           <Link
             href="/settings/staff"
             className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-all"
@@ -269,10 +269,10 @@ export default function SecuritySettingsPage() {
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 opacity-60">
           <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
             Advanced Security
-            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Coming Soon</span>
+            <span className="text-xs bg-gray-100 text-gray-900 px-2 py-0.5 rounded-full">Coming Soon</span>
           </h2>
-          <p className="text-sm text-gray-400 mt-2">The following features will be available in a future update:</p>
-          <ul className="mt-3 space-y-2 text-sm text-gray-400">
+          <p className="text-sm text-gray-900 mt-2">The following features will be available in a future update:</p>
+          <ul className="mt-3 space-y-2 text-sm text-gray-900">
             <li className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-gray-200" />
               Blocked card management

@@ -666,7 +666,7 @@ function LiquorBuilderContent() {
         </div>
         {/* Row 2: POS category pills (what shows on front-end bar tabs) */}
         <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto">
-          <span className="text-[10px] uppercase text-gray-700 font-medium shrink-0 mr-1">POS Tabs:</span>
+          <span className="text-[10px] uppercase text-gray-900 font-medium shrink-0 mr-1">POS Tabs:</span>
           <button
             onClick={() => {
               setSelectedMenuCategoryId('')
@@ -712,7 +712,7 @@ function LiquorBuilderContent() {
       </div>
 
       {isLoading ? (
-        <div className="text-center py-8 text-gray-700">Loading...</div>
+        <div className="text-center py-8 text-gray-900">Loading...</div>
       ) : isEmptySetup ? (
         /* Getting Started Guide */
         <div className="max-w-2xl mx-auto p-6">
@@ -737,7 +737,7 @@ function LiquorBuilderContent() {
               <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
                 <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">2</div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-700">Add Your Bottles</h3>
+                  <h3 className="font-semibold text-gray-900">Add Your Bottles</h3>
                   <p className="text-sm text-gray-600">Go to <Link href="/liquor-inventory" className="text-purple-500 underline">Liquor Inventory</Link> to add bottles with cost, size, and tier</p>
                 </div>
               </div>
@@ -746,7 +746,7 @@ function LiquorBuilderContent() {
               <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
                 <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">3</div>
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-700">Create Drink Items</h3>
+                  <h3 className="font-semibold text-gray-900">Create Drink Items</h3>
                   <p className="text-sm text-gray-600">Add drinks, set prices, build recipes, and configure spirit upgrades</p>
                 </div>
               </div>
@@ -822,7 +822,7 @@ function LiquorBuilderContent() {
                             if (selectedDrink?.id === drink.id) setSelectedDrink(null)
                           }}
                           title={drink.isAvailable ? '86 this item' : 'Un-86 this item'}
-                          className="text-gray-300 hover:text-orange-500 text-xs px-1 rounded"
+                          className="text-gray-900 hover:text-orange-500 text-xs px-1 rounded"
                         >
                           {drink.isAvailable ? '⊘' : '✓'}
                         </button>
@@ -840,7 +840,7 @@ function LiquorBuilderContent() {
                             if (selectedDrink?.id === drink.id) setSelectedDrink(null)
                           }}
                           title="Remove from POS"
-                          className="text-gray-300 hover:text-red-500 text-xs px-1 rounded"
+                          className="text-gray-900 hover:text-red-500 text-xs px-1 rounded"
                         >
                           ✕
                         </button>
@@ -868,7 +868,7 @@ function LiquorBuilderContent() {
               <>
                 {/* Item Editor Card */}
                 <div className="bg-white rounded-lg border p-5">
-                  <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Item Details</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Item Details</h3>
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
@@ -882,7 +882,7 @@ function LiquorBuilderContent() {
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">Price</label>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-700 text-sm">$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-900 text-sm">$</span>
                         <input
                           type="number"
                           step="0.01"
@@ -931,7 +931,7 @@ function LiquorBuilderContent() {
                           await loadDrinks()
                           setSelectedDrink(null)
                         }}
-                        className="px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-700 hover:border-red-400 hover:text-red-600"
+                        className="px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-900 hover:border-red-400 hover:text-red-600"
                       >
                         ✕ Remove
                       </button>
@@ -975,11 +975,11 @@ function LiquorBuilderContent() {
                     <div className="flex items-center gap-3 mb-3">
                       <span className="font-semibold text-gray-900">{selectedDrink.linkedBottleProductName}</span>
                       {selectedDrink.linkedBottleSpiritCategory && (
-                        <span className="text-xs text-gray-700">{selectedDrink.linkedBottleSpiritCategory}</span>
+                        <span className="text-xs text-gray-900">{selectedDrink.linkedBottleSpiritCategory}</span>
                       )}
                       {selectedDrink.linkedBottleTier && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                          selectedDrink.linkedBottleTier === 'well' ? 'bg-gray-200 text-gray-700'
+                          selectedDrink.linkedBottleTier === 'well' ? 'bg-gray-200 text-gray-900'
                           : selectedDrink.linkedBottleTier === 'call' ? 'bg-blue-100 text-blue-700'
                           : selectedDrink.linkedBottleTier === 'premium' ? 'bg-purple-100 text-purple-700'
                           : 'bg-amber-100 text-amber-700'
@@ -988,7 +988,7 @@ function LiquorBuilderContent() {
                         </span>
                       )}
                       {selectedDrink.linkedBottleSizeMl && (
-                        <span className="text-xs text-gray-700">{selectedDrink.linkedBottleSizeMl}ml</span>
+                        <span className="text-xs text-gray-900">{selectedDrink.linkedBottleSizeMl}ml</span>
                       )}
                     </div>
 
@@ -1011,7 +1011,7 @@ function LiquorBuilderContent() {
                               className="w-20 px-2 py-1.5 text-sm border rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-green-400"
                               placeholder={String(bottleDefaultPour)}
                             />
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-700">oz</span>
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-900">oz</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-3 text-xs text-gray-600">
@@ -1044,7 +1044,7 @@ function LiquorBuilderContent() {
                 })() : (
                   <div className={`rounded-lg border-2 border-dashed p-5 transition-colors ${showBottleLinkPicker ? 'border-blue-300 bg-blue-50/30' : 'border-gray-200'}`}>
                     <div className="flex items-center justify-between mb-2">
-                      <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Linked Bottle</h3>
+                      <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Linked Bottle</h3>
                       {!showBottleLinkPicker && (
                         <button
                           onClick={() => { setShowBottleLinkPicker(true); setExpandedPickerCats(new Set()) }}
@@ -1069,7 +1069,7 @@ function LiquorBuilderContent() {
                           />
                           <button
                             onClick={() => { setShowBottleLinkPicker(false); setBottleLinkSearch('') }}
-                            className="px-2 py-2 text-gray-400 hover:text-gray-600 text-sm"
+                            className="px-2 py-2 text-gray-900 hover:text-gray-600 text-sm"
                           >
                             Cancel
                           </button>
@@ -1105,8 +1105,8 @@ function LiquorBuilderContent() {
                                     })}
                                     className="w-full flex items-center gap-2 px-1 py-1.5 hover:bg-gray-50 rounded transition-colors"
                                   >
-                                    <span className="text-gray-400 text-[10px] select-none">{isCatExpanded ? '\u25BC' : '\u25B6'}</span>
-                                    <span className="text-[10px] uppercase text-gray-700 font-semibold tracking-wide">{catName}</span>
+                                    <span className="text-gray-900 text-[10px] select-none">{isCatExpanded ? '\u25BC' : '\u25B6'}</span>
+                                    <span className="text-[10px] uppercase text-gray-900 font-semibold tracking-wide">{catName}</span>
                                     <span className="text-[10px] text-gray-600">{catBottles.length}</span>
                                   </button>
                                   {isCatExpanded && (
@@ -1122,7 +1122,7 @@ function LiquorBuilderContent() {
                                             <span className="text-sm font-medium text-gray-800">{b.name}</span>
                                             <div className="flex items-center gap-2">
                                               <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                                                b.tier === 'well' ? 'bg-gray-200 text-gray-700'
+                                                b.tier === 'well' ? 'bg-gray-200 text-gray-900'
                                                 : b.tier === 'call' ? 'bg-blue-100 text-blue-700'
                                                 : b.tier === 'premium' ? 'bg-purple-100 text-purple-700'
                                                 : 'bg-amber-100 text-amber-700'
@@ -1130,7 +1130,7 @@ function LiquorBuilderContent() {
                                                 {b.tier === 'top_shelf' ? 'TOP SHELF' : b.tier.toUpperCase()}
                                               </span>
                                               {b.pourCost && (
-                                                <span className="text-xs text-gray-700">{formatCurrency(Number(b.pourCost))}</span>
+                                                <span className="text-xs text-gray-900">{formatCurrency(Number(b.pourCost))}</span>
                                               )}
                                             </div>
                                           </div>
@@ -1233,7 +1233,7 @@ function LiquorBuilderContent() {
                               <button
                                 type="button"
                                 onClick={() => setShowInlineBottleForm(false)}
-                                className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+                                className="px-2 py-1.5 text-xs text-gray-900 hover:text-gray-900"
                               >
                                 Cancel
                               </button>
@@ -1333,7 +1333,7 @@ function LiquorBuilderContent() {
                       onChange={e => setSpiritMode(e.target.checked)}
                       className="w-4 h-4 text-amber-600 rounded"
                     />
-                    <span className="text-sm font-semibold text-gray-700">🥃 Spirit Upgrades</span>
+                    <span className="text-sm font-semibold text-gray-900">🥃 Spirit Upgrades</span>
                     <span className="text-xs text-gray-600">(for cocktails — Well/Call/Prem/Top tiers)</span>
                   </label>
 
@@ -1352,7 +1352,7 @@ function LiquorBuilderContent() {
                           top_shelf: 'border-amber-200 bg-amber-50',
                         }
                         const tierTextColor: Record<string, string> = {
-                          well: 'text-gray-700',
+                          well: 'text-gray-900',
                           call: 'text-blue-700',
                           premium: 'text-purple-700',
                           top_shelf: 'text-amber-700',
@@ -1372,14 +1372,14 @@ function LiquorBuilderContent() {
                                 ) : (
                                   <button
                                     onClick={() => entry.id && setSpiritEntryDefault(entry.id)}
-                                    className="text-[10px] uppercase px-1.5 py-0.5 rounded border border-gray-300 text-gray-400 hover:border-green-400 hover:text-green-600 hover:bg-green-50 shrink-0 transition-colors"
+                                    className="text-[10px] uppercase px-1.5 py-0.5 rounded border border-gray-300 text-gray-900 hover:border-green-400 hover:text-green-600 hover:bg-green-50 shrink-0 transition-colors"
                                     title="Set as default spirit"
                                   >
                                     Set default
                                   </button>
                                 )}
                                 <span className="flex-1 text-sm font-medium text-gray-800 truncate">{entry.bottleName}</span>
-                                <span className="text-xs text-gray-700">+$</span>
+                                <span className="text-xs text-gray-900">+$</span>
                                 <input
                                   type="number"
                                   step="0.25"
@@ -1397,7 +1397,7 @@ function LiquorBuilderContent() {
                                 />
                                 <button
                                   onClick={() => entry.id && removeSpiritEntry(entry.id)}
-                                  className="text-gray-300 hover:text-red-500 text-lg leading-none shrink-0"
+                                  className="text-gray-900 hover:text-red-500 text-lg leading-none shrink-0"
                                   title="Remove"
                                 >
                                   ×
@@ -1432,7 +1432,7 @@ function LiquorBuilderContent() {
                     /* Pour Size Buttons Editor */
                     <>
                       <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Pour Size Buttons</h3>
+                        <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Pour Size Buttons</h3>
                         <span className="text-xs text-gray-600">Shot / Tall / Short / Double</span>
                       </div>
                       <p className="text-xs text-gray-600 mb-3">Enable size variants for this item. Each multiplies the base price.</p>
@@ -1503,7 +1503,7 @@ function LiquorBuilderContent() {
                             onChange={e => setApplyPourToModifiers(e.target.checked)}
                             className="w-4 h-4 text-purple-600"
                           />
-                          <span className="text-xs text-gray-700">Apply multiplier to spirit upgrade charges too</span>
+                          <span className="text-xs text-gray-900">Apply multiplier to spirit upgrade charges too</span>
                         </label>
                       )}
                       {Object.keys(enabledPourSizes).length > 0 && (
@@ -1526,7 +1526,7 @@ function LiquorBuilderContent() {
                 <div className="bg-white rounded-lg border overflow-hidden">
                   <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
                     <div>
-                      <h3 className="text-sm font-semibold text-gray-700">Modifier Groups</h3>
+                      <h3 className="text-sm font-semibold text-gray-900">Modifier Groups</h3>
                       <p className="text-xs text-gray-600 mt-0.5">Tap a template in the right panel to attach, then edit modifiers inline below</p>
                     </div>
                   </div>
@@ -1565,7 +1565,7 @@ function LiquorBuilderContent() {
                             {isExpanded && (
                               <div className="bg-gray-50 border-t px-4 py-3">
                                 {/* Column headers */}
-                                <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-700 px-1 mb-1.5">
+                                <div className="grid grid-cols-12 gap-2 text-[10px] text-gray-900 px-1 mb-1.5">
                                   <div className="col-span-5">Name</div>
                                   <div className="col-span-3 text-right">+Charge</div>
                                   <div className="col-span-2 text-center">Active</div>
@@ -1604,7 +1604,7 @@ function LiquorBuilderContent() {
                                       {/* Price */}
                                       <div className="col-span-3">
                                         <div className="relative">
-                                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-700 text-xs">$</span>
+                                          <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-900 text-xs">$</span>
                                           <input
                                             type="number"
                                             step="0.25"
@@ -1658,7 +1658,7 @@ function LiquorBuilderContent() {
                                             )
                                             reloadDrinkModifiersRef.current(selectedDrink.id)
                                           }}
-                                          className="text-gray-300 hover:text-red-500 text-lg leading-none"
+                                          className="text-gray-900 hover:text-red-500 text-lg leading-none"
                                           title="Remove option"
                                         >
                                           ×
@@ -1728,7 +1728,7 @@ function LiquorBuilderContent() {
           <div className="w-64 bg-white border-l flex flex-col shrink-0 overflow-hidden">
             <div className="px-3 py-2 border-b shrink-0">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] uppercase text-gray-700 font-semibold tracking-wide">Modifier Templates</span>
+                <span className="text-[10px] uppercase text-gray-900 font-semibold tracking-wide">Modifier Templates</span>
               </div>
               <Link href="/liquor-modifiers" className="text-[10px] text-purple-600 hover:text-purple-700 font-medium">
                 Manage Templates →
@@ -2003,7 +2003,7 @@ function MenuCategoryModal({
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold">{category ? 'Edit Category' : 'New Menu Category'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-gray-900 hover:text-gray-600 text-xl leading-none">×</button>
         </div>
 
         <div className="space-y-4">

@@ -281,25 +281,25 @@ export default function ClosedTabsPage() {
         <div className="grid grid-cols-4 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Total Tabs Closed</p>
+              <p className="text-sm text-gray-900">Total Tabs Closed</p>
               <p className="text-2xl font-bold text-gray-900">{summary.totalTabsClosed}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Total Revenue</p>
+              <p className="text-sm text-gray-900">Total Revenue</p>
               <p className="text-2xl font-bold text-blue-600">{formatCurrency(summary.totalRevenue)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Average Tab Size</p>
+              <p className="text-sm text-gray-900">Average Tab Size</p>
               <p className="text-2xl font-bold text-gray-900">{formatCurrency(summary.averageTabSize)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Average Tip %</p>
+              <p className="text-sm text-gray-900">Average Tip %</p>
               <p className="text-2xl font-bold text-green-600">{summary.averageTipPercent.toFixed(1)}%</p>
             </CardContent>
           </Card>
@@ -311,10 +311,10 @@ export default function ClosedTabsPage() {
             {isLoading ? (
               <div className="p-8 text-center">
                 <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
-                <p className="text-gray-500">Loading closed tabs...</p>
+                <p className="text-gray-900">Loading closed tabs...</p>
               </div>
             ) : tabs.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
+              <div className="p-8 text-center text-gray-900">
                 No closed tabs found for the selected filters
               </div>
             ) : (
@@ -344,14 +344,14 @@ export default function ClosedTabsPage() {
                           <td className="px-4 py-3 font-medium text-blue-600 hover:text-blue-800">
                             {tab.tabName || '(unnamed)'}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {tab.customerName || '-'}
                           </td>
                           <td className="px-4 py-3 text-sm">{tab.employee.name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {formatDateTime(tab.openedAt)}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {tab.closedAt ? formatDateTime(tab.closedAt) : '-'}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-sm">
@@ -361,13 +361,13 @@ export default function ClosedTabsPage() {
                             {tab.tipTotal > 0 ? (
                               <span className="text-green-600">{formatCurrency(tab.tipTotal)}</span>
                             ) : (
-                              <span className="text-gray-400">-</span>
+                              <span className="text-gray-900">-</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-sm font-bold">
                             {formatCurrency(tab.paidTotal)}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {tab.paymentMethods.map(formatPaymentMethod).join(', ')}
                           </td>
                         </tr>
@@ -379,7 +379,7 @@ export default function ClosedTabsPage() {
                 {/* Pagination */}
                 {totalPages > 1 && (
                   <div className="p-4 flex items-center justify-between border-t">
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-900">
                       Page {currentPage} of {totalPages} ({summary.totalTabsClosed} tabs)
                     </span>
                     <div className="flex gap-2">
@@ -420,19 +420,19 @@ export default function ClosedTabsPage() {
             {/* Tab meta */}
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-gray-500">Employee:</span>{' '}
+                <span className="text-gray-900">Employee:</span>{' '}
                 <span className="font-medium">{detailTab.employee.name}</span>
               </div>
               <div>
-                <span className="text-gray-500">Customer:</span>{' '}
+                <span className="text-gray-900">Customer:</span>{' '}
                 <span className="font-medium">{detailTab.customerName || '-'}</span>
               </div>
               <div>
-                <span className="text-gray-500">Opened:</span>{' '}
+                <span className="text-gray-900">Opened:</span>{' '}
                 <span className="font-medium">{formatDateTime(detailTab.openedAt)}</span>
               </div>
               <div>
-                <span className="text-gray-500">Closed:</span>{' '}
+                <span className="text-gray-900">Closed:</span>{' '}
                 <span className="font-medium">{detailTab.closedAt ? formatDateTime(detailTab.closedAt) : '-'}</span>
               </div>
             </div>
@@ -444,7 +444,7 @@ export default function ClosedTabsPage() {
                   <span className="text-red-600 text-xs font-bold uppercase tracking-wider">Walkout</span>
                 </div>
                 {walkoutRetries.length === 0 ? (
-                  <p className="text-xs text-gray-500">No capture retry records found.</p>
+                  <p className="text-xs text-gray-900">No capture retry records found.</p>
                 ) : (
                   <div className="space-y-2">
                     {walkoutRetries.map(retry => {
@@ -468,10 +468,10 @@ export default function ClosedTabsPage() {
                             </span>
                             <span className="text-gray-900 font-medium">{formatCurrency(retry.amount)}</span>
                             {retry.cardType && retry.cardLast4 && (
-                              <span className="text-gray-500">{retry.cardType} ****{retry.cardLast4}</span>
+                              <span className="text-gray-900">{retry.cardType} ****{retry.cardLast4}</span>
                             )}
                           </div>
-                          <div className="text-gray-500 mt-0.5">
+                          <div className="text-gray-900 mt-0.5">
                             <span>Retries: {retry.retryCount}/{retry.maxRetries}</span>
                             {retry.nextRetryAt && retry.status === 'pending' && (
                               <span className="ml-2">Next: {new Date(retry.nextRetryAt).toLocaleDateString()}</span>
@@ -493,7 +493,7 @@ export default function ClosedTabsPage() {
 
             {/* Items */}
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Items ({detailTab.itemCount})</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Items ({detailTab.itemCount})</h3>
               <div className="bg-gray-50 rounded-lg p-3 space-y-2 max-h-60 overflow-y-auto">
                 {detailTab.items.map(item => (
                   <div key={item.id}>
@@ -502,7 +502,7 @@ export default function ClosedTabsPage() {
                       <span className="font-mono">{formatCurrency(item.itemTotal)}</span>
                     </div>
                     {item.modifiers.map(mod => (
-                      <div key={mod.id} className="text-xs text-gray-500 pl-4">
+                      <div key={mod.id} className="text-xs text-gray-900 pl-4">
                         {mod.preModifier ? `${mod.preModifier} ` : ''}{mod.name}
                         {mod.price > 0 && ` +${formatCurrency(mod.price)}`}
                       </div>
@@ -518,16 +518,16 @@ export default function ClosedTabsPage() {
             {/* Totals */}
             <div className="border-t pt-3 space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Subtotal</span>
+                <span className="text-gray-900">Subtotal</span>
                 <span className="font-mono">{formatCurrency(detailTab.subtotal)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Tax</span>
+                <span className="text-gray-900">Tax</span>
                 <span className="font-mono">{formatCurrency(detailTab.taxTotal)}</span>
               </div>
               {detailTab.tipTotal > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Tip</span>
+                  <span className="text-gray-900">Tip</span>
                   <span className="font-mono text-green-600">{formatCurrency(detailTab.tipTotal)}</span>
                 </div>
               )}
@@ -539,7 +539,7 @@ export default function ClosedTabsPage() {
 
             {/* Payments */}
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Payments</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Payments</h3>
               <div className="space-y-2">
                 {detailTab.payments.map(payment => (
                   <div key={payment.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3 text-sm">

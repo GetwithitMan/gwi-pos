@@ -92,7 +92,7 @@ export function ManagerPinModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="md">
-        <p className="text-sm text-gray-500 mb-6">{message}</p>
+        <p className="text-sm text-gray-900 mb-6">{message}</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

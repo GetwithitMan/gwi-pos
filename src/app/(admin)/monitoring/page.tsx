@@ -109,7 +109,7 @@ export default function MonitoringDashboard() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">System Monitoring</h1>
-          <p className="text-gray-300">Real-time error tracking and system health</p>
+          <p className="text-gray-900">Real-time error tracking and system health</p>
         </div>
 
         {/* Alert Banner (if critical errors) */}
@@ -144,7 +144,7 @@ export default function MonitoringDashboard() {
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-300 text-sm">Errors (24h)</p>
+                <p className="text-gray-900 text-sm">Errors (24h)</p>
                 <p className="text-4xl font-bold text-white mt-1">{recentCount}</p>
               </div>
               <div className="bg-blue-500/20 rounded-full p-3">
@@ -159,7 +159,7 @@ export default function MonitoringDashboard() {
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-300 text-sm">Critical (Unresolved)</p>
+                <p className="text-gray-900 text-sm">Critical (Unresolved)</p>
                 <p className="text-4xl font-bold text-red-400 mt-1">{criticalCount}</p>
               </div>
               <div className="bg-red-500/20 rounded-full p-3">
@@ -174,7 +174,7 @@ export default function MonitoringDashboard() {
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-300 text-sm">System Health</p>
+                <p className="text-gray-900 text-sm">System Health</p>
                 <p className="text-2xl font-bold text-green-400 mt-1">
                   {health.some(h => h.status === 'DOWN') ? '🔴 DOWN' :
                    health.some(h => h.status === 'DEGRADED') ? '🟡 DEGRADED' : '🟢 HEALTHY'}
@@ -202,7 +202,7 @@ export default function MonitoringDashboard() {
               </div>
               <div>
                 <h3 className="text-xl font-semibold text-white">Error Logs</h3>
-                <p className="text-gray-300 text-sm">View and manage all error logs</p>
+                <p className="text-gray-900 text-sm">View and manage all error logs</p>
               </div>
             </div>
           </Link>
@@ -216,7 +216,7 @@ export default function MonitoringDashboard() {
               </div>
               <div>
                 <h3 className="text-xl font-semibold text-white">System Health</h3>
-                <p className="text-gray-300 text-sm">Monitor critical system components</p>
+                <p className="text-gray-900 text-sm">Monitor critical system components</p>
               </div>
             </div>
           </Link>
@@ -239,7 +239,7 @@ export default function MonitoringDashboard() {
                         item.severity === 'HIGH' ? 'bg-orange-500' :
                         item.severity === 'MEDIUM' ? 'bg-yellow-500' : 'bg-blue-500'
                       }`}></div>
-                      <span className="text-gray-300">{item.severity}</span>
+                      <span className="text-gray-900">{item.severity}</span>
                     </div>
                     <span className="text-white font-semibold">{item.count}</span>
                   </div>
@@ -253,7 +253,7 @@ export default function MonitoringDashboard() {
               <div className="space-y-3">
                 {stats.byErrorType.slice(0, 5).map((item) => (
                   <div key={item.errorType} className="flex items-center justify-between">
-                    <span className="text-gray-300">{item.errorType}</span>
+                    <span className="text-gray-900">{item.errorType}</span>
                     <span className="text-white font-semibold">{item.count}</span>
                   </div>
                 ))}

@@ -78,7 +78,7 @@ function SortableQuickBarItem({
       <button
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 touch-none"
+        className="cursor-grab active:cursor-grabbing text-gray-900 hover:text-gray-600 touch-none"
         aria-label={`Drag to reorder ${item.name}`}
       >
         <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
@@ -93,13 +93,13 @@ function SortableQuickBarItem({
 
       <div className="flex-1 min-w-0">
         <span className="text-sm font-medium text-gray-900 truncate block">{item.name}</span>
-        <span className="text-xs text-gray-500">{item.categoryName}</span>
+        <span className="text-xs text-gray-900">{item.categoryName}</span>
       </div>
 
       {/* Remove button */}
       <button
         onClick={() => onRemove(item.id)}
-        className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all"
+        className="opacity-0 group-hover:opacity-100 p-1 rounded text-gray-900 hover:text-red-500 hover:bg-red-50 transition-all"
         aria-label={`Remove ${item.name}`}
       >
         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -333,7 +333,7 @@ export default function ButtonLayoutPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (isLoading) {
-    return <div className="p-8 text-center text-gray-400">Loading...</div>
+    return <div className="p-8 text-center text-gray-900">Loading...</div>
   }
 
   return (
@@ -342,7 +342,7 @@ export default function ButtonLayoutPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Staff Button Layout</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-900 mt-1">
             Configure the default quick bar buttons shown on all POS terminals.
           </p>
         </div>
@@ -361,7 +361,7 @@ export default function ButtonLayoutPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">Default Quick Bar</h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-900">
               Drag to reorder. These items appear on every terminal unless an employee has a personal override.
             </p>
           </div>
@@ -378,7 +378,7 @@ export default function ButtonLayoutPage() {
         </div>
 
         {resolvedItems.length === 0 ? (
-          <div className="py-8 text-center text-gray-400 border-2 border-dashed rounded-xl">
+          <div className="py-8 text-center text-gray-900 border-2 border-dashed rounded-xl">
             <p className="text-sm">No items in the default quick bar.</p>
             <button
               onClick={() => setShowItemPicker(true)}
@@ -410,7 +410,7 @@ export default function ButtonLayoutPage() {
           </DndContext>
         )}
 
-        <div className="text-xs text-gray-400">
+        <div className="text-xs text-gray-900">
           {resolvedItems.length} item{resolvedItems.length !== 1 ? 's' : ''} in default layout
         </div>
       </Card>
@@ -419,15 +419,15 @@ export default function ButtonLayoutPage() {
       <Card className="p-6 space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Employee Overrides</h2>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-900">
             Employees who have customized their personal quick bar. Reset to make them use the location defaults.
           </p>
         </div>
 
         {overridesLoading ? (
-          <div className="py-4 text-center text-gray-400 text-sm">Loading overrides...</div>
+          <div className="py-4 text-center text-gray-900 text-sm">Loading overrides...</div>
         ) : overrides.length === 0 ? (
-          <div className="py-4 text-center text-gray-400 text-sm">
+          <div className="py-4 text-center text-gray-900 text-sm">
             No employees have custom overrides.
           </div>
         ) : (
@@ -436,7 +436,7 @@ export default function ButtonLayoutPage() {
               <div key={override.employeeId} className="flex items-center justify-between py-3">
                 <div>
                   <span className="text-sm font-medium text-gray-900">{override.employeeName}</span>
-                  <span className="ml-2 text-xs text-gray-500">
+                  <span className="ml-2 text-xs text-gray-900">
                     {override.itemCount} custom item{override.itemCount !== 1 ? 's' : ''}
                   </span>
                 </div>
@@ -473,9 +473,9 @@ export default function ButtonLayoutPage() {
           {/* Items list */}
           <div className="max-h-96 overflow-y-auto divide-y">
             {allItemsLoading ? (
-              <div className="py-8 text-center text-gray-400 text-sm">Loading menu items...</div>
+              <div className="py-8 text-center text-gray-900 text-sm">Loading menu items...</div>
             ) : pickerItems.length === 0 ? (
-              <div className="py-8 text-center text-gray-400 text-sm">
+              <div className="py-8 text-center text-gray-900 text-sm">
                 {pickerSearch ? 'No matching items found.' : 'All items are already in the quick bar.'}
               </div>
             ) : (
@@ -487,9 +487,9 @@ export default function ButtonLayoutPage() {
                 >
                   <div>
                     <span className="text-sm font-medium text-gray-900">{item.name}</span>
-                    <span className="ml-2 text-xs text-gray-500">{item.categoryName}</span>
+                    <span className="ml-2 text-xs text-gray-900">{item.categoryName}</span>
                   </div>
-                  <span className="text-xs text-gray-400">${item.price.toFixed(2)}</span>
+                  <span className="text-xs text-gray-900">${item.price.toFixed(2)}</span>
                 </button>
               ))
             )}

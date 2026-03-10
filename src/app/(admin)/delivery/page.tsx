@@ -290,19 +290,19 @@ export default function DeliveryPage() {
         <div className="grid grid-cols-4 gap-4 mb-6">
           <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
             <div className="text-2xl font-bold text-blue-600">{activeDeliveries.length}</div>
-            <div className="text-sm text-gray-500">Active Deliveries</div>
+            <div className="text-sm text-gray-900">Active Deliveries</div>
           </div>
           <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
             <div className="text-2xl font-bold text-yellow-600">{pendingCount}</div>
-            <div className="text-sm text-gray-500">Pending</div>
+            <div className="text-sm text-gray-900">Pending</div>
           </div>
           <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
             <div className="text-2xl font-bold text-green-600">{completedToday.length}</div>
-            <div className="text-sm text-gray-500">Delivered Today</div>
+            <div className="text-sm text-gray-900">Delivered Today</div>
           </div>
           <div className="bg-white dark:bg-gray-900 rounded-lg p-4 border border-gray-200 dark:border-gray-800">
             <div className="text-2xl font-bold">{avgDeliveryTime ?? '--'}</div>
-            <div className="text-sm text-gray-500">Avg Delivery (min)</div>
+            <div className="text-sm text-gray-900">Avg Delivery (min)</div>
           </div>
         </div>
 
@@ -319,7 +319,7 @@ export default function DeliveryPage() {
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     statusFilter === s
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-700'
+                      : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-900 hover:bg-gray-300 dark:hover:bg-gray-700'
                   }`}
                 >
                   {s === 'all' ? 'All' : STATUS_CONFIG[s].label}
@@ -328,9 +328,9 @@ export default function DeliveryPage() {
             </div>
 
             {isLoading ? (
-              <div className="text-center py-10 text-gray-500">Loading...</div>
+              <div className="text-center py-10 text-gray-900">Loading...</div>
             ) : deliveries.length === 0 ? (
-              <div className="text-center py-10 text-gray-500">No delivery orders found</div>
+              <div className="text-center py-10 text-gray-900">No delivery orders found</div>
             ) : (
               <div className="space-y-3">
                 {deliveries.map(d => {
@@ -349,10 +349,10 @@ export default function DeliveryPage() {
                             <span className="font-semibold">{d.customerName}</span>
                             <span className={`text-xs font-medium ${config.color}`}>{config.label}</span>
                             {d.orderNumber && (
-                              <span className="text-xs text-gray-500">#{d.orderNumber}</span>
+                              <span className="text-xs text-gray-900">#{d.orderNumber}</span>
                             )}
                           </div>
-                          <div className="text-sm text-gray-500 mt-1">
+                          <div className="text-sm text-gray-900 mt-1">
                             {d.address && (
                               <div>
                                 {d.address}
@@ -364,14 +364,14 @@ export default function DeliveryPage() {
                             )}
                             {d.phone && <div>{d.phone}</div>}
                           </div>
-                          <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                          <div className="flex items-center gap-3 mt-2 text-xs text-gray-900">
                             <span>ETA: {d.estimatedMinutes}min</span>
                             {d.driverName && <span>Driver: {d.driverName}</span>}
                             {d.deliveryFee > 0 && <span>Fee: ${d.deliveryFee.toFixed(2)}</span>}
                             <span>Created: {new Date(d.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
                           </div>
                           {d.notes && (
-                            <div className="text-xs text-gray-500 italic mt-1">{d.notes}</div>
+                            <div className="text-xs text-gray-900 italic mt-1">{d.notes}</div>
                           )}
                         </div>
 
@@ -422,9 +422,9 @@ export default function DeliveryPage() {
 
           {/* RIGHT: Driver panel */}
           <div className="w-72 flex-shrink-0">
-            <h3 className="font-semibold mb-3 text-gray-700 dark:text-gray-300">Drivers</h3>
+            <h3 className="font-semibold mb-3 text-gray-900 dark:text-gray-900">Drivers</h3>
             {drivers.length === 0 ? (
-              <div className="text-center py-6 text-gray-500 text-sm">No employees available</div>
+              <div className="text-center py-6 text-gray-900 text-sm">No employees available</div>
             ) : (
               <div className="space-y-2">
                 {drivers
@@ -443,7 +443,7 @@ export default function DeliveryPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="font-medium text-sm">{driver.name}</div>
-                          <div className="text-xs text-gray-500">{driver.role}</div>
+                          <div className="text-xs text-gray-900">{driver.role}</div>
                         </div>
                         <div className="text-right">
                           <div className={`text-xs font-medium ${

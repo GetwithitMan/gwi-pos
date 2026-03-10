@@ -135,7 +135,7 @@ export function SizeModal({
                 onChange={(e) => setToppingMultiplier(e.target.value)}
                 className="w-full p-2 border rounded-lg"
               />
-              <p className="text-xs text-gray-500 mt-1">Scales topping prices (1.0 = standard)</p>
+              <p className="text-xs text-gray-900 mt-1">Scales topping prices (1.0 = standard)</p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Inventory Multiplier</label>
@@ -146,7 +146,7 @@ export function SizeModal({
                 onChange={(e) => setInventoryMultiplier(e.target.value)}
                 className="w-full p-2 border rounded-lg"
               />
-              <p className="text-xs text-gray-500 mt-1">Scales all ingredient usage (Small=0.75, Med=1.0, Lg=1.3)</p>
+              <p className="text-xs text-gray-900 mt-1">Scales all ingredient usage (Small=0.75, Med=1.0, Lg=1.3)</p>
             </div>
           </div>
           <div>

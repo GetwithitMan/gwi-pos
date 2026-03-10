@@ -220,7 +220,7 @@ export default function ReservationReportsPage() {
         />
 
         {isLoading ? (
-          <div className="text-center py-8 text-gray-500">Loading report...</div>
+          <div className="text-center py-8 text-gray-900">Loading report...</div>
         ) : (
           <>
             {/* Summary Cards */}
@@ -388,7 +388,7 @@ export default function ReservationReportsPage() {
                                   style={{ height: `${height}%`, minHeight: d.count > 0 ? '4px' : '0' }}
                                   title={`${d.date}: ${d.count} reservations, ${d.covers} covers`}
                                 />
-                                <span className="text-[8px] text-gray-500 mt-1 -rotate-45 origin-left">
+                                <span className="text-[8px] text-gray-900 mt-1 -rotate-45 origin-left">
                                   {d.date.split('-').slice(1).join('/')}
                                 </span>
                               </div>

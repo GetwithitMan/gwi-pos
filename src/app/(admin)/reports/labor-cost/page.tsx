@@ -92,7 +92,7 @@ export default function LaborCostReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap items-end gap-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Start Date</label>
+                <label className="block text-xs text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -101,7 +101,7 @@ export default function LaborCostReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">End Date</label>
+                <label className="block text-xs text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -110,7 +110,7 @@ export default function LaborCostReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Group By</label>
+                <label className="block text-xs text-gray-900 mb-1">Group By</label>
                 <select
                   value={groupBy}
                   onChange={e => setGroupBy(e.target.value as 'date' | 'role' | 'employee')}
@@ -157,25 +157,25 @@ export default function LaborCostReportPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-sm text-gray-500">Total Hours</div>
+                <div className="text-sm text-gray-900">Total Hours</div>
                 <div className="text-2xl font-bold">{report.summary.totalHours.toFixed(1)}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-sm text-gray-500">Total Wages</div>
+                <div className="text-sm text-gray-900">Total Wages</div>
                 <div className="text-2xl font-bold text-red-600">{formatCurrency(report.summary.totalWages)}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-sm text-gray-500">Total Sales</div>
+                <div className="text-sm text-gray-900">Total Sales</div>
                 <div className="text-2xl font-bold text-green-600">{formatCurrency(report.summary.totalSales)}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-sm text-gray-500">Labor %</div>
+                <div className="text-sm text-gray-900">Labor %</div>
                 <div className={`text-2xl font-bold ${
                   (report.summary.laborPercent || 0) > 35 ? 'text-red-600' :
                   (report.summary.laborPercent || 0) > 25 ? 'text-yellow-600' :
@@ -198,12 +198,12 @@ export default function LaborCostReportPage() {
             </CardHeader>
             <CardContent>
               {report.rows.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">No labor data for this period.</p>
+                <p className="text-sm text-gray-900 text-center py-4">No labor data for this period.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b text-left text-gray-500">
+                      <tr className="border-b text-left text-gray-900">
                         <th className="py-2 pr-4">{groupBy === 'date' ? 'Date' : groupBy === 'role' ? 'Role' : 'Employee'}</th>
                         <th className="py-2 pr-4 text-right">Hours</th>
                         <th className="py-2 pr-4 text-right">Wages</th>
@@ -236,7 +236,7 @@ export default function LaborCostReportPage() {
         )}
 
         {isLoading && (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-gray-900">
             <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
             Loading labor cost data...
           </div>

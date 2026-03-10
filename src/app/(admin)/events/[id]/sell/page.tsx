@@ -240,11 +240,11 @@ export default function SellTicketsPage({ params }: { params: Promise<{ id: stri
       {/* Header */}
       <div className="bg-gray-800 p-4 flex justify-between items-center">
         <div>
-          <Link href={`/events/${id}`} className="text-gray-400 hover:text-white text-sm">
+          <Link href={`/events/${id}`} className="text-gray-900 hover:text-white text-sm">
             &larr; Back to Event
           </Link>
           <h1 className="text-xl font-bold">{event.name}</h1>
-          <div className="text-sm text-gray-400">
+          <div className="text-sm text-gray-900">
             {new Date(event.eventDate).toLocaleDateString()} &bull;{' '}
             {formatTime(event.doorsOpen)}
           </div>
@@ -346,7 +346,7 @@ export default function SellTicketsPage({ params }: { params: Promise<{ id: stri
           {selectedSeats.length > 0 && heldTickets.length === 0 && (
             <div className="mb-4">
               <h3 className="font-medium mb-2">Selected Seats ({selectedSeats.length})</h3>
-              <div className="text-sm text-gray-400 mb-3">
+              <div className="text-sm text-gray-900 mb-3">
                 {selectedTierInfo?.name} @ ${selectedTierInfo?.price} each
               </div>
               <div className="text-lg font-bold mb-3">
@@ -385,7 +385,7 @@ export default function SellTicketsPage({ params }: { params: Promise<{ id: stri
                       <span>{ticket.seatLabel || ticket.tableName}</span>
                       <span>${ticket.totalPrice.toFixed(2)}</span>
                     </div>
-                    <div className="text-xs text-gray-400">{ticket.pricingTier}</div>
+                    <div className="text-xs text-gray-900">{ticket.pricingTier}</div>
                   </div>
                 ))}
               </div>
@@ -434,7 +434,7 @@ export default function SellTicketsPage({ params }: { params: Promise<{ id: stri
 
           {/* Empty state */}
           {selectedSeats.length === 0 && heldTickets.length === 0 && (
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-gray-900 py-8">
               Click seats on the floor plan to select them
             </div>
           )}

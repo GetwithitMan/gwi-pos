@@ -72,7 +72,7 @@ export default function AlertSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading alert settings...</div>
+          <div className="text-gray-900 text-lg">Loading alert settings...</div>
         </div>
       </div>
     )
@@ -96,7 +96,7 @@ export default function AlertSettingsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -112,7 +112,7 @@ export default function AlertSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">System Alerts</h2>
-          <p className="text-sm text-gray-500 mb-5">Master switch for all alert notifications. When disabled, no alerts will be generated.</p>
+          <p className="text-sm text-gray-900 mb-5">Master switch for all alert notifications. When disabled, no alerts will be generated.</p>
 
           <div className="space-y-0">
             <ToggleRow
@@ -130,7 +130,7 @@ export default function AlertSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className={`bg-white border border-gray-200 rounded-2xl shadow-sm p-6 ${!alerts.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Transaction Alerts</h2>
-          <p className="text-sm text-gray-500 mb-5">Get notified when voids or discounts exceed configured thresholds.</p>
+          <p className="text-sm text-gray-900 mb-5">Get notified when voids or discounts exceed configured thresholds.</p>
 
           <div className="space-y-0">
             <NumberRow
@@ -173,7 +173,7 @@ export default function AlertSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className={`bg-white border border-gray-200 rounded-2xl shadow-sm p-6 ${!alerts.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Time Clock Alerts</h2>
-          <p className="text-sm text-gray-500 mb-5">Overtime and labor compliance warnings.</p>
+          <p className="text-sm text-gray-900 mb-5">Overtime and labor compliance warnings.</p>
 
           <div className="space-y-0">
             <NumberRow
@@ -194,7 +194,7 @@ export default function AlertSettingsPage() {
             ═══════════════════════════════════════════ */}
         <section className={`bg-white border border-gray-200 rounded-2xl shadow-sm p-6 ${!alerts.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Cash Drawer</h2>
-          <p className="text-sm text-gray-500 mb-5">Alerts for cash drawer activity.</p>
+          <p className="text-sm text-gray-900 mb-5">Alerts for cash drawer activity.</p>
 
           <div className="space-y-0">
             <ToggleRow

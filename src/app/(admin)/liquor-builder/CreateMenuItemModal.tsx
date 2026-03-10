@@ -76,7 +76,7 @@ export function CreateMenuItemModal({
               <div className="flex justify-between mb-1">
                 <span className="text-gray-600">Tier:</span>
                 <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                  bottle.tier === 'well' ? 'bg-gray-100 text-gray-700' :
+                  bottle.tier === 'well' ? 'bg-gray-100 text-gray-900' :
                   bottle.tier === 'call' ? 'bg-blue-100 text-blue-700' :
                   bottle.tier === 'premium' ? 'bg-purple-100 text-purple-700' :
                   'bg-amber-100 text-amber-700'
@@ -139,7 +139,7 @@ export function CreateMenuItemModal({
           {/* Suggested Prices (only when bottle with pour cost) */}
           {bottle && pourCost > 0 && (
             <div>
-              <label className="block text-xs text-gray-700 mb-2">Suggested prices (by profit margin):</label>
+              <label className="block text-xs text-gray-900 mb-2">Suggested prices (by profit margin):</label>
               <div className="flex gap-2">
                 {suggestedPrices.map(({ margin, price: suggested }) => (
                   <button

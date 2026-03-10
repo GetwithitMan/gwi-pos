@@ -151,7 +151,7 @@ export default function DrawersPage() {
       {/* Drawer selector */}
       {drawers.length > 1 && (
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-300 mb-1">Drawer</label>
+          <label className="block text-sm font-medium text-gray-900 mb-1">Drawer</label>
           <select
             value={selectedDrawerId}
             onChange={(e) => setSelectedDrawerId(e.target.value)}
@@ -177,7 +177,7 @@ export default function DrawersPage() {
           <div className="text-2xl font-bold text-red-300">${summary.totalPaidOut.toFixed(2)}</div>
         </div>
         <div className="bg-gray-800 border border-gray-600 rounded-lg p-4">
-          <div className="text-sm text-gray-400">Net</div>
+          <div className="text-sm text-gray-900">Net</div>
           <div className={`text-2xl font-bold ${summary.net >= 0 ? 'text-green-300' : 'text-red-300'}`}>
             ${summary.net.toFixed(2)}
           </div>
@@ -204,7 +204,7 @@ export default function DrawersPage() {
       <div className="bg-gray-800 rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-700 text-gray-300">
+            <tr className="bg-gray-700 text-gray-900">
               <th className="px-4 py-3 text-left">Time</th>
               <th className="px-4 py-3 text-left">Type</th>
               <th className="px-4 py-3 text-right">Amount</th>
@@ -216,18 +216,18 @@ export default function DrawersPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">Loading...</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-900">Loading...</td>
               </tr>
             ) : records.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-900">
                   No paid in/out records for today
                 </td>
               </tr>
             ) : (
               records.map(r => (
                 <tr key={r.id} className="border-t border-gray-700 hover:bg-gray-700/50">
-                  <td className="px-4 py-3 text-gray-300">
+                  <td className="px-4 py-3 text-gray-900">
                     {new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </td>
                   <td className="px-4 py-3">
@@ -244,12 +244,12 @@ export default function DrawersPage() {
                   }`}>
                     ${r.amount.toFixed(2)}
                   </td>
-                  <td className="px-4 py-3 text-gray-300">
+                  <td className="px-4 py-3 text-gray-900">
                     {r.reason}
-                    {r.reference && <span className="text-gray-500 ml-1">({r.reference})</span>}
+                    {r.reference && <span className="text-gray-900 ml-1">({r.reference})</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-300">{r.employeeName}</td>
-                  <td className="px-4 py-3 text-gray-400">{r.drawerName}</td>
+                  <td className="px-4 py-3 text-gray-900">{r.employeeName}</td>
+                  <td className="px-4 py-3 text-gray-900">{r.drawerName}</td>
                 </tr>
               ))
             )}
@@ -267,7 +267,7 @@ export default function DrawersPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Amount ($)</label>
+                <label className="block text-sm text-gray-900 mb-1">Amount ($)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -281,7 +281,7 @@ export default function DrawersPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Reason</label>
+                <label className="block text-sm text-gray-900 mb-1">Reason</label>
                 <select
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -308,7 +308,7 @@ export default function DrawersPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Reference (optional)</label>
+                <label className="block text-sm text-gray-900 mb-1">Reference (optional)</label>
                 <input
                   type="text"
                   value={reference}

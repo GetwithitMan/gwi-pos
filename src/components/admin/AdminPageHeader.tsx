@@ -30,17 +30,17 @@ export function AdminPageHeader({
         <nav className="flex items-center gap-2 text-sm text-gray-600 mb-2">
           {breadcrumbs.map((crumb, i) => (
             <Fragment key={crumb.href}>
-              {i > 0 && <span className="text-gray-500">/</span>}
+              {i > 0 && <span className="text-gray-900">/</span>}
               <Link
                 href={crumb.href}
-                className="hover:text-gray-700 transition-colors"
+                className="hover:text-gray-900 transition-colors"
               >
                 {crumb.label}
               </Link>
             </Fragment>
           ))}
-          <span className="text-gray-500">/</span>
-          <span className="text-gray-700 font-medium">{title}</span>
+          <span className="text-gray-900">/</span>
+          <span className="text-gray-900 font-medium">{title}</span>
         </nav>
       )}
 

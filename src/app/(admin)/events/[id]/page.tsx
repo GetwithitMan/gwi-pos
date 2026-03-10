@@ -76,7 +76,7 @@ interface Conflict {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-700 text-gray-300',
+  draft: 'bg-gray-700 text-gray-900',
   on_sale: 'bg-green-900 text-green-300',
   sold_out: 'bg-purple-900 text-purple-300',
   cancelled: 'bg-red-900 text-red-300',
@@ -180,7 +180,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
       {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
-          <Link href="/events" className="text-gray-400 hover:text-white text-sm mb-2 inline-block">
+          <Link href="/events" className="text-gray-900 hover:text-white text-sm mb-2 inline-block">
             &larr; Back to Events
           </Link>
           <div className="flex items-center gap-3">
@@ -189,7 +189,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
               {event.status.replace('_', ' ')}
             </span>
           </div>
-          <div className="text-gray-400 mt-1">
+          <div className="text-gray-900 mt-1">
             {new Date(event.eventDate).toLocaleDateString('en-US', {
               weekday: 'long',
               year: 'numeric',
@@ -262,33 +262,33 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
       {/* Stats Grid */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Tickets Sold</div>
+          <div className="text-gray-900 text-sm">Tickets Sold</div>
           <div className="text-2xl font-bold text-green-400">{ticketsSold}</div>
-          <div className="text-xs text-gray-500">of {event.totalCapacity} total</div>
+          <div className="text-xs text-gray-900">of {event.totalCapacity} total</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Checked In</div>
+          <div className="text-gray-900 text-sm">Checked In</div>
           <div className="text-2xl font-bold text-purple-400">{event.ticketCounts.checkedIn}</div>
-          <div className="text-xs text-gray-500">of {ticketsSold} sold</div>
+          <div className="text-xs text-gray-900">of {ticketsSold} sold</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Held</div>
+          <div className="text-gray-900 text-sm">Held</div>
           <div className="text-2xl font-bold text-yellow-400">{event.ticketCounts.held}</div>
-          <div className="text-xs text-gray-500">pending purchase</div>
+          <div className="text-xs text-gray-900">pending purchase</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Available</div>
+          <div className="text-gray-900 text-sm">Available</div>
           <div className="text-2xl font-bold">
             {event.totalCapacity - ticketsSold - event.ticketCounts.held}
           </div>
-          <div className="text-xs text-gray-500">remaining</div>
+          <div className="text-xs text-gray-900">remaining</div>
         </div>
       </div>
 
       {/* Capacity Bar */}
       <div className="bg-gray-800 rounded-lg p-4 mb-6">
         <div className="flex justify-between mb-2">
-          <span className="text-sm text-gray-400">Capacity</span>
+          <span className="text-sm text-gray-900">Capacity</span>
           <span className="text-sm">{soldPercent}% sold</span>
         </div>
         <div className="h-4 bg-gray-700 rounded-full overflow-hidden">
@@ -313,20 +313,20 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
                 <div>
                   <div className="font-medium">{tier.name}</div>
                   {tier.description && (
-                    <div className="text-sm text-gray-400 mt-1">{tier.description}</div>
+                    <div className="text-sm text-gray-900 mt-1">{tier.description}</div>
                   )}
                 </div>
                 <div className="text-right">
                   <div className="text-lg font-bold">${tier.price}</div>
                   {tier.serviceFee > 0 && (
-                    <div className="text-xs text-gray-500">+${tier.serviceFee} fee</div>
+                    <div className="text-xs text-gray-900">+${tier.serviceFee} fee</div>
                   )}
                 </div>
               </div>
               <div className="mt-3 pt-3 border-t border-gray-700 text-sm">
                 <span className="text-green-400">{tier.quantitySold} sold</span>
                 {tier.quantityAvailable && (
-                  <span className="text-gray-400"> / {tier.quantityAvailable} available</span>
+                  <span className="text-gray-900"> / {tier.quantityAvailable} available</span>
                 )}
               </div>
             </div>
@@ -340,24 +340,24 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
           <h2 className="text-lg font-medium mb-4">Event Details</h2>
           <dl className="space-y-3">
             <div className="flex justify-between">
-              <dt className="text-gray-400">Event Type</dt>
+              <dt className="text-gray-900">Event Type</dt>
               <dd className="capitalize">{event.eventType.replace('_', ' ')}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-400">Ticketing Mode</dt>
+              <dt className="text-gray-900">Ticketing Mode</dt>
               <dd className="capitalize">{event.ticketingMode.replace('_', ' ')}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-400">Online Sales</dt>
+              <dt className="text-gray-900">Online Sales</dt>
               <dd>{event.allowOnlineSales ? 'Enabled' : 'Disabled'}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-400">POS Sales</dt>
+              <dt className="text-gray-900">POS Sales</dt>
               <dd>{event.allowPOSSales ? 'Enabled' : 'Disabled'}</dd>
             </div>
             {event.maxTicketsPerOrder && (
               <div className="flex justify-between">
-                <dt className="text-gray-400">Max Per Order</dt>
+                <dt className="text-gray-900">Max Per Order</dt>
                 <dd>{event.maxTicketsPerOrder}</dd>
               </div>
             )}
@@ -368,20 +368,20 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
           <h2 className="text-lg font-medium mb-4">Schedule</h2>
           <dl className="space-y-3">
             <div className="flex justify-between">
-              <dt className="text-gray-400">Event Date</dt>
+              <dt className="text-gray-900">Event Date</dt>
               <dd>{new Date(event.eventDate).toLocaleDateString()}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-400">Doors Open</dt>
+              <dt className="text-gray-900">Doors Open</dt>
               <dd>{formatTime(event.doorsOpen)}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-400">Show Time</dt>
+              <dt className="text-gray-900">Show Time</dt>
               <dd>{formatTime(event.startTime)}</dd>
             </div>
             {event.endTime && (
               <div className="flex justify-between">
-                <dt className="text-gray-400">End Time</dt>
+                <dt className="text-gray-900">End Time</dt>
                 <dd>{formatTime(event.endTime)}</dd>
               </div>
             )}
@@ -420,7 +420,7 @@ function ConflictModal({
       size="2xl"
     >
 
-        <p className="text-gray-400 mb-4">
+        <p className="text-gray-900 mb-4">
           The following reservations overlap with this event. Choose how to handle them:
         </p>
 
@@ -444,7 +444,7 @@ function ConflictModal({
               />
               <div className="flex-1">
                 <div className="font-medium">{conflict.guestName}</div>
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-gray-900">
                   Party of {conflict.partySize} at {formatTime(conflict.reservationTime)}
                   {conflict.tableName && ` - ${conflict.tableName}`}
                 </div>
@@ -459,7 +459,7 @@ function ConflictModal({
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-gray-700"
+            className="flex-1 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-gray-900"
           >
             Cancel
           </button>

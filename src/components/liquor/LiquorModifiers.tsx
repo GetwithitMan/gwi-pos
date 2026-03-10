@@ -106,7 +106,7 @@ export function LiquorModifiers() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen text-gray-500">
+      <div className="flex items-center justify-center min-h-screen text-gray-900">
         Loading...
       </div>
     )
@@ -141,7 +141,7 @@ export function LiquorModifiers() {
         {/* Left: Template list */}
         <div className="w-72 bg-white border-r flex flex-col shrink-0">
           <div className="px-4 py-2.5 border-b">
-            <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-gray-900 uppercase tracking-wide">
               Templates ({groups.length})
             </span>
           </div>
@@ -196,7 +196,7 @@ export function LiquorModifiers() {
           {selectedGroup ? (
             <>
               <div className="px-6 py-3 border-b bg-white flex items-center justify-between shrink-0">
-                <h2 className="text-sm font-semibold text-gray-700">
+                <h2 className="text-sm font-semibold text-gray-900">
                   Editing: <span className="text-purple-700">{selectedGroup.name}</span>
                 </h2>
               </div>

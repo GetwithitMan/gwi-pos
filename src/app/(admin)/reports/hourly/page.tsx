@@ -142,7 +142,7 @@ export default function HourlySalesPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Date</label>
                 <input
                   type="date"
                   value={date}
@@ -151,8 +151,8 @@ export default function HourlySalesPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Compare Date <span className="text-gray-400 font-normal">(optional)</span>
+                <label className="block text-sm font-medium text-gray-900 mb-1">
+                  Compare Date <span className="text-gray-900 font-normal">(optional)</span>
                 </label>
                 <input
                   type="date"
@@ -185,7 +185,7 @@ export default function HourlySalesPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Revenue</p>
+                <p className="text-xs text-gray-900">Total Revenue</p>
                 <p className="text-xl font-bold text-green-600">
                   {formatCurrency(summary.totalRevenue)}
                 </p>
@@ -193,7 +193,7 @@ export default function HourlySalesPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Orders</p>
+                <p className="text-xs text-gray-900">Total Orders</p>
                 <p className="text-xl font-bold text-blue-600">
                   {summary.totalOrders}
                 </p>
@@ -201,19 +201,19 @@ export default function HourlySalesPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Peak Hour</p>
+                <p className="text-xs text-gray-900">Peak Hour</p>
                 <p className="text-xl font-bold text-purple-600">
                   {summary.peakHourLabel}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-xs text-gray-900 mt-0.5">
                   {formatCurrency(summary.peakRevenue)}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Avg Order Value</p>
-                <p className="text-xl font-bold text-gray-700">
+                <p className="text-xs text-gray-900">Avg Order Value</p>
+                <p className="text-xl font-bold text-gray-900">
                   {formatCurrency(summary.avgOrderValue)}
                 </p>
               </CardContent>
@@ -252,7 +252,7 @@ export default function HourlySalesPage() {
               <CardTitle className="flex items-center justify-between">
                 <span>Revenue by Hour</span>
                 {report?.date && (
-                  <span className="text-sm font-normal text-gray-500">
+                  <span className="text-sm font-normal text-gray-900">
                     {new Date(report.date + 'T12:00:00').toLocaleDateString('en-US', {
                       weekday: 'long',
                       month: 'long',
@@ -265,19 +265,19 @@ export default function HourlySalesPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="text-center py-12 text-gray-500">Loading report...</div>
+                <div className="text-center py-12 text-gray-900">Loading report...</div>
               ) : !hasActivity ? (
-                <div className="text-center py-12 text-gray-500">
+                <div className="text-center py-12 text-gray-900">
                   No orders found for this date.
                 </div>
               ) : (
                 <div className="space-y-0.5">
                   {/* Column header */}
                   <div className="flex items-center gap-3 pb-2 border-b mb-2">
-                    <span className="w-12 text-xs text-right text-gray-400">Hour</span>
-                    <div className="flex-1 text-xs text-gray-400 pl-1">Revenue</div>
-                    <span className="w-20 text-right text-xs text-gray-400">Amount</span>
-                    <span className="w-16 text-right text-xs text-gray-400">Orders</span>
+                    <span className="w-12 text-xs text-right text-gray-900">Hour</span>
+                    <div className="flex-1 text-xs text-gray-900 pl-1">Revenue</div>
+                    <span className="w-20 text-right text-xs text-gray-900">Amount</span>
+                    <span className="w-16 text-right text-xs text-gray-900">Orders</span>
                   </div>
                   {hours.map((h) => {
                     const compareH = compareHours?.find(c => c.hour === h.hour)
@@ -287,7 +287,7 @@ export default function HourlySalesPage() {
 
                     return (
                       <div key={h.hour} className="flex items-center gap-3 py-0.5">
-                        <span className={`w-12 text-xs text-right ${isPeak ? 'text-purple-600 font-semibold' : 'text-gray-500'}`}>
+                        <span className={`w-12 text-xs text-right ${isPeak ? 'text-purple-600 font-semibold' : 'text-gray-900'}`}>
                           {h.label}
                         </span>
                         <div className="flex-1 bg-gray-100 rounded h-6 overflow-hidden relative">
@@ -306,10 +306,10 @@ export default function HourlySalesPage() {
                         </div>
                         <span className="w-20 text-right text-sm font-medium">
                           {h.revenue > 0 ? formatCurrency(h.revenue) : (
-                            <span className="text-gray-300">—</span>
+                            <span className="text-gray-900">—</span>
                           )}
                         </span>
-                        <span className="w-16 text-right text-xs text-gray-500">
+                        <span className="w-16 text-right text-xs text-gray-900">
                           {h.orderCount > 0 ? `${h.orderCount} orders` : ''}
                         </span>
                       </div>
@@ -317,7 +317,7 @@ export default function HourlySalesPage() {
                   })}
                   {/* Legend */}
                   {compareHours && (
-                    <div className="flex items-center gap-6 pt-3 mt-2 border-t text-xs text-gray-500">
+                    <div className="flex items-center gap-6 pt-3 mt-2 border-t text-xs text-gray-900">
                       <span className="flex items-center gap-1.5">
                         <span className="w-3 h-3 rounded bg-blue-500" />
                         {report?.date}
@@ -342,17 +342,17 @@ export default function HourlySalesPage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="text-center py-12 text-gray-500">Loading report...</div>
+                <div className="text-center py-12 text-gray-900">Loading report...</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Hour</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Orders</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Revenue</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Avg Order</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Tips</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Hour</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Orders</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Revenue</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Avg Order</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Tips</th>
                         {compareHours && (
                           <>
                             <th className="px-4 py-3 text-right text-sm font-medium text-orange-500">
@@ -375,7 +375,7 @@ export default function HourlySalesPage() {
                             className={`border-t ${isPeak ? 'bg-purple-50' : 'hover:bg-gray-50'} ${h.orderCount === 0 ? 'opacity-40' : ''}`}
                           >
                             <td className="px-4 py-2.5">
-                              <span className={`font-medium ${isPeak ? 'text-purple-700' : 'text-gray-700'}`}>
+                              <span className={`font-medium ${isPeak ? 'text-purple-700' : 'text-gray-900'}`}>
                                 {h.label}
                               </span>
                               {isPeak && (
@@ -388,10 +388,10 @@ export default function HourlySalesPage() {
                             <td className="px-4 py-2.5 text-right font-medium">
                               {h.revenue > 0 ? formatCurrency(h.revenue) : '—'}
                             </td>
-                            <td className="px-4 py-2.5 text-right text-gray-500">
+                            <td className="px-4 py-2.5 text-right text-gray-900">
                               {h.avgOrderValue > 0 ? formatCurrency(h.avgOrderValue) : '—'}
                             </td>
-                            <td className="px-4 py-2.5 text-right text-gray-500">
+                            <td className="px-4 py-2.5 text-right text-gray-900">
                               {h.tipTotal > 0 ? formatCurrency(h.tipTotal) : '—'}
                             </td>
                             {compareHours && (

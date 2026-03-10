@@ -37,7 +37,7 @@ interface Event {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
+  draft: 'bg-gray-100 text-gray-900',
   on_sale: 'bg-green-50 text-green-700',
   sold_out: 'bg-purple-50 text-purple-700',
   cancelled: 'bg-red-50 text-red-700',
@@ -125,7 +125,7 @@ export default function EventsPage() {
             key={status}
             onClick={() => setFilter(status)}
             className={`px-3 py-2 rounded capitalize ${
-              filter === status ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+              filter === status ? 'bg-blue-600 text-white' : 'bg-white text-gray-900 border border-gray-300 hover:bg-gray-50'
             }`}
           >
             {status === 'on_sale' ? 'On Sale' : status.replace('_', ' ')}
@@ -218,7 +218,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
           <div className="text-sm text-gray-600 uppercase">
             {new Date(event.eventDate).toLocaleDateString('en-US', { month: 'short' })}
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-gray-900">
             {new Date(event.eventDate).toLocaleDateString('en-US', { weekday: 'short' })}
           </div>
         </div>
@@ -303,7 +303,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
 
               <button
                 onClick={() => setShowActions(!showActions)}
-                className="px-2 py-1.5 bg-gray-200 rounded text-gray-700 hover:bg-gray-300"
+                className="px-2 py-1.5 bg-gray-200 rounded text-gray-900 hover:bg-gray-300"
               >
                 ...
               </button>
@@ -317,21 +317,21 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
         <div className="absolute right-4 top-16 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-10 min-w-[150px]">
           <Link
             href={`/events/${event.id}`}
-            className="block px-4 py-2 text-gray-700 hover:bg-gray-50"
+            className="block px-4 py-2 text-gray-900 hover:bg-gray-50"
             onClick={() => setShowActions(false)}
           >
             View Details
           </Link>
           <Link
             href={`/events/${event.id}/sell`}
-            className="block px-4 py-2 text-gray-700 hover:bg-gray-50"
+            className="block px-4 py-2 text-gray-900 hover:bg-gray-50"
             onClick={() => setShowActions(false)}
           >
             Sell Tickets
           </Link>
           <Link
             href={`/events/${event.id}/check-in`}
-            className="block px-4 py-2 text-gray-700 hover:bg-gray-50"
+            className="block px-4 py-2 text-gray-900 hover:bg-gray-50"
             onClick={() => setShowActions(false)}
           >
             Check-In

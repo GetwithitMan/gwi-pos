@@ -112,7 +112,7 @@ export default function CommissionReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -121,7 +121,7 @@ export default function CommissionReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -149,7 +149,7 @@ export default function CommissionReportPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-sm text-gray-500">Total Commission</p>
+                <p className="text-sm text-gray-900">Total Commission</p>
                 <p className="text-3xl font-bold text-green-600">
                   {formatCurrency(report.summary.grandTotalCommission)}
                 </p>
@@ -157,7 +157,7 @@ export default function CommissionReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-sm text-gray-500">Employees with Commission</p>
+                <p className="text-sm text-gray-900">Employees with Commission</p>
                 <p className="text-3xl font-bold text-blue-600">
                   {report.summary.totalEmployees}
                 </p>
@@ -165,7 +165,7 @@ export default function CommissionReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-sm text-gray-500">Orders with Commission</p>
+                <p className="text-sm text-gray-900">Orders with Commission</p>
                 <p className="text-3xl font-bold text-purple-600">
                   {report.summary.totalOrders}
                 </p>
@@ -181,9 +181,9 @@ export default function CommissionReportPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading report...</div>
+              <div className="text-center py-8 text-gray-900">Loading report...</div>
             ) : !report || report.report.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 <p className="mb-2">No commission data found for the selected period.</p>
                 <p className="text-sm">Commission is tracked when items with commission settings are sold.</p>
               </div>
@@ -205,7 +205,7 @@ export default function CommissionReportPage() {
                         </div>
                         <div>
                           <p className="font-semibold">{employee.employeeName}</p>
-                          <p className="text-sm text-gray-500">{employee.orderCount} orders</p>
+                          <p className="text-sm text-gray-900">{employee.orderCount} orders</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
@@ -213,7 +213,7 @@ export default function CommissionReportPage() {
                           {formatCurrency(employee.totalCommission)}
                         </span>
                         <svg
-                          className={`w-5 h-5 text-gray-400 transition-transform ${
+                          className={`w-5 h-5 text-gray-900 transition-transform ${
                             expandedEmployee === employee.employeeId ? 'rotate-180' : ''
                           }`}
                           fill="none"
@@ -230,10 +230,10 @@ export default function CommissionReportPage() {
                         <table className="w-full">
                           <thead className="bg-gray-50">
                             <tr>
-                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Order</th>
-                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Date</th>
-                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">Items</th>
-                              <th className="px-4 py-2 text-right text-sm font-medium text-gray-500">Commission</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-900">Order</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-900">Date</th>
+                              <th className="px-4 py-2 text-left text-sm font-medium text-gray-900">Items</th>
+                              <th className="px-4 py-2 text-right text-sm font-medium text-gray-900">Commission</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -242,10 +242,10 @@ export default function CommissionReportPage() {
                                 <td className="px-4 py-3 text-sm font-medium">
                                   #{order.orderNumber}
                                 </td>
-                                <td className="px-4 py-3 text-sm text-gray-500">
+                                <td className="px-4 py-3 text-sm text-gray-900">
                                   {formatDate(order.date)}
                                 </td>
-                                <td className="px-4 py-3 text-sm text-gray-500">
+                                <td className="px-4 py-3 text-sm text-gray-900">
                                   {order.items.map((item, i) => (
                                     <span key={i}>
                                       {item.name}

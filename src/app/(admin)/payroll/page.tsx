@@ -236,9 +236,9 @@ export default function PayrollPage() {
               </CardHeader>
               <CardContent>
                 {isLoading ? (
-                  <div className="text-center py-4 text-gray-500">Loading...</div>
+                  <div className="text-center py-4 text-gray-900">Loading...</div>
                 ) : periods.length === 0 ? (
-                  <div className="text-center py-4 text-gray-500">
+                  <div className="text-center py-4 text-gray-900">
                     No payroll periods yet.
                     <br />
                     Create one to get started.
@@ -261,7 +261,7 @@ export default function PayrollPage() {
                           </span>
                           {getStatusBadge(period.status)}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-900">
                           {period.employeeCount} employees
                           {period.totals.grandTotal > 0 && (
                             <span className="ml-2">• {formatCurrency(period.totals.grandTotal)}</span>
@@ -286,7 +286,7 @@ export default function PayrollPage() {
                       <CardTitle>
                         {formatDate(selectedPeriod.periodStart)} - {formatDate(selectedPeriod.periodEnd)}
                       </CardTitle>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-gray-900 mt-1">
                         {selectedPeriod.periodType} pay period
                       </p>
                     </div>
@@ -296,7 +296,7 @@ export default function PayrollPage() {
                     {/* Summary Cards */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                       <div className="bg-gray-50 p-3 rounded-lg">
-                        <p className="text-xs text-gray-500">Total Hours</p>
+                        <p className="text-xs text-gray-900">Total Hours</p>
                         <p className="text-lg font-bold">
                           {(selectedPeriod.totals.regularHours + selectedPeriod.totals.overtimeHours).toFixed(1)}
                         </p>
@@ -307,19 +307,19 @@ export default function PayrollPage() {
                         )}
                       </div>
                       <div className="bg-blue-50 p-3 rounded-lg">
-                        <p className="text-xs text-gray-500">Wages</p>
+                        <p className="text-xs text-gray-900">Wages</p>
                         <p className="text-lg font-bold text-blue-600">
                           {formatCurrency(selectedPeriod.totals.wages)}
                         </p>
                       </div>
                       <div className="bg-green-50 p-3 rounded-lg">
-                        <p className="text-xs text-gray-500">Tips</p>
+                        <p className="text-xs text-gray-900">Tips</p>
                         <p className="text-lg font-bold text-green-600">
                           {formatCurrency(selectedPeriod.totals.tips)}
                         </p>
                       </div>
                       <div className="bg-purple-50 p-3 rounded-lg">
-                        <p className="text-xs text-gray-500">Grand Total</p>
+                        <p className="text-xs text-gray-900">Grand Total</p>
                         <p className="text-lg font-bold text-purple-600">
                           {formatCurrency(selectedPeriod.totals.grandTotal)}
                         </p>
@@ -378,12 +378,12 @@ export default function PayrollPage() {
                             <div className="flex justify-between items-start mb-4">
                               <div>
                                 <h4 className="font-semibold">{stub.employee.name}</h4>
-                                <p className="text-sm text-gray-500">{stub.employee.role}</p>
+                                <p className="text-sm text-gray-900">{stub.employee.role}</p>
                               </div>
                               <div className="text-right flex items-start gap-3">
                                 <div>
                                   <p className="text-2xl font-bold">{formatCurrency(stub.netPay)}</p>
-                                  <p className="text-xs text-gray-500">Net Pay</p>
+                                  <p className="text-xs text-gray-900">Net Pay</p>
                                 </div>
                                 <Button
                                   variant="outline"
@@ -403,33 +403,33 @@ export default function PayrollPage() {
 
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                               <div>
-                                <p className="text-gray-500">Hours</p>
+                                <p className="text-gray-900">Hours</p>
                                 <p className="font-medium">
                                   {stub.regularHours.toFixed(1)} reg
                                   {stub.overtimeHours > 0 && ` + ${stub.overtimeHours.toFixed(1)} OT`}
                                 </p>
                               </div>
                               <div>
-                                <p className="text-gray-500">Wages</p>
+                                <p className="text-gray-900">Wages</p>
                                 <p className="font-medium">
                                   {formatCurrency(stub.regularPay + stub.overtimePay)}
                                 </p>
                               </div>
                               <div>
-                                <p className="text-gray-500">Tips</p>
+                                <p className="text-gray-900">Tips</p>
                                 <p className="font-medium text-green-600">
                                   {formatCurrency(stub.netTips)}
                                 </p>
                               </div>
                               <div>
-                                <p className="text-gray-500">Gross Pay</p>
+                                <p className="text-gray-900">Gross Pay</p>
                                 <p className="font-medium">{formatCurrency(stub.grossPay)}</p>
                               </div>
                             </div>
 
                             {stub.deductions && Object.keys(stub.deductions).length > 0 && (
                               <div className="mt-3 pt-3 border-t">
-                                <p className="text-xs text-gray-500 mb-2">Deductions</p>
+                                <p className="text-xs text-gray-900 mb-2">Deductions</p>
                                 <div className="flex flex-wrap gap-3 text-xs">
                                   {stub.deductions.federalTax > 0 && (
                                     <span>Federal: -{formatCurrency(stub.deductions.federalTax)}</span>
@@ -455,7 +455,7 @@ export default function PayrollPage() {
               </div>
             ) : (
               <Card>
-                <CardContent className="py-12 text-center text-gray-500">
+                <CardContent className="py-12 text-center text-gray-900">
                   Select a pay period to view details
                 </CardContent>
               </Card>
@@ -468,7 +468,7 @@ export default function PayrollPage() {
       <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Pay Period" size="md">
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Period Start
                 </label>
                 <input
@@ -487,7 +487,7 @@ export default function PayrollPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Period End
                 </label>
                 <input

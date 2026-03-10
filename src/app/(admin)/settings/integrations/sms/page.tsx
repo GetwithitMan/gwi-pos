@@ -57,7 +57,7 @@ export default function SmsIntegrationPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">SMS Integration (Twilio)</h1>
-          <p className="text-gray-500">Connect a Twilio SMS account to enable text message alerts and manager approvals. Twilio is a third-party messaging service — you need a Twilio account to use this feature.</p>
+          <p className="text-gray-900">Connect a Twilio SMS account to enable text message alerts and manager approvals. Twilio is a third-party messaging service — you need a Twilio account to use this feature.</p>
         </div>
         {!loading && (
           <span className={`px-3 py-1 rounded-full text-sm font-medium ${
@@ -142,7 +142,7 @@ export default function SmsIntegrationPage() {
 TWILIO_AUTH_TOKEN=your_token_here
 TWILIO_FROM_NUMBER=+1234567890`}
             </pre>
-            <p className="text-sm text-gray-500 mt-3">4. Restart the POS server for changes to take effect.</p>
+            <p className="text-sm text-gray-900 mt-3">4. Restart the POS server for changes to take effect.</p>
             <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
               These credentials are set in your venue&apos;s server configuration. Ask your IT person or our support team to update them — you don&apos;t need to make changes yourself.
             </div>

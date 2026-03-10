@@ -53,7 +53,7 @@ interface Reservation {
 const STATUS_COLORS: Record<string, string> = {
   confirmed: 'bg-blue-900 text-blue-300',
   seated: 'bg-green-900 text-green-300',
-  completed: 'bg-gray-700 text-gray-300',
+  completed: 'bg-gray-700 text-gray-900',
   cancelled: 'bg-red-900 text-red-300',
   no_show: 'bg-orange-900 text-orange-300',
 }
@@ -274,19 +274,19 @@ export default function ReservationsPage() {
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Total Reservations</div>
+          <div className="text-gray-900 text-sm">Total Reservations</div>
           <div className="text-2xl font-bold">{stats.total}</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Confirmed</div>
+          <div className="text-gray-900 text-sm">Confirmed</div>
           <div className="text-2xl font-bold text-blue-400">{stats.confirmed}</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Currently Seated</div>
+          <div className="text-gray-900 text-sm">Currently Seated</div>
           <div className="text-2xl font-bold text-green-400">{stats.seated}</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Total Covers</div>
+          <div className="text-gray-900 text-sm">Total Covers</div>
           <div className="text-2xl font-bold">{stats.totalCovers}</div>
         </div>
       </div>
@@ -294,14 +294,14 @@ export default function ReservationsPage() {
       {/* Timeline View */}
       <div className="bg-gray-800 rounded-lg p-4">
         {sortedSlots.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
+          <div className="text-center text-gray-900 py-8">
             No reservations for this date
           </div>
         ) : (
           <div className="space-y-4">
             {sortedSlots.map(slot => (
               <div key={slot} className="border-l-2 border-gray-600 pl-4">
-                <div className="text-lg font-medium text-gray-400 mb-2">
+                <div className="text-lg font-medium text-gray-900 mb-2">
                   {formatTime(slot)}
                 </div>
                 <div className="grid gap-3">
@@ -406,17 +406,17 @@ function ReservationCard({
               </span>
             )}
           </div>
-          <div className="text-sm text-gray-400 mt-1">
+          <div className="text-sm text-gray-900 mt-1">
             Party of {reservation.partySize} &bull; {reservation.duration} min
           </div>
           {reservation.table && (
-            <div className="text-sm text-gray-300 mt-1">
+            <div className="text-sm text-gray-900 mt-1">
               Table: {reservation.table.name}
               {reservation.table.section && ` (${reservation.table.section.name})`}
             </div>
           )}
           {reservation.guestPhone && (
-            <div className="text-sm text-gray-400">{reservation.guestPhone}</div>
+            <div className="text-sm text-gray-900">{reservation.guestPhone}</div>
           )}
           {reservation.specialRequests && (
             <div className="text-sm text-yellow-400 mt-2">
@@ -608,7 +608,7 @@ function ReservationModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Guest Name *</label>
+            <label className="block text-sm text-gray-900 mb-1">Guest Name *</label>
             <input
               type="text"
               value={form.guestName}
@@ -620,7 +620,7 @@ function ReservationModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Phone</label>
+              <label className="block text-sm text-gray-900 mb-1">Phone</label>
               <input
                 type="tel"
                 value={form.guestPhone}
@@ -629,7 +629,7 @@ function ReservationModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Email</label>
+              <label className="block text-sm text-gray-900 mb-1">Email</label>
               <input
                 type="email"
                 value={form.guestEmail}
@@ -641,7 +641,7 @@ function ReservationModal({
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Party Size *</label>
+              <label className="block text-sm text-gray-900 mb-1">Party Size *</label>
               <input
                 type="number"
                 value={form.partySize}
@@ -652,7 +652,7 @@ function ReservationModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Date *</label>
+              <label className="block text-sm text-gray-900 mb-1">Date *</label>
               <input
                 type="date"
                 value={form.reservationDate}
@@ -662,7 +662,7 @@ function ReservationModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Time *</label>
+              <label className="block text-sm text-gray-900 mb-1">Time *</label>
               <input
                 type="time"
                 value={form.reservationTime}
@@ -675,7 +675,7 @@ function ReservationModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Duration (min)</label>
+              <label className="block text-sm text-gray-900 mb-1">Duration (min)</label>
               <select
                 value={form.duration}
                 onChange={e => setForm({ ...form, duration: Number(e.target.value) })}
@@ -689,7 +689,7 @@ function ReservationModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Table</label>
+              <label className="block text-sm text-gray-900 mb-1">Table</label>
               <select
                 value={form.tableId}
                 onChange={e => setForm({ ...form, tableId: e.target.value })}
@@ -713,7 +713,7 @@ function ReservationModal({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Bottle Service Tier</label>
+            <label className="block text-sm text-gray-900 mb-1">Bottle Service Tier</label>
             <div className="flex items-center gap-2">
               <select
                 value={form.bottleServiceTierId}
@@ -743,7 +743,7 @@ function ReservationModal({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Special Requests</label>
+            <label className="block text-sm text-gray-900 mb-1">Special Requests</label>
             <textarea
               value={form.specialRequests}
               onChange={e => setForm({ ...form, specialRequests: e.target.value })}
@@ -754,7 +754,7 @@ function ReservationModal({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Internal Notes</label>
+            <label className="block text-sm text-gray-900 mb-1">Internal Notes</label>
             <textarea
               value={form.internalNotes}
               onChange={e => setForm({ ...form, internalNotes: e.target.value })}

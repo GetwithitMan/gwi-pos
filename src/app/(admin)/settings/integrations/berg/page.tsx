@@ -446,7 +446,7 @@ export default function BergSettingsPage() {
     return new Date(lastSeenAt).getTime() > fiveMinAgo
   }
 
-  if (loading) return <div className="p-6 text-gray-500">Loading...</div>
+  if (loading) return <div className="p-6 text-gray-900">Loading...</div>
 
   const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
 
@@ -455,7 +455,7 @@ export default function BergSettingsPage() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">Berg Controls</h1>
-          <p className="text-gray-500">
+          <p className="text-gray-900">
             Compare Berg liquor system pours against POS sales data by mapping PLU numbers to menu items.
           </p>
         </div>
@@ -468,8 +468,8 @@ export default function BergSettingsPage() {
           <CardContent>
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-gray-700">Enable Berg Comparison Reports</div>
-                <div className="text-xs text-gray-400">Turn on to start mapping PLU numbers and running comparison reports.</div>
+                <div className="text-sm font-medium text-gray-900">Enable Berg Comparison Reports</div>
+                <div className="text-xs text-gray-900">Turn on to start mapping PLU numbers and running comparison reports.</div>
               </div>
               <button
                 type="button"
@@ -486,7 +486,7 @@ export default function BergSettingsPage() {
         </Card>
 
         {!enabled && (
-          <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm text-gray-500">
+          <div className="rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm text-gray-900">
             Enable Berg comparison reports to start mapping PLU numbers to your POS items.
           </div>
         )}
@@ -524,7 +524,7 @@ export default function BergSettingsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>Berg Devices</CardTitle>
-                    <p className="text-xs text-gray-400 mt-1">Connect physical Berg ECU hardware. Requires the berg-bridge service running on your NUC.</p>
+                    <p className="text-xs text-gray-900 mt-1">Connect physical Berg ECU hardware. Requires the berg-bridge service running on your NUC.</p>
                   </div>
                   <Button onClick={() => { setShowAddDevice(!showAddDevice); setDeviceForm(emptyDeviceForm); setEditingDeviceId(null); setNewSecretAlert(null) }} size="sm">
                     {showAddDevice ? 'Cancel' : 'Add Device'}
@@ -535,7 +535,7 @@ export default function BergSettingsPage() {
                 {/* Add Device Form */}
                 {showAddDevice && (
                   <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
-                    <div className="text-sm font-medium text-gray-700 mb-2">{editingDeviceId ? 'Edit Device' : 'Add Device'}</div>
+                    <div className="text-sm font-medium text-gray-900 mb-2">{editingDeviceId ? 'Edit Device' : 'Add Device'}</div>
                     {/* Mode Presets */}
                     <div className="mb-4">
                       <label className="block text-xs font-medium text-gray-600 mb-2">Quick Preset</label>
@@ -582,7 +582,7 @@ export default function BergSettingsPage() {
                             }`}
                           >
                             <div className="font-medium">{preset.label}</div>
-                            <div className="text-gray-500 mt-0.5">{preset.description}</div>
+                            <div className="text-gray-900 mt-0.5">{preset.description}</div>
                           </button>
                         ))}
                       </div>
@@ -610,7 +610,7 @@ export default function BergSettingsPage() {
                           ))}
                         </select>
                         {deviceForm.model && MODEL_PLU_HINTS[deviceForm.model] && (
-                          <p className="text-xs text-gray-400 mt-1">{MODEL_PLU_HINTS[deviceForm.model]}</p>
+                          <p className="text-xs text-gray-900 mt-1">{MODEL_PLU_HINTS[deviceForm.model]}</p>
                         )}
                       </div>
                       <div>
@@ -679,7 +679,7 @@ export default function BergSettingsPage() {
                             <option value="ACK_ON_TIMEOUT">ACK on timeout (log uncertainty)</option>
                             <option value="NAK_ON_TIMEOUT">NAK on timeout (strictest)</option>
                           </select>
-                          <p className="text-xs text-gray-400 mt-1">Only applies when Requires Open Order mode is active</p>
+                          <p className="text-xs text-gray-900 mt-1">Only applies when Requires Open Order mode is active</p>
                         </div>
                       )}
                       <div>
@@ -705,7 +705,7 @@ export default function BergSettingsPage() {
                         />
                         <label htmlFor="autoRingOnlySingle" className="text-sm">
                           Only auto-ring when single open ticket on terminal
-                          <span className="block text-xs text-gray-400">Prevents ambiguous multi-tab pours</span>
+                          <span className="block text-xs text-gray-900">Prevents ambiguous multi-tab pours</span>
                         </label>
                       </div>
                     )}
@@ -720,7 +720,7 @@ export default function BergSettingsPage() {
 
                 {/* Device List */}
                 {devices.length === 0 && !showAddDevice ? (
-                  <p className="text-sm text-gray-400">No devices registered. Click &quot;Add Device&quot; to connect Berg hardware.</p>
+                  <p className="text-sm text-gray-900">No devices registered. Click &quot;Add Device&quot; to connect Berg hardware.</p>
                 ) : (
                   <div className="space-y-2">
                     {devices.map(d => {
@@ -731,14 +731,14 @@ export default function BergSettingsPage() {
                           <div className="flex items-center gap-3">
                             <div>
                               <div className="text-sm font-medium text-gray-800">{d.name}</div>
-                              <div className="text-xs text-gray-400">{d.portName}</div>
+                              <div className="text-xs text-gray-900">{d.portName}</div>
                             </div>
                             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                               {modelLabel}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${connected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'}`}>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${connected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-900'}`}>
                               {connected ? 'Connected' : 'Idle'}
                             </span>
                             <button
@@ -768,7 +768,7 @@ export default function BergSettingsPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle>Live Packet Stream</CardTitle>
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-gray-900 mt-1">
                         Showing raw packets from {devices.find(d => d.id === listenDeviceId)?.name ?? listenDeviceId} &mdash; polling every 2s &mdash; auto-stops after 5 min
                       </p>
                     </div>
@@ -781,7 +781,7 @@ export default function BergSettingsPage() {
                     className="bg-gray-950 rounded-b-lg overflow-y-auto max-h-80 font-mono text-xs text-green-400 p-3 space-y-0.5"
                   >
                     {listenEvents.length === 0 ? (
-                      <div className="text-gray-500 py-4 text-center">Waiting for packets&hellip;</div>
+                      <div className="text-gray-900 py-4 text-center">Waiting for packets&hellip;</div>
                     ) : (
                       listenEvents.map((ev) => {
                         const ts = new Date(ev.receivedAt).toLocaleTimeString()
@@ -794,20 +794,20 @@ export default function BergSettingsPage() {
                             key={ev.id}
                             className={`leading-5 ${!ev.lrcValid ? 'text-red-400' : ev.status === 'NAK' || ev.status === 'NAK_TIMEOUT' ? 'text-yellow-400' : 'text-green-400'}`}
                           >
-                            <span className="text-gray-500">{ts}</span>
+                            <span className="text-gray-900">{ts}</span>
                             {' '}PLU <span className="font-bold">{ev.pluNumber}</span>
                             {pluDesc}
-                            <span className="text-gray-300">{lrcTag}</span>
+                            <span className="text-gray-900">{lrcTag}</span>
                             <span className={ev.status === 'ACK' || ev.status === 'ACK_BEST_EFFORT' ? 'text-green-300' : 'text-red-300'}>{statusTag}</span>
-                            {latTag && <span className="text-gray-500">{latTag}</span>}
+                            {latTag && <span className="text-gray-900">{latTag}</span>}
                             {ev.unmatchedType && <span className="text-orange-400"> [{ev.unmatchedType}]</span>}
-                            <span className="text-gray-700 ml-2 text-xs">{ev.rawPacket}</span>
+                            <span className="text-gray-900 ml-2 text-xs">{ev.rawPacket}</span>
                           </div>
                         )
                       })
                     )}
                   </div>
-                  <div className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100">
+                  <div className="px-3 py-2 text-xs text-gray-900 border-t border-gray-100">
                     {listenEvents.length} packet{listenEvents.length !== 1 ? 's' : ''} captured &mdash; last 100 shown
                   </div>
                 </CardContent>
@@ -826,7 +826,7 @@ export default function BergSettingsPage() {
                 {/* Add/Edit Form */}
                 {showForm && (
                   <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
-                    <div className="text-sm font-medium text-gray-700 mb-2">{editingId ? 'Edit Mapping' : 'Add Mapping'}</div>
+                    <div className="text-sm font-medium text-gray-900 mb-2">{editingId ? 'Edit Mapping' : 'Add Mapping'}</div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-600 mb-1">PLU Number</label>
@@ -874,7 +874,7 @@ export default function BergSettingsPage() {
                         />
                       </div>
                     </div>
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <label className="flex items-center gap-2 text-sm text-gray-900">
                       <input
                         type="checkbox"
                         checked={form.active}
@@ -892,12 +892,12 @@ export default function BergSettingsPage() {
 
                 {/* Table */}
                 {mappings.length === 0 ? (
-                  <p className="text-sm text-gray-400">No PLU mappings yet. Click &quot;Add Mapping&quot; to get started.</p>
+                  <p className="text-sm text-gray-900">No PLU mappings yet. Click &quot;Add Mapping&quot; to get started.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="border-b text-left text-gray-500">
+                        <tr className="border-b text-left text-gray-900">
                           <th className="py-2 pr-3 font-medium">PLU #</th>
                           <th className="py-2 pr-3 font-medium">Description</th>
                           <th className="py-2 pr-3 font-medium">Mapped Item</th>
@@ -911,7 +911,7 @@ export default function BergSettingsPage() {
                           <tr key={m.id}>
                             <td className="py-2 pr-3 font-mono">{m.pluNumber}</td>
                             <td className="py-2 pr-3">{m.description}</td>
-                            <td className="py-2 pr-3 text-gray-500">{m.menuItemId ?? '—'}</td>
+                            <td className="py-2 pr-3 text-gray-900">{m.menuItemId ?? '—'}</td>
                             <td className="py-2 pr-3">{m.pourSizeOz != null ? `${m.pourSizeOz} oz` : '—'}</td>
                             <td className="py-2 pr-3">
                               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${m.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>

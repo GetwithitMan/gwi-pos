@@ -56,7 +56,7 @@ export default function SlackIntegrationPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">Slack Integration</h1>
-          <p className="text-gray-500">Send real-time alerts and notifications to your Slack workspace.</p>
+          <p className="text-gray-900">Send real-time alerts and notifications to your Slack workspace.</p>
         </div>
         {!loading && (
           <span className={`px-3 py-1 rounded-full text-sm font-medium ${
@@ -112,7 +112,7 @@ export default function SlackIntegrationPage() {
                   {testing ? 'Testing...' : 'Test Connection'}
                 </Button>
                 {configured && (
-                  <p className="text-xs text-gray-400 mt-2">Sends a test message to your configured Slack channel.</p>
+                  <p className="text-xs text-gray-900 mt-2">Sends a test message to your configured Slack channel.</p>
                 )}
               </div>
             </div>
@@ -132,7 +132,7 @@ export default function SlackIntegrationPage() {
             <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto mt-3">
 {`SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00/B00/xxxx`}
             </pre>
-            <p className="text-sm text-gray-500 mt-3">4. Restart the POS server for changes to take effect.</p>
+            <p className="text-sm text-gray-900 mt-3">4. Restart the POS server for changes to take effect.</p>
           </CardContent>
         </Card>
       </div>

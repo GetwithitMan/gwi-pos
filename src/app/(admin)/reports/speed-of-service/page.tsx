@@ -137,7 +137,7 @@ export default function SpeedOfServicePage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -146,7 +146,7 @@ export default function SpeedOfServicePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -171,25 +171,25 @@ export default function SpeedOfServicePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Orders Analyzed</p>
+                <p className="text-xs text-gray-900">Orders Analyzed</p>
                 <p className="text-2xl font-bold text-blue-600">{report.overall.orderCount}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Avg Order → Send</p>
+                <p className="text-xs text-gray-900">Avg Order → Send</p>
                 <p className="text-2xl font-bold text-purple-600">{fmtMin(report.overall.avgOrderToSend)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Avg Send → Complete</p>
+                <p className="text-xs text-gray-900">Avg Send → Complete</p>
                 <p className="text-2xl font-bold text-orange-600">{fmtMin(report.overall.avgSendToComplete)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Avg Seat → Pay</p>
+                <p className="text-xs text-gray-900">Avg Seat → Pay</p>
                 <p className="text-2xl font-bold text-green-600">{fmtMin(report.overall.avgSeatToPay)}</p>
               </CardContent>
             </Card>
@@ -220,19 +220,19 @@ export default function SpeedOfServicePage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading report...</div>
+              <div className="text-center py-8 text-gray-900">Loading report...</div>
             ) : !report || report.overall.orderCount === 0 ? (
-              <div className="text-center py-8 text-gray-500">No timing data found for the selected period.</div>
+              <div className="text-center py-8 text-gray-900">No timing data found for the selected period.</div>
             ) : view === 'employee' ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Employee</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Orders</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Order → Send</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Send → Complete</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Seat → Pay</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Employee</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Orders</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Order → Send</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Send → Complete</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Seat → Pay</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -253,11 +253,11 @@ export default function SpeedOfServicePage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Date</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Orders</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Order → Send</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Send → Complete</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Seat → Pay</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Date</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Orders</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Order → Send</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Send → Complete</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Seat → Pay</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -282,11 +282,11 @@ export default function SpeedOfServicePage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Order Type</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Orders</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Order → Send</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Send → Complete</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Seat → Pay</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Order Type</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Orders</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Order → Send</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Send → Complete</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Seat → Pay</th>
                     </tr>
                   </thead>
                   <tbody>

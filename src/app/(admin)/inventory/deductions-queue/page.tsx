@@ -33,7 +33,7 @@ interface Summary {
 type FilterTab = 'all' | 'pending' | 'failed' | 'dead'
 
 const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-gray-700 text-gray-300',
+  pending: 'bg-gray-700 text-gray-900',
   processing: 'bg-blue-900/50 text-blue-300',
   succeeded: 'bg-green-900/50 text-green-300',
   failed: 'bg-yellow-900/50 text-yellow-300',
@@ -167,7 +167,7 @@ export default function DeductionQueuePage() {
       {/* Summary cards */}
       <div className="grid grid-cols-5 gap-3 mb-6">
         <div className="bg-gray-800 border border-gray-600 rounded-lg p-3 text-center">
-          <div className="text-xs text-gray-400">Pending</div>
+          <div className="text-xs text-gray-900">Pending</div>
           <div className="text-xl font-bold text-gray-200">{summary.pending}</div>
         </div>
         <div className="bg-gray-800 border border-blue-800 rounded-lg p-3 text-center">
@@ -197,7 +197,7 @@ export default function DeductionQueuePage() {
             className={`px-4 py-2 rounded-lg text-sm font-medium min-h-[48px] ${
               filter === t.key
                 ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-700 text-gray-900 hover:bg-gray-600'
             }`}
           >
             {t.label}
@@ -209,7 +209,7 @@ export default function DeductionQueuePage() {
       <div className="bg-gray-800 rounded-lg overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-gray-700 text-gray-300">
+            <tr className="bg-gray-700 text-gray-900">
               <th className="px-4 py-3 text-left">Order</th>
               <th className="px-4 py-3 text-left">Status</th>
               <th className="px-4 py-3 text-center">Attempts</th>
@@ -223,18 +223,18 @@ export default function DeductionQueuePage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">Loading...</td>
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-900">Loading...</td>
               </tr>
             ) : deductions.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={8} className="px-4 py-8 text-center text-gray-900">
                   No deductions found
                 </td>
               </tr>
             ) : (
               deductions.map(d => (
                 <tr key={d.id} className="border-t border-gray-700 hover:bg-gray-700/50">
-                  <td className="px-4 py-3 text-gray-300 font-mono text-xs">
+                  <td className="px-4 py-3 text-gray-900 font-mono text-xs">
                     {d.orderId.slice(-8)}
                   </td>
                   <td className="px-4 py-3">
@@ -242,25 +242,25 @@ export default function DeductionQueuePage() {
                       {d.status.toUpperCase()}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-center text-gray-300">
+                  <td className="px-4 py-3 text-center text-gray-900">
                     {d.attempts}/{d.maxAttempts}
                   </td>
-                  <td className="px-4 py-3 text-gray-400 max-w-xs truncate" title={d.lastError ?? ''}>
+                  <td className="px-4 py-3 text-gray-900 max-w-xs truncate" title={d.lastError ?? ''}>
                     {d.lastError || '—'}
                   </td>
-                  <td className="px-4 py-3 text-gray-400">
+                  <td className="px-4 py-3 text-gray-900">
                     {new Date(d.createdAt).toLocaleString([], {
                       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
                     })}
                   </td>
-                  <td className="px-4 py-3 text-gray-400">
+                  <td className="px-4 py-3 text-gray-900">
                     {d.lastAttemptAt
                       ? new Date(d.lastAttemptAt).toLocaleString([], {
                           month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
                         })
                       : '—'}
                   </td>
-                  <td className="px-4 py-3 text-gray-400">
+                  <td className="px-4 py-3 text-gray-900">
                     {d.status === 'pending' || d.status === 'failed'
                       ? new Date(d.availableAt).toLocaleString([], {
                           month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -285,7 +285,7 @@ export default function DeductionQueuePage() {
         </table>
       </div>
 
-      <div className="mt-3 text-xs text-gray-500 text-right">
+      <div className="mt-3 text-xs text-gray-900 text-right">
         Auto-refreshes every 30 seconds
       </div>
     </div>

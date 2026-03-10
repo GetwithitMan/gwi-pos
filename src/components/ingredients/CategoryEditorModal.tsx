@@ -82,7 +82,7 @@ export function CategoryEditorModal({
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Name *
             </label>
             <input
@@ -97,7 +97,7 @@ export function CategoryEditorModal({
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Description
             </label>
             <input
@@ -111,7 +111,7 @@ export function CategoryEditorModal({
 
           {/* Icon Picker */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Icon
             </label>
             <div className="grid grid-cols-10 gap-1 p-2 border rounded-lg">
@@ -129,7 +129,7 @@ export function CategoryEditorModal({
               ))}
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-sm text-gray-700">Custom:</span>
+              <span className="text-sm text-gray-900">Custom:</span>
               <input
                 type="text"
                 value={formData.icon}
@@ -142,7 +142,7 @@ export function CategoryEditorModal({
 
           {/* Color Picker */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Color
             </label>
             <div className="flex flex-wrap gap-2 p-2 border rounded-lg">
@@ -159,7 +159,7 @@ export function CategoryEditorModal({
               ))}
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <span className="text-sm text-gray-700">Custom:</span>
+              <span className="text-sm text-gray-900">Custom:</span>
               <input
                 type="color"
                 value={formData.color}
@@ -178,7 +178,7 @@ export function CategoryEditorModal({
 
           {/* Sort Order */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Sort Order
             </label>
             <input
@@ -204,7 +204,7 @@ export function CategoryEditorModal({
 
           {/* Preview */}
           <div className="border-t pt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-900 mb-2">
               Preview
             </label>
             <div

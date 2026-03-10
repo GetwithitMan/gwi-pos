@@ -469,7 +469,7 @@ export default function EmployeeDetailPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
-        <div className="text-center py-12 text-gray-500">Loading employee...</div>
+        <div className="text-center py-12 text-gray-900">Loading employee...</div>
       </div>
     )
   }
@@ -502,7 +502,7 @@ export default function EmployeeDetailPage() {
             <span className="mt-1 text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">Inactive</span>
           )}
         </div>
-        <div className="ml-auto text-right text-sm text-gray-500">
+        <div className="ml-auto text-right text-sm text-gray-900">
           <div>{employee.stats.orderCount} orders</div>
           <div>{formatCurrency(employee.stats.totalSales)} total sales</div>
         </div>
@@ -517,7 +517,7 @@ export default function EmployeeDetailPage() {
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab
                 ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                : 'border-transparent text-gray-900 hover:text-gray-900'
             }`}
           >
             {tab}
@@ -670,7 +670,7 @@ export default function EmployeeDetailPage() {
                 <Label>Hourly Rate</Label>
                 {canEditWages ? (
                   <div className="relative mt-1">
-                    <span className="absolute left-3 top-2.5 text-gray-500">$</span>
+                    <span className="absolute left-3 top-2.5 text-gray-900">$</span>
                     <Input
                       type="number"
                       value={employee.hourlyRate?.toString() || ''}
@@ -681,7 +681,7 @@ export default function EmployeeDetailPage() {
                     />
                   </div>
                 ) : (
-                  <div className="mt-1 p-2 bg-gray-50 rounded text-sm text-gray-500">
+                  <div className="mt-1 p-2 bg-gray-50 rounded text-sm text-gray-900">
                     {employee.hourlyRate ? formatCurrency(employee.hourlyRate) + '/hr' : 'Not set'} — Requires Manager
                   </div>
                 )}
@@ -700,21 +700,21 @@ export default function EmployeeDetailPage() {
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-500">Bank Name</span>
+                  <span className="text-gray-900">Bank Name</span>
                   <p>{employee.bankName || '—'}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Account Type</span>
+                  <span className="text-gray-900">Account Type</span>
                   <p>{employee.bankAccountType || '—'}</p>
                 </div>
               </div>
               {employee.bankAccountLast4 && (
                 <div className="text-sm">
-                  <span className="text-gray-500">Account ending in </span>
+                  <span className="text-gray-900">Account ending in </span>
                   <span className="font-mono font-medium">{employee.bankAccountLast4}</span>
                 </div>
               )}
-              <p className="text-xs text-gray-400">Full account number not stored</p>
+              <p className="text-xs text-gray-900">Full account number not stored</p>
             </CardContent>
           </Card>
 
@@ -723,19 +723,19 @@ export default function EmployeeDetailPage() {
             <CardContent>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-500">Gross Wages</span>
+                  <span className="text-gray-900">Gross Wages</span>
                   <p className="font-medium">{formatCurrency(employee.ytdGrossWages || 0)}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Tips</span>
+                  <span className="text-gray-900">Tips</span>
                   <p className="font-medium">{formatCurrency(employee.ytdTips || 0)}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Taxes Withheld</span>
+                  <span className="text-gray-900">Taxes Withheld</span>
                   <p className="font-medium">{formatCurrency(employee.ytdTaxesWithheld || 0)}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Net Pay</span>
+                  <span className="text-gray-900">Net Pay</span>
                   <p className="font-medium">{formatCurrency(employee.ytdNetPay || 0)}</p>
                 </div>
               </div>
@@ -747,19 +747,19 @@ export default function EmployeeDetailPage() {
             <CardContent>
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-500">Federal Filing Status</span>
+                  <span className="text-gray-900">Federal Filing Status</span>
                   <p>{employee.federalFilingStatus || 'Not set'}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">Federal Allowances</span>
+                  <span className="text-gray-900">Federal Allowances</span>
                   <p>{employee.federalAllowances ?? 'Not set'}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">State Filing Status</span>
+                  <span className="text-gray-900">State Filing Status</span>
                   <p>{employee.stateFilingStatus || 'Not set'}</p>
                 </div>
                 <div>
-                  <span className="text-gray-500">State Allowances</span>
+                  <span className="text-gray-900">State Allowances</span>
                   <p>{employee.stateAllowances ?? 'Not set'}</p>
                 </div>
               </div>
@@ -779,15 +779,15 @@ export default function EmployeeDetailPage() {
           <div className="grid grid-cols-3 gap-4">
             <Card className="p-4 text-center">
               <div className="text-2xl font-bold">{formatHours(weeklyHours)}</div>
-              <div className="text-xs text-gray-500">Hours this week</div>
+              <div className="text-xs text-gray-900">Hours this week</div>
             </Card>
             <Card className="p-4 text-center">
               <div className="text-2xl font-bold">{formatHours(periodHours)}</div>
-              <div className="text-xs text-gray-500">Hours this pay period</div>
+              <div className="text-xs text-gray-900">Hours this pay period</div>
             </Card>
             <Card className="p-4 text-center">
               <div className="text-2xl font-bold">{scheduledCount}</div>
-              <div className="text-xs text-gray-500">Scheduled shifts (14d)</div>
+              <div className="text-xs text-gray-900">Scheduled shifts (14d)</div>
             </Card>
           </div>
 
@@ -796,12 +796,12 @@ export default function EmployeeDetailPage() {
             <CardHeader><CardTitle>Punch History (Last 30 Days)</CardTitle></CardHeader>
             <CardContent>
               {punches.length === 0 ? (
-                <p className="text-sm text-gray-500 py-4 text-center">No punches found</p>
+                <p className="text-sm text-gray-900 py-4 text-center">No punches found</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b text-left text-gray-500">
+                      <tr className="border-b text-left text-gray-900">
                         <th className="pb-2 pr-4">Date</th>
                         <th className="pb-2 pr-4">Clock In</th>
                         <th className="pb-2 pr-4">Clock Out</th>
@@ -862,7 +862,7 @@ export default function EmployeeDetailPage() {
                   >
                     Previous
                   </Button>
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-gray-900">
                     Page {punchPage + 1} of {Math.ceil(punchTotal / 20)}
                   </span>
                   <Button
@@ -883,11 +883,11 @@ export default function EmployeeDetailPage() {
             <CardHeader><CardTitle>Upcoming Scheduled Shifts (Next 14 Days)</CardTitle></CardHeader>
             <CardContent>
               {scheduledShifts.length === 0 ? (
-                <p className="text-sm text-gray-500 py-4 text-center">No upcoming shifts scheduled</p>
+                <p className="text-sm text-gray-900 py-4 text-center">No upcoming shifts scheduled</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b text-left text-gray-500">
+                    <tr className="border-b text-left text-gray-900">
                       <th className="pb-2 pr-4">Date</th>
                       <th className="pb-2 pr-4">Day</th>
                       <th className="pb-2 pr-4">Start</th>
@@ -936,15 +936,15 @@ export default function EmployeeDetailPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <span className="text-gray-500">7shifts User ID</span>
+                      <span className="text-gray-900">7shifts User ID</span>
                       <p className="font-mono">{employee.sevenShiftsUserId}</p>
                     </div>
                     <div>
-                      <span className="text-gray-500">Role ID</span>
+                      <span className="text-gray-900">Role ID</span>
                       <p className="font-mono">{employee.sevenShiftsRoleId || '—'}</p>
                     </div>
                     <div>
-                      <span className="text-gray-500">Department ID</span>
+                      <span className="text-gray-900">Department ID</span>
                       <p className="font-mono">{employee.sevenShiftsDepartmentId || '—'}</p>
                     </div>
                   </div>
@@ -957,7 +957,7 @@ export default function EmployeeDetailPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-medium">Not Linked</span>
                   </div>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-gray-900">
                     Link this employee to a 7shifts account to sync time punches and scheduling data.
                   </p>
 
@@ -1060,7 +1060,7 @@ export default function EmployeeDetailPage() {
               placeholder="e.g., Forgot to clock out"
               className="mt-1"
             />
-            <p className="text-xs text-gray-500 mt-1">Required — will be logged in audit trail</p>
+            <p className="text-xs text-gray-900 mt-1">Required — will be logged in audit trail</p>
           </div>
           <div className="flex gap-2 pt-4 border-t">
             <Button variant="ghost" className="flex-1" onClick={() => setEditingPunch(null)} disabled={isSaving}>

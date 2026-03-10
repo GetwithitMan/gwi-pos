@@ -188,10 +188,10 @@ export default function DiscountsPage() {
       {/* Content */}
       <main className="max-w-7xl mx-auto mt-6">
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading discounts...</div>
+          <div className="text-center py-12 text-gray-900">Loading discounts...</div>
         ) : discounts.length === 0 ? (
           <Card className="p-8 text-center">
-            <p className="text-gray-500 mb-4">No discounts created yet.</p>
+            <p className="text-gray-900 mb-4">No discounts created yet.</p>
             <Button
               variant="primary"
               onClick={() => {
@@ -226,7 +226,7 @@ export default function DiscountsPage() {
                 </div>
 
                 {discount.description && (
-                  <p className="text-sm text-gray-500 mb-3">{discount.description}</p>
+                  <p className="text-sm text-gray-900 mb-3">{discount.description}</p>
                 )}
 
                 <div className="space-y-1 text-sm mb-4">
@@ -302,7 +302,7 @@ export default function DiscountsPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Internal Name
               </label>
               <input
@@ -316,7 +316,7 @@ export default function DiscountsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Display Text (shown on receipt)
               </label>
               <input
@@ -330,7 +330,7 @@ export default function DiscountsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-900 mb-1">
                 Description (optional)
               </label>
               <input
@@ -344,7 +344,7 @@ export default function DiscountsPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Type
                 </label>
                 <select
@@ -359,7 +359,7 @@ export default function DiscountsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   {formData.configType === 'percent' ? 'Percent (%)' : 'Amount ($)'}
                 </label>
                 <input
@@ -378,7 +378,7 @@ export default function DiscountsPage() {
 
             {formData.configType === 'percent' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Maximum Discount Amount (optional)
                 </label>
                 <input
@@ -395,7 +395,7 @@ export default function DiscountsPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Max Per Order
                 </label>
                 <input
@@ -408,7 +408,7 @@ export default function DiscountsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Priority
                 </label>
                 <input

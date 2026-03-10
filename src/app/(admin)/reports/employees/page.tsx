@@ -163,7 +163,7 @@ export default function EmployeeReportsPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -172,7 +172,7 @@ export default function EmployeeReportsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -200,7 +200,7 @@ export default function EmployeeReportsPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Sales</p>
+                <p className="text-xs text-gray-900">Total Sales</p>
                 <p className="text-xl font-bold text-green-600">
                   {formatCurrency(report.summary.totalSales)}
                 </p>
@@ -208,7 +208,7 @@ export default function EmployeeReportsPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Tips</p>
+                <p className="text-xs text-gray-900">Total Tips</p>
                 <p className="text-xl font-bold text-blue-600">
                   {formatCurrency(report.summary.totalTips)}
                 </p>
@@ -216,7 +216,7 @@ export default function EmployeeReportsPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Tip %</p>
+                <p className="text-xs text-gray-900">Tip %</p>
                 <p className="text-xl font-bold text-purple-600">
                   {report.summary.avgTipPercent}%
                 </p>
@@ -224,7 +224,7 @@ export default function EmployeeReportsPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Commission</p>
+                <p className="text-xs text-gray-900">Commission</p>
                 <p className="text-xl font-bold text-orange-600">
                   {formatCurrency(report.summary.totalCommission)}
                 </p>
@@ -232,24 +232,24 @@ export default function EmployeeReportsPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Orders</p>
-                <p className="text-xl font-bold text-gray-700">
+                <p className="text-xs text-gray-900">Orders</p>
+                <p className="text-xl font-bold text-gray-900">
                   {report.summary.totalOrders}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Avg Ticket</p>
-                <p className="text-xl font-bold text-gray-700">
+                <p className="text-xs text-gray-900">Avg Ticket</p>
+                <p className="text-xl font-bold text-gray-900">
                   {formatCurrency(report.summary.avgTicket)}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Employees</p>
-                <p className="text-xl font-bold text-gray-700">
+                <p className="text-xs text-gray-900">Employees</p>
+                <p className="text-xl font-bold text-gray-900">
                   {report.summary.totalEmployees}
                 </p>
               </CardContent>
@@ -290,9 +290,9 @@ export default function EmployeeReportsPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading report...</div>
+              <div className="text-center py-8 text-gray-900">Loading report...</div>
             ) : !report || report.byEmployee.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 No data found for the selected period.
               </div>
             ) : selectedView === 'summary' ? (
@@ -300,15 +300,15 @@ export default function EmployeeReportsPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Employee</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Role</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Orders</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Sales</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Tips</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Commission</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Avg Ticket</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Items</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Hours</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Employee</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Role</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Orders</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Sales</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Tips</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Commission</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Avg Ticket</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Items</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Hours</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -328,7 +328,7 @@ export default function EmployeeReportsPage() {
                             <span className="font-medium">{emp.name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-gray-500">{emp.role}</td>
+                        <td className="px-4 py-3 text-gray-900">{emp.role}</td>
                         <td className="px-4 py-3 text-right">{emp.orders}</td>
                         <td className="px-4 py-3 text-right font-medium text-green-600">
                           {formatCurrency(emp.sales)}
@@ -370,7 +370,7 @@ export default function EmployeeReportsPage() {
                         {day.employees.map((emp) => (
                           <tr key={emp.employeeId} className="border-t">
                             <td className="px-4 py-2">{emp.employeeName}</td>
-                            <td className="px-4 py-2 text-right text-gray-500">{emp.orders} orders</td>
+                            <td className="px-4 py-2 text-right text-gray-900">{emp.orders} orders</td>
                             <td className="px-4 py-2 text-right text-green-600">{formatCurrency(emp.sales)}</td>
                             <td className="px-4 py-2 text-right text-blue-600">{formatCurrency(emp.tips)}</td>
                           </tr>
@@ -386,14 +386,14 @@ export default function EmployeeReportsPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Employee</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Cash Sales</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Card Sales</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Cash Tips</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Card Tips</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Cash Received</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Owes Back</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Purse Balance</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Employee</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Cash Sales</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Card Sales</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Cash Tips</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Card Tips</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Cash Received</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Owes Back</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Purse Balance</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -402,11 +402,11 @@ export default function EmployeeReportsPage() {
                         <td className="px-4 py-3 font-medium">{emp.name}</td>
                         <td className="px-4 py-3 text-right">
                           {formatCurrency(emp.cashAmount)}
-                          <span className="text-gray-400 text-xs ml-1">({emp.cashPayments})</span>
+                          <span className="text-gray-900 text-xs ml-1">({emp.cashPayments})</span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           {formatCurrency(emp.cardAmount)}
-                          <span className="text-gray-400 text-xs ml-1">({emp.cardPayments})</span>
+                          <span className="text-gray-900 text-xs ml-1">({emp.cardPayments})</span>
                         </td>
                         <td className="px-4 py-3 text-right text-green-600">
                           {formatCurrency(emp.cashTips)}

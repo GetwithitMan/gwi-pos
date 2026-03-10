@@ -69,7 +69,7 @@ export function EffectiveAccessPreview({ permissions }: EffectiveAccessPreviewPr
 
   return (
     <div className="mt-2 p-3 bg-gray-50 rounded-lg border border-gray-100">
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">What this role can access</p>
+      <p className="text-xs font-medium text-gray-900 uppercase tracking-wide mb-2">What this role can access</p>
       <div className="space-y-1.5">
         {rows.map(({ icon, label, result }) => (
           <div key={label} className="flex items-center justify-between text-sm">
@@ -77,7 +77,7 @@ export function EffectiveAccessPreview({ permissions }: EffectiveAccessPreviewPr
               <span>{icon}</span>
               {label}
             </span>
-            <span className={`text-xs font-medium ${result.positive ? 'text-green-600' : 'text-gray-400'}`}>
+            <span className={`text-xs font-medium ${result.positive ? 'text-green-600' : 'text-gray-900'}`}>
               {result.positive ? '✓' : '✗'} {result.label}
             </span>
           </div>

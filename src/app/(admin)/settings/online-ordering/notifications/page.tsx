@@ -91,7 +91,7 @@ export default function NotificationsPage() {
         {/* Restaurant Notifications */}
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
           <h2 className="text-lg font-semibold text-white mb-1">Restaurant Notifications</h2>
-          <p className="text-sm text-gray-300 mb-5">
+          <p className="text-sm text-gray-900 mb-5">
             We&apos;ll send a notification when a new online order arrives.
           </p>
 
@@ -107,7 +107,7 @@ export default function NotificationsPage() {
                 placeholder="orders@yourrestaurant.com"
                 className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <p className="text-xs text-gray-300 mt-1.5">
+              <p className="text-xs text-gray-900 mt-1.5">
                 Receives an email for every new online order
               </p>
             </div>
@@ -125,10 +125,10 @@ export default function NotificationsPage() {
                 placeholder="(555) 555-5555"
                 className="w-full px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
-              <p className="text-xs text-gray-300 mt-1.5">
+              <p className="text-xs text-gray-900 mt-1.5">
                 Requires Twilio SMS to be configured
               </p>
-              <p className="text-xs text-gray-400 mt-1 italic">
+              <p className="text-xs text-gray-900 mt-1 italic">
                 SMS notifications require Twilio to be set up in Integrations
               </p>
             </div>
@@ -137,17 +137,17 @@ export default function NotificationsPage() {
 
         {/* Customer Notifications (coming soon) */}
         <div className="bg-gray-900/50 rounded-xl border border-gray-800/50 p-6 opacity-60">
-          <h2 className="text-lg font-semibold text-gray-400 mb-3">Customer Notifications</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Customer Notifications</h2>
 
           <div className="bg-gray-800/50 rounded-lg p-3 mb-5">
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-gray-900">
               Customer confirmation email is coming in a future update.
             </p>
           </div>
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-300">Customer confirmation email</p>
+              <p className="text-sm text-gray-900">Customer confirmation email</p>
               <button
                 type="button"
                 role="switch"
@@ -162,7 +162,7 @@ export default function NotificationsPage() {
             <div className="border-t border-gray-800/50" />
 
             <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-300">Customer confirmation SMS</p>
+              <p className="text-sm text-gray-900">Customer confirmation SMS</p>
               <button
                 type="button"
                 role="switch"

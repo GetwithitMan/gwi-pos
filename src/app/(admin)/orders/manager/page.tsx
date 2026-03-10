@@ -330,7 +330,7 @@ export default function OpenOrdersManagerPage() {
                       className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                         statusFilter.includes(s)
                           ? STATUS_COLORS[s] + ' border-transparent'
-                          : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'
+                          : 'bg-white text-gray-900 border-gray-200 hover:border-gray-400'
                       }`}
                     >
                       {STATUS_LABELS[s]}
@@ -361,7 +361,7 @@ export default function OpenOrdersManagerPage() {
                   className={`px-3 py-2 rounded-lg text-sm border transition-colors ${
                     showRolledOverOnly
                       ? 'bg-orange-100 text-orange-700 border-orange-200'
-                      : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+                      : 'bg-white text-gray-900 border-gray-200 hover:border-gray-400'
                   }`}
                 >
                   {showRolledOverOnly ? 'Rolled Over Only' : 'Show All'}
@@ -391,30 +391,30 @@ export default function OpenOrdersManagerPage() {
         <div className="grid grid-cols-4 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Open Orders</p>
+              <p className="text-sm text-gray-900">Open Orders</p>
               <p className="text-2xl font-bold text-gray-900">{filteredOrders.length}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Rolled Over</p>
-              <p className={`text-2xl font-bold ${rolledOverCount > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+              <p className="text-sm text-gray-900">Rolled Over</p>
+              <p className={`text-2xl font-bold ${rolledOverCount > 0 ? 'text-orange-600' : 'text-gray-900'}`}>
                 {rolledOverCount}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Zero Balance</p>
-              <p className={`text-2xl font-bold ${zeroBalanceCount > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+              <p className="text-sm text-gray-900">Zero Balance</p>
+              <p className={`text-2xl font-bold ${zeroBalanceCount > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
                 {zeroBalanceCount}
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Capture Declined</p>
-              <p className={`text-2xl font-bold ${captureDeclinedCount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+              <p className="text-sm text-gray-900">Capture Declined</p>
+              <p className={`text-2xl font-bold ${captureDeclinedCount > 0 ? 'text-red-600' : 'text-gray-900'}`}>
                 {captureDeclinedCount}
               </p>
             </CardContent>
@@ -449,7 +449,7 @@ export default function OpenOrdersManagerPage() {
                 </Button>
               )}
               {!allSelectedZeroBalance && !allSelectedNonZero && (
-                <span className="text-xs text-gray-500 self-center">
+                <span className="text-xs text-gray-900 self-center">
                   Mixed selection — select all $0 or all with balance for bulk action
                 </span>
               )}
@@ -490,7 +490,7 @@ export default function OpenOrdersManagerPage() {
                 </table>
               </div>
             ) : filteredOrders.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
+              <div className="p-8 text-center text-gray-900">
                 No open orders match the selected filters
               </div>
             ) : (
@@ -554,14 +554,14 @@ export default function OpenOrdersManagerPage() {
                           </td>
 
                           {/* Age */}
-                          <td className="px-4 py-3 text-sm text-gray-500 whitespace-nowrap">
+                          <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
                             {formatAge(order.ageMinutes)}
                           </td>
 
                           {/* Table / Tab */}
-                          <td className="px-4 py-3 text-sm text-gray-700">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {order.tableName || order.tabName || (
-                              <span className="text-gray-400 italic">—</span>
+                              <span className="text-gray-900 italic">—</span>
                             )}
                           </td>
 
@@ -573,12 +573,12 @@ export default function OpenOrdersManagerPage() {
                           </td>
 
                           {/* Items */}
-                          <td className="px-4 py-3 text-center text-sm text-gray-500">
+                          <td className="px-4 py-3 text-center text-sm text-gray-900">
                             {order.itemCount}
                           </td>
 
                           {/* Server */}
-                          <td className="px-4 py-3 text-sm text-gray-700">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {order.employee.name}
                           </td>
 
@@ -596,7 +596,7 @@ export default function OpenOrdersManagerPage() {
                                 </span>
                               )}
                               {isDraft && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-900">
                                   Draft
                                 </span>
                               )}
@@ -662,26 +662,26 @@ export default function OpenOrdersManagerPage() {
               {/* Order meta */}
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-gray-500">Status:</span>{' '}
+                  <span className="text-gray-900">Status:</span>{' '}
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ml-1 ${STATUS_COLORS[detailOrder.status] ?? ''}`}>
                     {STATUS_LABELS[detailOrder.status] ?? detailOrder.status}
                   </span>
                 </div>
                 <div>
-                  <span className="text-gray-500">Age:</span>{' '}
+                  <span className="text-gray-900">Age:</span>{' '}
                   <span className="font-medium">{formatAge(detailOrder.ageMinutes)}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500">Server:</span>{' '}
+                  <span className="text-gray-900">Server:</span>{' '}
                   <span className="font-medium">{detailOrder.employee.name}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500">Created:</span>{' '}
+                  <span className="text-gray-900">Created:</span>{' '}
                   <span className="font-medium">{formatDateTime(detailOrder.createdAt)}</span>
                 </div>
                 {(detailOrder.tableName || detailOrder.tabName) && (
                   <div>
-                    <span className="text-gray-500">{detailOrder.tableName ? 'Table' : 'Tab'}:</span>{' '}
+                    <span className="text-gray-900">{detailOrder.tableName ? 'Table' : 'Tab'}:</span>{' '}
                     <span className="font-medium">{detailOrder.tableName || detailOrder.tabName}</span>
                   </div>
                 )}
@@ -713,7 +713,7 @@ export default function OpenOrdersManagerPage() {
               {/* Items */}
               {detailOrder.items.length > 0 ? (
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Items</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Items</h3>
                   <div className="bg-gray-50 rounded-lg p-3 space-y-2">
                     {detailOrder.items.map(item => (
                       <div key={item.id}>
@@ -722,7 +722,7 @@ export default function OpenOrdersManagerPage() {
                           <span className="font-mono">{formatCurrency(item.itemTotal)}</span>
                         </div>
                         {item.modifiers.map(mod => (
-                          <div key={mod.id} className="text-xs text-gray-500 pl-4">
+                          <div key={mod.id} className="text-xs text-gray-900 pl-4">
                             {/* T-042: handle compound preModifier strings */}
                             {mod.preModifier ? `${mod.preModifier.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} ` : ''}{mod.name}
                             {mod.price > 0 && ` +${formatCurrency(mod.price)}`}
@@ -736,7 +736,7 @@ export default function OpenOrdersManagerPage() {
                   </div>
                 </div>
               ) : (
-                <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-400 italic text-center">
+                <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-900 italic text-center">
                   No items — draft order
                 </div>
               )}
@@ -744,11 +744,11 @@ export default function OpenOrdersManagerPage() {
               {/* Totals */}
               <div className="border-t pt-3 space-y-1 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Subtotal</span>
+                  <span className="text-gray-900">Subtotal</span>
                   <span className="font-mono">{formatCurrency(detailOrder.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Tax</span>
+                  <span className="text-gray-900">Tax</span>
                   <span className="font-mono">{formatCurrency(detailOrder.taxTotal)}</span>
                 </div>
                 <div className={`flex justify-between font-bold text-base pt-1 border-t ${isZero ? 'text-red-600' : ''}`}>
@@ -760,7 +760,7 @@ export default function OpenOrdersManagerPage() {
               {/* Reassign table */}
               {canBulkOp && tables.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Reassign Table</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Reassign Table</h3>
                   <div className="flex gap-2">
                     <select
                       value={reassignTableId}

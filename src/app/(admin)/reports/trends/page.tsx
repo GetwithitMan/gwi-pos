@@ -256,7 +256,7 @@ export default function TrendsReportPage() {
             <div className="flex flex-wrap gap-4 items-end">
               {periodMode !== 'mtd' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Period End Date</label>
+                  <label className="block text-sm font-medium text-gray-900 mb-1">Period End Date</label>
                   <input
                     type="date"
                     value={endDate}
@@ -266,7 +266,7 @@ export default function TrendsReportPage() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Period Length</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Period Length</label>
                 <select
                   value={periodMode === 'mtd' ? 'mtd' : String(periodDays)}
                   onChange={(e) => {
@@ -290,7 +290,7 @@ export default function TrendsReportPage() {
                 {isLoading ? 'Loading...' : 'Compare'}
               </Button>
               <div className="flex-1" />
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-gray-900">
                 <div>Current: {startDate} to {periodMode === 'mtd' ? mtdEndDate : endDate}</div>
                 <div>Previous: {prevStartDate} to {prevEndDate}</div>
               </div>
@@ -299,9 +299,9 @@ export default function TrendsReportPage() {
         </Card>
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading comparison data...</div>
+          <div className="text-center py-12 text-gray-900">Loading comparison data...</div>
         ) : !report ? (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-gray-900">
             Select dates and click Compare to view trends
           </div>
         ) : (
@@ -310,42 +310,42 @@ export default function TrendsReportPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Net Sales</p>
+                  <p className="text-xs text-gray-900">Net Sales</p>
                   <p className="text-xl font-bold text-green-600">{formatCurrency(report.summary.currentNetSales)}</p>
                   <p className={`text-sm font-medium ${deltaColor(report.summary.salesDelta)}`}>
                     {formatDelta(report.summary.salesDelta)} ({report.summary.salesDeltaPercent > 0 ? '+' : ''}{report.summary.salesDeltaPercent}%)
                   </p>
-                  <p className="text-xs text-gray-400">vs {formatCurrency(report.summary.previousNetSales)}</p>
+                  <p className="text-xs text-gray-900">vs {formatCurrency(report.summary.previousNetSales)}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Orders</p>
+                  <p className="text-xs text-gray-900">Orders</p>
                   <p className="text-xl font-bold text-blue-600">{report.summary.currentOrders}</p>
                   <p className={`text-sm font-medium ${deltaColor(report.summary.ordersDelta)}`}>
                     {formatDelta(report.summary.ordersDelta, false)}
                   </p>
-                  <p className="text-xs text-gray-400">vs {report.summary.previousOrders}</p>
+                  <p className="text-xs text-gray-900">vs {report.summary.previousOrders}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Avg Check</p>
+                  <p className="text-xs text-gray-900">Avg Check</p>
                   <p className="text-xl font-bold text-purple-600">{formatCurrency(report.summary.currentAvgCheck)}</p>
                   <p className={`text-sm font-medium ${deltaColor(report.summary.avgCheckDelta)}`}>
                     {formatDelta(report.summary.avgCheckDelta)}
                   </p>
-                  <p className="text-xs text-gray-400">vs {formatCurrency(report.summary.previousAvgCheck)}</p>
+                  <p className="text-xs text-gray-900">vs {formatCurrency(report.summary.previousAvgCheck)}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Tips</p>
+                  <p className="text-xs text-gray-900">Tips</p>
                   <p className="text-xl font-bold text-orange-600">{formatCurrency(report.summary.currentTips)}</p>
                   <p className={`text-sm font-medium ${deltaColor(report.summary.tipsDelta)}`}>
                     {formatDelta(report.summary.tipsDelta)}
                   </p>
-                  <p className="text-xs text-gray-400">vs {formatCurrency(report.summary.previousTips)}</p>
+                  <p className="text-xs text-gray-900">vs {formatCurrency(report.summary.previousTips)}</p>
                 </CardContent>
               </Card>
             </div>
@@ -360,14 +360,14 @@ export default function TrendsReportPage() {
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Current Date</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Net Sales</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Orders</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Avg Check</th>
-                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-400">vs</th>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Compare Date</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Net Sales</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Delta</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Current Date</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Net Sales</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Orders</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Avg Check</th>
+                        <th className="px-4 py-3 text-center text-sm font-medium text-gray-900">vs</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Compare Date</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Net Sales</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Delta</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -382,11 +382,11 @@ export default function TrendsReportPage() {
                             <td className="px-4 py-3 text-right font-medium text-green-600">{formatCurrency(day.netSales)}</td>
                             <td className="px-4 py-3 text-right">{day.orderCount}</td>
                             <td className="px-4 py-3 text-right">{formatCurrency(day.avgCheck)}</td>
-                            <td className="px-4 py-3 text-center text-gray-300">|</td>
-                            <td className="px-4 py-3 text-gray-500">
+                            <td className="px-4 py-3 text-center text-gray-900">|</td>
+                            <td className="px-4 py-3 text-gray-900">
                               {prevDay ? new Date(prevDay.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—'}
                             </td>
-                            <td className="px-4 py-3 text-right text-gray-500">
+                            <td className="px-4 py-3 text-right text-gray-900">
                               {prevDay ? formatCurrency(prevDay.netSales) : '—'}
                             </td>
                             <td className={`px-4 py-3 text-right font-medium ${deltaColor(delta)}`}>
@@ -404,7 +404,7 @@ export default function TrendsReportPage() {
                         <td className="px-4 py-3 text-right">{formatCurrency(report.summary.currentAvgCheck)}</td>
                         <td className="px-4 py-3" />
                         <td className="px-4 py-3" />
-                        <td className="px-4 py-3 text-right text-gray-500">{formatCurrency(report.summary.previousNetSales)}</td>
+                        <td className="px-4 py-3 text-right text-gray-900">{formatCurrency(report.summary.previousNetSales)}</td>
                         <td className={`px-4 py-3 text-right ${deltaColor(report.summary.salesDelta)}`}>
                           {formatDelta(report.summary.salesDelta)}
                         </td>
@@ -416,7 +416,7 @@ export default function TrendsReportPage() {
             </Card>
 
             {/* Footer */}
-            <div className="text-center text-xs text-gray-500 pt-4">
+            <div className="text-center text-xs text-gray-900 pt-4">
               Generated on {new Date().toLocaleString()}
             </div>
           </div>

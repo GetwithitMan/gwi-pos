@@ -126,7 +126,7 @@ export default function InventorySettingsPage() {
 
       {isLoading ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             Loading settings...
           </CardContent>
         </Card>
@@ -136,14 +136,14 @@ export default function InventorySettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Modifier Instruction Multipliers</CardTitle>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-900">
                 Adjust how modifier instructions affect ingredient usage
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     &quot;Lite&quot; / &quot;Light&quot; / &quot;Easy&quot;
                   </label>
                   <div className="flex items-center gap-2">
@@ -156,17 +156,17 @@ export default function InventorySettingsPage() {
                       onChange={(e) => updateSetting('multiplierLite', parseFloat(e.target.value) || 0.5)}
                       className="w-24 border rounded px-3 py-2"
                     />
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-900">
                       ({Math.round(settings.multiplierLite * 100)}%)
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-900 mt-1">
                     Default: 0.5 (50%)
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     &quot;Extra&quot; / &quot;Double&quot;
                   </label>
                   <div className="flex items-center gap-2">
@@ -179,17 +179,17 @@ export default function InventorySettingsPage() {
                       onChange={(e) => updateSetting('multiplierExtra', parseFloat(e.target.value) || 2.0)}
                       className="w-24 border rounded px-3 py-2"
                     />
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-900">
                       ({Math.round(settings.multiplierExtra * 100)}%)
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-900 mt-1">
                     Default: 2.0 (200%)
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     &quot;Triple&quot; / &quot;3x&quot;
                   </label>
                   <div className="flex items-center gap-2">
@@ -202,11 +202,11 @@ export default function InventorySettingsPage() {
                       onChange={(e) => updateSetting('multiplierTriple', parseFloat(e.target.value) || 3.0)}
                       className="w-24 border rounded px-3 py-2"
                     />
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-gray-900">
                       ({Math.round(settings.multiplierTriple * 100)}%)
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-900 mt-1">
                     Default: 3.0 (300%)
                   </p>
                 </div>
@@ -224,14 +224,14 @@ export default function InventorySettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Alerts & Thresholds</CardTitle>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-900">
                 Set triggers for inventory alerts
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Variance Alert Threshold
                   </label>
                   <div className="flex items-center gap-2">
@@ -244,15 +244,15 @@ export default function InventorySettingsPage() {
                       onChange={(e) => updateSetting('varianceAlertPct', parseFloat(e.target.value) || 5)}
                       className="w-24 border rounded px-3 py-2"
                     />
-                    <span className="text-sm text-gray-500">%</span>
+                    <span className="text-sm text-gray-900">%</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-900 mt-1">
                     Alert when count variance exceeds this percentage
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Cost Change Alert Threshold
                   </label>
                   <div className="flex items-center gap-2">
@@ -265,9 +265,9 @@ export default function InventorySettingsPage() {
                       onChange={(e) => updateSetting('costChangeAlertPct', parseFloat(e.target.value) || 10)}
                       className="w-24 border rounded px-3 py-2"
                     />
-                    <span className="text-sm text-gray-500">%</span>
+                    <span className="text-sm text-gray-900">%</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-900 mt-1">
                     Alert when item cost changes by this percentage
                   </p>
                 </div>
@@ -275,7 +275,7 @@ export default function InventorySettingsPage() {
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Target Food Cost %
                   </label>
                   <div className="flex items-center gap-2">
@@ -289,15 +289,15 @@ export default function InventorySettingsPage() {
                       className="w-24 border rounded px-3 py-2"
                       placeholder="--"
                     />
-                    <span className="text-sm text-gray-500">%</span>
+                    <span className="text-sm text-gray-900">%</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-900 mt-1">
                     Target food cost percentage (typically 28-35%)
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Target Liquor Cost %
                   </label>
                   <div className="flex items-center gap-2">
@@ -311,9 +311,9 @@ export default function InventorySettingsPage() {
                       className="w-24 border rounded px-3 py-2"
                       placeholder="--"
                     />
-                    <span className="text-sm text-gray-500">%</span>
+                    <span className="text-sm text-gray-900">%</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-900 mt-1">
                     Target liquor cost percentage (typically 18-24%)
                   </p>
                 </div>
@@ -325,14 +325,14 @@ export default function InventorySettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Inventory Count Settings</CardTitle>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-900">
                 Configure count frequency and approval requirements
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Default Count Frequency
                   </label>
                   <select
@@ -347,7 +347,7 @@ export default function InventorySettingsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-900 mb-1">
                     Count Reminder Day
                   </label>
                   <select
@@ -371,7 +371,7 @@ export default function InventorySettingsPage() {
                   onChange={(e) => updateSetting('requireManagerReview', e.target.checked)}
                   className="rounded"
                 />
-                <label htmlFor="requireManagerReview" className="text-sm text-gray-700">
+                <label htmlFor="requireManagerReview" className="text-sm text-gray-900">
                   Require manager review before applying count adjustments
                 </label>
               </div>
@@ -382,13 +382,13 @@ export default function InventorySettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Liquor Inventory Settings</CardTitle>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-900">
                 Configure default pour sizes for spirits
               </p>
             </CardHeader>
             <CardContent>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Default Pour Size
                 </label>
                 <div className="flex items-center gap-2">
@@ -401,9 +401,9 @@ export default function InventorySettingsPage() {
                     onChange={(e) => updateSetting('defaultPourSizeOz', parseFloat(e.target.value) || 1.5)}
                     className="w-24 border rounded px-3 py-2"
                   />
-                  <span className="text-sm text-gray-500">oz</span>
+                  <span className="text-sm text-gray-900">oz</span>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-gray-900 mt-1">
                   Standard pour size for spirits (typically 1.5 oz)
                 </p>
               </div>
@@ -414,7 +414,7 @@ export default function InventorySettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Data Export</CardTitle>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-900">
                 Configure inventory data export (for accounting systems)
               </p>
             </CardHeader>
@@ -427,7 +427,7 @@ export default function InventorySettingsPage() {
                   onChange={(e) => updateSetting('exportEnabled', e.target.checked)}
                   className="rounded"
                 />
-                <label htmlFor="exportEnabled" className="text-sm text-gray-700">
+                <label htmlFor="exportEnabled" className="text-sm text-gray-900">
                   Enable automated data export
                 </label>
               </div>
@@ -435,7 +435,7 @@ export default function InventorySettingsPage() {
               {settings.exportEnabled && (
                 <div className="grid grid-cols-2 gap-4 pl-6">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-900 mb-1">
                       Export Target
                     </label>
                     <input
@@ -447,7 +447,7 @@ export default function InventorySettingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-900 mb-1">
                       API Key
                     </label>
                     <input

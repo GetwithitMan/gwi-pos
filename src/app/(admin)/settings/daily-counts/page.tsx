@@ -221,7 +221,7 @@ export default function DailyCountsSettingsPage() {
           </div>
 
           {dailyCountItems.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-gray-900">
               <span className="text-4xl mb-3 block">📦</span>
               <p className="font-medium mb-1">No items configured for daily counting</p>
               <p className="text-sm">Enable items below to add them to the morning count.</p>
@@ -242,7 +242,7 @@ export default function DailyCountsSettingsPage() {
                       <span className="text-green-600 text-xl">✓</span>
                       <div>
                         <span className="font-medium">{item.name}</span>
-                        <span className="text-gray-500 text-sm ml-2">
+                        <span className="text-gray-900 text-sm ml-2">
                           ({item.outputUnit})
                         </span>
                       </div>
@@ -264,7 +264,7 @@ export default function DailyCountsSettingsPage() {
                       >
                         Remove
                       </Button>
-                      <span className="text-gray-400">
+                      <span className="text-gray-900">
                         {expandedItemId === item.id ? '▼' : '▶'}
                       </span>
                     </div>
@@ -273,12 +273,12 @@ export default function DailyCountsSettingsPage() {
                   {/* Expanded: Tray Configurations */}
                   {expandedItemId === item.id && (
                     <div className="p-4 border-t bg-white">
-                      <h4 className="font-medium mb-3 text-sm text-gray-700">
+                      <h4 className="font-medium mb-3 text-sm text-gray-900">
                         Tray Configurations
                       </h4>
 
                       {item.trayConfigs.length === 0 ? (
-                        <p className="text-sm text-gray-500 mb-3">
+                        <p className="text-sm text-gray-900 mb-3">
                           No tray configurations yet. Add trays to make counting faster.
                         </p>
                       ) : (
@@ -290,7 +290,7 @@ export default function DailyCountsSettingsPage() {
                             >
                               <div>
                                 <span className="font-medium">{tray.name}</span>
-                                <span className="text-gray-500 ml-2">
+                                <span className="text-gray-900 ml-2">
                                   = {tray.capacity} {item.outputUnit}
                                 </span>
                               </div>
@@ -335,7 +335,7 @@ export default function DailyCountsSettingsPage() {
                               className="w-full px-3 py-2 border rounded-lg text-sm"
                             />
                           </div>
-                          <div className="text-sm text-gray-500 pb-2">
+                          <div className="text-sm text-gray-900 pb-2">
                             {item.outputUnit}
                           </div>
                           <Button
@@ -369,7 +369,7 @@ export default function DailyCountsSettingsPage() {
                       {/* Quick Add Suggestions */}
                       {item.trayConfigs.length === 0 && addingTrayFor !== item.id && (
                         <div className="mt-3 pt-3 border-t">
-                          <p className="text-xs text-gray-500 mb-2">Quick add common trays:</p>
+                          <p className="text-xs text-gray-900 mb-2">Quick add common trays:</p>
                           <div className="flex flex-wrap gap-2">
                             {[
                               { name: 'Full Tray', capacity: 12 },
@@ -432,7 +432,7 @@ export default function DailyCountsSettingsPage() {
           </p>
 
           {otherItems.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-gray-900">
               <p>All prep items are configured for daily counting.</p>
             </div>
           ) : (
@@ -445,7 +445,7 @@ export default function DailyCountsSettingsPage() {
                 >
                   <div>
                     <span className="font-medium">{item.name}</span>
-                    <span className="text-gray-500 text-sm ml-2">
+                    <span className="text-gray-900 text-sm ml-2">
                       ({item.outputUnit})
                     </span>
                   </div>
@@ -490,14 +490,14 @@ export default function DailyCountsSettingsPage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-3 p-2 bg-white rounded border">
-                      <span className="text-sm text-gray-500">Manual count:</span>
+                      <span className="text-sm text-gray-900">Manual count:</span>
                       <input
                         type="number"
                         placeholder="0"
                         className="w-20 px-2 py-1 border rounded text-center"
                         disabled
                       />
-                      <span className="text-sm text-gray-500">{item.outputUnit}</span>
+                      <span className="text-sm text-gray-900">{item.outputUnit}</span>
                     </div>
                   )}
                 </div>

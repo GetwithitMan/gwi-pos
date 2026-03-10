@@ -33,7 +33,7 @@ const STATUS_TABS = [
 ]
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
+  draft: 'bg-gray-100 text-gray-900',
   sent: 'bg-blue-50 text-blue-700',
   confirmed: 'bg-purple-50 text-purple-700',
   partially_received: 'bg-yellow-50 text-yellow-700',
@@ -122,7 +122,7 @@ export default function PurchaseOrdersPage() {
           <CardContent className="p-4">
             <p className="text-sm text-blue-600">Pending</p>
             <p className="text-3xl font-bold text-blue-700">{counts.pending}</p>
-            <p className="text-xs text-gray-500">Draft + Sent</p>
+            <p className="text-xs text-gray-900">Draft + Sent</p>
           </CardContent>
         </Card>
         <Card>
@@ -165,14 +165,14 @@ export default function PurchaseOrdersPage() {
       {/* Table */}
       {isLoading ? (
         <Card>
-          <CardContent className="p-8 text-center text-gray-500">
+          <CardContent className="p-8 text-center text-gray-900">
             Loading...
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center">
-            <p className="text-gray-500 text-lg mb-2">No purchase orders yet</p>
+            <p className="text-gray-900 text-lg mb-2">No purchase orders yet</p>
             <Link href="/inventory/orders/new" className="text-blue-600 hover:underline text-sm">
               Create your first PO
             </Link>
@@ -200,7 +200,7 @@ export default function PurchaseOrdersPage() {
                     <td className="px-4 py-3 font-medium text-gray-900">
                       {order.orderNumber}
                     </td>
-                    <td className="px-4 py-3 text-gray-700">
+                    <td className="px-4 py-3 text-gray-900">
                       {order.vendorName}
                     </td>
                     <td className="px-4 py-3 text-center">

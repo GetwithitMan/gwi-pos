@@ -164,7 +164,7 @@ export default function FlashReportPage() {
       value: `${current.voids.percentOfSales.toFixed(1)}%`,
       delta: p ? `${(current.voids.percentOfSales - p.voids.percentOfSales).toFixed(1)}pp` : null,
       deltaUp: p ? current.voids.percentOfSales <= p.voids.percentOfSales : null,
-      color: current.voids.percentOfSales > 5 ? 'text-red-600' : 'text-gray-700',
+      color: current.voids.percentOfSales > 5 ? 'text-red-600' : 'text-gray-900',
     })
 
     const discDelta = p ? calcDelta(current.revenue.discounts, p.revenue.discounts) : null
@@ -220,15 +220,15 @@ export default function FlashReportPage() {
 
       <div className="max-w-5xl mx-auto">
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading flash report...</div>
+          <div className="text-center py-12 text-gray-900">Loading flash report...</div>
         ) : !current ? (
-          <div className="text-center py-12 text-gray-500">No data available for this date</div>
+          <div className="text-center py-12 text-gray-900">No data available for this date</div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {metrics.map((m) => (
               <Card key={m.label}>
                 <CardContent className="p-5">
-                  <p className="text-sm text-gray-500 mb-1">{m.label}</p>
+                  <p className="text-sm text-gray-900 mb-1">{m.label}</p>
                   <p className={`text-3xl font-bold ${m.color}`}>{m.value}</p>
                   {m.delta !== null && (
                     <p className={`text-sm mt-1 font-medium ${m.deltaUp ? 'text-green-600' : 'text-red-600'}`}>

@@ -83,7 +83,7 @@ export default function BergUnmatchedReportPage() {
         <h1 className="text-2xl font-bold">Unmatched Pours</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={dateClass} />
-          <span className="text-gray-400">to</span>
+          <span className="text-gray-900">to</span>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={dateClass} />
           <Button onClick={runReport} disabled={loading}>
             {loading ? 'Running...' : 'Run Report'}
@@ -130,7 +130,7 @@ export default function BergUnmatchedReportPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-left text-gray-500">
+                    <tr className="border-b bg-gray-50 text-left text-gray-900">
                       <th className="py-2 px-3 font-medium">Time</th>
                       <th className="py-2 px-3 font-medium">Device</th>
                       <th className="py-2 px-3 font-medium">PLU</th>
@@ -181,7 +181,7 @@ export default function BergUnmatchedReportPage() {
                     ))}
                     {report.events.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="py-8 text-center text-gray-400">
+                        <td colSpan={9} className="py-8 text-center text-gray-900">
                           No unmatched pours for this period. Great job!
                         </td>
                       </tr>

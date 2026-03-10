@@ -58,7 +58,7 @@ interface DailyPrepCount {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
-  draft: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Draft' },
+  draft: { bg: 'bg-gray-100', text: 'text-gray-900', label: 'Draft' },
   submitted: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending Approval' },
   approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Approved' },
   rejected: { bg: 'bg-red-100', text: 'text-red-700', label: 'Rejected' },
@@ -389,7 +389,7 @@ export default function DailyPrepCountsPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-900">Loading...</p>
       </div>
     )
   }
@@ -453,7 +453,7 @@ export default function DailyPrepCountsPage() {
                         at {formatTime(todayCount.countDate)}
                       </p>
                       {todayCount.submittedBy && (
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-900">
                           Submitted by {todayCount.submittedBy.firstName}
                         </p>
                       )}
@@ -484,7 +484,7 @@ export default function DailyPrepCountsPage() {
           <Card className="p-6">
             <h3 className="text-lg font-semibold mb-4">Recent Counts</h3>
             {counts.length === 0 ? (
-              <p className="text-gray-500 text-center py-4">No counts yet</p>
+              <p className="text-gray-900 text-center py-4">No counts yet</p>
             ) : (
               <div className="space-y-2">
                 {counts.map(count => {
@@ -498,7 +498,7 @@ export default function DailyPrepCountsPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <span className="font-medium">{formatDate(count.countDate)}</span>
-                          <span className="text-gray-500 text-sm ml-2">
+                          <span className="text-gray-900 text-sm ml-2">
                             {count.shiftType} shift
                           </span>
                         </div>
@@ -506,7 +506,7 @@ export default function DailyPrepCountsPage() {
                           {status.label}
                         </span>
                       </div>
-                      <div className="text-sm text-gray-500 mt-1">
+                      <div className="text-sm text-gray-900 mt-1">
                         {count.countItems?.length || 0} items counted
                         {count.createdBy && ` • by ${count.createdBy.firstName}`}
                       </div>
@@ -527,7 +527,7 @@ export default function DailyPrepCountsPage() {
                 <h3 className="font-semibold">
                   {activeCount?.countDate && formatDate(activeCount.countDate)} - {activeCount?.shiftType} shift
                 </h3>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-900">
                   {activeCount?.status === 'draft' ? 'In progress' : STATUS_COLORS[activeCount?.status || 'draft'].label}
                 </p>
               </div>
@@ -552,7 +552,7 @@ export default function DailyPrepCountsPage() {
                     <div className="flex items-center justify-between mb-3">
                       <div>
                         <h4 className="font-semibold">{item.name}</h4>
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-900">
                           Previous stock: {item.currentPrepStock} {item.outputUnit}
                         </p>
                       </div>
@@ -560,7 +560,7 @@ export default function DailyPrepCountsPage() {
                         <div className="text-2xl font-bold text-blue-600">
                           {calculateTotal(item.id)}
                         </div>
-                        <div className="text-sm text-gray-500">{item.outputUnit}</div>
+                        <div className="text-sm text-gray-900">{item.outputUnit}</div>
                       </div>
                     </div>
 
@@ -570,7 +570,7 @@ export default function DailyPrepCountsPage() {
                           <div key={tray.id} className="bg-gray-50 rounded-lg p-3">
                             <div className="text-sm font-medium mb-2">
                               {tray.name}
-                              <span className="text-gray-400 ml-1">
+                              <span className="text-gray-900 ml-1">
                                 (×{tray.capacity})
                               </span>
                             </div>
@@ -602,7 +602,7 @@ export default function DailyPrepCountsPage() {
                                 +
                               </button>
                             </div>
-                            <div className="text-xs text-gray-500 mt-1 text-center">
+                            <div className="text-xs text-gray-900 mt-1 text-center">
                               = {(trayEntries[item.id]?.[tray.id] || 0) * tray.capacity} {item.outputUnit}
                             </div>
                           </div>
@@ -646,7 +646,7 @@ export default function DailyPrepCountsPage() {
                         >
                           +
                         </button>
-                        <span className="text-sm text-gray-500">{item.outputUnit}</span>
+                        <span className="text-sm text-gray-900">{item.outputUnit}</span>
                       </div>
                     )}
                   </Card>
@@ -694,7 +694,7 @@ export default function DailyPrepCountsPage() {
                     <div>
                       <h4 className="font-semibold">{item.prepItem.name}</h4>
                       {item.trayBreakdown && (
-                        <div className="text-sm text-gray-500 mt-1">
+                        <div className="text-sm text-gray-900 mt-1">
                           {Object.entries(item.trayBreakdown).map(([trayId, count]) => {
                             const prep = prepItems.find(p => p.id === item.prepItemId)
                             const tray = prep?.trayConfigs.find(t => t.id === trayId)
@@ -705,7 +705,7 @@ export default function DailyPrepCountsPage() {
                     </div>
                     <div className="text-right">
                       <div className="text-2xl font-bold">{item.totalCounted}</div>
-                      <div className="text-sm text-gray-500">{item.prepItem.outputUnit}</div>
+                      <div className="text-sm text-gray-900">{item.prepItem.outputUnit}</div>
                     </div>
                   </div>
                   {item.variance !== null && item.variance !== 0 && (
@@ -806,7 +806,7 @@ export default function DailyPrepCountsPage() {
                 Please provide a reason for rejecting this count. The staff member will need to submit a new count.
               </p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Rejection Reason
                 </label>
                 <textarea

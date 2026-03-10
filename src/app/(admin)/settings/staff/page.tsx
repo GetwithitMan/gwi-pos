@@ -80,7 +80,7 @@ export default function StaffShiftsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-700 text-lg">Loading settings...</div>
+          <div className="text-gray-900 text-lg">Loading settings...</div>
         </div>
       </div>
     )
@@ -104,7 +104,7 @@ export default function StaffShiftsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -166,7 +166,7 @@ export default function StaffShiftsPage() {
           {/* Day Start Time */}
           <div className="flex items-center justify-between py-3 border-b border-gray-100">
             <div>
-              <div className="text-sm text-gray-700">Day Start Time</div>
+              <div className="text-sm text-gray-900">Day Start Time</div>
               <div className="text-xs text-gray-600">The time your business day resets. Orders and reports before this time are counted as the previous day. For venues open past midnight, use 4:00 AM. For day-only venues, midnight is fine.</div>
             </div>
             <input
@@ -206,7 +206,7 @@ export default function StaffShiftsPage() {
           {/* Grace Period */}
           <div className="flex items-center justify-between py-3 mt-2 border-t border-gray-100">
             <div>
-              <div className="text-sm text-gray-700">Grace Period</div>
+              <div className="text-sm text-gray-900">Grace Period</div>
               <div className="text-xs text-gray-600">Extra minutes after the day-end time before rules are enforced. Use 5–15 minutes to give staff time to close out last-minute tabs. Set to 0 for immediate enforcement.</div>
             </div>
             <input

@@ -82,7 +82,7 @@ export function DeletedItemsPanel({
                   <div className="flex items-center gap-3">
                     <span className="text-red-400" role="img" aria-label="Deleted">🗑️</span>
                     <div>
-                      <span className="font-medium text-gray-700">{ingredient.name}</span>
+                      <span className="font-medium text-gray-900">{ingredient.name}</span>
                       {ingredient.parentIngredient && (
                         <span className="text-xs text-gray-600 ml-2">
                           (was prep under {ingredient.parentIngredient.name})
@@ -139,7 +139,7 @@ export function DeletedItemsPanel({
                           onSetRestoreAsType(null)
                           onSetRestoreCategoryId(null)
                         }}
-                        className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+                        className="px-2 py-1 text-xs text-gray-900 hover:text-gray-900"
                       >
                         ✕ Cancel
                       </button>
@@ -210,7 +210,7 @@ export function DeletedItemsPanel({
                         </div>
                         <button
                           onClick={() => onSetRestoreStep('type')}
-                          className="text-xs text-gray-500 hover:text-gray-700 underline"
+                          className="text-xs text-gray-900 hover:text-gray-900 underline"
                         >
                           ← Back
                         </button>
@@ -240,7 +240,7 @@ export function DeletedItemsPanel({
                         </div>
                         <button
                           onClick={() => onSetRestoreStep('type')}
-                          className="text-xs text-gray-500 hover:text-gray-700 underline"
+                          className="text-xs text-gray-900 hover:text-gray-900 underline"
                         >
                           ← Back
                         </button>

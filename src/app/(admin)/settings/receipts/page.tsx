@@ -199,7 +199,7 @@ export default function ReceiptSettingsPage() {
         <SettingsCard title="Header & Footer">
           <div className="space-y-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Header Text</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Header Text</label>
               <input
                 type="text"
                 value={receipts.headerText}
@@ -209,7 +209,7 @@ export default function ReceiptSettingsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Footer Text</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Footer Text</label>
               <input
                 type="text"
                 value={receipts.footerText}
@@ -255,7 +255,7 @@ export default function ReceiptSettingsPage() {
           {receiptDisplay.tips.enabled && (
             <>
               <div className="mt-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Suggested tip percentages</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Suggested tip percentages</label>
                 <input
                   type="text"
                   value={receiptDisplay.tips.suggestedTips.join(', ')}
@@ -274,7 +274,7 @@ export default function ReceiptSettingsPage() {
                 <p className="text-xs text-gray-600 mt-1">Whole numbers only, separated by commas (e.g., 15, 18, 20, 25). Customers will see these as quick-select buttons on the printed tip line.</p>
               </div>
               <div className="mt-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Calculation basis</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Calculation basis</label>
                 <p className="text-xs text-gray-600 mb-2">Pre-Tax: suggested tip is based on the food/drink total before tax (standard in most US venues). Post-Tax: tip is based on the total including tax (slightly higher suggestions).</p>
                 <div className="flex gap-2">
                   <button
@@ -282,7 +282,7 @@ export default function ReceiptSettingsPage() {
                     className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       receiptDisplay.tips.calculation === 'pre-tax'
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                     }`}
                   >
                     Pre-Tax
@@ -292,7 +292,7 @@ export default function ReceiptSettingsPage() {
                     className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                       receiptDisplay.tips.calculation === 'post-tax'
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                     }`}
                   >
                     Post-Tax
@@ -312,9 +312,9 @@ export default function ReceiptSettingsPage() {
           {receiptDisplay.signature.required && (
             <>
               <div className="mt-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Signature threshold</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Signature threshold</label>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-700">$</span>
+                  <span className="text-sm text-gray-900">$</span>
                   <input
                     type="number"
                     value={receiptDisplay.signature.threshold ?? ''}
@@ -333,14 +333,14 @@ export default function ReceiptSettingsPage() {
             </>
           )}
           <div className="mt-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Print copies</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Print copies</label>
             <div className="flex gap-2">
               <button
                 onClick={() => updateSignature('printCopies', 1)}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   receiptDisplay.signature.printCopies === 1
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                 }`}
               >
                 1 Copy
@@ -350,7 +350,7 @@ export default function ReceiptSettingsPage() {
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   receiptDisplay.signature.printCopies === 2
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                 }`}
               >
                 2 Copies
@@ -368,7 +368,7 @@ export default function ReceiptSettingsPage() {
           <Toggle value={receiptDisplay.footer.showTableName} onChange={v => updateFooter('showTableName', v)} label="Show table name" />
           <div className="border-t border-gray-100 my-2" />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Terms text</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Terms text</label>
             <p className="text-xs text-gray-600 mb-1">Custom legal or courtesy text printed near the bottom (e.g., &apos;Gratuity is optional&apos; or &apos;All sales final&apos;).</p>
             <input
               type="text"
@@ -379,7 +379,7 @@ export default function ReceiptSettingsPage() {
             />
           </div>
           <div className="mt-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Promo text</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Promo text</label>
             <p className="text-xs text-gray-600 mb-1">Marketing message or promotion printed at the very end of the receipt (e.g., &apos;Follow us on Instagram&apos;).</p>
             <input
               type="text"
@@ -390,7 +390,7 @@ export default function ReceiptSettingsPage() {
             />
           </div>
           <div className="mt-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Custom footer lines</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Custom footer lines</label>
             <textarea
               value={(receiptDisplay.footer.customLines || []).join('\n')}
               onChange={e => {
@@ -428,7 +428,7 @@ export default function ReceiptSettingsPage() {
       {/* ─── Sticky Save Bar ─── */}
       {isDirty && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg px-6 py-3 flex items-center justify-between z-50">
-          <span className="text-sm text-gray-700">You have unsaved changes</span>
+          <span className="text-sm text-gray-900">You have unsaved changes</span>
           <button
             onClick={handleSave}
             disabled={isSaving}

@@ -151,7 +151,7 @@ export default function BergDispenseReportPage() {
         <h1 className="text-2xl font-bold">Berg Dispense Log</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={dateClass} />
-          <span className="text-gray-400">to</span>
+          <span className="text-gray-900">to</span>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={dateClass} />
           <select value={deviceId} onChange={e => setDeviceId(e.target.value)} onFocus={loadDevices} className={selectClass}>
             <option value="ALL">All Devices</option>
@@ -180,7 +180,7 @@ export default function BergDispenseReportPage() {
 
       {/* Empty state */}
       {!report && !loading && (
-        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-900">
           No dispense events found for this period.
         </div>
       )}
@@ -191,31 +191,31 @@ export default function BergDispenseReportPage() {
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 mb-6">
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Total Events</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Total Events</div>
                 <div className="text-2xl font-bold mt-1">{summary.totalEvents}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">ACK&apos;d</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">ACK&apos;d</div>
                 <div className="text-2xl font-bold mt-1 text-green-600">{summary.ackCount}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">NAK&apos;d</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">NAK&apos;d</div>
                 <div className="text-2xl font-bold mt-1 text-red-600">{summary.nakCount}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Bad LRC</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Bad LRC</div>
                 <div className="text-2xl font-bold mt-1 text-red-600">{summary.badLrcCount}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <div className="text-xs text-gray-500 uppercase font-medium">Avg Latency</div>
+                <div className="text-xs text-gray-900 uppercase font-medium">Avg Latency</div>
                 <div className="text-2xl font-bold mt-1">{summary.avgLatencyMs}ms</div>
               </CardContent>
             </Card>
@@ -227,7 +227,7 @@ export default function BergDispenseReportPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-left text-gray-500">
+                    <tr className="border-b bg-gray-50 text-left text-gray-900">
                       <th className="py-2 px-3 font-medium">Time</th>
                       <th className="py-2 px-3 font-medium">Device</th>
                       <th className="py-2 px-3 font-medium">PLU</th>
@@ -254,12 +254,12 @@ export default function BergDispenseReportPage() {
                         <td className="py-2 px-3">{lrcBadge(ev.lrcValid)}</td>
                         <td className="py-2 px-3 text-right font-mono">{ev.ackLatencyMs != null ? `${ev.ackLatencyMs}ms` : '—'}</td>
                         <td className="py-2 px-3">{ev.orderId ?? '—'}</td>
-                        <td className="py-2 px-3 text-gray-500">{ev.unmatchedType ?? '—'}</td>
+                        <td className="py-2 px-3 text-gray-900">{ev.unmatchedType ?? '—'}</td>
                       </tr>
                     ))}
                     {report.events.length === 0 && (
                       <tr>
-                        <td colSpan={11} className="py-8 text-center text-gray-400">
+                        <td colSpan={11} className="py-8 text-center text-gray-900">
                           No dispense events found for this period.
                         </td>
                       </tr>

@@ -53,7 +53,7 @@ export function DeleteCategoryModal({
             </p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Type <span className="font-bold text-red-600">DELETE</span> to confirm
             </label>
             <input

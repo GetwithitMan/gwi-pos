@@ -463,7 +463,7 @@ export function BottleModal({
                       className={`flex-1 text-[10px] py-0.5 rounded border transition-colors ${
                         pourSizeOz === p.oz.toString()
                           ? 'bg-purple-100 border-purple-400 text-purple-700 font-semibold'
-                          : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                          : 'border-gray-200 text-gray-900 hover:border-gray-300'
                       }`}
                     >
                       {p.oz}oz
@@ -525,7 +525,7 @@ export function BottleModal({
                     className={`flex-1 text-[10px] py-0.5 rounded border transition-colors ${
                       pourSizeOz === p.oz.toString()
                         ? 'bg-blue-100 border-blue-400 text-blue-700 font-semibold'
-                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                        : 'border-gray-200 text-gray-900 hover:border-gray-300'
                     }`}
                   >
                     {p.label}

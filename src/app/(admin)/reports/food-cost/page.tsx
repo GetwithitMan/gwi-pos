@@ -148,17 +148,17 @@ export default function FoodCostReportPage() {
           </div>
           <div className="flex gap-2">
             <button onClick={() => setGroupBy('category')}
-              className={`px-4 py-2 rounded-lg font-medium ${groupBy === 'category' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+              className={`px-4 py-2 rounded-lg font-medium ${groupBy === 'category' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'}`}>
               By Category
             </button>
             <button onClick={() => setGroupBy('item')}
-              className={`px-4 py-2 rounded-lg font-medium ${groupBy === 'item' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'}`}>
+              className={`px-4 py-2 rounded-lg font-medium ${groupBy === 'item' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'}`}>
               By Item
             </button>
           </div>
           {report.byItem.length > 0 && (
             <button onClick={() => exportCSV(report)}
-              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 font-medium ml-auto">
+              className="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-900 font-medium ml-auto">
               Export CSV
             </button>
           )}
@@ -188,15 +188,15 @@ export default function FoodCostReportPage() {
             </div>
           </div>
           <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-            <div className="text-gray-500 text-sm">Total Revenue</div>
+            <div className="text-gray-900 text-sm">Total Revenue</div>
             <div className="text-2xl font-bold text-gray-900">${report.summary.totalRevenue.toFixed(2)}</div>
           </div>
           <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-            <div className="text-gray-500 text-sm">Total COGS</div>
+            <div className="text-gray-900 text-sm">Total COGS</div>
             <div className="text-2xl font-bold text-gray-900">${report.summary.totalCost.toFixed(2)}</div>
           </div>
           <div className="bg-white rounded-lg shadow p-4 border border-gray-200">
-            <div className="text-gray-500 text-sm">Gross Profit</div>
+            <div className="text-gray-900 text-sm">Gross Profit</div>
             <div className="text-2xl font-bold text-green-600">${report.summary.grossProfit.toFixed(2)}</div>
           </div>
         </div>
@@ -207,12 +207,12 @@ export default function FoodCostReportPage() {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="text-left p-4 text-gray-700 font-semibold">Category</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Items</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Revenue</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">COGS</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Food Cost %</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Profit</th>
+                  <th className="text-left p-4 text-gray-900 font-semibold">Category</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Items</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Revenue</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">COGS</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Food Cost %</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Profit</th>
                 </tr>
               </thead>
               <tbody>
@@ -241,14 +241,14 @@ export default function FoodCostReportPage() {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="text-left p-4 text-gray-700 font-semibold">Item</th>
-                  <th className="text-left p-4 text-gray-700 font-semibold">Category</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Qty</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Revenue</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Unit Cost</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Total Cost</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Food Cost %</th>
-                  <th className="text-right p-4 text-gray-700 font-semibold">Profit</th>
+                  <th className="text-left p-4 text-gray-900 font-semibold">Item</th>
+                  <th className="text-left p-4 text-gray-900 font-semibold">Category</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Qty</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Revenue</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Unit Cost</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Total Cost</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Food Cost %</th>
+                  <th className="text-right p-4 text-gray-900 font-semibold">Profit</th>
                 </tr>
               </thead>
               <tbody>

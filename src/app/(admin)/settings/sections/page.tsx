@@ -163,7 +163,7 @@ export default function SectionAssignmentsPage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Section Assignments</h1>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-gray-900 mb-6">
         Assign servers to floor plan sections. Assignments help route orders and track coverage.
       </p>
 
@@ -173,7 +173,7 @@ export default function SectionAssignmentsPage() {
         </div>
       ) : sections.length === 0 ? (
         <div className="text-center py-12 bg-white rounded-lg border">
-          <p className="text-gray-500">No sections found. Create sections in the Floor Plan Editor first.</p>
+          <p className="text-gray-900">No sections found. Create sections in the Floor Plan Editor first.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -196,7 +196,7 @@ export default function SectionAssignmentsPage() {
                     />
                     <div className="text-left">
                       <span className="font-medium text-gray-900">{section.name}</span>
-                      <span className="ml-2 text-xs text-gray-400">
+                      <span className="ml-2 text-xs text-gray-900">
                         {section.tableCount} table{section.tableCount !== 1 ? 's' : ''}
                       </span>
                     </div>
@@ -207,7 +207,7 @@ export default function SectionAssignmentsPage() {
                     )}
                   </div>
                   <svg
-                    className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+                    className={`w-5 h-5 text-gray-900 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -219,7 +219,7 @@ export default function SectionAssignmentsPage() {
                 {isExpanded && (
                   <div className="border-t px-4 py-3">
                     {sectionAssignments.length === 0 ? (
-                      <p className="text-sm text-gray-400 mb-3">No servers assigned to this section.</p>
+                      <p className="text-sm text-gray-900 mb-3">No servers assigned to this section.</p>
                     ) : (
                       <div className="space-y-2 mb-3">
                         {sectionAssignments.map(a => (
@@ -229,7 +229,7 @@ export default function SectionAssignmentsPage() {
                           >
                             <div>
                               <span className="text-sm font-medium text-gray-900">{a.employeeName}</span>
-                              <span className="ml-2 text-xs text-gray-400">{a.roleName}</span>
+                              <span className="ml-2 text-xs text-gray-900">{a.roleName}</span>
                             </div>
                             <button
                               onClick={() => handleUnassign(section.id, a.employeeId)}
@@ -265,7 +265,7 @@ export default function SectionAssignmentsPage() {
                         </button>
                         <button
                           onClick={() => { setAssigningSection(null); setSelectedEmployeeId('') }}
-                          className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 min-h-[40px]"
+                          className="px-3 py-2 text-sm text-gray-900 hover:text-gray-900 min-h-[40px]"
                         >
                           Cancel
                         </button>

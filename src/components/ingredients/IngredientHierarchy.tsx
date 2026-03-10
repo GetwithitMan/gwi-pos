@@ -264,13 +264,13 @@ function HierarchyNode({
           {/* Expand/Collapse or Leaf Icon */}
           <div className="w-5 flex-shrink-0">
             {hasChildren ? (
-              <span className="w-5 h-5 flex items-center justify-center text-gray-500 text-xs">
+              <span className="w-5 h-5 flex items-center justify-center text-gray-900 text-xs">
                 {isExpanded ? '▼' : '▶'}
               </span>
             ) : depth > 0 ? (
-              <span className="text-gray-400 text-xs">•</span>
+              <span className="text-gray-900 text-xs">•</span>
             ) : (
-              <span className="text-gray-400 text-xs">•</span>
+              <span className="text-gray-900 text-xs">•</span>
             )}
           </div>
 
@@ -499,7 +499,7 @@ function HierarchyNode({
                             </span>
                             {menuItemNames.length > 0 && (
                               <>
-                                <span className="text-gray-400 text-xs">→</span>
+                                <span className="text-gray-900 text-xs">→</span>
                                 {menuItemNames.map(mi => (
                                   <span
                                     key={mi.id}
@@ -576,7 +576,7 @@ function HierarchyNode({
                     <span className="text-xs font-medium text-purple-700">
                       {comp.quantity} {comp.unit}
                     </span>
-                    <span className="text-xs text-gray-700">
+                    <span className="text-xs text-gray-900">
                       {comp.component.name}
                     </span>
                     {comp.component.categoryRelation && (
@@ -695,7 +695,7 @@ export function GroupedIngredientHierarchy({
     <div className="space-y-2">
       {/* Zoom Control */}
       <div className="flex items-center justify-end gap-2 mb-2">
-        <span className="text-gray-500 text-sm">🔍</span>
+        <span className="text-gray-900 text-sm">🔍</span>
         <div className="flex items-center border rounded-lg overflow-hidden">
           {ZOOM_LEVELS.map((level, idx) => (
             <button
@@ -931,7 +931,7 @@ function CategoryHierarchySection({
               Delete
             </Button>
           )}
-          <span className="text-gray-400 text-sm">
+          <span className="text-gray-900 text-sm">
             {isExpanded ? '▼' : '▶'}
           </span>
         </div>

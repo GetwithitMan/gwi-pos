@@ -307,7 +307,7 @@ export default function TipOutsSettingsPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Loading tip-out settings...</p>
+        <p className="text-gray-900">Loading tip-out settings...</p>
       </div>
     )
   }
@@ -360,7 +360,7 @@ export default function TipOutsSettingsPage() {
             <h3 className="text-lg font-semibold mb-4">Add New Tip-Out Rule</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   From Role (tips out)
                 </label>
                 <select
@@ -375,7 +375,7 @@ export default function TipOutsSettingsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   To Role (receives)
                 </label>
                 <select
@@ -391,7 +391,7 @@ export default function TipOutsSettingsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Percentage
                 </label>
                 <div className="flex items-center gap-2">
@@ -405,11 +405,11 @@ export default function TipOutsSettingsPage() {
                     className="w-full px-3 py-2 border rounded-lg"
                     placeholder="e.g., 3"
                   />
-                  <span className="text-gray-500">%</span>
+                  <span className="text-gray-900">%</span>
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-900 mb-1">
                   Basis Type
                 </label>
                 <select
@@ -425,8 +425,8 @@ export default function TipOutsSettingsPage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Max % Cap <span className="text-gray-400 font-normal">(optional)</span>
+                <label className="block text-sm font-medium text-gray-900 mb-1">
+                  Max % Cap <span className="text-gray-900 font-normal">(optional)</span>
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -439,13 +439,13 @@ export default function TipOutsSettingsPage() {
                     className="w-full px-3 py-2 border rounded-lg"
                     placeholder="e.g., 5"
                   />
-                  <span className="text-gray-500">%</span>
+                  <span className="text-gray-900">%</span>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Caps tip-out at this % of tips earned</p>
+                <p className="text-xs text-gray-900 mt-1">Caps tip-out at this % of tips earned</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Effective Date <span className="text-gray-400 font-normal">(optional)</span>
+                <label className="block text-sm font-medium text-gray-900 mb-1">
+                  Effective Date <span className="text-gray-900 font-normal">(optional)</span>
                 </label>
                 <input
                   type="date"
@@ -455,8 +455,8 @@ export default function TipOutsSettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Expires At <span className="text-gray-400 font-normal">(optional)</span>
+                <label className="block text-sm font-medium text-gray-900 mb-1">
+                  Expires At <span className="text-gray-900 font-normal">(optional)</span>
                 </label>
                 <input
                   type="date"
@@ -493,8 +493,8 @@ export default function TipOutsSettingsPage() {
           <h3 className="text-lg font-semibold mb-4">Current Tip-Out Rules</h3>
 
           {rules.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="text-center py-8 text-gray-900">
+              <svg className="w-12 h-12 mx-auto mb-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <p className="text-lg font-medium mb-1">No tip-out rules configured</p>
@@ -520,7 +520,7 @@ export default function TipOutsSettingsPage() {
                       <td className="py-3 px-2">
                         <span className="font-medium">{rule.fromRole.name}</span>
                       </td>
-                      <td className="py-3 px-2 text-center text-gray-400">
+                      <td className="py-3 px-2 text-center text-gray-900">
                         <svg className="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                         </svg>
@@ -542,7 +542,7 @@ export default function TipOutsSettingsPage() {
                                 className="w-20 px-2 py-1 border rounded"
                                 autoFocus
                               />
-                              <span className="text-gray-500">%</span>
+                              <span className="text-gray-900">%</span>
                             </div>
                             <div className="flex items-center justify-end gap-2">
                               <input
@@ -566,7 +566,7 @@ export default function TipOutsSettingsPage() {
                               {rule.percentage}%
                             </span>
                             {rule.maxPercentage != null && (
-                              <div className="text-xs text-gray-400 mt-0.5">Cap: {rule.maxPercentage}%</div>
+                              <div className="text-xs text-gray-900 mt-0.5">Cap: {rule.maxPercentage}%</div>
                             )}
                           </div>
                         )}
@@ -594,7 +594,7 @@ export default function TipOutsSettingsPage() {
                               </button>
                               <button
                                 onClick={cancelEdit}
-                                className="text-gray-500 hover:text-gray-700"
+                                className="text-gray-900 hover:text-gray-900"
                               >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -610,7 +610,7 @@ export default function TipOutsSettingsPage() {
                                 : BASIS_TYPE_LABELS[(rule.basisType || 'tips_earned')] || rule.basisType}
                             </span>
                             {(rule.effectiveDate || rule.expiresAt) && (
-                              <div className="text-xs text-gray-400 mt-1">
+                              <div className="text-xs text-gray-900 mt-1">
                                 {rule.effectiveDate && new Date(rule.effectiveDate).toLocaleDateString()}
                                 {rule.effectiveDate && rule.expiresAt && ' - '}
                                 {!rule.effectiveDate && rule.expiresAt && 'Until '}
@@ -626,7 +626,7 @@ export default function TipOutsSettingsPage() {
                           className={`px-2 py-1 rounded text-xs font-medium ${
                             rule.isActive
                               ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-500'
+                              : 'bg-gray-100 text-gray-900'
                           }`}
                         >
                           {rule.isActive ? 'Active' : 'Inactive'}
@@ -699,7 +699,7 @@ export default function TipOutsSettingsPage() {
                         </span>
                       </div>
                       {isCapped && rule.maxPercentage != null && (
-                        <div className="text-xs text-gray-400 text-right">
+                        <div className="text-xs text-gray-900 text-right">
                           Raw: ${rawAmount.toFixed(2)}, capped at {rule.maxPercentage}% of tips = ${cappedAmount.toFixed(2)}
                         </div>
                       )}

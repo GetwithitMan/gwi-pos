@@ -134,13 +134,13 @@ export default function OnlineHoursPage() {
         <div className="flex gap-3">
           <button
             onClick={() => applyToAll('11:00', '22:00', false)}
-            className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium"
+            className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-900 font-medium"
           >
             Open 11am - 10pm daily
           </button>
           <button
             onClick={() => applyToAll('11:00', '22:00', true)}
-            className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-700 font-medium"
+            className="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-gray-900 font-medium"
           >
             Closed all week
           </button>
@@ -169,7 +169,7 @@ export default function OnlineHoursPage() {
                   }`}
                 >
                   {/* Day name */}
-                  <span className="w-28 text-sm font-medium text-gray-700 flex-shrink-0">
+                  <span className="w-28 text-sm font-medium text-gray-900 flex-shrink-0">
                     {DAY_NAMES[dayNum]}
                   </span>
 
@@ -187,7 +187,7 @@ export default function OnlineHoursPage() {
                         }`}
                       />
                     </button>
-                    <span className={`text-xs font-medium ${dayHours.closed ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-medium ${dayHours.closed ? 'text-red-500' : 'text-gray-900'}`}>
                       Closed
                     </span>
                   </label>
@@ -200,7 +200,7 @@ export default function OnlineHoursPage() {
                       onChange={(e) => updateDay(dayNum, 'open', e.target.value)}
                       className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
-                    <span className="text-gray-400 text-sm">to</span>
+                    <span className="text-gray-900 text-sm">to</span>
                     <input
                       type="time"
                       value={dayHours.close}

@@ -131,7 +131,7 @@ export function IngredientEditorModal({
             <div className="text-center mb-6">
               {isUncategorized ? (
                 <>
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-200 text-gray-700 rounded-full text-sm mb-3">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-gray-200 text-gray-900 rounded-full text-sm mb-3">
                     <span>❓</span> Unclassified Item
                   </div>
                   <h2 className="text-xl font-bold text-gray-900 mb-2">
@@ -215,7 +215,7 @@ export function IngredientEditorModal({
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">❓</span>
                     <div>
-                      <h4 className="font-bold text-gray-700 group-hover:text-gray-900">
+                      <h4 className="font-bold text-gray-900 group-hover:text-gray-900">
                         Move to Uncategorized
                       </h4>
                       <p className="text-sm text-gray-600">
@@ -231,7 +231,7 @@ export function IngredientEditorModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="text-sm text-gray-900 hover:text-gray-900"
               >
                 Cancel
               </button>
@@ -255,7 +255,7 @@ export function IngredientEditorModal({
                   setItemType(null)
                 }
               }}
-              className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1 mb-4"
+              className="text-sm text-gray-900 hover:text-gray-900 flex items-center gap-1 mb-4"
             >
               ← {wantsToChangeParent ? 'Cancel parent change' : 'Back to type selection'}
             </button>
@@ -281,10 +281,10 @@ export function IngredientEditorModal({
             </div>
 
             {loadingBases ? (
-              <div className="text-center py-8 text-gray-700">Loading inventory items...</div>
+              <div className="text-center py-8 text-gray-900">Loading inventory items...</div>
             ) : baseIngredients.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-gray-700 mb-4">No inventory items found</p>
+                <p className="text-gray-900 mb-4">No inventory items found</p>
                 <button
                   type="button"
                   onClick={handleCreateNewParent}
@@ -319,14 +319,14 @@ export function IngredientEditorModal({
                             }}
                             className="w-full sticky top-0 bg-gray-100 px-3 py-2 text-left hover:bg-gray-200 flex items-center justify-between transition-colors"
                           >
-                            <span className="text-sm font-semibold text-gray-700">
+                            <span className="text-sm font-semibold text-gray-900">
                               {categoryName}
                             </span>
                             <span className="flex items-center gap-2">
                               <span className="text-xs text-gray-600">
                                 {ingredients.length} items
                               </span>
-                              <span className="text-gray-400">
+                              <span className="text-gray-900">
                                 {isExpanded ? '▼' : '▶'}
                               </span>
                             </span>
@@ -374,7 +374,7 @@ export function IngredientEditorModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="text-sm text-gray-500 hover:text-gray-700"
+                className="text-sm text-gray-900 hover:text-gray-900"
               >
                 Cancel
               </button>
@@ -390,7 +390,7 @@ export function IngredientEditorModal({
               <button
                 type="button"
                 onClick={() => setShowCreateNewParent(false)}
-                className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                className="text-sm text-gray-900 hover:text-gray-900 flex items-center gap-1"
               >
                 ← Back to parent selection
               </button>
@@ -436,7 +436,7 @@ export function IngredientEditorModal({
                 setItemType(null)
                 setSelectedParentId('')
               }}
-              className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              className="text-sm text-gray-900 hover:text-gray-900 flex items-center gap-1"
             >
               ← Change type
             </button>

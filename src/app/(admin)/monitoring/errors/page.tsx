@@ -99,7 +99,7 @@ export default function ErrorListPage() {
     switch (status) {
       case 'RESOLVED': return 'text-green-400'
       case 'INVESTIGATING': return 'text-yellow-400'
-      case 'IGNORED': return 'text-gray-400'
+      case 'IGNORED': return 'text-gray-900'
       default: return 'text-red-400'
     }
   }
@@ -113,11 +113,11 @@ export default function ErrorListPage() {
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <Link href="/monitoring" className="text-gray-300 hover:text-white text-sm mb-2 inline-block">
+            <Link href="/monitoring" className="text-gray-900 hover:text-white text-sm mb-2 inline-block">
               ← Back to Dashboard
             </Link>
             <h1 className="text-4xl font-bold text-white">Error Logs</h1>
-            <p className="text-gray-300 mt-1">{total} total errors</p>
+            <p className="text-gray-900 mt-1">{total} total errors</p>
           </div>
         </div>
 
@@ -127,7 +127,7 @@ export default function ErrorListPage() {
 
             {/* Search */}
             <div className="md:col-span-2">
-              <label className="block text-sm text-gray-300 mb-2">Search</label>
+              <label className="block text-sm text-gray-900 mb-2">Search</label>
               <input
                 type="text"
                 placeholder="Search message, category, action..."
@@ -142,7 +142,7 @@ export default function ErrorListPage() {
 
             {/* Severity Filter */}
             <div>
-              <label className="block text-sm text-gray-300 mb-2">Severity</label>
+              <label className="block text-sm text-gray-900 mb-2">Severity</label>
               <select
                 value={severity}
                 onChange={(e) => {
@@ -161,7 +161,7 @@ export default function ErrorListPage() {
 
             {/* Status Filter */}
             <div>
-              <label className="block text-sm text-gray-300 mb-2">Status</label>
+              <label className="block text-sm text-gray-900 mb-2">Status</label>
               <select
                 value={status}
                 onChange={(e) => {
@@ -183,23 +183,23 @@ export default function ErrorListPage() {
           {/* Active Filters Display */}
           {(severity || errorType || status || search) && (
             <div className="mt-4 flex items-center gap-2 flex-wrap">
-              <span className="text-sm text-gray-300">Active filters:</span>
+              <span className="text-sm text-gray-900">Active filters:</span>
               {severity && (
                 <span className="bg-white/10 px-3 py-1 rounded-full text-sm text-white flex items-center gap-2">
                   Severity: {severity}
-                  <button onClick={() => setSeverity('')} className="text-gray-300 hover:text-white">×</button>
+                  <button onClick={() => setSeverity('')} className="text-gray-900 hover:text-white">×</button>
                 </span>
               )}
               {status && (
                 <span className="bg-white/10 px-3 py-1 rounded-full text-sm text-white flex items-center gap-2">
                   Status: {status}
-                  <button onClick={() => setStatus('')} className="text-gray-300 hover:text-white">×</button>
+                  <button onClick={() => setStatus('')} className="text-gray-900 hover:text-white">×</button>
                 </span>
               )}
               {search && (
                 <span className="bg-white/10 px-3 py-1 rounded-full text-sm text-white flex items-center gap-2">
                   Search: {search}
-                  <button onClick={() => setSearch('')} className="text-gray-300 hover:text-white">×</button>
+                  <button onClick={() => setSearch('')} className="text-gray-900 hover:text-white">×</button>
                 </span>
               )}
               <button
@@ -221,12 +221,12 @@ export default function ErrorListPage() {
         {loading ? (
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-12 border border-white/20 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto"></div>
-            <p className="text-gray-300 mt-4">Loading errors...</p>
+            <p className="text-gray-900 mt-4">Loading errors...</p>
           </div>
         ) : errors.length === 0 ? (
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-12 border border-white/20 text-center">
-            <p className="text-gray-300 text-lg">No errors found</p>
-            <p className="text-gray-400 text-sm mt-2">Try adjusting your filters</p>
+            <p className="text-gray-900 text-lg">No errors found</p>
+            <p className="text-gray-900 text-sm mt-2">Try adjusting your filters</p>
           </div>
         ) : (
           <>
@@ -235,12 +235,12 @@ export default function ErrorListPage() {
                 <table className="w-full">
                   <thead className="bg-white/5">
                     <tr className="border-b border-white/10">
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Severity</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Type</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Message</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Status</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Count</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-300">Last Occurred</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Severity</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Type</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Message</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Count</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Last Occurred</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -257,13 +257,13 @@ export default function ErrorListPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="text-gray-300 text-sm">{error.errorType}</span>
+                          <span className="text-gray-900 text-sm">{error.errorType}</span>
                         </td>
                         <td className="px-6 py-4">
                           <div>
                             <p className="text-white text-sm font-medium line-clamp-1">{error.message}</p>
                             {error.action && (
-                              <p className="text-gray-400 text-xs mt-1 line-clamp-1">{error.action}</p>
+                              <p className="text-gray-900 text-xs mt-1 line-clamp-1">{error.action}</p>
                             )}
                           </div>
                         </td>
@@ -276,7 +276,7 @@ export default function ErrorListPage() {
                           <span className="text-white text-sm">{error.occurrenceCount}x</span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="text-gray-300 text-sm">
+                          <span className="text-gray-900 text-sm">
                             {new Date(error.lastOccurred).toLocaleString()}
                           </span>
                         </td>
@@ -290,7 +290,7 @@ export default function ErrorListPage() {
             {/* Pagination */}
             {totalPages > 1 && (
               <div className="mt-6 flex items-center justify-between">
-                <p className="text-gray-300 text-sm">
+                <p className="text-gray-900 text-sm">
                   Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, total)} of {total} errors
                 </p>
                 <div className="flex items-center gap-2">
@@ -301,7 +301,7 @@ export default function ErrorListPage() {
                   >
                     Previous
                   </button>
-                  <span className="text-gray-300 text-sm">
+                  <span className="text-gray-900 text-sm">
                     Page {page} of {totalPages}
                   </span>
                   <button

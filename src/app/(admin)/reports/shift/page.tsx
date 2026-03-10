@@ -334,9 +334,9 @@ function EmployeeShiftReportContent() {
         />
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading report...</div>
+          <div className="text-center py-12 text-gray-900">Loading report...</div>
         ) : !report ? (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-gray-900">
             {selectedEmployeeId
               ? 'No shift found for this employee on this date'
               : 'Select an employee and date to view their shift report'}
@@ -352,7 +352,7 @@ function EmployeeShiftReportContent() {
                     <p className="text-gray-600">{report.employee.role}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-900">
                       {new Date(report.shift.clockIn).toLocaleDateString('en-US', {
                         weekday: 'long',
                         year: 'numeric',
@@ -360,7 +360,7 @@ function EmployeeShiftReportContent() {
                         day: 'numeric',
                       })}
                     </p>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-900">
                       Shift: {formatShiftTime(report.shift.clockIn)} - {formatShiftTime(report.shift.clockOut)}
                     </p>
                   </div>
@@ -370,43 +370,43 @@ function EmployeeShiftReportContent() {
                 <div className="mt-4 p-4 bg-gray-50 rounded-lg">
                   <div className="grid grid-cols-5 md:grid-cols-10 gap-4 text-center text-sm">
                     <div>
-                      <p className="text-gray-500">Sales</p>
+                      <p className="text-gray-900">Sales</p>
                       <p className="font-bold text-lg">{formatCurrency(report.summary.totalSales)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Hours</p>
+                      <p className="text-gray-900">Hours</p>
                       <p className="font-bold text-lg">{report.summary.hours.toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Labor</p>
+                      <p className="text-gray-900">Labor</p>
                       <p className="font-bold text-lg">{formatCurrency(report.summary.laborCost)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Checks</p>
+                      <p className="text-gray-900">Checks</p>
                       <p className="font-bold text-lg">{report.summary.checks}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Avg Check</p>
+                      <p className="text-gray-900">Avg Check</p>
                       <p className="font-bold text-lg">{formatCurrency(report.summary.avgCheck)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Tips</p>
+                      <p className="text-gray-900">Tips</p>
                       <p className="font-bold text-lg text-green-600">{formatCurrency(report.summary.tips)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Discounts</p>
+                      <p className="text-gray-900">Discounts</p>
                       <p className="font-bold text-lg text-orange-600">{formatCurrency(report.summary.discounts)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Voids</p>
+                      <p className="text-gray-900">Voids</p>
                       <p className="font-bold text-lg text-red-600">{formatCurrency(report.summary.voids)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">Cash Due</p>
+                      <p className="text-gray-900">Cash Due</p>
                       <p className="font-bold text-lg">{formatCurrency(report.summary.cashDue)}</p>
                     </div>
                     <div>
-                      <p className="text-gray-500">CC Tips</p>
+                      <p className="text-gray-900">CC Tips</p>
                       <p className="font-bold text-lg text-green-600">{formatCurrency(report.summary.creditTips)}</p>
                     </div>
                   </div>
@@ -579,7 +579,7 @@ function EmployeeShiftReportContent() {
                 {report.revenueGroups.map(group => (
                   <div key={group.name} className="grid grid-cols-4 gap-4 text-sm font-mono py-1 border-t">
                     <div>{group.name}</div>
-                    <div className="text-right text-gray-500">{group.percentOfNet}%</div>
+                    <div className="text-right text-gray-900">{group.percentOfNet}%</div>
                     <div className="text-right">{formatCurrency(group.net)}</div>
                     <div className="text-right text-red-600">
                       {group.voids > 0 ? formatCurrency(group.voids) : '—'}
@@ -610,14 +610,14 @@ function EmployeeShiftReportContent() {
                       <span>Total ({report.voids.total.count})</span>
                       <span>
                         {formatCurrency(report.voids.total.amount)}
-                        <span className="text-gray-500 text-xs ml-1">
+                        <span className="text-gray-900 text-xs ml-1">
                           ({report.voids.percentOfSales}%)
                         </span>
                       </span>
                     </div>
                     {report.voids.byReason.length > 0 && (
                       <div className="mt-2 pt-2 border-t">
-                        <p className="text-xs text-gray-500 mb-1">By Reason:</p>
+                        <p className="text-xs text-gray-900 mb-1">By Reason:</p>
                         {report.voids.byReason.map(v => (
                           <div key={v.reason} className="flex justify-between text-xs">
                             <span>{v.reason} ({v.count})</span>
@@ -638,7 +638,7 @@ function EmployeeShiftReportContent() {
                 <CardContent>
                   <div className="space-y-1 font-mono text-sm">
                     {report.discounts.byType.length === 0 ? (
-                      <p className="text-gray-500">No discounts applied</p>
+                      <p className="text-gray-900">No discounts applied</p>
                     ) : (
                       report.discounts.byType.map(d => (
                         <div key={d.name} className="flex justify-between">
@@ -664,35 +664,35 @@ function EmployeeShiftReportContent() {
               <CardContent>
                 <div className="grid grid-cols-4 md:grid-cols-8 gap-4 font-mono text-sm">
                   <div>
-                    <p className="text-gray-500 text-xs">Sales</p>
+                    <p className="text-gray-900 text-xs">Sales</p>
                     <p className="font-bold">{formatCurrency(report.revenue.totalCollected)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs">Checks</p>
+                    <p className="text-gray-900 text-xs">Checks</p>
                     <p className="font-bold">{report.stats.checks}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs">Avg Check</p>
+                    <p className="text-gray-900 text-xs">Avg Check</p>
                     <p className="font-bold">{formatCurrency(report.stats.avgCheck)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs">Avg Time</p>
+                    <p className="text-gray-900 text-xs">Avg Time</p>
                     <p className="font-bold">{formatTime(report.stats.avgCheckTimeMinutes)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs">Covers</p>
+                    <p className="text-gray-900 text-xs">Covers</p>
                     <p className="font-bold">{report.stats.covers}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs">Avg Cover</p>
+                    <p className="text-gray-900 text-xs">Avg Cover</p>
                     <p className="font-bold">{formatCurrency(report.stats.avgCover)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs">Food Avg</p>
+                    <p className="text-gray-900 text-xs">Food Avg</p>
                     <p className="font-bold">{formatCurrency(report.stats.foodAvg)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500 text-xs">Bev Avg</p>
+                    <p className="text-gray-900 text-xs">Bev Avg</p>
                     <p className="font-bold">{formatCurrency(report.stats.bevAvg)}</p>
                   </div>
                 </div>
@@ -740,7 +740,7 @@ function EmployeeShiftReportContent() {
             </Card>
 
             {/* Footer */}
-            <div className="text-center text-xs text-gray-500 pt-2">
+            <div className="text-center text-xs text-gray-900 pt-2">
               Generated {new Date().toLocaleString()}
             </div>
           </div>

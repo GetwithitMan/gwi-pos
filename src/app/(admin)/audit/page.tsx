@@ -341,7 +341,7 @@ export default function AuditLogBrowserPage() {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
         <AdminPageHeader title="Audit Trail" />
-        <div className="text-center py-20 text-gray-500">
+        <div className="text-center py-20 text-gray-900">
           You do not have permission to view this page.
         </div>
       </div>
@@ -374,7 +374,7 @@ export default function AuditLogBrowserPage() {
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
           {/* Date preset buttons */}
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            <span className="text-xs font-medium text-gray-500 mr-1">Date Range:</span>
+            <span className="text-xs font-medium text-gray-900 mr-1">Date Range:</span>
             {([
               { key: 'today', label: 'Today' },
               { key: 'yesterday', label: 'Yesterday' },
@@ -401,7 +401,7 @@ export default function AuditLogBrowserPage() {
             {datePreset === 'custom' && (
               <>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
+                  <label className="block text-xs font-medium text-gray-900 mb-1">Start Date</label>
                   <input
                     type="date"
                     value={startDate}
@@ -410,7 +410,7 @@ export default function AuditLogBrowserPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
+                  <label className="block text-xs font-medium text-gray-900 mb-1">End Date</label>
                   <input
                     type="date"
                     value={endDate}
@@ -423,7 +423,7 @@ export default function AuditLogBrowserPage() {
 
             {/* Employee Filter */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Employee</label>
+              <label className="block text-xs font-medium text-gray-900 mb-1">Employee</label>
               <select
                 value={filterEmployeeId}
                 onChange={e => setFilterEmployeeId(e.target.value)}
@@ -440,7 +440,7 @@ export default function AuditLogBrowserPage() {
 
             {/* Action Type Filter */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Action Type</label>
+              <label className="block text-xs font-medium text-gray-900 mb-1">Action Type</label>
               <select
                 value={actionType}
                 onChange={e => setActionType(e.target.value)}
@@ -457,7 +457,7 @@ export default function AuditLogBrowserPage() {
 
             {/* Search Text */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
+              <label className="block text-xs font-medium text-gray-900 mb-1">Search</label>
               <input
                 type="text"
                 value={searchText}
@@ -488,7 +488,7 @@ export default function AuditLogBrowserPage() {
           <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Activity Log</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-gray-900 mt-0.5">
                 {total > 0
                   ? `Showing ${showingFrom}--${showingTo} of ${total.toLocaleString()} entries`
                   : 'No entries found'}
@@ -505,7 +505,7 @@ export default function AuditLogBrowserPage() {
 
           {/* Loading state */}
           {isLoading ? (
-            <div className="flex items-center justify-center py-12 gap-3 text-gray-400">
+            <div className="flex items-center justify-center py-12 gap-3 text-gray-900">
               <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -513,14 +513,14 @@ export default function AuditLogBrowserPage() {
               <span>Loading audit log...</span>
             </div>
           ) : entries.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
+            <div className="text-center py-12 text-gray-900">
               No audit entries found for the selected filters.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-900 uppercase tracking-wider">
                     <th className="px-5 py-3">Date/Time</th>
                     <th className="px-5 py-3">Employee</th>
                     <th className="px-5 py-3">Action</th>
@@ -559,7 +559,7 @@ export default function AuditLogBrowserPage() {
                             {formatActionLabel(entry.action)}
                           </span>
                           {entry.entityType && (
-                            <span className="ml-2 text-xs text-gray-400 capitalize">
+                            <span className="ml-2 text-xs text-gray-900 capitalize">
                               {entry.entityType}
                               {entry.entityId && (
                                 <span className="ml-1 font-mono">
@@ -571,9 +571,9 @@ export default function AuditLogBrowserPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-5 py-3 text-gray-500 max-w-[400px]">
+                        <td className="px-5 py-3 text-gray-900 max-w-[400px]">
                           {!hasDetails ? (
-                            <span className="text-gray-300">--</span>
+                            <span className="text-gray-900">--</span>
                           ) : isExpanded ? (
                             <div className="space-y-1 bg-gray-50 rounded-lg p-3 -mx-1" onClick={e => e.stopPropagation()}>
                               {detailKeys.map(key => (
@@ -588,12 +588,12 @@ export default function AuditLogBrowserPage() {
                               ))}
                             </div>
                           ) : (
-                            <span className="text-xs text-gray-500 truncate block max-w-[380px]" title="Click to expand">
+                            <span className="text-xs text-gray-900 truncate block max-w-[380px]" title="Click to expand">
                               {detailSummary}
                             </span>
                           )}
                         </td>
-                        <td className="px-5 py-3 text-gray-500 font-mono text-xs whitespace-nowrap">
+                        <td className="px-5 py-3 text-gray-900 font-mono text-xs whitespace-nowrap">
                           {entry.ipAddress || '--'}
                         </td>
                       </tr>
@@ -607,7 +607,7 @@ export default function AuditLogBrowserPage() {
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-900">
                 Page {currentPage + 1} of {totalPages}
               </p>
               <div className="flex items-center gap-2">

@@ -201,19 +201,19 @@ export default function MarketingPage() {
         {/* Summary Cards */}
         <div className="grid grid-cols-4 gap-4 mb-6">
           <div className="bg-gray-800 rounded-lg p-4">
-            <div className="text-gray-400 text-sm">Active Campaigns</div>
+            <div className="text-gray-900 text-sm">Active Campaigns</div>
             <div className="text-2xl font-bold">{activeCampaigns}</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-4">
-            <div className="text-gray-400 text-sm">Total Recipients</div>
+            <div className="text-gray-900 text-sm">Total Recipients</div>
             <div className="text-2xl font-bold">{totalRecipients.toLocaleString()}</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-4">
-            <div className="text-gray-400 text-sm">Total Delivered</div>
+            <div className="text-gray-900 text-sm">Total Delivered</div>
             <div className="text-2xl font-bold text-green-400">{totalDelivered.toLocaleString()}</div>
           </div>
           <div className="bg-gray-800 rounded-lg p-4">
-            <div className="text-gray-400 text-sm">Avg Open Rate</div>
+            <div className="text-gray-900 text-sm">Avg Open Rate</div>
             <div className="text-2xl font-bold text-blue-400">{avgOpenRate}%</div>
           </div>
         </div>
@@ -253,9 +253,9 @@ export default function MarketingPage() {
                   <td className="p-4">
                     <div className="font-medium">{campaign.name}</div>
                     {campaign.subject && (
-                      <div className="text-sm text-gray-400 truncate max-w-xs">{campaign.subject}</div>
+                      <div className="text-sm text-gray-900 truncate max-w-xs">{campaign.subject}</div>
                     )}
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-900">
                       {new Date(campaign.createdAt).toLocaleDateString()}
                     </div>
                   </td>
@@ -272,7 +272,7 @@ export default function MarketingPage() {
                   <td className="p-4">
                     <StatusBadge status={campaign.status} />
                     {campaign.scheduledFor && campaign.status === 'scheduled' && (
-                      <div className="text-xs text-gray-400 mt-1">
+                      <div className="text-xs text-gray-900 mt-1">
                         {new Date(campaign.scheduledFor).toLocaleString()}
                       </div>
                     )}
@@ -284,7 +284,7 @@ export default function MarketingPage() {
                         <div className="text-green-400">{campaign.deliveredCount.toLocaleString()} delivered</div>
                       </div>
                     ) : (
-                      <span className="text-gray-500">-</span>
+                      <span className="text-gray-900">-</span>
                     )}
                   </td>
                   <td className="p-4 text-sm">
@@ -294,7 +294,7 @@ export default function MarketingPage() {
                         <div>{Math.round((campaign.clickCount / campaign.deliveredCount) * 100)}% clicked</div>
                       </div>
                     ) : (
-                      <span className="text-gray-500">-</span>
+                      <span className="text-gray-900">-</span>
                     )}
                   </td>
                   <td className="p-4 text-right space-x-2">
@@ -333,7 +333,7 @@ export default function MarketingPage() {
               ))}
               {filteredCampaigns.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-gray-500">
+                  <td colSpan={7} className="p-8 text-center text-gray-900">
                     No campaigns found. Create your first campaign to get started.
                   </td>
                 </tr>
@@ -378,14 +378,14 @@ export default function MarketingPage() {
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
-    draft: 'bg-gray-700 text-gray-300',
+    draft: 'bg-gray-700 text-gray-900',
     scheduled: 'bg-yellow-900 text-yellow-300',
     sending: 'bg-blue-900 text-blue-300',
     sent: 'bg-green-900 text-green-300',
     cancelled: 'bg-red-900 text-red-300',
   }
   return (
-    <span className={`px-2 py-1 text-xs rounded font-medium capitalize ${colors[status] || 'bg-gray-700 text-gray-300'}`}>
+    <span className={`px-2 py-1 text-xs rounded font-medium capitalize ${colors[status] || 'bg-gray-700 text-gray-900'}`}>
       {status}
     </span>
   )
@@ -449,7 +449,7 @@ function CreateCampaignModal({
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Campaign Name *</label>
+          <label className="block text-sm text-gray-900 mb-1">Campaign Name *</label>
           <input
             type="text"
             value={form.name}
@@ -462,7 +462,7 @@ function CreateCampaignModal({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Type *</label>
+            <label className="block text-sm text-gray-900 mb-1">Type *</label>
             <select
               value={form.type}
               onChange={e => setForm({ ...form, type: e.target.value as 'email' | 'sms' })}
@@ -473,7 +473,7 @@ function CreateCampaignModal({
             </select>
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Target Audience *</label>
+            <label className="block text-sm text-gray-900 mb-1">Target Audience *</label>
             <select
               value={form.segment}
               onChange={e => setForm({ ...form, segment: e.target.value })}
@@ -488,7 +488,7 @@ function CreateCampaignModal({
 
         {form.type === 'email' && (
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Subject Line</label>
+            <label className="block text-sm text-gray-900 mb-1">Subject Line</label>
             <input
               type="text"
               value={form.subject}
@@ -500,7 +500,7 @@ function CreateCampaignModal({
         )}
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">
+          <label className="block text-sm text-gray-900 mb-1">
             {form.type === 'email' ? 'Email Body (HTML supported)' : 'SMS Message'}
           </label>
           <textarea
@@ -513,7 +513,7 @@ function CreateCampaignModal({
               : 'Hi {{customer_first_name}}! Visit {{location_name}} this week for 20% off.'
             }
           />
-          <div className="mt-2 text-xs text-gray-500">
+          <div className="mt-2 text-xs text-gray-900">
             <span className="font-medium">Available variables:</span>{' '}
             {VARIABLE_HINTS.map((h, i) => (
               <span key={i}>
@@ -523,14 +523,14 @@ function CreateCampaignModal({
             ))}
           </div>
           {form.type === 'sms' && (
-            <div className="mt-1 text-xs text-gray-500">
+            <div className="mt-1 text-xs text-gray-900">
               {form.bodyContent.length}/130 chars (STOP instructions auto-appended)
             </div>
           )}
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Schedule (leave blank to save as draft)</label>
+          <label className="block text-sm text-gray-900 mb-1">Schedule (leave blank to save as draft)</label>
           <input
             type="datetime-local"
             value={form.scheduledFor}
@@ -567,22 +567,22 @@ function CampaignDetailView({ campaign }: { campaign: CampaignDetail }) {
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-gray-700 rounded p-3 text-center">
           <div className="text-xl font-bold">{campaign.recipientCount}</div>
-          <div className="text-xs text-gray-400">Recipients</div>
+          <div className="text-xs text-gray-900">Recipients</div>
         </div>
         <div className="bg-gray-700 rounded p-3 text-center">
           <div className="text-xl font-bold text-green-400">{campaign.deliveredCount}</div>
-          <div className="text-xs text-gray-400">Delivered</div>
+          <div className="text-xs text-gray-900">Delivered</div>
         </div>
         <div className="bg-gray-700 rounded p-3 text-center">
           <div className="text-xl font-bold text-blue-400">{campaign.openCount}</div>
-          <div className="text-xs text-gray-400">Opened</div>
+          <div className="text-xs text-gray-900">Opened</div>
         </div>
       </div>
 
       {/* Status Breakdown */}
       {campaign.recipientStats.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-gray-400 mb-2">Recipient Status</h3>
+          <h3 className="text-sm font-medium text-gray-900 mb-2">Recipient Status</h3>
           <div className="flex flex-wrap gap-2">
             {campaign.recipientStats.map(s => (
               <span key={s.status} className="px-3 py-1 bg-gray-700 rounded text-sm capitalize">
@@ -595,10 +595,10 @@ function CampaignDetailView({ campaign }: { campaign: CampaignDetail }) {
 
       {/* Content Preview */}
       <div>
-        <h3 className="text-sm font-medium text-gray-400 mb-2">Content</h3>
+        <h3 className="text-sm font-medium text-gray-900 mb-2">Content</h3>
         <div className="bg-gray-700 rounded p-4">
           {campaign.type === 'email' && campaign.subject && (
-            <div className="text-sm text-gray-400 mb-2">Subject: {campaign.subject}</div>
+            <div className="text-sm text-gray-900 mb-2">Subject: {campaign.subject}</div>
           )}
           <div className="text-sm whitespace-pre-wrap">{campaign.body}</div>
         </div>
@@ -607,7 +607,7 @@ function CampaignDetailView({ campaign }: { campaign: CampaignDetail }) {
       {/* Recent Recipients */}
       {campaign.recipients.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-gray-400 mb-2">
+          <h3 className="text-sm font-medium text-gray-900 mb-2">
             Recipients ({campaign.recipients.length})
           </h3>
           <div className="max-h-60 overflow-y-auto bg-gray-700 rounded">
@@ -624,7 +624,7 @@ function CampaignDetailView({ campaign }: { campaign: CampaignDetail }) {
                   <tr key={r.id} className="border-t border-gray-600">
                     <td className="p-2 font-mono text-xs">{r.address}</td>
                     <td className="p-2 capitalize">{r.status}</td>
-                    <td className="p-2 text-gray-400">
+                    <td className="p-2 text-gray-900">
                       {r.sentAt ? new Date(r.sentAt).toLocaleString() : '-'}
                     </td>
                   </tr>
@@ -645,30 +645,30 @@ function AnalyticsView({ analytics }: { analytics: CampaignAnalytics }) {
       <div className="grid grid-cols-4 gap-3">
         <div className="bg-gray-700 rounded p-3 text-center">
           <div className="text-xl font-bold text-green-400">{analytics.rates.deliveryRate}%</div>
-          <div className="text-xs text-gray-400">Delivery Rate</div>
+          <div className="text-xs text-gray-900">Delivery Rate</div>
         </div>
         <div className="bg-gray-700 rounded p-3 text-center">
           <div className="text-xl font-bold text-blue-400">{analytics.rates.openRate}%</div>
-          <div className="text-xs text-gray-400">Open Rate</div>
+          <div className="text-xs text-gray-900">Open Rate</div>
         </div>
         <div className="bg-gray-700 rounded p-3 text-center">
           <div className="text-xl font-bold text-purple-400">{analytics.rates.clickRate}%</div>
-          <div className="text-xs text-gray-400">Click Rate</div>
+          <div className="text-xs text-gray-900">Click Rate</div>
         </div>
         <div className="bg-gray-700 rounded p-3 text-center">
           <div className="text-xl font-bold text-red-400">{analytics.rates.unsubscribeRate}%</div>
-          <div className="text-xs text-gray-400">Unsubscribe Rate</div>
+          <div className="text-xs text-gray-900">Unsubscribe Rate</div>
         </div>
       </div>
 
       {/* Totals */}
       <div>
-        <h3 className="text-sm font-medium text-gray-400 mb-2">Totals</h3>
+        <h3 className="text-sm font-medium text-gray-900 mb-2">Totals</h3>
         <div className="grid grid-cols-5 gap-3">
           {Object.entries(analytics.totals).map(([key, value]) => (
             <div key={key} className="bg-gray-700 rounded p-3 text-center">
               <div className="text-lg font-bold">{(value as number).toLocaleString()}</div>
-              <div className="text-xs text-gray-400 capitalize">{key}</div>
+              <div className="text-xs text-gray-900 capitalize">{key}</div>
             </div>
           ))}
         </div>
@@ -676,7 +676,7 @@ function AnalyticsView({ analytics }: { analytics: CampaignAnalytics }) {
 
       {/* Status Breakdown */}
       <div>
-        <h3 className="text-sm font-medium text-gray-400 mb-2">Status Breakdown</h3>
+        <h3 className="text-sm font-medium text-gray-900 mb-2">Status Breakdown</h3>
         <div className="bg-gray-700 rounded p-4">
           {analytics.statusBreakdown.map(s => (
             <div key={s.status} className="flex justify-between py-1 border-b border-gray-600 last:border-0">
@@ -695,7 +695,7 @@ function AnalyticsView({ analytics }: { analytics: CampaignAnalytics }) {
             {analytics.errors.map((e, i) => (
               <div key={i} className="flex justify-between text-sm">
                 <span className="text-red-300 truncate flex-1">{e.errorMessage}</span>
-                <span className="text-gray-400 ml-3">{e.count}x</span>
+                <span className="text-gray-900 ml-3">{e.count}x</span>
               </div>
             ))}
           </div>

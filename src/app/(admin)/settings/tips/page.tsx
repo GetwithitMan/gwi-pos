@@ -328,7 +328,7 @@ export default function TipSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-700 text-lg">Loading tip settings...</div>
+          <div className="text-gray-900 text-lg">Loading tip settings...</div>
         </div>
       </div>
     )
@@ -353,7 +353,7 @@ export default function TipSettingsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -372,7 +372,7 @@ export default function TipSettingsPage() {
           <p className="text-sm text-gray-600 mb-5">Control how suggested tip amounts are calculated on receipts and payment screens.</p>
 
           {/* Basis selector */}
-          <label className="block text-sm font-medium text-gray-700 mb-2">Calculation Basis</label>
+          <label className="block text-sm font-medium text-gray-900 mb-2">Calculation Basis</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             {BASIS_OPTIONS.map(opt => (
               <button
@@ -385,7 +385,7 @@ export default function TipSettingsPage() {
                     : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                 }`}
               >
-                <div className={`text-sm font-medium ${tipBank.tipGuide.basis === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
+                <div className={`text-sm font-medium ${tipBank.tipGuide.basis === opt.value ? 'text-indigo-600' : 'text-gray-900'}`}>
                   {opt.label}
                 </div>
                 <div className="text-xs text-gray-600 mt-0.5">{opt.description}</div>
@@ -394,7 +394,7 @@ export default function TipSettingsPage() {
           </div>
 
           {/* Percentages */}
-          <label className="block text-sm font-medium text-gray-700 mb-2">Suggested Percentages</label>
+          <label className="block text-sm font-medium text-gray-900 mb-2">Suggested Percentages</label>
           <div className="flex flex-wrap items-center gap-2 mb-3">
             {tipBank.tipGuide.percentages.map(pct => (
               <span
@@ -445,7 +445,7 @@ export default function TipSettingsPage() {
           {/* Show Basis Explanation toggle */}
           <div className="flex items-center justify-between py-3 border-t border-gray-100">
             <div>
-              <div className="text-sm text-gray-700">Show Basis Explanation on Receipt</div>
+              <div className="text-sm text-gray-900">Show Basis Explanation on Receipt</div>
               <div className="text-xs text-gray-600">Print a small note on the receipt showing what the tip suggestions are based on (e.g., &quot;tip suggested on $45.50 before discounts&quot;).</div>
             </div>
             <ToggleSwitch
@@ -456,7 +456,7 @@ export default function TipSettingsPage() {
 
           {/* Round To selector */}
           <div className="pt-3 border-t border-gray-100">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Round Suggested Tips To</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Round Suggested Tips To</label>
             <p className="text-xs text-gray-600 mb-2">Round suggested tip amounts to the nearest penny, nickel, dime, or quarter. &quot;Quarter&quot; keeps amounts like $4.00 or $4.25, which is easier for cash payments.</p>
             <div className="flex gap-2 flex-wrap">
               {ROUND_TO_OPTIONS.map(opt => (
@@ -487,7 +487,7 @@ export default function TipSettingsPage() {
           {/* Enabled toggle */}
           <div className="flex items-center justify-between py-3">
             <div>
-              <div className="text-sm text-gray-700">Enable Tip Bank</div>
+              <div className="text-sm text-gray-900">Enable Tip Bank</div>
               <div className="text-xs text-gray-600">Track and bank credit card tips for payroll distribution</div>
             </div>
             <ToggleSwitch
@@ -498,7 +498,7 @@ export default function TipSettingsPage() {
 
           {/* Allocation Mode */}
           <div className="pt-3 border-t border-gray-100">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Allocation Mode</label>
+            <label className="block text-sm font-medium text-gray-900 mb-2">Allocation Mode</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {ALLOCATION_OPTIONS.map(opt => (
                 <button
@@ -511,7 +511,7 @@ export default function TipSettingsPage() {
                       : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                   }`}
                 >
-                  <div className={`text-sm font-medium ${tipBank.allocationMode === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
+                  <div className={`text-sm font-medium ${tipBank.allocationMode === opt.value ? 'text-indigo-600' : 'text-gray-900'}`}>
                     {opt.label}
                   </div>
                   <div className="text-xs text-gray-600 mt-0.5">{opt.description}</div>
@@ -551,7 +551,7 @@ export default function TipSettingsPage() {
 
           {/* Table Tip Ownership Mode */}
           <div className="pt-4 mt-4 border-t border-gray-100">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Table Tip Ownership</label>
+            <label className="block text-sm font-medium text-gray-900 mb-2">Table Tip Ownership</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
@@ -562,7 +562,7 @@ export default function TipSettingsPage() {
                     : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                 }`}
               >
-                <div className={`text-sm font-medium ${tipBank.tableTipOwnershipMode === 'ITEM_BASED' ? 'text-indigo-600' : 'text-gray-700'}`}>
+                <div className={`text-sm font-medium ${tipBank.tableTipOwnershipMode === 'ITEM_BASED' ? 'text-indigo-600' : 'text-gray-900'}`}>
                   Item-Based
                 </div>
                 <div className="text-xs text-gray-600 mt-0.5">Helpers earn per-item credit on server tables</div>
@@ -576,7 +576,7 @@ export default function TipSettingsPage() {
                     : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                 }`}
               >
-                <div className={`text-sm font-medium ${tipBank.tableTipOwnershipMode === 'PRIMARY_SERVER_OWNS_ALL' ? 'text-indigo-600' : 'text-gray-700'}`}>
+                <div className={`text-sm font-medium ${tipBank.tableTipOwnershipMode === 'PRIMARY_SERVER_OWNS_ALL' ? 'text-indigo-600' : 'text-gray-900'}`}>
                   Primary Server Owns All
                 </div>
                 <div className="text-xs text-gray-600 mt-0.5">100% of the tip goes to the primary server. Other staff (bartenders, hosts) are only paid through tip-outs. Make sure Tip Distribution (tip-outs) is configured below.</div>
@@ -629,7 +629,7 @@ export default function TipSettingsPage() {
                     : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                 }`}
               >
-                <div className={`text-sm font-medium ${tipBank.chargebackPolicy === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
+                <div className={`text-sm font-medium ${tipBank.chargebackPolicy === opt.value ? 'text-indigo-600' : 'text-gray-900'}`}>
                   {opt.label}
                   {opt.value === 'EMPLOYEE_CHARGEBACK' && (
                     <span className="ml-2 text-xs font-bold text-amber-600">&#9888;&#65039; May be illegal in some states</span>
@@ -660,7 +660,7 @@ export default function TipSettingsPage() {
           <p className="text-sm text-gray-600 mb-5">Automatically share a portion of each server&apos;s tips with supporting staff &mdash; bartenders, hosts, bussers, etc.</p>
 
           {/* Payout Method */}
-          <label className="block text-sm font-medium text-gray-700 mb-2">Payout Method</label>
+          <label className="block text-sm font-medium text-gray-900 mb-2">Payout Method</label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <button
               type="button"
@@ -671,7 +671,7 @@ export default function TipSettingsPage() {
                   : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
               }`}
             >
-              <div className={`text-sm font-medium ${tipShares.payoutMethod === 'payroll' ? 'text-indigo-600' : 'text-gray-700'}`}>
+              <div className={`text-sm font-medium ${tipShares.payoutMethod === 'payroll' ? 'text-indigo-600' : 'text-gray-900'}`}>
                 Payroll
               </div>
               <div className="text-xs text-gray-600 mt-0.5">Tip shares are held by the business and added to employees&apos; next paycheck (subject to payroll taxes). The business temporarily holds the money.</div>
@@ -685,7 +685,7 @@ export default function TipSettingsPage() {
                   : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
               }`}
             >
-              <div className={`text-sm font-medium ${tipShares.payoutMethod === 'manual' ? 'text-indigo-600' : 'text-gray-700'}`}>
+              <div className={`text-sm font-medium ${tipShares.payoutMethod === 'manual' ? 'text-indigo-600' : 'text-gray-900'}`}>
                 Manual
               </div>
               <div className="text-xs text-gray-600 mt-0.5">You hand cash directly to employees at shift end. Use the Tip Share Report to track amounts owed and mark them as paid.</div>
@@ -728,7 +728,7 @@ export default function TipSettingsPage() {
             {/* Toggle */}
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-gray-700">Deduct CC Fee from Tips</div>
+                <div className="text-sm text-gray-900">Deduct CC Fee from Tips</div>
                 <div className="text-xs text-gray-600">Reduce credit card tips by the processing fee before crediting to employees. Example: 3% fee on a $100 CC tip = employee receives $97. This applies to credit card tips ONLY &mdash; cash tips are not affected.</div>
               </div>
               <ToggleSwitch
@@ -746,7 +746,7 @@ export default function TipSettingsPage() {
             {/* Fee percent (only when enabled) */}
             {tipBank.deductCCFeeFromTips && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">CC Processing Fee %</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">CC Processing Fee %</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
@@ -757,7 +757,7 @@ export default function TipSettingsPage() {
                     onChange={e => updateTipBank('ccFeePercent', parseFloat(e.target.value) || 0)}
                     className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
-                  <span className="text-gray-700 text-sm">%</span>
+                  <span className="text-gray-900 text-sm">%</span>
                 </div>
                 <p className="text-xs text-gray-600 mt-1">
                   Example: A $10.00 CC tip at {tipBank.ccFeePercent}% fee = ${(10 * (1 - tipBank.ccFeePercent / 100)).toFixed(2)} credited to employee
@@ -778,7 +778,7 @@ export default function TipSettingsPage() {
             {/* Allow cash out at EOD */}
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-gray-700">Allow Cash Out at Shift Close</div>
+                <div className="text-sm text-gray-900">Allow Cash Out at Shift Close</div>
                 <div className="text-xs text-gray-600">Let employees receive their tip payout in cash at the end of their shift. If OFF, tips are held for payroll.</div>
               </div>
               <ToggleSwitch
@@ -791,7 +791,7 @@ export default function TipSettingsPage() {
             {tipBank.allowEODCashOut && (
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm text-gray-700">Require Manager Approval</div>
+                  <div className="text-sm text-gray-900">Require Manager Approval</div>
                   <div className="text-xs text-gray-600">Manager must approve before cash is given to the employee</div>
                 </div>
                 <ToggleSwitch
@@ -803,7 +803,7 @@ export default function TipSettingsPage() {
 
             {/* Default payout method */}
             <div className={!tipBank.allowEODCashOut ? 'opacity-50 pointer-events-none' : ''}>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Default Payout Method</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">Default Payout Method</label>
               {!tipBank.allowEODCashOut && (
                 <p className="text-xs text-amber-600 mb-2">This setting only applies when &quot;Allow Cash Out at Shift Close&quot; is enabled above. If cash out is OFF, all tips go to payroll regardless of this setting.</p>
               )}
@@ -818,7 +818,7 @@ export default function TipSettingsPage() {
                       : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                   }`}
                 >
-                  <div className={`text-sm font-medium ${tipBank.defaultPayoutMethod === 'cash' ? 'text-green-600' : 'text-gray-700'}`}>
+                  <div className={`text-sm font-medium ${tipBank.defaultPayoutMethod === 'cash' ? 'text-green-600' : 'text-gray-900'}`}>
                     Cash (Recommended)
                   </div>
                   <div className="text-xs text-gray-600 mt-1">Employee receives tip cash at shift end (recommended &mdash; employees own their tips immediately).</div>
@@ -833,7 +833,7 @@ export default function TipSettingsPage() {
                       : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                   }`}
                 >
-                  <div className={`text-sm font-medium ${tipBank.defaultPayoutMethod === 'payroll' ? 'text-indigo-600' : 'text-gray-700'}`}>
+                  <div className={`text-sm font-medium ${tipBank.defaultPayoutMethod === 'payroll' ? 'text-indigo-600' : 'text-gray-900'}`}>
                     Payroll
                   </div>
                   <div className="text-xs text-gray-600 mt-1">Tips are added to the employee&apos;s next paycheck. The business holds the money until payday.</div>
@@ -862,7 +862,7 @@ export default function TipSettingsPage() {
                     : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                 }`}
               >
-                <div className={`text-sm font-medium ${tipBank.tipAttributionTiming === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
+                <div className={`text-sm font-medium ${tipBank.tipAttributionTiming === opt.value ? 'text-indigo-600' : 'text-gray-900'}`}>
                   {opt.label}
                 </div>
                 <div className="text-xs text-gray-600 mt-1">{opt.description}</div>
@@ -878,7 +878,7 @@ export default function TipSettingsPage() {
 
           {/* Late Tab Tip Handling */}
           <div className="pt-4 mt-4 border-t border-gray-100">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tips from Tabs Closed After Shift Ends</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">Tips from Tabs Closed After Shift Ends</label>
             <p className="text-xs text-gray-600 mb-3">When the last team member clocks out, some tabs may still be open. When those tabs eventually close, where do the tips go?</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {LATE_TAB_TIP_OPTIONS.map(opt => (
@@ -892,7 +892,7 @@ export default function TipSettingsPage() {
                       : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                   }`}
                 >
-                  <div className={`text-sm font-medium ${tipBank.lateTabTipHandling === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
+                  <div className={`text-sm font-medium ${tipBank.lateTabTipHandling === opt.value ? 'text-indigo-600' : 'text-gray-900'}`}>
                     {opt.label}
                   </div>
                   <div className="text-xs text-gray-600 mt-1">{opt.description}</div>
@@ -903,7 +903,7 @@ export default function TipSettingsPage() {
 
           {/* Attribution Model */}
           <div className="pt-4 mt-4 border-t border-gray-100">
-            <label className="block text-sm font-medium text-gray-700 mb-1">When Multiple Staff Are on a Check</label>
+            <label className="block text-sm font-medium text-gray-900 mb-1">When Multiple Staff Are on a Check</label>
             <p className="text-xs text-gray-600 mb-3">If more than one employee is credited on a check, how is the tip split between them?</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {ATTRIBUTION_MODEL_OPTIONS.map(opt => (
@@ -917,7 +917,7 @@ export default function TipSettingsPage() {
                       : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
                   }`}
                 >
-                  <div className={`text-sm font-medium ${tipBank.attributionModel === opt.value ? 'text-indigo-600' : 'text-gray-700'}`}>
+                  <div className={`text-sm font-medium ${tipBank.attributionModel === opt.value ? 'text-indigo-600' : 'text-gray-900'}`}>
                     {opt.label}
                   </div>
                   <div className="text-xs text-gray-600 mt-1">{opt.description}</div>
@@ -945,9 +945,9 @@ export default function TipSettingsPage() {
           <p className="text-xs text-gray-600 mb-5 p-3 rounded-lg bg-gray-50 border border-gray-200">Employees choose their team at clock-in. They can switch teams between shifts but not mid-shift.</p>
 
           {templatesLoading ? (
-            <div className="text-gray-700 text-sm py-4 text-center">Loading teams...</div>
+            <div className="text-gray-900 text-sm py-4 text-center">Loading teams...</div>
           ) : templates.length === 0 ? (
-            <div className="text-gray-700 text-sm py-6 text-center border border-dashed border-gray-200 rounded-xl">
+            <div className="text-gray-900 text-sm py-6 text-center border border-dashed border-gray-200 rounded-xl">
               No teams defined yet. Click &quot;Add Team&quot; to create one.
             </div>
           ) : (
@@ -963,7 +963,7 @@ export default function TipSettingsPage() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-semibold text-gray-900">{t.name}</span>
                       {!t.active && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-200 text-gray-500">Inactive</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-200 text-gray-900">Inactive</span>
                       )}
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-600">
                         {t.defaultSplitMode === 'equal' ? 'Equal' : t.defaultSplitMode === 'hours_weighted' ? 'Hours' : 'Role'}
@@ -985,7 +985,7 @@ export default function TipSettingsPage() {
                     <button
                       type="button"
                       onClick={() => openEditTemplate(t)}
-                      className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                      className="p-2 rounded-lg hover:bg-gray-100 text-gray-900 hover:text-gray-600 transition-colors"
                       aria-label={`Edit ${t.name}`}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -995,7 +995,7 @@ export default function TipSettingsPage() {
                     <button
                       type="button"
                       onClick={() => handleDeleteTemplate(t.id)}
-                      className="p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                      className="p-2 rounded-lg hover:bg-red-50 text-gray-900 hover:text-red-500 transition-colors"
                       aria-label={`Delete ${t.name}`}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1033,7 +1033,7 @@ export default function TipSettingsPage() {
 
               {/* Name */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Team Name</label>
                 <input
                   type="text"
                   value={templateForm.name}
@@ -1046,7 +1046,7 @@ export default function TipSettingsPage() {
 
               {/* Split Mode */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Default Split Mode</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">Default Split Mode</label>
                 <div className="flex gap-2">
                   {SPLIT_MODE_OPTIONS.map(opt => (
                     <button
@@ -1067,7 +1067,7 @@ export default function TipSettingsPage() {
 
               {/* Allowed Roles */}
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-900 mb-2">
                   Allowed Roles
                   <span className="text-xs text-gray-600 font-normal ml-1">(if no roles are selected, any employee can choose this team at clock-in)</span>
                 </label>
@@ -1098,7 +1098,7 @@ export default function TipSettingsPage() {
               {/* Active toggle */}
               <div className="flex items-center justify-between py-3 mb-4 border-t border-gray-100">
                 <div>
-                  <div className="text-sm text-gray-700">Active</div>
+                  <div className="text-sm text-gray-900">Active</div>
                   <div className="text-xs text-gray-600">Show this team as an option at clock-in</div>
                 </div>
                 <ToggleSwitch
@@ -1112,7 +1112,7 @@ export default function TipSettingsPage() {
                 <button
                   type="button"
                   onClick={() => { setShowTemplateForm(false); setEditingTemplate(null) }}
-                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-all"
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-900 rounded-xl text-sm font-semibold transition-all"
                 >
                   Cancel
                 </button>

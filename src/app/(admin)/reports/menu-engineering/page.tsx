@@ -53,7 +53,7 @@ const CLASS_CONFIG: Record<Classification, { label: string; emoji: string; color
   star: { label: 'Stars', emoji: '\u2B50', color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200' },
   plow_horse: { label: 'Plow Horses', emoji: '\uD83D\uDC34', color: 'text-yellow-700', bg: 'bg-yellow-50', border: 'border-yellow-200' },
   puzzle: { label: 'Puzzles', emoji: '\uD83E\uDDE9', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
-  dog: { label: 'Dogs', emoji: '\uD83D\uDC15', color: 'text-gray-700', bg: 'bg-gray-50', border: 'border-gray-200' },
+  dog: { label: 'Dogs', emoji: '\uD83D\uDC15', color: 'text-gray-900', bg: 'bg-gray-50', border: 'border-gray-200' },
 }
 
 function classificationBadge(c: Classification) {
@@ -153,7 +153,7 @@ export default function MenuEngineeringPage() {
             </select>
           )}
           <button onClick={() => setShowInfo(!showInfo)}
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-500 font-medium"
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-900 font-medium"
             title="What is menu engineering?">
             ?
           </button>
@@ -191,8 +191,8 @@ export default function MenuEngineeringPage() {
                   <span className={`text-2xl font-bold ${cfg.color}`}>{q.count}</span>
                 </div>
                 <div className={`font-semibold ${cfg.color}`}>{cfg.label}</div>
-                <div className="text-xs text-gray-500 mt-1">${q.revenue.toFixed(0)} revenue</div>
-                <div className="text-xs text-gray-400 mt-0.5">{q.note}</div>
+                <div className="text-xs text-gray-900 mt-1">${q.revenue.toFixed(0)} revenue</div>
+                <div className="text-xs text-gray-900 mt-0.5">{q.note}</div>
               </button>
             )
           })}
@@ -203,13 +203,13 @@ export default function MenuEngineeringPage() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="text-left p-4 text-gray-700 font-semibold">Item</th>
-                <th className="text-left p-4 text-gray-700 font-semibold">Category</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">Sold</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">Revenue</th>
-                <th className="text-right p-4 text-gray-700 font-semibold">CM</th>
-                <th className="text-center p-4 text-gray-700 font-semibold">Class</th>
-                <th className="text-left p-4 text-gray-700 font-semibold">Recommendation</th>
+                <th className="text-left p-4 text-gray-900 font-semibold">Item</th>
+                <th className="text-left p-4 text-gray-900 font-semibold">Category</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">Sold</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">Revenue</th>
+                <th className="text-right p-4 text-gray-900 font-semibold">CM</th>
+                <th className="text-center p-4 text-gray-900 font-semibold">Class</th>
+                <th className="text-left p-4 text-gray-900 font-semibold">Recommendation</th>
               </tr>
             </thead>
             <tbody>
@@ -233,7 +233,7 @@ export default function MenuEngineeringPage() {
               ))}
               {filteredItems.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-gray-400">No items match the current filters</td>
+                  <td colSpan={7} className="p-8 text-center text-gray-900">No items match the current filters</td>
                 </tr>
               )}
             </tbody>
@@ -241,7 +241,7 @@ export default function MenuEngineeringPage() {
         </div>
 
         {/* Averages footer */}
-        <div className="mt-4 flex gap-6 text-sm text-gray-500">
+        <div className="mt-4 flex gap-6 text-sm text-gray-900">
           <span>Avg qty sold: {report.averages.avgQtySold.toFixed(1)}</span>
           <span>Avg contribution margin: ${report.averages.avgContributionMargin.toFixed(2)}</span>
           <span>Total items: {report.summary.totalItems}</span>

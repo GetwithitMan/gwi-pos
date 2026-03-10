@@ -21,14 +21,14 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       primary: 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30',
       secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300 shadow-sm hover:shadow-md',
       danger: 'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700 shadow-lg shadow-red-500/25 hover:shadow-xl',
-      ghost: 'bg-transparent text-gray-700 hover:bg-white/60 hover:backdrop-blur-sm',
-      outline: 'bg-transparent border-2 border-gray-300 text-gray-700 hover:bg-white/60 hover:border-gray-400',
+      ghost: 'bg-transparent text-gray-900 hover:bg-white/60 hover:backdrop-blur-sm',
+      outline: 'bg-transparent border-2 border-gray-300 text-gray-900 hover:bg-white/60 hover:border-gray-400',
 
       // Glass variants
       glass: 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white backdrop-blur-sm border border-white/20 shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 hover:scale-[1.02]',
       glassSecondary: 'bg-white/80 backdrop-blur-md text-gray-800 border border-white/40 shadow-md shadow-black/5 hover:bg-white/90 hover:shadow-lg hover:scale-[1.01]',
-      glassGhost: 'bg-white/30 backdrop-blur-sm text-gray-700 border border-transparent hover:bg-white/50 hover:border-white/30',
-      glassOutline: 'bg-transparent backdrop-blur-sm text-gray-700 border-2 border-gray-300/50 hover:bg-white/40 hover:border-gray-400/60',
+      glassGhost: 'bg-white/30 backdrop-blur-sm text-gray-900 border border-transparent hover:bg-white/50 hover:border-white/30',
+      glassOutline: 'bg-transparent backdrop-blur-sm text-gray-900 border-2 border-gray-300/50 hover:bg-white/40 hover:border-gray-400/60',
     }
 
     const sizes = {
@@ -95,12 +95,12 @@ const MotionButton = forwardRef<HTMLButtonElement, MotionButtonProps>(
       primary: 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25',
       secondary: 'bg-gray-200 text-gray-800 shadow-sm',
       danger: 'bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25',
-      ghost: 'bg-transparent text-gray-700',
-      outline: 'bg-transparent border-2 border-gray-300 text-gray-700',
+      ghost: 'bg-transparent text-gray-900',
+      outline: 'bg-transparent border-2 border-gray-300 text-gray-900',
       glass: 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white backdrop-blur-sm border border-white/20 shadow-lg shadow-blue-500/25',
       glassSecondary: 'bg-white/80 backdrop-blur-md text-gray-800 border border-white/40 shadow-md shadow-black/5',
-      glassGhost: 'bg-white/30 backdrop-blur-sm text-gray-700 border border-transparent',
-      glassOutline: 'bg-transparent backdrop-blur-sm text-gray-700 border-2 border-gray-300/50',
+      glassGhost: 'bg-white/30 backdrop-blur-sm text-gray-900 border border-transparent',
+      glassOutline: 'bg-transparent backdrop-blur-sm text-gray-900 border-2 border-gray-300/50',
     }
 
     const sizes = {

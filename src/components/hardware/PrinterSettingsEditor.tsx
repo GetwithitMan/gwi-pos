@@ -72,7 +72,7 @@ export function PrinterSettingsEditor({
                   <option value="large">Large</option>
                   <option value="xlarge">Extra Large</option>
                 </select>
-                <p className="text-xs text-gray-500 mt-1">KITCHEN header, order number</p>
+                <p className="text-xs text-gray-900 mt-1">KITCHEN header, order number</p>
               </div>
 
               <div>
@@ -86,7 +86,7 @@ export function PrinterSettingsEditor({
                   <option value="large">Large</option>
                   <option value="xlarge">Extra Large</option>
                 </select>
-                <p className="text-xs text-gray-500 mt-1">e.g., &quot;2x Pepperoni Pizza&quot;</p>
+                <p className="text-xs text-gray-900 mt-1">e.g., &quot;2x Pepperoni Pizza&quot;</p>
               </div>
 
               <div>
@@ -100,7 +100,7 @@ export function PrinterSettingsEditor({
                   <option value="normal">Normal</option>
                   <option value="large">Large</option>
                 </select>
-                <p className="text-xs text-gray-500 mt-1">Modifiers and toppings</p>
+                <p className="text-xs text-gray-900 mt-1">Modifiers and toppings</p>
               </div>
 
               <div>
@@ -113,7 +113,7 @@ export function PrinterSettingsEditor({
                   <option value="normal">Normal</option>
                   <option value="large">Large</option>
                 </select>
-                <p className="text-xs text-gray-500 mt-1">Special notes and instructions</p>
+                <p className="text-xs text-gray-900 mt-1">Special notes and instructions</p>
               </div>
             </div>
           </div>
@@ -148,7 +148,7 @@ export function PrinterSettingsEditor({
                   />
                   <div>
                     <span className="font-medium">RESEND</span>
-                    <p className="text-xs text-gray-500">Print &quot;RESEND&quot; banner in red</p>
+                    <p className="text-xs text-gray-900">Print &quot;RESEND&quot; banner in red</p>
                   </div>
                 </label>
 
@@ -161,7 +161,7 @@ export function PrinterSettingsEditor({
                   />
                   <div>
                     <span className="font-medium">NO Items (Critical)</span>
-                    <p className="text-xs text-gray-500">Print &quot;NO [ingredient]&quot; in red for allergies</p>
+                    <p className="text-xs text-gray-900">Print &quot;NO [ingredient]&quot; in red for allergies</p>
                   </div>
                 </label>
 
@@ -174,7 +174,7 @@ export function PrinterSettingsEditor({
                   />
                   <div>
                     <span className="font-medium">Allergy Warnings</span>
-                    <p className="text-xs text-gray-500">Print allergy alerts in red</p>
+                    <p className="text-xs text-gray-900">Print allergy alerts in red</p>
                   </div>
                 </label>
 
@@ -187,7 +187,7 @@ export function PrinterSettingsEditor({
                   />
                   <div>
                     <span className="font-medium">Special Notes</span>
-                    <p className="text-xs text-gray-500">Print special instructions in red</p>
+                    <p className="text-xs text-gray-900">Print special instructions in red</p>
                   </div>
                 </label>
 
@@ -200,7 +200,7 @@ export function PrinterSettingsEditor({
                   />
                   <div>
                     <span className="font-medium">Headers</span>
-                    <p className="text-xs text-gray-500">Print &quot;KITCHEN&quot; and order number in red</p>
+                    <p className="text-xs text-gray-900">Print &quot;KITCHEN&quot; and order number in red</p>
                   </div>
                 </label>
               </div>
@@ -220,7 +220,7 @@ export function PrinterSettingsEditor({
                 />
                 <div>
                   <span className="font-medium">ITEM NAMES IN ALL CAPS</span>
-                  <p className="text-xs text-gray-500">Print item names in uppercase</p>
+                  <p className="text-xs text-gray-900">Print item names in uppercase</p>
                 </div>
               </label>
 
@@ -233,7 +233,7 @@ export function PrinterSettingsEditor({
                 />
                 <div>
                   <span className="font-medium">MODIFIERS IN ALL CAPS</span>
-                  <p className="text-xs text-gray-500">Print modifiers and toppings in uppercase</p>
+                  <p className="text-xs text-gray-900">Print modifiers and toppings in uppercase</p>
                 </div>
               </label>
 
@@ -246,7 +246,7 @@ export function PrinterSettingsEditor({
                 />
                 <div>
                   <span className="font-medium">Compact Spacing</span>
-                  <p className="text-xs text-gray-500">Reduce line spacing for busy kitchens</p>
+                  <p className="text-xs text-gray-900">Reduce line spacing for busy kitchens</p>
                 </div>
               </label>
 

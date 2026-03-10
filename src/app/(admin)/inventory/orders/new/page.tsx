@@ -242,7 +242,7 @@ export default function NewPurchaseOrderPage() {
         </Link>
         <h1 className="text-2xl font-bold text-gray-900">New Purchase Order</h1>
         {fromReorder && (
-          <p className="text-sm text-gray-500 mt-1">Creating from reorder suggestions</p>
+          <p className="text-sm text-gray-900 mt-1">Creating from reorder suggestions</p>
         )}
       </div>
 
@@ -261,7 +261,7 @@ export default function NewPurchaseOrderPage() {
 
               {/* Vendor Select */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Vendor *</label>
                 <select
                   value={form.vendorId}
                   onChange={(e) => setForm(f => ({ ...f, vendorId: e.target.value }))}
@@ -276,7 +276,7 @@ export default function NewPurchaseOrderPage() {
 
               {/* Order Number */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Order Number</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Order Number</label>
                 <input
                   type="text"
                   value={form.orderNumber}
@@ -288,7 +288,7 @@ export default function NewPurchaseOrderPage() {
 
               {/* Expected Delivery */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expected Delivery</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Expected Delivery</label>
                 <input
                   type="date"
                   value={form.expectedDelivery}
@@ -299,7 +299,7 @@ export default function NewPurchaseOrderPage() {
 
               {/* Notes */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Notes</label>
                 <textarea
                   value={form.notes}
                   onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -343,9 +343,9 @@ export default function NewPurchaseOrderPage() {
                 {showResults && (itemSearch.length >= 2) && (
                   <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     {isSearching ? (
-                      <p className="p-3 text-sm text-gray-500">Searching...</p>
+                      <p className="p-3 text-sm text-gray-900">Searching...</p>
                     ) : searchResults.length === 0 ? (
-                      <p className="p-3 text-sm text-gray-500">No items found</p>
+                      <p className="p-3 text-sm text-gray-900">No items found</p>
                     ) : (
                       searchResults.map(item => {
                         const alreadyAdded = lineItems.some(li => li.inventoryItemId === item.id)
@@ -362,9 +362,9 @@ export default function NewPurchaseOrderPage() {
                             <div className="flex justify-between items-center">
                               <div>
                                 <div className="font-medium text-sm">{item.name}</div>
-                                {item.sku && <div className="text-xs text-gray-500">{item.sku}</div>}
+                                {item.sku && <div className="text-xs text-gray-900">{item.sku}</div>}
                               </div>
-                              <div className="text-right text-xs text-gray-500">
+                              <div className="text-right text-xs text-gray-900">
                                 {item.currentStock !== null && (
                                   <div>Stock: {item.currentStock} {item.storageUnit}</div>
                                 )}
@@ -384,7 +384,7 @@ export default function NewPurchaseOrderPage() {
 
               {/* Line Items Table */}
               {lineItems.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm">
+                <div className="text-center py-8 text-gray-900 text-sm">
                   Search and add inventory items above
                 </div>
               ) : (
@@ -407,7 +407,7 @@ export default function NewPurchaseOrderPage() {
                             <td className="px-3 py-2">
                               <div className="font-medium text-gray-900">{li.itemName}</div>
                               {li.currentStock !== null && (
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-gray-900">
                                   Stock: {li.currentStock} {li.storageUnit}
                                 </div>
                               )}
@@ -464,7 +464,7 @@ export default function NewPurchaseOrderPage() {
                       </tbody>
                       <tfoot className="bg-gray-50 border-t-2">
                         <tr>
-                          <td colSpan={4} className="px-3 py-3 text-right font-semibold text-gray-700">
+                          <td colSpan={4} className="px-3 py-3 text-right font-semibold text-gray-900">
                             Estimated Total ({lineItems.length} item{lineItems.length !== 1 ? 's' : ''})
                           </td>
                           <td className="px-3 py-3 text-right font-bold text-gray-900">

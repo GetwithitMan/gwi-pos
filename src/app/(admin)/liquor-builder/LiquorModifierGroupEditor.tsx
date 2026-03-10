@@ -156,10 +156,10 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
     <div className="p-5 space-y-5 overflow-y-auto h-full">
       {/* Group Settings */}
       <div>
-        <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">Group Settings</h3>
+        <h3 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-3">Group Settings</h3>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
-            <label className="block text-xs text-gray-700 mb-1">Group Name</label>
+            <label className="block text-xs text-gray-900 mb-1">Group Name</label>
             <input
               type="text"
               value={groupName}
@@ -168,7 +168,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Min Selections</label>
+            <label className="block text-xs text-gray-900 mb-1">Min Selections</label>
             <input
               type="number"
               min="0"
@@ -178,7 +178,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-700 mb-1">Max Selections</label>
+            <label className="block text-xs text-gray-900 mb-1">Max Selections</label>
             <input
               type="number"
               min="1"
@@ -211,7 +211,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
       {/* Modifier Options */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+          <span className="text-xs font-semibold text-gray-900 uppercase tracking-wide">
             Options ({activeCount} active)
           </span>
           <button
@@ -223,7 +223,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
         </div>
 
         {/* Column headers */}
-        <div className="grid grid-cols-12 gap-1 text-[10px] text-gray-700 px-1 mb-1">
+        <div className="grid grid-cols-12 gap-1 text-[10px] text-gray-900 px-1 mb-1">
           <div className="col-span-4">Name</div>
           <div className="col-span-2 text-right">+Charge</div>
           <div className="col-span-4">Inventory Link</div>
@@ -253,7 +253,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
               {/* Price */}
               <div className="col-span-2">
                 <div className="relative">
-                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-700 text-xs">$</span>
+                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-900 text-xs">$</span>
                   <input
                     type="number"
                     step="0.25"
@@ -294,7 +294,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
               <div className="col-span-1 flex justify-center">
                 <button
                   onClick={() => removeMod(i)}
-                  className="text-gray-300 hover:text-red-500 text-lg leading-none"
+                  className="text-gray-900 hover:text-red-500 text-lg leading-none"
                   title="Remove option"
                 >
                   ×

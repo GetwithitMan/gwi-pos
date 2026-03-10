@@ -249,7 +249,7 @@ export default function SevenShiftsIntegrationPage() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">7shifts</h1>
-          <p className="text-gray-500">
+          <p className="text-gray-900">
             Connect to 7shifts to push daily sales summaries, sync employee time punches,
             pull schedules, and receive real-time webhooks for labor management.
           </p>
@@ -321,7 +321,7 @@ export default function SevenShiftsIntegrationPage() {
               </Button>
             </div>
             {!configured && !loading && (
-              <p className="text-xs text-gray-400">Enter your credentials below and save before testing.</p>
+              <p className="text-xs text-gray-900">Enter your credentials below and save before testing.</p>
             )}
           </CardContent>
         </Card>
@@ -337,7 +337,7 @@ export default function SevenShiftsIntegrationPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Client ID</label>
                 <input
                   type="text"
                   value={form.clientId}
@@ -345,11 +345,11 @@ export default function SevenShiftsIntegrationPage() {
                   placeholder="your-7shifts-client-id"
                   className={inputClass}
                 />
-                <p className="text-xs text-gray-400 mt-1">OAuth Client ID from 7shifts Developer Portal</p>
+                <p className="text-xs text-gray-900 mt-1">OAuth Client ID from 7shifts Developer Portal</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Client Secret</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Client Secret</label>
                 {hasClientSecret && (
                   <div className="flex items-center gap-1.5 text-xs text-green-700 mb-1.5">
                     <span>&#10003; Secret configured</span>
@@ -367,16 +367,16 @@ export default function SevenShiftsIntegrationPage() {
                   <button
                     type="button"
                     onClick={() => setShowClientSecret(v => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-700"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-900 hover:text-gray-900"
                   >
                     {showClientSecret ? 'Hide' : 'Show'}
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">OAuth Client Secret — write-only, never displayed after saving</p>
+                <p className="text-xs text-gray-900 mt-1">OAuth Client Secret — write-only, never displayed after saving</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Company ID</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Company ID</label>
                 <input
                   type="number"
                   value={form.companyId || ''}
@@ -384,11 +384,11 @@ export default function SevenShiftsIntegrationPage() {
                   placeholder="123456"
                   className={inputClass}
                 />
-                <p className="text-xs text-gray-400 mt-1">Your 7shifts numeric company ID</p>
+                <p className="text-xs text-gray-900 mt-1">Your 7shifts numeric company ID</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Company GUID</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Company GUID</label>
                 <input
                   type="text"
                   value={form.companyGuid}
@@ -396,11 +396,11 @@ export default function SevenShiftsIntegrationPage() {
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                   className={inputClass}
                 />
-                <p className="text-xs text-gray-400 mt-1">UUID — required as x-company-guid header on every API call</p>
+                <p className="text-xs text-gray-900 mt-1">UUID — required as x-company-guid header on every API call</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">7shifts Location ID</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">7shifts Location ID</label>
                 <input
                   type="number"
                   value={form.locationId7s || ''}
@@ -408,11 +408,11 @@ export default function SevenShiftsIntegrationPage() {
                   placeholder="789012"
                   className={inputClass}
                 />
-                <p className="text-xs text-gray-400 mt-1">The 7shifts location ID that maps to this GWI POS venue</p>
+                <p className="text-xs text-gray-900 mt-1">The 7shifts location ID that maps to this GWI POS venue</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Webhook Secret</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Webhook Secret</label>
                 {hasWebhookSecret && (
                   <div className="flex items-center gap-1.5 text-xs text-green-700 mb-1.5">
                     <span>&#10003; Secret configured</span>
@@ -430,18 +430,18 @@ export default function SevenShiftsIntegrationPage() {
                   <button
                     type="button"
                     onClick={() => setShowWebhookSecret(v => !v)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-500 hover:text-gray-700"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-900 hover:text-gray-900"
                   >
                     {showWebhookSecret ? 'Hide' : 'Show'}
                   </button>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Shared secret for verifying incoming webhook payloads</p>
+                <p className="text-xs text-gray-900 mt-1">Shared secret for verifying incoming webhook payloads</p>
               </div>
             </div>
 
             {/* Environment */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Environment</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">Environment</label>
               <div className="flex gap-3">
                 {(['sandbox', 'production'] as const).map(env => (
                   <button
@@ -504,8 +504,8 @@ export default function SevenShiftsIntegrationPage() {
               ] as const).map(row => (
                 <div key={row.label} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
                   <div className="space-y-0.5">
-                    <div className="text-sm font-medium text-gray-700">{row.label}</div>
-                    <div className="text-xs text-gray-400">{formatTimestamp(row.at)}</div>
+                    <div className="text-sm font-medium text-gray-900">{row.label}</div>
+                    <div className="text-xs text-gray-900">{formatTimestamp(row.at)}</div>
                     {row.status === 'error' && row.error && (
                       <div className="text-xs text-red-600">{row.error}</div>
                     )}
@@ -522,9 +522,9 @@ export default function SevenShiftsIntegrationPage() {
           <CardHeader><CardTitle>Sync Readiness</CardTitle></CardHeader>
           <CardContent>
             {preSyncLoading ? (
-              <p className="text-sm text-gray-500">Checking sync readiness...</p>
+              <p className="text-sm text-gray-900">Checking sync readiness...</p>
             ) : !preSyncCheck ? (
-              <p className="text-sm text-gray-400">Unable to load pre-sync check.</p>
+              <p className="text-sm text-gray-900">Unable to load pre-sync check.</p>
             ) : (() => {
               const { issues, counts, isReadyToSync, businessDate } = preSyncCheck
               const hasBlockers = issues.openPunches.length > 0 || issues.unmappedEmployeesWithPunches.length > 0
@@ -538,7 +538,7 @@ export default function SevenShiftsIntegrationPage() {
 
               return (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-500">Business date: {businessDate}</p>
+                  <p className="text-xs text-gray-900">Business date: {businessDate}</p>
 
                   <div className={`rounded-lg border p-3 ${color}`}>
                     {isReadyToSync && !hasWarnings ? (
@@ -618,22 +618,22 @@ export default function SevenShiftsIntegrationPage() {
           <CardContent>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center gap-2">
-                <span className={hasClientSecret && form.companyId > 0 && form.companyGuid ? 'text-green-600' : 'text-gray-400'}>
+                <span className={hasClientSecret && form.companyId > 0 && form.companyGuid ? 'text-green-600' : 'text-gray-900'}>
                   {hasClientSecret && form.companyId > 0 && form.companyGuid ? '&#10003;' : '&#10007;'}
                 </span>
-                <span className="text-gray-700">Credentials configured</span>
+                <span className="text-gray-900">Credentials configured</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className={status?.webhooksRegistered ? 'text-green-600' : 'text-gray-400'}>
+                <span className={status?.webhooksRegistered ? 'text-green-600' : 'text-gray-900'}>
                   {status?.webhooksRegistered ? '&#10003;' : '&#10007;'}
                 </span>
-                <span className="text-gray-700">Webhooks registered</span>
+                <span className="text-gray-900">Webhooks registered</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className={(status?.employeesLinked ?? 0) > 0 ? 'text-green-600' : 'text-gray-400'}>
+                <span className={(status?.employeesLinked ?? 0) > 0 ? 'text-green-600' : 'text-gray-900'}>
                   {(status?.employeesLinked ?? 0) > 0 ? '&#10003;' : '&#10007;'}
                 </span>
-                <span className="text-gray-700">
+                <span className="text-gray-900">
                   Employees linked
                   {(status?.employeesLinked ?? 0) > 0 && ` (${status!.employeesLinked})`}
                 </span>

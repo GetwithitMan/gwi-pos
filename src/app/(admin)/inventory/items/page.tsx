@@ -318,8 +318,8 @@ export default function InventoryItemsPage() {
               `}</style>
             </div>
           ) : filteredItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-              <svg className="w-12 h-12 mb-3 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <div className="flex flex-col items-center justify-center py-16 text-gray-900">
+              <svg className="w-12 h-12 mb-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
               </svg>
               <p className="text-base font-medium">No inventory items found</p>
@@ -347,9 +347,9 @@ export default function InventoryItemsPage() {
                           <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" title="Low Stock" />
                         )}
                       </div>
-                      <div className="text-xs text-gray-500 flex items-center gap-2">
+                      <div className="text-xs text-gray-900 flex items-center gap-2">
                         {item.sku && <span>{item.sku}</span>}
-                        <span className="text-gray-300">|</span>
+                        <span className="text-gray-500">|</span>
                         <span>{item.department}</span>
                       </div>
                     </div>
@@ -357,7 +357,7 @@ export default function InventoryItemsPage() {
                       <div className={`text-sm font-mono ${item.isLowStock ? 'text-red-600 font-semibold' : ''}`}>
                         {item.currentStock.toFixed(1)}
                       </div>
-                      <div className="text-xs text-gray-400">{item.storageUnit}</div>
+                      <div className="text-xs text-gray-900">{item.storageUnit}</div>
                     </div>
                   </div>
                 </div>
@@ -365,7 +365,7 @@ export default function InventoryItemsPage() {
               components={{
                 Footer: () => (
                   isLoadingMore ? (
-                    <div className="p-3 text-center text-gray-500 text-sm">Loading more...</div>
+                    <div className="p-3 text-center text-gray-900 text-sm">Loading more...</div>
                   ) : null
                 ),
               }}
@@ -399,7 +399,7 @@ export default function InventoryItemsPage() {
             onAdjust={() => setShowAdjustModal(true)}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-400">
+          <div className="flex items-center justify-center h-full text-gray-900">
             Select an item to view details
           </div>
         )}
@@ -461,7 +461,7 @@ function ItemDetails({
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-bold">{item.name}</h2>
-          <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
+          <div className="flex items-center gap-2 mt-1 text-sm text-gray-900">
             {item.sku && <span>SKU: {item.sku}</span>}
             <span className="px-2 py-0.5 rounded bg-gray-100">{item.department}</span>
             <span className="px-2 py-0.5 rounded bg-gray-100">{item.itemType}</span>
@@ -484,25 +484,25 @@ function ItemDetails({
             <p className={`text-2xl font-bold ${item.isLowStock ? 'text-red-600' : ''}`}>
               {item.currentStock.toFixed(1)}
             </p>
-            <p className="text-xs text-gray-500">Current Stock ({item.storageUnit})</p>
+            <p className="text-xs text-gray-900">Current Stock ({item.storageUnit})</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold">{item.parLevel ?? '-'}</p>
-            <p className="text-xs text-gray-500">Par Level</p>
+            <p className="text-xs text-gray-900">Par Level</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold">{formatCurrency(effectiveCost)}</p>
-            <p className="text-xs text-gray-500">Cost per {item.storageUnit}</p>
+            <p className="text-xs text-gray-900">Cost per {item.storageUnit}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold">{formatCurrency(item.purchaseCost)}</p>
-            <p className="text-xs text-gray-500">Cost per {item.purchaseUnit}</p>
+            <p className="text-xs text-gray-900">Cost per {item.purchaseUnit}</p>
           </CardContent>
         </Card>
       </div>
@@ -516,19 +516,19 @@ function ItemDetails({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-500">Default Vendor</span>
+              <span className="text-gray-900">Default Vendor</span>
               <span className="font-medium">{item.defaultVendor?.name || '-'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Purchase Unit</span>
+              <span className="text-gray-900">Purchase Unit</span>
               <span className="font-medium">{item.purchaseUnit}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Purchase Size</span>
+              <span className="text-gray-900">Purchase Size</span>
               <span className="font-medium">{item.purchaseSize}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Cost per Purchase</span>
+              <span className="text-gray-900">Cost per Purchase</span>
               <span className="font-medium">{formatCurrency(item.purchaseCost)}</span>
             </div>
           </CardContent>
@@ -541,25 +541,25 @@ function ItemDetails({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-500">Storage Unit</span>
+              <span className="text-gray-900">Storage Unit</span>
               <span className="font-medium">{item.storageUnit}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Units per Purchase</span>
+              <span className="text-gray-900">Units per Purchase</span>
               <span className="font-medium">{item.unitsPerPurchase}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Cost per Unit</span>
+              <span className="text-gray-900">Cost per Unit</span>
               <span className="font-medium">{formatCurrency(item.costPerUnit)}</span>
             </div>
             {item.yieldPercent && (
               <>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Yield %</span>
+                  <span className="text-gray-900">Yield %</span>
                   <span className="font-medium">{item.yieldPercent}%</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Yield-Adjusted Cost</span>
+                  <span className="text-gray-900">Yield-Adjusted Cost</span>
                   <span className="font-medium text-blue-600">{formatCurrency(item.yieldCostPerUnit || 0)}</span>
                 </div>
               </>
@@ -574,21 +574,21 @@ function ItemDetails({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-500">Current Stock</span>
+              <span className="text-gray-900">Current Stock</span>
               <span className={`font-medium ${item.isLowStock ? 'text-red-600' : ''}`}>
                 {item.currentStock.toFixed(1)} {item.storageUnit}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Par Level</span>
+              <span className="text-gray-900">Par Level</span>
               <span className="font-medium">{item.parLevel ?? '-'} {item.parLevel ? item.storageUnit : ''}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Reorder Point</span>
+              <span className="text-gray-900">Reorder Point</span>
               <span className="font-medium">{item.reorderPoint ?? '-'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Reorder Quantity</span>
+              <span className="text-gray-900">Reorder Quantity</span>
               <span className="font-medium">{item.reorderQty ?? '-'}</span>
             </div>
           </CardContent>
@@ -601,24 +601,24 @@ function ItemDetails({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-500">Department</span>
+              <span className="text-gray-900">Department</span>
               <span className="font-medium">{item.department}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Item Type</span>
+              <span className="text-gray-900">Item Type</span>
               <span className="font-medium">{item.itemType}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Category</span>
+              <span className="text-gray-900">Category</span>
               <span className="font-medium">{item.category || '-'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Brand</span>
+              <span className="text-gray-900">Brand</span>
               <span className="font-medium">{item.brand || '-'}</span>
             </div>
             {item.spiritCategory && (
               <div className="flex justify-between">
-                <span className="text-gray-500">Spirit Category</span>
+                <span className="text-gray-900">Spirit Category</span>
                 <span className="font-medium">{item.spiritCategory.name}</span>
               </div>
             )}
@@ -932,7 +932,7 @@ function InventoryItemModal({
                   <div className="text-lg font-bold text-blue-600">
                     {formatCurrency(yieldCostPerUnit ?? costPerUnit)}
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-900">
                     per {form.storageUnit || 'unit'}
                     {yieldCostPerUnit && ' (yield-adjusted)'}
                   </div>
@@ -1097,7 +1097,7 @@ function AdjustStockModal({
       size="md"
     >
         <div className="space-y-4">
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-gray-900">
             Current stock: <strong>{item.currentStock.toFixed(1)} {item.storageUnit}</strong>
           </div>
 
@@ -1126,13 +1126,13 @@ function AdjustStockModal({
               className="w-full border rounded px-3 py-2"
               placeholder="+/- amount"
             />
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-gray-900 mt-1">
               Use positive for additions, negative for removals
             </p>
           </div>
 
           <div className="p-3 bg-gray-50 rounded">
-            <div className="text-sm text-gray-500">New stock will be:</div>
+            <div className="text-sm text-gray-900">New stock will be:</div>
             <div className={`text-xl font-bold ${newStock < 0 ? 'text-red-600' : ''}`}>
               {newStock.toFixed(1)} {item.storageUnit}
             </div>

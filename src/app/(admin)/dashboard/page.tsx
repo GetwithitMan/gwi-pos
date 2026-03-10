@@ -133,7 +133,7 @@ function getAlertIconColor(type: string): string {
     case 'warning': return 'text-amber-600'
     case 'info': return 'text-blue-600'
     case 'success': return 'text-green-600'
-    default: return 'text-gray-500'
+    default: return 'text-gray-900'
   }
 }
 
@@ -588,7 +588,7 @@ export default function ManagerDashboardPage() {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
         <AdminPageHeader title="Manager Dashboard" />
-        <div className="text-center py-20 text-gray-500">
+        <div className="text-center py-20 text-gray-900">
           You do not have permission to view this page.
         </div>
       </div>
@@ -600,9 +600,9 @@ export default function ManagerDashboardPage() {
       <AdminPageHeader
         title="Live Dashboard"
         subtitle={
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-gray-900">
             {liveMetrics?.businessDate && (
-              <span className="mr-3 text-gray-500 font-medium">{new Date(liveMetrics.businessDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+              <span className="mr-3 text-gray-900 font-medium">{new Date(liveMetrics.businessDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
             )}
             Updated {secondsAgo < 5 ? 'just now' : `${secondsAgo}s ago`}
           </span>
@@ -659,7 +659,7 @@ export default function ManagerDashboardPage() {
             </div>
             <button
               onClick={dismissAllAlerts}
-              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-xs text-gray-900 hover:text-gray-600 transition-colors"
             >
               Dismiss all
             </button>
@@ -676,7 +676,7 @@ export default function ManagerDashboardPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-gray-900">{alert.title}</span>
-                    <span className="text-[10px] text-gray-400">
+                    <span className="text-[10px] text-gray-900">
                       {alert.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
@@ -684,7 +684,7 @@ export default function ManagerDashboardPage() {
                 </div>
                 <button
                   onClick={() => dismissAlert(alert.id)}
-                  className="text-gray-300 hover:text-gray-500 transition-colors text-sm leading-none"
+                  className="text-gray-900 hover:text-gray-500 transition-colors text-sm leading-none"
                   aria-label="Dismiss alert"
                 >
                   &times;
@@ -714,7 +714,7 @@ export default function ManagerDashboardPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
           <div className="flex items-start justify-between mb-4">
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Net Sales Today</p>
+              <p className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-1">Net Sales Today</p>
               <p className="text-3xl font-bold text-gray-900">{formatCurrency(liveMetrics.netSalesToday)}</p>
             </div>
             <div className="text-right">
@@ -728,13 +728,13 @@ export default function ManagerDashboardPage() {
                 <span>{liveMetrics.salesPacingPct > 0 ? '\u25B2' : liveMetrics.salesPacingPct < 0 ? '\u25BC' : '\u2014'}</span>
                 <span>{liveMetrics.salesPacingPct > 0 ? '+' : ''}{liveMetrics.salesPacingPct.toFixed(1)}% vs last week</span>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Last week same time: {formatCurrency(liveMetrics.netSalesLastWeekSameDay)}</p>
+              <p className="text-xs text-gray-900 mt-1">Last week same time: {formatCurrency(liveMetrics.netSalesLastWeekSameDay)}</p>
             </div>
           </div>
 
           {/* Day progress bar */}
           <div className="mb-3">
-            <div className="flex items-center justify-between text-[10px] text-gray-400 mb-1">
+            <div className="flex items-center justify-between text-[10px] text-gray-900 mb-1">
               <span>Business day progress</span>
               <span>{Math.round(liveMetrics.dayFraction * 100)}%</span>
             </div>
@@ -754,24 +754,24 @@ export default function ManagerDashboardPage() {
       {liveMetrics && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Checks Today</p>
+            <p className="text-xs font-medium text-gray-900 uppercase tracking-wider">Checks Today</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{liveMetrics.checksToday}</p>
-            <p className="text-xs text-gray-400 mt-1">Avg {formatCurrency(liveMetrics.avgCheckSize)}</p>
+            <p className="text-xs text-gray-900 mt-1">Avg {formatCurrency(liveMetrics.avgCheckSize)}</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Open Tickets</p>
+            <p className="text-xs font-medium text-gray-900 uppercase tracking-wider">Open Tickets</p>
             <p className="text-2xl font-bold text-blue-600 mt-1">{liveMetrics.openTicketCount}</p>
-            <p className="text-xs text-gray-400 mt-1">{formatCurrency(liveMetrics.openTicketValue)} value</p>
+            <p className="text-xs text-gray-900 mt-1">{formatCurrency(liveMetrics.openTicketValue)} value</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Voids / Comps</p>
+            <p className="text-xs font-medium text-gray-900 uppercase tracking-wider">Voids / Comps</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(liveMetrics.voidsTotalToday)}</p>
-            <p className="text-xs text-gray-400 mt-1">Comps: {formatCurrency(liveMetrics.compsTotalToday)}</p>
+            <p className="text-xs text-gray-900 mt-1">Comps: {formatCurrency(liveMetrics.compsTotalToday)}</p>
           </div>
           <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Discounts</p>
+            <p className="text-xs font-medium text-gray-900 uppercase tracking-wider">Discounts</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(liveMetrics.discountsTotalToday)}</p>
-            <p className="text-xs text-gray-400 mt-1">Net In/Out: {formatCurrency(liveMetrics.paidNetTotal)}</p>
+            <p className="text-xs text-gray-900 mt-1">Net In/Out: {formatCurrency(liveMetrics.paidNetTotal)}</p>
           </div>
           <div className={`bg-white rounded-xl border p-4 ${
             laborPercent !== null && laborPercent > 35
@@ -780,7 +780,7 @@ export default function ManagerDashboardPage() {
                 ? 'border-amber-300 bg-amber-50'
                 : 'border-gray-200'
           }`}>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Labor %</p>
+            <p className="text-xs font-medium text-gray-900 uppercase tracking-wider">Labor %</p>
             <p className={`text-2xl font-bold mt-1 ${
               laborPercent !== null && laborPercent > 35
                 ? 'text-red-600'
@@ -790,7 +790,7 @@ export default function ManagerDashboardPage() {
             }`}>
               {laborPercent !== null ? `${laborPercent.toFixed(1)}%` : '--'}
             </p>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-gray-900 mt-1">
               {laborCost > 0 ? formatCurrency(laborCost) + ' wages' : 'No labor data'}
             </p>
           </div>
@@ -844,25 +844,25 @@ export default function ManagerDashboardPage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Current Count</p>
+              <p className="text-xs text-gray-900 uppercase tracking-wider">Current Count</p>
               <p className="text-2xl font-bold text-gray-900 mt-1">
                 {doorCount.count}
                 {doorCount.maxCapacity > 0 && (
-                  <span className="text-sm font-normal text-gray-400"> / {doorCount.maxCapacity}</span>
+                  <span className="text-sm font-normal text-gray-900"> / {doorCount.maxCapacity}</span>
                 )}
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Total Collected</p>
+              <p className="text-xs text-gray-900 uppercase tracking-wider">Total Collected</p>
               <p className="text-2xl font-bold text-green-600 mt-1">{formatCurrency(doorCount.totalCollected)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Cash</p>
-              <p className="text-lg font-semibold text-gray-700 mt-1">{formatCurrency(doorCount.cashTotal)}</p>
+              <p className="text-xs text-gray-900 uppercase tracking-wider">Cash</p>
+              <p className="text-lg font-semibold text-gray-900 mt-1">{formatCurrency(doorCount.cashTotal)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 uppercase tracking-wider">Card</p>
-              <p className="text-lg font-semibold text-gray-700 mt-1">{formatCurrency(doorCount.cardTotal)}</p>
+              <p className="text-xs text-gray-900 uppercase tracking-wider">Card</p>
+              <p className="text-lg font-semibold text-gray-900 mt-1">{formatCurrency(doorCount.cardTotal)}</p>
             </div>
           </div>
           {doorCount.maxCapacity > 0 && (
@@ -890,18 +890,18 @@ export default function ManagerDashboardPage() {
       <section className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">Open Orders</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Sorted by age — oldest first</p>
+          <p className="text-xs text-gray-900 mt-0.5">Sorted by age — oldest first</p>
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-400">Loading...</div>
+          <div className="text-center py-12 text-gray-900">Loading...</div>
         ) : sortedOrders.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">No open orders</div>
+          <div className="text-center py-12 text-gray-900">No open orders</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-900 uppercase tracking-wider">
                   <th className="px-5 py-3">Order #</th>
                   <th className="px-5 py-3">Type</th>
                   <th className="px-5 py-3">Table / Tab</th>
@@ -935,10 +935,10 @@ export default function ManagerDashboardPage() {
                         {order.orderTypeConfig?.name || order.orderType}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-gray-700">
+                    <td className="px-5 py-3 text-gray-900">
                       {order.table?.name || order.tabName || '\u2014'}
                     </td>
-                    <td className="px-5 py-3 text-gray-700">{order.employee.name}</td>
+                    <td className="px-5 py-3 text-gray-900">{order.employee.name}</td>
                     <td className="px-5 py-3 text-right text-gray-600">{order.itemCount}</td>
                     <td className="px-5 py-3 text-right font-medium text-gray-900">
                       {formatCurrency(order.total)}
@@ -967,18 +967,18 @@ export default function ManagerDashboardPage() {
       <section className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">Clocked-In Staff</h2>
-          <p className="text-xs text-gray-500 mt-0.5">{staff.length} employee{staff.length !== 1 ? 's' : ''} on the clock</p>
+          <p className="text-xs text-gray-900 mt-0.5">{staff.length} employee{staff.length !== 1 ? 's' : ''} on the clock</p>
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-400">Loading...</div>
+          <div className="text-center py-12 text-gray-900">Loading...</div>
         ) : staff.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">No employees clocked in</div>
+          <div className="text-center py-12 text-gray-900">No employees clocked in</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-900 uppercase tracking-wider">
                   <th className="px-5 py-3">Name</th>
                   <th className="px-5 py-3">Clock-In Time</th>
                   <th className="px-5 py-3">Hours on Shift</th>
@@ -1016,18 +1016,18 @@ export default function ManagerDashboardPage() {
       <section className="bg-white rounded-xl shadow-sm border border-gray-200">
         <div className="px-5 py-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">Employee Performance</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs text-gray-900 mt-0.5">
             Today&apos;s per-employee metrics with risk indicators
           </p>
         </div>
 
         {employeeStats.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">No employee data for today</div>
+          <div className="text-center py-12 text-gray-900">No employee data for today</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <tr className="border-b border-gray-100 text-left text-xs font-medium text-gray-900 uppercase tracking-wider">
                   <th className="px-5 py-3">Employee</th>
                   <th className="px-5 py-3 text-right">Sales</th>
                   <th className="px-5 py-3 text-right">Orders</th>
@@ -1076,10 +1076,10 @@ export default function ManagerDashboardPage() {
                       <td className="px-5 py-3 text-right text-gray-600">
                         {emp.orderCount}
                       </td>
-                      <td className={`px-5 py-3 text-right ${isLowAvgCheck ? 'text-gray-400 italic' : 'text-gray-600'}`}>
+                      <td className={`px-5 py-3 text-right ${isLowAvgCheck ? 'text-gray-900 italic' : 'text-gray-600'}`}>
                         {formatCurrency(emp.avgCheckSize)}
                         {isLowAvgCheck && (
-                          <span className="ml-1 text-[10px] text-gray-400" title="Below location average">&darr;</span>
+                          <span className="ml-1 text-[10px] text-gray-900" title="Below location average">&darr;</span>
                         )}
                       </td>
                       <td className="px-5 py-3 text-right text-gray-600">
@@ -1088,7 +1088,7 @@ export default function ManagerDashboardPage() {
                       <td className={`px-5 py-3 text-right ${isHighVoid ? 'text-red-700 font-semibold' : 'text-gray-600'}`}>
                         {emp.voidCount}
                         {emp.voidAmount > 0 && (
-                          <span className="text-[10px] text-gray-400 ml-1">
+                          <span className="text-[10px] text-gray-900 ml-1">
                             ({formatCurrency(emp.voidAmount)})
                           </span>
                         )}
@@ -1099,7 +1099,7 @@ export default function ManagerDashboardPage() {
                             ? 'bg-red-100 text-red-700'
                             : voidPct > 0
                               ? 'bg-gray-100 text-gray-600'
-                              : 'text-gray-400'
+                              : 'text-gray-900'
                         }`}>
                           {voidPct.toFixed(1)}%
                         </span>
@@ -1107,7 +1107,7 @@ export default function ManagerDashboardPage() {
                       <td className={`px-5 py-3 text-right ${isHighDiscount ? 'text-amber-700 font-semibold' : 'text-gray-600'}`}>
                         {emp.discountCount}
                         {emp.discountAmount > 0 && (
-                          <span className="text-[10px] text-gray-400 ml-1">
+                          <span className="text-[10px] text-gray-900 ml-1">
                             ({formatCurrency(emp.discountAmount)})
                           </span>
                         )}
@@ -1122,7 +1122,7 @@ export default function ManagerDashboardPage() {
 
         {/* Legend */}
         {employeeStats.length > 0 && (
-          <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap gap-4 text-[10px] text-gray-400">
+          <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap gap-4 text-[10px] text-gray-900">
             <span><span className="inline-block w-2 h-2 rounded-full bg-red-400 mr-1"></span>High void rate (&gt;5%)</span>
             <span><span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1"></span>Frequent discounts (&gt;10 today)</span>
             <span><span className="inline-block w-2 h-2 rounded-full bg-gray-300 mr-1"></span>&darr; Below avg check size</span>
@@ -1181,12 +1181,12 @@ export default function ManagerDashboardPage() {
       {/* ================================================================ */}
       {/* FOOTER                                                          */}
       {/* ================================================================ */}
-      <div className="flex items-center justify-between py-4 mt-2 text-xs text-gray-400">
+      <div className="flex items-center justify-between py-4 mt-2 text-xs text-gray-900">
         <span>Refreshes every 60s &middot; Socket-driven real-time updates</span>
         <Button
           variant="ghost"
           size="sm"
-          className="text-xs text-gray-400 hover:text-gray-600"
+          className="text-xs text-gray-900 hover:text-gray-600"
           onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics(); refreshLaborPercent(); refreshDoorCount() }}
         >
           Refresh now

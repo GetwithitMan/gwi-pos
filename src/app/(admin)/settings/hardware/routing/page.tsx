@@ -206,7 +206,7 @@ export default function RoutingPage() {
     return (
       <div className="min-h-screen bg-gray-50 p-8">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center py-12 text-gray-500">Loading routing configuration...</div>
+          <div className="text-center py-12 text-gray-900">Loading routing configuration...</div>
         </div>
       </div>
     )
@@ -295,7 +295,7 @@ export default function RoutingPage() {
                           className={`px-2 py-1 text-xs rounded border transition-colors ${
                             category.printerIds?.includes(dest.id)
                               ? dest.type === 'kds' ? 'bg-green-500 text-white border-green-500' : 'bg-blue-500 text-white border-blue-500'
-                              : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
+                              : 'bg-white text-gray-900 border-gray-300 hover:border-blue-300'
                           }`}
                         >
                           {dest.name}{dest.type === 'kds' ? ' (KDS)' : ''}
@@ -318,7 +318,7 @@ export default function RoutingPage() {
                           <div className="flex-1">
                             <span className="text-sm font-medium">{item.name}</span>
                             {(item.printerIds || item.backupPrinterIds) && (
-                              <div className="text-xs text-gray-500 mt-1">
+                              <div className="text-xs text-gray-900 mt-1">
                                 {item.printerIds && (
                                   <span>Destinations: {getDestinationNames(item.printerIds)}</span>
                                 )}
@@ -342,7 +342,7 @@ export default function RoutingPage() {
                         {editingItem === item.id && (
                           <div className="mt-3 pt-3 border-t space-y-3">
                             <div>
-                              <label className="text-xs font-medium text-gray-700 mb-1 block">
+                              <label className="text-xs font-medium text-gray-900 mb-1 block">
                                 Print Destinations (override category)
                               </label>
                               <div className="flex flex-wrap gap-1">
@@ -360,20 +360,20 @@ export default function RoutingPage() {
                                     className={`px-2 py-1 text-xs rounded border transition-colors ${
                                       item.printerIds?.includes(dest.id)
                                         ? dest.type === 'kds' ? 'bg-green-500 text-white border-green-500' : 'bg-blue-500 text-white border-blue-500'
-                                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
+                                        : 'bg-white text-gray-900 border-gray-300 hover:border-blue-300'
                                     }`}
                                   >
                                     {dest.name}{dest.type === 'kds' ? ' (KDS)' : ''}
                                   </button>
                                 ))}
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">
+                              <p className="text-xs text-gray-900 mt-1">
                                 Leave empty to inherit from category
                               </p>
                             </div>
 
                             <div>
-                              <label className="text-xs font-medium text-gray-700 mb-1 block">
+                              <label className="text-xs font-medium text-gray-900 mb-1 block">
                                 Backup Printer (if primary is offline)
                               </label>
                               <div className="flex flex-wrap gap-1">
@@ -391,14 +391,14 @@ export default function RoutingPage() {
                                     className={`px-2 py-1 text-xs rounded border transition-colors ${
                                       item.backupPrinterIds?.includes(dest.id)
                                         ? 'bg-orange-500 text-white border-orange-500'
-                                        : 'bg-white text-gray-700 border-gray-300 hover:border-orange-300'
+                                        : 'bg-white text-gray-900 border-gray-300 hover:border-orange-300'
                                     }`}
                                   >
                                     {dest.name}{dest.type === 'kds' ? ' (KDS)' : ''}
                                   </button>
                                 ))}
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">
+                              <p className="text-xs text-gray-900 mt-1">
                                 If the primary printer doesn&apos;t respond, the ticket will be sent here instead. Useful to prevent lost orders during hardware issues.
                               </p>
                             </div>
@@ -407,7 +407,7 @@ export default function RoutingPage() {
                       </div>
                     ))}
                     {categoryItems[category.id].length === 0 && (
-                      <p className="text-sm text-gray-500 text-center py-4">
+                      <p className="text-sm text-gray-900 text-center py-4">
                         No items in this category
                       </p>
                     )}
@@ -421,7 +421,7 @@ export default function RoutingPage() {
         {categories.length === 0 && (
           <Card>
             <CardContent className="py-12">
-              <p className="text-center text-gray-500">
+              <p className="text-center text-gray-900">
                 No categories found. Add categories in the Menu page.
               </p>
             </CardContent>
@@ -431,7 +431,7 @@ export default function RoutingPage() {
         {/* Modifier Routing Info */}
         <Card className="mt-6 bg-gray-50">
           <CardContent className="py-4">
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-gray-900">
               <strong>Modifier Routing:</strong> Configure modifier printer routing in the{' '}
               <button
                 onClick={() => router.push('/menu')}

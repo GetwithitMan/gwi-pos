@@ -80,7 +80,7 @@ export default function TabSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-700 text-lg">Loading tab settings...</div>
+          <div className="text-gray-900 text-lg">Loading tab settings...</div>
         </div>
       </div>
     )
@@ -104,7 +104,7 @@ export default function TabSettingsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -164,7 +164,7 @@ export default function TabSettingsPage() {
 
             <div className="flex items-center justify-between py-3 border-t border-gray-100">
               <div>
-                <div className="text-sm text-gray-700">Inactivity Warning After</div>
+                <div className="text-sm text-gray-900">Inactivity Warning After</div>
                 <div className="text-xs text-gray-600">Show a reminder when a tab hasn&apos;t had any activity for this long. This is a visual warning only — tabs are never automatically closed.</div>
               </div>
               <div className="flex items-center gap-2">
@@ -177,7 +177,7 @@ export default function TabSettingsPage() {
                   aria-label="Inactivity warning minutes"
                   className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 />
-                <span className="text-sm text-gray-700">min</span>
+                <span className="text-sm text-gray-900">min</span>
               </div>
             </div>
           </div>
@@ -283,7 +283,7 @@ export default function TabSettingsPage() {
           <div className="mt-4 pt-4 border-t border-gray-100">
             <div className="flex items-center justify-between py-2">
               <div>
-                <div className="text-sm text-gray-700">Max Capture Retries</div>
+                <div className="text-sm text-gray-900">Max Capture Retries</div>
                 <div className="text-xs text-gray-600">How many times to retry a failed card charge before giving up and flagging the tab as a walkout.</div>
               </div>
               <input

@@ -119,7 +119,7 @@ export default function PaymentsPage() {
         {/* Tip Suggestions */}
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
           <h2 className="text-lg font-semibold text-white mb-1">Tip Suggestions</h2>
-          <p className="text-sm text-gray-300 mb-5">
+          <p className="text-sm text-gray-900 mb-5">
             These percentages appear as quick-tap buttons on the customer checkout page.
           </p>
 
@@ -136,7 +136,7 @@ export default function PaymentsPage() {
                     onChange={e => handleTipChange(i, e.target.value)}
                     className="w-24 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm">%</span>
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-900 text-sm">%</span>
                 </div>
               </div>
             ))}
@@ -152,7 +152,7 @@ export default function PaymentsPage() {
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     settings.defaultTip === tip
                       ? 'bg-blue-600 text-white'
-                      : 'bg-gray-800 text-gray-300 border border-gray-700 hover:border-gray-600'
+                      : 'bg-gray-800 text-gray-900 border border-gray-700 hover:border-gray-600'
                   }`}
                 >
                   {tip}%
@@ -163,7 +163,7 @@ export default function PaymentsPage() {
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   settings.defaultTip === null
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-300 border border-gray-700 hover:border-gray-600'
+                    : 'bg-gray-800 text-gray-900 border border-gray-700 hover:border-gray-600'
                 }`}
               >
                 No default
@@ -180,7 +180,7 @@ export default function PaymentsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white">Require ZIP code for card payment</p>
-                <p className="text-xs text-gray-300 mt-0.5">
+                <p className="text-xs text-gray-900 mt-0.5">
                   Some payment processors require ZIP for card-not-present transactions
                 </p>
               </div>
@@ -229,7 +229,7 @@ export default function PaymentsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-white">Require contact info for pickup orders</p>
-                <p className="text-xs text-gray-300 mt-0.5">
+                <p className="text-xs text-gray-900 mt-0.5">
                   Requires customers to provide phone or email when ordering takeout
                 </p>
               </div>
@@ -254,13 +254,13 @@ export default function PaymentsPage() {
 
         {/* Future Options */}
         <div className="bg-gray-900/50 rounded-xl border border-gray-800/50 p-6 opacity-60">
-          <h2 className="text-lg font-semibold text-gray-400 mb-4">Future Options</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Future Options</h2>
 
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-gray-500">Allow pay-on-pickup (cash)</p>
-                <span className="px-2 py-0.5 text-xs bg-gray-800 text-gray-500 rounded-full">Coming soon</span>
+                <p className="text-sm font-medium text-gray-900">Allow pay-on-pickup (cash)</p>
+                <span className="px-2 py-0.5 text-xs bg-gray-800 text-gray-900 rounded-full">Coming soon</span>
               </div>
               <p className="text-xs text-gray-600 mt-0.5">
                 Future feature — customers can choose to pay when they pick up

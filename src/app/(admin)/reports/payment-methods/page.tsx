@@ -321,7 +321,7 @@ export default function PaymentMethodsReportPage() {
               {preset === 'custom' && (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                    <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                     <input
                       type="date"
                       value={startDate}
@@ -330,7 +330,7 @@ export default function PaymentMethodsReportPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                    <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                     <input
                       type="date"
                       value={endDate}
@@ -344,7 +344,7 @@ export default function PaymentMethodsReportPage() {
                 {isLoading ? 'Loading...' : 'Apply'}
               </Button>
               <div className="flex-1" />
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-gray-900">
                 {startDate === endDate ? startDate : `${startDate} to ${endDate}`}
               </div>
             </div>
@@ -360,46 +360,46 @@ export default function PaymentMethodsReportPage() {
         />
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading payment methods data...</div>
+          <div className="text-center py-12 text-gray-900">Loading payment methods data...</div>
         ) : agg.totalPayments === 0 ? (
-          <div className="text-center py-12 text-gray-500">No payment data for this period</div>
+          <div className="text-center py-12 text-gray-900">No payment data for this period</div>
         ) : (
           <div className="space-y-6">
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Cash</p>
+                  <p className="text-xs text-gray-900">Cash</p>
                   <p className={`text-xl font-bold ${methodColors.cash}`}>{formatCurrency(agg.cash.amount)}</p>
-                  <p className="text-xs text-gray-400">{agg.cash.count} txns &middot; {pct(agg.cash.amount, agg.totalPayments)}%</p>
+                  <p className="text-xs text-gray-900">{agg.cash.count} txns &middot; {pct(agg.cash.amount, agg.totalPayments)}%</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Credit Card</p>
+                  <p className="text-xs text-gray-900">Credit Card</p>
                   <p className={`text-xl font-bold ${methodColors.credit}`}>{formatCurrency(agg.credit.amount)}</p>
-                  <p className="text-xs text-gray-400">{agg.credit.count} txns &middot; {pct(agg.credit.amount, agg.totalPayments)}%</p>
+                  <p className="text-xs text-gray-900">{agg.credit.count} txns &middot; {pct(agg.credit.amount, agg.totalPayments)}%</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Gift Card</p>
+                  <p className="text-xs text-gray-900">Gift Card</p>
                   <p className={`text-xl font-bold ${methodColors.gift}`}>{formatCurrency(agg.gift.amount)}</p>
-                  <p className="text-xs text-gray-400">{agg.gift.count} txns &middot; {pct(agg.gift.amount, agg.totalPayments)}%</p>
+                  <p className="text-xs text-gray-900">{agg.gift.count} txns &middot; {pct(agg.gift.amount, agg.totalPayments)}%</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">House Account</p>
+                  <p className="text-xs text-gray-900">House Account</p>
                   <p className={`text-xl font-bold ${methodColors.houseAccount}`}>{formatCurrency(agg.houseAccount.amount)}</p>
-                  <p className="text-xs text-gray-400">{agg.houseAccount.count} txns &middot; {pct(agg.houseAccount.amount, agg.totalPayments)}%</p>
+                  <p className="text-xs text-gray-900">{agg.houseAccount.count} txns &middot; {pct(agg.houseAccount.amount, agg.totalPayments)}%</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Other</p>
+                  <p className="text-xs text-gray-900">Other</p>
                   <p className={`text-xl font-bold ${methodColors.other}`}>{formatCurrency(agg.other.amount)}</p>
-                  <p className="text-xs text-gray-400">{agg.other.count} txns &middot; {pct(agg.other.amount, agg.totalPayments)}%</p>
+                  <p className="text-xs text-gray-900">{agg.other.count} txns &middot; {pct(agg.other.amount, agg.totalPayments)}%</p>
                 </CardContent>
               </Card>
             </div>
@@ -408,15 +408,15 @@ export default function PaymentMethodsReportPage() {
             <div className="grid grid-cols-2 gap-4">
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Total Payments</p>
+                  <p className="text-xs text-gray-900">Total Payments</p>
                   <p className="text-2xl font-bold text-gray-900">{formatCurrency(agg.totalPayments)}</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <p className="text-xs text-gray-500">Total Tips</p>
+                  <p className="text-xs text-gray-900">Total Tips</p>
                   <p className="text-2xl font-bold text-orange-600">{formatCurrency(agg.totalTips)}</p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-gray-900">
                     Cash tips: {formatCurrency(agg.cash.tips)} &middot; Card tips: {formatCurrency(agg.credit.tips)}
                   </p>
                 </CardContent>
@@ -438,7 +438,7 @@ export default function PaymentMethodsReportPage() {
                       return (
                         <div key={key}>
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-medium text-gray-700">{label}</span>
+                            <span className="text-sm font-medium text-gray-900">{label}</span>
                             <span className="text-sm text-gray-600">
                               {formatCurrency(brand.amount)} ({brand.count} txns) &middot; {pct(brand.amount, agg.credit.amount)}%
                             </span>
@@ -467,12 +467,12 @@ export default function PaymentMethodsReportPage() {
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Method</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Transactions</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Amount</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Tips</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Tip %</th>
-                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">% of Total</th>
+                        <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Method</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Transactions</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Amount</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Tips</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Tip %</th>
+                        <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">% of Total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -481,25 +481,25 @@ export default function PaymentMethodsReportPage() {
                         <td className="px-4 py-3 text-right text-gray-600">{agg.cash.count}</td>
                         <td className="px-4 py-3 text-right font-medium">{formatCurrency(agg.cash.amount)}</td>
                         <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(agg.cash.tips)}</td>
-                        <td className="px-4 py-3 text-right text-gray-500">{agg.cash.amount > 0 ? pct(agg.cash.tips, agg.cash.amount) : '0.0'}%</td>
-                        <td className="px-4 py-3 text-right text-gray-500">{pct(agg.cash.amount, agg.totalPayments)}%</td>
+                        <td className="px-4 py-3 text-right text-gray-900">{agg.cash.amount > 0 ? pct(agg.cash.tips, agg.cash.amount) : '0.0'}%</td>
+                        <td className="px-4 py-3 text-right text-gray-900">{pct(agg.cash.amount, agg.totalPayments)}%</td>
                       </tr>
                       <tr className="border-t hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium text-blue-600">Credit Card</td>
                         <td className="px-4 py-3 text-right text-gray-600">{agg.credit.count}</td>
                         <td className="px-4 py-3 text-right font-medium">{formatCurrency(agg.credit.amount)}</td>
                         <td className="px-4 py-3 text-right text-orange-600">{formatCurrency(agg.credit.tips)}</td>
-                        <td className="px-4 py-3 text-right text-gray-500">{agg.credit.amount > 0 ? pct(agg.credit.tips, agg.credit.amount) : '0.0'}%</td>
-                        <td className="px-4 py-3 text-right text-gray-500">{pct(agg.credit.amount, agg.totalPayments)}%</td>
+                        <td className="px-4 py-3 text-right text-gray-900">{agg.credit.amount > 0 ? pct(agg.credit.tips, agg.credit.amount) : '0.0'}%</td>
+                        <td className="px-4 py-3 text-right text-gray-900">{pct(agg.credit.amount, agg.totalPayments)}%</td>
                       </tr>
                       {agg.gift.count > 0 && (
                         <tr className="border-t hover:bg-gray-50">
                           <td className="px-4 py-3 font-medium text-purple-600">Gift Card</td>
                           <td className="px-4 py-3 text-right text-gray-600">{agg.gift.count}</td>
                           <td className="px-4 py-3 text-right font-medium">{formatCurrency(agg.gift.amount)}</td>
-                          <td className="px-4 py-3 text-right text-gray-400">--</td>
-                          <td className="px-4 py-3 text-right text-gray-400">--</td>
-                          <td className="px-4 py-3 text-right text-gray-500">{pct(agg.gift.amount, agg.totalPayments)}%</td>
+                          <td className="px-4 py-3 text-right text-gray-900">--</td>
+                          <td className="px-4 py-3 text-right text-gray-900">--</td>
+                          <td className="px-4 py-3 text-right text-gray-900">{pct(agg.gift.amount, agg.totalPayments)}%</td>
                         </tr>
                       )}
                       {agg.houseAccount.count > 0 && (
@@ -507,9 +507,9 @@ export default function PaymentMethodsReportPage() {
                           <td className="px-4 py-3 font-medium text-orange-600">House Account</td>
                           <td className="px-4 py-3 text-right text-gray-600">{agg.houseAccount.count}</td>
                           <td className="px-4 py-3 text-right font-medium">{formatCurrency(agg.houseAccount.amount)}</td>
-                          <td className="px-4 py-3 text-right text-gray-400">--</td>
-                          <td className="px-4 py-3 text-right text-gray-400">--</td>
-                          <td className="px-4 py-3 text-right text-gray-500">{pct(agg.houseAccount.amount, agg.totalPayments)}%</td>
+                          <td className="px-4 py-3 text-right text-gray-900">--</td>
+                          <td className="px-4 py-3 text-right text-gray-900">--</td>
+                          <td className="px-4 py-3 text-right text-gray-900">{pct(agg.houseAccount.amount, agg.totalPayments)}%</td>
                         </tr>
                       )}
                       {agg.other.count > 0 && (
@@ -517,9 +517,9 @@ export default function PaymentMethodsReportPage() {
                           <td className="px-4 py-3 font-medium text-gray-600">Other</td>
                           <td className="px-4 py-3 text-right text-gray-600">{agg.other.count}</td>
                           <td className="px-4 py-3 text-right font-medium">{formatCurrency(agg.other.amount)}</td>
-                          <td className="px-4 py-3 text-right text-gray-400">--</td>
-                          <td className="px-4 py-3 text-right text-gray-400">--</td>
-                          <td className="px-4 py-3 text-right text-gray-500">{pct(agg.other.amount, agg.totalPayments)}%</td>
+                          <td className="px-4 py-3 text-right text-gray-900">--</td>
+                          <td className="px-4 py-3 text-right text-gray-900">--</td>
+                          <td className="px-4 py-3 text-right text-gray-900">{pct(agg.other.amount, agg.totalPayments)}%</td>
                         </tr>
                       )}
                     </tbody>
@@ -549,13 +549,13 @@ export default function PaymentMethodsReportPage() {
                     <table className="w-full">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Date</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Cash</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Credit</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Gift</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">House Acct</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Other</th>
-                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Total</th>
+                          <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Date</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Cash</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Credit</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Gift</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">House Acct</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Other</th>
+                          <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Total</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -591,7 +591,7 @@ export default function PaymentMethodsReportPage() {
             )}
 
             {/* Footer */}
-            <div className="text-center text-xs text-gray-500 pt-4">
+            <div className="text-center text-xs text-gray-900 pt-4">
               Generated on {new Date().toLocaleString()}
             </div>
           </div>

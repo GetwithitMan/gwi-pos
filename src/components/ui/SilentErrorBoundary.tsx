@@ -47,7 +47,7 @@ export class SilentErrorBoundary extends React.Component<
 
       return (
         <div className="flex flex-col items-center justify-center p-6 text-center gap-3">
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-900">
             Something went wrong{this.props.name ? ` in ${this.props.name}` : ''}.
           </p>
           <button

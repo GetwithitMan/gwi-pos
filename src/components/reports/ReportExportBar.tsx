@@ -272,7 +272,7 @@ export function ReportExportBar({
                   type="text"
                   readOnly
                   value={shareUrl}
-                  className="flex-1 px-3 py-2 border rounded-lg bg-gray-50 text-sm text-gray-700 font-mono"
+                  className="flex-1 px-3 py-2 border rounded-lg bg-gray-50 text-sm text-gray-900 font-mono"
                   onClick={e => (e.target as HTMLInputElement).select()}
                 />
                 <Button
@@ -282,7 +282,7 @@ export function ReportExportBar({
                   {shareCopied ? 'Copied!' : 'Copy'}
                 </Button>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-900">
                 This link expires in 72 hours and can be viewed by anyone.
               </p>
             </div>
@@ -307,7 +307,7 @@ export function ReportExportBar({
           </p>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Recipient Email <span className="text-red-500">*</span>
             </label>
             <input
@@ -320,7 +320,7 @@ export function ReportExportBar({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Recipient Name (optional)
             </label>
             <input

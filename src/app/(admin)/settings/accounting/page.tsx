@@ -247,7 +247,7 @@ export default function AccountingSettingsPage() {
           breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-700 text-lg">Loading accounting settings...</div>
+          <div className="text-gray-900 text-lg">Loading accounting settings...</div>
         </div>
       </div>
     )
@@ -273,7 +273,7 @@ export default function AccountingSettingsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -304,7 +304,7 @@ export default function AccountingSettingsPage() {
                 {/* Provider Selector */}
                 <div className="py-3 border-t border-gray-100">
                   <label className="block text-sm font-medium text-gray-900 mb-1">Accounting Provider</label>
-                  <p className="text-xs text-gray-500 mb-2">Select your accounting software for format-specific exports</p>
+                  <p className="text-xs text-gray-900 mb-2">Select your accounting software for format-specific exports</p>
                   <select
                     value={accounting.provider}
                     onChange={e => updateAccounting('provider', e.target.value as AccountingSettings['provider'])}
@@ -330,7 +330,7 @@ export default function AccountingSettingsPage() {
                 {accounting.autoExportDaily && (
                   <div className="py-3 border-t border-gray-100 pl-4">
                     <label className="block text-sm font-medium text-gray-900 mb-1">Export Time</label>
-                    <p className="text-xs text-gray-500 mb-2">When to run the daily auto-export (24-hour format)</p>
+                    <p className="text-xs text-gray-900 mb-2">When to run the daily auto-export (24-hour format)</p>
                     <input
                       type="time"
                       value={accounting.exportTime}
@@ -359,7 +359,7 @@ export default function AccountingSettingsPage() {
                 <div key={field.key} className="flex items-start gap-4 py-2 border-b border-gray-50 last:border-0">
                   <div className="flex-1 min-w-0">
                     <label className="block text-sm font-medium text-gray-900">{field.label}</label>
-                    <p className="text-xs text-gray-500">{field.description}</p>
+                    <p className="text-xs text-gray-900">{field.description}</p>
                   </div>
                   <input
                     type="text"
@@ -379,7 +379,7 @@ export default function AccountingSettingsPage() {
                   setAccounting(prev => ({ ...prev, glMapping: { ...DEFAULT_GL_MAPPING } }))
                   setIsDirty(true)
                 }}
-                className="text-sm text-gray-500 hover:text-gray-700 underline"
+                className="text-sm text-gray-900 hover:text-gray-900 underline"
               >
                 Reset to defaults
               </button>
@@ -397,7 +397,7 @@ export default function AccountingSettingsPage() {
 
             <div className="flex flex-wrap items-end gap-3 mb-4">
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Business Date</label>
+                <label className="block text-xs font-medium text-gray-900 mb-1">Business Date</label>
                 <input
                   type="date"
                   value={previewDate}
@@ -410,13 +410,13 @@ export default function AccountingSettingsPage() {
                 type="button"
                 onClick={handlePreview}
                 disabled={isLoadingPreview}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 transition-all"
+                className="px-4 py-2 bg-gray-100 text-gray-900 rounded-lg text-sm font-medium hover:bg-gray-200 disabled:opacity-50 transition-all"
               >
                 {isLoadingPreview ? 'Loading...' : 'Preview Journal'}
               </button>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Format</label>
+                <label className="block text-xs font-medium text-gray-900 mb-1">Format</label>
                 <select
                   value={exportFormat}
                   onChange={e => setExportFormat(e.target.value)}
@@ -461,21 +461,21 @@ export default function AccountingSettingsPage() {
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Account</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Debit</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Credit</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Memo</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">Account</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">Name</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-900 uppercase">Debit</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-900 uppercase">Credit</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">Memo</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {preview.entries.map((entry, i) => (
                         <tr key={i} className="hover:bg-gray-50">
                           <td className="px-3 py-2 font-mono text-gray-900">{entry.accountCode}</td>
-                          <td className="px-3 py-2 text-gray-700">{entry.accountName}</td>
+                          <td className="px-3 py-2 text-gray-900">{entry.accountName}</td>
                           <td className="px-3 py-2 text-right text-gray-900">{entry.debit > 0 ? `$${entry.debit.toFixed(2)}` : ''}</td>
                           <td className="px-3 py-2 text-right text-gray-900">{entry.credit > 0 ? `$${entry.credit.toFixed(2)}` : ''}</td>
-                          <td className="px-3 py-2 text-gray-500 text-xs">{entry.memo}</td>
+                          <td className="px-3 py-2 text-gray-900 text-xs">{entry.memo}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -503,28 +503,28 @@ export default function AccountingSettingsPage() {
             <p className="text-sm text-gray-600 mb-4">Past journal exports.</p>
 
             {isLoadingHistory ? (
-              <div className="text-sm text-gray-500 py-4">Loading history...</div>
+              <div className="text-sm text-gray-900 py-4">Loading history...</div>
             ) : history.length === 0 ? (
-              <div className="text-sm text-gray-500 py-4">No exports yet. Use the Preview & Export section above to generate your first journal.</div>
+              <div className="text-sm text-gray-900 py-4">No exports yet. Use the Preview & Export section above to generate your first journal.</div>
             ) : (
               <div className="overflow-x-auto border border-gray-200 rounded-lg">
                 <table className="min-w-full divide-y divide-gray-200 text-sm">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Format</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Exported At</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">By</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Entries</th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Debits</th>
-                      <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Balanced</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">Date</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">Format</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">Exported At</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-900 uppercase">By</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-900 uppercase">Entries</th>
+                      <th className="px-3 py-2 text-right text-xs font-medium text-gray-900 uppercase">Debits</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-gray-900 uppercase">Balanced</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {history.map(item => (
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2 text-gray-900 font-medium">{item.date}</td>
-                        <td className="px-3 py-2 text-gray-700 uppercase text-xs">{item.format}</td>
+                        <td className="px-3 py-2 text-gray-900 uppercase text-xs">{item.format}</td>
                         <td className="px-3 py-2 text-gray-600 text-xs">
                           {new Date(item.exportedAt).toLocaleString()}
                         </td>

@@ -234,7 +234,7 @@ export function ModifierFlowEditor({
 
   if (!selectedGroupId) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400 bg-white p-6">
+      <div className="h-full flex items-center justify-center text-gray-900 bg-white p-6">
         <div className="text-center">
           <svg className="w-10 h-10 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -248,7 +248,7 @@ export function ModifierFlowEditor({
 
   if (loading || !group) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400 bg-white p-6">
+      <div className="h-full flex items-center justify-center text-gray-900 bg-white p-6">
         <p className="text-sm">Loading group settings...</p>
       </div>
     )
@@ -306,7 +306,7 @@ export function ModifierFlowEditor({
                 Stacking
               </span>
             )}
-            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-700">
+            <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-900">
               {group.minSelections}-{group.maxSelections} selections
             </span>
             <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700">
@@ -317,7 +317,7 @@ export function ModifierFlowEditor({
 
         {/* Group Settings */}
         <div className="border-b pb-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Group Settings</h3>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Group Settings</h3>
           <div className="space-y-3">
             {/* Min/Max Selections */}
             <div className="flex items-center gap-2">
@@ -333,7 +333,7 @@ export function ModifierFlowEditor({
                 min="0"
                 disabled={exclusionKey === '__new__'}
               />
-              <span className="text-gray-400">to</span>
+              <span className="text-gray-900">to</span>
               <input
                 type="number"
                 value={group.maxSelections}
@@ -354,8 +354,8 @@ export function ModifierFlowEditor({
                 onChange={(e) => handleSettingChange({ isRequired: e.target.checked })}
                 className="w-4 h-4 rounded"
               />
-              <span className="text-sm text-gray-700">Required</span>
-              <span className="text-xs text-gray-400">Customer must make a selection</span>
+              <span className="text-sm text-gray-900">Required</span>
+              <span className="text-xs text-gray-900">Customer must make a selection</span>
             </label>
             {/* Stacking Toggle */}
             <label className="flex items-center gap-3 cursor-pointer">
@@ -365,8 +365,8 @@ export function ModifierFlowEditor({
                 onChange={(e) => handleSettingChange({ allowStacking: e.target.checked })}
                 className="w-4 h-4 rounded"
               />
-              <span className="text-sm text-gray-700">Allow Stacking</span>
-              <span className="text-xs text-gray-400">Same item can be selected multiple times</span>
+              <span className="text-sm text-gray-900">Allow Stacking</span>
+              <span className="text-xs text-gray-900">Same item can be selected multiple times</span>
             </label>
             {/* Delete Group */}
             <button
@@ -381,7 +381,7 @@ export function ModifierFlowEditor({
         {/* Section 2: Tiered Pricing */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-semibold text-gray-700">Tiered Pricing</label>
+            <label className="text-sm font-semibold text-gray-900">Tiered Pricing</label>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
@@ -420,7 +420,7 @@ export function ModifierFlowEditor({
                     disabled={exclusionKey === '__new__'}
                     className="w-4 h-4 text-blue-600 rounded disabled:opacity-50"
                   />
-                  <span className="text-gray-700">Flat Tiers — Fixed price per tier</span>
+                  <span className="text-gray-900">Flat Tiers — Fixed price per tier</span>
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -433,7 +433,7 @@ export function ModifierFlowEditor({
                     disabled={exclusionKey === '__new__'}
                     className="w-4 h-4 text-blue-600 rounded disabled:opacity-50"
                   />
-                  <span className="text-gray-700">Free Threshold — First N selections free</span>
+                  <span className="text-gray-900">Free Threshold — First N selections free</span>
                 </label>
               </div>
 
@@ -537,8 +537,8 @@ export function ModifierFlowEditor({
         {/* Section 3: Exclusion Rules */}
         <div className="space-y-3 border-t pt-4">
           <label className="block">
-            <span className="text-sm font-semibold text-gray-700">Exclusion Group</span>
-            <p className="mt-0.5 text-xs text-gray-500">
+            <span className="text-sm font-semibold text-gray-900">Exclusion Group</span>
+            <p className="mt-0.5 text-xs text-gray-900">
               Prevent duplicate selections across groups. Modifiers selected in one group will be greyed out in related groups.
             </p>
             <select

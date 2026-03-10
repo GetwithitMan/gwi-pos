@@ -208,7 +208,7 @@ export function ManagerPinElevationModal({
                     type="button"
                     onClick={handleClear}
                     disabled={isVerifying}
-                    className="h-14 rounded-xl bg-gray-100 text-gray-500 text-sm font-medium
+                    className="h-14 rounded-xl bg-gray-100 text-gray-900 text-sm font-medium
                       hover:bg-gray-200 active:bg-gray-300 active:scale-95
                       transition-all disabled:opacity-40 disabled:pointer-events-none
                       touch-manipulation"
@@ -225,7 +225,7 @@ export function ManagerPinElevationModal({
                     type="button"
                     onClick={handleBackspace}
                     disabled={isVerifying}
-                    className="h-14 rounded-xl bg-gray-100 text-gray-500
+                    className="h-14 rounded-xl bg-gray-100 text-gray-900
                       hover:bg-gray-200 active:bg-gray-300 active:scale-95
                       transition-all disabled:opacity-40 disabled:pointer-events-none
                       flex items-center justify-center touch-manipulation"
@@ -273,7 +273,7 @@ export function ManagerPinElevationModal({
           onClick={onClose}
           disabled={isVerifying}
           className="mt-4 w-full max-w-[280px] py-2.5 rounded-xl text-sm font-medium
-            text-gray-500 bg-gray-100 hover:bg-gray-200 active:bg-gray-300
+            text-gray-900 bg-gray-100 hover:bg-gray-200 active:bg-gray-300
             transition-all disabled:opacity-40 touch-manipulation"
         >
           Cancel

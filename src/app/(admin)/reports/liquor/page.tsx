@@ -235,7 +235,7 @@ export default function LiquorReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -244,7 +244,7 @@ export default function LiquorReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -303,9 +303,9 @@ export default function LiquorReportPage() {
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-700">Loading report...</div>
+          <div className="text-center py-12 text-gray-900">Loading report...</div>
         ) : !report ? (
-          <div className="text-center py-12 text-gray-700">Failed to load report</div>
+          <div className="text-center py-12 text-gray-900">Failed to load report</div>
         ) : (
           <>
             {/* Overview Tab */}
@@ -315,13 +315,13 @@ export default function LiquorReportPage() {
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Total Pours</p>
+                      <p className="text-sm text-gray-900">Total Pours</p>
                       <p className="text-2xl font-bold text-blue-600">{report.summary.totalPours}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Pour Cost</p>
+                      <p className="text-sm text-gray-900">Pour Cost</p>
                       <p className="text-2xl font-bold text-red-600">
                         {formatCurrency(report.summary.totalPourCost)}
                       </p>
@@ -329,7 +329,7 @@ export default function LiquorReportPage() {
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Spirit Revenue</p>
+                      <p className="text-sm text-gray-900">Spirit Revenue</p>
                       <p className="text-2xl font-bold text-green-600">
                         {formatCurrency(report.summary.totalSpiritRevenue)}
                       </p>
@@ -337,20 +337,20 @@ export default function LiquorReportPage() {
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Gross Margin</p>
+                      <p className="text-sm text-gray-900">Gross Margin</p>
                       <p className="text-2xl font-bold text-purple-600">{report.summary.grossMargin}%</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Bottles Used</p>
-                      <p className="text-2xl font-bold text-gray-700">{report.summary.uniqueBottlesUsed}</p>
+                      <p className="text-sm text-gray-900">Bottles Used</p>
+                      <p className="text-2xl font-bold text-gray-900">{report.summary.uniqueBottlesUsed}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Spirit Selections</p>
-                      <p className="text-2xl font-bold text-gray-700">{report.summary.spiritSelectionCount}</p>
+                      <p className="text-sm text-gray-900">Spirit Selections</p>
+                      <p className="text-2xl font-bold text-gray-900">{report.summary.spiritSelectionCount}</p>
                     </CardContent>
                   </Card>
                 </div>
@@ -538,7 +538,7 @@ export default function LiquorReportPage() {
                 </CardHeader>
                 <CardContent>
                   {report.pourCostAnalysis.length === 0 ? (
-                    <div className="text-center py-8 text-gray-700">
+                    <div className="text-center py-8 text-gray-900">
                       <p className="mb-2">No cocktails with recipes found.</p>
                       <p className="text-sm">Add recipes in the Liquor Builder to see pour cost analysis.</p>
                     </div>
@@ -573,7 +573,7 @@ export default function LiquorReportPage() {
                                     {item.margin}%
                                   </span>
                                 </td>
-                                <td className="py-3 px-4 text-center text-gray-700">{item.ingredientCount}</td>
+                                <td className="py-3 px-4 text-center text-gray-900">{item.ingredientCount}</td>
                               </tr>
                             )
                           })}
@@ -592,25 +592,25 @@ export default function LiquorReportPage() {
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Upsells Shown</p>
+                      <p className="text-sm text-gray-900">Upsells Shown</p>
                       <p className="text-2xl font-bold text-blue-600">{report.upsells.summary.totalShown}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Upsells Accepted</p>
+                      <p className="text-sm text-gray-900">Upsells Accepted</p>
                       <p className="text-2xl font-bold text-green-600">{report.upsells.summary.totalAccepted}</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Acceptance Rate</p>
+                      <p className="text-sm text-gray-900">Acceptance Rate</p>
                       <p className="text-2xl font-bold text-purple-600">{report.upsells.summary.acceptanceRate}%</p>
                     </CardContent>
                   </Card>
                   <Card>
                     <CardContent className="p-4">
-                      <p className="text-sm text-gray-700">Upsell Revenue</p>
+                      <p className="text-sm text-gray-900">Upsell Revenue</p>
                       <p className="text-2xl font-bold text-green-600">
                         {formatCurrency(report.upsells.summary.totalRevenue)}
                       </p>

@@ -320,31 +320,31 @@ export default function TipPayoutsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Card>
             <CardContent className="pt-5">
-              <div className="text-sm text-gray-500 mb-1">Total Owed</div>
+              <div className="text-sm text-gray-900 mb-1">Total Owed</div>
               <div className="text-2xl font-bold text-gray-900">
                 {formatCurrency(totalOwedDollars)}
               </div>
-              <div className="text-xs text-gray-400 mt-1">Sum of all positive balances</div>
+              <div className="text-xs text-gray-900 mt-1">Sum of all positive balances</div>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="pt-5">
-              <div className="text-sm text-gray-500 mb-1">Employees Owed</div>
+              <div className="text-sm text-gray-900 mb-1">Employees Owed</div>
               <div className="text-2xl font-bold text-gray-900">
                 {employeesOwed.length}
               </div>
-              <div className="text-xs text-gray-400 mt-1">With positive balance</div>
+              <div className="text-xs text-gray-900 mt-1">With positive balance</div>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="pt-5">
-              <div className="text-sm text-gray-500 mb-1">Last Batch Payout</div>
+              <div className="text-sm text-gray-900 mb-1">Last Batch Payout</div>
               <div className="text-lg font-bold text-gray-900">
                 {lastBatchDate ? formatDate(lastBatchDate) : 'Never'}
               </div>
-              <div className="text-xs text-gray-400 mt-1">Most recent payroll batch</div>
+              <div className="text-xs text-gray-900 mt-1">Most recent payroll batch</div>
             </CardContent>
           </Card>
         </div>
@@ -359,7 +359,7 @@ export default function TipPayoutsPage() {
                 <CardTitle>Employee Balances</CardTitle>
                 <p className="text-sm text-gray-600 mt-0.5">Tip bank balances owed to employees</p>
               </div>
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <label className="flex items-center gap-2 text-sm text-gray-900 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={showZeroBalances}
@@ -372,7 +372,7 @@ export default function TipPayoutsPage() {
           </CardHeader>
           <CardContent>
             {employeesOwed.length === 0 && !showZeroBalances ? (
-              <div className="text-center py-12 text-gray-400">
+              <div className="text-center py-12 text-gray-900">
                 <svg className="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -384,10 +384,10 @@ export default function TipPayoutsPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gray-200">
-                      <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Employee</th>
-                      <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Role</th>
-                      <th className="text-right text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Balance</th>
-                      <th className="text-right text-xs font-medium text-gray-500 uppercase tracking-wider pb-3">Actions</th>
+                      <th className="text-left text-xs font-medium text-gray-900 uppercase tracking-wider pb-3 pr-4">Employee</th>
+                      <th className="text-left text-xs font-medium text-gray-900 uppercase tracking-wider pb-3 pr-4">Role</th>
+                      <th className="text-right text-xs font-medium text-gray-900 uppercase tracking-wider pb-3 pr-4">Balance</th>
+                      <th className="text-right text-xs font-medium text-gray-900 uppercase tracking-wider pb-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -407,10 +407,10 @@ export default function TipPayoutsPage() {
                             </div>
                           </td>
                           <td className="py-3 pr-4">
-                            <span className="text-sm text-gray-500">{emp.roleName}</span>
+                            <span className="text-sm text-gray-900">{emp.roleName}</span>
                           </td>
                           <td className="py-3 pr-4 text-right">
-                            <span className={`text-sm font-semibold ${isZero ? 'text-gray-400' : 'text-emerald-600'}`}>
+                            <span className={`text-sm font-semibold ${isZero ? 'text-gray-900' : 'text-emerald-600'}`}>
                               {formatCurrency(emp.currentBalanceDollars)}
                             </span>
                           </td>
@@ -444,7 +444,7 @@ export default function TipPayoutsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Batch Actions</CardTitle>
-            <p className="text-sm text-gray-500 mt-0.5">Process payouts for multiple employees at once</p>
+            <p className="text-sm text-gray-900 mt-0.5">Process payouts for multiple employees at once</p>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
@@ -485,7 +485,7 @@ export default function TipPayoutsPage() {
           >
             <div>
               <h2 className="text-base font-semibold text-gray-900">Payout History</h2>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-900">
                 {historyTotal > 0
                   ? `${historyTotal} payout${historyTotal !== 1 ? 's' : ''} on record`
                   : 'View past payouts'
@@ -493,7 +493,7 @@ export default function TipPayoutsPage() {
               </p>
             </div>
             <svg
-              className={`w-5 h-5 text-gray-400 transition-transform ${historyExpanded ? 'rotate-180' : ''}`}
+              className={`w-5 h-5 text-gray-900 transition-transform ${historyExpanded ? 'rotate-180' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -507,7 +507,7 @@ export default function TipPayoutsPage() {
               {/* Date range filter */}
               <div className="flex flex-wrap items-end gap-3 mt-4 mb-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">From</label>
+                  <label className="block text-xs font-medium text-gray-900 mb-1">From</label>
                   <input
                     type="date"
                     value={historyDateFrom}
@@ -516,7 +516,7 @@ export default function TipPayoutsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">To</label>
+                  <label className="block text-xs font-medium text-gray-900 mb-1">To</label>
                   <input
                     type="date"
                     value={historyDateTo}
@@ -530,7 +530,7 @@ export default function TipPayoutsPage() {
                       setHistoryDateFrom('')
                       setHistoryDateTo('')
                     }}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-900 hover:text-gray-900 transition-colors"
                   >
                     Clear
                   </button>
@@ -538,20 +538,20 @@ export default function TipPayoutsPage() {
               </div>
 
               {isHistoryLoading ? (
-                <div className="text-center py-8 text-gray-400">Loading history...</div>
+                <div className="text-center py-8 text-gray-900">Loading history...</div>
               ) : history.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">No payouts found</div>
+                <div className="text-center py-8 text-gray-900">No payouts found</div>
               ) : (
                 <>
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
                         <tr className="border-b border-gray-200">
-                          <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Date</th>
-                          <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Employee</th>
-                          <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Type</th>
-                          <th className="text-right text-xs font-medium text-gray-500 uppercase tracking-wider pb-3 pr-4">Amount</th>
-                          <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider pb-3">Memo</th>
+                          <th className="text-left text-xs font-medium text-gray-900 uppercase tracking-wider pb-3 pr-4">Date</th>
+                          <th className="text-left text-xs font-medium text-gray-900 uppercase tracking-wider pb-3 pr-4">Employee</th>
+                          <th className="text-left text-xs font-medium text-gray-900 uppercase tracking-wider pb-3 pr-4">Type</th>
+                          <th className="text-right text-xs font-medium text-gray-900 uppercase tracking-wider pb-3 pr-4">Amount</th>
+                          <th className="text-left text-xs font-medium text-gray-900 uppercase tracking-wider pb-3">Memo</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -575,7 +575,7 @@ export default function TipPayoutsPage() {
                             <td className="py-3 pr-4 text-right text-sm font-semibold text-gray-900">
                               {formatCurrency(entry.amountDollars)}
                             </td>
-                            <td className="py-3 text-sm text-gray-500 max-w-[200px] truncate">
+                            <td className="py-3 text-sm text-gray-900 max-w-[200px] truncate">
                               {entry.memo || '--'}
                             </td>
                           </tr>
@@ -587,7 +587,7 @@ export default function TipPayoutsPage() {
                   {/* Pagination */}
                   {historyTotal > HISTORY_LIMIT && (
                     <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-                      <span className="text-sm text-gray-400">
+                      <span className="text-sm text-gray-900">
                         Showing {historyOffset + 1}–{Math.min(historyOffset + HISTORY_LIMIT, historyTotal)} of {historyTotal}
                       </span>
                       <div className="flex gap-2">
@@ -630,14 +630,14 @@ export default function TipPayoutsPage() {
         title="Cash Out Tips"
         size="md"
       >
-            <p className="text-sm text-gray-500 mb-5">
+            <p className="text-sm text-gray-900 mb-5">
               Pay out tips for {cashOutEmployee?.displayName || `${cashOutEmployee?.firstName} ${cashOutEmployee?.lastName}`}
             </p>
 
             <div className="space-y-4">
               {/* Current balance display */}
               <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
-                <div className="text-xs text-gray-500 mb-0.5">Current Balance</div>
+                <div className="text-xs text-gray-900 mb-0.5">Current Balance</div>
                 <div className="text-xl font-bold text-emerald-600">
                   {formatCurrency(cashOutEmployee?.currentBalanceDollars ?? 0)}
                 </div>
@@ -645,9 +645,9 @@ export default function TipPayoutsPage() {
 
               {/* Amount input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Payout Amount</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Payout Amount</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-900 text-sm">$</span>
                   <input
                     type="number"
                     step="0.01"
@@ -660,12 +660,12 @@ export default function TipPayoutsPage() {
                     aria-label="Payout amount"
                   />
                 </div>
-                <p className="text-xs text-gray-400 mt-1">Leave at full balance for complete payout</p>
+                <p className="text-xs text-gray-900 mt-1">Leave at full balance for complete payout</p>
               </div>
 
               {/* Memo input */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Memo (optional)</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Memo (optional)</label>
                 <input
                   type="text"
                   value={cashOutMemo}
@@ -686,7 +686,7 @@ export default function TipPayoutsPage() {
                   setCashOutMemo('')
                 }}
                 disabled={isCashingOut}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-900 hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -709,7 +709,7 @@ export default function TipPayoutsPage() {
         title="Confirm Payroll Batch Payout"
         size="md"
       >
-            <p className="text-sm text-gray-500 mb-5">
+            <p className="text-sm text-gray-900 mb-5">
               This will create payroll debit entries for {employeesOwed.length} employee{employeesOwed.length !== 1 ? 's' : ''} totaling {formatCurrency(totalOwedDollars)}.
             </p>
 
@@ -721,7 +721,7 @@ export default function TipPayoutsPage() {
                   <div key={emp.employeeId} className="flex items-center justify-between px-4 py-2.5">
                     <div>
                       <div className="text-sm text-gray-900 font-medium">{name}</div>
-                      <div className="text-xs text-gray-500">{emp.roleName}</div>
+                      <div className="text-xs text-gray-900">{emp.roleName}</div>
                     </div>
                     <span className="text-sm font-semibold text-emerald-600">
                       {formatCurrency(emp.currentBalanceDollars)}
@@ -733,7 +733,7 @@ export default function TipPayoutsPage() {
 
             {/* Total */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-              <span className="text-sm font-medium text-gray-700">Total Payout</span>
+              <span className="text-sm font-medium text-gray-900">Total Payout</span>
               <span className="text-lg font-bold text-gray-900">{formatCurrency(totalOwedDollars)}</span>
             </div>
 
@@ -742,7 +742,7 @@ export default function TipPayoutsPage() {
               <button
                 onClick={() => setShowBatchConfirm(false)}
                 disabled={isBatchProcessing}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-900 hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -769,7 +769,7 @@ export default function TipPayoutsPage() {
               <svg className="w-12 h-12 mx-auto mb-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-900 mt-1">
                 {formatCurrency(batchResult?.totalPaidOutDollars ?? 0)} paid to {batchResult?.employeeCount ?? 0} employee{batchResult?.employeeCount !== 1 ? 's' : ''}
               </p>
             </div>

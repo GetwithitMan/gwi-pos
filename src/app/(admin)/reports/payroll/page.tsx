@@ -186,7 +186,7 @@ export default function PayrollReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Period Start</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Period Start</label>
                 <input
                   type="date"
                   value={startDate}
@@ -195,7 +195,7 @@ export default function PayrollReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Period End</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Period End</label>
                 <input
                   type="date"
                   value={endDate}
@@ -231,7 +231,7 @@ export default function PayrollReportPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Wages</p>
+                <p className="text-xs text-gray-900">Total Wages</p>
                 <p className="text-xl font-bold text-blue-600">
                   {formatCurrency(report.summary.totalWages)}
                 </p>
@@ -239,7 +239,7 @@ export default function PayrollReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Tips</p>
+                <p className="text-xs text-gray-900">Total Tips</p>
                 <p className="text-xl font-bold text-green-600">
                   {formatCurrency(report.summary.totalTips)}
                 </p>
@@ -247,7 +247,7 @@ export default function PayrollReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Commission</p>
+                <p className="text-xs text-gray-900">Total Commission</p>
                 <p className="text-xl font-bold text-purple-600">
                   {formatCurrency(report.summary.totalCommissions)}
                 </p>
@@ -255,7 +255,7 @@ export default function PayrollReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Grand Total</p>
+                <p className="text-xs text-gray-900">Grand Total</p>
                 <p className="text-xl font-bold text-gray-900">
                   {formatCurrency(report.summary.grandTotal)}
                 </p>
@@ -263,22 +263,22 @@ export default function PayrollReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Hours</p>
-                <p className="text-xl font-bold text-gray-700">
+                <p className="text-xs text-gray-900">Total Hours</p>
+                <p className="text-xl font-bold text-gray-900">
                   {report.summary.totalHours.toFixed(1)}
                 </p>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-900">
                   {report.summary.totalOvertimeHours > 0 && `(${report.summary.totalOvertimeHours.toFixed(1)} OT)`}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Banked Tips</p>
+                <p className="text-xs text-gray-900">Banked Tips</p>
                 <p className="text-xl font-bold text-orange-600">
                   {formatCurrency(report.summary.totalBankedTipsPending)}
                 </p>
-                <p className="text-xs text-gray-400">pending payout</p>
+                <p className="text-xs text-gray-900">pending payout</p>
               </CardContent>
             </Card>
           </div>
@@ -291,9 +291,9 @@ export default function PayrollReportPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading payroll data...</div>
+              <div className="text-center py-8 text-gray-900">Loading payroll data...</div>
             ) : !report || report.employees.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 <p className="mb-2">No payroll data found for the selected period.</p>
                 <p className="text-sm">Ensure employees have clocked in/out during this period.</p>
               </div>
@@ -316,35 +316,35 @@ export default function PayrollReportPage() {
                         </div>
                         <div>
                           <p className="font-semibold">{emp.employeeName}</p>
-                          <p className="text-sm text-gray-500">{emp.role}</p>
+                          <p className="text-sm text-gray-900">{emp.role}</p>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-6">
                         <div className="text-right">
-                          <p className="text-sm text-gray-500">Hours</p>
+                          <p className="text-sm text-gray-900">Hours</p>
                           <p className="font-medium">{emp.totalHours.toFixed(1)}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-gray-500">Wages</p>
+                          <p className="text-sm text-gray-900">Wages</p>
                           <p className="font-medium text-blue-600">{formatCurrency(emp.totalWages)}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm text-gray-500">Tips</p>
+                          <p className="text-sm text-gray-900">Tips</p>
                           <p className="font-medium text-green-600">{formatCurrency(emp.netTips)}</p>
                         </div>
                         {emp.commissionTotal > 0 && (
                           <div className="text-right">
-                            <p className="text-sm text-gray-500">Commission</p>
+                            <p className="text-sm text-gray-900">Commission</p>
                             <p className="font-medium text-purple-600">{formatCurrency(emp.commissionTotal)}</p>
                           </div>
                         )}
                         <div className="text-right min-w-[100px]">
-                          <p className="text-sm text-gray-500">Gross Pay</p>
+                          <p className="text-sm text-gray-900">Gross Pay</p>
                           <p className="text-xl font-bold">{formatCurrency(emp.grossPay)}</p>
                         </div>
                         <svg
-                          className={`w-5 h-5 text-gray-400 transition-transform ${
+                          className={`w-5 h-5 text-gray-900 transition-transform ${
                             expandedEmployee === emp.employeeId ? 'rotate-180' : ''
                           }`}
                           fill="none"
@@ -480,7 +480,7 @@ export default function PayrollReportPage() {
                         {/* Grand Total */}
                         <div className="mt-4 pt-4 border-t flex justify-end">
                           <div className="bg-gray-100 px-6 py-3 rounded-lg">
-                            <p className="text-sm text-gray-500">Gross Pay</p>
+                            <p className="text-sm text-gray-900">Gross Pay</p>
                             <p className="text-2xl font-bold">{formatCurrency(emp.grossPay)}</p>
                           </div>
                         </div>

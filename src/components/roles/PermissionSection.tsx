@@ -102,7 +102,7 @@ export function PermissionSection({
 
   if (groups.length === 0) {
     return (
-      <div className="p-6 text-center text-gray-400 text-sm">
+      <div className="p-6 text-center text-gray-900 text-sm">
         No permissions available for this tab.
       </div>
     )
@@ -176,13 +176,13 @@ export function PermissionSection({
                   </button>
                   <div>
                     <span className="font-medium text-sm">{group.name}</span>
-                    <span className="ml-2 text-xs text-gray-500">({selectedCount}/{totalCount})</span>
+                    <span className="ml-2 text-xs text-gray-900">({selectedCount}/{totalCount})</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400 hidden sm:block">{group.description}</span>
+                  <span className="text-xs text-gray-900 hidden sm:block">{group.description}</span>
                   <svg
-                    className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    className={`w-4 h-4 text-gray-900 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -218,7 +218,7 @@ export function PermissionSection({
                             <button
                               type="button"
                               onClick={(e) => { e.preventDefault(); handleInfoToggle(perm.key) }}
-                              className={`p-1 rounded transition-colors ${isInfoOpen ? 'text-blue-500 bg-blue-50' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+                              className={`p-1 rounded transition-colors ${isInfoOpen ? 'text-blue-500 bg-blue-50' : 'text-gray-900 hover:text-gray-600 hover:bg-gray-100'}`}
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

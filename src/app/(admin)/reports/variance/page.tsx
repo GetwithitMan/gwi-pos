@@ -156,7 +156,7 @@ export default function VarianceReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -165,7 +165,7 @@ export default function VarianceReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -190,23 +190,23 @@ export default function VarianceReportPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Items with Variance</p>
+                <p className="text-xs text-gray-900">Items with Variance</p>
                 <p className="text-2xl font-bold text-gray-900">{summary.itemsWithVariance}</p>
-                <p className="text-xs text-gray-400">of {summary.totalItems} tracked</p>
+                <p className="text-xs text-gray-900">of {summary.totalItems} tracked</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Variance Cost</p>
+                <p className="text-xs text-gray-900">Total Variance Cost</p>
                 <p className={`text-2xl font-bold ${summary.totalVarianceCost < 0 ? 'text-red-600' : 'text-green-600'}`}>
                   {formatCurrency(Math.abs(summary.totalVarianceCost))}
                 </p>
-                <p className="text-xs text-gray-400">{summary.totalVarianceCost < 0 ? 'shrinkage' : 'surplus'}</p>
+                <p className="text-xs text-gray-900">{summary.totalVarianceCost < 0 ? 'shrinkage' : 'surplus'}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Overall Variance %</p>
+                <p className="text-xs text-gray-900">Overall Variance %</p>
                 <p className={`text-2xl font-bold ${Math.abs(summary.overallVariancePercent) > 10 ? 'text-red-600' : Math.abs(summary.overallVariancePercent) > 5 ? 'text-amber-600' : 'text-green-600'}`}>
                   {summary.overallVariancePercent.toFixed(1)}%
                 </p>
@@ -214,16 +214,16 @@ export default function VarianceReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Over Theoretical</p>
+                <p className="text-xs text-gray-900">Over Theoretical</p>
                 <p className="text-2xl font-bold text-green-600">{summary.itemsOverTheoretical}</p>
-                <p className="text-xs text-gray-400">items</p>
+                <p className="text-xs text-gray-900">items</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Under Theoretical</p>
+                <p className="text-xs text-gray-900">Under Theoretical</p>
                 <p className="text-2xl font-bold text-red-600">{summary.itemsUnderTheoretical}</p>
-                <p className="text-xs text-gray-400">items (shrinkage)</p>
+                <p className="text-xs text-gray-900">items (shrinkage)</p>
               </CardContent>
             </Card>
           </div>
@@ -236,9 +236,9 @@ export default function VarianceReportPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading variance data...</div>
+              <div className="text-center py-8 text-gray-900">Loading variance data...</div>
             ) : items.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 No tracked inventory items found for the selected period.
               </div>
             ) : (
@@ -246,16 +246,16 @@ export default function VarianceReportPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-3 text-left text-sm font-medium text-gray-500">Item</th>
-                      <th className="px-3 py-3 text-left text-sm font-medium text-gray-500">Category</th>
-                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-500">Begin</th>
-                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-500">Purchases</th>
-                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-500">Theo. Usage</th>
-                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-500">Theo. End</th>
-                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-500">Actual End</th>
-                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-500">Variance</th>
-                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-500">Var %</th>
-                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-500">Var Cost</th>
+                      <th className="px-3 py-3 text-left text-sm font-medium text-gray-900">Item</th>
+                      <th className="px-3 py-3 text-left text-sm font-medium text-gray-900">Category</th>
+                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-900">Begin</th>
+                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-900">Purchases</th>
+                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-900">Theo. Usage</th>
+                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-900">Theo. End</th>
+                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-900">Actual End</th>
+                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-900">Variance</th>
+                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-900">Var %</th>
+                      <th className="px-3 py-3 text-right text-sm font-medium text-gray-900">Var Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -266,10 +266,10 @@ export default function VarianceReportPage() {
                           <td className="px-3 py-3">
                             <div>
                               <span className="font-medium">{item.name}</span>
-                              {item.sku && <span className="text-xs text-gray-400 ml-2">{item.sku}</span>}
+                              {item.sku && <span className="text-xs text-gray-900 ml-2">{item.sku}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-3 text-gray-500 text-sm">{item.category}</td>
+                          <td className="px-3 py-3 text-gray-900 text-sm">{item.category}</td>
                           <td className="px-3 py-3 text-right text-sm">{item.beginningStock.toFixed(1)} {item.unit}</td>
                           <td className="px-3 py-3 text-right text-sm">{item.purchases.toFixed(1)}</td>
                           <td className="px-3 py-3 text-right text-sm">{item.theoreticalUsage.toFixed(1)}</td>
@@ -299,7 +299,7 @@ export default function VarianceReportPage() {
         {/* Color Legend */}
         {items.length > 0 && (
           <div className="mt-4 p-4 bg-white border border-gray-200 rounded-xl">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Variance Thresholds</h3>
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Variance Thresholds</h3>
             <div className="flex gap-4 text-sm">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-full bg-green-500" />

@@ -380,19 +380,19 @@ ${paymentRows}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Orders Found</p>
+              <p className="text-sm text-gray-900">Orders Found</p>
               <p className="text-2xl font-bold text-gray-900">{orders.length}{hasMore ? '+' : ''}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Total Revenue</p>
+              <p className="text-sm text-gray-900">Total Revenue</p>
               <p className="text-2xl font-bold text-blue-600">{formatCurrency(totalRevenue)}</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <p className="text-sm text-gray-500">Needs Tip</p>
+              <p className="text-sm text-gray-900">Needs Tip</p>
               <p className={`text-2xl font-bold ${needsTipCount > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                 {needsTipCount}
               </p>
@@ -406,10 +406,10 @@ ${paymentRows}
             {isLoading ? (
               <div className="p-8 text-center">
                 <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
-                <p className="text-gray-500">Loading closed orders...</p>
+                <p className="text-gray-900">Loading closed orders...</p>
               </div>
             ) : orders.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
+              <div className="p-8 text-center text-gray-900">
                 No closed orders found for the selected filters
               </div>
             ) : (
@@ -440,23 +440,23 @@ ${paymentRows}
                               #{order.orderNumber}
                             </button>
                             {order.tabName && (
-                              <span className="block text-xs text-gray-400">{order.tabName}</span>
+                              <span className="block text-xs text-gray-900">{order.tabName}</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {order.closedAt ? formatDateTime(order.closedAt) : '-'}
                           </td>
                           <td className="px-4 py-3 text-sm">{order.employee.name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {formatOrderType(order.orderType)}
                           </td>
-                          <td className="px-4 py-3 text-sm text-center text-gray-500">
+                          <td className="px-4 py-3 text-sm text-center text-gray-900">
                             {order.itemCount}
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-sm">
                             {formatCurrency(order.total)}
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
+                          <td className="px-4 py-3 text-sm text-gray-900">
                             {formatPaymentMethods(order.paymentMethods)}
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -469,7 +469,7 @@ ${paymentRows}
                                 {formatCurrency(order.tipTotal)}
                               </span>
                             ) : (
-                              <span className="text-sm text-gray-400">-</span>
+                              <span className="text-sm text-gray-900">-</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -535,24 +535,24 @@ ${paymentRows}
             {/* Order meta */}
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-gray-500">Server:</span>{' '}
+                <span className="text-gray-900">Server:</span>{' '}
                 <span className="font-medium">{detailOrder.employee.name}</span>
               </div>
               <div>
-                <span className="text-gray-500">Type:</span>{' '}
+                <span className="text-gray-900">Type:</span>{' '}
                 <span className="font-medium">{formatOrderType(detailOrder.orderType)}</span>
               </div>
               <div>
-                <span className="text-gray-500">Closed:</span>{' '}
+                <span className="text-gray-900">Closed:</span>{' '}
                 <span className="font-medium">{detailOrder.closedAt ? formatDateTime(detailOrder.closedAt) : '-'}</span>
               </div>
               <div>
-                <span className="text-gray-500">Status:</span>{' '}
+                <span className="text-gray-900">Status:</span>{' '}
                 <span className="font-medium capitalize">{detailOrder.status}</span>
               </div>
               {detailOrder.tabName && (
                 <div>
-                  <span className="text-gray-500">Tab:</span>{' '}
+                  <span className="text-gray-900">Tab:</span>{' '}
                   <span className="font-medium">{detailOrder.tabName}</span>
                 </div>
               )}
@@ -560,7 +560,7 @@ ${paymentRows}
 
             {/* Items */}
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Items</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Items</h3>
               <div className="bg-gray-50 rounded-lg p-3 space-y-2">
                 {detailOrder.items.map(item => (
                   <div key={item.id}>
@@ -569,7 +569,7 @@ ${paymentRows}
                       <span className="font-mono">{formatCurrency(item.itemTotal)}</span>
                     </div>
                     {item.modifiers.map(mod => (
-                      <div key={mod.id} className="text-xs text-gray-500 pl-4">
+                      <div key={mod.id} className="text-xs text-gray-900 pl-4">
                         {/* T-042: handle compound preModifier strings */}
                         {mod.preModifier ? `${mod.preModifier.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string) => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} ` : ''}{mod.name}
                         {mod.price > 0 && ` +${formatCurrency(mod.price)}`}
@@ -586,16 +586,16 @@ ${paymentRows}
             {/* Totals */}
             <div className="border-t pt-3 space-y-1 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-500">Subtotal</span>
+                <span className="text-gray-900">Subtotal</span>
                 <span className="font-mono">{formatCurrency(detailOrder.subtotal)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Tax</span>
+                <span className="text-gray-900">Tax</span>
                 <span className="font-mono">{formatCurrency(detailOrder.taxTotal)}</span>
               </div>
               {detailOrder.tipTotal > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Tip</span>
+                  <span className="text-gray-900">Tip</span>
                   <span className="font-mono text-green-600">{formatCurrency(detailOrder.tipTotal)}</span>
                 </div>
               )}
@@ -607,7 +607,7 @@ ${paymentRows}
 
             {/* Payments */}
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Payments</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-2">Payments</h3>
               <div className="space-y-2">
                 {detailOrder.payments.map(payment => (
                   <div key={payment.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3 text-sm">

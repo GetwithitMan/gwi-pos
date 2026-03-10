@@ -118,7 +118,7 @@ export function AddPreparationModal({
           New Prep Item
         </span>
       </div>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-gray-900 mb-4">
         How is <span className="font-semibold text-blue-600">{parentIngredient.name}</span> prepared?
       </p>
 
@@ -139,7 +139,7 @@ export function AddPreparationModal({
                   className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
                     formData.preparationType === type
                       ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                      : 'bg-white text-gray-900 border-gray-300 hover:border-blue-400'
                   }`}
                 >
                   {type}
@@ -188,7 +188,7 @@ export function AddPreparationModal({
                 className="w-24 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg font-semibold"
               />
               <span className="text-lg">%</span>
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-900">
                 of raw weight becomes this prep
               </span>
             </div>
@@ -210,7 +210,7 @@ export function AddPreparationModal({
               ))}
             </div>
 
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-900">
               Example: 6 oz raw chicken at {formData.yieldPercent}% yield = {(6 * (parseFloat(formData.yieldPercent) || 100) / 100).toFixed(1)} oz cooked
             </p>
           </div>
@@ -253,14 +253,14 @@ export function AddPreparationModal({
               <div className="p-3 bg-white rounded-lg border border-green-200">
                 <p className="font-semibold text-gray-900 mb-2">📊 Inventory Math:</p>
                 <div className="space-y-1 text-sm">
-                  <p className="text-gray-700">
+                  <p className="text-gray-900">
                     <span className="font-medium">{formData.portionAmount} {formData.portionUnit}</span> {previewName} on a menu item
                   </p>
-                  <p className="text-gray-500">↓</p>
-                  <p className="text-gray-700">
+                  <p className="text-gray-900">↓</p>
+                  <p className="text-gray-900">
                     Deducts <span className="font-medium text-blue-600">{rawNeeded.toFixed(2)} {formData.portionUnit}</span> from {parentIngredient.name} inventory
                   </p>
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-gray-900 mt-2">
                     ({formData.portionAmount} ÷ {formData.yieldPercent}% = {rawNeeded.toFixed(2)} raw)
                   </p>
                 </div>
@@ -270,7 +270,7 @@ export function AddPreparationModal({
 
           {/* Name Preview */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
+            <label className="block text-sm font-medium text-gray-900">
               Name (auto-generated, or customize)
             </label>
             <input
@@ -280,7 +280,7 @@ export function AddPreparationModal({
               className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder={previewName}
             />
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-900">
               Will be named: <strong>{previewName}</strong>
             </p>
           </div>

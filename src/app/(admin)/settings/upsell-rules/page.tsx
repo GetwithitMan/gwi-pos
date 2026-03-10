@@ -364,7 +364,7 @@ export default function UpsellRulesPage() {
       />
 
       {isLoading ? (
-        <div className="text-gray-400 text-center py-12">Loading...</div>
+        <div className="text-gray-900 text-center py-12">Loading...</div>
       ) : (
         <>
           {/* ── Settings Section ───────────────────────────────────────── */}
@@ -416,7 +416,7 @@ export default function UpsellRulesPage() {
           {/* ── Rules List ─────────────────────────────────────────────── */}
           <div className="space-y-3">
             {rules.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 text-gray-900">
                 <p className="text-lg font-semibold mb-2">No upsell rules yet</p>
                 <p className="text-sm">Create your first rule to start suggesting items to servers</p>
               </div>
@@ -447,12 +447,12 @@ export default function UpsellRulesPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-white text-sm">{rule.name}</span>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-900">
                             {TRIGGER_TYPE_LABELS[rule.triggerType] ?? rule.triggerType}
                           </span>
-                          <span className="text-xs text-gray-500">P{rule.priority}</span>
+                          <span className="text-xs text-gray-900">P{rule.priority}</span>
                         </div>
-                        <div className="text-xs text-gray-400 mt-1">
+                        <div className="text-xs text-gray-900 mt-1">
                           {rule.message || 'No message set'}
                           {rule.suggestItemName && (
                             <span className="ml-2 text-blue-400">
@@ -468,7 +468,7 @@ export default function UpsellRulesPage() {
                         {/* Stats */}
                         {stats && stats.timesShown > 0 && (
                           <div className="flex gap-4 mt-2 text-xs">
-                            <span className="text-gray-500">Shown: {stats.timesShown}</span>
+                            <span className="text-gray-900">Shown: {stats.timesShown}</span>
                             <span className="text-green-500">Accepted: {stats.timesAccepted}</span>
                             <span className="text-blue-400">Rate: {stats.conversionRate}%</span>
                             <span className="text-emerald-400">Revenue: {formatCurrency(stats.revenueGenerated)}</span>
@@ -509,7 +509,7 @@ export default function UpsellRulesPage() {
                 <div className="space-y-4">
                   {/* Name */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-1">Rule Name</label>
+                    <label className="block text-sm font-semibold text-gray-900 mb-1">Rule Name</label>
                     <input
                       type="text"
                       value={formData.name}
@@ -521,7 +521,7 @@ export default function UpsellRulesPage() {
 
                   {/* Trigger Type */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-1">Trigger Type</label>
+                    <label className="block text-sm font-semibold text-gray-900 mb-1">Trigger Type</label>
                     <select
                       value={formData.triggerType}
                       onChange={e => setFormData(p => ({ ...p, triggerType: e.target.value }))}
@@ -538,7 +538,7 @@ export default function UpsellRulesPage() {
                   {/* Trigger-specific fields */}
                   {formData.triggerType === 'item_added' && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-300 mb-1">Trigger Item</label>
+                      <label className="block text-sm font-semibold text-gray-900 mb-1">Trigger Item</label>
                       <select
                         value={formData.triggerItemId}
                         onChange={e => setFormData(p => ({ ...p, triggerItemId: e.target.value }))}
@@ -556,7 +556,7 @@ export default function UpsellRulesPage() {
 
                   {formData.triggerType === 'category_match' && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-300 mb-1">Trigger Category</label>
+                      <label className="block text-sm font-semibold text-gray-900 mb-1">Trigger Category</label>
                       <select
                         value={formData.triggerCategoryId}
                         onChange={e => setFormData(p => ({ ...p, triggerCategoryId: e.target.value }))}
@@ -574,7 +574,7 @@ export default function UpsellRulesPage() {
 
                   {formData.triggerType === 'order_total' && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-300 mb-1">Minimum Order Total ($)</label>
+                      <label className="block text-sm font-semibold text-gray-900 mb-1">Minimum Order Total ($)</label>
                       <input
                         type="number"
                         value={formData.triggerMinTotal}
@@ -590,7 +590,7 @@ export default function UpsellRulesPage() {
                     <>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-300 mb-1">Start Time</label>
+                          <label className="block text-sm font-semibold text-gray-900 mb-1">Start Time</label>
                           <input
                             type="time"
                             value={formData.triggerTimeStart}
@@ -599,7 +599,7 @@ export default function UpsellRulesPage() {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-300 mb-1">End Time</label>
+                          <label className="block text-sm font-semibold text-gray-900 mb-1">End Time</label>
                           <input
                             type="time"
                             value={formData.triggerTimeEnd}
@@ -609,7 +609,7 @@ export default function UpsellRulesPage() {
                         </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-semibold text-gray-300 mb-1">Days of Week</label>
+                        <label className="block text-sm font-semibold text-gray-900 mb-1">Days of Week</label>
                         <div className="flex gap-1">
                           {DAY_NAMES.map((name, i) => (
                             <button
@@ -625,7 +625,7 @@ export default function UpsellRulesPage() {
                               className={`px-2 py-1 rounded text-xs font-semibold transition ${
                                 formData.triggerDaysOfWeek.includes(i)
                                   ? 'bg-blue-600 text-white'
-                                  : 'bg-gray-700 text-gray-400'
+                                  : 'bg-gray-700 text-gray-900'
                               }`}
                             >
                               {name}
@@ -638,7 +638,7 @@ export default function UpsellRulesPage() {
 
                   {/* Suggestion Target */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-1">Suggest Item</label>
+                    <label className="block text-sm font-semibold text-gray-900 mb-1">Suggest Item</label>
                     <select
                       value={formData.suggestItemId}
                       onChange={e => setFormData(p => ({ ...p, suggestItemId: e.target.value, suggestCategoryId: e.target.value ? '' : p.suggestCategoryId }))}
@@ -655,7 +655,7 @@ export default function UpsellRulesPage() {
 
                   {!formData.suggestItemId && (
                     <div>
-                      <label className="block text-sm font-semibold text-gray-300 mb-1">
+                      <label className="block text-sm font-semibold text-gray-900 mb-1">
                         Or Suggest from Category
                       </label>
                       <select
@@ -675,7 +675,7 @@ export default function UpsellRulesPage() {
 
                   {/* Message */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-1">Display Message</label>
+                    <label className="block text-sm font-semibold text-gray-900 mb-1">Display Message</label>
                     <input
                       type="text"
                       value={formData.message}
@@ -687,7 +687,7 @@ export default function UpsellRulesPage() {
 
                   {/* Priority */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-300 mb-1">Priority</label>
+                    <label className="block text-sm font-semibold text-gray-900 mb-1">Priority</label>
                     <input
                       type="number"
                       value={formData.priority}
@@ -696,7 +696,7 @@ export default function UpsellRulesPage() {
                       max={100}
                       className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm"
                     />
-                    <p className="text-xs text-gray-500 mt-1">Higher priority shows first when multiple rules match</p>
+                    <p className="text-xs text-gray-900 mt-1">Higher priority shows first when multiple rules match</p>
                   </div>
 
                   {/* Active */}
@@ -711,7 +711,7 @@ export default function UpsellRulesPage() {
                         formData.isActive ? 'translate-x-4' : ''
                       }`} />
                     </button>
-                    <span className="text-sm text-gray-300">Active</span>
+                    <span className="text-sm text-gray-900">Active</span>
                   </div>
                 </div>
 

@@ -37,7 +37,7 @@ interface GiftCardTransaction {
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
-  depleted: 'bg-gray-100 text-gray-700',
+  depleted: 'bg-gray-100 text-gray-900',
   expired: 'bg-red-100 text-red-700',
   frozen: 'bg-blue-100 text-blue-700',
 }
@@ -256,9 +256,9 @@ export default function GiftCardsPage() {
         <div className="lg:col-span-2">
           <Card className="p-4">
             {loading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
+              <div className="text-center py-8 text-gray-900">Loading...</div>
             ) : giftCards.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No gift cards found</div>
+              <div className="text-center py-8 text-gray-900">No gift cards found</div>
             ) : (
               <div className="divide-y">
                 {giftCards.map((card) => (
@@ -273,7 +273,7 @@ export default function GiftCardsPage() {
                       <div>
                         <div className="font-mono font-medium">{card.cardNumber}</div>
                         {card.recipientName && (
-                          <div className="text-sm text-gray-500">To: {card.recipientName}</div>
+                          <div className="text-sm text-gray-900">To: {card.recipientName}</div>
                         )}
                       </div>
                       <div className="text-right">
@@ -283,7 +283,7 @@ export default function GiftCardsPage() {
                       </div>
                     </div>
                     <div className="flex justify-between mt-2 text-sm">
-                      <span className="text-gray-500">
+                      <span className="text-gray-900">
                         Initial: {formatCurrency(card.initialBalance)}
                       </span>
                       <span className="font-medium text-green-600">
@@ -308,17 +308,17 @@ export default function GiftCardsPage() {
 
               <div className="space-y-3">
                 <div>
-                  <label className="text-xs text-gray-500">Card Number</label>
+                  <label className="text-xs text-gray-900">Card Number</label>
                   <div className="font-mono">{selectedCard.cardNumber}</div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs text-gray-500">Initial</label>
+                    <label className="text-xs text-gray-900">Initial</label>
                     <div>{formatCurrency(selectedCard.initialBalance)}</div>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500">Current</label>
+                    <label className="text-xs text-gray-900">Current</label>
                     <div className="text-xl font-bold text-green-600">
                       {formatCurrency(selectedCard.currentBalance)}
                     </div>
@@ -326,7 +326,7 @@ export default function GiftCardsPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs text-gray-500">Status</label>
+                  <label className="text-xs text-gray-900">Status</label>
                   <div>
                     <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[selectedCard.status]}`}>
                       {selectedCard.status.toUpperCase()}
@@ -336,31 +336,31 @@ export default function GiftCardsPage() {
 
                 {selectedCard.recipientName && (
                   <div>
-                    <label className="text-xs text-gray-500">Recipient</label>
+                    <label className="text-xs text-gray-900">Recipient</label>
                     <div>{selectedCard.recipientName}</div>
                     {selectedCard.recipientEmail && (
-                      <div className="text-sm text-gray-500">{selectedCard.recipientEmail}</div>
+                      <div className="text-sm text-gray-900">{selectedCard.recipientEmail}</div>
                     )}
                   </div>
                 )}
 
                 {selectedCard.purchaserName && (
                   <div>
-                    <label className="text-xs text-gray-500">Purchased By</label>
+                    <label className="text-xs text-gray-900">Purchased By</label>
                     <div>{selectedCard.purchaserName}</div>
                   </div>
                 )}
 
                 {selectedCard.message && (
                   <div>
-                    <label className="text-xs text-gray-500">Message</label>
+                    <label className="text-xs text-gray-900">Message</label>
                     <div className="text-sm italic">&ldquo;{selectedCard.message}&rdquo;</div>
                   </div>
                 )}
 
                 {selectedCard.expiresAt && (
                   <div>
-                    <label className="text-xs text-gray-500">Expires</label>
+                    <label className="text-xs text-gray-900">Expires</label>
                     <div>{formatDate(selectedCard.expiresAt)}</div>
                   </div>
                 )}
@@ -390,7 +390,7 @@ export default function GiftCardsPage() {
               <div className="mt-4 pt-4 border-t">
                 <h3 className="font-medium mb-2">Transaction History</h3>
                 {cardTransactions.length === 0 ? (
-                  <div className="text-sm text-gray-500">No transactions</div>
+                  <div className="text-sm text-gray-900">No transactions</div>
                 ) : (
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {cardTransactions.map((txn) => (
@@ -401,7 +401,7 @@ export default function GiftCardsPage() {
                             {txn.amount >= 0 ? '+' : ''}{formatCurrency(txn.amount)}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-900">
                           Balance: {formatCurrency(txn.balanceAfter)}
                         </div>
                         <div className="text-xs text-gray-600">
@@ -414,7 +414,7 @@ export default function GiftCardsPage() {
               </div>
             </Card>
           ) : (
-            <Card className="p-8 text-center text-gray-500">
+            <Card className="p-8 text-center text-gray-900">
               Select a gift card to view details
             </Card>
           )}
@@ -433,7 +433,7 @@ export default function GiftCardsPage() {
           <div>
             <label className="text-sm font-medium block mb-1">Amount *</label>
             <div className="relative">
-              <span className="absolute left-3 top-2 text-gray-500">$</span>
+              <span className="absolute left-3 top-2 text-gray-900">$</span>
               <input
                 type="number"
                 value={newAmount}
@@ -514,7 +514,7 @@ export default function GiftCardsPage() {
       <Modal isOpen={showReloadModal && !!selectedCard} onClose={() => { setShowReloadModal(false); setReloadAmount('') }} title="Reload Gift Card" size="sm">
         {selectedCard && (
           <>
-            <div className="mb-4 text-sm text-gray-500">
+            <div className="mb-4 text-sm text-gray-900">
               {selectedCard.cardNumber}
               <br />
               Current Balance: {formatCurrency(selectedCard.currentBalance)}
@@ -523,7 +523,7 @@ export default function GiftCardsPage() {
               <div>
                 <label className="text-sm font-medium block mb-1">Reload Amount *</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2 text-gray-500">$</span>
+                  <span className="absolute left-3 top-2 text-gray-900">$</span>
                   <input
                     type="number"
                     value={reloadAmount}

@@ -243,7 +243,7 @@ export default function WasteReportPage() {
         <Card className="p-4 mb-6">
           <div className="flex flex-wrap gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
               <input
                 type="date"
                 value={startDate}
@@ -252,7 +252,7 @@ export default function WasteReportPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+              <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
               <input
                 type="date"
                 value={endDate}
@@ -323,7 +323,7 @@ export default function WasteReportPage() {
           /* ─── All Entries Table ─── */
           sortedLogs.length === 0 ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">No waste entries found for this period.</p>
+              <p className="text-gray-900">No waste entries found for this period.</p>
             </Card>
           ) : (
             <Card className="overflow-hidden">
@@ -359,7 +359,7 @@ export default function WasteReportPage() {
                     {sortedLogs.map((log) => (
                       <tr key={log.id} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm font-medium">{log.itemName}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{log.category}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{log.category}</td>
                         <td className="px-4 py-3 text-sm text-right font-mono">
                           {log.quantity} {log.unit}
                         </td>
@@ -367,12 +367,12 @@ export default function WasteReportPage() {
                           {formatCurrency(log.cost)}
                         </td>
                         <td className="px-4 py-3 text-sm">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-900">
                             {formatReason(log.reason)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{log.employeeName}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{formatDate(log.businessDate)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{log.employeeName}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{formatDate(log.businessDate)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -384,7 +384,7 @@ export default function WasteReportPage() {
           /* ─── By Reason ─── */
           byReason.length === 0 ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">No waste data for this period.</p>
+              <p className="text-gray-900">No waste data for this period.</p>
             </Card>
           ) : (
             <Card className="overflow-hidden">
@@ -418,7 +418,7 @@ export default function WasteReportPage() {
                                   style={{ width: `${Math.min(pct, 100)}%` }}
                                 />
                               </div>
-                              <span className="text-xs text-gray-500 w-12 text-right">{pct.toFixed(1)}%</span>
+                              <span className="text-xs text-gray-900 w-12 text-right">{pct.toFixed(1)}%</span>
                             </div>
                           </td>
                         </tr>
@@ -433,7 +433,7 @@ export default function WasteReportPage() {
           /* ─── By Item ─── */
           byItem.length === 0 ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">No waste data for this period.</p>
+              <p className="text-gray-900">No waste data for this period.</p>
             </Card>
           ) : (
             <Card className="overflow-hidden">
@@ -452,7 +452,7 @@ export default function WasteReportPage() {
                     {byItem.map((entry, idx) => (
                       <tr key={idx} className="border-b hover:bg-gray-50">
                         <td className="px-4 py-3 text-sm font-medium">{entry.itemName}</td>
-                        <td className="px-4 py-3 text-sm text-gray-500">{entry.category}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{entry.category}</td>
                         <td className="px-4 py-3 text-sm text-right">{entry.count}</td>
                         <td className="px-4 py-3 text-sm text-right font-mono">{entry.quantity.toFixed(1)}</td>
                         <td className="px-4 py-3 text-sm text-right font-mono text-red-600">{formatCurrency(entry.cost)}</td>
@@ -467,7 +467,7 @@ export default function WasteReportPage() {
           /* ─── By Employee ─── */
           byEmployee.length === 0 ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">No waste data for this period.</p>
+              <p className="text-gray-900">No waste data for this period.</p>
             </Card>
           ) : (
             <Card className="overflow-hidden">
@@ -499,17 +499,17 @@ export default function WasteReportPage() {
           /* ─── Daily Trend ─── */
           byDay.length === 0 ? (
             <Card className="p-8 text-center">
-              <p className="text-gray-500">No waste data for this period.</p>
+              <p className="text-gray-900">No waste data for this period.</p>
             </Card>
           ) : (
             <Card className="p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Daily Waste Cost Trend</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-4">Daily Waste Cost Trend</h3>
               <div className="space-y-2">
                 {byDay.map((day) => {
                   const barWidth = maxDayCost > 0 ? (day.cost / maxDayCost) * 100 : 0
                   return (
                     <div key={day.date} className="flex items-center gap-3">
-                      <span className="text-sm text-gray-500 w-24 flex-shrink-0">{formatDate(day.date)}</span>
+                      <span className="text-sm text-gray-900 w-24 flex-shrink-0">{formatDate(day.date)}</span>
                       <div className="flex-1 bg-gray-100 rounded-full h-6 relative">
                         <div
                           className="bg-red-400 h-6 rounded-full flex items-center"
@@ -523,7 +523,7 @@ export default function WasteReportPage() {
                         </div>
                       </div>
                       {barWidth <= 20 && (
-                        <span className="text-xs text-gray-500 w-20 text-right flex-shrink-0">
+                        <span className="text-xs text-gray-900 w-20 text-right flex-shrink-0">
                           {formatCurrency(day.cost)}
                         </span>
                       )}

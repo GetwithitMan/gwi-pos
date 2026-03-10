@@ -39,7 +39,7 @@ const STATUS_STYLES: Record<string, { label: string; className: string }> = {
   early: { label: 'Early', className: 'bg-blue-100 text-blue-700' },
   late: { label: 'Late', className: 'bg-yellow-100 text-yellow-700' },
   no_show: { label: 'No Show', className: 'bg-red-100 text-red-700' },
-  unscheduled: { label: 'Unscheduled', className: 'bg-gray-100 text-gray-700' },
+  unscheduled: { label: 'Unscheduled', className: 'bg-gray-100 text-gray-900' },
 }
 
 export default function ScheduleCompliancePage() {
@@ -102,7 +102,7 @@ export default function ScheduleCompliancePage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap items-end gap-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Start Date</label>
+                <label className="block text-xs text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -111,7 +111,7 @@ export default function ScheduleCompliancePage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">End Date</label>
+                <label className="block text-xs text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -131,7 +131,7 @@ export default function ScheduleCompliancePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-sm text-gray-500">Compliance Rate</div>
+                <div className="text-sm text-gray-900">Compliance Rate</div>
                 <div className={`text-2xl font-bold ${
                   report.summary.complianceRate >= 90 ? 'text-green-600' :
                   report.summary.complianceRate >= 75 ? 'text-yellow-600' :
@@ -143,7 +143,7 @@ export default function ScheduleCompliancePage() {
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-sm text-gray-500">Scheduled / Actual</div>
+                <div className="text-sm text-gray-900">Scheduled / Actual</div>
                 <div className="text-lg font-bold">
                   {report.summary.totalScheduledHours.toFixed(1)}h / {report.summary.totalActualHours.toFixed(1)}h
                 </div>
@@ -151,7 +151,7 @@ export default function ScheduleCompliancePage() {
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-sm text-gray-500">No Shows</div>
+                <div className="text-sm text-gray-900">No Shows</div>
                 <div className={`text-2xl font-bold ${report.summary.noShows > 0 ? 'text-red-600' : 'text-green-600'}`}>
                   {report.summary.noShows}
                 </div>
@@ -159,7 +159,7 @@ export default function ScheduleCompliancePage() {
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <div className="text-sm text-gray-500">Late Arrivals</div>
+                <div className="text-sm text-gray-900">Late Arrivals</div>
                 <div className={`text-2xl font-bold ${report.summary.lateCount > 0 ? 'text-yellow-600' : 'text-green-600'}`}>
                   {report.summary.lateCount}
                 </div>
@@ -176,12 +176,12 @@ export default function ScheduleCompliancePage() {
             </CardHeader>
             <CardContent>
               {report.rows.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">No schedule data for this period.</p>
+                <p className="text-sm text-gray-900 text-center py-4">No schedule data for this period.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b text-left text-gray-500">
+                      <tr className="border-b text-left text-gray-900">
                         <th className="py-2 pr-4">Date</th>
                         <th className="py-2 pr-4">Employee</th>
                         <th className="py-2 pr-4">Scheduled</th>
@@ -231,7 +231,7 @@ export default function ScheduleCompliancePage() {
         )}
 
         {isLoading && (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-gray-900">
             <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
             Loading schedule compliance data...
           </div>

@@ -373,9 +373,9 @@ export default function DailyReportPage() {
         />
 
         {isLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading report...</div>
+          <div className="text-center py-12 text-gray-900">Loading report...</div>
         ) : !report ? (
-          <div className="text-center py-12 text-gray-500">No data available for this date</div>
+          <div className="text-center py-12 text-gray-900">No data available for this date</div>
         ) : (
           <div className="space-y-6 print:space-y-4">
             {/* Report Header */}
@@ -570,7 +570,7 @@ export default function DailyReportPage() {
                           {cat.name} ({cat.units})
                         </span>
                         <span className="flex items-center gap-2">
-                          <span className="text-gray-500 text-xs">{cat.percentOfTotal}%</span>
+                          <span className="text-gray-900 text-xs">{cat.percentOfTotal}%</span>
                           <span className="w-20 text-right">{formatCurrency(cat.net)}</span>
                         </span>
                       </div>
@@ -622,14 +622,14 @@ export default function DailyReportPage() {
                       <span>Total ({report.voids.total.count})</span>
                       <span>
                         {formatCurrency(report.voids.total.amount)}
-                        <span className="text-gray-500 text-xs ml-1">
+                        <span className="text-gray-900 text-xs ml-1">
                           ({report.voids.percentOfSales}%)
                         </span>
                       </span>
                     </div>
                     {report.voids.byReason.length > 0 && (
                       <div className="mt-2 pt-2 border-t">
-                        <p className="text-xs text-gray-500 mb-1">By Reason:</p>
+                        <p className="text-xs text-gray-900 mb-1">By Reason:</p>
                         {report.voids.byReason.map(v => (
                           <div key={v.reason} className="flex justify-between text-xs">
                             <span>{v.reason} ({v.count})</span>
@@ -674,23 +674,23 @@ export default function DailyReportPage() {
                   <div className="flex justify-between">
                     <span>Front of House</span>
                     <span className="flex items-center gap-4">
-                      <span className="text-gray-500">{report.labor.frontOfHouse.hours.toFixed(1)} hrs</span>
-                      <span className="text-gray-500">{report.labor.frontOfHouse.percentOfLabor}%</span>
+                      <span className="text-gray-900">{report.labor.frontOfHouse.hours.toFixed(1)} hrs</span>
+                      <span className="text-gray-900">{report.labor.frontOfHouse.percentOfLabor}%</span>
                       <span className="w-20 text-right">{formatCurrency(report.labor.frontOfHouse.cost)}</span>
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Back of House</span>
                     <span className="flex items-center gap-4">
-                      <span className="text-gray-500">{report.labor.backOfHouse.hours.toFixed(1)} hrs</span>
-                      <span className="text-gray-500">{report.labor.backOfHouse.percentOfLabor}%</span>
+                      <span className="text-gray-900">{report.labor.backOfHouse.hours.toFixed(1)} hrs</span>
+                      <span className="text-gray-900">{report.labor.backOfHouse.percentOfLabor}%</span>
                       <span className="w-20 text-right">{formatCurrency(report.labor.backOfHouse.cost)}</span>
                     </span>
                   </div>
                   <div className="flex justify-between font-bold border-t pt-1 mt-1">
                     <span>Total Labor</span>
                     <span className="flex items-center gap-4">
-                      <span className="text-gray-500">{report.labor.total.hours.toFixed(1)} hrs</span>
+                      <span className="text-gray-900">{report.labor.total.hours.toFixed(1)} hrs</span>
                       <span className="text-blue-600">{report.labor.total.percentOfSales}% of sales</span>
                       <span className="w-20 text-right">{formatCurrency(report.labor.total.cost)}</span>
                     </span>
@@ -734,35 +734,35 @@ export default function DailyReportPage() {
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-mono text-sm">
                   <div>
-                    <p className="text-gray-500">Checks</p>
+                    <p className="text-gray-900">Checks</p>
                     <p className="text-xl font-bold">{report.stats.checks}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Avg Check</p>
+                    <p className="text-gray-900">Avg Check</p>
                     <p className="text-xl font-bold">{formatCurrency(report.stats.avgCheck)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Avg Check Time</p>
+                    <p className="text-gray-900">Avg Check Time</p>
                     <p className="text-xl font-bold">{formatTime(report.stats.avgCheckTimeMinutes)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Covers</p>
+                    <p className="text-gray-900">Covers</p>
                     <p className="text-xl font-bold">{report.stats.covers}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Avg Cover</p>
+                    <p className="text-gray-900">Avg Cover</p>
                     <p className="text-xl font-bold">{formatCurrency(report.stats.avgCover)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Food Avg</p>
+                    <p className="text-gray-900">Food Avg</p>
                     <p className="text-xl font-bold">{formatCurrency(report.stats.foodAvg)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Bev Avg</p>
+                    <p className="text-gray-900">Bev Avg</p>
                     <p className="text-xl font-bold">{formatCurrency(report.stats.bevAvg)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Retail Avg</p>
+                    <p className="text-gray-900">Retail Avg</p>
                     <p className="text-xl font-bold">{formatCurrency(report.stats.retailAvg)}</p>
                   </div>
                 </div>
@@ -812,7 +812,7 @@ export default function DailyReportPage() {
             )}
 
             {/* Footer */}
-            <div className="text-center text-xs text-gray-500 pt-4 print:pt-2">
+            <div className="text-center text-xs text-gray-900 pt-4 print:pt-2">
               Generated on {new Date(report.generatedAt).toLocaleString()}
             </div>
           </div>

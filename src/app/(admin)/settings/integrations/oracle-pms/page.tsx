@@ -117,7 +117,7 @@ export default function OraclePmsIntegrationPage() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">Oracle Hotel PMS</h1>
-          <p className="text-gray-500">
+          <p className="text-gray-900">
             Connect to Oracle OPERA Cloud to allow guests to charge restaurant bills directly
             to their hotel room. Requires an active OHIP (Oracle Hospitality Integration Platform)
             subscription and app registration.
@@ -190,7 +190,7 @@ export default function OraclePmsIntegrationPage() {
               </Button>
             </div>
             {!configured && !loading && (
-              <p className="text-xs text-gray-400">Enter your credentials below and save before testing.</p>
+              <p className="text-xs text-gray-900">Enter your credentials below and save before testing.</p>
             )}
           </CardContent>
         </Card>
@@ -207,7 +207,7 @@ export default function OraclePmsIntegrationPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">API Base URL</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">API Base URL</label>
                 <input
                   type="url"
                   value={form.baseUrl}
@@ -215,11 +215,11 @@ export default function OraclePmsIntegrationPage() {
                   placeholder="https://your-property.oraclehospitality.com"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">Your OPERA Cloud instance URL (no trailing slash)</p>
+                <p className="text-xs text-gray-900 mt-1">Your OPERA Cloud instance URL (no trailing slash)</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hotel ID</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Hotel ID</label>
                 <input
                   type="text"
                   value={form.hotelId}
@@ -227,11 +227,11 @@ export default function OraclePmsIntegrationPage() {
                   placeholder="HOTEL1"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">The property code in OPERA (x-hotelid)</p>
+                <p className="text-xs text-gray-900 mt-1">The property code in OPERA (x-hotelid)</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Client ID</label>
                 <input
                   type="text"
                   value={form.clientId}
@@ -239,11 +239,11 @@ export default function OraclePmsIntegrationPage() {
                   placeholder="your-ohip-client-id"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">OAuth client ID from OHIP app registration</p>
+                <p className="text-xs text-gray-900 mt-1">OAuth client ID from OHIP app registration</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Client Secret</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Client Secret</label>
                 {hasClientSecret && (
                   <div className="flex items-center gap-1.5 text-xs text-green-700 mb-1.5">
                     <span>✓ Secret configured</span>
@@ -257,11 +257,11 @@ export default function OraclePmsIntegrationPage() {
                   autoComplete="new-password"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">OAuth client secret — write-only, never displayed after saving</p>
+                <p className="text-xs text-gray-900 mt-1">OAuth client secret — write-only, never displayed after saving</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Application Key</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Application Key</label>
                 {hasAppKey && (
                   <div className="flex items-center gap-1.5 text-xs text-green-700 mb-1.5">
                     <span>✓ Key configured</span>
@@ -275,11 +275,11 @@ export default function OraclePmsIntegrationPage() {
                   autoComplete="new-password"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">x-app-key — write-only, never displayed after saving</p>
+                <p className="text-xs text-gray-900 mt-1">x-app-key — write-only, never displayed after saving</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">F&amp;B Charge Code</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">F&amp;B Charge Code</label>
                 <input
                   type="text"
                   value={form.chargeCode}
@@ -287,13 +287,13 @@ export default function OraclePmsIntegrationPage() {
                   placeholder="REST01"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">Transaction code configured in OPERA for restaurant charges — ask your hotel team</p>
+                <p className="text-xs text-gray-900 mt-1">Transaction code configured in OPERA for restaurant charges — ask your hotel team</p>
               </div>
             </div>
 
             {/* Environment */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Environment</label>
+              <label className="block text-sm font-medium text-gray-900 mb-2">Environment</label>
               <div className="flex gap-3">
                 {(['cert', 'production'] as const).map(env => (
                   <button

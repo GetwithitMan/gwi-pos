@@ -417,7 +417,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
 
   const tierColor = (tier: string) => {
     switch (tier?.toLowerCase()) {
-      case 'well': return 'bg-gray-100 text-gray-700'
+      case 'well': return 'bg-gray-100 text-gray-900'
       case 'call': return 'bg-blue-100 text-blue-700'
       case 'premium': return 'bg-amber-100 text-amber-700'
       case 'top shelf': return 'bg-purple-100 text-purple-700'
@@ -462,12 +462,12 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
       {isExpanded && (
         <div className="p-4 space-y-3">
           {loading ? (
-            <p className="text-center text-gray-400 text-sm py-4">Loading recipe...</p>
+            <p className="text-center text-gray-600 text-sm py-4">Loading recipe...</p>
           ) : (
             <>
               {ingredients.length === 0 ? (
                 <div className="text-center py-6 bg-amber-50/50 rounded border border-amber-200">
-                  <p className="text-gray-500 text-sm mb-2">No recipe ingredients</p>
+                  <p className="text-gray-900 text-sm mb-2">No recipe ingredients</p>
                   <Button size="sm" variant="outline" onClick={() => setShowPicker(true)}>
                     Add First Ingredient
                   </Button>
@@ -481,7 +481,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                         <div key={index} className="border rounded-lg p-3 bg-white">
                           <div className="grid grid-cols-12 gap-2 items-start">
                             <div className="col-span-6">
-                              <label className="block text-xs text-gray-500 mb-1">Spirit/Liqueur</label>
+                              <label className="block text-xs text-gray-900 mb-1">Spirit/Liqueur</label>
                               <select
                                 value={ing.bottleProductId || ''}
                                 onChange={(e) => updateIngredient(index, 'bottleProductId', e.target.value)}
@@ -500,7 +500,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                               </select>
                             </div>
                             <div className="col-span-2">
-                              <label className="block text-xs text-gray-500 mb-1 capitalize">{getPortionLabel(ing)}</label>
+                              <label className="block text-xs text-gray-900 mb-1 capitalize">{getPortionLabel(ing)}</label>
                               <input
                                 type="number"
                                 step="0.5"
@@ -511,13 +511,13 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                               />
                             </div>
                             <div className="col-span-2">
-                              <label className="block text-xs text-gray-500 mb-1">Cost</label>
+                              <label className="block text-xs text-gray-900 mb-1">Cost</label>
                               <div className="py-1.5 font-medium text-sm text-center text-red-600">
                                 {formatCurrency(ingredientCost)}
                               </div>
                             </div>
                             <div className="col-span-1">
-                              <label className="block text-xs text-gray-500 mb-1">Swap</label>
+                              <label className="block text-xs text-gray-900 mb-1">Swap</label>
                               <input
                                 type="checkbox"
                                 checked={ing.isSubstitutable}
@@ -544,7 +544,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                       <div key={index} className="border rounded-lg p-3 bg-green-50/50 border-green-200">
                         <div className="grid grid-cols-12 gap-2 items-start">
                           <div className="col-span-4">
-                            <label className="block text-xs text-gray-500 mb-1">Food Item</label>
+                            <label className="block text-xs text-gray-900 mb-1">Food Item</label>
                             <div className="flex items-center gap-1.5 py-1.5">
                               {ing.ingredientCategoryIcon && (
                                 <span className="text-sm">{ing.ingredientCategoryIcon}</span>
@@ -558,7 +558,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                             </div>
                           </div>
                           <div className="col-span-2">
-                            <label className="block text-xs text-gray-500 mb-1">Qty</label>
+                            <label className="block text-xs text-gray-900 mb-1">Qty</label>
                             <input
                               type="number"
                               step="0.5"
@@ -569,7 +569,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                             />
                           </div>
                           <div className="col-span-2">
-                            <label className="block text-xs text-gray-500 mb-1">Unit</label>
+                            <label className="block text-xs text-gray-900 mb-1">Unit</label>
                             <select
                               value={ing.unit || 'each'}
                               onChange={(e) => updateIngredient(index, 'unit', e.target.value)}
@@ -581,7 +581,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                             </select>
                           </div>
                           <div className="col-span-2">
-                            <label className="block text-xs text-gray-500 mb-1">Cost</label>
+                            <label className="block text-xs text-gray-900 mb-1">Cost</label>
                             <div className="py-1.5 font-medium text-sm text-center text-red-600">
                               {formatCurrency(foodCost)}
                             </div>
@@ -622,7 +622,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                       className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                         pickerTab === 'spirits'
                           ? 'text-amber-700 border-b-2 border-amber-500 bg-amber-50/50'
-                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                          : 'text-gray-900 hover:text-gray-800 hover:bg-gray-50'
                       }`}
                     >
                       Spirits
@@ -632,7 +632,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                       className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                         pickerTab === 'food'
                           ? 'text-green-700 border-b-2 border-green-500 bg-green-50/50'
-                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                          : 'text-gray-900 hover:text-gray-800 hover:bg-gray-50'
                       }`}
                     >
                       Food Items
@@ -655,7 +655,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                       {pickerTab === 'spirits' && (
                         <>
                           {Object.keys(filteredBottlesByCategory).length === 0 ? (
-                            <p className="text-gray-400 text-sm text-center py-4">No bottles found</p>
+                            <p className="text-gray-600 text-sm text-center py-4">No bottles found</p>
                           ) : (
                             Object.entries(filteredBottlesByCategory)
                               .sort(([a], [b]) => a.localeCompare(b))
@@ -663,13 +663,13 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                                 <div key={category}>
                                   <button
                                     onClick={() => toggleCategory(category)}
-                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded"
+                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50 rounded"
                                   >
                                     <span className={`text-xs transition-transform ${expandedCategories[category] ? 'rotate-90' : ''}`}>
                                       ▶
                                     </span>
                                     <span>{category}</span>
-                                    <span className="text-xs text-gray-400">({catBottles.length})</span>
+                                    <span className="text-xs text-gray-900">({catBottles.length})</span>
                                   </button>
                                   {expandedCategories[category] && (
                                     <div className="ml-4 space-y-0.5">
@@ -690,7 +690,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                                             <span className={`text-xs px-1.5 py-0.5 rounded ${tierColor(bottle.tier)}`}>
                                               {bottle.tier}
                                             </span>
-                                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                                            <span className="text-xs text-gray-900 whitespace-nowrap">
                                               {alreadyAdded ? 'Added' : `${formatCurrency(bottle.pourCost || 0)}/pour`}
                                             </span>
                                           </button>
@@ -708,7 +708,7 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                       {pickerTab === 'food' && (
                         <>
                           {filteredFoodCategories.length === 0 ? (
-                            <p className="text-gray-400 text-sm text-center py-4">No food items found</p>
+                            <p className="text-gray-600 text-sm text-center py-4">No food items found</p>
                           ) : (
                             filteredFoodCategories.map((group) => {
                               const catKey = group.category?.id || 'uncategorized'
@@ -718,14 +718,14 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                                 <div key={catKey}>
                                   <button
                                     onClick={() => toggleCategory(`food-${catKey}`)}
-                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 rounded"
+                                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-50 rounded"
                                   >
                                     <span className={`text-xs transition-transform ${expandedCategories[`food-${catKey}`] ? 'rotate-90' : ''}`}>
                                       ▶
                                     </span>
                                     {catIcon && <span className="text-sm">{catIcon}</span>}
                                     <span>{catName}</span>
-                                    <span className="text-xs text-gray-400">({group.ingredients.length})</span>
+                                    <span className="text-xs text-gray-900">({group.ingredients.length})</span>
                                   </button>
                                   {expandedCategories[`food-${catKey}`] && (
                                     <div className="ml-4 space-y-0.5">
@@ -749,9 +749,9 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, locationId, isExpande
                                           >
                                             <span className="flex-1 truncate">{food.name}</span>
                                             {food.standardUnit && (
-                                              <span className="text-xs text-gray-400">{food.standardUnit}</span>
+                                              <span className="text-xs text-gray-900">{food.standardUnit}</span>
                                             )}
-                                            <span className="text-xs text-gray-500 whitespace-nowrap">
+                                            <span className="text-xs text-gray-900 whitespace-nowrap">
                                               {alreadyAdded ? 'Added' : costPerUnit ? `${formatCurrency(costPerUnit)}/ea` : ''}
                                             </span>
                                           </button>

@@ -30,7 +30,7 @@ function SectionCard({ icon, title, description, href }: SectionCardProps) {
           <p className="text-sm text-gray-600 leading-snug">{description}</p>
         </div>
         <svg
-          className="w-5 h-5 text-gray-300 group-hover:text-gray-500 mt-1 ml-3 flex-shrink-0 transition-colors"
+          className="w-5 h-5 text-gray-900 group-hover:text-gray-500 mt-1 ml-3 flex-shrink-0 transition-colors"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -119,7 +119,7 @@ export default function SettingsPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-700">Loading...</p>
+        <p className="text-gray-900">Loading...</p>
       </div>
     )
   }
@@ -197,6 +197,12 @@ export default function SettingsPage() {
             title="Upsell Rules"
             description="Configure intelligent upsell prompts to increase revenue per check"
             href="/settings/upsell-rules"
+          />
+          <SectionCard
+            icon="🔄"
+            title="Memberships"
+            description="Recurring payments, retry schedule, grace periods, and decline notifications"
+            href="/settings/memberships"
           />
           <SectionCard
             icon="⏳"

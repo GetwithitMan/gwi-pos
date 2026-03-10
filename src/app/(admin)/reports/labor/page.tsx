@@ -91,7 +91,7 @@ function exportLaborCSV(report: LaborReport, startDate: string, endDate: string)
 }
 
 function laborPercentColor(percent: number | null): string {
-  if (percent === null) return 'text-gray-400'
+  if (percent === null) return 'text-gray-900'
   if (percent < 30) return 'text-green-600'
   if (percent <= 35) return 'text-amber-600'
   return 'text-red-600'
@@ -158,7 +158,7 @@ export default function LaborReportPage() {
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={startDate}
@@ -167,7 +167,7 @@ export default function LaborReportPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                <label className="block text-sm font-medium text-gray-900 mb-1">End Date</label>
                 <input
                   type="date"
                   value={endDate}
@@ -195,7 +195,7 @@ export default function LaborReportPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Labor Cost</p>
+                <p className="text-xs text-gray-900">Total Labor Cost</p>
                 <p className="text-xl font-bold text-gray-900">
                   {formatCurrency(report.summary.totalLaborCost)}
                 </p>
@@ -203,7 +203,7 @@ export default function LaborReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                <p className="text-xs text-gray-900 flex items-center gap-1.5">
                   Labor %
                   {badge && (
                     <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${badge.className}`}>
@@ -220,7 +220,7 @@ export default function LaborReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Hours</p>
+                <p className="text-xs text-gray-900">Total Hours</p>
                 <p className="text-xl font-bold text-blue-600">
                   {report.summary.totalHours.toFixed(1)}
                 </p>
@@ -228,24 +228,24 @@ export default function LaborReportPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Overtime Hours</p>
-                <p className={`text-xl font-bold ${report.summary.totalOvertimeHours > 0 ? 'text-amber-600' : 'text-gray-700'}`}>
+                <p className="text-xs text-gray-900">Overtime Hours</p>
+                <p className={`text-xl font-bold ${report.summary.totalOvertimeHours > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
                   {report.summary.totalOvertimeHours.toFixed(1)}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Avg $/Hour</p>
-                <p className="text-xl font-bold text-gray-700">
+                <p className="text-xs text-gray-900">Avg $/Hour</p>
+                <p className="text-xl font-bold text-gray-900">
                   {formatCurrency(report.summary.avgCostPerHour)}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
-                <p className="text-xs text-gray-500">Total Shifts</p>
-                <p className="text-xl font-bold text-gray-700">
+                <p className="text-xs text-gray-900">Total Shifts</p>
+                <p className="text-xl font-bold text-gray-900">
                   {report.summary.totalShifts}
                 </p>
               </CardContent>
@@ -286,9 +286,9 @@ export default function LaborReportPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading report...</div>
+              <div className="text-center py-8 text-gray-900">Loading report...</div>
             ) : !report || report.byEmployee.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-900">
                 No labor data found for the selected period.
               </div>
             ) : selectedView === 'employee' ? (
@@ -296,13 +296,13 @@ export default function LaborReportPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Employee</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Role</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Hours</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Regular</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">OT</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Rate</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Labor Cost</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Employee</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Role</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Hours</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Regular</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">OT</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Rate</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Labor Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -318,13 +318,13 @@ export default function LaborReportPage() {
                             <span className="font-medium">{emp.name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-gray-500">{emp.role}</td>
+                        <td className="px-4 py-3 text-gray-900">{emp.role}</td>
                         <td className="px-4 py-3 text-right font-medium text-blue-600">{emp.totalHours.toFixed(1)}</td>
                         <td className="px-4 py-3 text-right">{emp.regularHours.toFixed(1)}</td>
                         <td className={`px-4 py-3 text-right ${emp.overtimeHours > 0 ? 'text-amber-600 font-medium' : ''}`}>
                           {emp.overtimeHours.toFixed(1)}
                         </td>
-                        <td className="px-4 py-3 text-right text-gray-500">{formatCurrency(emp.hourlyRate)}/hr</td>
+                        <td className="px-4 py-3 text-right text-gray-900">{formatCurrency(emp.hourlyRate)}/hr</td>
                         <td className="px-4 py-3 text-right font-medium">{formatCurrency(emp.laborCost)}</td>
                       </tr>
                     ))}
@@ -346,13 +346,13 @@ export default function LaborReportPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Date</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Employees</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Shifts</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Hours</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">OT Hours</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Breaks</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Labor Cost</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Date</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Employees</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Shifts</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Hours</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">OT Hours</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Breaks</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Labor Cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -371,7 +371,7 @@ export default function LaborReportPage() {
                         <td className={`px-4 py-3 text-right ${day.overtimeHours > 0 ? 'text-amber-600 font-medium' : ''}`}>
                           {day.overtimeHours.toFixed(1)}
                         </td>
-                        <td className="px-4 py-3 text-right text-gray-500">{day.breakMinutes}m</td>
+                        <td className="px-4 py-3 text-right text-gray-900">{day.breakMinutes}m</td>
                         <td className="px-4 py-3 text-right font-medium">{formatCurrency(day.laborCost)}</td>
                       </tr>
                     ))}
@@ -383,7 +383,7 @@ export default function LaborReportPage() {
                       <td className="px-4 py-3 text-right font-bold">{report.summary.totalShifts}</td>
                       <td className="px-4 py-3 text-right font-bold text-blue-600">{report.summary.totalHours.toFixed(1)}</td>
                       <td className="px-4 py-3 text-right font-bold text-amber-600">{report.summary.totalOvertimeHours.toFixed(1)}</td>
-                      <td className="px-4 py-3 text-right font-bold text-gray-500">{report.summary.totalBreakMinutes}m</td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-900">{report.summary.totalBreakMinutes}m</td>
                       <td className="px-4 py-3 text-right font-bold">{formatCurrency(report.summary.totalLaborCost)}</td>
                     </tr>
                   </tfoot>
@@ -395,13 +395,13 @@ export default function LaborReportPage() {
                 <table className="w-full">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Role</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Employees</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Shifts</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Total Hours</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Avg Hrs/Shift</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Labor Cost</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">% of Total</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium text-gray-900">Role</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Employees</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Shifts</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Total Hours</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Avg Hrs/Shift</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">Labor Cost</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium text-gray-900">% of Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -411,9 +411,9 @@ export default function LaborReportPage() {
                         <td className="px-4 py-3 text-right">{role.employees}</td>
                         <td className="px-4 py-3 text-right">{role.shifts}</td>
                         <td className="px-4 py-3 text-right font-medium text-blue-600">{role.totalHours.toFixed(1)}</td>
-                        <td className="px-4 py-3 text-right text-gray-500">{role.avgHoursPerShift.toFixed(1)}</td>
+                        <td className="px-4 py-3 text-right text-gray-900">{role.avgHoursPerShift.toFixed(1)}</td>
                         <td className="px-4 py-3 text-right font-medium">{formatCurrency(role.laborCost)}</td>
-                        <td className="px-4 py-3 text-right text-gray-500">
+                        <td className="px-4 py-3 text-right text-gray-900">
                           {report.summary.totalLaborCost > 0
                             ? `${((role.laborCost / report.summary.totalLaborCost) * 100).toFixed(1)}%`
                             : '—'}
@@ -441,7 +441,7 @@ export default function LaborReportPage() {
         {/* Labor % benchmark guide */}
         {report && report.summary.laborCostPercent !== null && (
           <div className="mt-4 p-4 bg-white border border-gray-200 rounded-xl">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Labor Cost % Benchmarks</h3>
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Labor Cost % Benchmarks</h3>
             <div className="flex gap-4 text-sm">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-full bg-green-500" />

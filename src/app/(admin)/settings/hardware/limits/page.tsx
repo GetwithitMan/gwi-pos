@@ -114,7 +114,7 @@ export default function HardwareLimitsPage() {
           ]}
         />
         <div className="flex items-center justify-center py-20">
-          <div className="text-gray-400 text-lg">Loading transaction limits...</div>
+          <div className="text-gray-900 text-lg">Loading transaction limits...</div>
         </div>
       </div>
     )
@@ -150,7 +150,7 @@ export default function HardwareLimitsPage() {
               className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
                 isDirty
                   ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-200 text-gray-900 cursor-not-allowed'
               }`}
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
@@ -166,10 +166,10 @@ export default function HardwareLimitsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Device Limits</h2>
-          <p className="text-sm text-gray-500 mb-2">
+          <p className="text-sm text-gray-900 mb-2">
             Maximum number of devices your venue can pair. Set to 0 for unlimited.
           </p>
-          <p className="text-xs text-gray-400 mb-5">
+          <p className="text-xs text-gray-900 mb-5">
             These limits are typically managed by your subscription plan via Mission Control.
           </p>
 
@@ -227,7 +227,7 @@ export default function HardwareLimitsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Transaction Limits</h2>
-          <p className="text-sm text-gray-500 mb-5">
+          <p className="text-sm text-gray-900 mb-5">
             Set maximum dollar amounts for payments, cash, tabs, and discounts. Set to 0 for unlimited.
           </p>
 
@@ -267,7 +267,7 @@ export default function HardwareLimitsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Handheld Device Limits</h2>
-          <p className="text-sm text-gray-500 mb-5">
+          <p className="text-sm text-gray-900 mb-5">
             Restrict what handheld terminals (Android register devices) can do. These limits apply to terminals with category HANDHELD.
           </p>
 
@@ -336,7 +336,7 @@ export default function HardwareLimitsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Cellular Device Limits</h2>
-          <p className="text-sm text-gray-500 mb-5">
+          <p className="text-sm text-gray-900 mb-5">
             Additional restrictions for devices operating over cellular connections. These are on top of the hard-coded proxy blocks.
           </p>
 
@@ -377,7 +377,7 @@ export default function HardwareLimitsPage() {
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Volume Guards</h2>
-          <p className="text-sm text-gray-500 mb-5">
+          <p className="text-sm text-gray-900 mb-5">
             Limit how many orders, voids, or comps a single employee can perform in a time window. Set to 0 for unlimited.
           </p>
 
@@ -457,7 +457,7 @@ function DeviceLimitRow({
       <div className="flex items-center justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="text-sm text-gray-900 font-medium">{label}</div>
-          <div className="text-xs text-gray-500">{description}</div>
+          <div className="text-xs text-gray-900">{description}</div>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {/* Current count display */}
@@ -467,7 +467,7 @@ function DeviceLimitRow({
             </span>
           )}
           {current !== null && isUnlimited && (
-            <span className="text-sm font-medium text-gray-500">
+            <span className="text-sm font-medium text-gray-900">
               {current} active
             </span>
           )}
@@ -518,7 +518,7 @@ function DollarRow({
         <div className="text-xs text-gray-600">{description}</div>
       </div>
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        <span className="text-gray-700 text-sm">$</span>
+        <span className="text-gray-900 text-sm">$</span>
         <input
           type="number"
           value={value}

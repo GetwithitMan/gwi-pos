@@ -106,7 +106,7 @@ function TreeNode({
       >
         {!isLeaf ? (
           <span className="flex items-center gap-0.5">
-            <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+            <span className={`text-gray-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
               ▶
             </span>
             {isRequired && <span className="w-1.5 h-1.5 rounded-full bg-red-500" title="Required" />}
@@ -114,8 +114,8 @@ function TreeNode({
         ) : (
           <span className="w-3" />
         )}
-        {icon && <span className="text-gray-500">{icon}</span>}
-        <span className={`flex-1 truncate ${isLeaf ? 'text-gray-600' : 'font-medium'} ${isEmpty ? 'italic text-gray-400' : ''}`}>
+        {icon && <span className="text-gray-600">{icon}</span>}
+        <span className={`flex-1 truncate ${isLeaf ? 'text-gray-600' : 'font-medium'} ${isEmpty ? 'italic text-gray-900' : ''}`}>
           {label}
         </span>
         {badge}
@@ -170,7 +170,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
 
   if (!item) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400 p-4">
+      <div className="h-full flex items-center justify-center text-gray-900 p-4">
         <p className="text-sm">Select an item to view its structure</p>
       </div>
     )
@@ -196,7 +196,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
         isEmpty={isEmpty}
         badge={
           <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-900">
               {group.modifiers.length}
             </span>
             {childGroupCount > 0 && (
@@ -240,13 +240,13 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
     <div className="h-full flex flex-col bg-white border-r">
       {/* Header */}
       <div className="p-3 border-b bg-gray-50">
-        <h3 className="font-semibold text-sm text-gray-700">Item Structure</h3>
+        <h3 className="font-semibold text-sm text-gray-900">Item Structure</h3>
       </div>
 
       {/* Tree Content */}
       <div className="flex-1 overflow-y-auto p-2">
         {loading ? (
-          <div className="text-center py-4 text-gray-400 text-sm">Loading...</div>
+          <div className="text-center py-4 text-gray-900 text-sm">Loading...</div>
         ) : (
           <div className="space-y-1">
             {/* Root Item */}
@@ -270,11 +270,11 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
                 nodeId="ingredients"
                 icon={<span>🥗</span>}
                 badge={
-                  <span className="text-xs text-gray-400">{ingredients.length}</span>
+                  <span className="text-xs text-gray-900">{ingredients.length}</span>
                 }
               >
                 {ingredients.length === 0 ? (
-                  <div className="py-1 px-4 text-xs text-gray-400 italic">None</div>
+                  <div className="py-1 px-4 text-xs text-gray-900 italic">None</div>
                 ) : (
                   ingredients.map(ing => (
                     <TreeNode
@@ -319,7 +319,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
                     const totalOptions = itemOwnedGroups.reduce((sum, g) => sum + g.modifiers.length, 0)
 
                     return (
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-gray-900">
                         {topLevelGroups.length > 0
                           ? `${topLevelGroups.length} group${topLevelGroups.length !== 1 ? 's' : ''} · ${totalOptions} option${totalOptions !== 1 ? 's' : ''}`
                           : '0'}
@@ -329,7 +329,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
                 }
               >
                 {itemOwnedGroups.length === 0 ? (
-                  <div className="py-1 px-4 text-xs text-gray-400 italic">None</div>
+                  <div className="py-1 px-4 text-xs text-gray-900 italic">None</div>
                 ) : (
                   (() => {
                     // Build set of child group IDs to exclude from top level
@@ -356,9 +356,9 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
                 icon={<span>🖨️</span>}
               >
                 {!item.printerIds || item.printerIds.length === 0 ? (
-                  <div className="py-1 px-4 text-xs text-gray-400 italic">Category default</div>
+                  <div className="py-1 px-4 text-xs text-gray-900 italic">Category default</div>
                 ) : (
-                  <div className="py-1 px-4 text-xs text-gray-500">
+                  <div className="py-1 px-4 text-xs text-gray-900">
                     {item.printerIds.length} printer(s) configured
                   </div>
                 )}

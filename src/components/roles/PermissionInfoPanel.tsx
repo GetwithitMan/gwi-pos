@@ -20,7 +20,7 @@ export function PermissionInfoPanel({ meta, isOpen }: PermissionInfoPanelProps) 
         >
           <div className="mx-3 mb-2 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm">
             {/* Description */}
-            <p className="text-gray-700 mb-2">{meta.description}</p>
+            <p className="text-gray-900 mb-2">{meta.description}</p>
 
             {/* Details bullets */}
             {meta.details.length > 0 && (
@@ -36,7 +36,7 @@ export function PermissionInfoPanel({ meta, isOpen }: PermissionInfoPanelProps) 
 
             {/* Recommended for */}
             {meta.recommendedFor && meta.recommendedFor.length > 0 && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-900">
                 <span className="font-medium">Recommended for:</span> {meta.recommendedFor.join(', ')}
               </p>
             )}

@@ -288,7 +288,7 @@ export function InventoryItemEditor({
             <button
               type="button"
               onClick={onChangeType}
-              className="text-xs text-gray-500 hover:text-blue-600 underline"
+              className="text-xs text-gray-900 hover:text-blue-600 underline"
             >
               Change to Prep Item
             </button>
@@ -297,7 +297,7 @@ export function InventoryItemEditor({
         <h2 className="text-xl font-bold">
           {isEditing ? 'Edit Inventory Item' : 'Add Inventory Item'}
         </h2>
-        <p className="text-xs text-gray-500 mt-1">
+        <p className="text-xs text-gray-900 mt-1">
           Base ingredient that you purchase from vendors. Prep items can be made from this.
         </p>
       </div>
@@ -319,10 +319,10 @@ export function InventoryItemEditor({
               }`}
             >
               <div className="text-2xl mb-1">📦</div>
-              <div className={`font-bold ${formData.sourceType === 'delivered' ? 'text-blue-900' : 'text-gray-700'}`}>
+              <div className={`font-bold ${formData.sourceType === 'delivered' ? 'text-blue-900' : 'text-gray-900'}`}>
                 Delivered
               </div>
-              <div className="text-xs text-gray-500">Purchased from vendor</div>
+              <div className="text-xs text-gray-900">Purchased from vendor</div>
             </button>
             <button
               type="button"
@@ -334,10 +334,10 @@ export function InventoryItemEditor({
               }`}
             >
               <div className="text-2xl mb-1">👨‍🍳</div>
-              <div className={`font-bold ${formData.sourceType === 'made' ? 'text-orange-900' : 'text-gray-700'}`}>
+              <div className={`font-bold ${formData.sourceType === 'made' ? 'text-orange-900' : 'text-gray-900'}`}>
                 Made In-House
               </div>
-              <div className="text-xs text-gray-500">Made from a recipe</div>
+              <div className="text-xs text-gray-900">Made from a recipe</div>
             </button>
           </div>
         </div>
@@ -352,7 +352,7 @@ export function InventoryItemEditor({
               </h3>
               <p className="text-sm text-blue-700">How does this appear on your vendor invoice?</p>
               <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-gray-700 font-medium">1</span>
+                <span className="text-gray-900 font-medium">1</span>
                 <select
                   value={formData.purchaseUnit}
                   onChange={(e) => setFormData({ ...formData, purchaseUnit: e.target.value })}
@@ -368,9 +368,9 @@ export function InventoryItemEditor({
                   <option value="each">each</option>
                   <option value="lb">lb</option>
                 </select>
-                <span className="text-gray-700 font-medium">costs</span>
+                <span className="text-gray-900 font-medium">costs</span>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-900 font-bold">$</span>
                   <input
                     type="number"
                     step="0.01"
@@ -392,7 +392,7 @@ export function InventoryItemEditor({
               </h3>
               <p className="text-sm text-blue-700">How much usable product is in each {formData.purchaseUnit || 'unit'}?</p>
               <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-gray-700 font-medium">Contains</span>
+                <span className="text-gray-900 font-medium">Contains</span>
                 <input
                   type="number"
                   step="0.5"
@@ -432,7 +432,7 @@ export function InventoryItemEditor({
             )}
 
             {/* Examples */}
-            <div className="text-xs text-gray-500 space-y-1 pt-2">
+            <div className="text-xs text-gray-900 space-y-1 pt-2">
               <p className="font-medium">Examples:</p>
               <p>• Flour: 1 <strong>bag</strong> @ $23 contains <strong>50 lb</strong> → $0.46/lb</p>
               <p>• Cheese: 1 <strong>case</strong> @ $45 contains <strong>120 slices</strong> → $0.375/slice</p>
@@ -578,7 +578,7 @@ export function InventoryItemEditor({
                 {/* Category-grouped ingredient selector */}
                 <div className="border border-orange-200 rounded-lg bg-white max-h-64 overflow-y-auto">
                   {ingredientsByCategory.length === 0 ? (
-                    <div className="p-3 text-gray-500 text-sm text-center">No ingredients available</div>
+                    <div className="p-3 text-gray-900 text-sm text-center">No ingredients available</div>
                   ) : (
                     ingredientsByCategory.map(group => {
                       const categoryKey = group.category?.id || 'uncategorized'
@@ -608,9 +608,9 @@ export function InventoryItemEditor({
                             <span className="font-medium text-gray-800 flex items-center gap-2">
                               {group.category?.icon && <span>{group.category.icon}</span>}
                               {group.category?.name || 'Uncategorized'}
-                              <span className="text-xs text-gray-500">({availableInCategory.length})</span>
+                              <span className="text-xs text-gray-900">({availableInCategory.length})</span>
                             </span>
-                            <span className="text-gray-400 text-sm">
+                            <span className="text-gray-900 text-sm">
                               {isExpanded ? '▼' : '▶'}
                             </span>
                           </button>
@@ -628,7 +628,7 @@ export function InventoryItemEditor({
                                     className={`w-full px-4 py-1.5 text-left text-sm transition-colors flex items-center gap-2 ${
                                       isSelected
                                         ? 'bg-orange-200 text-orange-900 font-medium'
-                                        : 'hover:bg-orange-100 text-gray-700'
+                                        : 'hover:bg-orange-100 text-gray-900'
                                     }`}
                                   >
                                     <span className={`w-3 h-3 rounded-full border ${
@@ -690,7 +690,7 @@ export function InventoryItemEditor({
 
                 {/* Hint when no ingredient selected */}
                 {!newComponentId && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-900">
                     Click a category to expand it, then click an ingredient to select it.
                   </p>
                 )}
@@ -706,7 +706,7 @@ export function InventoryItemEditor({
                     How much does this recipe make? Prep items will use this to calculate their cost.
                   </p>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-gray-700 font-medium">This recipe makes</span>
+                    <span className="text-gray-900 font-medium">This recipe makes</span>
                     <input
                       type="number"
                       step="0.5"
@@ -744,7 +744,7 @@ export function InventoryItemEditor({
                   </div>
 
                   {/* Hint about prep items */}
-                  <p className="text-xs text-gray-500 mt-2">
+                  <p className="text-xs text-gray-900 mt-2">
                     💡 Create prep items (like XL, L, M dough balls) as children of this item. Each prep item specifies how many oz/units it uses.
                   </p>
                 </div>
@@ -757,7 +757,7 @@ export function InventoryItemEditor({
           <h3 className="font-semibold text-gray-900 border-b pb-2">Basic Info</h3>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Name *
             </label>
             <input
@@ -771,7 +771,7 @@ export function InventoryItemEditor({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Category
             </label>
             <select
@@ -789,7 +789,7 @@ export function InventoryItemEditor({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
               Description (optional)
             </label>
             <input
@@ -822,7 +822,7 @@ export function InventoryItemEditor({
 
         {/* ========== Inventory Link ========== */}
         <details className="border rounded-lg">
-          <summary className="px-4 py-3 cursor-pointer font-medium text-gray-700 hover:bg-gray-50">
+          <summary className="px-4 py-3 cursor-pointer font-medium text-gray-900 hover:bg-gray-50">
             Link to Inventory System (Optional)
           </summary>
           <div className="px-4 pb-4 space-y-4">
@@ -896,7 +896,7 @@ export function InventoryItemEditor({
 
         {/* ========== Visibility ========== */}
         <details className="border rounded-lg">
-          <summary className="px-4 py-3 cursor-pointer font-medium text-gray-700 hover:bg-gray-50">
+          <summary className="px-4 py-3 cursor-pointer font-medium text-gray-900 hover:bg-gray-50">
             Visibility & Status
           </summary>
           <div className="px-4 pb-4 space-y-4">

@@ -94,7 +94,7 @@ export default function BergEmployeeReportPage() {
         <h1 className="text-2xl font-bold">Employee Accountability</h1>
         <div className="flex items-center gap-3 flex-wrap">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={dateClass} />
-          <span className="text-gray-400">to</span>
+          <span className="text-gray-900">to</span>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={dateClass} />
           <Button onClick={runReport} disabled={loading}>
             {loading ? 'Running...' : 'Run Report'}
@@ -107,7 +107,7 @@ export default function BergEmployeeReportPage() {
 
       {/* Empty state */}
       {!report && !loading && (
-        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-900">
           Select a date range and run the report to see per-employee Berg accountability data.
         </div>
       )}
@@ -118,13 +118,13 @@ export default function BergEmployeeReportPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <Card>
               <CardContent className="pt-4 text-center">
-                <div className="text-xs text-gray-500 uppercase">Total Pours</div>
+                <div className="text-xs text-gray-900 uppercase">Total Pours</div>
                 <div className="text-3xl font-bold">{report.summary.totalPours}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4 text-center">
-                <div className="text-xs text-gray-500 uppercase">Total Unmatched</div>
+                <div className="text-xs text-gray-900 uppercase">Total Unmatched</div>
                 <div className={`text-3xl font-bold ${report.summary.totalUnmatched > 0 ? 'text-amber-600' : 'text-green-600'}`}>
                   {report.summary.totalUnmatched}
                 </div>
@@ -132,7 +132,7 @@ export default function BergEmployeeReportPage() {
             </Card>
             <Card>
               <CardContent className="pt-4 text-center">
-                <div className="text-xs text-gray-500 uppercase">Total $ Exposure</div>
+                <div className="text-xs text-gray-900 uppercase">Total $ Exposure</div>
                 <div className={`text-3xl font-bold ${report.summary.totalExposure > 0 ? 'text-red-600' : 'text-green-600'}`}>
                   {fmtMoney(report.summary.totalExposure)}
                 </div>
@@ -146,7 +146,7 @@ export default function BergEmployeeReportPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50 text-left text-gray-500">
+                    <tr className="border-b bg-gray-50 text-left text-gray-900">
                       <th className="py-2 px-3 font-medium">Employee</th>
                       <th className="py-2 px-3 font-medium text-right">Pours</th>
                       <th className="py-2 px-3 font-medium text-right">Volume (oz)</th>
@@ -166,7 +166,7 @@ export default function BergEmployeeReportPage() {
                           <td className="py-2 px-3 font-medium">
                             {row.employeeName}
                             {!row.employeeId && (
-                              <span className="ml-2 text-xs text-gray-400">(unassigned)</span>
+                              <span className="ml-2 text-xs text-gray-900">(unassigned)</span>
                             )}
                           </td>
                           <td className="py-2 px-3 text-right">{row.totalPours}</td>
@@ -176,14 +176,14 @@ export default function BergEmployeeReportPage() {
                             {hasUnmatched ? (
                               <span className="font-semibold text-amber-700">{row.unmatchedCount}</span>
                             ) : (
-                              <span className="text-gray-400">0</span>
+                              <span className="text-gray-900">0</span>
                             )}
                           </td>
                           <td className="py-2 px-3 text-right">
                             {row.unmatchedExposure > 0 ? (
                               <span className="font-semibold text-red-600">{fmtMoney(row.unmatchedExposure)}</span>
                             ) : (
-                              <span className="text-gray-400">$0.00</span>
+                              <span className="text-gray-900">$0.00</span>
                             )}
                           </td>
                           <td className="py-2 px-3 text-right">
@@ -196,7 +196,7 @@ export default function BergEmployeeReportPage() {
                     })}
                     {report.employees.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-gray-400">
+                        <td colSpan={7} className="py-8 text-center text-gray-900">
                           No dispense events found for this period.
                         </td>
                       </tr>

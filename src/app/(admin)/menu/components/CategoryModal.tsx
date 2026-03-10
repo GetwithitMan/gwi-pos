@@ -98,7 +98,7 @@ export function CategoryModal({
                   />
                   <div className="flex-1">
                     <p className="font-medium text-sm">{type.label}</p>
-                    <p className="text-xs text-gray-500">{type.description}</p>
+                    <p className="text-xs text-gray-900">{type.description}</p>
                   </div>
                 </label>
               ))}
@@ -114,22 +114,22 @@ export function CategoryModal({
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                 className="w-full px-3 py-2 border rounded-lg text-left flex items-center justify-between bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <span className={selectedDestinations.length === 0 ? 'text-gray-500' : ''}>
+                <span className={selectedDestinations.length === 0 ? 'text-gray-900' : ''}>
                   {selectedDestinations.length === 0
                     ? 'Select destinations...'
                     : selectedDestinations.map(d => d.name).join(', ')}
                 </span>
-                <span className="text-gray-400">{isDropdownOpen ? '▲' : '▼'}</span>
+                <span className="text-gray-500">{isDropdownOpen ? '▲' : '▼'}</span>
               </button>
 
               {isDropdownOpen && (
                 <div className="absolute z-10 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-auto">
                   {printDestinations.length === 0 ? (
-                    <div className="px-3 py-2 text-gray-500 text-sm">No destinations available</div>
+                    <div className="px-3 py-2 text-gray-900 text-sm">No destinations available</div>
                   ) : (
                     <>
                       {printers.filter(p => p.isActive).length > 0 && (
-                        <div className="px-3 py-1 text-xs font-semibold text-gray-500 bg-gray-50 border-b">
+                        <div className="px-3 py-1 text-xs font-semibold text-gray-900 bg-gray-50 border-b">
                           Printers
                         </div>
                       )}
@@ -151,11 +151,11 @@ export function CategoryModal({
                             className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                           />
                           <span className="flex-1">{printer.name}</span>
-                          <span className="text-xs text-gray-400">{printer.printerRole}</span>
+                          <span className="text-xs text-gray-900">{printer.printerRole}</span>
                         </label>
                       ))}
                       {kdsScreens.filter(k => k.isActive).length > 0 && (
-                        <div className="px-3 py-1 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-t">
+                        <div className="px-3 py-1 text-xs font-semibold text-gray-900 bg-gray-50 border-b border-t">
                           KDS Screens
                         </div>
                       )}
@@ -177,14 +177,14 @@ export function CategoryModal({
                             className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
                           />
                           <span className="flex-1">{screen.name}</span>
-                          <span className="text-xs text-gray-400">{screen.screenType}</span>
+                          <span className="text-xs text-gray-900">{screen.screenType}</span>
                         </label>
                       ))}
                     </>
                   )}
                 </div>
               )}
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-900 mt-1">
                 {printerIds.length === 0
                   ? 'Using system default'
                   : `Sending to ${printerIds.length} destination(s)`}

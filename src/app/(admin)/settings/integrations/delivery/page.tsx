@@ -165,7 +165,7 @@ export default function DeliveryIntegrationSettingsPage() {
     return (
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-4">Delivery Integrations</h1>
-        <div className="text-gray-500">Loading settings...</div>
+        <div className="text-gray-900">Loading settings...</div>
       </div>
     )
   }
@@ -173,7 +173,7 @@ export default function DeliveryIntegrationSettingsPage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-1">Delivery Integrations</h1>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-gray-900 mb-6">
         Connect DoorDash, UberEats, and Grubhub to receive delivery orders directly in the POS.
       </p>
 
@@ -212,7 +212,7 @@ export default function DeliveryIntegrationSettingsPage() {
               onChange={e => updateGlobal('defaultTaxRate', Number(e.target.value))}
               className="w-20 px-2 py-1 border rounded text-sm text-right"
             />
-            <span className="text-sm text-gray-500 ml-1">%</span>
+            <span className="text-sm text-gray-900 ml-1">%</span>
           </div>
         </CardContent>
       </Card>
@@ -229,14 +229,14 @@ export default function DeliveryIntegrationSettingsPage() {
                   <CardTitle className="text-lg">{config.label}</CardTitle>
                 </div>
                 <div className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  platformForm.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                  platformForm.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-900'
                 }`}>
                   {platformForm.enabled ? 'Active' : 'Inactive'}
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-sm text-gray-500">{config.description}</p>
+              <p className="text-sm text-gray-900">{config.description}</p>
 
               <ToggleRow
                 label="Enable Integration"
@@ -249,7 +249,7 @@ export default function DeliveryIntegrationSettingsPage() {
                 <>
                   {/* Store / Restaurant ID */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-900 mb-1">
                       {key === 'grubhub' ? 'Restaurant ID' : 'Store ID'}
                     </label>
                     <input
@@ -264,7 +264,7 @@ export default function DeliveryIntegrationSettingsPage() {
                   {/* UberEats Client ID */}
                   {key === 'ubereats' && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-sm font-medium text-gray-900 mb-1">
                         Client ID
                       </label>
                       <input
@@ -279,7 +279,7 @@ export default function DeliveryIntegrationSettingsPage() {
 
                   {/* Webhook Secret */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-900 mb-1">
                       Webhook Secret
                     </label>
                     <input
@@ -289,7 +289,7 @@ export default function DeliveryIntegrationSettingsPage() {
                       className="w-full px-3 py-2 border rounded-lg text-sm"
                       placeholder="HMAC webhook signing secret"
                     />
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-gray-900 mt-1">
                       Used to validate incoming webhook signatures
                     </p>
                   </div>
@@ -318,13 +318,13 @@ export default function DeliveryIntegrationSettingsPage() {
                         onChange={e => updatePlatform(key, 'prepTimeMinutes', Number(e.target.value))}
                         className="w-16 px-2 py-1 border rounded text-sm text-right"
                       />
-                      <span className="text-sm text-gray-500">min</span>
+                      <span className="text-sm text-gray-900">min</span>
                     </div>
                   </div>
 
                   {/* Webhook URL */}
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-xs font-medium text-gray-700 mb-1">Webhook URL</div>
+                    <div className="text-xs font-medium text-gray-900 mb-1">Webhook URL</div>
                     <div className="flex items-center gap-2">
                       <code className="text-xs bg-white px-2 py-1 rounded border flex-1 truncate">
                         {baseUrl}{config.webhookPath}
@@ -339,7 +339,7 @@ export default function DeliveryIntegrationSettingsPage() {
                         Copy
                       </button>
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-gray-900 mt-1">
                       Paste this URL in your {config.label} developer dashboard webhook settings
                     </p>
                   </div>

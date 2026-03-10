@@ -60,11 +60,11 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
         <CardContent className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">Send Pizza Orders To:</label>
-            <p className="text-xs text-gray-500 mb-3">
+            <p className="text-xs text-gray-900 mb-3">
               Select one or more printers. Pizza tickets will print to all selected printers.
             </p>
             {printers.length === 0 ? (
-              <p className="text-sm text-gray-500 italic">No printers configured. Add printers in Hardware Settings.</p>
+              <p className="text-sm text-gray-900 italic">No printers configured. Add printers in Hardware Settings.</p>
             ) : (
               <div className="space-y-2">
                 {printers.map(printer => {
@@ -87,7 +87,7 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
                       />
                       <div className="flex-1">
                         <span className="font-medium">{printer.name}</span>
-                        <span className="text-xs text-gray-500 ml-2">({printer.printerRole})</span>
+                        <span className="text-xs text-gray-900 ml-2">({printer.printerRole})</span>
                       </div>
                     </div>
                   )
@@ -113,25 +113,25 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
           </p>
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm">
-              <span className={config.printSettings ? 'text-green-600' : 'text-gray-400'}>
+              <span className={config.printSettings ? 'text-green-600' : 'text-gray-900'}>
                 {config.printSettings ? '✓' : '○'}
               </span>
               <span>Section headers for split pizzas</span>
             </div>
             <div className="flex items-center gap-2 text-sm">
-              <span className={config.printSettings?.modifications?.highlightNo ? 'text-green-600' : 'text-gray-400'}>
+              <span className={config.printSettings?.modifications?.highlightNo ? 'text-green-600' : 'text-gray-900'}>
                 {config.printSettings?.modifications?.highlightNo ? '✓' : '○'}
               </span>
               <span>NO items highlighted (allergy safe)</span>
             </div>
             <div className="flex items-center gap-2 text-sm">
-              <span className={config.printSettings?.modifications?.highlightExtra ? 'text-green-600' : 'text-gray-400'}>
+              <span className={config.printSettings?.modifications?.highlightExtra ? 'text-green-600' : 'text-gray-900'}>
                 {config.printSettings?.modifications?.highlightExtra ? '✓' : '○'}
               </span>
               <span>EXTRA/LIGHT modifications highlighted</span>
             </div>
             <div className="flex items-center gap-2 text-sm">
-              <span className={config.printSettings?.allergyAlerts?.highlightAllergies ? 'text-green-600' : 'text-gray-400'}>
+              <span className={config.printSettings?.allergyAlerts?.highlightAllergies ? 'text-green-600' : 'text-gray-900'}>
                 {config.printSettings?.allergyAlerts?.highlightAllergies ? '✓' : '○'}
               </span>
               <span>Allergy alerts</span>
@@ -184,7 +184,7 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
                 )
               })}
             </div>
-            <p className="text-xs text-gray-500 mt-1">Check which division modes are available in the pizza builder</p>
+            <p className="text-xs text-gray-900 mt-1">Check which division modes are available in the pizza builder</p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Default Section View</label>
@@ -210,13 +210,13 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
               <option value="flat">Flat (any coverage = 100%)</option>
               <option value="hybrid">Hybrid (custom percentages)</option>
             </select>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-900 mt-1">
               Fractional: A topping covering half the pizza costs half price
             </p>
             {config.pricingMode === 'hybrid' && (
               <div className="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
                 <label className="block text-sm font-medium mb-2">Custom Pricing Percentages</label>
-                <p className="text-xs text-gray-500 mb-3">Set the price percentage charged for each division level (1.0 = 100%)</p>
+                <p className="text-xs text-gray-900 mb-3">Set the price percentage charged for each division level (1.0 = 100%)</p>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { key: 'whole', label: 'Whole', default: 1.0 },
@@ -264,7 +264,7 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
           <div className="flex items-center justify-between">
             <div>
               <label className="text-sm font-medium">Allow section-based sauce & cheese</label>
-              <p className="text-xs text-gray-500">Let staff place sauce or cheese on specific sections (e.g. marinara on left, BBQ on right)</p>
+              <p className="text-xs text-gray-900">Let staff place sauce or cheese on specific sections (e.g. marinara on left, BBQ on right)</p>
             </div>
             <input
               type="checkbox"
@@ -285,7 +285,7 @@ export function ConfigTab({ config, printers, onSave, showPrintSettings, setShow
                 <option value={2}>Up to halves</option>
                 <option value={3}>Up to thirds</option>
               </select>
-              <p className="text-xs text-gray-500 mt-1">Maximum number of sections for sauce and cheese placement</p>
+              <p className="text-xs text-gray-900 mt-1">Maximum number of sections for sauce and cheese placement</p>
             </div>
           )}
         </CardContent>
@@ -392,7 +392,7 @@ export function SizesTab({ sizes, onAdd, onEdit, onDelete }: SizesTabProps) {
       </CardHeader>
       <CardContent>
         {sizes.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No sizes configured. Add your first size to get started.</p>
+          <p className="text-gray-900 text-center py-8">No sizes configured. Add your first size to get started.</p>
         ) : (
           <div className="space-y-2">
             {sizes.map(size => (
@@ -406,7 +406,7 @@ export function SizesTab({ sizes, onAdd, onEdit, onDelete }: SizesTabProps) {
                   </div>
                   <div>
                     <div className="font-semibold">{size.name}</div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-gray-900">
                       {size.displayName || `${size.inches || '?'}"`} • {size.slices} slices
                       {size.isDefault && <span className="ml-2 text-orange-600 font-medium">Default</span>}
                     </div>
@@ -423,7 +423,7 @@ export function SizesTab({ sizes, onAdd, onEdit, onDelete }: SizesTabProps) {
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <div className="font-bold text-lg">{formatCurrency(size.basePrice)}</div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-900">
                       Topping: {size.toppingMultiplier}x
                     </div>
                   </div>
@@ -456,7 +456,7 @@ export function CrustsTab({ crusts, onAdd, onEdit, onDelete }: CrustsTabProps) {
       </CardHeader>
       <CardContent>
         {crusts.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No crusts configured. Add your first crust to get started.</p>
+          <p className="text-gray-900 text-center py-8">No crusts configured. Add your first crust to get started.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {crusts.map(crust => (
@@ -468,7 +468,7 @@ export function CrustsTab({ crusts, onAdd, onEdit, onDelete }: CrustsTabProps) {
                   <div className="font-semibold">{crust.name}</div>
                   {crust.isDefault && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">Default</span>}
                 </div>
-                {crust.description && <p className="text-sm text-gray-500 mb-2">{crust.description}</p>}
+                {crust.description && <p className="text-sm text-gray-900 mb-2">{crust.description}</p>}
                 {crust.inventoryItemName ? (
                   <div className="text-xs text-blue-600 mb-1">
                     Linked: {crust.inventoryItemName}
@@ -512,7 +512,7 @@ export function SaucesTab({ sauces, onAdd, onEdit, onDelete }: SaucesTabProps) {
       </CardHeader>
       <CardContent>
         {sauces.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No sauces configured. Add your first sauce to get started.</p>
+          <p className="text-gray-900 text-center py-8">No sauces configured. Add your first sauce to get started.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sauces.map(sauce => (
@@ -524,7 +524,7 @@ export function SaucesTab({ sauces, onAdd, onEdit, onDelete }: SaucesTabProps) {
                   <div className="font-semibold">{sauce.name}</div>
                   {sauce.isDefault && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">Default</span>}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                <div className="flex items-center gap-2 text-xs text-gray-900 mb-2">
                   {sauce.allowLight && <span className="bg-gray-100 px-2 py-0.5 rounded">Light</span>}
                   {sauce.allowExtra && <span className="bg-gray-100 px-2 py-0.5 rounded">Extra +{formatCurrency(sauce.extraPrice)}</span>}
                 </div>
@@ -571,7 +571,7 @@ export function CheesesTab({ cheeses, onAdd, onEdit, onDelete }: CheesesTabProps
       </CardHeader>
       <CardContent>
         {cheeses.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No cheeses configured. Add your first cheese to get started.</p>
+          <p className="text-gray-900 text-center py-8">No cheeses configured. Add your first cheese to get started.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {cheeses.map(cheese => (
@@ -583,7 +583,7 @@ export function CheesesTab({ cheeses, onAdd, onEdit, onDelete }: CheesesTabProps
                   <div className="font-semibold">{cheese.name}</div>
                   {cheese.isDefault && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">Default</span>}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+                <div className="flex items-center gap-2 text-xs text-gray-900 mb-2">
                   {cheese.allowLight && <span className="bg-gray-100 px-2 py-0.5 rounded">Light</span>}
                   {cheese.allowExtra && <span className="bg-gray-100 px-2 py-0.5 rounded">Extra +{formatCurrency(cheese.extraPrice)}</span>}
                 </div>
@@ -655,7 +655,7 @@ export function ToppingsTab({ toppings, onAdd, onEdit, onDelete }: ToppingsTabPr
       </CardHeader>
       <CardContent>
         {toppings.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No toppings configured. Add your first topping to get started.</p>
+          <p className="text-gray-900 text-center py-8">No toppings configured. Add your first topping to get started.</p>
         ) : (
           <div className="space-y-6">
             {Object.entries(groupedToppings).map(([category, categoryToppings]) => {
@@ -680,7 +680,7 @@ export function ToppingsTab({ toppings, onAdd, onEdit, onDelete }: ToppingsTabPr
                           <div className="font-bold text-green-600">{formatCurrency(topping.price)}</div>
                         </div>
                         {topping.extraPrice && (
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-gray-900">
                             Extra: +{formatCurrency(topping.extraPrice)}
                           </div>
                         )}

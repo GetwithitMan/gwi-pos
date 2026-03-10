@@ -96,7 +96,7 @@ export default function SevenShiftsEmployeeMappingPage() {
   if (loading) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-900">Loading...</p>
       </div>
     )
   }
@@ -107,10 +107,10 @@ export default function SevenShiftsEmployeeMappingPage() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <Link href="/settings/integrations/7shifts" className="text-gray-400 hover:text-gray-600 text-sm">&larr; 7shifts Settings</Link>
+            <Link href="/settings/integrations/7shifts" className="text-gray-900 hover:text-gray-600 text-sm">&larr; 7shifts Settings</Link>
           </div>
           <h1 className="text-2xl font-bold mb-1">7shifts Employee Mapping</h1>
-          <p className="text-gray-500">
+          <p className="text-gray-900">
             Link GWI POS employees to their 7shifts accounts so time punches and sales data
             are attributed to the correct person.
           </p>
@@ -158,21 +158,21 @@ export default function SevenShiftsEmployeeMappingPage() {
                       <td className="py-3 font-medium text-gray-900">
                         {emp.firstName} {emp.lastName}
                       </td>
-                      <td className="py-3 text-gray-500">
+                      <td className="py-3 text-gray-900">
                         {emp.role?.name ?? '—'}
                       </td>
                       <td className="py-3">
                         {isLinked ? (
                           <span className="inline-flex items-center gap-1.5">
                             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Linked</span>
-                            <span className="text-gray-700">
+                            <span className="text-gray-900">
                               {linkedUser
                                 ? `${linkedUser.first_name} ${linkedUser.last_name}`
                                 : `User #${emp.sevenShiftsUserId}`
                               }
                             </span>
                             {linkedUser?.department_name && (
-                              <span className="text-gray-400 text-xs">({linkedUser.department_name})</span>
+                              <span className="text-gray-900 text-xs">({linkedUser.department_name})</span>
                             )}
                           </span>
                         ) : (
@@ -214,7 +214,7 @@ export default function SevenShiftsEmployeeMappingPage() {
                 })}
                 {gwiEmployees.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-gray-400">
+                    <td colSpan={4} className="py-8 text-center text-gray-900">
                       No employees found.
                     </td>
                   </tr>

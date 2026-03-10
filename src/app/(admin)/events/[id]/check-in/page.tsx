@@ -240,13 +240,13 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
     <div className="h-screen flex flex-col">
       {/* Header */}
       <div className="bg-gray-800 p-4">
-        <Link href={`/events/${id}`} className="text-gray-400 hover:text-white text-sm">
+        <Link href={`/events/${id}`} className="text-gray-900 hover:text-white text-sm">
           &larr; Back to Event
         </Link>
         <div className="flex justify-between items-center mt-2">
           <div>
             <h1 className="text-xl font-bold">{event.name}</h1>
-            <div className="text-sm text-gray-400">
+            <div className="text-sm text-gray-900">
               {new Date(event.eventDate).toLocaleDateString()} &bull; Check-In
             </div>
           </div>
@@ -255,19 +255,19 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
           <div className="flex gap-6">
             <div className="text-center">
               <div className="text-3xl font-bold text-green-400">{stats.checkedIn}</div>
-              <div className="text-sm text-gray-400">Checked In</div>
+              <div className="text-sm text-gray-900">Checked In</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-yellow-400">{stats.remaining}</div>
-              <div className="text-sm text-gray-400">Remaining</div>
+              <div className="text-sm text-gray-900">Remaining</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold">{stats.total}</div>
-              <div className="text-sm text-gray-400">Total</div>
+              <div className="text-sm text-gray-900">Total</div>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-blue-400">{stats.percentCheckedIn}%</div>
-              <div className="text-sm text-gray-400">Complete</div>
+              <div className="text-sm text-gray-900">Complete</div>
             </div>
           </div>
         </div>
@@ -372,7 +372,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
           {/* Ticket list */}
           <div className="space-y-2">
             {filteredTickets.length === 0 ? (
-              <div className="text-center text-gray-400 py-8">
+              <div className="text-center text-gray-900 py-8">
                 No tickets found
               </div>
             ) : (
@@ -391,7 +391,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
 
                   <div className="flex-1">
                     <div className="font-medium">{ticket.customerName || 'Guest'}</div>
-                    <div className="text-sm text-gray-400">
+                    <div className="text-sm text-gray-900">
                       {ticket.ticketNumber}
                       {ticket.seatLabel && ` - Seat ${ticket.seatLabel}`}
                       {ticket.tableName && ` (${ticket.tableName})`}

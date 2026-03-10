@@ -81,12 +81,12 @@ export default function BergHealthPage() {
         <div>
           <h1 className="text-2xl font-bold">Bridge Health</h1>
           {report && (
-            <div className="text-xs text-gray-400 mt-1">Auto-refreshes every 60s</div>
+            <div className="text-xs text-gray-900 mt-1">Auto-refreshes every 60s</div>
           )}
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={dateClass} />
-          <span className="text-gray-400">to</span>
+          <span className="text-gray-900">to</span>
           <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={dateClass} />
           <Button onClick={runReport} disabled={loading}>
             {loading ? 'Loading...' : 'Refresh'}
@@ -115,7 +115,7 @@ export default function BergHealthPage() {
 
       {/* Empty state */}
       {!report && !loading && (
-        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-500">
+        <div className="rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-900">
           No active Berg devices configured.
         </div>
       )}
@@ -140,29 +140,29 @@ export default function BergHealthPage() {
                 {/* Stats grid */}
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   <div>
-                    <div className="text-xs text-gray-500 uppercase">Events</div>
+                    <div className="text-xs text-gray-900 uppercase">Events</div>
                     <div className="text-lg font-bold">{device.stats.total}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase">ACK Count</div>
+                    <div className="text-xs text-gray-900 uppercase">ACK Count</div>
                     <div className="text-lg font-bold text-green-600">{device.stats.ackCount}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase">NAK Rate</div>
+                    <div className="text-xs text-gray-900 uppercase">NAK Rate</div>
                     <div className="text-lg font-bold text-red-600">{device.stats.nakRate.toFixed(1)}%</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase">LRC Errors</div>
+                    <div className="text-xs text-gray-900 uppercase">LRC Errors</div>
                     <div className="text-lg font-bold">{device.stats.lrcErrorRate.toFixed(1)}%</div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase">Avg Latency</div>
+                    <div className="text-xs text-gray-900 uppercase">Avg Latency</div>
                     <div className={`text-lg font-bold ${latencyColor(device.stats.avgAckLatencyMs)}`}>
                       {device.stats.avgAckLatencyMs != null ? `${device.stats.avgAckLatencyMs}ms` : '—'}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-gray-500 uppercase">Max Latency</div>
+                    <div className="text-xs text-gray-900 uppercase">Max Latency</div>
                     <div className="text-lg font-bold">
                       {device.stats.maxAckLatencyMs != null ? `${device.stats.maxAckLatencyMs}ms` : '—'}
                     </div>
@@ -171,7 +171,7 @@ export default function BergHealthPage() {
 
                 {/* Dedup rate */}
                 {device.stats.dedupRate > 0 && (
-                  <div className={`text-xs mb-3 ${device.stats.dedupRate > 5 ? 'text-amber-600 font-medium' : 'text-gray-500'}`}>
+                  <div className={`text-xs mb-3 ${device.stats.dedupRate > 5 ? 'text-amber-600 font-medium' : 'text-gray-900'}`}>
                     {device.stats.dedupRate.toFixed(1)}% dedup rate
                     {device.stats.dedupRate > 5 && ' — high duplicate rate detected'}
                   </div>
@@ -192,7 +192,7 @@ export default function BergHealthPage() {
           ))}
 
           {report.devices.length === 0 && (
-            <div className="col-span-full rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-500">
+            <div className="col-span-full rounded-lg bg-gray-50 border border-gray-200 p-8 text-center text-sm text-gray-900">
               No active Berg devices configured.
             </div>
           )}

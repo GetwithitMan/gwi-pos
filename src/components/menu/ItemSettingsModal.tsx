@@ -430,7 +430,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
   }
 
   const inputClass = 'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500'
-  const labelClass = 'block text-xs font-semibold text-gray-700 mb-1'
+  const labelClass = 'block text-xs font-semibold text-gray-900 mb-1'
 
   return (
     <Modal isOpen={true} onClose={onClose} title="Edit Item" size="2xl" variant="default">
@@ -514,7 +514,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                         onChange={(e) => setSoldByWeight(e.target.checked)}
                         className="w-4 h-4 rounded"
                       />
-                      <span className="text-sm font-medium text-gray-700">Sold by Weight</span>
+                      <span className="text-sm font-medium text-gray-900">Sold by Weight</span>
                       <span className="text-[11px] text-gray-600">(requires scale)</span>
                     </label>
                     {soldByWeight && (
@@ -569,16 +569,16 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                       onClick={() => setCostExpanded(!costExpanded)}
                       className="w-full px-3 py-2 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors"
                     >
-                      <span className="text-xs font-semibold text-gray-700">INGREDIENT COSTS</span>
+                      <span className="text-xs font-semibold text-gray-900">INGREDIENT COSTS</span>
                       <span className="flex items-center gap-2">
                         {!costingLoading && ingredientCosts?.hasCostData && (
-                          <span className="text-xs font-bold text-gray-700">${ingredientCosts.totalCost.toFixed(2)}</span>
+                          <span className="text-xs font-bold text-gray-900">${ingredientCosts.totalCost.toFixed(2)}</span>
                         )}
                         {!costingLoading && ingredientCosts && !ingredientCosts.hasCostData && ingredientCosts.ingredients.length > 0 && (
                           <span className="text-[11px] text-gray-600">{ingredientCosts.ingredients.length} ingredients</span>
                         )}
                         {costingLoading && <span className="text-[11px] text-gray-600">Loading...</span>}
-                        <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${costExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={`w-3.5 h-3.5 text-gray-500 transition-transform ${costExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                         </svg>
                       </span>
@@ -592,8 +592,8 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                             <div className="divide-y divide-gray-100 border-t">
                               {ingredientCosts.ingredients.map((ing, i) => (
                                 <div key={i} className="px-3 py-1.5 flex items-center justify-between">
-                                  <span className="text-sm text-gray-700">{ing.name}</span>
-                                  <span className={`text-sm font-medium ${ing.cost != null && ing.cost > 0 ? 'text-gray-900' : 'text-gray-300'}`}>
+                                  <span className="text-sm text-gray-900">{ing.name}</span>
+                                  <span className={`text-sm font-medium ${ing.cost != null && ing.cost > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
                                     {ing.cost != null && ing.cost > 0 ? `$${ing.cost.toFixed(2)}` : '—'}
                                   </span>
                                 </div>
@@ -609,7 +609,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                                   {parseFloat(price) > 0 && (
                                     <>
                                       <div className="flex items-center justify-between">
-                                        <span className="text-xs text-gray-700">Food Cost %</span>
+                                        <span className="text-xs text-gray-900">Food Cost %</span>
                                         {(() => {
                                           const pct = (ingredientCosts.totalCost / parseFloat(price)) * 100
                                           return (
@@ -620,8 +620,8 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                                         })()}
                                       </div>
                                       <div className="flex items-center justify-between">
-                                        <span className="text-xs text-gray-700">Gross Profit</span>
-                                        <span className="text-xs font-semibold text-gray-700">
+                                        <span className="text-xs text-gray-900">Gross Profit</span>
+                                        <span className="text-xs font-semibold text-gray-900">
                                           ${(parseFloat(price) - ingredientCosts.totalCost).toFixed(2)}
                                         </span>
                                       </div>
@@ -688,7 +688,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} className="w-4 h-4 rounded" />
-                      <span className="text-sm text-gray-700">Active</span>
+                      <span className="text-sm text-gray-900">Active</span>
                     </label>
                   </div>
                 </>
@@ -712,11 +712,11 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                     <span className={labelClass}>Channels</span>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={showOnPOS} onChange={(e) => setShowOnPOS(e.target.checked)} className="w-4 h-4 rounded" />
-                      <span className="text-sm text-gray-700">Show on POS</span>
+                      <span className="text-sm text-gray-900">Show on POS</span>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input type="checkbox" checked={showOnline} onChange={(e) => setShowOnline(e.target.checked)} className="w-4 h-4 rounded" />
-                      <span className="text-sm text-gray-700">Show on Online Ordering</span>
+                      <span className="text-sm text-gray-900">Show on Online Ordering</span>
                     </label>
                   </div>
                 </>
@@ -854,7 +854,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                       onChange={(e) => setIsTaxExempt(e.target.checked)}
                       className="w-4 h-4 rounded"
                     />
-                    <span className="text-sm text-gray-700">Tax Exempt</span>
+                    <span className="text-sm text-gray-900">Tax Exempt</span>
                   </label>
 
                   {/* Commission Section */}
@@ -946,7 +946,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                               className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all min-h-[44px] ${
                                 isSelected
                                   ? `${colorClass} ring-2 ring-offset-1 ring-orange-400`
-                                  : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100'
+                                  : 'bg-gray-50 text-gray-900 border-gray-200 hover:bg-gray-100'
                               }`}
                             >
                               {allergen}
@@ -956,7 +956,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                       </div>
                       {allergens.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-gray-100">
-                          <span className="text-[11px] text-gray-500">Selected: </span>
+                          <span className="text-[11px] text-gray-900">Selected: </span>
                           <div className="flex flex-wrap gap-1 mt-1">
                             {allergens.map(a => (
                               <span
@@ -995,8 +995,8 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                           className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
                         />
                         <div>
-                          <span className="text-sm font-medium text-gray-700">Age-Restricted (21+)</span>
-                          <p className="text-[11px] text-gray-500">Requires ID verification before adding to order. Alcohol, tobacco, etc.</p>
+                          <span className="text-sm font-medium text-gray-900">Age-Restricted (21+)</span>
+                          <p className="text-[11px] text-gray-900">Requires ID verification before adding to order. Alcohol, tobacco, etc.</p>
                         </div>
                       </label>
                     </div>
@@ -1116,7 +1116,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                           />
                         </div>
                         {calories && (
-                          <div className="text-[11px] text-gray-500 bg-gray-50 rounded-lg p-2">
+                          <div className="text-[11px] text-gray-900 bg-gray-50 rounded-lg p-2">
                             Summary: {calories} cal
                             {protein ? ` | ${protein}g protein` : ''}
                             {carbs ? ` | ${carbs}g carbs` : ''}

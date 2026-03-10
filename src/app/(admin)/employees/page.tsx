@@ -382,7 +382,7 @@ export default function EmployeesPage() {
               />
               Show Inactive
             </label>
-            <p className="text-xs text-gray-400 mt-0.5 ml-6">
+            <p className="text-xs text-gray-900 mt-0.5 ml-6">
               Inactive employees are hidden from normal lists. Their history and records are preserved.
             </p>
           </div>
@@ -390,9 +390,9 @@ export default function EmployeesPage() {
 
         {/* Employee List */}
         {isPageLoading ? (
-          <div className="text-center py-12 text-gray-500">Loading employees...</div>
+          <div className="text-center py-12 text-gray-900">Loading employees...</div>
         ) : filteredEmployees.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
+          <div className="text-center py-12 text-gray-900">
             {searchTerm ? 'No employees match your search' : 'No employees found'}
           </div>
         ) : (
@@ -425,7 +425,7 @@ export default function EmployeesPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-900">
                       {emp.firstName} {emp.lastName}
                     </p>
                     <div className="flex items-center gap-1.5 flex-wrap mt-1">
@@ -434,7 +434,7 @@ export default function EmployeesPage() {
                       <AccessLevelBadge level={(emp.role as Role).accessLevel} />
                     </div>
                     {emp.hourlyRate && (
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-gray-900 mt-1">
                         {formatCurrency(emp.hourlyRate)}/hr
                       </p>
                     )}
@@ -443,7 +443,7 @@ export default function EmployeesPage() {
 
                 {/* Contact Info */}
                 {(emp.email || emp.phone) && (
-                  <div className="mt-3 pt-3 border-t text-sm text-gray-500">
+                  <div className="mt-3 pt-3 border-t text-sm text-gray-900">
                     {emp.email && <p className="truncate">{emp.email}</p>}
                     {emp.phone && <p>{emp.phone}</p>}
                   </div>
@@ -536,7 +536,7 @@ export default function EmployeesPage() {
               placeholder="e.g., Mike S."
               className="mt-1"
             />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-900 mt-1">
               Optional shortname shown on orders and receipts (e.g., &ldquo;Mike S.&rdquo;). Leave blank to auto-generate from first name + last initial.
             </p>
           </div>
@@ -573,7 +573,7 @@ export default function EmployeesPage() {
             <div>
               <Label htmlFor="pin">
                 PIN {!editingEmployee && '*'}
-                {editingEmployee && <span className="text-gray-400 text-xs ml-1">(leave blank to keep)</span>}
+                {editingEmployee && <span className="text-gray-900 text-xs ml-1">(leave blank to keep)</span>}
               </Label>
               <Input
                 id="pin"
@@ -585,7 +585,7 @@ export default function EmployeesPage() {
                 placeholder="4-6 digits"
                 className="mt-1"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-900 mt-1">
                 4-6 digit number the employee uses to log in at the POS. Choose something the employee will remember.
               </p>
             </div>
@@ -649,7 +649,7 @@ export default function EmployeesPage() {
           {editingEmployee && roles.length > 1 && (
             <div>
               <Label>Additional Roles</Label>
-              <p className="text-xs text-gray-500 mb-2">
+              <p className="text-xs text-gray-900 mb-2">
                 Employee can work as these roles too (selected at clock-in)
               </p>
               <div className="space-y-1 p-2 border rounded-lg bg-gray-50">
@@ -673,7 +673,7 @@ export default function EmployeesPage() {
                     </label>
                   ))}
                 {roles.filter(r => r.id !== formData.roleId).length === 0 && (
-                  <p className="text-xs text-gray-400 py-1">No other roles available</p>
+                  <p className="text-xs text-gray-900 py-1">No other roles available</p>
                 )}
               </div>
             </div>
@@ -684,7 +684,7 @@ export default function EmployeesPage() {
             <div>
               <Label htmlFor="hourlyRate">Hourly Rate</Label>
               <div className="relative mt-1">
-                <span className="absolute left-3 top-2.5 text-gray-500">$</span>
+                <span className="absolute left-3 top-2.5 text-gray-900">$</span>
                 <Input
                   id="hourlyRate"
                   type="number"
@@ -723,7 +723,7 @@ export default function EmployeesPage() {
                 onChange={(e) => setFormData({ ...formData, color: e.target.value })}
                 className="w-10 h-10 rounded border cursor-pointer"
               />
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-gray-900">
                 Used for avatar and visual identification
               </span>
             </div>
