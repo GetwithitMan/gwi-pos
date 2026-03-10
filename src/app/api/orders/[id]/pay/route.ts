@@ -15,7 +15,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder, dispatchTableStatusChanged, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
@@ -25,7 +25,7 @@ import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { calculateCharge, type EntertainmentPricing } from '@/lib/entertainment-pricing'
-import { getLocationTaxRate } from '@/lib/order-calculations'
+import { getLocationTaxRate, recalculatePercentDiscounts } from '@/lib/order-calculations'
 import { ingestAndProject, type IngestEvent, type IngestResult } from '@/lib/order-events/ingester'
 import { OrderRouter } from '@/lib/order-router'
 import { batchUpdateOrderItemStatus } from '@/lib/batch-updates'
@@ -660,19 +660,25 @@ export const POST = withVenue(withTiming(async function POST(
           newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
         }
 
-        const newTaxTotal = roundToCents(newSubtotal * taxRate)
-        const newTotal = roundToCents(newSubtotal + newTaxTotal)
+        // Recalculate percent-based discounts against new subtotal (entertainment price changes invalidate them)
+        const newDiscountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
+        const effectiveDiscount = Math.min(newDiscountTotal, newSubtotal)
+
+        const newTaxTotal = roundToCents((newSubtotal - effectiveDiscount) * taxRate)
+        const newTotal = roundToCents(newSubtotal + newTaxTotal - effectiveDiscount)
 
         await tx.order.update({
           where: { id: orderId },
           data: {
             subtotal: newSubtotal,
+            discountTotal: effectiveDiscount,
             taxTotal: newTaxTotal,
             total: newTotal,
           },
         })
 
         ;(order as any).subtotal = newSubtotal
+        ;(order as any).discountTotal = effectiveDiscount
         ;(order as any).taxTotal = newTaxTotal
         ;(order as any).total = newTotal
     }
@@ -1665,19 +1671,50 @@ export const POST = withVenue(withTiming(async function POST(
 
     // If order is fully paid, reset entertainment items and table status
     if (orderIsPaid) {
-      void db.menuItem.updateMany({
-        where: {
-          currentOrderId: orderId,
-          itemType: 'timed_rental',
-        },
-        data: {
-          entertainmentStatus: 'available',
-          currentOrderId: null,
-          currentOrderItemId: null,
-        },
-      }).catch(err => {
-        console.error('[Pay] Entertainment reset failed:', err)
-      })
+      // Reset entertainment items after payment
+      try {
+        const entertainmentItems = await db.menuItem.findMany({
+          where: { currentOrderId: orderId, itemType: 'timed_rental' },
+          select: { id: true },
+        })
+
+        if (entertainmentItems.length > 0) {
+          await db.menuItem.updateMany({
+            where: { currentOrderId: orderId, itemType: 'timed_rental' },
+            data: {
+              entertainmentStatus: 'available',
+              currentOrderId: null,
+              currentOrderItemId: null,
+            },
+          })
+
+          // Reset FloorPlanElements
+          for (const item of entertainmentItems) {
+            await db.floorPlanElement.updateMany({
+              where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
+              data: {
+                status: 'available',
+                currentOrderId: null,
+                sessionStartedAt: null,
+                sessionExpiresAt: null,
+              },
+            })
+          }
+
+          // Dispatch socket events
+          void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
+          for (const item of entertainmentItems) {
+            void dispatchEntertainmentStatusChanged(order.locationId, {
+              itemId: item.id,
+              entertainmentStatus: 'available',
+              currentOrderId: null,
+              expiresAt: null,
+            }, { async: true }).catch(() => {})
+          }
+        }
+      } catch (entertainmentErr) {
+        console.error('[Pay] Failed to reset entertainment items:', entertainmentErr)
+      }
 
       // ── Inventory Deduction Outbox ──────────────────────────────────────────
       // Create PendingDeduction synchronously after payment commit.

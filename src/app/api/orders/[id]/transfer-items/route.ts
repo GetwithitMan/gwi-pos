@@ -129,6 +129,25 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // Update MenuItem.currentOrderId for transferred timed_rental items
+      const transferredItems = await tx.orderItem.findMany({
+        where: { id: { in: itemIds }, orderId: toOrderId },
+        include: { menuItem: { select: { id: true, itemType: true } } },
+      })
+
+      for (const item of transferredItems) {
+        if (item.menuItem?.itemType === 'timed_rental') {
+          await tx.menuItem.update({
+            where: { id: item.menuItemId },
+            data: { currentOrderId: toOrderId, currentOrderItemId: item.id },
+          })
+          await tx.floorPlanElement.updateMany({
+            where: { linkedMenuItemId: item.menuItemId, deletedAt: null },
+            data: { currentOrderId: toOrderId },
+          })
+        }
+      }
+
       // Update destination order totals
       const destItems = await tx.orderItem.findMany({
         where: { orderId: toOrderId },

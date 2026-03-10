@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { calculateCharge, getActiveRate, type EntertainmentPricing, type HappyHourConfig, type ChargeBreakdown } from '@/lib/entertainment-pricing'
 import { emitToLocation } from '@/lib/socket-server'
+import { recalculatePercentDiscounts } from '@/lib/order-calculations'
 
 // POST - Start block time for an order item
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -377,6 +378,30 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         blockTimeExpiresAt: true,
       },
     })
+
+    // Recalculate percent-based discounts if price changed (extension changes subtotal)
+    void (async () => {
+      try {
+        const activeItems = await db.orderItem.findMany({
+          where: { orderId: orderItem.orderId, status: 'active', deletedAt: null },
+          include: { modifiers: true },
+        })
+        let newSubtotal = 0
+        for (const ai of activeItems) {
+          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
+          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
+        }
+        const newDiscountTotal = await recalculatePercentDiscounts(db, orderItem.orderId, newSubtotal)
+        if (newDiscountTotal > 0) {
+          await db.order.update({
+            where: { id: orderItem.orderId },
+            data: { subtotal: newSubtotal, discountTotal: Math.min(newDiscountTotal, newSubtotal) },
+          })
+        }
+      } catch (err) {
+        console.error('[block-time] Failed to recalculate discounts after extend:', err)
+      }
+    })()
 
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync (extend)
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {

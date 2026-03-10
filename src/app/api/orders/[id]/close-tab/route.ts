@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -623,11 +623,13 @@ export const POST = withVenue(async function POST(
         },
       })
       // BUG #455: Create Payment record for close-tab capture
+      // Use order.employeeId (the selling employee) for sale credit, not the
+      // request body's employeeId (the person who physically closed the tab).
       await tx.payment.create({
         data: {
           locationId,
           orderId,
-          employeeId,
+          employeeId: order.employeeId || employeeId,
           amount: purchaseAmount,
           tipAmount: finalTipAmount,
           totalAmount: totalCaptured,
@@ -672,6 +674,49 @@ export const POST = withVenue(async function POST(
     void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
       closedStatus: 'paid',
     })
+
+    // Clean up entertainment items after tab close
+    try {
+      const entertainmentItems = await db.menuItem.findMany({
+        where: { currentOrderId: orderId, itemType: 'timed_rental' },
+        select: { id: true },
+      })
+
+      if (entertainmentItems.length > 0) {
+        await db.menuItem.updateMany({
+          where: { currentOrderId: orderId, itemType: 'timed_rental' },
+          data: {
+            entertainmentStatus: 'available',
+            currentOrderId: null,
+            currentOrderItemId: null,
+          },
+        })
+
+        for (const item of entertainmentItems) {
+          await db.floorPlanElement.updateMany({
+            where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
+            data: {
+              status: 'available',
+              currentOrderId: null,
+              sessionStartedAt: null,
+              sessionExpiresAt: null,
+            },
+          })
+        }
+
+        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+        for (const item of entertainmentItems) {
+          void dispatchEntertainmentStatusChanged(locationId, {
+            itemId: item.id,
+            entertainmentStatus: 'available',
+            currentOrderId: null,
+            expiresAt: null,
+          }, { async: true }).catch(() => {})
+        }
+      }
+    } catch (cleanupErr) {
+      console.error('[Close Tab] Failed to reset entertainment items:', cleanupErr)
+    }
 
     // Deduct inventory via PendingDeduction outbox (retryable, with exponential backoff)
     await db.pendingDeduction.upsert({

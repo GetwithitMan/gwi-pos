@@ -104,6 +104,19 @@ export const POST = withVenue(async function POST(
         data: { orderId: targetOrderId },
       })
 
+      // Update MenuItem.currentOrderId for merged timed_rental items
+      await tx.menuItem.updateMany({
+        where: {
+          currentOrderId: sourceOrderId,
+          itemType: 'timed_rental',
+        },
+        data: { currentOrderId: targetOrderId },
+      })
+      await tx.floorPlanElement.updateMany({
+        where: { currentOrderId: sourceOrderId, deletedAt: null },
+        data: { currentOrderId: targetOrderId },
+      })
+
       // Move discounts (if any) - update their orderId
       const movedDisc = await tx.orderDiscount.updateMany({
         where: { orderId: sourceOrderId },

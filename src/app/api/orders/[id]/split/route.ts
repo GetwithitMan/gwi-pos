@@ -37,6 +37,7 @@ export const POST = withVenue(async function POST(
         items: {
           include: {
             modifiers: true,
+            menuItem: { select: { id: true, itemType: true } },
           },
         },
         payments: {
@@ -307,6 +308,9 @@ export const POST = withVenue(async function POST(
           itemTotal: item.itemTotal,
           specialNotes: item.specialNotes,
           seatNumber: item.seatNumber,
+          blockTimeMinutes: item.blockTimeMinutes,
+          blockTimeStartedAt: item.blockTimeStartedAt,
+          blockTimeExpiresAt: item.blockTimeExpiresAt,
           modifiers: {
             create: item.modifiers.map(mod => ({
               locationId: order.locationId,
@@ -372,6 +376,26 @@ export const POST = withVenue(async function POST(
             },
           },
         })
+
+        // Update MenuItem.currentOrderId for timed_rental items moved to split child
+        const movedEntertainmentItems = itemsToMove.filter(
+          (item: any) => item.menuItem?.itemType === 'timed_rental'
+        )
+        for (const item of movedEntertainmentItems) {
+          if (item.menuItemId) {
+            await tx.menuItem.update({
+              where: { id: item.menuItemId },
+              data: {
+                currentOrderId: _newOrder.id,
+                currentOrderItemId: null, // Will be set by the new OrderItem
+              },
+            })
+            await tx.floorPlanElement.updateMany({
+              where: { linkedMenuItemId: item.menuItemId, deletedAt: null },
+              data: { currentOrderId: _newOrder.id },
+            })
+          }
+        }
 
         // Remove items from original order
         await tx.orderItemModifier.updateMany({
@@ -580,6 +604,9 @@ export const POST = withVenue(async function POST(
               specialNotes: item.specialNotes,
               seatNumber: item.seatNumber,
               courseNumber: item.courseNumber,
+              blockTimeMinutes: item.blockTimeMinutes,
+              blockTimeStartedAt: item.blockTimeStartedAt,
+              blockTimeExpiresAt: item.blockTimeExpiresAt,
               modifiers: {
                 create: item.modifiers.map(mod => ({
                   locationId: order.locationId,
@@ -642,6 +669,26 @@ export const POST = withVenue(async function POST(
             paidAmount: 0,
             isPaid: false,
           })
+
+          // Update MenuItem.currentOrderId for timed_rental items moved to split child
+          const movedEntertainmentItems = seatItems.filter(
+            (item: any) => item.menuItem?.itemType === 'timed_rental'
+          )
+          for (const item of movedEntertainmentItems) {
+            if (item.menuItemId) {
+              await tx.menuItem.update({
+                where: { id: item.menuItemId },
+                data: {
+                  currentOrderId: splitOrder.id,
+                  currentOrderItemId: null, // Will be set by the new OrderItem
+                },
+              })
+              await tx.floorPlanElement.updateMany({
+                where: { linkedMenuItemId: item.menuItemId, deletedAt: null },
+                data: { currentOrderId: splitOrder.id },
+              })
+            }
+          }
         }
 
         // Delete items from original order (they've been copied to split orders)
@@ -854,6 +901,9 @@ export const POST = withVenue(async function POST(
               seatNumber: item.seatNumber,
               courseNumber: item.courseNumber,
               sourceTableId: item.sourceTableId, // Preserve source table reference
+              blockTimeMinutes: item.blockTimeMinutes,
+              blockTimeStartedAt: item.blockTimeStartedAt,
+              blockTimeExpiresAt: item.blockTimeExpiresAt,
               modifiers: {
                 create: item.modifiers.map(mod => ({
                   locationId: order.locationId,
@@ -917,6 +967,26 @@ export const POST = withVenue(async function POST(
             paidAmount: 0,
             isPaid: false,
           })
+
+          // Update MenuItem.currentOrderId for timed_rental items moved to split child
+          const movedEntertainmentItems = tableItems.filter(
+            (item: any) => item.menuItem?.itemType === 'timed_rental'
+          )
+          for (const item of movedEntertainmentItems) {
+            if (item.menuItemId) {
+              await tx.menuItem.update({
+                where: { id: item.menuItemId },
+                data: {
+                  currentOrderId: splitOrder.id,
+                  currentOrderItemId: null, // Will be set by the new OrderItem
+                },
+              })
+              await tx.floorPlanElement.updateMany({
+                where: { linkedMenuItemId: item.menuItemId, deletedAt: null },
+                data: { currentOrderId: splitOrder.id },
+              })
+            }
+          }
         }
 
         // Delete items from original order (they've been copied to split orders)
