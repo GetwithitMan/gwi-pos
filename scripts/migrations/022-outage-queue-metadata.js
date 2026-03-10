@@ -1,7 +1,12 @@
-const { columnExists } = require('../migration-helpers')
+const { columnExists, tableExists } = require('../migration-helpers')
 
 async function up(prisma) {
   const PREFIX = '[022-outage-queue-metadata]'
+
+  if (!(await tableExists(prisma, 'OutageQueueEntry'))) {
+    console.log(`${PREFIX} OutageQueueEntry table does not exist — skipping`)
+    return
+  }
 
   const hasCol = await columnExists(prisma, 'OutageQueueEntry', 'metadata')
   if (hasCol) {
