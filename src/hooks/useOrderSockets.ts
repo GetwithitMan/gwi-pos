@@ -40,6 +40,16 @@ interface UseOrderSocketsOptions {
     closedByEmployeeId: string | null
     locationId: string
   }) => void
+  onOrderClaimed?: (data: {
+    orderId: string
+    employeeId: string
+    employeeName: string | null
+    terminalId: string | null
+    claimedAt: string
+  }) => void
+  onOrderReleased?: (data: {
+    orderId: string
+  }) => void
 }
 
 export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected: boolean } {
@@ -119,6 +129,22 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       callbacksRef.current.onOrderClosed?.(payload)
     }
 
+    const onOrderClaimed = (data: unknown) => {
+      const payload = data as {
+        orderId: string
+        employeeId: string
+        employeeName: string | null
+        terminalId: string | null
+        claimedAt: string
+      }
+      callbacksRef.current.onOrderClaimed?.(payload)
+    }
+
+    const onOrderReleased = (data: unknown) => {
+      const payload = data as { orderId: string }
+      callbacksRef.current.onOrderReleased?.(payload)
+    }
+
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
     socket.on('connect_error', onConnectError)
@@ -126,6 +152,8 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
     socket.on('order:totals-updated', onTotalsUpdated)
     socket.on('entertainment:status-changed', onEntertainmentChanged)
     socket.on('order:closed', onOrderClosed)
+    socket.on('order:claimed', onOrderClaimed)
+    socket.on('order:released', onOrderReleased)
 
     // If already connected (shared socket was created by another consumer), join immediately
     if (socket.connected) {
@@ -141,6 +169,8 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       socket.off('order:totals-updated', onTotalsUpdated)
       socket.off('entertainment:status-changed', onEntertainmentChanged)
       socket.off('order:closed', onOrderClosed)
+      socket.off('order:claimed', onOrderClaimed)
+      socket.off('order:released', onOrderReleased)
       socketRef.current = null
       releaseSharedSocket()
     }

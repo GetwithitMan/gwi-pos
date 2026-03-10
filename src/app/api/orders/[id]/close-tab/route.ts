@@ -13,6 +13,7 @@ import { roundToCents, calculateCardPrice } from '@/lib/pricing'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { checkOrderClaim } from '@/lib/order-claim'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -44,6 +45,16 @@ export const POST = withVenue(async function POST(
 
     if (!employeeId) {
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+    }
+
+    // Order claim check — block if another employee has an active claim
+    const terminalId = request.headers.get('x-terminal-id')
+    const claimBlock = await checkOrderClaim(db, orderId, employeeId, terminalId)
+    if (claimBlock) {
+      return NextResponse.json(
+        { error: claimBlock.error, claimedBy: claimBlock.claimedBy },
+        { status: claimBlock.status }
+      )
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -346,7 +357,7 @@ export const POST = withVenue(async function POST(
         data: { tabStatus: 'open', version: { increment: 1 } },
       })
       return NextResponse.json(
-        { error: 'Multiple cards on tab. Please specify which card to charge.', code: 'CARD_SELECTION_REQUIRED', cards: order.cards.map(c => ({ id: c.id, last4: c.last4, cardBrand: c.cardBrand })) },
+        { error: 'Multiple cards on tab. Please specify which card to charge.', code: 'CARD_SELECTION_REQUIRED', cards: order.cards.map(c => ({ id: c.id, last4: c.cardLast4, cardType: c.cardType })) },
         { status: 400 }
       )
     }
@@ -666,6 +677,12 @@ export const POST = withVenue(async function POST(
     // ═══════════════════════════════════════════════════════════════════════════
     // POST-TRANSACTION: Fire-and-forget side effects (unchanged from original)
     // ═══════════════════════════════════════════════════════════════════════════
+
+    // Release order claim after successful close (fire-and-forget)
+    void db.$executeRawUnsafe(
+      `UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = $1`,
+      orderId
+    ).catch(() => {})
 
     // Emit order events for tab close (fire-and-forget)
     void emitOrderEvent(locationId, orderId, 'TAB_CLOSED', {

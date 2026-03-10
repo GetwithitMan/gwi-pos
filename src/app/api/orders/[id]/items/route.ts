@@ -12,6 +12,8 @@ import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { calculateIngredientCosts, calculateVariantCost } from '@/lib/inventory/recipe-costing'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
+import { checkOrderClaim } from '@/lib/order-claim'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
@@ -280,6 +282,18 @@ export const POST = withVenue(async function POST(
             ERROR_CODES.VALIDATION_ERROR
           )
         }
+      }
+    }
+
+    // Order claim check — block if another employee has an active claim
+    if (requestingEmployeeId) {
+      const terminalId = request.headers.get('x-terminal-id')
+      const claimBlock = await checkOrderClaim(db, orderId, requestingEmployeeId, terminalId)
+      if (claimBlock) {
+        return NextResponse.json(
+          { error: claimBlock.error, claimedBy: claimBlock.claimedBy },
+          { status: claimBlock.status }
+        )
       }
     }
 
@@ -862,6 +876,9 @@ export const POST = withVenue(async function POST(
       })
       dispatchTabItemsUpdated(result.updatedOrder.locationId, { orderId, itemCount: updatedItemCount })
     }
+
+    // Evaluate auto-discount rules after items are added (fire-and-forget)
+    void evaluateAutoDiscounts(result.updatedOrder.id, result.updatedOrder.locationId).catch(console.error)
 
     return NextResponse.json({ data: {
       ...response,

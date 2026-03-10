@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { checkOrderClaim } from '@/lib/order-claim'
 
 interface SplitRequest {
   type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'get_splits'
@@ -27,6 +28,18 @@ export const POST = withVenue(async function POST(
   try {
     const { id } = await params
     const body = await request.json() as SplitRequest
+
+    // Order claim check — block if another employee has an active claim
+    if (body.employeeId) {
+      const terminalId = request.headers.get('x-terminal-id')
+      const claimBlock = await checkOrderClaim(db, id, body.employeeId, terminalId)
+      if (claimBlock) {
+        return NextResponse.json(
+          { error: claimBlock.error, claimedBy: claimBlock.claimedBy },
+          { status: claimBlock.status }
+        )
+      }
+    }
 
     // Get the original order with all details
     const order = await db.order.findUnique({
@@ -170,6 +183,8 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create all split children + update parent atomically ===
       const splitOrders = await db.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+
         // Get current max split index for this parent
         const existingSplits = await tx.order.count({
           where: { parentOrderId: order.id },
@@ -184,8 +199,16 @@ export const POST = withVenue(async function POST(
               ? Math.round((orderTotal - perSplit * (numWays - 1)) * 100) / 100
               : perSplit
 
-            const splitSubtotal = Math.round((splitTotal / (1 + taxRate)) * 100) / 100
-            const splitTax = Math.round((splitTotal - splitSubtotal) * 100) / 100
+            // Split subtotal, tax, and discount proportionally from parent (handles tax-inclusive items correctly)
+            const splitSubtotal = i === numWays - 1
+              ? Math.round((Number(order.subtotal) - Math.floor((Number(order.subtotal) / numWays) * 100) / 100 * (numWays - 1)) * 100) / 100
+              : Math.floor((Number(order.subtotal) / numWays) * 100) / 100
+            const splitTax = i === numWays - 1
+              ? Math.round((Number(order.taxTotal) - Math.floor((Number(order.taxTotal) / numWays) * 100) / 100 * (numWays - 1)) * 100) / 100
+              : Math.floor((Number(order.taxTotal) / numWays) * 100) / 100
+            const splitDiscount = i === numWays - 1
+              ? Math.round((Number(order.discountTotal) - Math.floor((Number(order.discountTotal) / numWays) * 100) / 100 * (numWays - 1)) * 100) / 100
+              : Math.floor((Number(order.discountTotal) / numWays) * 100) / 100
 
             return tx.order.create({
               data: {
@@ -200,7 +223,7 @@ export const POST = withVenue(async function POST(
                 tabName: order.tabName,
                 guestCount: 1,
                 subtotal: splitSubtotal,
-                discountTotal: 0,
+                discountTotal: splitDiscount,
                 taxTotal: splitTax,
                 tipTotal: 0,
                 total: splitTotal,
@@ -414,6 +437,20 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create child order + soft-delete items from parent + recalc parent atomically ===
       const { newOrder, remainingSubtotal, remainingTax, remainingTotal, remainingItems, baseOrderNumber, nextSplitIndex } = await db.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+
+        // Verify items still belong to this order (guard against concurrent split)
+        const freshItems = await tx.orderItem.findMany({
+          where: { id: { in: itemIds }, orderId: order.id, deletedAt: null },
+          select: { id: true },
+        })
+        const freshItemIds = new Set(freshItems.map(i => i.id))
+        const validItemIds = itemIds.filter((iid: string) => freshItemIds.has(iid))
+        if (validItemIds.length === 0) {
+          throw new Error('All selected items were already moved by a concurrent split')
+        }
+        const validItemsToMove = itemsToMove.filter(item => freshItemIds.has(item.id))
+
         // Get the next split index
         const maxSplit = await tx.order.aggregate({
           where: { parentOrderId: order.parentOrderId || order.id },
@@ -460,7 +497,7 @@ export const POST = withVenue(async function POST(
         })
 
         // Update MenuItem.currentOrderId for timed_rental items moved to split child
-        const movedEntertainmentItems = itemsToMove.filter(
+        const movedEntertainmentItems = validItemsToMove.filter(
           (item: any) => item.menuItem?.itemType === 'timed_rental'
         )
         for (const item of movedEntertainmentItems) {
@@ -483,14 +520,14 @@ export const POST = withVenue(async function POST(
         await tx.orderItemModifier.updateMany({
           where: {
             orderItem: {
-              id: { in: itemIds },
+              id: { in: validItemIds },
             },
           },
           data: { deletedAt: new Date() },
         })
         await tx.orderItem.updateMany({
           where: {
-            id: { in: itemIds },
+            id: { in: validItemIds },
           },
           data: { deletedAt: new Date(), status: 'removed' as OrderItemStatus },
         })
@@ -498,16 +535,16 @@ export const POST = withVenue(async function POST(
         // --- Move item-level discounts to the new child order ---
         // Build a map from old item ID → new item ID in the child order
         const oldToNewItemMap = new Map<string, string>()
-        for (let i = 0; i < itemsToMove.length; i++) {
-          const oldItem = itemsToMove[i]
-          // _newOrder.items are in the same order as newItems (which mirrors itemsToMove)
+        for (let i = 0; i < validItemsToMove.length; i++) {
+          const oldItem = validItemsToMove[i]
+          // _newOrder.items are in the same order as newItems (which mirrors validItemsToMove)
           const newItem = _newOrder.items[i]
           if (newItem) oldToNewItemMap.set(oldItem.id, newItem.id)
         }
 
         // Find all item-level discounts on the moved items
         let childItemDiscountTotal = 0
-        for (const movedItem of itemsToMove) {
+        for (const movedItem of validItemsToMove) {
           const discounts = (movedItem as any).itemDiscounts || []
           for (const disc of discounts) {
             if (disc.deletedAt) continue
@@ -543,7 +580,7 @@ export const POST = withVenue(async function POST(
         })
 
         let childOrderDiscountTotal = 0
-        const _remainingItems = order.items.filter(item => !itemIds.includes(item.id))
+        const _remainingItems = order.items.filter(item => !validItemIds.includes(item.id))
         let _remainingSubtotal = 0
         _remainingItems.forEach(item => {
           const itemTotal = Number(item.price) * item.quantity
@@ -769,6 +806,8 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create all seat children + soft-delete items + update parent atomically ===
       const { splitOrders, itemIdsToRemove, remainingItems, remainingTotal } = await db.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+
         // Get current max split index
         const existingSplits = await tx.order.count({
           where: { parentOrderId: order.id },
@@ -1166,6 +1205,8 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create all table children + soft-delete items + update parent atomically ===
       const { splitOrders, itemIdsToRemove, remainingItems, remainingTotal } = await db.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+
         // Get current max split index
         const existingSplits = await tx.order.count({
           where: { parentOrderId: order.id },

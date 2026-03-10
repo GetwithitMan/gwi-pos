@@ -10,7 +10,7 @@ import {
   roundAmount,
 } from '@/lib/payment'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
-import { requireAnyPermission } from '@/lib/api-auth'
+import { requireAnyPermission, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
@@ -35,6 +35,7 @@ import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { checkOrderClaim } from '@/lib/order-claim'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -186,6 +187,19 @@ export const POST = withVenue(withTiming(async function POST(
   let autoVoidLocationId: string | undefined
   try {
     body = await request.json()
+
+    // Order claim check — block if another employee has an active claim
+    const payEmployeeId = (body.employeeId as string) || null
+    if (payEmployeeId) {
+      const terminalId = request.headers.get('x-terminal-id') || (body.terminalId as string) || null
+      const claimBlock = await checkOrderClaim(db, orderId, payEmployeeId, terminalId)
+      if (claimBlock) {
+        return NextResponse.json(
+          { error: claimBlock.error, claimedBy: claimBlock.claimedBy },
+          { status: claimBlock.status }
+        )
+      }
+    }
 
     // ── PMS Pre-Charge: Extract Oracle OPERA HTTP call OUTSIDE the transaction ──
     // Room charges require a 1-5s HTTP call to Oracle OPERA. Doing this inside the
@@ -354,6 +368,26 @@ export const POST = withVenue(withTiming(async function POST(
     // Guarantees the standby has applied this transaction's WAL before commit returns.
     // Prevents payment loss during HA failover (card charged but DB record lost).
     await enableSyncReplication(tx)
+
+    // HA FAILOVER PROTECTION: Detect orphaned pending Datacap sales.
+    // If the primary NUC died between card-charged and response-returned, the pending
+    // record will still be in 'pending' status. Mark as orphaned for reconciliation.
+    // Only check records older than 60s to avoid flagging in-flight transactions.
+    const orphanedSales = await tx.$queryRawUnsafe<Array<{ id: string; amount: unknown; datacapRecordNo: string | null; invoiceNo: string | null }>>(
+      `SELECT id, amount, "datacapRecordNo", "invoiceNo" FROM "_pending_datacap_sales"
+       WHERE "orderId" = $1 AND "status" = 'pending' AND "createdAt" < NOW() - INTERVAL '60 seconds'`,
+      orderId,
+    ).catch(() => [] as Array<{ id: string; amount: unknown; datacapRecordNo: string | null; invoiceNo: string | null }>)
+
+    if (orphanedSales.length > 0) {
+      console.warn(`[PAY] Found ${orphanedSales.length} orphaned pending Datacap sale(s) for order ${orderId}. These may need manual void.`)
+      for (const sale of orphanedSales) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "_pending_datacap_sales" SET "status" = 'orphaned', "resolvedAt" = NOW() WHERE id = $1`,
+          sale.id
+        )
+      }
+    }
 
     // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
     // Includes items/employee/table so we can build receipt data in the response (avoids second fetch)
@@ -528,6 +562,14 @@ export const POST = withVenue(withTiming(async function POST(
     const auth = await requireAnyPermission(employeeId, order.locationId, [...requiredPerms])
     if (!auth.authorized) {
       return { earlyReturn: NextResponse.json({ error: auth.error }, { status: auth.status }) }
+    }
+
+    // Guard: paying another employee's order requires pos.edit_others_orders
+    if (employeeId && order.employeeId && order.employeeId !== employeeId) {
+      const ownerAuth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
+      if (!ownerAuth.authorized) {
+        return { earlyReturn: NextResponse.json({ error: ownerAuth.error }, { status: ownerAuth.status }) }
+      }
     }
 
     if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
@@ -1894,6 +1936,14 @@ export const POST = withVenue(withTiming(async function POST(
     // Dispatch payment:processed for each created payment (fire-and-forget)
     for (const p of ingestResult.bridgedPayments) {
       void dispatchPaymentProcessed(order.locationId, { orderId, paymentId: p.id, status: 'completed', sourceTerminalId: terminalId || undefined }).catch(() => {})
+    }
+
+    // Release order claim after successful payment (fire-and-forget)
+    if (orderIsPaid) {
+      void db.$executeRawUnsafe(
+        `UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = $1`,
+        orderId
+      ).catch(() => {})
     }
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)

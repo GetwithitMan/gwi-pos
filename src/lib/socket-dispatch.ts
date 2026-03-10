@@ -701,7 +701,7 @@ export async function dispatchOrderTotalsUpdate(
 export async function dispatchOpenOrdersChanged(
   locationId: string,
   payload: {
-    trigger: 'created' | 'paid' | 'voided' | 'transferred' | 'reopened' | 'sent' | 'item_updated' | 'payment_updated'
+    trigger: 'created' | 'paid' | 'voided' | 'transferred' | 'reopened' | 'sent' | 'item_updated' | 'payment_updated' | 'updated' | 'cancelled'
     orderId?: string
     tableId?: string
     orderNumber?: number
@@ -1330,4 +1330,71 @@ export function dispatchScaleStatus(
     error: status.error ?? null,
     timestamp: new Date().toISOString(),
   }).catch(console.error)
+}
+
+// ==================== Order Claim Events ====================
+
+/**
+ * Dispatch order:claimed event when a terminal claims (soft-locks) an order.
+ *
+ * All terminals receive this so they can show "Order open on [terminal]" indicators.
+ * Claim expires after 60 seconds if not refreshed (heartbeat).
+ */
+export async function dispatchOrderClaimed(
+  locationId: string,
+  payload: {
+    orderId: string
+    employeeId: string
+    employeeName: string | null
+    terminalId: string | null
+    claimedAt: string // ISO timestamp
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:claimed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch order:claimed:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async order:claimed failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch order:released event when a terminal releases its claim on an order.
+ *
+ * Clears the "Order open on [terminal]" indicator on all terminals.
+ */
+export async function dispatchOrderReleased(
+  locationId: string,
+  payload: {
+    orderId: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:released', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch order:released:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async order:released failed:', err))
+    return true
+  }
+
+  return doEmit()
 }

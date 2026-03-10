@@ -112,6 +112,10 @@ interface OpenOrder {
   captureRetryCount?: number
   reopenedAt?: string | null
   reopenReason?: string | null
+  claimedByEmployeeId?: string | null
+  claimedByTerminalId?: string | null
+  claimedAt?: string | null
+  claimedByEmployee?: { displayName: string | null } | null
   parentOrderId?: string | null
   hasSplits?: boolean
   splitCount?: number
@@ -327,6 +331,42 @@ export function OpenOrdersPanel({
     }
   }, [viewMode, debouncedLoadOrders, ageFilter])
 
+  // Handle order:claimed socket event — update claim fields in local state
+  const handleOrderClaimed = useCallback((data: {
+    orderId: string
+    employeeId: string
+    employeeName: string | null
+    terminalId: string | null
+    claimedAt: string
+  }) => {
+    setOrders(prev => prev.map(o =>
+      o.id === data.orderId
+        ? {
+            ...o,
+            claimedByEmployeeId: data.employeeId,
+            claimedByTerminalId: data.terminalId,
+            claimedAt: data.claimedAt,
+            claimedByEmployee: data.employeeName ? { displayName: data.employeeName } : null,
+          }
+        : o
+    ))
+  }, [])
+
+  // Handle order:released socket event — clear claim fields in local state
+  const handleOrderReleased = useCallback((data: { orderId: string }) => {
+    setOrders(prev => prev.map(o =>
+      o.id === data.orderId
+        ? {
+            ...o,
+            claimedByEmployeeId: null,
+            claimedByTerminalId: null,
+            claimedAt: null,
+            claimedByEmployee: null,
+          }
+        : o
+    ))
+  }, [])
+
   const { isConnected } = useOrderSockets({
     locationId,
     enabled: viewMode === 'open',
@@ -338,6 +378,8 @@ export function OpenOrdersPanel({
         setOrders(prev => prev.filter(o => o.id !== data.orderId))
       }
     },
+    onOrderClaimed: handleOrderClaimed,
+    onOrderReleased: handleOrderReleased,
   })
 
   // 30s polling fallback when socket is disconnected (Item 10)
@@ -365,6 +407,107 @@ export function OpenOrdersPanel({
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [locationId, viewMode, loadOrders])
+
+  // ── Order claim lifecycle ──────────────────────────────────────────────────
+
+  const claimOrder = useCallback(async (orderId: string): Promise<boolean> => {
+    if (!employeeId) return true // No employee, skip claim
+    try {
+      const res = await fetch(`/api/orders/${orderId}/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId, terminalId: getTerminalId(), locationId }),
+      })
+      if (res.status === 409) {
+        const data = await res.json()
+        toast.error(data.error || 'This order is being edited by another employee')
+        return false
+      }
+      return res.ok
+    } catch {
+      // Claim failures are non-blocking — proceed to open the order
+      return true
+    }
+  }, [employeeId, locationId])
+
+  const releaseOrder = useCallback(async (orderId: string) => {
+    if (!employeeId) return
+    void fetch(`/api/orders/${orderId}/claim`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId, terminalId: getTerminalId(), locationId }),
+    }).catch(console.error)
+  }, [employeeId, locationId])
+
+  // Track the currently-selected order for heartbeat + auto-release
+  const claimedOrderIdRef = useRef<string | null>(null)
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Heartbeat: re-claim every 30 seconds while an order is selected
+  useEffect(() => {
+    if (currentOrderId && employeeId) {
+      // If the order just changed, claim the new one and release the old
+      if (claimedOrderIdRef.current && claimedOrderIdRef.current !== currentOrderId) {
+        releaseOrder(claimedOrderIdRef.current)
+      }
+      claimedOrderIdRef.current = currentOrderId
+
+      // Start heartbeat interval
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
+      heartbeatIntervalRef.current = setInterval(() => {
+        if (claimedOrderIdRef.current) {
+          void claimOrder(claimedOrderIdRef.current).catch(console.error)
+        }
+      }, 30_000)
+    } else {
+      // No order selected — release and clear heartbeat
+      if (claimedOrderIdRef.current) {
+        releaseOrder(claimedOrderIdRef.current)
+        claimedOrderIdRef.current = null
+      }
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current)
+        heartbeatIntervalRef.current = null
+      }
+    }
+
+    return () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current)
+        heartbeatIntervalRef.current = null
+      }
+    }
+  }, [currentOrderId, employeeId, claimOrder, releaseOrder])
+
+  // Release claim on unmount
+  useEffect(() => {
+    return () => {
+      if (claimedOrderIdRef.current) {
+        releaseOrder(claimedOrderIdRef.current)
+        claimedOrderIdRef.current = null
+      }
+    }
+  }, [releaseOrder])
+
+  // Wrap onSelectOrder with claim check
+  const handleSelectOrder = useCallback(async (order: OpenOrder) => {
+    const success = await claimOrder(order.id)
+    if (success) {
+      onSelectOrder(order)
+    }
+  }, [claimOrder, onSelectOrder])
+
+  // Wrap onViewOrder with claim check
+  const handleViewOrder = useCallback(async (order: OpenOrder) => {
+    const success = await claimOrder(order.id)
+    if (success) {
+      if (onViewOrder) {
+        onViewOrder(order)
+      } else {
+        onSelectOrder(order)
+      }
+    }
+  }, [claimOrder, onViewOrder, onSelectOrder])
 
   useEffect(() => {
     if (locationId && viewMode === 'closed') {
@@ -575,11 +718,20 @@ export function OpenOrdersPanel({
     const hasEntertainment = order.hasActiveEntertainment && order.entertainment && order.entertainment.length > 0
     const entertainmentItems = order.items.filter(item => item.blockTimeMinutes || item.blockTimeExpiresAt)
 
+    // Claim indicator: show if claimed by another employee and within 60s expiry
+    const isClaimedByOther = !!(
+      order.claimedByEmployeeId &&
+      order.claimedByEmployeeId !== employeeId &&
+      order.claimedAt &&
+      (Date.now() - new Date(order.claimedAt).getTime()) < 60_000
+    )
+    const claimedByName = order.claimedByEmployee?.displayName || 'Another employee'
+
     if (viewStyle === 'condensed') {
       return (
         <div
           key={order.id}
-          onClick={() => onViewOrder ? onViewOrder(order) : onSelectOrder(order)}
+          onClick={() => handleViewOrder(order)}
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-all ${
             dark
               ? 'bg-white/5 hover:bg-white/10 border border-white/10'
@@ -612,13 +764,18 @@ export function OpenOrdersPanel({
                 📅 {formatDateStarted(order.createdAt)}
               </span>
             )}
+            {isClaimedByOther && (
+              <span className={`inline-block mt-0.5 text-xs font-medium ${dark ? 'text-amber-400' : 'text-amber-600'}`}>
+                Editing: {claimedByName}
+              </span>
+            )}
           </div>
           <span className={`font-bold text-sm ${dark ? 'text-green-400' : 'text-gray-900'}`}>
             {formatCurrency(getDisplayTotal(order))}
           </span>
           {viewMode === 'open' && (
             <button
-              onClick={(e) => { e.stopPropagation(); onSelectOrder(order) }}
+              onClick={(e) => { e.stopPropagation(); handleSelectOrder(order) }}
               className="px-3 py-1.5 bg-green-600 hover:bg-green-500 rounded text-xs font-bold text-white transition-colors"
             >
               Pay
@@ -635,7 +792,7 @@ export function OpenOrdersPanel({
         key={order.id}
         onClick={() => {
           if (isPaidOrClosed) { setClosedOrderModalOrder(order); return }
-          if (onViewOrder) { onViewOrder(order) } else { onSelectOrder(order) }
+          handleViewOrder(order)
         }}
         className={`p-3 rounded-xl transition-all border ${
           isPaidOrClosed
@@ -757,6 +914,11 @@ export function OpenOrdersPanel({
               Card Declined
             </span>
           )}
+          {isClaimedByOther && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${dark ? 'bg-amber-600/30 text-amber-300 border border-amber-500/30' : 'bg-amber-100 text-amber-600 border border-amber-300'}`}>
+              Editing: {claimedByName}
+            </span>
+          )}
         </div>
 
         {/* Split ticket tabs — nested under parent */}
@@ -784,7 +946,7 @@ export function OpenOrdersPanel({
                     itemCount: 0,
                     paidAmount: split.isPaid ? split.total : 0,
                   }
-                  onSelectOrder(splitOrder)
+                  handleSelectOrder(splitOrder)
                 }}
                 className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1.5 ${
                   split.isPaid
@@ -849,7 +1011,7 @@ export function OpenOrdersPanel({
         {viewMode === 'open' && !isPaidOrClosed && (
           <div className="mt-2 flex gap-2">
             <button
-              onClick={(e) => { e.stopPropagation(); onSelectOrder(order) }}
+              onClick={(e) => { e.stopPropagation(); handleSelectOrder(order) }}
               className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-bold text-white transition-colors"
             >
               Open

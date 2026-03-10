@@ -154,6 +154,12 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           orderTypeRef: {
             select: { id: true, name: true, color: true, icon: true },
           },
+          claimedByEmployeeId: true,
+          claimedByTerminalId: true,
+          claimedAt: true,
+          claimedByEmployee: {
+            select: { displayName: true, firstName: true, lastName: true },
+          },
           cards: {
             where: { deletedAt: null, status: 'authorized' },
             select: { cardholderName: true, cardType: true, cardLast4: true },
@@ -251,6 +257,14 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           openedAt: o.openedAt,
           reopenedAt: o.reopenedAt?.toISOString() || null,
           reopenReason: o.reopenReason || null,
+          // Claim info
+          claimedByEmployeeId: (o as any).claimedByEmployeeId || null,
+          claimedByTerminalId: (o as any).claimedByTerminalId || null,
+          claimedAt: (o as any).claimedAt?.toISOString?.() || (o as any).claimedAt || null,
+          claimedByEmployee: (o as any).claimedByEmployee ? {
+            displayName: (o as any).claimedByEmployee.displayName ||
+              `${(o as any).claimedByEmployee.firstName || ''} ${(o as any).claimedByEmployee.lastName || ''}`.trim() || null,
+          } : null,
           // Payment status
           paidAmount: o.payments
             .filter((p: { status: string }) => p.status === 'completed')
@@ -305,6 +319,9 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         },
         orderTypeRef: {
           select: { id: true, name: true, color: true, icon: true },
+        },
+        claimedByEmployee: {
+          select: { displayName: true, firstName: true, lastName: true },
         },
         items: {
           include: {
@@ -483,6 +500,14 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         openedAt: order.openedAt.toISOString(),
         reopenedAt: order.reopenedAt?.toISOString() || null,
         reopenReason: order.reopenReason || null,
+        // Claim info
+        claimedByEmployeeId: (order as any).claimedByEmployeeId || null,
+        claimedByTerminalId: (order as any).claimedByTerminalId || null,
+        claimedAt: (order as any).claimedAt?.toISOString?.() || null,
+        claimedByEmployee: (order as any).claimedByEmployee ? {
+          displayName: (order as any).claimedByEmployee.displayName ||
+            `${(order as any).claimedByEmployee.firstName || ''} ${(order as any).claimedByEmployee.lastName || ''}`.trim() || null,
+        } : null,
         // Payment status
         paidAmount: order.payments
           .filter((p: any) => p.status === 'completed')

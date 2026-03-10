@@ -166,8 +166,10 @@ enum PrinterRole {
 
 enum PrintJobStatus {
   pending
+  queued
   sent
   failed
+  failed_permanent
 }
 
 enum PrintRuleLevel {
@@ -1046,6 +1048,7 @@ model Employee {
 
   // Relations
   orders           Order[]
+  claimedOrders    Order[]          @relation("ClaimedOrders")
   timeClockEntries TimeClockEntry[]
   shifts           Shift[]
   voidLogs         VoidLog[]
@@ -1992,6 +1995,7 @@ model Section {
   defaultForTables Table[]          @relation("TableDefaultSection")
   scheduledShifts  ScheduledShift[] @relation("ScheduledShiftSection")
 
+  @@unique([locationId, name])
   @@index([locationId])
 }
 
@@ -2082,6 +2086,7 @@ model Table {
   // C-SCHEMA-1: Reverse relations (batch 2)
   errorLogs ErrorLog[] @relation("ErrorLogTable")
 
+  @@unique([locationId, name])
   @@index([sectionId])
   // @@index([status]) — removed: redundant with @@index([locationId, status]) (all queries include locationId)
   @@index([locationId, status])
@@ -2381,6 +2386,12 @@ model Order {
   // Tax exemption (manager.tax_exempt permission required to set)
   isTaxExempt Boolean @default(false)
 
+  // Order claiming — soft lock to prevent concurrent editing
+  claimedByEmployeeId String?
+  claimedByEmployee   Employee? @relation("ClaimedOrders", fields: [claimedByEmployeeId], references: [id])
+  claimedByTerminalId String?   // Terminal ID that currently has the order open
+  claimedAt           DateTime? // When the claim was acquired; auto-expires after 60s
+
   // HA cellular sync — mutation origin tracking
   lastMutatedBy    String? // 'cloud' | 'local' | null
   originTerminalId String?
@@ -2459,6 +2470,7 @@ model Order {
   @@index([locationId, createdAt, status])
   @@index([locationId, businessDayDate])
   @@index([locationId, status, businessDayDate])
+  @@index([claimedByEmployeeId, claimedAt])
 }
 
 /// ACTIVE: Primary order item table — all reads and writes go here.
@@ -2509,6 +2521,7 @@ model OrderItem {
 
   // Kitchen status
   kitchenStatus KitchenStatus @default(pending)
+  kitchenSentAt DateTime? // When item was sent to kitchen (for speed-of-service tracking)
 
   // KDS completion tracking
   isCompleted Boolean   @default(false)
@@ -2877,6 +2890,9 @@ model Coupon {
   validUntil DateTime?
   isActive   Boolean   @default(true)
 
+  // Stacking — when false, coupon cannot be applied if order already has a discount
+  isStackable Boolean @default(false)
+
   // Tracking
   createdBy String? // Employee who created
 
@@ -2886,7 +2902,8 @@ model Coupon {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  redemptions CouponRedemption[]
+  redemptions    CouponRedemption[]
+  orderDiscounts OrderDiscount[]
 
   @@unique([locationId, code])
   // @@index([locationId]) — redundant with compound indexes below
@@ -3047,6 +3064,11 @@ model OrderDiscount {
   discountRuleId String?
   discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
 
+  // Coupon link (set when discount was applied via coupon redemption)
+  couponId   String?
+  coupon     Coupon? @relation(fields: [couponId], references: [id])
+  couponCode String? // Denormalized for display/reporting
+
   name    String
   amount  Decimal
   percent Decimal?
@@ -3069,6 +3091,7 @@ model OrderDiscount {
 
   @@index([locationId])
   @@index([orderId])
+  @@index([couponId])
 }
 
 // ============================================
@@ -4216,6 +4239,7 @@ model TaxRule {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  @@unique([locationId, name])
   @@index([locationId])
   @@index([isActive])
   @@index([locationId, isActive, isInclusive])
@@ -6430,6 +6454,7 @@ model PrintRoute {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  @@unique([locationId, name])
   @@index([locationId])
   @@index([routeType])
   @@index([priority])
@@ -8075,6 +8100,7 @@ model OrderItemSnapshot {
   courseNumber       Int?
   isHeld             Boolean       @default(false)
   kitchenStatus      String?
+  kitchenSentAt      DateTime?
   soldByWeight       Boolean       @default(false)
   weight             Float?
   weightUnit         String?

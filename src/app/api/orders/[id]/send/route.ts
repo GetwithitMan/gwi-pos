@@ -8,9 +8,13 @@ import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig, type OriginDevice } from '@/lib/fulfillment-router'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
+import { checkOrderClaim } from '@/lib/order-claim'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -21,15 +25,31 @@ export const POST = withVenue(withTiming(async function POST(
     const timing = getTimingFromRequest(request)
     const { id } = await params
 
-    // Parse optional itemIds from body for selective firing (per-item delays)
+    // Parse optional itemIds and employeeId from body for selective firing (per-item delays)
     let filterItemIds: string[] | null = null
+    let sendEmployeeId: string | null = null
     try {
       const body = await request.json()
       if (body.itemIds && Array.isArray(body.itemIds) && body.itemIds.length > 0) {
         filterItemIds = body.itemIds
       }
+      if (body.employeeId) {
+        sendEmployeeId = body.employeeId
+      }
     } catch {
       // No body or invalid JSON — send all pending items
+    }
+
+    // Order claim check — block if another employee has an active claim
+    if (sendEmployeeId) {
+      const terminalId = request.headers.get('x-terminal-id')
+      const claimBlock = await checkOrderClaim(db, id, sendEmployeeId, terminalId)
+      if (claimBlock) {
+        return NextResponse.json(
+          { error: claimBlock.error, claimedBy: claimBlock.claimedBy },
+          { status: claimBlock.status }
+        )
+      }
     }
 
     // Atomic fetch: use interactive transaction with row-level lock to prevent
@@ -68,6 +88,14 @@ export const POST = withVenue(withTiming(async function POST(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Guard: sending another employee's order requires pos.edit_others_orders
+    if (sendEmployeeId && order.employeeId && order.employeeId !== sendEmployeeId) {
+      const auth = await requirePermission(sendEmployeeId, order.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
+      if (!auth.authorized) {
+        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
     }
 
     // Filter: only non-held, pending items. isHeld is a hard gate — held items never send.
@@ -383,6 +411,9 @@ export const POST = withVenue(withTiming(async function POST(
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(() => {})
+
+    // Evaluate auto-discount rules after items are sent (fire-and-forget)
+    void evaluateAutoDiscounts(order.id, order.locationId).catch(console.error)
 
     return NextResponse.json({ data: {
       success: true,
