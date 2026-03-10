@@ -199,6 +199,21 @@ export interface BusinessDaySettings {
   enforceTabClose: boolean     // Force tab close by day boundary (default: true)
   batchAtDayEnd: boolean       // Run daily batch at day boundary (default: true)
   graceMinutes: number         // Grace period after boundary (default: 15)
+  warnBeforeClose: boolean     // Warn if open orders exist during EOD reset (default: true)
+}
+
+// ─── Break Compliance Settings ──────────────────────────────────────────────
+
+export interface BreakComplianceSettings {
+  complianceMode: 'off' | 'warn' | 'enforce'   // How to handle missing breaks (default: 'warn')
+  minShiftForBreak: number                       // Hours — shifts longer than this require a break (default: 5)
+  breakDurationMinutes: number                   // Minimum break duration in minutes (default: 30)
+}
+
+export const DEFAULT_BREAK_COMPLIANCE: BreakComplianceSettings = {
+  complianceMode: 'warn',
+  minShiftForBreak: 5,
+  breakDurationMinutes: 30,
 }
 
 export interface ClockOutSettings {
@@ -518,13 +533,13 @@ export const DEFAULT_LAYOUT_SETTINGS: POSLayoutSettings = {
 }
 
 export interface ApprovalSettings {
-  requireVoidApproval: boolean           // Require manager approval for voids (default: false)
-  requireDiscountApproval: boolean       // Require manager approval for ALL discounts (default: false)
+  requireVoidApproval: boolean           // Require manager approval for voids (default: true)
+  requireDiscountApproval: boolean       // Require manager approval for ALL discounts (default: true)
   discountApprovalThreshold: number      // % above which manager approval is required (default: 20)
-  voidApprovalThreshold: number          // $ above which void needs approval (0 = all voids) (default: 0)
+  voidApprovalThreshold: number          // $ above which void needs approval (0 = all voids) (default: 25)
   requireRefundApproval: boolean         // Require manager approval for refunds (default: true)
-  requireDrawerOpenApproval: boolean     // Require manager approval to open drawer (default: false)
-  defaultMaxDiscountPercent: number      // Cap for non-managers (e.g., 10 = servers can only give up to 10% off) (default: 100)
+  requireDrawerOpenApproval: boolean     // Require manager approval to open drawer (default: true)
+  defaultMaxDiscountPercent: number      // Cap for non-managers (e.g., 25 = servers can only give up to 25% off) (default: 25)
 }
 
 // ─── Hotel PMS Integration (Oracle OPERA Cloud / OHIP) ────────────────────────
@@ -650,6 +665,30 @@ export const DEFAULT_SEVEN_SHIFTS_SETTINGS: SevenShiftsSettings = {
   webhooksRegisteredAt: null,
 }
 
+// ─── EOD (End of Day) Settings ──────────────────────────────────────────────
+
+export interface EodSettings {
+  autoBatchClose: boolean               // Auto-trigger Datacap batch close during EOD reset (default: true)
+}
+
+export const DEFAULT_EOD_SETTINGS: EodSettings = {
+  autoBatchClose: true,
+}
+
+// ─── Walkout Auto-Detection Settings ────────────────────────────────────────
+
+export interface WalkoutSettings {
+  autoDetectMinutes: number             // Minutes an open order must be idle before flagging (default: 120)
+  autoDetectEnabled: boolean            // Enable walkout auto-detection (default: true)
+  maxCaptureRetries: number             // Max walkout capture retry attempts before marking exhausted (default: 10)
+}
+
+export const DEFAULT_WALKOUT_SETTINGS: WalkoutSettings = {
+  autoDetectMinutes: 120,
+  autoDetectEnabled: true,
+  maxCaptureRetries: 10,
+}
+
 export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
@@ -676,6 +715,9 @@ export interface LocationSettings {
   marginEdge?: MarginEdgeSettings       // MarginEdge COGS integration (optional for backward compat)
   bergReportsEnabled?: boolean           // Berg liquor controls comparison reports (Tier 1)
   localDataRetention?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | '60days' | '90days'
+  eod?: EodSettings                     // EOD batch close automation (optional for backward compat)
+  walkout?: WalkoutSettings             // Walkout auto-detection (optional for backward compat)
+  breaks?: BreakComplianceSettings     // Break compliance enforcement (optional for backward compat)
 }
 
 // Default settings for new locations
@@ -850,6 +892,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     enforceTabClose: true,
     batchAtDayEnd: true,
     graceMinutes: 15,
+    warnBeforeClose: true,
   },
   autoReboot: {
     enabled: false,
@@ -857,13 +900,13 @@ export const DEFAULT_SETTINGS: LocationSettings = {
   },
   receiptDisplay: DEFAULT_GLOBAL_RECEIPT_SETTINGS,
   approvals: {
-    requireVoidApproval: false,
-    requireDiscountApproval: false,
+    requireVoidApproval: true,
+    requireDiscountApproval: true,
     discountApprovalThreshold: 20,
-    voidApprovalThreshold: 0,
+    voidApprovalThreshold: 25,
     requireRefundApproval: true,
-    requireDrawerOpenApproval: false,
-    defaultMaxDiscountPercent: 100,
+    requireDrawerOpenApproval: true,
+    defaultMaxDiscountPercent: 25,
   },
   alerts: {
     enabled: true,
@@ -988,6 +1031,15 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     marginEdge: partial.marginEdge
       ? { ...DEFAULT_MARGIN_EDGE_SETTINGS, ...partial.marginEdge, syncOptions: { ...DEFAULT_MARGIN_EDGE_SETTINGS.syncOptions, ...partial.marginEdge.syncOptions } }
+      : undefined,
+    eod: partial.eod
+      ? { ...DEFAULT_EOD_SETTINGS, ...partial.eod }
+      : undefined,
+    walkout: partial.walkout
+      ? { ...DEFAULT_WALKOUT_SETTINGS, ...partial.walkout }
+      : undefined,
+    breaks: partial.breaks
+      ? { ...DEFAULT_BREAK_COMPLIANCE, ...partial.breaks }
       : undefined,
   }
 }
