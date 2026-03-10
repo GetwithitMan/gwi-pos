@@ -108,6 +108,7 @@ interface OpenOrder {
   isRolledOver?: boolean
   rolledOverAt?: string | null
   rolledOverFrom?: string | null
+  isWalkout?: boolean
   isCaptureDeclined?: boolean
   captureRetryCount?: number
   reopenedAt?: string | null

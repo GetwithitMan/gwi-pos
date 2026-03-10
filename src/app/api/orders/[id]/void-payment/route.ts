@@ -13,6 +13,7 @@ import { enableSyncReplication } from '@/lib/db-helpers'
 import { dispatchAlert } from '@/lib/alert-service'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 class VoidValidationError extends Error {
   statusCode: number
@@ -182,6 +183,7 @@ export const POST = withVenue(async function POST(
             voidedAt: new Date(),
             voidedBy: managerId,
             voidReason: reason,
+            lastMutatedBy: 'local',
           },
         })
 
@@ -190,6 +192,7 @@ export const POST = withVenue(async function POST(
           where: { id: orderId },
           data: {
             status: newOrderStatus,
+            lastMutatedBy: 'local',
           },
         })
 
@@ -275,6 +278,14 @@ export const POST = withVenue(async function POST(
         )
       }
       throw dbError
+    }
+
+    // Queue outage writes if in outage mode (fire-and-forget)
+    if (isInOutageMode()) {
+      const fullPayment = await db.payment.findUnique({ where: { id: paymentId } })
+      if (fullPayment) void queueOutageWrite('Payment', paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      const fullOrder = await db.order.findUnique({ where: { id: orderId } })
+      if (fullOrder) void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
     }
 
     // Emit order event for voided payment (fire-and-forget)

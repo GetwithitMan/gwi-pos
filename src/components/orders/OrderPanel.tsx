@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 import { roundToCents } from '@/lib/pricing'
 import { OrderDelayBanner } from './OrderDelayBanner'
 import { ConflictBanner } from './ConflictBanner'
+import { ComboSuggestionBanner } from './ComboSuggestionBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import { CustomerLookupModal } from '@/components/customers/CustomerLookupModal'
 import { getSharedSocket } from '@/lib/shared-socket'
@@ -1867,6 +1868,15 @@ export const OrderPanel = memo(function OrderPanel({
           </div>
         )}
       </div>
+
+      {/* Combo auto-suggest banner */}
+      {hasPendingItems && !hasSentItems && (
+        <ComboSuggestionBanner
+          orderId={orderId ?? null}
+          itemCount={pendingItems.length}
+          hasSentItems={!!hasSentItems}
+        />
+      )}
 
       {/* Reopened order banner */}
       {reopenedAt && (

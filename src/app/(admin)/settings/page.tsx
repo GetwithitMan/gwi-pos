@@ -186,6 +186,12 @@ export default function SettingsPage() {
             description="Business information, POS display layout, auto-reboot, and system settings"
             href="/settings/venue"
           />
+          <SectionCard
+            icon="🎓"
+            title="Training & Messages"
+            description="Training mode for new employees, login screen announcements, and staff alerts"
+            href="/settings/training"
+          />
         </div>
 
         {/* Hardware Health Widget */}

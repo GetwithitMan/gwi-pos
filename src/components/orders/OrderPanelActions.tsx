@@ -609,12 +609,32 @@ export const OrderPanelActions = memo(function OrderPanelActions({
                 cursor: justSent ? 'default' : (hasPendingItems && !isSending ? 'pointer' : 'not-allowed'),
                 transition: 'all 0.2s ease',
                 opacity: !hasPendingItems && !justSent ? 0.4 : 1,
-                marginBottom: needsCard && hasPendingItems ? '2px' : '10px',
+                marginBottom: needsCard && hasPendingItems ? '2px' : (justSent && !hasPendingItems ? '6px' : '10px'),
                 boxShadow: justSent ? '0 0 20px rgba(22, 163, 74, 0.3)' : (hasPendingItems && !isSending ? `0 0 20px ${glow}` : 'none'),
               }}
             >
               {label}
             </button>
+            {justSent && !hasPendingItems && (
+              <button
+                onClick={() => setJustSent(false)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '10px',
+                  border: '2px solid rgba(59, 130, 246, 0.5)',
+                  background: 'rgba(59, 130, 246, 0.1)',
+                  color: '#60a5fa',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  marginBottom: '10px',
+                }}
+              >
+                + Add More Items
+              </button>
+            )}
             {needsCard && hasPendingItems && (
               <div style={{ fontSize: '10px', color: '#a78bfa', textAlign: 'center', marginBottom: '8px' }}>
                 Insert chip to pre-authorize — sends to tab after approved

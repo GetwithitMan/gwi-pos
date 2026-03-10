@@ -17,6 +17,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { isTrainingEmployee } from '@/lib/training-mode'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -73,6 +74,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const locSettings = await getLocationSettings(locationId) as Record<string, unknown> | null
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+
+    // Training mode: stamp isTraining on orders created by training employees
+    const parsedLocSettings = locSettings ? parseSettings(locSettings) : null
+    const orderIsTraining = parsedLocSettings ? isTrainingEmployee(employeeId, parsedLocSettings) : false
 
     // === FAST PATH: Draft shell creation (no items) ===
     // When items is empty, create a lightweight order shell without tax/commission/totals computation.
@@ -140,6 +145,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
               customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
               businessDayDate: businessDayStart,
               idempotencyKey: idempotencyKey || null,
+              isTraining: orderIsTraining,
               ...cellularMutationFields,
             },
           })
@@ -485,6 +491,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
             businessDayDate: businessDayStart,
             idempotencyKey: idempotencyKey || null,
+            isTraining: orderIsTraining,
             ...cellularMutationFields,
             items: {
               create: orderItems,

@@ -86,6 +86,7 @@ export default function TrendsReportPage() {
   const [isLoading, setIsLoading] = useState(false)
 
   const [periodDays, setPeriodDays] = useState(7)
+  const [periodMode, setPeriodMode] = useState<'days' | 'mtd'>('days')
   const [endDate, setEndDate] = useState(() => {
     const d = new Date()
     d.setDate(d.getDate() - 1)
@@ -93,18 +94,44 @@ export default function TrendsReportPage() {
   })
 
   const startDate = (() => {
+    if (periodMode === 'mtd') {
+      const now = new Date()
+      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      return firstOfMonth.toISOString().split('T')[0]
+    }
     const d = new Date(endDate + 'T12:00:00')
     d.setDate(d.getDate() - periodDays + 1)
     return d.toISOString().split('T')[0]
   })()
 
+  const mtdEndDate = (() => {
+    if (periodMode === 'mtd') {
+      return new Date().toISOString().split('T')[0]
+    }
+    return endDate
+  })()
+
   const prevEndDate = (() => {
+    if (periodMode === 'mtd') {
+      const now = new Date()
+      const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+      const lastDayPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0)
+      if (prevMonth > lastDayPrevMonth) {
+        return lastDayPrevMonth.toISOString().split('T')[0]
+      }
+      return prevMonth.toISOString().split('T')[0]
+    }
     const d = new Date(startDate + 'T12:00:00')
     d.setDate(d.getDate() - 1)
     return d.toISOString().split('T')[0]
   })()
 
   const prevStartDate = (() => {
+    if (periodMode === 'mtd') {
+      const now = new Date()
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      return prevMonthDate.toISOString().split('T')[0]
+    }
     const d = new Date(prevEndDate + 'T12:00:00')
     d.setDate(d.getDate() - periodDays + 1)
     return d.toISOString().split('T')[0]
@@ -120,7 +147,7 @@ export default function TrendsReportPage() {
     if (!employee?.location?.id) return
     setIsLoading(true)
     try {
-      const currentDates = getDatesInRange(startDate, endDate)
+      const currentDates = getDatesInRange(startDate, periodMode === 'mtd' ? mtdEndDate : endDate)
       const previousDates = getDatesInRange(prevStartDate, prevEndDate)
 
       const fetchDay = async (date: string): Promise<DayMetrics> => {
@@ -215,7 +242,7 @@ export default function TrendsReportPage() {
           <Button
             variant="outline"
             disabled={!report}
-            onClick={() => report && exportTrendsCSV(report, startDate, endDate)}
+            onClick={() => report && exportTrendsCSV(report, startDate, periodMode === 'mtd' ? mtdEndDate : endDate)}
           >
             Export CSV
           </Button>
@@ -227,25 +254,36 @@ export default function TrendsReportPage() {
         <Card className="mb-6">
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-4 items-end">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Period End Date</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              {periodMode !== 'mtd' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Period End Date</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Period Length</label>
                 <select
-                  value={periodDays}
-                  onChange={(e) => setPeriodDays(Number(e.target.value))}
+                  value={periodMode === 'mtd' ? 'mtd' : String(periodDays)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (val === 'mtd') {
+                      setPeriodMode('mtd')
+                    } else {
+                      setPeriodMode('days')
+                      setPeriodDays(Number(val))
+                    }
+                  }}
                   className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value={7}>Last 7 Days</option>
                   <option value={14}>Last 14 Days</option>
                   <option value={30}>Last 30 Days</option>
+                  <option value="mtd">Month to Date</option>
                 </select>
               </div>
               <Button variant="primary" onClick={loadReport} disabled={isLoading}>
@@ -253,7 +291,7 @@ export default function TrendsReportPage() {
               </Button>
               <div className="flex-1" />
               <div className="text-sm text-gray-500">
-                <div>Current: {startDate} to {endDate}</div>
+                <div>Current: {startDate} to {periodMode === 'mtd' ? mtdEndDate : endDate}</div>
                 <div>Previous: {prevStartDate} to {prevEndDate}</div>
               </div>
             </div>

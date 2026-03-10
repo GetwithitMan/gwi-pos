@@ -45,6 +45,7 @@ export const PERMISSIONS = {
   POS_CHANGE_TABLE: 'pos.change_table',
   POS_CHANGE_SERVER: 'pos.change_server',
   POS_NO_SALE: 'pos.no_sale',
+  POS_TRANSFER_ORDER: 'pos.transfer_order',
 
   // === MANAGER ===
   MGR_DISCOUNTS: 'manager.discounts',
@@ -67,6 +68,7 @@ export const PERMISSIONS = {
   MGR_END_BREAKS_EARLY: 'manager.end_breaks_early',
   MGR_FORCE_CLOCK_OUT: 'manager.force_clock_out',
   MGR_RECEIVE_TRANSFERS: 'manager.receive_transfers',
+  MGR_KEYED_ENTRY: 'manager.keyed_entry',
 
   // === REPORTS ===
   REPORTS_VIEW: 'reports.view',
@@ -196,6 +198,7 @@ export const PERMISSION_GROUPS = {
       { key: 'pos.change_table', label: 'Change Table', description: 'Move orders between tables' },
       { key: 'pos.change_server', label: 'Change Server', description: 'Transfer orders to other employees' },
       { key: 'pos.no_sale', label: 'No Sale', description: 'Open drawer without transaction' },
+      { key: 'pos.transfer_order', label: 'Transfer Orders', description: 'Transfer own orders to another employee during shift handoff' },
     ],
   },
   'Manager': {
@@ -407,12 +410,14 @@ export const DEFAULT_ROLES: Record<string, string[]> = {
     'pos.access', 'pos.table_service', 'pos.quick_order',
     'pos.cash_payments', 'pos.card_payments',
     'pos.split_checks', 'pos.change_table', 'pos.change_server',
+    'pos.transfer_order',
     'tips.view_own', 'tips.share', 'tips.collect',
   ],
   'Bartender': [
     'pos.access', 'pos.table_service', 'pos.quick_order',
     'pos.cash_payments', 'pos.card_payments', 'pos.cash_drawer',
     'pos.split_checks', 'pos.no_sale',
+    'pos.transfer_order',
     'manager.cash_drawer_blind',
     'tips.view_own', 'tips.share', 'tips.collect',
     'menu.86_items',

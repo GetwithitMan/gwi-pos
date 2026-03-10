@@ -236,13 +236,28 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     const status = searchParams.get('status') // pending | collected | exhausted | written_off
+    const orderId = searchParams.get('orderId')
 
     if (!locationId) {
       return NextResponse.json({ error: 'Missing locationId' }, { status: 400 })
     }
 
+    // If filtering by orderId, find order cards first to get walkout retry IDs
+    let orderCardFilter: string[] | null = null
+    if (orderId) {
+      const orderCards = await db.orderCard.findMany({
+        where: { orderId, deletedAt: null },
+        select: { id: true },
+      })
+      orderCardFilter = orderCards.map(c => c.id)
+      if (orderCardFilter.length === 0) {
+        return NextResponse.json({ data: [] })
+      }
+    }
+
     const where: Record<string, unknown> = { locationId, deletedAt: null }
     if (status) where.status = status
+    if (orderCardFilter) where.orderCardId = { in: orderCardFilter }
 
     const retries = await db.walkoutRetry.findMany({
       where,

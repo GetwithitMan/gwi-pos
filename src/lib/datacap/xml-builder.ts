@@ -113,8 +113,11 @@ export function buildGratuityBlock(gratuity: DatacapGratuityFields): string {
 
 // ─── Account Block ───────────────────────────────────────────────────────────
 
-function buildAccountBlock(acctNo: string): string {
-  return `<Account><AcctNo>${escapeXml(acctNo)}</AcctNo></Account>`
+function buildAccountBlock(acctNo: string, expDate?: string, cvv?: string): string {
+  const parts = [`<AcctNo>${escapeXml(acctNo)}</AcctNo>`]
+  if (expDate) parts.push(`<ExpDate>${escapeXml(expDate)}</ExpDate>`)
+  if (cvv) parts.push(`<CVVData>${escapeXml(cvv)}</CVVData>`)
+  return `<Account>${parts.join('')}</Account>`
 }
 
 // ─── Main Request Builder ────────────────────────────────────────────────────
@@ -146,9 +149,9 @@ export function buildRequest(fields: DatacapRequestFields): string {
   if (fields.tranDeviceId !== undefined) parts.push(tag('TranDeviceID', String(fields.tranDeviceId)))
   if (fields.posPackageId) parts.push(tag('POSPackageID', fields.posPackageId))
 
-  // Account — almost always 'SecureDevice' for EMV
+  // Account — 'SecureDevice' for EMV, actual card number for keyed entry
   if (fields.acctNo) {
-    parts.push(buildAccountBlock(fields.acctNo))
+    parts.push(buildAccountBlock(fields.acctNo, fields.expDate, fields.cvv))
   }
 
   // Amounts
@@ -196,6 +199,9 @@ export function buildRequest(fields: DatacapRequestFields): string {
 
   // ForceOffline — SAF storage flag (certification test 18.x)
   if (fields.forceOffline) parts.push('<ForceOffline>Yes</ForceOffline>')
+
+  // AVS zip code — for keyed/manual card entry AVS verification
+  if (fields.avsZipCode) parts.push(tag('AVSZipCode', fields.avsZipCode))
 
   // Level II — customer/PO code for B2B interchange qualification (max 17 chars per Datacap spec)
   if (fields.customerCode) {

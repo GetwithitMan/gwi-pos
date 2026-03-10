@@ -4,8 +4,11 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency, formatTime } from '@/lib/utils'
+import { hasPermission } from '@/lib/auth-utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 
 // ============================================================================
@@ -170,6 +173,22 @@ export default function ManagerDashboardPage() {
   const [liveMetrics, setLiveMetrics] = useState<LiveMetrics | null>(null)
   const [deductionBannerDismissed, setDeductionBannerDismissed] = useState(false)
 
+  // Labor % state
+  const [laborPercent, setLaborPercent] = useState<number | null>(null)
+  const [laborCost, setLaborCost] = useState<number>(0)
+
+  // EOD Reset state
+  const [eodConfirmOpen, setEodConfirmOpen] = useState(false)
+  const [eodDryRunResult, setEodDryRunResult] = useState<{
+    orphanedTables: { count: number; tables: { id: string; name: string }[] }
+    staleOrders: { count: number; orders: { id: string; orderNumber: number; total: number }[] }
+  } | null>(null)
+  const [eodRunning, setEodRunning] = useState(false)
+  const [eodResult, setEodResult] = useState<{
+    stats: { tablesReset: number; staleOrdersDetected: number; entertainmentReset: number; batchCloseTriggered: boolean }
+    warnings: string[]
+  } | null>(null)
+
   // Tick for "last updated" display
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -318,14 +337,38 @@ export default function ManagerDashboardPage() {
     }
   }, [locationId, currentEmployee?.id])
 
+  // ------------------------------------------
+  // Labor % fetch
+  // ------------------------------------------
+  const refreshLaborPercent = useCallback(async () => {
+    if (!locationId || !currentEmployee?.id) return
+    try {
+      const today = getTodayDateStr()
+      const res = await fetch(
+        `/api/reports/labor-cost?locationId=${locationId}&requestingEmployeeId=${currentEmployee.id}&startDate=${today}&endDate=${today}&groupBy=date`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        const summary = data.data?.summary
+        if (summary) {
+          setLaborPercent(summary.laborPercent ?? null)
+          setLaborCost(summary.totalWages ?? 0)
+        }
+      }
+    } catch (err) {
+      console.error('Labor % refresh failed:', err)
+    }
+  }, [locationId, currentEmployee?.id])
+
   // Initial load
   useEffect(() => {
     if (locationId) {
       refreshData()
       refreshEmployeeStats()
       refreshLiveMetrics()
+      refreshLaborPercent()
     }
-  }, [locationId, refreshData, refreshEmployeeStats, refreshLiveMetrics])
+  }, [locationId, refreshData, refreshEmployeeStats, refreshLiveMetrics, refreshLaborPercent])
 
   // ------------------------------------------
   // Socket: real-time updates
@@ -336,6 +379,8 @@ export default function ManagerDashboardPage() {
   liveMetricsRef.current = refreshLiveMetrics
   const employeeStatsRef = useRef(refreshEmployeeStats)
   employeeStatsRef.current = refreshEmployeeStats
+  const laborPercentRef = useRef(refreshLaborPercent)
+  laborPercentRef.current = refreshLaborPercent
 
   useEffect(() => {
     if (!locationId) return
@@ -373,6 +418,7 @@ export default function ManagerDashboardPage() {
       refreshRef.current()
       liveMetricsRef.current()
       employeeStatsRef.current()
+      laborPercentRef.current()
     }
 
     socket.on('orders:list-changed', debouncedRefresh)
@@ -437,6 +483,68 @@ export default function ManagerDashboardPage() {
   const isManager = permissions.includes('reports.view') ||
     permissions.includes('admin.full') ||
     permissions.includes('*')
+  const canCloseDay = hasPermission(permissions, 'manager.close_day')
+
+  const handleEodDryRun = async () => {
+    if (!locationId || !currentEmployee?.id) return
+    setEodRunning(true)
+    setEodResult(null)
+    try {
+      const res = await fetch('/api/eod/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId, employeeId: currentEmployee.id, dryRun: true }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data?.wouldReset) {
+          setEodDryRunResult(data.data.wouldReset)
+          setEodConfirmOpen(true)
+        }
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to check EOD status')
+      }
+    } catch {
+      toast.error('Failed to reach server for EOD check')
+    } finally {
+      setEodRunning(false)
+    }
+  }
+
+  const handleEodConfirm = async () => {
+    if (!locationId || !currentEmployee?.id) return
+    setEodRunning(true)
+    try {
+      const res = await fetch('/api/eod/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId, employeeId: currentEmployee.id, dryRun: false, confirm: true }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data?.requiresConfirmation) {
+          toast.error(data.data.warning || 'Open orders exist. Confirm to proceed.')
+          return
+        }
+        if (data.data?.stats) {
+          setEodResult(data.data)
+          toast.success('End of Day reset completed')
+          refreshData()
+          refreshLiveMetrics()
+        }
+      } else {
+        const err = await res.json()
+        toast.error(err.error || 'EOD reset failed')
+      }
+    } catch {
+      toast.error('Failed to reach server for EOD reset')
+    } finally {
+      setEodRunning(false)
+      setEodConfirmOpen(false)
+      setEodDryRunResult(null)
+    }
+  }
 
   if (!hydrated || !currentEmployee) return null
 
@@ -465,7 +573,17 @@ export default function ManagerDashboardPage() {
         }
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics() }}>
+            {canCloseDay && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={eodRunning}
+                onClick={handleEodDryRun}
+              >
+                {eodRunning ? 'Checking...' : 'Close Day'}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics(); refreshLaborPercent() }}>
               Refresh
             </Button>
           </div>
@@ -598,7 +716,7 @@ export default function ManagerDashboardPage() {
       {/* METRICS GRID (4 cards)                                          */}
       {/* ================================================================ */}
       {liveMetrics && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Checks Today</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{liveMetrics.checksToday}</p>
@@ -618,6 +736,27 @@ export default function ManagerDashboardPage() {
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Discounts</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(liveMetrics.discountsTotalToday)}</p>
             <p className="text-xs text-gray-400 mt-1">Net In/Out: {formatCurrency(liveMetrics.paidNetTotal)}</p>
+          </div>
+          <div className={`bg-white rounded-xl border p-4 ${
+            laborPercent !== null && laborPercent > 35
+              ? 'border-red-300 bg-red-50'
+              : laborPercent !== null && laborPercent > 25
+                ? 'border-amber-300 bg-amber-50'
+                : 'border-gray-200'
+          }`}>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Labor %</p>
+            <p className={`text-2xl font-bold mt-1 ${
+              laborPercent !== null && laborPercent > 35
+                ? 'text-red-600'
+                : laborPercent !== null && laborPercent > 25
+                  ? 'text-amber-600'
+                  : 'text-green-600'
+            }`}>
+              {laborPercent !== null ? `${laborPercent.toFixed(1)}%` : '--'}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {laborCost > 0 ? formatCurrency(laborCost) + ' wages' : 'No labor data'}
+            </p>
           </div>
         </div>
       )}
@@ -895,6 +1034,54 @@ export default function ManagerDashboardPage() {
       </section>
 
       {/* ================================================================ */}
+      {/* EOD RESET RESULT BANNER                                         */}
+      {/* ================================================================ */}
+      {eodResult && (
+        <section className="bg-green-50 rounded-xl border border-green-200 p-5 mb-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-green-800 mb-2">End of Day Reset Complete</h3>
+              <div className="text-sm text-green-700 space-y-1">
+                <p>{eodResult.stats.tablesReset} table{eodResult.stats.tablesReset !== 1 ? 's' : ''} reset to available</p>
+                <p>{eodResult.stats.staleOrdersDetected} stale order{eodResult.stats.staleOrdersDetected !== 1 ? 's' : ''} rolled over</p>
+                {eodResult.stats.entertainmentReset > 0 && (
+                  <p>{eodResult.stats.entertainmentReset} entertainment item{eodResult.stats.entertainmentReset !== 1 ? 's' : ''} reset</p>
+                )}
+                {eodResult.stats.batchCloseTriggered && (
+                  <p>Datacap batch close triggered</p>
+                )}
+                {eodResult.warnings.map((w, i) => (
+                  <p key={i} className="text-amber-700">{w}</p>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={() => setEodResult(null)}
+              className="text-green-400 hover:text-green-600 transition-colors text-lg leading-none"
+              aria-label="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* EOD Confirm Dialog */}
+      <ConfirmDialog
+        open={eodConfirmOpen}
+        title="Close Day"
+        description={
+          eodDryRunResult
+            ? `This will reset ${eodDryRunResult.orphanedTables.count} orphaned table${eodDryRunResult.orphanedTables.count !== 1 ? 's' : ''} to available, roll over ${eodDryRunResult.staleOrders.count} stale order${eodDryRunResult.staleOrders.count !== 1 ? 's' : ''}, reset entertainment items, run batch close, and detect walkouts. This action cannot be undone.`
+            : 'This will close all open tabs, reset table statuses, and run batch close. Are you sure?'
+        }
+        confirmLabel="Close Day"
+        destructive
+        onConfirm={handleEodConfirm}
+        onCancel={() => { setEodConfirmOpen(false); setEodDryRunResult(null) }}
+      />
+
+      {/* ================================================================ */}
       {/* FOOTER                                                          */}
       {/* ================================================================ */}
       <div className="flex items-center justify-between py-4 mt-2 text-xs text-gray-400">
@@ -903,7 +1090,7 @@ export default function ManagerDashboardPage() {
           variant="ghost"
           size="sm"
           className="text-xs text-gray-400 hover:text-gray-600"
-          onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics() }}
+          onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics(); refreshLaborPercent() }}
         >
           Refresh now
         </Button>

@@ -1,11 +1,25 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { hasPermission } from '@/lib/auth-utils'
 import { useAuthStore } from '@/stores/auth-store'
+
+interface WalkoutRetryInfo {
+  id: string
+  status: string
+  retryCount: number
+  maxRetries: number
+  nextRetryAt: string | null
+  lastRetryError: string | null
+  collectedAt: string | null
+  writtenOffAt: string | null
+  cardType: string | null
+  cardLast4: string | null
+  amount: number
+}
 
 interface Payment {
   id: string
@@ -25,6 +39,7 @@ interface ClosedOrder {
   displayNumber?: string
   tabName: string | null
   status: string
+  isWalkout?: boolean
   total: number
   subtotal: number
   taxTotal: number
@@ -84,6 +99,24 @@ export function ClosedOrderActionsModal({
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null)
   const [rerunAmount, setRerunAmount] = useState('')
   const [sameAgainLoading, setSameAgainLoading] = useState(false)
+  const [walkoutRetries, setWalkoutRetries] = useState<WalkoutRetryInfo[]>([])
+
+  useEffect(() => {
+    if (!isOpen || !order.isWalkout || !locationId) return
+    const fetchRetries = async () => {
+      try {
+        const params = new URLSearchParams({ locationId, orderId: order.id })
+        const res = await fetch(`/api/datacap/walkout-retry?${params}`)
+        if (res.ok) {
+          const json = await res.json()
+          setWalkoutRetries(json.data || [])
+        }
+      } catch {
+        // Supplementary data — fail silently
+      }
+    }
+    fetchRetries()
+  }, [isOpen, order.isWalkout, order.id, locationId])
 
   const canVoid = hasPermission(employeePermissions, 'manager.void_payments')
   const canReopen = hasPermission(employeePermissions, 'manager.void_orders')
@@ -365,6 +398,57 @@ export function ClosedOrderActionsModal({
             </div>
           )}
         </div>
+
+        {/* Walkout Retry Status */}
+        {order.isWalkout && (
+          <div className="px-6 py-3 border-b border-white/10 bg-red-900/20">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-red-400 text-xs font-bold uppercase tracking-wider">Walkout</span>
+            </div>
+            {walkoutRetries.length === 0 ? (
+              <p className="text-xs text-slate-400">No capture retry records.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {walkoutRetries.map(retry => {
+                  const statusStyles: Record<string, string> = {
+                    pending: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+                    collected: 'bg-green-500/20 text-green-300 border-green-500/30',
+                    exhausted: 'bg-red-500/20 text-red-300 border-red-500/30',
+                    written_off: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
+                  }
+                  const statusLabels: Record<string, string> = {
+                    pending: 'Pending',
+                    collected: 'Collected',
+                    exhausted: 'Exhausted',
+                    written_off: 'Written Off',
+                  }
+                  return (
+                    <div key={retry.id} className="text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${statusStyles[retry.status] || 'bg-slate-500/20 text-slate-300 border-slate-500/30'}`}>
+                          {statusLabels[retry.status] || retry.status}
+                        </span>
+                        <span className="text-white font-medium">{formatCurrency(retry.amount)}</span>
+                        {retry.cardType && retry.cardLast4 && (
+                          <span className="text-slate-400">{retry.cardType} ****{retry.cardLast4}</span>
+                        )}
+                      </div>
+                      <div className="text-slate-400 mt-0.5">
+                        <span>Retries: {retry.retryCount}/{retry.maxRetries}</span>
+                        {retry.nextRetryAt && retry.status === 'pending' && (
+                          <span className="ml-2">Next: {new Date(retry.nextRetryAt).toLocaleDateString()}</span>
+                        )}
+                        {retry.lastRetryError && (
+                          <p className="text-red-400 truncate max-w-full mt-0.5">Error: {retry.lastRetryError}</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Action Area */}
         <div className="px-6 py-4 max-h-[50vh] overflow-y-auto">

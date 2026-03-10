@@ -68,6 +68,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         cashSales: shift.cashSales ? Number(shift.cashSales) : null,
         cardSales: shift.cardSales ? Number(shift.cardSales) : null,
         tipsDeclared: shift.tipsDeclared ? Number(shift.tipsDeclared) : null,
+        drawerId: shift.drawerId || null,
         notes: shift.notes,
       })),
     } })

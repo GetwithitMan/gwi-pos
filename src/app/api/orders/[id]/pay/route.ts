@@ -916,8 +916,38 @@ export const POST = withVenue(withTiming(async function POST(
       terminalId,
     )
 
+    // Training mode: if order is a training order and suppressPayments is enabled,
+    // create simulated payment records without hitting Datacap or deducting real balances.
+    const isTrainingPayment = order.isTraining === true && settings.training?.suppressPayments !== false
+
     for (let paymentIdx = 0; paymentIdx < payments.length; paymentIdx++) {
       const payment = payments[paymentIdx]
+
+      // Training mode bypass — skip real payment processing, create simulated record
+      if (isTrainingPayment) {
+        const trainingRecord = {
+          locationId: order.locationId,
+          orderId,
+          employeeId: employeeId || null,
+          drawerId: null as string | null,
+          shiftId: null as string | null,
+          terminalId: terminalId || null,
+          amount: payment.amount,
+          tipAmount: 0, // No tips on training orders
+          totalAmount: payment.amount,
+          paymentMethod: 'cash' as PaymentMethod, // Store as cash — no card processor interaction
+          status: 'completed' as PaymentStatus,
+          idempotencyKey: payments.length > 1
+            ? `${finalIdempotencyKey}-${paymentIdx}`
+            : finalIdempotencyKey,
+          authCode: 'TRAINING',
+          transactionId: `TRAINING-${crypto.randomUUID().slice(0, 8)}`,
+        }
+        allPendingPayments.push(trainingRecord)
+        alreadyPaidInLoop += payment.amount
+        continue
+      }
+
       // Use cached attribution for cash, null for non-cash
       const attribution = payment.method === 'cash'
         ? drawerAttribution
@@ -1580,6 +1610,7 @@ export const POST = withVenue(withTiming(async function POST(
       hasCash,
       autoGratApplied,
       autoGratNote,
+      isTrainingPayment,
     }
 
     }, { timeout: 30000 })
@@ -1615,13 +1646,24 @@ export const POST = withVenue(withTiming(async function POST(
       hasCash,
       autoGratApplied,
       autoGratNote,
+      isTrainingPayment,
     } = txResult as any
 
     if (isInOutageMode()) {
-      for (const bp of ingestResult.bridgedPayments) {
-        void queueOutageWrite('Payment', bp.id, 'INSERT', { ...bp } as Record<string, unknown>, order.locationId).catch(console.error)
+      // Read back full Payment rows from local PG — BridgedPayment is missing
+      // NOT NULL columns (locationId, createdAt, updatedAt, processedAt) that
+      // would cause constraint violations on Neon replay.
+      const fullPayments = await db.payment.findMany({
+        where: { id: { in: ingestResult.bridgedPayments.map((bp: { id: string }) => bp.id) } }
+      })
+      for (const fp of fullPayments) {
+        void queueOutageWrite('Payment', fp.id, 'INSERT', fp as unknown as Record<string, unknown>, order.locationId).catch(console.error)
       }
-      void queueOutageWrite('Order', orderId, 'UPDATE', { id: orderId, ...updateData } as Record<string, unknown>, order.locationId).catch(console.error)
+      // Read back full Order for complete payload (updateData is partial)
+      const fullOrder = await db.order.findUnique({ where: { id: orderId } })
+      if (fullOrder) {
+        void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      }
     }
 
     if (unsentItems.length > 0) {
@@ -1748,6 +1790,7 @@ export const POST = withVenue(withTiming(async function POST(
           primaryPaymentMethod: updateData.primaryPaymentMethod,
           tipTotal: newTipTotal,
           version: { increment: 1 },
+          lastMutatedBy: paymentMutationOrigin,
         },
       }).catch(console.error)
     } else {
@@ -1756,6 +1799,7 @@ export const POST = withVenue(withTiming(async function POST(
         data: {
           tipTotal: newTipTotal,
           ...(updateData.primaryPaymentMethod ? { primaryPaymentMethod: updateData.primaryPaymentMethod } : {}),
+          lastMutatedBy: paymentMutationOrigin,
         },
       }).catch(console.error)
     }
@@ -1949,7 +1993,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Resolve tip owner: order's assigned employee, or the processing employee as fallback.
       // Without fallback, tips on unassigned orders (e.g. walk-up kiosk) would be silently dropped.
       const tipOwnerEmployeeId = order.employeeId || employeeId
-      if (totalTips > 0 && tipOwnerEmployeeId) {
+      if (totalTips > 0 && tipOwnerEmployeeId && !isTrainingPayment) {
         void allocateTipsForPayment({
           locationId: order.locationId,
           orderId,

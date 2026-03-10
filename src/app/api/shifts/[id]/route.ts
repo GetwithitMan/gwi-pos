@@ -195,11 +195,16 @@ export const PUT = withVenue(async function PUT(
       )
 
       // Expected cash = starting cash + cash received - change given + paid in - paid out
+      // Note: safe drops are PaidInOut records with type='out' and reason starting with '[SAFE DROP]',
+      // so they are already subtracted via summary.paidOut.
       const expectedCash = Number(shift.startingCash) + summary.netCashReceived + summary.paidIn - summary.paidOut
       const variance = effectiveActualCash - expectedCash
 
       // Guard: large cash variance requires override permission
-      if (Math.abs(variance) > 5 && requestingEmployeeId) {
+      // Uses configurable threshold from cashManagement settings (defaults to $5)
+      const locSettingsForVariance = parseSettings(await getLocationSettings(shift.locationId))
+      const varianceThreshold = locSettingsForVariance.cashManagement?.varianceWarningThreshold ?? 5
+      if (Math.abs(variance) > varianceThreshold && requestingEmployeeId) {
         const varAuth = await requirePermission(requestingEmployeeId, shift.locationId, PERMISSIONS.MGR_CASH_VARIANCE_OVERRIDE)
         if (!varAuth.authorized) {
           return NextResponse.json(
@@ -445,10 +450,82 @@ export const PUT = withVenue(async function PUT(
     // Handle structured errors from the transaction
     if (error instanceof Error && error.message.startsWith('OPEN_ORDERS:')) {
       const openOrderCount = parseInt(error.message.split(':')[1], 10)
+
+      // Re-fetch shift for the catch block (shift var is scoped inside try)
+      const { id: shiftIdForError } = await params
+      const shiftForError = await db.shift.findUnique({
+        where: { id: shiftIdForError },
+        select: { locationId: true, employeeId: true },
+      })
+
+      // Fetch open order details for the handoff UI
+      let openOrders: { id: string; orderNumber: number | null; tabName: string | null; status: string; total: number }[] = []
+      if (shiftForError) {
+        try {
+          const orders = await db.order.findMany({
+            where: {
+              locationId: shiftForError.locationId,
+              employeeId: shiftForError.employeeId,
+              status: { in: ['open', 'sent', 'in_progress', 'split'] },
+              deletedAt: null,
+            },
+            select: {
+              id: true,
+              orderNumber: true,
+              tabName: true,
+              status: true,
+              total: true,
+            },
+            orderBy: { createdAt: 'desc' },
+          })
+          openOrders = orders.map(o => ({
+            id: o.id,
+            orderNumber: o.orderNumber,
+            tabName: o.tabName,
+            status: o.status,
+            total: Number(o.total),
+          }))
+        } catch {
+          // If fetching details fails, still return the count-based response
+        }
+      }
+
+      // Check if employee owns any active tip groups
+      let tipGroupsOwned: { id: string; memberCount: number }[] = []
+      if (shiftForError) {
+        try {
+          const groups = await db.tipGroup.findMany({
+            where: {
+              locationId: shiftForError.locationId,
+              ownerId: shiftForError.employeeId,
+              status: 'active',
+            },
+            select: {
+              id: true,
+            },
+          })
+          // Count active memberships separately to avoid _count typing issues
+          const groupsWithCounts = await Promise.all(
+            groups.map(async (g) => {
+              const memberCount = await db.tipGroupMembership.count({
+                where: { groupId: g.id, status: 'active', deletedAt: null },
+              })
+              return { id: g.id, memberCount }
+            })
+          )
+          tipGroupsOwned = groupsWithCounts
+        } catch {
+          // tipGroup table may not exist in all deployments
+        }
+      }
+
       return NextResponse.json(
         {
           error: 'Cannot close shift with open orders',
           openOrderCount,
+          openOrders,
+          canTransfer: true,
+          tipGroupsOwned,
           requiresManagerOverride: true,
         },
         { status: 409 }

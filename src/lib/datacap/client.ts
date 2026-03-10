@@ -21,6 +21,7 @@ import type {
   SaleByRecordParams,
   PreAuthByRecordParams,
   AuthOnlyParams,
+  KeyedSaleParams,
   TranCode,
 } from './types'
 import { validateDatacapConfig } from './types'
@@ -444,6 +445,48 @@ export class DatacapClient {
       const response = await this.send(reader, xml)
       return this.handleResponse(readerId, response)
     })
+  }
+
+  /**
+   * Process a keyed/manual entry sale (card not present — no physical reader).
+   * Sends card data directly to Datacap cloud for authorization.
+   * IMPORTANT: Card number is NEVER logged or stored. Only last 4 digits are returned.
+   *
+   * Does NOT use withPadReset because there is no physical reader to reset.
+   * Sequence tracking uses the provided readerId for consistency.
+   *
+   * @param readerId - Payment reader ID (used for sequence tracking and config)
+   * @param params - Keyed sale parameters (card number, expiry, CVV, amounts)
+   * @returns Datacap response with authorization details
+   * @throws DatacapError if transaction fails
+   */
+  async keyedSale(readerId: string, params: KeyedSaleParams): Promise<DatacapResponse> {
+    const reader = await getReaderInfo(readerId)
+    const seqNo = await getSequenceNo(readerId)
+    const base = this.buildBaseFields(reader, seqNo)
+
+    const fields: DatacapRequestFields = {
+      ...base,
+      merchantId: base.merchantId!,
+      operatorId: base.operatorId!,
+      tranCode: TRAN_CODES.SALE,
+      invoiceNo: params.invoiceNo,
+      refNo: params.invoiceNo,
+      // Pass card number directly (not 'SecureDevice') for keyed entry
+      acctNo: params.cardNumber,
+      expDate: `${params.expiryMonth}${params.expiryYear}`,
+      cvv: params.cvv,
+      avsZipCode: params.zipCode,
+      amounts: params.amounts,
+      partialAuth: params.allowPartialAuth !== false ? 'Allow' : 'Deny',
+      recordNumberRequested: params.requestRecordNo !== false,
+      frequency: 'OneTime',
+    }
+
+    const xml = buildRequest(fields)
+    // Keyed entry goes through cloud (no physical reader interaction, no pad reset needed)
+    const response = await this.sendCloud(xml)
+    return this.handleResponse(readerId, response)
   }
 
   /**

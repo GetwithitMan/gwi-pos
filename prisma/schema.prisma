@@ -2407,6 +2407,9 @@ model Order {
   // Partial unique index (migration 024) scoped to locationId, non-null keys, non-deleted
   idempotencyKey String?
 
+  // Training mode — training orders skip real payments/printing/inventory
+  isTraining Boolean @default(false)
+
   // HA cellular sync — mutation origin tracking
   lastMutatedBy    String? // 'cloud' | 'local' | null
   originTerminalId String?
@@ -8670,7 +8673,7 @@ model OutageQueueEntry {
   recordId       String
   operation      String // INSERT, UPDATE, DELETE
   payload        Json
-  localSeq       Int // monotonic local sequence
+  localSeq       BigInt // monotonic local sequence
   idempotencyKey String    @unique // {locationId}:{tableName}:{recordId}:{localSeq}
   status         String    @default("pending") // pending, replayed, conflict, failed
   metadata       Json?

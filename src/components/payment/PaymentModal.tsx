@@ -6,12 +6,14 @@ import { calculateCardPrice, applyPriceRounding } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, PAYMENT_METHOD_LABELS } from '@/lib/payment'
 import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings, PricingProgram } from '@/lib/settings'
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
+import { ManualCardEntryModal, type ManualCardEntryResult } from './ManualCardEntryModal'
 import type { DatacapResult } from '@/hooks/useDatacap'
 import { toast } from '@/stores/toast-store'
 import { getOrderVersion, handleVersionConflict } from '@/lib/order-version'
 import { uuid } from '@/lib/uuid'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { startPaymentTiming, markRequestSent, markGatewayResponse, completePaymentTiming, type PaymentTimingEntry } from '@/lib/payment-timing'
+import { useAuthStore } from '@/stores/auth-store'
 
 export interface TabCard {
   id: string
@@ -87,7 +89,7 @@ interface HouseAccountInfo {
   status: string
 }
 
-type PaymentStep = 'method' | 'cash' | 'tip' | 'gift_card' | 'house_account' | 'datacap_card' | 'room_charge'
+type PaymentStep = 'method' | 'cash' | 'tip' | 'gift_card' | 'house_account' | 'datacap_card' | 'room_charge' | 'manual_card_entry'
 
 // Default tip settings
 const DEFAULT_TIP_SETTINGS: TipSettings = {
@@ -147,6 +149,10 @@ export function PaymentModal({
   pricingProgram,
 }: PaymentModalProps) {
   // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
+  // Permission check for manual card entry (manager-level feature)
+  const employeePermissions = useAuthStore(s => s.employee?.permissions ?? [])
+  const canKeyedEntry = employeePermissions.includes('manager.keyed_entry')
+
   // State for fetched order data (when orderTotal is not provided)
   const [fetchedOrderTotal, setFetchedOrderTotal] = useState<number | null>(null)
   const [fetchedSubtotal, setFetchedSubtotal] = useState<number | null>(null)
@@ -190,6 +196,9 @@ export function PaymentModal({
   const [selectedRoomGuest, setSelectedRoomGuest] = useState<{ reservationId: string; roomNumber: string; guestName: string; selectionId: string } | null>(null)
   const [roomChargeLookupLoading, setRoomChargeLookupLoading] = useState(false)
   const [roomChargeLookupError, setRoomChargeLookupError] = useState<string | null>(null)
+
+  // Manual card entry state
+  const [showManualEntry, setShowManualEntry] = useState(false)
 
   // Add card to tab state
   const [addingCard, setAddingCard] = useState(false)
@@ -767,6 +776,30 @@ export function PaymentModal({
     processPayments([...pendingPayments, payment], pendingPayments)
   }
 
+  // Handle Manual Card Entry success
+  const handleManualEntrySuccess = (result: ManualCardEntryResult) => {
+    setShowManualEntry(false)
+    const timing = startPaymentTiming('pay_close', orderId || undefined)
+    timing.method = 'credit'
+    markGatewayResponse(timing)
+    cardTimingRef.current = timing
+
+    const payment: PendingPayment = {
+      method: 'credit',
+      amount: currentTotal,
+      tipAmount: tipAmount,
+      cardBrand: result.cardType || 'card',
+      cardLast4: result.cardLast4 || '0000',
+      datacapRecordNo: result.recordNo,
+      datacapRefNumber: result.authCode, // Use authCode as ref for keyed entry
+      datacapSequenceNo: result.sequenceNo,
+      authCode: result.authCode,
+      entryMethod: 'Manual',
+      amountAuthorized: result.amountAuthorized ? parseFloat(result.amountAuthorized) : undefined,
+    }
+    processPayments([...pendingPayments, payment], pendingPayments)
+  }
+
   // Build the /pay request body (shared between sync and fire-and-forget paths)
   const buildPayBody = (payments: PendingPayment[]) => ({
     payments: payments.map(p => ({
@@ -1000,6 +1033,7 @@ export function PaymentModal({
   })
 
   return (
+    <>
     <div style={overlayStyle}>
       <div style={modalStyle}>
         {/* Header */}
@@ -1434,6 +1468,35 @@ export function PaymentModal({
                   <div>
                     <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Bill to Room</div>
                     <div style={{ color: '#5eead4', fontSize: 13 }}>Charge to hotel room</div>
+                  </div>
+                </button>
+              )}
+
+              {/* Manual Card Entry — manager-only, higher risk */}
+              {canKeyedEntry && paymentSettings.acceptCredit && (
+                <button
+                  onClick={() => { setSelectedMethod('credit'); setShowManualEntry(true) }}
+                  disabled={!isConnected}
+                  style={{
+                    width: '100%',
+                    height: 56,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '0 20px',
+                    borderRadius: 12,
+                    border: '1px dashed rgba(245, 158, 11, 0.4)',
+                    background: 'rgba(245, 158, 11, 0.06)',
+                    cursor: !isConnected ? 'not-allowed' : 'pointer',
+                    textAlign: 'left' as const,
+                    opacity: !isConnected ? 0.5 : 1,
+                    marginTop: 4,
+                  }}
+                >
+                  <span style={{ fontSize: 22 }}>{'\u2328'}</span>
+                  <div>
+                    <div style={{ color: '#fbbf24', fontSize: 14, fontWeight: 600 }}>Manual Card Entry</div>
+                    <div style={{ color: '#92400e', fontSize: 11 }}>Type card number (manager only)</div>
                   </div>
                 </button>
               )}
@@ -2201,5 +2264,21 @@ export function PaymentModal({
         </div>
       </div>
     </div>
+
+    {/* Manual Card Entry Modal — rendered as overlay on top of payment modal */}
+    {orderId && (
+      <ManualCardEntryModal
+        isOpen={showManualEntry}
+        onClose={() => setShowManualEntry(false)}
+        amount={currentTotal}
+        tipAmount={tipAmount}
+        orderId={orderId}
+        onSuccess={handleManualEntrySuccess}
+        onError={(errMsg) => {
+          toast.error(errMsg)
+        }}
+      />
+    )}
+    </>
   )
 }

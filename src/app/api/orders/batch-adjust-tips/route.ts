@@ -10,6 +10,7 @@ import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 interface TipAdjustment {
   orderId: string
@@ -141,6 +142,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           data: {
             tipAmount: adj.tipAmount,
             totalAmount: newTotalAmount,
+            lastMutatedBy: 'local',
           },
         })
 
@@ -167,6 +169,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             tipTotal: newOrderTipTotal,
             total: newOrderTotal,
             version: { increment: 1 },
+            lastMutatedBy: 'local',
           },
         })
 
@@ -218,6 +221,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
       }
     })
+
+    // Queue outage writes if in outage mode (fire-and-forget)
+    if (isInOutageMode()) {
+      for (const [paymentId, { order, adj }] of prefetched) {
+        if (datacapFailed.has(paymentId)) continue
+        if (!datacapApproved.has(paymentId) && !datacapSkipped.has(paymentId)) continue
+        const fullPayment = await db.payment.findUnique({ where: { id: adj.paymentId } })
+        if (fullPayment) void queueOutageWrite('Payment', adj.paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+        const fullOrder = await db.order.findUnique({ where: { id: adj.orderId } })
+        if (fullOrder) void queueOutageWrite('Order', adj.orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      }
+    }
 
     // Fire-and-forget event emission per order
     for (const info of dispatchInfos) {

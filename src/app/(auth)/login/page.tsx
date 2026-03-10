@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { PinPad } from '@/components/ui/pin-pad'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,6 +8,55 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useDevStore } from '@/stores/dev-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
+import type { LoginMessage } from '@/lib/settings'
+
+function LoginMessages() {
+  const [messages, setMessages] = useState<LoginMessage[]>([])
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(raw => {
+        const data = raw.data ?? raw
+        const s = data.settings || data
+        const loginMsgs = s.loginMessages
+        if (!loginMsgs?.enabled || !loginMsgs.messages?.length) return
+
+        // Filter out expired messages
+        const now = new Date()
+        const active = loginMsgs.messages.filter((m: LoginMessage) => {
+          if (!m.expiresAt) return true
+          return new Date(m.expiresAt) > now
+        })
+        setMessages(active)
+      })
+      .catch(() => {/* silently ignore */})
+  }, [])
+
+  if (messages.length === 0) return null
+
+  const typeStyles: Record<string, string> = {
+    info: 'bg-gray-700/80 border-gray-600 text-gray-200',
+    warning: 'bg-amber-900/60 border-amber-600 text-amber-100',
+    urgent: 'bg-red-900/70 border-red-500 text-red-100 animate-pulse',
+  }
+
+  return (
+    <div className="w-full max-w-md mt-4 space-y-2 max-h-40 overflow-y-auto">
+      {messages.map((msg, i) => (
+        <div
+          key={i}
+          className={`rounded-lg border px-4 py-2.5 text-sm ${typeStyles[msg.type] || typeStyles.info}`}
+        >
+          {msg.type === 'urgent' && (
+            <span className="font-bold mr-1.5">!</span>
+          )}
+          {msg.text}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function LoginContent() {
   const router = useRouter()
@@ -238,6 +287,7 @@ function LoginContent() {
         />
       </CardContent>
     </Card>
+    <LoginMessages />
     </>
   )
 }

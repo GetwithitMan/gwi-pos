@@ -39,10 +39,25 @@ interface TabItem {
   }[]
 }
 
+interface WalkoutRetryInfo {
+  id: string
+  status: string
+  retryCount: number
+  maxRetries: number
+  nextRetryAt: string | null
+  lastRetryError: string | null
+  collectedAt: string | null
+  writtenOffAt: string | null
+  cardType: string | null
+  cardLast4: string | null
+  amount: number
+}
+
 interface ClosedTab {
   id: string
   tabName: string | null
   customerName: string | null
+  isWalkout?: boolean
   employee: { id: string; name: string }
   openedAt: string
   closedAt: string | null

@@ -231,13 +231,13 @@ export const POST = withVenue(async function POST(
       locationId: order.locationId,
     }, { async: true }).catch(console.error)
 
-    // Queue outage write if Neon is unreachable (fire-and-forget)
+    // Queue outage write if Neon is unreachable — read back full row to
+    // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
     if (isInOutageMode()) {
-      void queueOutageWrite('Payment', paymentId, 'UPDATE', {
-        id: paymentId,
-        status: isPartial ? 'completed' : 'refunded',
-        refundedAmount: totalAlreadyRefunded + refundAmount,
-      }, order.locationId).catch(console.error)
+      const fullPayment = await db.payment.findUnique({ where: { id: paymentId } })
+      if (fullPayment) {
+        void queueOutageWrite('Payment', fullPayment.id, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      }
     }
 
     // Bug 8 + C5 fix: Proportional tip reduction on partial/full refund (fire-and-forget)

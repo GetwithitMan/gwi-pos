@@ -123,6 +123,10 @@ export interface DatacapRequestFields {
   collectData?: boolean
   // Force transaction offline (SAF storage on reader — certification test 18.x)
   forceOffline?: boolean
+  // Keyed/manual entry fields (card not present — no physical reader)
+  expDate?: string         // MMYY format
+  cvv?: string             // 3-4 digit CVV/CVC
+  avsZipCode?: string      // Billing ZIP code for AVS check
 }
 
 // ─── Response ────────────────────────────────────────────────────────────────
@@ -265,6 +269,18 @@ export interface PreAuthByRecordParams {
 export interface AuthOnlyParams {
   invoiceNo: string
   // Zero-dollar auth — validates card without a charge
+}
+
+export interface KeyedSaleParams {
+  invoiceNo: string
+  amounts: DatacapAmountFields
+  cardNumber: string       // Full PAN — only last 4 stored after tokenization
+  expiryMonth: string      // MM
+  expiryYear: string       // YY
+  cvv: string              // 3-4 digits
+  zipCode?: string         // Billing ZIP for AVS
+  requestRecordNo?: boolean
+  allowPartialAuth?: boolean
 }
 
 // ─── Discovery ───────────────────────────────────────────────────────────────

@@ -33,7 +33,7 @@ const metrics: SyncMetrics = {
   errorCount: 0,
 }
 
-/** Monotonic sub-millisecond counter for outage queue sequence uniqueness */
+/** Monotonic counter for outage queue ordering (resets on server restart — fine per outage period) */
 let outageSeqCounter = 0
 
 // ── Outage Detection ──────────────────────────────────────────────────────────
@@ -64,8 +64,8 @@ export async function queueOutageWrite(
   locationId: string,
 ): Promise<void> {
   try {
-    // M3: Monotonic localSeq — Date.now() ms * 1000 + sub-ms counter (wraps at 1000)
-    const localSeq = Date.now() * 1000 + (outageSeqCounter++ % 1000)
+    // Monotonic localSeq — simple counter, resets on restart (new outage = new sequence)
+    const localSeq = ++outageSeqCounter
     // C1: idempotencyKey = locationId:tableName:recordId:localSeq
     const idempotencyKey = `${locationId}:${tableName}:${recordId}:${localSeq}`
 

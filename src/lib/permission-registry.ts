@@ -328,6 +328,24 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     risk: 'MED',
     recommendedFor: ['Server', 'Bartender'],
   },
+  'manager.keyed_entry': {
+    label: 'Manual Card Entry',
+    description: 'Allows this employee to manually type in credit card numbers for payment (card not present).',
+    details: [
+      'Used for phone orders, damaged cards, or when the card reader fails',
+      'Higher fraud risk than card-present transactions — restrict to trusted managers',
+      'Card data is sent directly to the processor and never stored locally',
+      'All keyed entry transactions are audit-logged with employee ID',
+    ],
+    examples: [
+      'Customer calls in a phone order and reads their card number',
+      'Card chip is damaged and cannot be read by the terminal',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Manager', 'Owner'],
+  },
   'manager.cash_variance_override': {
     label: 'Cash Variance Override',
     description: "Lets this employee close out the cash drawer even when the cash counted doesn't match what the system expects.",

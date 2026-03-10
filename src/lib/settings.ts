@@ -764,6 +764,64 @@ export interface LocationSettings {
   speedOfService?: SpeedOfServiceSettings  // Speed-of-service goal/alert thresholds (optional for backward compat)
   autoGratuity?: AutoGratuitySettings  // Party-size auto-gratuity (optional for backward compat)
   ageVerification?: AgeVerificationSettings  // Age verification prompts for restricted items (optional for backward compat)
+  cashManagement?: CashManagementSettings   // Cash management thresholds and policies (optional for backward compat)
+  loginMessages?: LoginMessageSettings        // Configurable messages shown on the login screen (optional for backward compat)
+  training?: TrainingSettings                 // Training mode — suppress payments/printing/inventory for training employees (optional for backward compat)
+  comboAutoSuggest?: boolean                   // Auto-suggest combo conversions when individual items match a combo template (default: true)
+}
+
+// ─── Cash Management Settings ─────────────────────────────────────────────────
+
+export interface CashManagementSettings {
+  varianceWarningThreshold: number    // Dollar amount — variance triggers warning (default: 5.00)
+  varianceCriticalThreshold: number   // Dollar amount — variance triggers critical alert (default: 25.00)
+  requireWitnessForDrops: boolean     // Require a second employee to witness safe drops (default: false)
+  requireReasonForNoSale: boolean     // Require a reason code when opening drawer without a sale (default: true)
+  maxDropAmount: number               // Maximum single safe drop amount in dollars (default: 500.00)
+}
+
+export const DEFAULT_CASH_MANAGEMENT: CashManagementSettings = {
+  varianceWarningThreshold: 5.00,
+  varianceCriticalThreshold: 25.00,
+  requireWitnessForDrops: false,
+  requireReasonForNoSale: true,
+  maxDropAmount: 500.00,
+}
+
+// ─── Login Message Settings ──────────────────────────────────────────────────
+
+export interface LoginMessage {
+  text: string
+  type: 'info' | 'warning' | 'urgent'
+  expiresAt?: string  // ISO date, null/undefined = permanent
+}
+
+export interface LoginMessageSettings {
+  enabled: boolean
+  messages: LoginMessage[]
+}
+
+export const DEFAULT_LOGIN_MESSAGES: LoginMessageSettings = {
+  enabled: false,
+  messages: [],
+}
+
+// ─── Training Mode Settings ─────────────────────────────────────────────────
+
+export interface TrainingSettings {
+  enabled: boolean                   // Master toggle
+  trainingEmployeeIds: string[]      // Employees currently in training mode
+  suppressInventory: boolean         // Don't deduct inventory for training orders (default: true)
+  suppressPayments: boolean          // Don't hit Datacap for training orders (default: true)
+  suppressPrinting: boolean          // Don't print kitchen tickets for training orders (default: true)
+}
+
+export const DEFAULT_TRAINING_SETTINGS: TrainingSettings = {
+  enabled: false,
+  trainingEmployeeIds: [],
+  suppressInventory: true,
+  suppressPayments: true,
+  suppressPrinting: true,
 }
 
 // ─── KDS Settings ──────────────────────────────────────────────────────────────
@@ -984,6 +1042,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     void2FAThreshold: 200,
   },
   localDataRetention: 'monthly',
+  cashManagement: DEFAULT_CASH_MANAGEMENT,
 }
 
 // Merge partial settings with defaults
@@ -1111,6 +1170,16 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     speedOfService: partial.speedOfService
       ? { ...DEFAULT_SPEED_OF_SERVICE, ...partial.speedOfService }
       : undefined,
+    cashManagement: partial.cashManagement
+      ? { ...DEFAULT_CASH_MANAGEMENT, ...partial.cashManagement }
+      : DEFAULT_CASH_MANAGEMENT,
+    loginMessages: partial.loginMessages
+      ? { ...DEFAULT_LOGIN_MESSAGES, ...partial.loginMessages, messages: partial.loginMessages.messages ?? [] }
+      : undefined,
+    training: partial.training
+      ? { ...DEFAULT_TRAINING_SETTINGS, ...partial.training, trainingEmployeeIds: partial.training.trainingEmployeeIds ?? [] }
+      : undefined,
+    comboAutoSuggest: partial.comboAutoSuggest ?? true,
   }
 }
 

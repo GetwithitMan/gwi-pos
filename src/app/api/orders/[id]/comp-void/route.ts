@@ -852,16 +852,13 @@ export const POST = withVenue(async function POST(
         total: parentTotals.total,
       }, { async: true }).catch(() => {})
 
-      // Queue outage write for parent order totals if Neon is unreachable
+      // Queue outage write for parent order totals if Neon is unreachable —
+      // read back full row to avoid NOT NULL constraint violations on replay
       if (isInOutageMode()) {
-        void queueOutageWrite('Order', order.parentOrderId, 'UPDATE', {
-          id: order.parentOrderId,
-          subtotal: parentTotals.subtotal,
-          taxTotal: parentTotals.taxTotal,
-          total: parentTotals.total,
-          discountTotal: parentTotals.discountTotal,
-          itemCount: parentTotals.itemCount,
-        }, order.locationId).catch(console.error)
+        const fullParentOrder = await db.order.findUnique({ where: { id: order.parentOrderId! } })
+        if (fullParentOrder) {
+          void queueOutageWrite('Order', fullParentOrder.id, 'UPDATE', fullParentOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+        }
       }
     }
 

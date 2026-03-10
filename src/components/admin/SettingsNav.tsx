@@ -94,6 +94,7 @@ const settingsSections: SettingsSection[] = [
     permission: PERMISSIONS.SETTINGS_FLOOR,
     items: [
       { name: 'Floor Plan Editor', href: '/settings/floor-plan' },
+      { name: 'Section Assignments', href: '/settings/sections' },
       { name: 'Reservations', href: '/settings/reservations' },
       { name: 'Entertainment', href: '/settings/entertainment' },
       { name: 'Events', href: '/settings/events' },

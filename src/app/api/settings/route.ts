@@ -225,6 +225,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       hotelPms: settings.hotelPms !== undefined
         ? { ...(currentSettings.hotelPms ?? {}), ...settings.hotelPms }
         : currentSettings.hotelPms,
+      loginMessages: settings.loginMessages !== undefined
+        ? settings.loginMessages
+        : currentSettings.loginMessages,
+      training: settings.training !== undefined
+        ? { ...(currentSettings.training ?? {}), ...settings.training }
+        : currentSettings.training,
     })
 
     // P0.1: Preserve existing secrets — never overwrite with empty values.

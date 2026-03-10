@@ -109,6 +109,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         taxTotal: Number(tab.taxTotal),
         tipTotal,
         total: Number(tab.total),
+        isWalkout: tab.isWalkout || undefined,
         paidTotal,
         paymentMethods,
         itemCount: tab.items.reduce((sum, i) => sum + i.quantity, 0),

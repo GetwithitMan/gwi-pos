@@ -14,6 +14,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -657,7 +658,7 @@ export const POST = withVenue(async function POST(
       timestamp: now.toISOString(),
     })
 
-    await db.$transaction(async (tx) => {
+    const createdPaymentId = await db.$transaction(async (tx) => {
       // Acquire row lock for the write phase
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
@@ -703,6 +704,7 @@ export const POST = withVenue(async function POST(
           capturedAmount: totalCaptured,
           capturedAt: now,
           tipAmount: finalTipAmount,
+          lastMutatedBy: 'local',
         },
       })
       await tx.order.update({
@@ -715,12 +717,13 @@ export const POST = withVenue(async function POST(
           tipTotal: finalTipAmount,
           total: totalCaptured,
           version: { increment: 1 },
+          lastMutatedBy: 'local',
         },
       })
       // BUG #455: Create Payment record for close-tab capture
       // Use order.employeeId (the selling employee) for sale credit, not the
       // request body's employeeId (the person who physically closed the tab).
-      await tx.payment.create({
+      const createdPayment = await tx.payment.create({
         data: {
           locationId,
           orderId,
@@ -735,6 +738,7 @@ export const POST = withVenue(async function POST(
           datacapRecordNo: capturedCard.recordNo,
           entryMethod: 'Chip', // Tab was opened with card present
           status: 'completed',
+          lastMutatedBy: 'local',
         },
       })
       // Void any remaining authorized cards
@@ -744,6 +748,7 @@ export const POST = withVenue(async function POST(
           data: { status: 'voided' },
         })
       }
+      return createdPayment.id
     })
 
     // PAYMENT-SAFETY: Phase 3 DB write succeeded — mark the pending capture as completed.
@@ -760,6 +765,14 @@ export const POST = withVenue(async function POST(
         pendingCaptureId, orderId, error: pcErr instanceof Error ? pcErr.message : String(pcErr),
       })
     })
+
+    // Queue outage writes if in outage mode (fire-and-forget)
+    if (isInOutageMode()) {
+      const fullPayment = await db.payment.findUnique({ where: { id: createdPaymentId } })
+      if (fullPayment) void queueOutageWrite('Payment', createdPaymentId, 'INSERT', fullPayment as unknown as Record<string, unknown>, locationId).catch(console.error)
+      const fullOrder = await db.order.findUnique({ where: { id: orderId } })
+      if (fullOrder) void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, locationId).catch(console.error)
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // POST-TRANSACTION: Fire-and-forget side effects (unchanged from original)

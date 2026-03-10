@@ -207,10 +207,17 @@ export const PATCH = withVenue(async function PATCH(
     // Dispatch open orders changed for cross-terminal awareness (fire-and-forget)
     void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }).catch(console.error)
 
-    // Queue outage writes if Neon is unreachable
+    // Queue outage writes if Neon is unreachable — read back full rows to
+    // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
     if (isInOutageMode()) {
-      void queueOutageWrite('Payment', payment.id, 'UPDATE', { id: payment.id, tipAmount: newTipAmount, totalAmount: newTotalAmount } as Record<string, unknown>, order.locationId).catch(console.error)
-      void queueOutageWrite('Order', orderId, 'UPDATE', { id: orderId, tipTotal: newOrderTipTotal, total: newOrderTotal } as Record<string, unknown>, order.locationId).catch(console.error)
+      const fullPayment = await db.payment.findUnique({ where: { id: payment.id } })
+      if (fullPayment) {
+        void queueOutageWrite('Payment', fullPayment.id, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      }
+      const fullOrder = await db.order.findUnique({ where: { id: orderId } })
+      if (fullOrder) {
+        void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      }
     }
 
     // Emit order event for tip adjustment (fire-and-forget)

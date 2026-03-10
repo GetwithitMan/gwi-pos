@@ -15,6 +15,8 @@ import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationCon
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import { checkOrderClaim } from '@/lib/order-claim'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -226,9 +228,13 @@ export const POST = withVenue(withTiming(async function POST(
 
     timing.end('db-update', 'Batch status updates')
 
-    // Queue for Neon replay if in outage mode (fire-and-forget)
+    // Queue for Neon replay if in outage mode — read back full row to
+    // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
     if (isInOutageMode()) {
-      void queueOutageWrite('Order', order.id, 'UPDATE', { id: order.id, status: order.status === 'draft' ? 'open' : order.status, kitchenStatus: 'sent', originTerminalId: order.originTerminalId || null }, order.locationId).catch(console.error)
+      const fullOrder = await db.order.findUnique({ where: { id: order.id } })
+      if (fullOrder) {
+        void queueOutageWrite('Order', fullOrder.id, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      }
     }
 
     // Route order to stations using tag-based routing engine
@@ -364,15 +370,33 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // Training mode: check if order is a training order
+    const isTraining = order.isTraining === true
+    let trainingSuppress = { printing: false, inventory: false }
+    if (isTraining) {
+      const locSettings = await getLocationSettings(order.locationId)
+      const parsed = locSettings ? parseSettings(locSettings) : null
+      trainingSuppress = {
+        printing: parsed?.training?.suppressPrinting !== false,
+        inventory: parsed?.training?.suppressInventory !== false,
+      }
+    }
+
     // Fire kitchen print jobs for PRINTER-type stations (fire and forget)
-    void printKitchenTicketsForManifests(routingResult).catch(err => {
-      console.error('[API /orders/[id]/send] Kitchen print failed:', err)
-    })
+    // Training mode: skip printing if suppressPrinting is enabled
+    if (!trainingSuppress.printing) {
+      void printKitchenTicketsForManifests(routingResult).catch(err => {
+        console.error('[API /orders/[id]/send] Kitchen print failed:', err)
+      })
+    }
 
     // Deduct prep stock for sent items (fire and forget)
-    void deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {
-      console.error('[API /orders/[id]/send] Prep stock deduction failed:', err)
-    })
+    // Training mode: skip inventory deduction if suppressInventory is enabled
+    if (!trainingSuppress.inventory) {
+      void deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {
+        console.error('[API /orders/[id]/send] Prep stock deduction failed:', err)
+      })
+    }
 
     // Audit log: sent to kitchen (fire-and-forget — don't block response)
     void db.auditLog.create({

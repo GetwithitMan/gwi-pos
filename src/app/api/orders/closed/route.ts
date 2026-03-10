@@ -182,6 +182,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           status: p.status,
           datacapRecordNo: p.datacapRecordNo || null,
         })),
+        isWalkout: order.isWalkout || undefined,
         hasPreAuth: false,
         preAuth: null,
         hasCardPayment,

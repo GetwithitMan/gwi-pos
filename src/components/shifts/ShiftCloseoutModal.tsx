@@ -8,6 +8,7 @@ import { formatCurrency } from '@/lib/utils'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
+import { ShiftHandoffModal } from './ShiftHandoffModal'
 
 interface ShiftSummary {
   totalSales: number
@@ -18,6 +19,8 @@ interface ShiftSummary {
   cashReceived: number
   changeGiven: number
   netCashReceived: number
+  paidIn: number
+  paidOut: number
   orderCount: number
   paymentCount: number
   voidCount: number
@@ -151,6 +154,10 @@ export function ShiftCloseoutModal({
 
   // Open orders block state
   const [openOrderBlock, setOpenOrderBlock] = useState<{ count: number } | null>(null)
+  // Handoff modal state
+  const [showHandoffModal, setShowHandoffModal] = useState(false)
+  const [handoffOpenOrders, setHandoffOpenOrders] = useState<{ id: string; orderNumber: number | null; tabName: string | null; status: string; total: number }[]>([])
+  const [handoffTipGroups, setHandoffTipGroups] = useState<{ id: string; memberCount: number }[]>([])
 
   // Closeout result
   const [closeoutResult, setCloseoutResult] = useState<{
@@ -186,8 +193,12 @@ export function ShiftCloseoutModal({
   )
 
   const actualCash = useManual ? parseFloat(manualTotal) || 0 : countedTotal
-  // Only calculate expected if summary is loaded (after reveal)
-  const expectedCash = (shift?.startingCash || 0) + (summary?.netCashReceived || 0)
+  // Expected cash = starting cash + net cash received + paid-in - paid-out (includes safe drops)
+  // Matches server-side formula in shifts/[id]/route.ts PUT handler
+  const expectedCash = (shift?.startingCash || 0)
+    + (summary?.netCashReceived || 0)
+    + (summary?.paidIn || 0)
+    - (summary?.paidOut || 0)
   const variance = summary ? actualCash - expectedCash : 0
 
   // Reset state when modal opens
@@ -202,6 +213,9 @@ export function ShiftCloseoutModal({
       setNotes('')
       setCloseoutResult(null)
       setOpenOrderBlock(null)
+      setShowHandoffModal(false)
+      setHandoffOpenOrders([])
+      setHandoffTipGroups([])
       setViewedSummaryFirst(false)
       setError(null)
       // Reset tip sharing state
@@ -510,6 +524,9 @@ export function ShiftCloseoutModal({
         const data = await response.json()
         if (response.status === 409 && data.requiresManagerOverride) {
           setOpenOrderBlock({ count: data.openOrderCount })
+          // Capture detailed order list and tip groups for the handoff modal
+          if (data.openOrders) setHandoffOpenOrders(data.openOrders)
+          if (data.tipGroupsOwned) setHandoffTipGroups(data.tipGroupsOwned)
           return
         }
         throw new Error(data.error || 'Failed to close shift')
@@ -552,6 +569,7 @@ export function ShiftCloseoutModal({
   }
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={onClose} title="Close Out Shift" size="2xl" variant="default">
         <p className="text-sm text-gray-600 -mt-3 mb-4">
           {shift.employee.name} • Started {formatTime(shift.startedAt)} ({formatDuration(shift.startedAt)})
@@ -737,6 +755,8 @@ export function ShiftCloseoutModal({
                     </div>
                   </Card>
 
+                  {/* Cash Drawer breakdown — only visible to managers with full cash drawer access */}
+                  {canSeeExpectedFirst && (
                   <Card className="p-4 bg-blue-50">
                     <div className="text-sm font-medium mb-2">Cash Drawer</div>
                     <div className="space-y-2">
@@ -752,12 +772,29 @@ export function ShiftCloseoutModal({
                         <span className="text-gray-600">Change Given</span>
                         <span className="font-medium text-red-600">-{formatCurrency(summary.changeGiven)}</span>
                       </div>
+                      {(summary.paidIn > 0 || summary.paidOut > 0) && (
+                        <>
+                          {summary.paidIn > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Paid In</span>
+                              <span className="font-medium text-green-600">+{formatCurrency(summary.paidIn)}</span>
+                            </div>
+                          )}
+                          {summary.paidOut > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Paid Out / Drops</span>
+                              <span className="font-medium text-red-600">-{formatCurrency(summary.paidOut)}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
                       <div className="flex justify-between border-t pt-2 font-bold">
                         <span>Expected in Drawer</span>
                         <span>{formatCurrency(expectedCash)}</span>
                       </div>
                     </div>
                   </Card>
+                  )}
 
                   {(summary.voidCount > 0 || summary.compCount > 0) && (
                     <Card className="p-4 bg-yellow-50">
@@ -1253,6 +1290,12 @@ export function ShiftCloseoutModal({
                       </p>
                       <div className="flex gap-2">
                         <button
+                          onClick={() => setShowHandoffModal(true)}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded transition-colors"
+                        >
+                          Transfer Orders
+                        </button>
+                        <button
                           onClick={() => {
                             onClose()
                             router.push('/orders')
@@ -1459,5 +1502,26 @@ export function ShiftCloseoutModal({
           )}
         </div>
     </Modal>
+
+    {/* Shift Handoff Modal — nested modal for transferring orders */}
+    <ShiftHandoffModal
+      isOpen={showHandoffModal}
+      onClose={() => setShowHandoffModal(false)}
+      shiftId={shift.id}
+      employeeId={shift.employee.id}
+      locationId={shift.locationId || ''}
+      openOrders={handoffOpenOrders}
+      tipGroupsOwned={handoffTipGroups}
+      onHandoffComplete={() => {
+        // After handoff, clear the block and re-attempt shift close
+        setOpenOrderBlock(null)
+        setShowHandoffModal(false)
+        setHandoffOpenOrders([])
+        setHandoffTipGroups([])
+        // Re-trigger the close shift flow — the orders are now transferred
+        handleCloseShift()
+      }}
+    />
+    </>
   )
 }

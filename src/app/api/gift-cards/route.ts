@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
+import { sendGiftCardEmail } from '@/lib/gift-card-email'
 
 // Generate a unique gift card number
 function generateCardNumber(): string {
@@ -155,6 +156,26 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
 
     // Audit trail for gift card creation
     console.log(`[AUDIT] GIFT_CARD_CREATED: card=${giftCard.cardNumber}, balance=$${Number(giftCard.initialBalance)}, by employee ${purchasedById}, orderId=${orderId || 'NONE'}`)
+
+    // Fire-and-forget: Send gift card email to recipient if email provided
+    if (recipientEmail) {
+      // Look up location name for the email
+      const location = await db.location.findUnique({
+        where: { id: locationId },
+        select: { name: true, address: true },
+      })
+
+      void sendGiftCardEmail({
+        recipientEmail,
+        recipientName: recipientName || undefined,
+        cardCode: giftCard.cardNumber,
+        balance: Number(giftCard.initialBalance),
+        fromName: purchaserName || undefined,
+        message: message || undefined,
+        locationName: location?.name || 'Our Restaurant',
+        locationAddress: location?.address || undefined,
+      }).catch(err => console.error('[GiftCard] Email delivery failed:', err))
+    }
 
     return NextResponse.json({ data: {
       ...giftCard,
