@@ -11,6 +11,7 @@ import {
   getActiveRate,
   type EntertainmentPricing,
 } from '@/lib/entertainment-pricing'
+import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -137,6 +138,8 @@ export async function GET(request: NextRequest) {
           expiresAt: null,
         }).catch(console.error)
 
+        void notifyNextWaitlistEntry(item.order.locationId, item.menuItem.id, item.menuItem.name).catch(console.error)
+
         continue
       }
 
@@ -218,6 +221,8 @@ export async function GET(request: NextRequest) {
           currentOrderId: null,
           expiresAt: null,
         }).catch(console.error)
+
+        void notifyNextWaitlistEntry(item.order.locationId, item.menuItem.id, item.menuItem.name).catch(console.error)
 
         // Emit ITEM_UPDATED order event for the price change
         void emitOrderEvent(

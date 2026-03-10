@@ -6,6 +6,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { calculateCharge, getActiveRate, type EntertainmentPricing, type HappyHourConfig, type ChargeBreakdown } from '@/lib/entertainment-pricing'
 import { emitToLocation } from '@/lib/socket-server'
 import { recalculatePercentDiscounts } from '@/lib/order-calculations'
+import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 
 // POST - Start block time for an order item
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -651,47 +652,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     }, { async: true }).catch(() => {})
 
     // Auto-notify next waitlist entry for this entertainment item
-    void (async () => {
-      try {
-        const floorPlanElement = await db.floorPlanElement.findFirst({
-          where: { linkedMenuItemId: orderItem.menuItemId, deletedAt: null },
-          select: { id: true, visualType: true },
-        })
-
-        if (floorPlanElement) {
-          const nextWaiting = await db.entertainmentWaitlist.findFirst({
-            where: {
-              locationId: orderItem.order.locationId,
-              deletedAt: null,
-              status: 'waiting',
-              OR: [
-                { elementId: floorPlanElement.id },
-                { visualType: floorPlanElement.visualType },
-              ],
-            },
-            orderBy: { position: 'asc' },
-          })
-
-          if (nextWaiting) {
-            await db.entertainmentWaitlist.update({
-              where: { id: nextWaiting.id },
-              data: { status: 'notified', notifiedAt: new Date() },
-            })
-
-            // Emit waitlist notification to all terminals
-            void emitToLocation(orderItem.order.locationId, 'entertainment:waitlist-notify', {
-              entryId: nextWaiting.id,
-              customerName: nextWaiting.customerName,
-              elementId: floorPlanElement.id,
-              elementName: floorPlanElement.visualType,
-              message: `${nextWaiting.customerName || 'Next customer'} — your ${itemName || 'entertainment item'} is now available!`,
-            }).catch(() => {})
-          }
-        }
-      } catch (err) {
-        console.error('Failed to auto-notify waitlist:', err)
-      }
-    })()
+    void notifyNextWaitlistEntry(orderItem.order.locationId, orderItem.menuItemId, itemName).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

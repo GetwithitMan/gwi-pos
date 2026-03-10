@@ -340,6 +340,17 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    if (cardsToTry.length > 1 && !orderCardId) {
+      await db.order.update({
+        where: { id: orderId },
+        data: { tabStatus: 'open', version: { increment: 1 } },
+      })
+      return NextResponse.json(
+        { error: 'Multiple cards on tab. Please specify which card to charge.', code: 'CARD_SELECTION_REQUIRED', cards: order.cards.map(c => ({ id: c.id, last4: c.last4, cardBrand: c.cardBrand })) },
+        { status: 400 }
+      )
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PHASE 2: External Datacap API calls (NO database lock held)
     // This is the slow part (500-3000ms). No other terminal is blocked.

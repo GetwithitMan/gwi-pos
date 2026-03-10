@@ -4,6 +4,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 
 // POST - Void an unclosed tab (releases all card holds)
 // Fires VoidSaleByRecordNo for each authorized OrderCard
@@ -177,6 +178,7 @@ export const POST = withVenue(async function POST(
           currentOrderId: null,
           expiresAt: null,
         }, { async: true }).catch(() => {})
+        void notifyNextWaitlistEntry(locationId, itemId).catch(() => {})
       }
       if (cleanedEntertainmentIds.length > 0) {
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})

@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -36,6 +37,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const stats = {
       tablesReset: 0,
       orphanedOrdersClosed: 0,
+      entertainmentReset: 0,
     }
 
     // Find tables with occupied status but no open orders (orphaned status)
@@ -108,6 +110,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const now = new Date()
 
     // Execute the reset in a transaction
+    let cleanedEntertainmentIds: string[] = []
     await db.$transaction(async (tx) => {
       // 1. Reset all tables to 'available' status (except those with open orders)
       const tablesWithOpenOrders = await tx.table.findMany({
@@ -181,7 +184,55 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
       }
 
-      // 3. Create master audit log for EOD reset
+      // 3. Reset any stale entertainment items still marked in_use
+      const staleEntertainment = await tx.menuItem.findMany({
+        where: {
+          locationId,
+          itemType: 'timed_rental',
+          entertainmentStatus: 'in_use',
+        },
+        select: { id: true, name: true },
+      })
+
+      if (staleEntertainment.length > 0) {
+        await tx.menuItem.updateMany({
+          where: {
+            id: { in: staleEntertainment.map(i => i.id) },
+          },
+          data: {
+            entertainmentStatus: 'available',
+            currentOrderId: null,
+            currentOrderItemId: null,
+          },
+        })
+
+        for (const item of staleEntertainment) {
+          await tx.floorPlanElement.updateMany({
+            where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
+            data: {
+              status: 'available',
+              currentOrderId: null,
+              sessionStartedAt: null,
+              sessionExpiresAt: null,
+            },
+          })
+        }
+
+        stats.entertainmentReset = staleEntertainment.length
+        cleanedEntertainmentIds = staleEntertainment.map(i => i.id)
+      }
+
+      // Expire all waiting/notified waitlist entries for this location
+      await tx.entertainmentWaitlist.updateMany({
+        where: {
+          locationId,
+          deletedAt: null,
+          status: { in: ['waiting', 'notified'] },
+        },
+        data: { status: 'expired' },
+      })
+
+      // 4. Create master audit log for EOD reset
       await tx.auditLog.create({
         data: {
           locationId,
@@ -192,6 +243,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           details: {
             tablesReset: stats.tablesReset,
             staleOrdersDetected: stats.orphanedOrdersClosed,
+            entertainmentReset: stats.entertainmentReset,
             timestamp: new Date().toISOString(),
           },
         },
@@ -215,11 +267,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})
     }
 
+    // Dispatch entertainment socket events + waitlist notifications
+    if (cleanedEntertainmentIds.length > 0) {
+      void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+      for (const itemId of cleanedEntertainmentIds) {
+        void dispatchEntertainmentStatusChanged(locationId, {
+          itemId,
+          entertainmentStatus: 'available',
+          currentOrderId: null,
+          expiresAt: null,
+        }, { async: true }).catch(() => {})
+        void notifyNextWaitlistEntry(locationId, itemId).catch(() => {})
+      }
+    }
+
     // Notify all terminals that EOD reset is complete (manager notification)
     void emitToLocation(locationId, 'eod:reset-complete', {
       cancelledDrafts: 0,
       rolledOverOrders: stats.orphanedOrdersClosed,
       tablesReset: stats.tablesReset,
+      entertainmentReset: stats.entertainmentReset,
       businessDay: currentBusinessDayStart.toISOString().split('T')[0],
     }).catch(console.error)
 
@@ -228,6 +295,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       stats: {
         tablesReset: stats.tablesReset,
         staleOrdersDetected: stats.orphanedOrdersClosed,
+        entertainmentReset: stats.entertainmentReset,
       },
       warnings: staleOpenOrders.length > 0
         ? [`${staleOpenOrders.length} stale order(s) detected. Please review manually.`]
