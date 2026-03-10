@@ -1,0 +1,167 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
+import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
+import {
+  dispatchOrderTotalsUpdate,
+  dispatchOpenOrdersChanged,
+  dispatchOrderSummaryUpdated,
+  buildOrderSummary,
+} from '@/lib/socket-dispatch'
+
+/**
+ * POST /api/orders/[id]/auto-discounts
+ *
+ * Manually trigger auto-discount evaluation for an order.
+ * Useful for re-evaluating after manual changes or debugging.
+ */
+export const POST = withVenue(async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: orderId } = await params
+
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, locationId: true, status: true },
+    })
+
+    if (!order) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
+    if (order.status !== 'open' && order.status !== 'draft' && order.status !== 'in_progress') {
+      return NextResponse.json(
+        { error: 'Cannot evaluate discounts on a closed order' },
+        { status: 400 }
+      )
+    }
+
+    const result = await evaluateAutoDiscounts(orderId, order.locationId)
+
+    // Fire-and-forget socket dispatches for cross-terminal sync
+    if (result.applied.length > 0 || result.removed.length > 0) {
+      const updatedOrder = await db.order.findUnique({
+        where: { id: orderId },
+        include: { table: { select: { name: true } } },
+      })
+
+      if (updatedOrder) {
+        void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+          subtotal: Number(updatedOrder.subtotal),
+          taxTotal: Number(updatedOrder.taxTotal),
+          tipTotal: Number(updatedOrder.tipTotal),
+          discountTotal: Number(updatedOrder.discountTotal),
+          total: Number(updatedOrder.total),
+          commissionTotal: Number(updatedOrder.commissionTotal || 0),
+        }).catch(console.error)
+
+        void dispatchOpenOrdersChanged(order.locationId, {
+          trigger: 'item_updated',
+          orderId,
+        }).catch(console.error)
+
+        void dispatchOrderSummaryUpdated(
+          order.locationId,
+          buildOrderSummary(updatedOrder),
+        ).catch(console.error)
+      }
+    }
+
+    return NextResponse.json({
+      data: {
+        applied: result.applied,
+        removed: result.removed,
+        appliedCount: result.applied.length,
+        removedCount: result.removed.length,
+      },
+    })
+  } catch (error) {
+    console.error('Failed to evaluate auto-discounts:', error)
+    return NextResponse.json(
+      { error: 'Failed to evaluate auto-discounts' },
+      { status: 500 }
+    )
+  }
+})
+
+/**
+ * GET /api/orders/[id]/auto-discounts
+ *
+ * Return currently applied auto-discounts for an order.
+ */
+export const GET = withVenue(async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: orderId } = await params
+
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, locationId: true },
+    })
+
+    if (!order) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
+    const autoDiscounts = await db.orderDiscount.findMany({
+      where: {
+        orderId,
+        locationId: order.locationId,
+        isAutomatic: true,
+        deletedAt: null,
+      },
+      include: {
+        discountRule: {
+          select: {
+            id: true,
+            name: true,
+            displayText: true,
+            discountType: true,
+            isStackable: true,
+            priority: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    return NextResponse.json({
+      data: {
+        discounts: autoDiscounts.map(d => ({
+          id: d.id,
+          name: d.name,
+          amount: Number(d.amount),
+          percent: d.percent ? Number(d.percent) : null,
+          discountRuleId: d.discountRuleId,
+          rule: d.discountRule ? {
+            id: d.discountRule.id,
+            name: d.discountRule.name,
+            displayText: d.discountRule.displayText,
+            discountType: d.discountRule.discountType,
+            isStackable: d.discountRule.isStackable,
+            priority: d.discountRule.priority,
+          } : null,
+          reason: d.reason,
+          createdAt: d.createdAt.toISOString(),
+        })),
+        count: autoDiscounts.length,
+      },
+    })
+  } catch (error) {
+    console.error('Failed to fetch auto-discounts:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch auto-discounts' },
+      { status: 500 }
+    )
+  }
+})
