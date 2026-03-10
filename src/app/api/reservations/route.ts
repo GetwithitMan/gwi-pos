@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings } from '@/lib/settings'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -196,6 +197,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
+    // Check if deposit is required based on settings + party size
+    const location = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const settings = parseSettings(location?.settings)
+    const depositSettings = settings.reservationDeposits
+
+    let depositRequired = false
+    let depositAmount = 0
+
+    if (depositSettings?.enabled) {
+      const threshold = depositSettings.requireForPartySize ?? 6
+      if (partySize >= threshold) {
+        depositRequired = true
+        depositAmount = depositSettings.defaultAmount ?? 50
+      }
+    }
+
     const reservation = await db.reservation.create({
       data: {
         locationId,
@@ -241,7 +261,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(reservation)
+    // Write deposit fields via raw SQL (columns added by migration 029)
+    if (depositRequired) {
+      void db.$executeRawUnsafe(
+        `UPDATE "Reservation" SET "depositRequired" = true, "depositAmount" = $1 WHERE id = $2`,
+        depositAmount, reservation.id
+      ).catch(console.error)
+    }
+
+    return NextResponse.json({
+      ...reservation,
+      depositRequired,
+      depositAmount,
+    })
   } catch (error) {
     console.error('Failed to create reservation:', error)
     return NextResponse.json(

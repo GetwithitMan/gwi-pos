@@ -1677,7 +1677,7 @@ export const POST = withVenue(withTiming(async function POST(
             await batchUpdateOrderItemStatus(autoSendIds, 'sent', now)
             const routingResult = await OrderRouter.resolveRouting(orderId, autoSendIds)
             void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch(console.error)
-            void printKitchenTicketsForManifests(routingResult).catch(console.error)
+            void printKitchenTicketsForManifests(routingResult, order.locationId).catch(console.error)
             void deductPrepStockForOrder(orderId, autoSendIds).catch(console.error)
             void emitOrderEvent(order.locationId, orderId, 'ORDER_SENT', { sentItemIds: autoSendIds })
           } catch (err) {
@@ -2250,6 +2250,25 @@ export const POST = withVenue(withTiming(async function POST(
       customerId: order.customer?.id || null,
       // Auto-gratuity info (when applied)
       ...(autoGratApplied ? { autoGratuityApplied: true, autoGratuityNote: autoGratNote } : {}),
+      // Card-on-file: signal to front-end that card can be saved (fire-and-forget check)
+      ...(() => {
+        try {
+          if (!settings.cardOnFile?.enabled || !settings.cardOnFile.allowSaveCard) return {}
+          if (!order.customer?.id) return {}
+          const cardPayment = ingestResult.bridgedPayments.find(
+            (p: any) => (p.paymentMethod === 'credit' || p.paymentMethod === 'debit') && p.cardLast4 && p.datacapRecordNo
+          )
+          if (!cardPayment) return {}
+          return {
+            canSaveCard: true,
+            saveCardInfo: {
+              last4: cardPayment.cardLast4,
+              cardBrand: cardPayment.cardBrand || 'UNKNOWN',
+              token: cardPayment.datacapRecordNo,
+            },
+          }
+        } catch { return {} }
+      })(),
     } })
   } catch (error) {
     console.error('Failed to process payment:', error)

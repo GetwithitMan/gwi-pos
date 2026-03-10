@@ -156,6 +156,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Cellular device count limit check (subscription-gated)
+    const { checkDeviceLimit } = await import('@/lib/device-limits')
+    const cellularLimit = await checkDeviceLimit(resolvedLocationId, 'cellular')
+    if (!cellularLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: cellularLimit.upgradeMessage,
+          code: 'DEVICE_LIMIT_EXCEEDED',
+          current: cellularLimit.current,
+          limit: cellularLimit.limit,
+        },
+        { status: 403 }
+      )
+    }
+
     // Issue a cellular JWT with the Neon-resolved locationId
     let token: string
     try {

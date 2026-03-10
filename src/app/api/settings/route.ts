@@ -231,6 +231,15 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       training: settings.training !== undefined
         ? { ...(currentSettings.training ?? {}), ...settings.training }
         : currentSettings.training,
+      accounting: settings.accounting !== undefined
+        ? { ...(currentSettings.accounting ?? {}), ...settings.accounting, glMapping: { ...(currentSettings.accounting?.glMapping ?? {}), ...(settings.accounting?.glMapping ?? {}) } }
+        : currentSettings.accounting,
+      payrollExport: settings.payrollExport !== undefined
+        ? { ...(currentSettings.payrollExport ?? {}), ...settings.payrollExport }
+        : currentSettings.payrollExport,
+      catering: settings.catering !== undefined
+        ? { ...(currentSettings.catering ?? {}), ...settings.catering }
+        : currentSettings.catering,
     })
 
     // P0.1: Preserve existing secrets — never overwrite with empty values.

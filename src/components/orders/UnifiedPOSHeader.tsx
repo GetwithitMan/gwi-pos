@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { MenuSearchResults } from '@/components/search'
 import { PendingSyncBadge } from '@/components/PendingSyncBadge'
 import { ScaleStatusBadge } from '@/components/scale/ScaleStatusBadge'
+import { PrinterStatusIndicator } from '@/components/pos/PrinterStatusIndicator'
 import type { OrderTypeConfig } from '@/types/order-types'
 
 interface SearchMenuItem {
@@ -511,6 +512,9 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
           </span>
         )}
       </button>
+
+      {/* ── Printer Status ── */}
+      <PrinterStatusIndicator />
 
       {/* ── Scale Status Badge ── */}
       <ScaleStatusBadge scaleId={scaleId} />

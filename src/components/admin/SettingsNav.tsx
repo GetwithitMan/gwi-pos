@@ -188,6 +188,8 @@ const settingsSections: SettingsSection[] = [
       { name: 'Payment Readers', href: '/settings/hardware/payment-readers' },
       { name: 'Prep Stations', href: '/settings/hardware/prep-stations' },
       { name: 'Customer Display', href: '/settings/hardware/cfd' },
+      { name: 'Transaction Limits', href: '/settings/hardware/limits' },
+      { name: 'Cellular Devices', href: '/settings/hardware/cellular' },
     ],
   },
   {
@@ -216,6 +218,7 @@ const settingsSections: SettingsSection[] = [
       { name: 'SMS (Twilio)', href: '/settings/integrations/sms' },
       { name: 'Email (Resend)', href: '/settings/integrations/email' },
       { name: 'Slack', href: '/settings/integrations/slack' },
+      { name: 'Accounting', href: '/settings/accounting' },
     ],
   },
   {

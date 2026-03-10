@@ -130,6 +130,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+    // Device count limit check (subscription-gated)
+    const { checkDeviceLimit } = await import('@/lib/device-limits')
+    const deviceType = category === 'HANDHELD' ? 'handheld' as const : 'terminal' as const
+    const limitCheck = await checkDeviceLimit(locationId, deviceType)
+    if (!limitCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: limitCheck.upgradeMessage,
+          code: 'DEVICE_LIMIT_EXCEEDED',
+          current: limitCheck.current,
+          limit: limitCheck.limit,
+        },
+        { status: 403 }
+      )
+    }
+
     // Validate required fields
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })

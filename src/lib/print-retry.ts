@@ -4,6 +4,11 @@
  * 1. dispatchPrintWithRetry — fire-and-forget HTTP dispatch with 1 retry + audit log
  * 2. retryFailedPrintJobs — batch-retry queued PrintJob records (status: 'queued', retryCount < 3)
  *
+ * When a job hits MAX_RETRY_COUNT, attemptBackupForJob tries:
+ *   1. A configured backup printer on the same PrintRoute
+ *   2. Any other active printer with the same role
+ * If no backup succeeds, marks as 'failed_permanent' and dispatches an alert.
+ *
  * Usage:
  *   void dispatchPrintWithRetry(url, body, { locationId, employeeId, orderId })
  *   const result = await retryFailedPrintJobs(locationId)
@@ -11,6 +16,8 @@
 
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
+import { dispatchPrintJobFailed } from '@/lib/socket-dispatch'
+import { dispatchAlert } from '@/lib/alert-service'
 
 const MAX_RETRY_COUNT = 3
 
@@ -64,7 +71,8 @@ export async function dispatchPrintWithRetry(
  *
  * Finds PrintJob records with status 'queued' and retryCount < MAX_RETRY_COUNT,
  * attempts to re-send each one to its printer. Updates status on success/failure.
- * After MAX_RETRY_COUNT failures, marks as 'failed_permanent'.
+ * After MAX_RETRY_COUNT failures, attempts backup printer routing before marking
+ * as 'failed_permanent'.
  */
 export async function retryFailedPrintJobs(
   locationId: string
@@ -80,9 +88,11 @@ export async function retryFailedPrintJobs(
       printer: {
         select: {
           id: true,
+          name: true,
           ipAddress: true,
           port: true,
           isActive: true,
+          printerRole: true,
         },
       },
     },
@@ -93,16 +103,21 @@ export async function retryFailedPrintJobs(
   let failed = 0
 
   for (const job of queuedJobs) {
-    // Skip jobs whose printer is no longer active
+    // Skip jobs whose printer is no longer active — try backup
     if (!job.printer.isActive) {
-      await db.printJob.update({
-        where: { id: job.id },
-        data: {
-          status: 'failed_permanent',
-          errorMessage: 'Printer is no longer active',
-        },
-      })
-      failed++
+      const backupOk = await attemptBackupForJob(job, locationId, 'Printer is no longer active')
+      if (backupOk) {
+        succeeded++
+      } else {
+        await db.printJob.update({
+          where: { id: job.id },
+          data: {
+            status: 'failed_permanent',
+            errorMessage: 'Printer is no longer active, no backup available',
+          },
+        })
+        failed++
+      }
       continue
     }
 
@@ -135,33 +150,190 @@ export async function retryFailedPrintJobs(
         succeeded++
       } else {
         const newRetryCount = job.retryCount + 1
-        const newStatus = newRetryCount >= MAX_RETRY_COUNT ? 'failed_permanent' : 'queued'
 
+        if (newRetryCount >= MAX_RETRY_COUNT) {
+          // Max retries exhausted — attempt backup printer
+          const backupOk = await attemptBackupForJob(job, locationId, result.error || 'Send failed')
+          if (backupOk) {
+            succeeded++
+          } else {
+            await db.printJob.update({
+              where: { id: job.id },
+              data: {
+                retryCount: newRetryCount,
+                status: 'failed_permanent',
+                errorMessage: result.error || 'Send failed — no backup available',
+              },
+            })
+
+            // Emit socket event + alert for permanent failure
+            void emitPermanentFailure(locationId, job).catch(console.error)
+
+            failed++
+          }
+        } else {
+          await db.printJob.update({
+            where: { id: job.id },
+            data: {
+              retryCount: newRetryCount,
+              status: 'queued',
+              errorMessage: result.error || 'Send failed',
+            },
+          })
+          failed++
+        }
+      }
+    } catch (err) {
+      const newRetryCount = job.retryCount + 1
+      const errorMsg = err instanceof Error ? err.message : String(err)
+
+      if (newRetryCount >= MAX_RETRY_COUNT) {
+        const backupOk = await attemptBackupForJob(job, locationId, errorMsg)
+        if (backupOk) {
+          succeeded++
+        } else {
+          await db.printJob.update({
+            where: { id: job.id },
+            data: {
+              retryCount: newRetryCount,
+              status: 'failed_permanent',
+              errorMessage: errorMsg + ' — no backup available',
+            },
+          })
+          void emitPermanentFailure(locationId, job).catch(console.error)
+          failed++
+        }
+      } else {
         await db.printJob.update({
           where: { id: job.id },
           data: {
             retryCount: newRetryCount,
-            status: newStatus as 'queued' | 'failed_permanent',
-            errorMessage: result.error || 'Send failed',
+            status: 'queued',
+            errorMessage: errorMsg,
           },
         })
         failed++
       }
-    } catch (err) {
-      const newRetryCount = job.retryCount + 1
-      const newStatus = newRetryCount >= MAX_RETRY_COUNT ? 'failed_permanent' : 'queued'
-
-      await db.printJob.update({
-        where: { id: job.id },
-        data: {
-          retryCount: newRetryCount,
-          status: newStatus as 'queued' | 'failed_permanent',
-          errorMessage: err instanceof Error ? err.message : String(err),
-        },
-      })
-      failed++
     }
   }
 
   return { retried: queuedJobs.length, succeeded, failed }
+}
+
+/**
+ * Attempt to route a failed job to a backup printer.
+ *
+ * Strategy 1: Find a PrintRoute whose primary printer matches, and use its backup.
+ * Strategy 2: Find any other active printer with the same role at this location.
+ *
+ * On success: marks original job as 'sent' with a note about backup routing.
+ * Returns true if backup succeeded.
+ */
+async function attemptBackupForJob(
+  job: {
+    id: string
+    content: string | null
+    orderId: string | null
+    printer: { id: string; name: string; ipAddress: string; port: number; printerRole: string }
+  },
+  locationId: string,
+  primaryError: string
+): Promise<boolean> {
+  if (!job.content) return false
+
+  const buffer = Buffer.from(job.content, 'base64')
+
+  try {
+    // Strategy 1: Configured backup via PrintRoute
+    const route = await db.printRoute.findFirst({
+      where: {
+        locationId,
+        printerId: job.printer.id,
+        backupPrinterId: { not: null },
+        deletedAt: null,
+      },
+      include: {
+        backupPrinter: {
+          select: { id: true, name: true, ipAddress: true, port: true, isActive: true },
+        },
+      },
+    })
+
+    if (route?.backupPrinter?.isActive) {
+      const backup = route.backupPrinter
+      console.log(`[PrintRetry] Trying backup printer "${backup.name}" for job ${job.id}`)
+      const result = await sendToPrinter(backup.ipAddress, backup.port, buffer)
+      if (result.success) {
+        await db.printJob.update({
+          where: { id: job.id },
+          data: {
+            status: 'sent',
+            sentAt: new Date(),
+            errorMessage: `Routed to backup: ${backup.name} (primary: ${primaryError})`,
+          },
+        })
+        return true
+      }
+      console.warn(`[PrintRetry] Backup "${backup.name}" also failed: ${result.error}`)
+    }
+
+    // Strategy 2: Any other active printer with same role
+    const altPrinter = await db.printer.findFirst({
+      where: {
+        locationId,
+        printerRole: job.printer.printerRole as 'kitchen' | 'bar' | 'receipt',
+        isActive: true,
+        deletedAt: null,
+        id: { not: job.printer.id },
+      },
+      select: { id: true, name: true, ipAddress: true, port: true },
+    })
+
+    if (altPrinter) {
+      console.log(`[PrintRetry] Trying alternate printer "${altPrinter.name}" for job ${job.id}`)
+      const result = await sendToPrinter(altPrinter.ipAddress, altPrinter.port, buffer)
+      if (result.success) {
+        await db.printJob.update({
+          where: { id: job.id },
+          data: {
+            status: 'sent',
+            sentAt: new Date(),
+            errorMessage: `Routed to fallback: ${altPrinter.name} (primary: ${primaryError})`,
+          },
+        })
+        return true
+      }
+      console.warn(`[PrintRetry] Alternate "${altPrinter.name}" also failed: ${result.error}`)
+    }
+
+    return false
+  } catch (err) {
+    console.error('[PrintRetry] Backup routing failed:', err)
+    return false
+  }
+}
+
+/**
+ * Emit socket event + alert when a print job becomes permanently failed.
+ */
+async function emitPermanentFailure(
+  locationId: string,
+  job: { id: string; orderId: string | null; printer: { name: string; id: string } }
+): Promise<void> {
+  void dispatchPrintJobFailed(locationId, {
+    orderId: job.orderId || job.id,
+    printerName: job.printer.name,
+    printerId: job.printer.id,
+    error: 'Permanently failed after max retries, no backup available',
+  }, { async: true }).catch(console.error)
+
+  void dispatchAlert({
+    severity: 'HIGH',
+    errorType: 'printer_failure',
+    category: 'hardware',
+    message: `Kitchen printer "${job.printer.name}" permanently failed for job ${job.id}. No backup printer available.`,
+    locationId,
+    orderId: job.orderId || undefined,
+    groupId: `printer-fail-${job.printer.id}`,
+  }).catch(console.error)
 }

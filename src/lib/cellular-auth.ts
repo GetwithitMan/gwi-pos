@@ -30,6 +30,70 @@ export interface CellularTokenPayload {
 }
 
 // ═══════════════════════════════════════════════════════════
+// Active session tracking (for POS admin UI)
+// ═══════════════════════════════════════════════════════════
+
+export interface ActiveCellularSession {
+  terminalId: string
+  locationId: string
+  deviceFingerprint: string
+  venueSlug: string
+  issuedAt: Date
+  expiresAt: Date
+  lastRequestAt: Date
+}
+
+/** In-memory registry of active cellular sessions (populated on token verify success) */
+const activeSessions = new Map<string, ActiveCellularSession>()
+
+/**
+ * Get all active (non-expired) cellular sessions for a location.
+ * Lazily cleans up expired entries on each call.
+ */
+export function getActiveCellularSessions(locationId: string): ActiveCellularSession[] {
+  const now = Date.now()
+  const results: ActiveCellularSession[] = []
+  for (const [key, session] of activeSessions) {
+    if (session.expiresAt.getTime() <= now) {
+      activeSessions.delete(key)
+      continue
+    }
+    if (session.locationId === locationId) {
+      results.push(session)
+    }
+  }
+  return results
+}
+
+/**
+ * Get ALL cellular sessions for a location (including expired, excluding revoked).
+ * Used by the admin page to show recently-expired devices.
+ */
+export function getAllCellularSessions(locationId: string): (ActiveCellularSession & { isExpired: boolean })[] {
+  const now = Date.now()
+  const results: (ActiveCellularSession & { isExpired: boolean })[] = []
+  // Clean up sessions expired more than 24h ago
+  const STALE_THRESHOLD = 24 * 60 * 60 * 1000
+  for (const [key, session] of activeSessions) {
+    if (now - session.expiresAt.getTime() > STALE_THRESHOLD) {
+      activeSessions.delete(key)
+      continue
+    }
+    if (session.locationId === locationId) {
+      results.push({ ...session, isExpired: session.expiresAt.getTime() <= now })
+    }
+  }
+  return results
+}
+
+/**
+ * Remove a session from the active sessions registry (called on revocation).
+ */
+export function removeActiveSession(terminalId: string, deviceFingerprint: string): void {
+  activeSessions.delete(`${terminalId}:${deviceFingerprint}`)
+}
+
+// ═══════════════════════════════════════════════════════════
 // In-memory caches (module-level singletons)
 // ═══════════════════════════════════════════════════════════
 
@@ -262,6 +326,17 @@ export async function verifyCellularToken(token: string): Promise<CellularTokenP
     // L2: Check DB for revocation (critical on Vercel where in-memory is empty after cold start)
     if (await isRevokedFromDb(payload.terminalId, payload.locationId)) return null
 
+    // Track active session for POS admin visibility
+    activeSessions.set(`${payload.terminalId}:${payload.deviceFingerprint}`, {
+      terminalId: payload.terminalId,
+      locationId: payload.locationId,
+      deviceFingerprint: payload.deviceFingerprint,
+      venueSlug: payload.venueSlug,
+      issuedAt: new Date(payload.iat * 1000),
+      expiresAt: new Date(payload.exp * 1000),
+      lastRequestAt: new Date(),
+    })
+
     return payload
   } catch {
     return null
@@ -406,6 +481,17 @@ export async function issueCellularToken(
   // Record activity on issuance
   recordActivity(terminalId)
 
+  // Track active session for POS admin visibility
+  activeSessions.set(`${terminalId}:${deviceFingerprint}`, {
+    terminalId,
+    locationId,
+    deviceFingerprint,
+    venueSlug,
+    issuedAt: new Date(payload.iat * 1000),
+    expiresAt: new Date(payload.exp * 1000),
+    lastRequestAt: new Date(),
+  })
+
   return `${headerB64}.${payloadB64}.${signatureB64}`
 }
 
@@ -531,9 +617,15 @@ async function isRevokedFromDb(terminalId: string, locationId: string): Promise<
   }
 }
 
-/** Revoke a terminal (add to deny list) */
+/** Revoke a terminal (add to deny list + remove from active sessions) */
 export function revokeTerminal(terminalId: string): void {
   denyList.set(terminalId, Date.now())
+  // Remove all sessions for this terminal from the active registry
+  for (const [key, session] of activeSessions) {
+    if (session.terminalId === terminalId) {
+      activeSessions.delete(key)
+    }
+  }
 }
 
 /** Un-revoke a terminal (remove from deny list) */
@@ -621,6 +713,13 @@ export function cleanupCaches(): void {
   // Evict stale rate limit buckets
   for (const [id, bucket] of rateLimitBuckets) {
     if (now - bucket.windowStart > 10_000) rateLimitBuckets.delete(id)
+  }
+
+  // Evict active sessions expired more than 24 hours ago
+  for (const [key, session] of activeSessions) {
+    if (now - session.expiresAt.getTime() > ONE_DAY) {
+      activeSessions.delete(key)
+    }
   }
 }
 

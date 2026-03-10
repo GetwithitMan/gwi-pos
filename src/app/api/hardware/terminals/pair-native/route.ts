@@ -34,25 +34,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Pairing code has expired' }, { status: 400 })
     }
 
-    // Hardware limit check — count active paired terminals for this location
+    // Device count limit check — use location settings instead of hardcoded limit
     const locationId = terminal.locationId
-    const activeTerminalCount = await db.terminal.count({
-      where: {
-        locationId,
-        isPaired: true,
-        deletedAt: null,
-      },
-    })
-
-    // Default limit: 20 terminals per location (Mission Control subscriptionLimits can override)
-    const TERMINAL_LIMIT = 20
-    if (activeTerminalCount >= TERMINAL_LIMIT) {
+    const { checkDeviceLimit } = await import('@/lib/device-limits')
+    const deviceType = terminal.category === 'HANDHELD' ? 'handheld' as const : 'terminal' as const
+    const limitCheck = await checkDeviceLimit(locationId, deviceType)
+    if (!limitCheck.allowed) {
       return NextResponse.json(
         {
-          error: 'Hardware limit reached. Maximum number of terminals for this location has been exceeded.',
-          code: 'LIMIT_EXCEEDED',
-          current: activeTerminalCount,
-          limit: TERMINAL_LIMIT,
+          error: limitCheck.upgradeMessage,
+          code: 'DEVICE_LIMIT_EXCEEDED',
+          current: limitCheck.current,
+          limit: limitCheck.limit,
         },
         { status: 403 }
       )

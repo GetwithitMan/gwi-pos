@@ -1515,3 +1515,38 @@ export async function dispatchCoverEntryRecorded(
 
   return doEmit()
 }
+
+/**
+ * Dispatch print job failure notification.
+ *
+ * Emitted when a kitchen print job fails after send.
+ * PrinterStatusIndicator listens for this to update the red dot.
+ */
+export async function dispatchPrintJobFailed(
+  locationId: string,
+  payload: {
+    orderId: string
+    orderNumber?: number
+    printerName: string
+    printerId?: string
+    error: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'print:job-failed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch print:job-failed:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async print:job-failed failed:', err))
+    return true
+  }
+
+  return doEmit()
+}

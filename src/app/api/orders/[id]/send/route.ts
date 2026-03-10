@@ -384,8 +384,10 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Fire kitchen print jobs for PRINTER-type stations (fire and forget)
     // Training mode: skip printing if suppressPrinting is enabled
+    // printKitchenTicketsForManifests handles per-station failover, backup routing,
+    // socket emit (print:job-failed), and alert dispatch internally.
     if (!trainingSuppress.printing) {
-      void printKitchenTicketsForManifests(routingResult).catch(err => {
+      void printKitchenTicketsForManifests(routingResult, order.locationId).catch(err => {
         console.error('[API /orders/[id]/send] Kitchen print failed:', err)
       })
     }

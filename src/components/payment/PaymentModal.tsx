@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice, applyPriceRounding } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, PAYMENT_METHOD_LABELS } from '@/lib/payment'
-import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings, PricingProgram } from '@/lib/settings'
+import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings, PricingProgram, CustomerFeedbackSettings } from '@/lib/settings'
+import { FeedbackPrompt } from './FeedbackPrompt'
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import { ManualCardEntryModal, type ManualCardEntryResult } from './ManualCardEntryModal'
 import type { DatacapResult } from '@/hooks/useDatacap'
@@ -45,6 +46,7 @@ interface PaymentModalProps {
   initialMethod?: 'cash' | 'credit'  // Skip method selection, go straight to payment
   waitForOrderReady?: () => Promise<void>  // Await background items persist before /pay
   pricingProgram?: PricingProgram  // Pricing program support
+  feedbackSettings?: CustomerFeedbackSettings  // Post-payment feedback prompt
 }
 
 interface PendingPayment {
@@ -147,6 +149,7 @@ export function PaymentModal({
   initialMethod,
   waitForOrderReady,
   pricingProgram,
+  feedbackSettings,
 }: PaymentModalProps) {
   // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
   // Permission check for manual card entry (manager-level feature)
@@ -208,6 +211,20 @@ export function PaymentModal({
 
   // Tab increment status — background indicator (Task #6)
   const [tabIncrementFailed, setTabIncrementFailed] = useState(false)
+
+  // Post-payment feedback prompt state
+  const [showFeedbackPrompt, setShowFeedbackPrompt] = useState(false)
+  const [pendingReceiptData, setPendingReceiptData] = useState<Record<string, unknown> | undefined>(undefined)
+
+  // Wrapper: show feedback prompt before completing (if enabled)
+  const maybeShowFeedback = (receiptData?: Record<string, unknown>) => {
+    if (feedbackSettings?.enabled && feedbackSettings?.promptAfterPayment) {
+      setPendingReceiptData(receiptData)
+      setShowFeedbackPrompt(true)
+    } else {
+      onPaymentComplete(receiptData)
+    }
+  }
 
   // Connection state — disable payment actions when disconnected from server
   const [isConnected, setIsConnected] = useState(true)
@@ -489,7 +506,7 @@ export function PaymentModal({
       })
       const data = await res.json()
       if (data.data?.success) {
-        onPaymentComplete()
+        maybeShowFeedback()
       } else {
         setError(data.data?.error?.message || data.error || 'Capture failed')
       }
@@ -867,7 +884,7 @@ export function PaymentModal({
           return
         }
         completePaymentTiming(cashTiming, 'success')
-        onPaymentComplete() // no receiptData → parent skips receipt modal
+        maybeShowFeedback() // no receiptData → parent skips receipt modal
       } catch {
         completePaymentTiming(cashTiming, 'error')
         toast.error('Cash payment failed — check network connection')
@@ -911,7 +928,7 @@ export function PaymentModal({
 
       if (result.orderStatus === 'paid') {
         if (cardTiming) { completePaymentTiming(cardTiming, 'success'); cardTimingRef.current = null }
-        onPaymentComplete(result.receiptData)
+        maybeShowFeedback(result.receiptData)
       } else {
         // Partial payment - reset for more payments
         setStep('method')
@@ -2276,6 +2293,21 @@ export function PaymentModal({
         onSuccess={handleManualEntrySuccess}
         onError={(errMsg) => {
           toast.error(errMsg)
+        }}
+      />
+    )}
+
+    {/* Post-payment feedback prompt */}
+    {showFeedbackPrompt && orderId && locationId && (
+      <FeedbackPrompt
+        orderId={orderId}
+        locationId={locationId}
+        employeeId={employeeId}
+        ratingScale={feedbackSettings?.ratingScale ?? 5}
+        requireComment={feedbackSettings?.requireComment ?? false}
+        onClose={() => {
+          setShowFeedbackPrompt(false)
+          onPaymentComplete(pendingReceiptData)
         }}
       />
     )}

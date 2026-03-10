@@ -8,7 +8,7 @@ import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settin
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { PaymentSettings, PriceRoundingSettings } from '@/lib/settings'
+import type { PaymentSettings, PriceRoundingSettings, EodSettings } from '@/lib/settings'
 
 export default function PaymentSettingsPage() {
   const { employee } = useRequireAuth()
@@ -19,6 +19,7 @@ export default function PaymentSettingsPage() {
   const [form, setForm] = useState<PaymentSettings | null>(null)
   const [roundingForm, setRoundingForm] = useState<PriceRoundingSettings | null>(null)
   const [hotelPmsEnabled, setHotelPmsEnabled] = useState(false)
+  const [eodSettings, setEodSettings] = useState<EodSettings | null>(null)
 
   useUnsavedWarning(isDirty)
 
@@ -32,6 +33,7 @@ export default function PaymentSettingsPage() {
         setForm(payments)
         setRoundingForm(data.settings.priceRounding)
         setHotelPmsEnabled(data.settings.hotelPms?.enabled ?? false)
+        setEodSettings(data.settings.eod ?? { autoBatchClose: true, batchCloseTime: '04:00' })
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load payment settings')
@@ -248,6 +250,40 @@ export default function PaymentSettingsPage() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Nightly Batch Close (read-only, managed from MC)
+            ═══════════════════════════════════════════ */}
+        <section className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="text-lg font-semibold text-gray-900">Nightly Batch Close</h2>
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600">View only</span>
+          </div>
+          <p className="text-sm text-gray-600 mb-4">Managed from Mission Control</p>
+
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="bg-white rounded-xl p-3 border border-gray-100">
+              <div className="text-xs text-gray-600 mb-0.5">Batch Close Time</div>
+              <div className="font-medium text-gray-900">
+                {(() => {
+                  const t = eodSettings?.batchCloseTime || '04:00'
+                  const [h, m] = t.split(':').map(Number)
+                  const ampm = h >= 12 ? 'PM' : 'AM'
+                  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+                  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+                })()}
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-3 border border-gray-100">
+              <div className="text-xs text-gray-600 mb-0.5">Auto Batch Close</div>
+              <div className="font-medium text-gray-900">{eodSettings?.autoBatchClose !== false ? 'Enabled' : 'Disabled'}</div>
+            </div>
+          </div>
+
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4">
+            All tips must be entered before the batch close time. After batch close, tip adjustments for that business day are no longer possible.
+          </p>
         </section>
 
         {/* ═══════════════════════════════════════════

@@ -683,10 +683,12 @@ export const DEFAULT_SEVEN_SHIFTS_SETTINGS: SevenShiftsSettings = {
 
 export interface EodSettings {
   autoBatchClose: boolean               // Auto-trigger Datacap batch close during EOD reset (default: true)
+  batchCloseTime: string                // HH:MM 24h format — when automated nightly batch fires (default: "04:00")
 }
 
 export const DEFAULT_EOD_SETTINGS: EodSettings = {
   autoBatchClose: true,
+  batchCloseTime: '04:00',
 }
 
 // ─── Speed-of-Service Goals Settings ─────────────────────────────────────────
@@ -729,6 +731,52 @@ export const DEFAULT_AGE_VERIFICATION: AgeVerificationSettings = {
   enabled: true,
   minimumAge: 21,
   verifyOnce: true,
+}
+
+// ─── Payroll Export Settings ──────────────────────────────────────────────────
+
+export interface PayrollExportSettings {
+  enabled: boolean                   // Master toggle (default: false)
+  provider: 'none' | 'adp' | 'gusto' | 'paychex' | 'csv'  // Payroll provider format (default: 'none')
+  includeTimeClock: boolean          // Include time clock hours in export (default: true)
+  includeTips: boolean               // Include tip data in export (default: true)
+  includeBreaks: boolean             // Include break hours in export (default: true)
+  exportFormat: 'csv' | 'json'       // Output file format (default: 'csv')
+  payPeriod: 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'  // Pay period cycle (default: 'biweekly')
+}
+
+export const DEFAULT_PAYROLL_EXPORT: PayrollExportSettings = {
+  enabled: false,
+  provider: 'none',
+  includeTimeClock: true,
+  includeTips: true,
+  includeBreaks: true,
+  exportFormat: 'csv',
+  payPeriod: 'biweekly',
+}
+
+// ─── Catering Settings ──────────────────────────────────────────────────────
+
+export interface CateringSettings {
+  enabled: boolean                   // Master toggle (default: false)
+  minAdvanceDays: number             // Minimum days in advance to place catering order (default: 3)
+  minOrderAmount: number             // Minimum order amount in dollars (default: 100.00)
+  requireDeposit: boolean            // Require deposit payment (default: true)
+  depositPercent: number             // Deposit percentage of total (default: 25)
+  serviceFeePercent: number          // Auto-applied gratuity / service fee (default: 18)
+  deliveryFee: number                // Fixed delivery fee in dollars, 0 = none (default: 0)
+  maxGuestCount: number              // Maximum guest count per order (default: 500)
+}
+
+export const DEFAULT_CATERING: CateringSettings = {
+  enabled: false,
+  minAdvanceDays: 3,
+  minOrderAmount: 100.00,
+  requireDeposit: true,
+  depositPercent: 25,
+  serviceFeePercent: 18,
+  deliveryFee: 0,
+  maxGuestCount: 500,
 }
 
 export interface LocationSettings {
@@ -778,6 +826,65 @@ export interface LocationSettings {
   qrOrdering?: QrOrderingSettings               // QR code dine-in ordering (optional for backward compat)
   waitlist?: WaitlistSettings                    // Public-facing waitlist management (optional for backward compat)
   menuRestorePoints?: MenuRestorePointSettings   // Menu snapshot restore points (optional for backward compat)
+  reservationDeposits?: ReservationDepositSettings  // Reservation deposit collection (optional for backward compat)
+  cardOnFile?: CardOnFileSettings                   // Card-on-file / saved card foundations (optional for backward compat)
+  printerFailover?: PrinterFailoverSettings         // Kitchen printer failure fallback (optional for backward compat)
+  accounting?: AccountingSettings                    // Accounting integration (QuickBooks/Xero/CSV) (optional for backward compat)
+  customerFeedback?: CustomerFeedbackSettings       // Post-payment feedback collection (optional for backward compat)
+  pourControl?: PourControlSettings                 // Pour control hardware integration (optional for backward compat)
+  payrollExport?: PayrollExportSettings             // Payroll data export (ADP/Gusto/Paychex/CSV) (optional for backward compat)
+  catering?: CateringSettings                       // Catering order management (optional for backward compat)
+  hardwareLimits?: HardwareLimitsSettings            // Per-device and per-transaction limits (optional for backward compat)
+}
+
+// ─── Printer Failover Settings ──────────────────────────────────────────────
+
+export interface PrinterFailoverSettings {
+  enabled: boolean              // Master toggle — try backup printer on failure (default: true)
+  maxRetries: number            // Max retry attempts before marking failed_permanent (default: 3)
+  alertOnFailure: boolean       // Emit manager alert when printer fails permanently (default: true)
+  showStatusIndicator: boolean  // Show printer health dot in POS header (default: true)
+}
+
+export const DEFAULT_PRINTER_FAILOVER: PrinterFailoverSettings = {
+  enabled: true,
+  maxRetries: 3,
+  alertOnFailure: true,
+  showStatusIndicator: true,
+}
+
+// ─── Reservation Deposit Settings ────────────────────────────────────────────
+
+export interface ReservationDepositSettings {
+  enabled: boolean                     // Master toggle (default: false)
+  defaultAmount: number                // Default deposit amount in dollars (default: 50.00)
+  refundableBeforeHours: number        // Refundable if cancelled X hours before reservation (default: 24)
+  requireForPartySize: number          // Require deposit for parties >= X guests (default: 6)
+  nonRefundablePercent: number         // What % is always non-refundable, 0-100 (default: 0)
+}
+
+export const DEFAULT_RESERVATION_DEPOSIT: ReservationDepositSettings = {
+  enabled: false,
+  defaultAmount: 50.00,
+  refundableBeforeHours: 24,
+  requireForPartySize: 6,
+  nonRefundablePercent: 0,
+}
+
+// ─── Card on File Settings ──────────────────────────────────────────────────
+
+export interface CardOnFileSettings {
+  enabled: boolean                     // Master toggle (default: false)
+  allowSaveCard: boolean               // Allow customers to save cards (default: true)
+  requireConsent: boolean              // Require explicit consent checkbox (default: true)
+  maxCardsPerCustomer: number          // Maximum saved cards per customer (default: 5)
+}
+
+export const DEFAULT_CARD_ON_FILE: CardOnFileSettings = {
+  enabled: false,
+  allowSaveCard: true,
+  requireConsent: true,
+  maxCardsPerCustomer: 5,
 }
 
 // ─── Waitlist Settings ────────────────────────────────────────────────────────
@@ -936,6 +1043,67 @@ export const DEFAULT_COVER_CHARGE: CoverChargeSettings = {
   maxCapacity: 0,
 }
 
+// ─── Hardware & Transaction Limits Settings ─────────────────────────────────
+
+export interface HardwareLimitsSettings {
+  // ─── Device Count Limits (synced from Mission Control subscription tier) ───
+  maxPOSTerminals: number                  // Max fixed station terminals (default: 20)
+  maxHandhelds: number                     // Max handheld devices (default: 4)
+  maxCellularDevices: number               // Max cellular (LTE/5G) devices (default: 2)
+  maxKDSScreens: number                    // Max KDS displays (default: 4)
+  maxPrinters: number                      // Max printers (default: 6)
+
+  // Transaction Limits
+  maxSingleTransactionAmount: number       // Max dollar amount for a single order payment (default: 9999.99, 0 = unlimited)
+  maxCashPaymentAmount: number             // Max single cash payment allowed (default: 500, 0 = unlimited)
+  maxOpenTabAmount: number                 // Max running tab total before lock (default: 1000, 0 = unlimited)
+  maxDiscountDollarAmount: number          // Max dollar discount on a single order (default: 0 = unlimited)
+
+  // Handheld / Device Limits
+  handheldMaxPaymentAmount: number         // Max payment amount for HANDHELD terminals (default: 500, 0 = unlimited)
+  handheldAllowVoids: boolean              // Can handhelds void items? (default: true)
+  handheldAllowComps: boolean              // Can handhelds comp items? (default: true)
+  handheldAllowDiscounts: boolean          // Can handhelds apply discounts? (default: true)
+  handheldAllowRefunds: boolean            // Can handhelds process refunds? (default: false)
+  handheldAllowCashPayments: boolean       // Can handhelds accept cash? (default: false)
+  handheldAllowTabClose: boolean           // Can handhelds close tabs? (default: true)
+
+  // Cellular-Specific (these are on top of the hard-coded proxy.ts blocks)
+  cellularMaxOrderAmount: number           // Max order total for cellular devices (default: 200, 0 = unlimited)
+  cellularAllowVoids: boolean              // Can cellular void? (default: false — currently re-auth required)
+  cellularAllowComps: boolean              // Can cellular comp? (default: false — currently re-auth required)
+
+  // Volume Guards
+  maxOrdersPerHour: number                 // Max orders a single employee can create per hour (default: 0 = unlimited)
+  maxVoidsPerShift: number                 // Max voids per employee per shift (default: 0 = unlimited)
+  maxCompsPerShift: number                 // Max comps per employee per shift (default: 0 = unlimited)
+}
+
+export const DEFAULT_HARDWARE_LIMITS: HardwareLimitsSettings = {
+  maxPOSTerminals: 20,
+  maxHandhelds: 4,
+  maxCellularDevices: 2,
+  maxKDSScreens: 4,
+  maxPrinters: 6,
+  maxSingleTransactionAmount: 9999.99,
+  maxCashPaymentAmount: 500,
+  maxOpenTabAmount: 1000,
+  maxDiscountDollarAmount: 0,
+  handheldMaxPaymentAmount: 500,
+  handheldAllowVoids: true,
+  handheldAllowComps: true,
+  handheldAllowDiscounts: true,
+  handheldAllowRefunds: false,
+  handheldAllowCashPayments: false,
+  handheldAllowTabClose: true,
+  cellularMaxOrderAmount: 200,
+  cellularAllowVoids: false,
+  cellularAllowComps: false,
+  maxOrdersPerHour: 0,
+  maxVoidsPerShift: 0,
+  maxCompsPerShift: 0,
+}
+
 // ─── QR Ordering Settings ──────────────────────────────────────────────────
 
 export interface QrOrderingSettings {
@@ -966,6 +1134,96 @@ export interface KdsSettings {
 export const DEFAULT_KDS_SETTINGS: KdsSettings = {
   orderAgeWarningMinutes: 10,
   orderAgeCriticalMinutes: 20,
+}
+
+// ─── Accounting Integration Settings ─────────────────────────────────────────
+
+export interface AccountingGLMapping {
+  salesRevenue: string            // GL account for sales revenue (default: '4000')
+  cashPayments: string            // GL account for cash payments (default: '1000')
+  cardPayments: string            // GL account for card payments (default: '1100')
+  giftCardPayments: string        // GL account for gift card payments (default: '1200')
+  houseAccountPayments: string    // GL account for house account payments (default: '1300')
+  taxCollected: string            // GL account for tax collected (default: '2100')
+  tipsPayable: string             // GL account for tips payable (default: '2200')
+  discounts: string               // GL account for discounts (default: '4100')
+  refunds: string                 // GL account for refunds (default: '4200')
+  comps: string                   // GL account for comps (default: '5000')
+  cogs: string                    // GL account for cost of goods sold (default: '5100')
+  laborCost: string               // GL account for labor cost (default: '6000')
+}
+
+export interface AccountingSettings {
+  enabled: boolean                                            // Master toggle (default: false)
+  provider: 'none' | 'quickbooks' | 'xero' | 'csv'          // Accounting provider (default: 'none')
+  autoExportDaily: boolean                                    // Auto-export daily journal (default: false)
+  exportTime: string                                          // HH:MM — time for daily auto-export (default: '04:00')
+  glMapping: AccountingGLMapping                              // GL account code mapping
+}
+
+export const DEFAULT_GL_MAPPING: AccountingGLMapping = {
+  salesRevenue: '4000',
+  cashPayments: '1000',
+  cardPayments: '1100',
+  giftCardPayments: '1200',
+  houseAccountPayments: '1300',
+  taxCollected: '2100',
+  tipsPayable: '2200',
+  discounts: '4100',
+  refunds: '4200',
+  comps: '5000',
+  cogs: '5100',
+  laborCost: '6000',
+}
+
+export const DEFAULT_ACCOUNTING_SETTINGS: AccountingSettings = {
+  enabled: false,
+  provider: 'none',
+  autoExportDaily: false,
+  exportTime: '04:00',
+  glMapping: { ...DEFAULT_GL_MAPPING },
+}
+
+// ─── Customer Feedback Settings ─────────────────────────────────────────────
+
+export interface CustomerFeedbackSettings {
+  enabled: boolean              // Master toggle (default: false)
+  promptAfterPayment: boolean   // Show rating prompt after payment (default: true)
+  sendSmsRequest: boolean       // Send SMS feedback request (default: false)
+  sendEmailRequest: boolean     // Send email feedback request (default: false)
+  feedbackUrl: string           // Public feedback page URL (default: '')
+  ratingScale: 5 | 10          // Star rating scale (default: 5)
+  requireComment: boolean       // Require comment with rating (default: false)
+}
+
+export const DEFAULT_CUSTOMER_FEEDBACK: CustomerFeedbackSettings = {
+  enabled: false,
+  promptAfterPayment: true,
+  sendSmsRequest: false,
+  sendEmailRequest: false,
+  feedbackUrl: '',
+  ratingScale: 5,
+  requireComment: false,
+}
+
+// ─── Pour Control Settings ──────────────────────────────────────────────────
+
+export interface PourControlSettings {
+  enabled: boolean              // Master toggle (default: false)
+  provider: 'none' | 'berg' | 'barvision' | 'tapwatcher' | 'generic'  // Hardware provider (default: 'none')
+  defaultPourOz: number         // Standard pour size in oz (default: 1.5)
+  overPourThresholdPercent: number // Flag pours >X% over target (default: 15)
+  trackWaste: boolean           // Track waste from over-pours (default: true)
+  alertOnOverPour: boolean      // Alert managers on over-pours (default: false)
+}
+
+export const DEFAULT_POUR_CONTROL: PourControlSettings = {
+  enabled: false,
+  provider: 'none',
+  defaultPourOz: 1.5,
+  overPourThresholdPercent: 15,
+  trackWaste: true,
+  alertOnOverPour: false,
 }
 
 // Default settings for new locations
@@ -1337,6 +1595,33 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     menuRestorePoints: partial.menuRestorePoints
       ? { ...DEFAULT_MENU_RESTORE_POINT_SETTINGS, ...partial.menuRestorePoints }
+      : undefined,
+    reservationDeposits: partial.reservationDeposits
+      ? { ...DEFAULT_RESERVATION_DEPOSIT, ...partial.reservationDeposits }
+      : undefined,
+    cardOnFile: partial.cardOnFile
+      ? { ...DEFAULT_CARD_ON_FILE, ...partial.cardOnFile }
+      : undefined,
+    printerFailover: partial.printerFailover
+      ? { ...DEFAULT_PRINTER_FAILOVER, ...partial.printerFailover }
+      : undefined,
+    accounting: partial.accounting
+      ? { ...DEFAULT_ACCOUNTING_SETTINGS, ...partial.accounting, glMapping: { ...DEFAULT_GL_MAPPING, ...partial.accounting.glMapping } }
+      : undefined,
+    payrollExport: partial.payrollExport
+      ? { ...DEFAULT_PAYROLL_EXPORT, ...partial.payrollExport }
+      : undefined,
+    catering: partial.catering
+      ? { ...DEFAULT_CATERING, ...partial.catering }
+      : undefined,
+    customerFeedback: partial.customerFeedback
+      ? { ...DEFAULT_CUSTOMER_FEEDBACK, ...partial.customerFeedback }
+      : undefined,
+    pourControl: partial.pourControl
+      ? { ...DEFAULT_POUR_CONTROL, ...partial.pourControl }
+      : undefined,
+    hardwareLimits: partial.hardwareLimits
+      ? { ...DEFAULT_HARDWARE_LIMITS, ...partial.hardwareLimits }
       : undefined,
   }
 }

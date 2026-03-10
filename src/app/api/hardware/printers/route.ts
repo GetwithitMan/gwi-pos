@@ -74,6 +74,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+    // Printer count limit check (subscription-gated)
+    const { checkDeviceLimit } = await import('@/lib/device-limits')
+    const printerLimit = await checkDeviceLimit(locationId, 'printer')
+    if (!printerLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: printerLimit.upgradeMessage,
+          code: 'DEVICE_LIMIT_EXCEEDED',
+          current: printerLimit.current,
+          limit: printerLimit.limit,
+        },
+        { status: 403 }
+      )
+    }
+
     // Validate IP address format
     const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
     if (!ipv4Regex.test(ipAddress)) {

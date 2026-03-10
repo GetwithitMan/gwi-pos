@@ -11,6 +11,8 @@
 
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
+import { dispatchPrintJobFailed } from '@/lib/socket-dispatch'
+import { dispatchAlert } from '@/lib/alert-service'
 import {
   buildDocument,
   buildDocumentNoCut,
@@ -41,10 +43,25 @@ export interface PrintResult {
  * produces manifests. Skips KDS stations (those are handled by socket dispatch).
  */
 export async function printKitchenTicketsForManifests(
-  routingResult: RoutingResult
+  routingResult: RoutingResult,
+  locationId?: string
 ): Promise<PrintResult[]> {
   const { order, manifests } = routingResult
   const results: PrintResult[] = []
+
+  // Resolve locationId: prefer explicit parameter, else look up from order
+  let resolvedLocationId = locationId || ''
+  if (!resolvedLocationId) {
+    try {
+      const dbOrder = await db.order.findUnique({
+        where: { id: order.orderId },
+        select: { locationId: true },
+      })
+      resolvedLocationId = dbOrder?.locationId || ''
+    } catch {
+      // Silent — locationId only needed for failover/alerts
+    }
+  }
 
   // Only process PRINTER stations — KDS is handled by sockets
   const printerManifests = manifests.filter((m) => m.type === 'PRINTER')
@@ -75,19 +92,69 @@ export async function printKitchenTicketsForManifests(
       const buffer = buildTicketBuffer(order, manifest)
       const sendResult = await sendToPrinter(manifest.ipAddress, manifest.port, buffer)
 
-      // Log PrintJob if we can find a matching Printer record
-      await logPrintJob(order.orderId, manifest, sendResult.success, sendResult.error)
+      if (sendResult.success) {
+        // Log PrintJob on success
+        await logPrintJob(order.orderId, manifest, true)
 
-      results.push({
-        stationId: manifest.stationId,
-        stationName: manifest.stationName,
-        success: sendResult.success,
-        error: sendResult.error,
-        itemCount: manifest.primaryItems.length,
-      })
+        results.push({
+          stationId: manifest.stationId,
+          stationName: manifest.stationName,
+          success: true,
+          itemCount: manifest.primaryItems.length,
+        })
+      } else {
+        // Primary printer failed — attempt backup printer failover
+        const backupResult = await attemptBackupPrinter(
+          resolvedLocationId, order, manifest, buffer, sendResult.error || 'Send failed'
+        )
+
+        if (backupResult) {
+          // Backup succeeded
+          results.push(backupResult)
+        } else {
+          // No backup or backup also failed — log failure, emit socket + alert
+          await logPrintJob(order.orderId, manifest, false, sendResult.error)
+
+          if (resolvedLocationId) {
+            void dispatchPrintJobFailed(resolvedLocationId, {
+              orderId: order.orderId,
+              orderNumber: order.orderNumber,
+              printerName: manifest.stationName,
+              error: sendResult.error || 'Send failed',
+            }, { async: true }).catch(console.error)
+
+            void dispatchAlert({
+              severity: 'HIGH',
+              errorType: 'printer_failure',
+              category: 'hardware',
+              message: `Kitchen printer "${manifest.stationName}" failed for order #${order.orderNumber}: ${sendResult.error || 'Send failed'}`,
+              locationId: resolvedLocationId,
+              orderId: order.orderId,
+            }).catch(console.error)
+          }
+
+          results.push({
+            stationId: manifest.stationId,
+            stationName: manifest.stationName,
+            success: false,
+            error: sendResult.error,
+            itemCount: manifest.primaryItems.length,
+          })
+        }
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       console.error(`[PrintTemplateFactory] Error printing to ${manifest.stationName}:`, errorMsg)
+
+      // Emit socket event for UI awareness
+      if (resolvedLocationId) {
+        void dispatchPrintJobFailed(resolvedLocationId, {
+          orderId: order.orderId,
+          orderNumber: order.orderNumber,
+          printerName: manifest.stationName,
+          error: errorMsg,
+        }, { async: true }).catch(console.error)
+      }
 
       results.push({
         stationId: manifest.stationId,
@@ -100,6 +167,133 @@ export async function printKitchenTicketsForManifests(
   }
 
   return results
+}
+
+/**
+ * Attempt to route a failed print job to a backup printer.
+ *
+ * Looks for a PrintRoute with a backupPrinter configured for the same station,
+ * or falls back to any other active printer with the same role (kitchen/bar).
+ * Returns a PrintResult on backup success, or null if no backup available or backup also failed.
+ */
+async function attemptBackupPrinter(
+  locationId: string,
+  order: OrderContext,
+  manifest: RoutingManifest,
+  buffer: Buffer,
+  primaryError: string
+): Promise<PrintResult | null> {
+  if (!locationId) return null
+
+  try {
+    // Strategy 1: Check PrintRoute for a configured backup printer
+    const route = await db.printRoute.findFirst({
+      where: {
+        locationId,
+        printerId: { not: null },
+        backupPrinterId: { not: null },
+        deletedAt: null,
+      },
+      include: {
+        printer: { select: { id: true, ipAddress: true, port: true, isActive: true, name: true } },
+        backupPrinter: { select: { id: true, ipAddress: true, port: true, isActive: true, name: true } },
+      },
+    })
+
+    // Match: the primary printer on this route matches the manifest's IP/port
+    if (route?.printer && route.backupPrinter?.isActive &&
+        route.printer.ipAddress === manifest.ipAddress &&
+        route.printer.port === (manifest.port ?? 9100)) {
+      const backup = route.backupPrinter
+      console.log(`[PrintTemplateFactory] Trying backup printer "${backup.name}" for station "${manifest.stationName}"`)
+
+      const backupSendResult = await sendToPrinter(backup.ipAddress, backup.port, buffer)
+      if (backupSendResult.success) {
+        // Log success against backup printer
+        await logPrintJobForPrinter(order.orderId, backup.id, locationId, true)
+
+        return {
+          stationId: manifest.stationId,
+          stationName: `${manifest.stationName} (backup: ${backup.name})`,
+          success: true,
+          itemCount: manifest.primaryItems.length,
+        }
+      }
+      console.warn(`[PrintTemplateFactory] Backup printer "${backup.name}" also failed: ${backupSendResult.error}`)
+    }
+
+    // Strategy 2: Find any other active kitchen printer at this location
+    const primaryPrinter = await db.printer.findFirst({
+      where: {
+        locationId,
+        ipAddress: manifest.ipAddress ?? undefined,
+        port: manifest.port ?? 9100,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: { id: true, printerRole: true },
+    })
+
+    if (primaryPrinter) {
+      const altPrinter = await db.printer.findFirst({
+        where: {
+          locationId,
+          printerRole: primaryPrinter.printerRole,
+          isActive: true,
+          deletedAt: null,
+          id: { not: primaryPrinter.id },
+        },
+        select: { id: true, name: true, ipAddress: true, port: true },
+      })
+
+      if (altPrinter) {
+        console.log(`[PrintTemplateFactory] Trying alternate ${primaryPrinter.printerRole} printer "${altPrinter.name}"`)
+        const altResult = await sendToPrinter(altPrinter.ipAddress, altPrinter.port, buffer)
+        if (altResult.success) {
+          await logPrintJobForPrinter(order.orderId, altPrinter.id, locationId, true)
+          return {
+            stationId: manifest.stationId,
+            stationName: `${manifest.stationName} (fallback: ${altPrinter.name})`,
+            success: true,
+            itemCount: manifest.primaryItems.length,
+          }
+        }
+        console.warn(`[PrintTemplateFactory] Alternate printer "${altPrinter.name}" also failed: ${altResult.error}`)
+      }
+    }
+
+    return null
+  } catch (err) {
+    console.error('[PrintTemplateFactory] Backup printer lookup failed:', err)
+    return null
+  }
+}
+
+/**
+ * Log a PrintJob record for a specific printer ID (used for backup printer logging).
+ */
+async function logPrintJobForPrinter(
+  orderId: string,
+  printerId: string,
+  locationId: string,
+  success: boolean,
+  error?: string
+): Promise<void> {
+  try {
+    await db.printJob.create({
+      data: {
+        locationId,
+        jobType: 'kitchen',
+        orderId,
+        printerId,
+        status: success ? 'sent' : 'failed',
+        errorMessage: error || null,
+        sentAt: new Date(),
+      },
+    })
+  } catch (err) {
+    console.error('[PrintTemplateFactory] Failed to log backup PrintJob:', err)
+  }
 }
 
 /**
