@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { recalculatePercentDiscounts, getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { getDatacapClient } from '@/lib/datacap/helpers'
@@ -14,6 +14,8 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { checkOrderClaim } from '@/lib/order-claim'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -41,6 +43,16 @@ export const POST = withVenue(async function POST(
       return NextResponse.json(
         { error: 'Action, item ID, reason, and employee ID are required' },
         { status: 400 }
+      )
+    }
+
+    // Order claim check — block if another employee has an active claim
+    const terminalId = request.headers.get('x-terminal-id')
+    const claimBlock = await checkOrderClaim(db, orderId, employeeId, terminalId)
+    if (claimBlock) {
+      return NextResponse.json(
+        { error: claimBlock.error, claimedBy: claimBlock.claimedBy },
+        { status: claimBlock.status }
       )
     }
 
@@ -90,7 +102,7 @@ export const POST = withVenue(async function POST(
           where: { id: itemId },
           include: {
             modifiers: true,
-            menuItem: { select: { id: true, itemType: true } },
+            menuItem: { select: { id: true, itemType: true, name: true } },
           },
         },
       },
@@ -260,6 +272,12 @@ export const POST = withVenue(async function POST(
 
       if (['paid', 'closed', 'voided'].includes(lockedOrder.status)) {
         throw new Error('ORDER_ALREADY_SETTLED')
+      }
+
+      // Re-check item status inside the lock to prevent double comp/void
+      const freshItem = await tx.orderItem.findFirst({ where: { id: itemId, orderId } })
+      if (!freshItem || freshItem.status !== 'active') {
+        throw new Error('ITEM_ALREADY_SETTLED')
       }
 
       // W1-P1: Collect card payment info for potential Datacap reversal
@@ -630,7 +648,8 @@ export const POST = withVenue(async function POST(
     // Fire-and-forget side effects OUTSIDE the transaction
 
     // BUG #378: Reset entertainment status when voiding a timed_rental item
-    if (item.menuItem?.itemType === 'timed_rental') {
+    // Only void — comp means customer plays for free but is still using the item
+    if (action === 'void' && item.menuItem?.itemType === 'timed_rental') {
       void db.menuItem.update({
         where: { id: item.menuItem.id },
         data: {
@@ -654,6 +673,15 @@ export const POST = withVenue(async function POST(
       }).catch(err => {
         console.error('[CompVoid] Failed to reset entertainment status:', err)
       })
+
+      void dispatchEntertainmentStatusChanged(order.locationId, {
+        itemId: item.menuItem!.id,
+        entertainmentStatus: 'available',
+        currentOrderId: null,
+        expiresAt: null,
+      }, { async: true }).catch(() => {})
+
+      void notifyNextWaitlistEntry(order.locationId, item.menuItem.id, item.menuItem.name).catch(() => {})
     }
 
     // Deduct inventory for voids where food was made
@@ -817,6 +845,27 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Overpayment detection: check if completed payments now exceed the new order total
+    let overpayment: { amount: number; message: string } | null = null
+    if (!shouldAutoClose) {
+      const updatedOrder = await db.order.findUnique({
+        where: { id: orderId },
+        include: { payments: { where: { status: 'completed' } } },
+      })
+      if (updatedOrder) {
+        const totalPaid = updatedOrder.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0)
+        const orderTotal = Number(updatedOrder.total)
+        if (totalPaid > orderTotal && totalPaid > 0) {
+          const overpaymentAmount = roundToCents(totalPaid - orderTotal)
+          console.warn(`[COMP-VOID] OVERPAYMENT DETECTED: Order ${orderId} has $${totalPaid.toFixed(2)} paid against $${orderTotal.toFixed(2)} total. Refund of $${overpaymentAmount.toFixed(2)} may be needed.`)
+          overpayment = {
+            amount: overpaymentAmount,
+            message: `Order is overpaid by $${overpaymentAmount.toFixed(2)}. A refund may be needed.`,
+          }
+        }
+      }
+    }
+
     return NextResponse.json({ data: {
       success: true,
       action,
@@ -829,6 +878,7 @@ export const POST = withVenue(async function POST(
       },
       orderTotals: totals,
       ...(cardReversalWarning ? { cardReversalWarning } : {}),
+      ...(overpayment ? { overpayment } : {}),
     } })
   } catch (error) {
     // Handle structured errors from the transaction lock
@@ -839,6 +889,12 @@ export const POST = withVenue(async function POST(
       if (error.message === 'ORDER_ALREADY_SETTLED') {
         return NextResponse.json(
           { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
+          { status: 409 }
+        )
+      }
+      if (error.message === 'ITEM_ALREADY_SETTLED') {
+        return NextResponse.json(
+          { error: 'Item has already been voided or comped' },
           { status: 409 }
         )
       }
