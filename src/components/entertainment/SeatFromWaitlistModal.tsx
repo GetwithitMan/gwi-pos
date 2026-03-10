@@ -29,8 +29,8 @@ export function SeatFromWaitlistModal({
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Find the item the customer is waiting for
-  const waitingForItem = entertainmentItems.find(i => i.id === entry?.menuItemId)
+  // Find the item the customer is waiting for (elementId = FloorPlanElement ID, matches entertainmentItems[].id)
+  const waitingForItem = entertainmentItems.find(i => i.id === (entry?.elementId || entry?.menuItem?.id))
 
   // Get available items
   const availableItems = entertainmentItems.filter(i => i.status === 'available')
@@ -46,7 +46,9 @@ export function SeatFromWaitlistModal({
       setError(null)
 
       // Default selection: first available item, or the one they requested
-      const itemTheyWant = entertainmentItems.find(i => i.id === entry.menuItemId)
+      // Use elementId (FloorPlanElement ID) to find the item they requested
+      const requestedElementId = entry.elementId || entry.menuItem?.id || ''
+      const itemTheyWant = entertainmentItems.find(i => i.id === requestedElementId)
       const available = entertainmentItems.filter(i => i.status === 'available')
 
       if (itemTheyWant?.status === 'available') {
@@ -55,7 +57,7 @@ export function SeatFromWaitlistModal({
         setSelectedItemId(available[0].id)
       } else {
         // Default to what they requested even if in use
-        setSelectedItemId(entry.menuItemId || '')
+        setSelectedItemId(requestedElementId)
       }
     }
   }, [isOpen, entry, entertainmentItems])
@@ -135,90 +137,44 @@ export function SeatFromWaitlistModal({
       }
 
       // Build the entertainment item for the order
+      // CRITICAL: Use menuItemId (the actual MenuItem ID) for order operations,
+      // NOT selectedItem.id which is a FloorPlanElement ID
+      const actualMenuItemId = selectedItem.menuItemId || selectedItem.id
       const entertainmentOrderItem = {
-        menuItemId: selectedItem.id,
+        menuItemId: actualMenuItemId,
         name: selectedItem.displayName || selectedItem.name,
         price: selectedItem.price || 0,
         quantity: 1,
         modifiers: [],
       }
 
-      let tabId = entry.tabId
+      // Create a new tab with the entertainment item
+      const tabName = entry.customerName || 'Guest'
 
-      // If customer already has a tab, add the item to it
-      if (tabId) {
-        // Fetch the existing order
-        const orderResponse = await fetch(`/api/orders/${tabId}`)
+      const tabResponse = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          employeeId,
+          orderType: 'bar_tab',
+          tabName,
+          guestCount: entry.partySize || 1,
+          items: [entertainmentOrderItem],
+        }),
+      })
 
-        if (orderResponse.ok) {
-          const orderRaw = await orderResponse.json()
-          const orderData = orderRaw.data ?? orderRaw
-
-          // Map existing items
-          const existingItems = Array.isArray(orderData.items) ? orderData.items : []
-          const mappedExistingItems = existingItems.map((item: { menuItemId: string; name: string; price: number; quantity: number; specialNotes?: string; modifiers?: { modifierId: string; name: string; price: number; preModifier?: string }[] }) => ({
-            menuItemId: item.menuItemId,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            specialNotes: item.specialNotes,
-            modifiers: (item.modifiers || []).map((m: { modifierId: string; name: string; price: number; preModifier?: string }) => ({
-              modifierId: m.modifierId,
-              name: m.name,
-              price: m.price,
-              preModifier: m.preModifier,
-            })),
-          }))
-
-          // Add the entertainment item
-          const allItems = [...mappedExistingItems, entertainmentOrderItem]
-
-          // Update the order
-          const updateResponse = await fetch(`/api/orders/${tabId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: allItems }),
-          })
-
-          if (!updateResponse.ok) {
-            const data = await updateResponse.json()
-            throw new Error(data.error || 'Failed to add item to order')
-          }
-        } else {
-          // Order not found, will create new one below
-          tabId = null
-        }
+      if (!tabResponse.ok) {
+        const data = await tabResponse.json()
+        throw new Error(data.error || 'Failed to create tab')
       }
 
-      // If no valid tab, create a new one WITH the entertainment item included
+      const tabRaw = await tabResponse.json()
+      const tabData = tabRaw.data ?? tabRaw
+      const tabId = tabData.id
+
       if (!tabId) {
-        const tabName = entry.tabName || entry.customerName || 'Guest'
-
-        const tabResponse = await fetch('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            locationId,
-            employeeId,
-            orderType: 'bar_tab',
-            tabName,
-            guestCount: entry.partySize || 1,
-            items: [entertainmentOrderItem], // Include item when creating order
-          }),
-        })
-
-        if (!tabResponse.ok) {
-          const data = await tabResponse.json()
-          throw new Error(data.error || 'Failed to create tab')
-        }
-
-        const tabRaw = await tabResponse.json()
-        const tabData = tabRaw.data ?? tabRaw
-        tabId = tabData.id // Response returns id directly, not order.id
-
-        if (!tabId) {
-          throw new Error('Failed to get new tab ID')
-        }
+        throw new Error('Failed to get new tab ID')
       }
 
       // Find the entertainment order item ID from the order
@@ -229,9 +185,9 @@ export function SeatFromWaitlistModal({
         if (orderResponse.ok) {
           const orderRaw2 = await orderResponse.json()
           const orderData = orderRaw2.data ?? orderRaw2
-          // Find the item that matches our entertainment item
+          // Match by actual menuItemId, not FloorPlanElement ID
           const entertainmentItem = orderData.items?.find(
-            (item: { menuItemId: string }) => item.menuItemId === selectedItemId
+            (item: { menuItemId: string }) => item.menuItemId === actualMenuItemId
           )
           if (entertainmentItem) {
             currentOrderItemId = entertainmentItem.id
@@ -252,6 +208,7 @@ export function SeatFromWaitlistModal({
             body: JSON.stringify({
               orderItemId: currentOrderItemId,
               minutes: blockMinutes,
+              locationId,
             }),
           })
           if (!blockRes.ok) {
@@ -373,7 +330,7 @@ export function SeatFromWaitlistModal({
                             className="w-5 h-5 text-green-600"
                           />
                           <span className="font-bold text-gray-900">{item.displayName}</span>
-                          {item.id === entry.menuItemId && (
+                          {item.id === (entry.elementId || entry.menuItem?.id) && (
                             <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-semibold">
                               REQUESTED
                             </span>
@@ -439,13 +396,7 @@ export function SeatFromWaitlistModal({
               {/* Tab info */}
               <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
                 <p className="text-sm font-medium text-blue-900">
-                  {entry.tabName ? (
-                    <>Adding to tab: <strong>{entry.tabName}</strong></>
-                  ) : entry.depositAmount ? (
-                    <>Will create new tab with ${entry.depositAmount} deposit</>
-                  ) : (
-                    <>No tab linked - session will start without a tab</>
-                  )}
+                  A new tab will be created for {entry.customerName || 'this customer'}
                 </p>
               </div>
 

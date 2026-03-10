@@ -59,6 +59,7 @@ export function EntertainmentItemCard({
 
   const isInUse = item.status === 'in_use'
   const isAvailable = item.status === 'available'
+  const isReserved = item.status === 'reserved'
   const isMaintenance = item.status === 'maintenance'
 
   // Get urgency colors for timer
@@ -80,6 +81,7 @@ export function EntertainmentItemCard({
       return 'border-red-400 bg-red-50'
     }
     if (isAvailable) return 'border-green-500 bg-green-50'
+    if (isReserved) return 'border-indigo-500 bg-indigo-50'
     if (isMaintenance) return 'border-gray-400 bg-gray-100'
     return 'border-gray-300 bg-white'
   }
@@ -91,7 +93,7 @@ export function EntertainmentItemCard({
       {/* Header with large item name */}
       <div className={cn(
         'p-4 text-center',
-        isInUse ? 'bg-red-600 text-white' : isAvailable ? 'bg-green-600 text-white' : 'bg-gray-500 text-white'
+        isInUse ? 'bg-red-600 text-white' : isAvailable ? 'bg-green-600 text-white' : isReserved ? 'bg-indigo-600 text-white' : 'bg-gray-500 text-white'
       )}>
         <h2 className="text-2xl font-bold tracking-wide">
           {item.displayName}
@@ -99,6 +101,7 @@ export function EntertainmentItemCard({
         <div className="text-sm font-medium opacity-90 mt-1">
           {isAvailable && '● AVAILABLE'}
           {isInUse && '● IN USE'}
+          {isReserved && '● RESERVED'}
           {isMaintenance && '● MAINTENANCE'}
         </div>
       </div>
@@ -136,9 +139,15 @@ export function EntertainmentItemCard({
           </div>
         )}
 
+        {isReserved && (
+          <div className="text-center py-6 text-indigo-700">
+            <div className="text-lg font-medium">Reserved</div>
+          </div>
+        )}
+
         {isMaintenance && (
           <div className="text-center py-6 text-gray-600">
-            <div className="text-lg">🔧 Under maintenance</div>
+            <div className="text-lg">Under maintenance</div>
           </div>
         )}
 

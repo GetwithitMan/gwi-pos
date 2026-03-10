@@ -17,7 +17,6 @@ import type {
   WorkflowRules,
   OpenOrder,
   OrderPanelItemData,
-  ActiveSession,
   EntertainmentItemInfo,
   TabCardInfo,
 } from '../types'
@@ -44,8 +43,6 @@ interface UseOrderHandlersOptions {
   menuItems: MenuItem[]
   orderTypes: OrderTypeConfig[]
   selectedCategoryData?: { categoryType?: string }
-  activeSessions: ActiveSession[]
-  setActiveSessions: (fn: (prev: ActiveSession[]) => ActiveSession[]) => void
   throttledLoadMenu: () => void
   pricing: any
 
@@ -169,8 +166,6 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     menuItems,
     orderTypes,
     selectedCategoryData,
-    activeSessions,
-    setActiveSessions,
     throttledLoadMenu,
     pricing,
     setShowPaymentModal,
@@ -1214,100 +1209,10 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       return
     }
 
-    setLoadingSession(true)
-    try {
-      const response = await fetch('/api/timed-sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          menuItemId: selectedTimedItem.id,
-          rateType: effectiveRateType,
-          rateAmount,
-          startedById: employeeId,
-        }),
-      })
-
-      if (response.ok) {
-        const session = await response.json()
-        setActiveSessions(prev => [...prev, {
-          id: session.id,
-          menuItemId: selectedTimedItem.id,
-          menuItemName: selectedTimedItem.name,
-          startedAt: session.startedAt,
-          rateType: effectiveRateType,
-          rateAmount,
-        }])
-
-        const rateLabel = effectiveRateType.replace('per', '').replace('Min', ' min').replace('Hour', '/hr')
-        addItem({
-          menuItemId: selectedTimedItem.id,
-          name: `\u23F1\uFE0F ${selectedTimedItem.name} (Active)`,
-          price: 0,
-          quantity: 1,
-          modifiers: [],
-          specialNotes: `Session ID: ${session.id} | Rate: ${formatCurrency(rateAmount)}${rateLabel}`,
-        })
-
-        setShowTimedRentalModal(false)
-        setSelectedTimedItem(null)
-        throttledLoadMenu()
-      } else {
-        const data = await response.json()
-        toast.error(data.error || 'Failed to start session')
-      }
-    } catch (error) {
-      console.error('Failed to start timed session:', error)
-      toast.error('Failed to start session')
-    } finally {
-      setLoadingSession(false)
-    }
-  }, [selectedTimedItem, locationId, employeeId, selectedRateType, throttledLoadMenu])
-
-  const handleStopTimedSession = useCallback(async (sessionId: string) => {
-    if (!confirm('Stop this session and calculate charges?')) return
-    try {
-      const response = await fetch(`/api/timed-sessions/${sessionId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'stop' }),
-      })
-      if (response.ok) {
-        const result = await response.json()
-        const session = activeSessions.find(s => s.id === sessionId)
-        if (session) {
-          const order = useOrderStore.getState().currentOrder
-          const orderItem = order?.items.find(item =>
-            item.specialNotes?.includes(`Session ID: ${sessionId}`)
-          )
-          if (orderItem) {
-            updateItem(orderItem.id, {
-              name: `${session.menuItemName} (${result.totalMinutes} min)`,
-              price: result.totalAmount || result.totalCharge,
-              specialNotes: `Billed: ${result.totalMinutes} min @ ${formatCurrency(session.rateAmount)}`,
-            })
-          } else if (order) {
-            addItem({
-              menuItemId: session.menuItemId,
-              name: `${session.menuItemName} (${result.totalMinutes} min)`,
-              price: result.totalAmount || result.totalCharge,
-              quantity: 1,
-              modifiers: [],
-              specialNotes: `Billed: ${result.totalMinutes} min @ ${formatCurrency(session.rateAmount)}`,
-            })
-          }
-        }
-        setActiveSessions(prev => prev.filter(s => s.id !== sessionId))
-        throttledLoadMenu()
-      } else {
-        const data = await response.json()
-        toast.error(data.error || 'Failed to stop session')
-      }
-    } catch (error) {
-      console.error('Failed to stop session:', error)
-      toast.error('Failed to stop session')
-    }
-  }, [activeSessions, throttledLoadMenu])
+    // Legacy per-minute session flow removed — block-time is the active system
+    setShowTimedRentalModal(false)
+    setSelectedTimedItem(null)
+  }, [selectedTimedItem, selectedRateType])
 
   // Entertainment session start handlers
   const handleStartEntertainmentWithNewTab = useCallback(async (tabName: string, pkg?: PrepaidPackage) => {
@@ -1640,7 +1545,6 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     handleAddPizzaToOrder,
     handleAddComboToOrderWithSelections,
     handleStartTimedSession,
-    handleStopTimedSession,
     handleStartEntertainmentWithNewTab,
     handleStartEntertainmentWithExistingTab,
     handleStartEntertainmentWithCurrentOrder,

@@ -151,6 +151,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           blockTimeStartedAt: now,
           blockTimeExpiresAt: expiresAt,
           price: initialPrice,
+          itemTotal: initialPrice,
         },
         select: {
           id: true,
@@ -199,6 +200,30 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const updatedItem = result.updatedItem
+
+    // Fire-and-forget discount recalculation (price changed from default to initial block price)
+    void (async () => {
+      try {
+        const activeItems = await db.orderItem.findMany({
+          where: { orderId: orderItem.orderId, status: 'active', deletedAt: null },
+          include: { modifiers: true },
+        })
+        let newSubtotal = 0
+        for (const ai of activeItems) {
+          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
+          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
+        }
+        const newDiscountTotal = await recalculatePercentDiscounts(db, orderItem.orderId, newSubtotal)
+        if (newDiscountTotal > 0) {
+          await db.order.update({
+            where: { id: orderItem.orderId },
+            data: { subtotal: newSubtotal, discountTotal: Math.min(newDiscountTotal, newSubtotal) },
+          })
+        }
+      } catch (err) {
+        console.error('[block-time] Failed to recalculate discounts after start:', err)
+      }
+    })()
 
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
@@ -370,6 +395,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         blockTimeMinutes: newTotalMinutes,
         blockTimeExpiresAt: newExpiresAt,
         price: newPrice,
+        itemTotal: newPrice,
       },
       select: {
         id: true,
@@ -599,6 +625,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       data: {
         blockTimeExpiresAt: now,
         price: calculatedCharge,
+        itemTotal: calculatedCharge,
       },
     })
 
@@ -632,6 +659,30 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
         sessionExpiresAt: null,
       },
     })
+
+    // Fire-and-forget discount recalculation (price changed to final charge)
+    void (async () => {
+      try {
+        const activeItems = await db.orderItem.findMany({
+          where: { orderId: orderItem.orderId, status: 'active', deletedAt: null },
+          include: { modifiers: true },
+        })
+        let newSubtotal = 0
+        for (const ai of activeItems) {
+          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
+          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
+        }
+        const newDiscountTotal = await recalculatePercentDiscounts(db, orderItem.orderId, newSubtotal)
+        if (newDiscountTotal > 0) {
+          await db.order.update({
+            where: { id: orderItem.orderId },
+            data: { subtotal: newSubtotal, discountTotal: Math.min(newDiscountTotal, newSubtotal) },
+          })
+        }
+      } catch (err) {
+        console.error('[block-time] Failed to recalculate discounts after stop:', err)
+      }
+    })()
 
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync (stop) with new price
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {

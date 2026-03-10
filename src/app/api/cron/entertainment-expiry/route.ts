@@ -30,16 +30,16 @@ function buildPricing(menuItem: {
   happyHourDays: any
 }): EntertainmentPricing {
   return {
-    ratePerMinute: Number(menuItem.ratePerMinute) || 0.25,
-    minimumCharge: Number(menuItem.minimumCharge) || 15,
+    ratePerMinute: Number(menuItem.ratePerMinute) || 0,
+    minimumCharge: Number(menuItem.minimumCharge) || 0,
     incrementMinutes: menuItem.incrementMinutes || 15,
-    graceMinutes: menuItem.graceMinutes || 5,
+    graceMinutes: menuItem.graceMinutes || 0,
     happyHour: menuItem.happyHourEnabled
       ? {
           enabled: true,
-          discount: menuItem.happyHourDiscount || 50,
-          start: menuItem.happyHourStart || '13:00',
-          end: menuItem.happyHourEnd || '16:00',
+          discount: menuItem.happyHourDiscount || 0,
+          start: menuItem.happyHourStart || '00:00',
+          end: menuItem.happyHourEnd || '23:59',
           days: (menuItem.happyHourDays as string[]) || [],
         }
       : undefined,
@@ -147,7 +147,7 @@ export async function GET(request: NextRequest) {
         // Calculate elapsed minutes
         const startedAt = item.blockTimeStartedAt!
         const elapsedMs = now.getTime() - startedAt.getTime()
-        const elapsedMinutes = elapsedMs / (1000 * 60)
+        const elapsedMinutes = Math.ceil(elapsedMs / (1000 * 60))
 
         // Calculate charge using pricing engine
         let newPrice: number

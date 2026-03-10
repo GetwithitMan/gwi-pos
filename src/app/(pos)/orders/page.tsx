@@ -156,8 +156,7 @@ export default function OrdersPage() {
     comboTemplate, setComboTemplate, comboSelections, setComboSelections } = useComboBuilder()
 
   const { showTimedRentalModal, setShowTimedRentalModal, selectedTimedItem, setSelectedTimedItem,
-    selectedRateType, setSelectedRateType, activeSessions: hookActiveSessions,
-    setActiveSessions: hookSetActiveSessions, loadingSession, setLoadingSession,
+    selectedRateType, setSelectedRateType, loadingSession, setLoadingSession,
     showEntertainmentStart, setShowEntertainmentStart,
     entertainmentItem, setEntertainmentItem } = useTimedRentals()
 
@@ -383,8 +382,6 @@ export default function OrdersPage() {
     menuItems: bootstrap.menuItems,
     orderTypes: bootstrap.orderTypes,
     selectedCategoryData: bootstrap.selectedCategoryData,
-    activeSessions: bootstrap.activeSessions,
-    setActiveSessions: bootstrap.setActiveSessions as any,
     throttledLoadMenu: bootstrap.throttledLoadMenu,
     pricing,
     setShowPaymentModal, setInitialPayMethod: setInitialPayMethod as any, setPaymentTabCards,

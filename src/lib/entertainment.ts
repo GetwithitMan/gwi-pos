@@ -135,6 +135,13 @@ export function getStatusColors(status: string): {
         text: 'text-red-700',
         dot: 'bg-red-500',
       }
+    case 'reserved':
+      return {
+        border: 'border-indigo-500',
+        background: 'bg-indigo-50',
+        text: 'text-indigo-700',
+        dot: 'bg-indigo-500',
+      }
     case 'maintenance':
       return {
         border: 'border-gray-400',
@@ -195,12 +202,14 @@ export function getUrgencyColors(level: 'normal' | 'warning' | 'critical' | 'exp
  * Entertainment item interface
  */
 export interface EntertainmentItem {
-  id: string
+  id: string  // FloorPlanElement ID
+  elementId?: string  // explicit alias for FloorPlanElement ID
+  menuItemId?: string | null  // MenuItem ID for order operations
   name: string
   displayName: string
   description: string | null
   category: { id: string; name: string }
-  status: 'available' | 'in_use' | 'maintenance'
+  status: 'available' | 'in_use' | 'reserved' | 'maintenance'
   currentOrder: {
     orderId: string
     orderItemId: string | null
@@ -238,25 +247,33 @@ export interface EntertainmentItem {
 export interface WaitlistEntry {
   id: string
   customerName: string
-  phoneNumber: string | null
+  phone: string | null
   partySize: number
   position: number
-  createdAt: string
   waitMinutes: number
+  waitTimeFormatted?: string
   notes?: string | null
   status?: string
+  elementId?: string | null
+  visualType?: string | null
+  element?: {
+    id: string
+    name: string | null
+    visualType: string | null
+    status?: string
+  } | null
+  table?: {
+    id: string
+    name: string
+  } | null
+  requestedAt?: string
+  notifiedAt?: string | null
+  seatedAt?: string | null
+  expiresAt?: string | null
+  // Client-enriched: set by KDS page when flattening per-item waitlists
   menuItem?: {
     id: string
     name: string
     status?: string
   }
-  menuItemId?: string
-  // Tab linking
-  tabId?: string | null
-  tabName?: string | null
-  // Deposit info
-  depositAmount?: number | null
-  depositMethod?: string | null
-  depositCardLast4?: string | null
-  depositRefunded?: boolean
 }

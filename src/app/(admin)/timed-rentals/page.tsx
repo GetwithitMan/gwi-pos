@@ -350,10 +350,6 @@ function TimedRentalsContent() {
             enabled: true,
             price: builderForm.happyHourPrice,
           } : null,
-          // Keep legacy fields for backward compatibility
-          per15Min: builderForm.ratePerMinute * 15,
-          per30Min: builderForm.ratePerMinute * 30,
-          perHour: builderForm.ratePerMinute * 60,
         },
         gracePeriodMinutes: builderForm.gracePeriodMinutes,
         entertainmentStatus: builderForm.status,

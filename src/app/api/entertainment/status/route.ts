@@ -144,7 +144,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       // Map to EntertainmentItem shape expected by KDS page
       return {
-        id: element.id,
+        id: element.id,  // FloorPlanElement ID (for floor plan operations)
+        elementId: element.id,  // explicit alias for FloorPlanElement ID
+        menuItemId: element.linkedMenuItemId || element.linkedMenuItem?.id || null,  // for order operations
         name: element.linkedMenuItem?.name || element.name || element.abbreviation || 'Unnamed',
         displayName: element.name || element.abbreviation || element.linkedMenuItem?.name || 'Unnamed',
         description: element.linkedMenuItem?.description || null,

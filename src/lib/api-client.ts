@@ -639,26 +639,6 @@ export const api = {
   },
 
   // ==========================================
-  // Timed Sessions
-  // ==========================================
-  timedSessions: {
-    list: (params: { locationId: string }) =>
-      fetchApi<unknown[]>(`/api/timed-sessions${buildQueryString(params)}`),
-
-    create: (data: unknown) =>
-      fetchApi<unknown>('/api/timed-sessions', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-
-    end: (id: string, data?: unknown) =>
-      fetchApi<unknown>(`/api/timed-sessions/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(data || {}),
-      }),
-  },
-
-  // ==========================================
   // Tips
   // ==========================================
   tips: {

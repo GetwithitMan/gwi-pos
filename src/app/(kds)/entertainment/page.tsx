@@ -64,9 +64,12 @@ export default function EntertainmentKDSPage() {
         const data = await response.json()
         setItems(data.data.items)
         // Collect all waitlist entries from all items
+        // Each item.id is a FloorPlanElement ID; waitlist entries use elementId to reference it
         const waitlistEntries: WaitlistEntry[] = data.data.items.flatMap((item: EntertainmentItem) =>
           item.waitlist.map(w => ({
             ...w,
+            // Ensure elementId is set for SeatFromWaitlistModal matching
+            elementId: w.elementId || item.id,
             menuItem: { id: item.id, name: item.displayName, status: item.status },
           }))
         )
@@ -207,8 +210,10 @@ export default function EntertainmentKDSPage() {
           return
         }
         const orderData = await orderResponse.json()
+        // Use the actual menuItemId (from status response) to match, not the FloorPlanElement ID
+        const actualMenuItemId = item.menuItemId || itemId
         const entertainmentItem = orderData.items?.find(
-          (i: { menuItemId: string }) => i.menuItemId === itemId
+          (i: { menuItemId: string }) => i.menuItemId === actualMenuItemId
         )
         if (!entertainmentItem?.id) {
           toast.error('Could not find entertainment item in order')
@@ -311,11 +316,13 @@ export default function EntertainmentKDSPage() {
         }
       } else {
         // Fallback: just reset the entertainment item status directly
+        // itemId is the FloorPlanElement ID, and the status PATCH expects elementId
         const response = await fetch('/api/entertainment/status', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            menuItemId: itemId,
+            elementId: itemId,
+            locationId,
             status: 'available',
           }),
         })
@@ -351,9 +358,9 @@ export default function EntertainmentKDSPage() {
   }
 
   const handleSubmitWaitlist = async (data: {
-    menuItemId: string
+    elementId: string
     customerName: string
-    phoneNumber?: string
+    phone?: string
     partySize: number
     notes?: string
   }) => {
@@ -598,7 +605,7 @@ export default function EntertainmentKDSPage() {
           }}
           locationId={locationId}
           employeeId={employee?.id}
-          menuItemId={selectedItemForWaitlist}
+          elementId={selectedItemForWaitlist}
           menuItemName={items.find(i => i.id === selectedItemForWaitlist)?.displayName || 'Entertainment Item'}
           onSuccess={() => {
             // Refresh data after adding to waitlist

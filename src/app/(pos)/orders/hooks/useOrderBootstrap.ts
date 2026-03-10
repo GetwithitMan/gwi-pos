@@ -5,7 +5,7 @@ import { useOrderStore } from '@/stores/order-store'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
 import { getDraftOrder, clearDraftOrder } from '@/lib/draft-order-persistence'
 import { toast } from '@/stores/toast-store'
-import type { Category, MenuItem, FloorPlanSnapshot, ActiveSession } from '../types'
+import type { Category, MenuItem, FloorPlanSnapshot } from '../types'
 import type { OrderTypeConfig } from '@/types/order-types'
 
 interface UseOrderBootstrapOptions {
@@ -35,7 +35,6 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
   const [isLoading, setIsLoading] = useState(true)
   const [orderTypes, setOrderTypes] = useState<OrderTypeConfig[]>([])
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
-  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([])
   const [terminalScaleId, setTerminalScaleId] = useState<string | null>(null)
 
   // Bootstrap snapshot data for FloorPlanHome
@@ -209,7 +208,6 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
         loadMenu()
         loadOrderTypes()
       }
-      loadActiveSessions()
     }
   }, [locationId, loadMenu, loadOrderTypes])
 
@@ -288,21 +286,6 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
     }
   }, [selectedCategoryData?.categoryType, loadMenu])
 
-  // Load active sessions
-  const loadActiveSessions = async () => {
-    if (!locationId) return
-    try {
-      const params = new URLSearchParams({ locationId, status: 'active' })
-      const response = await fetch(`/api/timed-sessions?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setActiveSessions(data.data?.sessions || [])
-      }
-    } catch (error) {
-      console.error('Failed to load active sessions:', error)
-    }
-  }
-
   // Check for open shift on load
   useEffect(() => {
     if (employeeId && locationId && !shiftChecked && !bootstrapLoadedRef.current) {
@@ -373,15 +356,12 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
     setOrderTypes,
     openOrdersCount,
     setOpenOrdersCount,
-    activeSessions,
-    setActiveSessions,
     initialSnapshot,
     terminalScaleId,
     selectedCategoryData,
     loadMenu,
     throttledLoadMenu,
     loadOpenOrdersCount,
-    loadActiveSessions,
     bootstrapLoadedRef,
     TERMINAL_ID,
   }
