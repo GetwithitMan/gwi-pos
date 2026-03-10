@@ -122,7 +122,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
 
   // Emit socket events on failover state transitions
   // We need a locationId — try to extract from DB or env
-  const locationId = process.env.LOCATION_ID
+  const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
   if (locationId) {
     if (isPromotedBackup && !lastKnownPromotedBackup) {
       // Transition: normal -> promoted backup

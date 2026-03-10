@@ -122,15 +122,19 @@ export async function POST(request: NextRequest) {
         select: { id: true },
       })
 
-      // Hint didn't match — find the actual Location in this venue DB
+      // Hint didn't match — find the actual Location in this venue DB.
+      // Filter to non-deleted locations and use oldest (likely primary) to avoid
+      // returning an arbitrary row in multi-location venue databases.
       if (!location) {
         location = await venueDb.location.findFirst({
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
           select: { id: true },
         })
         if (location) {
           console.warn(
             `[cellular-exchange] MC locationId '${mcData.locationId}' not found in venue '${mcData.venueSlug}'. ` +
-            `Resolved to '${location.id}' from venue DB. MC posLocationId is stale/wrong.`
+            `Falling back to '${location.id}' (oldest non-deleted). MC posLocationId is stale/wrong.`
           )
         }
       }

@@ -15,14 +15,22 @@ import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
  *
  * When outage clears, shows a brief green "Connection restored" flash
  * for 3 seconds before hiding.
+ *
+ * Positioned below FailoverBanner (which uses top:0, z-index:9998, ~32px tall)
+ * to avoid visual overlap when both banners are active simultaneously.
  */
+
+/** Height of the FailoverBanner (padding + font = ~32px) */
+const FAILOVER_BANNER_HEIGHT = 32
+
 export function OutageBanner() {
   const [isInOutage, setIsInOutage] = useState(false)
   const [showRestored, setShowRestored] = useState(false)
+  const [failoverActive, setFailoverActive] = useState(false)
   const wasInOutageRef = useRef(false)
   const restoredTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Check health API on mount for existing outage state
+  // Check health API on mount for existing outage + failover state
   useEffect(() => {
     let cancelled = false
     async function checkHealth() {
@@ -31,9 +39,14 @@ export function OutageBanner() {
         if (!res.ok) return
         const json = await res.json()
         const health = json.data
-        if (!cancelled && health?.upstreamSync?.inOutage) {
-          setIsInOutage(true)
-          wasInOutageRef.current = true
+        if (!cancelled) {
+          if (health?.upstreamSync?.inOutage) {
+            setIsInOutage(true)
+            wasInOutageRef.current = true
+          }
+          if (health?.isPromotedBackup) {
+            setFailoverActive(true)
+          }
         }
       } catch {
         // Non-critical — socket events will catch it
@@ -71,16 +84,25 @@ export function OutageBanner() {
       }
     }
 
+    const onFailoverActive = () => setFailoverActive(true)
+    const onFailoverResolved = () => setFailoverActive(false)
+
     socket.on('sync:outage-status', onOutageStatus)
+    socket.on('server:failover-active', onFailoverActive)
+    socket.on('server:failover-resolved', onFailoverResolved)
 
     return () => {
       socket.off('sync:outage-status', onOutageStatus)
+      socket.off('server:failover-active', onFailoverActive)
+      socket.off('server:failover-resolved', onFailoverResolved)
       releaseSharedSocket()
       if (restoredTimerRef.current) {
         clearTimeout(restoredTimerRef.current)
       }
     }
   }, [])
+
+  const topOffset = failoverActive ? FAILOVER_BANNER_HEIGHT : 0
 
   // Show green "restored" flash
   if (showRestored) {
@@ -89,7 +111,7 @@ export function OutageBanner() {
         role="status"
         style={{
           position: 'fixed',
-          top: 0,
+          top: topOffset,
           left: 0,
           right: 0,
           zIndex: 9997,
@@ -122,7 +144,7 @@ export function OutageBanner() {
       role="alert"
       style={{
         position: 'fixed',
-        top: 0,
+        top: topOffset,
         left: 0,
         right: 0,
         zIndex: 9997,

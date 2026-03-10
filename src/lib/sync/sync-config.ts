@@ -40,6 +40,8 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 50, conflictStrategy: 'neon-wins' },
 
   // ── NUC-owned (upstream: NUC → Neon) ──────────────────────────────────
+  OrderItemIngredient:    { direction: 'upstream', owner: 'nuc', priority: 26, batchSize: 100 },
+  OrderItemPizza:         { direction: 'upstream', owner: 'nuc', priority: 27, batchSize: 100 },
   OrderOwnership:         { direction: 'upstream', owner: 'nuc', priority: 12, batchSize: 100 },
   OrderOwnershipEntry:    { direction: 'upstream', owner: 'nuc', priority: 13, batchSize: 100 },
   Ticket:                 { direction: 'upstream', owner: 'nuc', priority: 15, batchSize: 100 },
@@ -68,6 +70,7 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   DigitalReceipt:             { direction: 'upstream', owner: 'nuc', priority: 74, batchSize: 100 },
   BergDispenseEvent:          { direction: 'upstream', owner: 'nuc', priority: 75, batchSize: 100 },
   CouponRedemption:           { direction: 'upstream', owner: 'nuc', priority: 76, batchSize: 100 },
+  Break:                      { direction: 'upstream', owner: 'nuc', priority: 41, batchSize: 100 },
 
   // ── Cloud-owned (downstream: Neon → NUC) ──────────────────────────────
   Organization:           { direction: 'downstream', owner: 'cloud', priority: 1, batchSize: 10 },
@@ -126,6 +129,19 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   EventPricingTier:       { direction: 'downstream', owner: 'cloud', priority: 54, batchSize: 50 },
   EventTableConfig:       { direction: 'downstream', owner: 'cloud', priority: 55, batchSize: 50 },
   Reservation:            { direction: 'downstream', owner: 'cloud', priority: 56, batchSize: 100 },
+  ItemBarcode:            { direction: 'downstream', owner: 'cloud', priority: 57, batchSize: 100 },
+  VoidReason:             { direction: 'downstream', owner: 'cloud', priority: 58, batchSize: 50 },
+  CompReason:             { direction: 'downstream', owner: 'cloud', priority: 59, batchSize: 50 },
+  FloorPlanElement:       { direction: 'downstream', owner: 'cloud', priority: 60, batchSize: 100 },
+  EntertainmentWaitlist:  { direction: 'downstream', owner: 'cloud', priority: 61, batchSize: 100 },
+  StorageLocation:        { direction: 'downstream', owner: 'cloud', priority: 62, batchSize: 50 },
+  PrepItem:               { direction: 'downstream', owner: 'cloud', priority: 63, batchSize: 100 },
+  PrepItemIngredient:     { direction: 'downstream', owner: 'cloud', priority: 64, batchSize: 100 },
+  PricingOptionInventoryLink: { direction: 'downstream', owner: 'cloud', priority: 65, batchSize: 100 },
+  SpiritCategory:         { direction: 'downstream', owner: 'cloud', priority: 66, batchSize: 50 },
+  SpiritModifierGroup:    { direction: 'downstream', owner: 'cloud', priority: 67, batchSize: 50 },
+  InventorySettings:      { direction: 'downstream', owner: 'cloud', priority: 68, batchSize: 10 },
+  CfdSettings:            { direction: 'downstream', owner: 'cloud', priority: 69, batchSize: 10 },
 
   // ── Special / None ────────────────────────────────────────────────────
   HardwareCommand:        { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },

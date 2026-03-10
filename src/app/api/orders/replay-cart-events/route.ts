@@ -135,9 +135,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Fall back to body-level identifiers (Android sends these)
+    // Fall back to body-level identifiers (Android sends these).
+    // For cellular requests, the proxy-verified x-location-id header (set from JWT)
+    // MUST take priority over the untrusted body value.
     if (!authEmployeeId) authEmployeeId = body.employeeId || request.headers.get('x-employee-id') || null
-    if (!authLocationId) authLocationId = body.locationId || request.headers.get('x-location-id') || null
+    if (!authLocationId) {
+      authLocationId = isCellularOrigin
+        ? (request.headers.get('x-location-id') || body.locationId || null)
+        : (body.locationId || request.headers.get('x-location-id') || null)
+    }
 
     if (!authEmployeeId || !authLocationId) {
       return NextResponse.json(

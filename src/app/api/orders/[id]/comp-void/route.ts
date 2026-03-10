@@ -320,6 +320,7 @@ export const POST = withVenue(async function POST(
           status: newStatus,
           voidReason: reason,
           wasMade: itemWasMade,
+          lastMutatedBy: 'local',
         },
       })
 
@@ -463,6 +464,7 @@ export const POST = withVenue(async function POST(
           ...(order.isBottleService ? { bottleServiceCurrentSpend: txTotals.subtotal } : {}),
           ...(txShouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
           version: { increment: 1 },
+          lastMutatedBy: 'local',
         },
       })
 

@@ -110,6 +110,13 @@ interface UseOrderHandlersOptions {
   setShowCardTabFlow: (v: boolean) => void
   setCardTabOrderId: (v: string | null) => void
 
+  // Age verification & allergen notice
+  setShowAgeVerification: (v: boolean) => void
+  setAgeVerificationItem: (v: MenuItem | null) => void
+  setAgeVerificationCallback: (v: (() => void) | null) => void
+  setAllergenNotice: (v: { itemName: string; allergens: string[] } | null) => void
+  ageVerificationSettings?: { enabled: boolean; minimumAge: number; verifyOnce: boolean }
+
   // Refs
   inlineModifierCallbackRef: React.MutableRefObject<((...args: any[]) => void) | null>
   inlinePizzaCallbackRef: React.MutableRefObject<((config: PizzaOrderConfig) => void) | null>
@@ -260,6 +267,11 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     setMode,
     addTableOrder,
     requireCardForTab,
+    setShowAgeVerification,
+    setAgeVerificationItem,
+    setAgeVerificationCallback,
+    setAllergenNotice,
+    ageVerificationSettings,
   } = options
 
   const [isSendingOrder, setIsSendingOrder] = useState(false)
@@ -824,6 +836,8 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
 
   // Add item handler
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Track whether age has been verified for this order (resets on new order)
+  const ageVerifiedOrderIdRef = useRef<string | null>(null)
 
   const handleAddItem = useCallback(async (item: MenuItem) => {
     if (!item.isAvailable) return
@@ -835,6 +849,38 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
       flashTimeoutRef.current = setTimeout(() => setSplitChipsFlashing(false), 1500)
       return
+    }
+
+    // Age verification check — before any item type routing
+    const ageSettings = ageVerificationSettings
+    if (item.isAgeRestricted && ageSettings?.enabled !== false) {
+      const minimumAge = ageSettings?.minimumAge ?? 21
+      const verifyOnce = ageSettings?.verifyOnce !== false
+      const currentOrderId = order?.id || null
+
+      // If verifyOnce and already verified for this order, skip
+      const alreadyVerified = verifyOnce && ageVerifiedOrderIdRef.current === currentOrderId && currentOrderId !== null
+
+      if (!alreadyVerified) {
+        // Show the age verification modal and wait for confirmation
+        setAgeVerificationItem(item)
+        setAgeVerificationCallback(() => () => {
+          // Mark as verified for this order
+          if (verifyOnce && currentOrderId) {
+            ageVerifiedOrderIdRef.current = currentOrderId
+          }
+          // Re-invoke handleAddItem — this time it will pass through
+          ageVerifiedOrderIdRef.current = currentOrderId || 'pending'
+          handleAddItem(item)
+        })
+        setShowAgeVerification(true)
+        return
+      }
+    }
+
+    // Allergen notice — show briefly when adding an item with allergens
+    if (item.allergens && item.allergens.length > 0) {
+      setAllergenNotice({ itemName: item.name, allergens: item.allergens })
     }
 
     if (item.itemType === 'combo') {
@@ -905,7 +951,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         modifiers: [],
       })
     }
-  }, [orderSplitChips, selectedCategoryData])
+  }, [orderSplitChips, selectedCategoryData, ageVerificationSettings])
 
   // Weight item
   const handleAddWeightItem = useCallback((

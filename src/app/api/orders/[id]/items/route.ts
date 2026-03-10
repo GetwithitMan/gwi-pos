@@ -14,6 +14,7 @@ import { calculateIngredientCosts, calculateVariantCost } from '@/lib/inventory/
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import { checkOrderClaim } from '@/lib/order-claim'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
@@ -621,6 +622,7 @@ export const POST = withVenue(async function POST(
               // Pricing option (size/variant selection)
               pricingOptionId: item.pricingOptionId ?? null,
               pricingOptionLabel: item.pricingOptionLabel ?? null,
+              lastMutatedBy: 'local',
               // Modifiers
               modifiers: {
                 create: item.modifiers.map(mod => ({
@@ -757,6 +759,7 @@ export const POST = withVenue(async function POST(
           itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
           ...(existingOrder.isBottleService ? { bottleServiceCurrentSpend: newSubtotal } : {}),
           version: { increment: 1 },
+          lastMutatedBy: 'local',
         },
         include: {
           employee: {
@@ -841,6 +844,14 @@ export const POST = withVenue(async function POST(
       }).catch(err => {
         console.warn('[Auto-Increment] Background check failed:', err)
       })
+    }
+
+    // Queue outage writes if Neon is unreachable
+    if (isInOutageMode()) {
+      for (const item of result.createdItems) {
+        void queueOutageWrite('OrderItem', item.id, 'INSERT', { ...item } as Record<string, unknown>, result.updatedOrder.locationId).catch(console.error)
+      }
+      void queueOutageWrite('Order', orderId, 'UPDATE', result.updatedOrder as unknown as Record<string, unknown>, result.updatedOrder.locationId).catch(console.error)
     }
 
     // Fire-and-forget: calculate and store costAtSale for all new items in parallel (N+1 fix)

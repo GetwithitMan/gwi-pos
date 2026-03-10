@@ -1621,6 +1621,7 @@ export const POST = withVenue(withTiming(async function POST(
       for (const bp of ingestResult.bridgedPayments) {
         void queueOutageWrite('Payment', bp.id, 'INSERT', { ...bp } as Record<string, unknown>, order.locationId).catch(console.error)
       }
+      void queueOutageWrite('Order', orderId, 'UPDATE', { id: orderId, ...updateData } as Record<string, unknown>, order.locationId).catch(console.error)
     }
 
     if (unsentItems.length > 0) {

@@ -14,8 +14,8 @@ import next from 'next'
 import { initializeSocketServer, getSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
-import { startCloudEventWorker } from './src/lib/cloud-event-queue'
-import { startOnlineOrderDispatchWorker } from './src/lib/online-order-worker'
+import { startCloudEventWorker, stopCloudEventWorker } from './src/lib/cloud-event-queue'
+import { startOnlineOrderDispatchWorker, stopOnlineOrderDispatchWorker } from './src/lib/online-order-worker'
 import { startHardwareCommandWorker } from './src/lib/hardware-command-worker'
 import { scaleService } from './src/lib/scale/scale-service'
 import { startUpstreamSyncWorker, stopUpstreamSyncWorker } from './src/lib/sync/upstream-sync-worker'
@@ -213,12 +213,15 @@ async function main() {
     await masterClient.$disconnect()
     console.log('[Server] Prisma disconnected')
 
+    stopCloudEventWorker()
+    stopOnlineOrderDispatchWorker()
+
     if (process.env.SYNC_ENABLED === 'true') {
       stopUpstreamSyncWorker()
       stopDownstreamSyncWorker()
       stopOutageReplayWorker()
       stopFulfillmentBridge()
-      stopBridgeCheckpoint()
+      await stopBridgeCheckpoint()
     }
     await disconnectNeon()
     console.log('[Server] Neon client disconnected')

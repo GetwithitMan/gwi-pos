@@ -505,8 +505,8 @@ export function isRevoked(terminalId: string): boolean {
  * device could operate for up to 24h (JWT expiry). This DB check closes that gap.
  * On NUC, this is redundant with the downstream-sync-worker but adds defense-in-depth.
  *
- * Fail-open: if the DB check errors (table doesn't exist, connection issue),
- * we allow the request rather than blocking legitimate devices.
+ * Fail-closed: if the DB check errors (table doesn't exist, connection issue),
+ * we deny the request rather than allowing a potentially revoked device through.
  */
 async function isRevokedFromDb(terminalId: string, locationId: string): Promise<boolean> {
   try {

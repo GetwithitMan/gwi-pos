@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -11,6 +11,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
+import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -202,6 +203,15 @@ export const PATCH = withVenue(async function PATCH(
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(() => {})
+
+    // Dispatch open orders changed for cross-terminal awareness (fire-and-forget)
+    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }).catch(console.error)
+
+    // Queue outage writes if Neon is unreachable
+    if (isInOutageMode()) {
+      void queueOutageWrite('Payment', payment.id, 'UPDATE', { id: payment.id, tipAmount: newTipAmount, totalAmount: newTotalAmount } as Record<string, unknown>, order.locationId).catch(console.error)
+      void queueOutageWrite('Order', orderId, 'UPDATE', { id: orderId, tipTotal: newOrderTipTotal, total: newOrderTotal } as Record<string, unknown>, order.locationId).catch(console.error)
+    }
 
     // Emit order event for tip adjustment (fire-and-forget)
     void emitOrderEvent(order.locationId, orderId, 'PAYMENT_APPLIED', {

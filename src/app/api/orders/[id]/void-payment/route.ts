@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
-import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
@@ -297,6 +297,9 @@ export const POST = withVenue(async function POST(
       discountTotal: Number(order.discountTotal),
       total: Number(order.total),
     }, { async: true }).catch(() => {})
+
+    // Dispatch open orders changed for cross-terminal awareness (fire-and-forget)
+    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }, { async: true }).catch(console.error)
 
     // Reverse tip allocations for this voided payment (fire-and-forget)
     // The chargeback policy (BUSINESS_ABSORBS vs EMPLOYEE_CHARGEBACK) is

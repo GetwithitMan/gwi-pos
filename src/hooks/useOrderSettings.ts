@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings, PricingProgram } from '@/lib/settings'
-import { getPricingProgram } from '@/lib/settings'
+import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings, PricingProgram, AgeVerificationSettings } from '@/lib/settings'
+import { getPricingProgram, DEFAULT_AGE_VERIFICATION } from '@/lib/settings'
 import { useOrderStore } from '@/stores/order-store'
 import { setLocationTaxRate } from '@/lib/seat-utils'
 
@@ -81,6 +81,7 @@ interface SettingsCache {
   requireCardForTab: boolean
   allowNameOnlyTab: boolean
   pricingProgram: PricingProgram
+  ageVerification: AgeVerificationSettings
 }
 
 const DEFAULT_PRICING_PROGRAM: PricingProgram = { model: 'none', enabled: false }
@@ -110,6 +111,9 @@ export function useOrderSettings() {
   const [pricingProgram, setPricingProgram] = useState<PricingProgram>(
     cachedSettings?.pricingProgram ?? DEFAULT_PRICING_PROGRAM
   )
+  const [ageVerification, setAgeVerification] = useState<AgeVerificationSettings>(
+    cachedSettings?.ageVerification ?? DEFAULT_AGE_VERIFICATION
+  )
   const [isLoading, setIsLoading] = useState(!cachedSettings)
 
   const applySettings = (settings: {
@@ -120,6 +124,7 @@ export function useOrderSettings() {
     receipts?: Partial<ReceiptSettings>
     barTabs?: { requireCardForTab?: boolean; allowNameOnlyTab?: boolean }
     pricingProgram?: PricingProgram
+    ageVerification?: AgeVerificationSettings
   }) => {
     const effectiveDualPricing = settings.dualPricing || DEFAULT_DUAL_PRICING
     const derivedPricingProgram = settings.pricingProgram
@@ -136,6 +141,7 @@ export function useOrderSettings() {
       requireCardForTab: settings.barTabs?.requireCardForTab ?? false,
       allowNameOnlyTab: settings.barTabs?.allowNameOnlyTab ?? true,
       pricingProgram: derivedPricingProgram,
+      ageVerification: settings.ageVerification ?? DEFAULT_AGE_VERIFICATION,
     }
 
     if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
@@ -168,6 +174,7 @@ export function useOrderSettings() {
     setRequireCardForTab(result.requireCardForTab)
     setAllowNameOnlyTab(result.allowNameOnlyTab)
     setPricingProgram(result.pricingProgram)
+    setAgeVerification(result.ageVerification)
   }
 
   const loadSettings = async () => {
@@ -185,6 +192,7 @@ export function useOrderSettings() {
         receipts: cachedSettings.receiptSettings,
         barTabs: { requireCardForTab: cachedSettings.requireCardForTab, allowNameOnlyTab: cachedSettings.allowNameOnlyTab },
         pricingProgram: cachedSettings.pricingProgram,
+        ageVerification: cachedSettings.ageVerification,
       })
       setIsLoading(false)
       return
@@ -206,6 +214,7 @@ export function useOrderSettings() {
           receipts: result.receiptSettings,
           barTabs: { requireCardForTab: result.requireCardForTab, allowNameOnlyTab: result.allowNameOnlyTab },
           pricingProgram: result.pricingProgram,
+          ageVerification: result.ageVerification,
         })
       }
       setIsLoading(false)
@@ -256,6 +265,7 @@ export function useOrderSettings() {
     requireCardForTab,
     allowNameOnlyTab,
     pricingProgram,
+    ageVerification,
     isLoading,
     reloadSettings: forceReload,
   }

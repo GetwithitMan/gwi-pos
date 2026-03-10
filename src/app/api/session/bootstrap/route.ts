@@ -129,8 +129,16 @@ async function getMenuForBootstrap(locationId: string) {
     getAllMenuItemsStockStatus(locationId),
   ])
 
+  // Filter out items outside their seasonal date range
+  const now = new Date()
+  const seasonallyAvailable = items.filter(item => {
+    if (item.availableFromDate && now < item.availableFromDate) return false
+    if (item.availableUntilDate && now > item.availableUntilDate) return false
+    return true
+  })
+
   // Map items — identical logic to /api/menu route
-  const itemsWithPourCost = items.map(item => {
+  const itemsWithPourCost = seasonallyAvailable.map(item => {
     let totalPourCost = 0
     let hasRecipe = false
 

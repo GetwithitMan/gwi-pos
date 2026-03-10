@@ -8,7 +8,7 @@ import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
  *
  * @param menuItems - Optional menu items array for timed rental detection
  */
-export function useOrderPanelItems(menuItems?: { id: string; itemType?: string }[]): OrderPanelItemData[] {
+export function useOrderPanelItems(menuItems?: { id: string; itemType?: string; allergens?: string[] }[]): OrderPanelItemData[] {
   const items = useOrderStore(state => state.currentOrder?.items)
 
   return useMemo(() => {
@@ -72,6 +72,8 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string }
         weight: item.weight,
         weightUnit: item.weightUnit,
         unitPrice: item.unitPrice,
+        // Allergen tracking (from menu item metadata)
+        allergens: menuItemInfo && 'allergens' in menuItemInfo ? (menuItemInfo as { allergens?: string[] }).allergens : undefined,
       }
     })
   }, [items, menuItems])

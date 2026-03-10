@@ -33,6 +33,9 @@ const metrics: SyncMetrics = {
   errorCount: 0,
 }
 
+/** Monotonic sub-millisecond counter for outage queue sequence uniqueness */
+let outageSeqCounter = 0
+
 // ── Outage Detection ──────────────────────────────────────────────────────────
 
 /** Number of consecutive sync failures before declaring outage */
@@ -61,14 +64,21 @@ export async function queueOutageWrite(
   locationId: string,
 ): Promise<void> {
   try {
+    // M3: Monotonic localSeq — Date.now() ms * 1000 + sub-ms counter (wraps at 1000)
+    const localSeq = Date.now() * 1000 + (outageSeqCounter++ % 1000)
+    // C1: idempotencyKey = locationId:tableName:recordId:localSeq
+    const idempotencyKey = `${locationId}:${tableName}:${recordId}:${localSeq}`
+
     await masterClient.$executeRawUnsafe(
-      `INSERT INTO "OutageQueueEntry" (id, "tableName", "recordId", operation, payload, "locationId", status, "localSeq", "createdAt")
-       VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, 'pending', EXTRACT(EPOCH FROM NOW())::bigint, NOW())`,
+      `INSERT INTO "OutageQueueEntry" (id, "tableName", "recordId", operation, payload, "locationId", status, "localSeq", "idempotencyKey", "createdAt")
+       VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, 'pending', $6, $7, NOW())`,
       tableName,
       recordId,
       operation,
       JSON.stringify(payload),
       locationId,
+      localSeq,
+      idempotencyKey,
     )
   } catch (err) {
     console.error(`[UpstreamSync] Failed to queue outage write for ${tableName}:${recordId}:`, err)
@@ -273,7 +283,7 @@ async function runSyncCycle(): Promise<void> {
       if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
         isInOutage = true
         console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)
-        const locId = process.env.LOCATION_ID
+        const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
         if (locId) void dispatchOutageStatus(locId, true).catch(console.error)
       }
       return
@@ -283,7 +293,7 @@ async function runSyncCycle(): Promise<void> {
     if (isInOutage) {
       console.log(`[UpstreamSync] Connectivity restored after ${consecutiveFailures} failures — exiting outage mode`)
       isInOutage = false
-      const locId = process.env.LOCATION_ID
+      const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
       if (locId) void dispatchOutageStatus(locId, false).catch(console.error)
     }
     consecutiveFailures = 0
@@ -341,7 +351,7 @@ async function runSyncCycle(): Promise<void> {
     if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
       isInOutage = true
       console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)
-      const locId = process.env.LOCATION_ID
+      const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
       if (locId) void dispatchOutageStatus(locId, true).catch(console.error)
     }
   } finally {

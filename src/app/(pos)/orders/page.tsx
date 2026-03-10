@@ -46,6 +46,8 @@ import { useOrderPageModals } from './useOrderPageModals'
 import { OrderPageModals } from './OrderPageModals'
 import { WeightCaptureModal } from '@/components/scale/WeightCaptureModal'
 import { PricingOptionPicker } from '@/components/orders/PricingOptionPicker'
+import { AgeVerificationModal } from '@/components/orders/AgeVerificationModal'
+import { AllergenNotice } from '@/components/orders/AllergenNotice'
 import { SharedOrderPanel } from './components/SharedOrderPanel'
 import { useOrderBootstrap } from './hooks/useOrderBootstrap'
 import { useOrderHandlers } from './hooks/useOrderHandlers'
@@ -106,7 +108,7 @@ export default function OrdersPage() {
     editingPizzaItem, setEditingPizzaItem } = usePizzaBuilder()
 
   const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings,
-    taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab } = useOrderSettings()
+    taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification } = useOrderSettings()
 
   const { settings: displaySettings, menuItemClass, gridColsClass, orderPanelClass,
     categorySize, categoryColorMode, categoryButtonBgColor, categoryButtonTextColor,
@@ -176,6 +178,12 @@ export default function OrdersPage() {
   const [weightCaptureItem, setWeightCaptureItem] = useState<{
     id: string; name: string; pricePerWeightUnit: number; weightUnit: string
   } | null>(null)
+
+  // ── Age verification & allergen notice ──
+  const [showAgeVerification, setShowAgeVerification] = useState(false)
+  const [ageVerificationItem, setAgeVerificationItem] = useState<MenuItem | null>(null)
+  const [ageVerificationCallback, setAgeVerificationCallback] = useState<(() => void) | null>(null)
+  const [allergenNotice, setAllergenNotice] = useState<{ itemName: string; allergens: string[] } | null>(null)
 
   // ── Saved order state ──
   const [savedOrderId, setSavedOrderId] = useState<string | null>(null)
@@ -417,6 +425,8 @@ export default function OrdersPage() {
     splitParentId, orderSplitChips, editingChildSplit,
     payAllSplitsParentId, tabCardInfo: tabCardInfo as any,
     setMode, addTableOrder, requireCardForTab,
+    setShowAgeVerification, setAgeVerificationItem, setAgeVerificationCallback, setAllergenNotice,
+    ageVerificationSettings: ageVerification,
   })
 
   // Wire up modifier ref
@@ -1374,6 +1384,33 @@ export default function OrdersPage() {
           pricingPickerCallbackRef.current = null
         }}
       />
+
+      {/* Age Verification Modal */}
+      <AgeVerificationModal
+        isOpen={showAgeVerification}
+        itemName={ageVerificationItem?.name || ''}
+        minimumAge={ageVerification?.minimumAge ?? 21}
+        onVerified={() => {
+          setShowAgeVerification(false)
+          ageVerificationCallback?.()
+          setAgeVerificationCallback(null)
+          setAgeVerificationItem(null)
+        }}
+        onCancel={() => {
+          setShowAgeVerification(false)
+          setAgeVerificationCallback(null)
+          setAgeVerificationItem(null)
+        }}
+      />
+
+      {/* Allergen Notice (auto-dismissing toast) */}
+      {allergenNotice && (
+        <AllergenNotice
+          itemName={allergenNotice.itemName}
+          allergens={allergenNotice.allergens}
+          onDismiss={() => setAllergenNotice(null)}
+        />
+      )}
     </div>
   )
 }

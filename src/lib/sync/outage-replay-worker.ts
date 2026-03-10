@@ -165,7 +165,14 @@ async function replayEntry(entry: {
         .map((c) => `"${c}" = EXCLUDED."${c}"`)
         .join(', ')
 
-      const sql = `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}`
+      // M6: Guard against overwriting newer Neon data with stale outage data.
+      // Only update if the existing row's updatedAt is older than or equal to the replayed row's.
+      const hasUpdatedAt = upsertCols.includes('updatedAt')
+      const versionGuard = hasUpdatedAt
+        ? ` WHERE "${tableName}"."updatedAt" <= EXCLUDED."updatedAt"`
+        : ''
+
+      const sql = `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}${versionGuard}`
       const values = upsertCols.map((col) => serializeValue(payload[col]))
 
       await neonClient.$executeRawUnsafe(sql, ...values)
@@ -203,8 +210,20 @@ async function processOutageQueue(): Promise<void> {
          AND COALESCE(("metadata"->>'retryCount')::int, 0) >= $1`,
       MAX_RETRY_ATTEMPTS
     ) as number
-    if (deadLettered > 0) {
-      console.error(`[OUTAGE-REPLAY] CRITICAL: ${deadLettered} entries dead-lettered after ${MAX_RETRY_ATTEMPTS} retries. Orders may be lost. Check OutageQueueEntry table.`)
+
+    // M4: Also dead-letter failed entries older than 24h regardless of retry count
+    // (prevents entries with retryCount < MAX from being stuck forever in 'failed')
+    const agedOut = await masterClient.$executeRawUnsafe(
+      `UPDATE "OutageQueueEntry" SET status = 'dead_letter'
+       WHERE status = 'failed'
+         AND "createdAt" < NOW() - INTERVAL '24 hours'
+         AND COALESCE(("metadata"->>'retryCount')::int, 0) < $1`,
+      MAX_RETRY_ATTEMPTS
+    ) as number
+
+    const totalDeadLettered = (deadLettered || 0) + (agedOut || 0)
+    if (totalDeadLettered > 0) {
+      console.error(`[OUTAGE-REPLAY] CRITICAL: ${totalDeadLettered} entries dead-lettered (${deadLettered || 0} max-retry, ${agedOut || 0} aged-out). Orders may be lost. Check OutageQueueEntry table.`)
       // If MC health endpoint exists, report it
     }
 

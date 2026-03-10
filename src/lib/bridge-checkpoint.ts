@@ -147,10 +147,29 @@ export function startBridgeCheckpoint(): void {
   console.log(`[BridgeCheckpoint] Started (node: ${NODE_ID}, lease: ${LEASE_DURATION}ms, heartbeat: ${HEARTBEAT_INTERVAL}ms)`)
 }
 
-export function stopBridgeCheckpoint(): void {
+export async function stopBridgeCheckpoint(): Promise<void> {
   if (checkpointTimer) {
     clearInterval(checkpointTimer)
     checkpointTimer = null
+  }
+
+  // Gracefully release the lease so backup can claim immediately
+  // instead of waiting 90s for the lease to expire
+  if (LOCATION_ID) {
+    try {
+      await masterClient.$executeRawUnsafe(
+        `UPDATE "BridgeCheckpoint"
+         SET "leaseExpiresAt" = NOW()
+         WHERE "locationId" = $1 AND "nodeId" = $2`,
+        LOCATION_ID,
+        NODE_ID,
+      )
+      console.log('[BridgeCheckpoint] Stopped (lease released)')
+    } catch (err) {
+      // Best-effort — if DB is unreachable, the lease will expire naturally in 90s
+      console.warn('[BridgeCheckpoint] Stopped (lease release failed, will expire in ≤90s):', err instanceof Error ? err.message : err)
+    }
+  } else {
     console.log('[BridgeCheckpoint] Stopped')
   }
 }
