@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-03-11 — Pour Size Fix, Attach Card Fix, Grey Text, NUC Schema, Room Recovery
+
+### Pour Size on First Bar Tab Item (5-layer bug)
+- **Problem:** When using quick-pick pour size buttons (Shot, Double, Tall, Short), the first item added via "New Bar Tab" dialog didn't show the pour size label — subsequent items did.
+- **Root cause:** 5-layer gap — Zod stripped `pourSize`/`pourMultiplier` from order creation, API didn't persist them, response mapper didn't return them, Android DTO didn't deserialize them, Android caching/events didn't map them.
+- **Commits:** gwi-pos `934aadaa`, gwi-android-register `a17a7b0`, gwi-pax-a6650 `d099134`
+
+### Attach Card Button Fixed (architectural mismatch)
+- **Problem:** "Attach Card" button on bar tabs did nothing. It called the server's `open-tab` endpoint which tries to run Datacap from the NUC — but on Android, the card reader (VP3350) is local to the device.
+- **Fix:** Rewrote `attachCardToTab()` to use device-side `PaymentManager.processPreAuth()`, then record the result via the existing `record-card-auth` server endpoint. Also fixed the same bug in `createBarTab()` pre-auth flow.
+- **UI:** Blue "Insert chip or tap card..." badge shown during card read. On success, order refreshes to show green card badge.
+- **Commit:** gwi-android-register `5f4e81c`
+- **Files:** GwiApiService.kt, OrderDtos.kt (RecordCardAuthRequest/Response), OrderViewModel.kt, OrderHeader.kt, OrderPanel.kt, OrderMainContent.kt
+
+---
+
 ## 2026-03-11 — Grey Text Root Cause + NUC Schema Auto-Sync + Android Room Recovery
 
 **Commits:**
@@ -37,6 +53,36 @@
 **gwi-android-register:** Room database init (auto-recovery)
 **gwi-pax-a6650:** Room database init (auto-recovery)
 **gwi-mission-control:** `scripts/installer.run` (synced)
+
+---
+
+## 2026-03-10 — Device Limits, Cellular Device View, Transaction Limits
+
+### Device Count Limits (Subscription Gating)
+- **New:** `src/lib/device-limits.ts` — shared `checkDeviceLimit()` utility for subscription-gated hardware caps
+- **New:** `GET /api/hardware/device-counts` — returns current device counts + limits per type
+- **Enforced at 4 points:** terminal creation, terminal pairing, cellular exchange, printer creation
+- **Replaced:** hardcoded `TERMINAL_LIMIT = 20` in pair-native with settings-driven limits
+- **Settings:** `maxPOSTerminals`(20), `maxHandhelds`(4), `maxCellularDevices`(2), `maxKDSScreens`(4), `maxPrinters`(6)
+- **MC tiers:** STARTER (2/0/2/2/1), PRO (8/4/4/6/4), ENTERPRISE (unlimited)
+- **Admin UI:** Device Limits section with progress bars at Settings > Hardware > Transaction Limits
+
+### Cellular Device View (Venue-Side Management)
+- **New:** In-memory `activeSessions` Map in `cellular-auth.ts` — tracks all cellular device sessions
+- **New:** `GET/POST /api/cellular-devices` — list active/expired/revoked sessions + revoke devices
+- **New:** Admin page at Settings > Hardware > Cellular Devices — device cards, status badges, restrictions info, revoke with confirmation
+- **Socket:** `cellular:device-revoked` event for real-time device disconnection
+- **Auto-refresh:** 30s polling for session updates
+
+### Transaction & Behavior Limits (HardwareLimitsSettings)
+- **New:** `HardwareLimitsSettings` interface with 17 fields across 4 groups
+- **New:** Admin page at Settings > Hardware > Transaction Limits
+- **Groups:** Transaction caps, handheld device controls, cellular device controls, volume guards
+- **Settings nav:** Added "Transaction Limits" and "Cellular Devices" under Hardware
+
+### Files Changed
+- **New:** `src/lib/device-limits.ts`, `src/app/api/hardware/device-counts/route.ts`, `src/app/api/cellular-devices/route.ts`, `src/app/(admin)/settings/hardware/cellular/page.tsx`, `src/app/(admin)/settings/hardware/limits/page.tsx`
+- **Modified:** `src/lib/settings.ts`, `src/lib/cellular-auth.ts`, `src/app/api/hardware/terminals/route.ts`, `src/app/api/hardware/terminals/pair-native/route.ts`, `src/app/api/auth/cellular-exchange/route.ts`, `src/app/api/hardware/printers/route.ts`, `src/components/admin/SettingsNav.tsx`
 
 ---
 

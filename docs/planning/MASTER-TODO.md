@@ -466,7 +466,7 @@ These are DONE and working — reference before adding anything similar:
 
 ---
 
-*Last updated: 2026-03-08 — Added HA/Cellular/Fulfillment phases from LOCAL-CORE-CELLULAR-EDGE-HA architecture plan.*
+*Last updated: 2026-03-10 — Device count limits enforced at terminal creation, pairing, cellular exchange, printer creation. Cellular device registry (venue-side) DONE. Transaction & behavior limits settings built.*
 
 ---
 
@@ -477,7 +477,7 @@ These are DONE and working — reference before adding anything similar:
 | Phase | Description | Status | Key Deliverables |
 |-------|-------------|--------|-----------------|
 | **Phase 1** | Backup NUC + HA Failover | In Progress | PG streaming replication, keepalived + VIP, ha-check.sh, promote.sh, rejoin-as-standby.sh, installer backup role, fence-check API, health API enhancement, Android VIP failover |
-| **Phase 2** | Cellular Edge Path | In Progress | proxy.ts cellular gate, cellular-auth.ts (6-gate model), bidirectional sync config, downstream Order sync, sync-agent SSE wake-up, cellular token refresh endpoint |
+| **Phase 2** | Cellular Edge Path | In Progress | proxy.ts cellular gate, cellular-auth.ts (6-gate model), bidirectional sync config, downstream Order sync, sync-agent SSE wake-up, cellular token refresh endpoint, device count limits (subscription-gated), venue-side cellular device management |
 | **Phase 3** | Fulfillment Routing | Pending | fulfillment-router.ts, FulfillmentType enum on MenuItem, station resolution, send-time snapshot, idempotent routing |
 | **Phase 4** | DR Formalization | Planned | Automated backup verification, replacement NUC restore procedure, Neon-assisted recovery |
-| **Phase 5** | Observability | Planned | MC HA dashboard, failover timeline, replication lag graph, cellular device registry, on-device health indicators |
+| **Phase 5** | Observability | Planned | MC HA dashboard, failover timeline, replication lag graph, ~~cellular device registry~~ DONE (venue-side + MC), on-device health indicators |

@@ -335,6 +335,12 @@ Cellular devices undergo a 6-gate registration process before receiving tokens:
 - `checkIdleTimeout()` — in-memory per-terminalId, >2 hours since last request → expired
 - **Revocation:** in-memory deny list (Map<terminalId, revokedAt>) with 60s TTL refresh from DB
 
+### Device Count Limits (Subscription Gating)
+
+Cellular device registration is subject to subscription-tier limits enforced at `cellular-exchange`. The shared `checkDeviceLimit()` utility (`src/lib/device-limits.ts`) gates device creation at 4 enforcement points: terminal creation, terminal pairing, cellular exchange, and printer creation. Limits are settings-driven (`maxCellularDevices`, `maxPOSTerminals`, `maxHandhelds`, `maxKDSScreens`, `maxPrinters`) with MC tier defaults: STARTER (2/0/2/2/1), PRO (8/4/4/6/4), ENTERPRISE (unlimited). Returns 403 `DEVICE_LIMIT_EXCEEDED` when a venue exceeds its tier allocation.
+
+**Venue-side cellular device management:** Venues can view and revoke cellular devices directly from the POS admin (Settings > Hardware > Cellular Devices) via `GET/POST /api/cellular-devices`. In-memory `activeSessions` Map in `cellular-auth.ts` tracks all active sessions. The `cellular:device-revoked` socket event provides real-time device disconnection.
+
 ### Event-Sourced Cart Outbox (INV-4)
 
 Cellular cart mutations follow a durable outbox pattern:

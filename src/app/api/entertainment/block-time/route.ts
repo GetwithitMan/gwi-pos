@@ -771,6 +771,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       lineItemId: orderItemId,
       price: calculatedCharge,
       blockTimeMinutes: orderItem.blockTimeMinutes,
+      blockTimeStartedAt: 'CLEARED',
       blockTimeExpiresAt: now.toISOString(),
       actualMinutesUsed: actualMinutes,
     })

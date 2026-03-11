@@ -174,11 +174,11 @@ This matrix answers: "If I change feature X, what else might break?"
 ### Hardware
 | | |
 |---|---|
-| **Depends On** | Settings (hardware configuration), KDS (device pairing) |
-| **Depended On By** | Orders (receipt printing), Payments (card reader, receipt), KDS (printer routing), Menu (per-modifier print routing), CFD (display device) |
+| **Depends On** | Settings (hardware configuration, `HardwareLimitsSettings`), KDS (device pairing), Mission Control (subscription tier → device count limits), Cellular Auth (session tracking for venue-side device management) |
+| **Depended On By** | Orders (receipt printing), Payments (card reader, receipt), KDS (printer routing), Menu (per-modifier print routing), CFD (display device), Terminal management (device count enforcement at pairing), Printer management (device count enforcement at creation), Cellular pairing (device count enforcement at exchange) |
 | **Shared Models** | `HardwareDevice`, `HardwareCommand`, `PrinterConfig`, `KdsScreen` |
-| **Shared Socket Events** | `hardware:command`, `printer:status`, `terminal:status_changed` |
-| **Critical Rules** | Print calls MUST be fire-and-forget — 7+ second TCP timeout if printer offline. NEVER await print before clearing UI. VP3300/VP3350 is the only supported card reader. |
+| **Shared Socket Events** | `hardware:command`, `printer:status`, `terminal:status_changed`, `cellular:device-revoked` |
+| **Critical Rules** | Print calls MUST be fire-and-forget — 7+ second TCP timeout if printer offline. NEVER await print before clearing UI. VP3300/VP3350 is the only supported card reader. Device count limits enforced at 4 creation/pairing points — returns 403 `DEVICE_LIMIT_EXCEEDED` when tier cap reached. Transaction/behavior limits per device type in `HardwareLimitsSettings`. |
 
 ---
 
@@ -720,7 +720,7 @@ When one of these changes, the entire cluster often needs review:
 | **Menu & Products** | Menu + Modifiers + Inventory | Item changes affect deductions and display |
 | **Service Floor** | Floor Plan + Entertainment + Tables | Physical space and sessions interlock |
 | **Staff & Compensation** | Employees + Time Clock + Tips | Clock-out, tip allocation, shift payroll |
-| **Output Devices** | Hardware + KDS + Printers | Routing and dispatch shared |
+| **Output Devices** | Hardware + KDS + Printers + Device Limits | Routing, dispatch, and device count caps shared |
 | **Access Control** | Roles + Permissions + Employees | Permission changes need role + employee sync |
 | **Payment Integrity** | Payments + Store-and-Forward + Refund/Void + Pricing Programs + Remote Void Approval + Chargebacks | All affect how money is collected, voided, and reconciled |
 | **Guest Tenders** | Payments + Gift Cards + House Accounts + Tabs + Pay-at-Table + Memberships | All are non-cash or alternative tender paths — each needs payment permission check |
@@ -770,4 +770,4 @@ When one of these changes, the entire cluster often needs review:
 
 ---
 
-*Last updated: 2026-03-10 (EOD Reset: added automated cron, dashboard button, MC config, batch close dependencies; added Payment Methods report, Section Assignments, crew hub features)*
+*Last updated: 2026-03-10 (Device count limits, cellular device management, transaction/behavior limits added to Hardware row)*

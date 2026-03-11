@@ -345,6 +345,68 @@ async function processCommand(dataStr) {
         log('[Sync] UPDATE_PAYMENT_CONFIG error: ' + err.message)
         result = { ok: false, error: err.message }
       }
+    } else if (cmd.type === 'CONFIGURE_SYNC') {
+      try {
+        var encNeonUrl = cmd.payload && cmd.payload.encryptedNeonDatabaseUrl
+        var encNeonDirect = cmd.payload && cmd.payload.encryptedNeonDirectUrl
+        if (!encNeonUrl || !encNeonDirect) {
+          log('[Sync] CONFIGURE_SYNC: missing encrypted payload fields')
+          result = { ok: false, error: 'missing-payload' }
+        } else {
+          // RSA-OAEP decrypt using server private key (same pattern as UPDATE_PAYMENT_CONFIG)
+          var privKey = fs.readFileSync(PRIVATE_KEY_PATH, 'utf-8')
+          var decryptOpts = { key: privKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }
+          var neonDatabaseUrl = crypto.privateDecrypt(decryptOpts, Buffer.from(encNeonUrl, 'base64')).toString('utf-8')
+          var neonDirectUrl = crypto.privateDecrypt(decryptOpts, Buffer.from(encNeonDirect, 'base64')).toString('utf-8')
+
+          // Read current .env
+          var envContent = ''
+          try { envContent = fs.readFileSync(ENV_FILE, 'utf-8') } catch (e) {}
+          var envLines = envContent.split('\n')
+
+          // Helper: replace existing key or append
+          function setEnvVar(lines, key, value) {
+            var found = false
+            for (var i = 0; i < lines.length; i++) {
+              if (lines[i].indexOf(key + '=') === 0) {
+                lines[i] = key + '=' + value
+                found = true
+                break
+              }
+            }
+            if (!found) lines.push(key + '=' + value)
+            return lines
+          }
+
+          envLines = setEnvVar(envLines, 'NEON_DATABASE_URL', neonDatabaseUrl)
+          envLines = setEnvVar(envLines, 'NEON_DIRECT_URL', neonDirectUrl)
+          envLines = setEnvVar(envLines, 'SYNC_ENABLED', 'true')
+
+          // Write updated .env
+          fs.writeFileSync(ENV_FILE, envLines.join('\n'))
+          log('[Sync] CONFIGURE_SYNC: .env updated with Neon URLs + SYNC_ENABLED=true')
+
+          // Copy .env to app directory (same as handleForceUpdate)
+          try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
+          try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
+
+          // Restart POS service to pick up new config
+          log('[Sync] CONFIGURE_SYNC: restarting POS service...')
+          var csOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
+          if (!csOk) csOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
+
+          // Update in-memory env so heartbeat picks up the change immediately
+          env.NEON_DATABASE_URL = neonDatabaseUrl
+          env.NEON_DIRECT_URL = neonDirectUrl
+          env.SYNC_ENABLED = 'true'
+
+          log('[Sync] CONFIGURE_SYNC: complete (restart=' + (csOk ? 'OK' : 'FAIL') + ')')
+          result = { ok: true }
+        }
+      } catch (err) {
+        log('[Sync] CONFIGURE_SYNC error: ' + err.message)
+        result = { ok: false, error: err.message }
+      }
     } else if (cmd.type === 'RE_PROVISION') {
       // Re-provision = full update cycle (same as FORCE_UPDATE)
       result = handleForceUpdate(cmd.payload || {})

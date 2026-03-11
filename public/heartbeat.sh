@@ -23,6 +23,11 @@ DISK=$(df -h / 2>/dev/null | awk 'NR==2{print $5}' | tr -d '%' || echo "0")
 UPTIME=$(cat /proc/uptime 2>/dev/null | awk '{printf "%.0f", $1}' || echo "0")
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown")
 POS_LOC="${POS_LOCATION_ID:-}"
+SYNC_ENABLED="${SYNC_ENABLED:-false}"
+NEON_CONFIGURED="false"
+if [ -n "${NEON_DATABASE_URL:-}" ]; then
+  NEON_CONFIGURED="true"
+fi
 
 # Get sync status from local POS (if running)
 SYNC_STATUS="{}"
@@ -41,6 +46,8 @@ BODY=$(cat <<EOJSON
   "uptimeSeconds": $UPTIME,
   "localIp": "$LOCAL_IP",
   "posLocationId": "$POS_LOC",
+  "syncEnabled": $SYNC_ENABLED,
+  "neonConfigured": $NEON_CONFIGURED,
   "syncStatus": $SYNC_STATUS
 }
 EOJSON

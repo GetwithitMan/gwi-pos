@@ -33,6 +33,8 @@ Hardware manages all physical devices connected to the POS system: thermal recei
 | Admin | `/settings/hardware/scales` | Managers |
 | Admin | `/settings/hardware/prep-stations` | Managers |
 | Admin | `/settings/hardware/health` | Managers |
+| Admin | `/settings/hardware/cellular` | Managers |
+| Admin | `/settings/hardware/limits` | Managers |
 
 ---
 
@@ -88,6 +90,11 @@ Hardware manages all physical devices connected to the POS system: thermal recei
 | `src/types/pizza-print-settings.ts` | Pizza print settings types |
 | `src/types/print-route-settings.ts` | Route-specific settings |
 | `src/components/hardware/PrintRouteEditor.tsx` | Route editor with live preview |
+| `src/lib/device-limits.ts` | Device count enforcement utility (`checkDeviceLimit()`) |
+| `src/app/api/hardware/device-counts/route.ts` | Device counts + limits API |
+| `src/app/api/cellular-devices/route.ts` | Cellular device session list + revocation |
+| `src/app/(admin)/settings/hardware/cellular/page.tsx` | Cellular device management admin page |
+| `src/app/(admin)/settings/hardware/limits/page.tsx` | Transaction & behavior limits admin page |
 
 ---
 
@@ -119,6 +126,9 @@ Hardware manages all physical devices connected to the POS system: thermal recei
 | `POST` | `/api/print/cash-drawer` | Employee PIN | Open cash drawer |
 | `POST` | `/api/print/daily-report` | Manager | Print daily report |
 | `POST` | `/api/print/shift-closeout` | Manager | Print shift closeout |
+| `GET` | `/api/hardware/device-counts` | Manager | Device counts + limits per type |
+| `GET` | `/api/cellular-devices` | Manager | List active/expired/revoked cellular sessions |
+| `POST` | `/api/cellular-devices` | Manager | Revoke a cellular device (deny list + audit) |
 
 ---
 
@@ -128,6 +138,7 @@ Hardware manages all physical devices connected to the POS system: thermal recei
 | Event | Payload | Trigger |
 |-------|---------|---------|
 | `terminal:status_changed` | `{ terminalId, status, name }` | Terminal connect/disconnect/heartbeat |
+| `cellular:device-revoked` | `{ terminalId, fingerprint }` | Cellular device revoked from venue admin |
 
 ### Received (Clients → POS)
 | Event | Source | Purpose |
@@ -207,6 +218,82 @@ KdsScreen {
 
 ---
 
+## Device Count Limits
+
+Subscription-gated hardware caps. Venues can only register a certain number of devices based on their MC plan tier. Adding more returns 403 `DEVICE_LIMIT_EXCEEDED` with an upgrade message.
+
+### Settings Fields (`HardwareLimitsSettings` in `src/lib/settings.ts`)
+- `maxPOSTerminals` (default 20), `maxHandhelds` (4), `maxCellularDevices` (2), `maxKDSScreens` (4), `maxPrinters` (6)
+- `0` = unlimited for any field
+
+### Enforcement Points
+- `POST /api/hardware/terminals` — terminal creation
+- `POST /api/hardware/terminals/pair-native` — replaced hardcoded `TERMINAL_LIMIT = 20`
+- `POST /api/auth/cellular-exchange` — cellular device pairing
+- `POST /api/hardware/printers` — printer creation
+
+### Enforcement Utility
+- `src/lib/device-limits.ts` — `checkDeviceLimit(locationId, deviceType)` returns `{ allowed, limit, current, upgradeMessage }`
+
+### MC Tier Defaults
+| Tier | Terminals | Handhelds | KDS | Printers | Readers |
+|------|-----------|-----------|-----|----------|---------|
+| STARTER | 2 | 0 | 2 | 2 | 1 |
+| PRO | 8 | 4 | 4 | 6 | 4 |
+| ENTERPRISE | unlimited | unlimited | unlimited | unlimited | unlimited |
+
+MC syncs tier limits to POS `LocationSettings.hardwareLimits` during fleet heartbeat.
+
+### Admin UI
+- "Device Limits" section with progress bars on Settings > Hardware > Transaction Limits page
+- `GET /api/hardware/device-counts?locationId=X` returns current counts + configured limits
+
+---
+
+## Cellular Device Management
+
+In-venue cellular device viewing and revocation. Venue managers can see and manage cellular (LTE/5G) devices connected to their venue without needing Mission Control access.
+
+### Session Tracking
+- In-memory `activeSessions` Map in `src/lib/cellular-auth.ts`, populated on JWT verify + token issuance
+- Tracks: terminalId, locationId, deviceFingerprint, venueSlug, issuedAt, expiresAt, lastRequestAt
+
+### API
+- `GET /api/cellular-devices?locationId=X` — list active, expired, and revoked sessions
+- `POST /api/cellular-devices` — revoke a device (adds to deny list + audit log + emits `cellular:device-revoked` socket event)
+
+### Admin Page
+- `src/app/(admin)/settings/hardware/cellular/page.tsx`
+- Device cards with status badges (Active / Expired / Revoked)
+- Restrictions info panel showing cellular allowlist/blocklist rules
+- Revoke button with confirmation dialog
+- 30-second auto-refresh
+
+---
+
+## Transaction & Behavior Limits
+
+Per-device-type transaction caps and behavior controls. Configured in `HardwareLimitsSettings` in `src/lib/settings.ts`.
+
+### Settings Fields (17 total, 4 groups)
+
+**Transaction Limits:**
+- `maxSingleTransactionAmount` ($9999.99), `maxCashPaymentAmount` ($500), `maxOpenTabAmount` ($1000), `maxDiscountDollarAmount` (0 = unlimited)
+
+**Handheld Device Limits:**
+- `handheldMaxPaymentAmount` ($500), `handheldAllowVoids`, `handheldAllowComps`, `handheldAllowDiscounts`, `handheldAllowRefunds`, `handheldAllowCashPayments`, `handheldAllowTabClose`
+
+**Cellular Device Limits:**
+- `cellularMaxOrderAmount` ($200), `cellularAllowVoids` (false), `cellularAllowComps` (false)
+
+**Volume Guards:**
+- `maxOrdersPerHour`, `maxVoidsPerShift`, `maxCompsPerShift` (all 0 = unlimited)
+
+### Admin Page
+- `src/app/(admin)/settings/hardware/limits/page.tsx`
+
+---
+
 ## Cross-Feature Dependencies
 
 > See `_CROSS-REF-MATRIX.md` for full matrix.
@@ -224,7 +311,9 @@ KdsScreen {
 | Payments | Card reader used for transactions, receipt printer for receipts |
 | KDS | Kitchen ticket print routing |
 | Menu | Per-modifier print routing configuration |
-| Settings | Hardware configuration stored in location settings |
+| Settings | Hardware configuration stored in location settings (including `HardwareLimitsSettings`) |
+| Mission Control | Subscription tiers push device count limits to POS via fleet heartbeat |
+| Cellular Auth | Cellular device sessions tracked for venue-side management |
 
 ### BEFORE CHANGING THIS FEATURE, VERIFY:
 - [ ] **KDS** — device pairing changes affect KDS screens
@@ -273,4 +362,4 @@ KdsScreen {
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-10*

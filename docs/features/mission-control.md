@@ -143,6 +143,11 @@ FleetCommand {
 | PRO | 8 | 4 | 4 | 6 | 4 |
 | ENTERPRISE | 999 | 999 | 999 | 999 | 999 |
 
+MC syncs tier-appropriate limits to POS `LocationSettings.hardwareLimits` during fleet heartbeat. POS enforces these limits at 4 device creation/pairing endpoints via `checkDeviceLimit()` in `src/lib/device-limits.ts`. When a venue exceeds its tier cap, the API returns 403 `DEVICE_LIMIT_EXCEEDED` with an upgrade message. See `docs/features/hardware.md` for enforcement details.
+
+### Cellular Device Management (Venue-Side)
+Cellular device viewing and revocation is now available from the venue admin at `/settings/hardware/cellular` — venue managers no longer need Mission Control access to see connected cellular devices or revoke them. MC remains the authority for initial device approval/deny via the CellularDevice lifecycle, but day-to-day session monitoring and revocation is handled venue-side.
+
 ### Edge Cases & Business Rules
 - HMAC-SHA256 for ALL fleet API calls (6-header auth model)
 - AES-256-GCM for sensitive config (payment keys) — NEVER store in plain text
@@ -161,6 +166,7 @@ FleetCommand {
 |---------|-----------|
 | Settings | Pushes config from cloud |
 | Payments | Delivers Datacap credentials |
+| Hardware | Subscription tier limits synced to POS `HardwareLimitsSettings` via heartbeat |
 
 ### These features MODIFY this feature:
 | Feature | How / Why |
@@ -211,4 +217,4 @@ FleetCommand {
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-10*

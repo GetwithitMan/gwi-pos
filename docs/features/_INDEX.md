@@ -94,7 +94,10 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 
 | Feature | Doc | Status | Repos | Top Dependencies |
 |---------|-----|--------|-------|-----------------|
-| **Hardware** | [hardware.md](hardware.md) | Active | pos, android | KDS, Orders, Payments |
+| **Hardware** | [hardware.md](hardware.md) | Active | pos, android | KDS, Orders, Payments, Settings, Mission Control |
+| **Device Count Limits** | [hardware.md](hardware.md#device-count-limits) | Active | pos, mission-control | Settings, Mission Control, Hardware |
+| **Cellular Device Management** | [hardware.md](hardware.md#cellular-device-management) | Active | pos | Cellular Auth, Settings, Hardware |
+| **Transaction & Behavior Limits** | [hardware.md](hardware.md#transaction--behavior-limits) | Active | pos | Settings, Hardware, Roles |
 | **CFD (Customer-Facing Display)** | [cfd.md](cfd.md) | Active | pos, android, cfd | Payments, Orders, Hardware |
 | **Cash Drawers** | [cash-drawers.md](cash-drawers.md) | Active | pos | Payments, Shifts, Hardware |
 | **Printer Settings** | [printer-settings.md](printer-settings.md) | Planned | pos | Hardware, Orders, KDS |

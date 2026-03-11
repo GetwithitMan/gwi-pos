@@ -44,6 +44,8 @@ Settings manages all system-wide configuration for a location. Configuration is 
 | Admin | `/settings/hardware/scales` | Managers |
 | Admin | `/settings/hardware/prep-stations` | Managers |
 | Admin | `/settings/hardware/health` | Managers |
+| Admin | `/settings/hardware/cellular` | Managers |
+| Admin | `/settings/hardware/limits` | Managers |
 | Admin | `/settings/integrations/sms` | Managers |
 | Admin | `/settings/integrations/slack` | Managers |
 | Admin | `/settings/integrations/email` | Managers |
@@ -176,6 +178,37 @@ OrderType {
   tabPreAuthEnabled: boolean
   tabPreAuthAmountCents: number
   tabIncrementalAuthThreshold: number
+
+  // Hardware Limits (HardwareLimitsSettings)
+  hardwareLimits: {
+    // Device count limits (subscription-gated, MC syncs tier defaults)
+    maxPOSTerminals: number        // default 20, 0 = unlimited
+    maxHandhelds: number           // default 4
+    maxCellularDevices: number     // default 2
+    maxKDSScreens: number          // default 4
+    maxPrinters: number            // default 6
+    // Transaction limits
+    maxSingleTransactionAmount: number  // default $9999.99
+    maxCashPaymentAmount: number        // default $500
+    maxOpenTabAmount: number            // default $1000
+    maxDiscountDollarAmount: number     // 0 = unlimited
+    // Handheld behavior limits
+    handheldMaxPaymentAmount: number    // default $500
+    handheldAllowVoids: boolean
+    handheldAllowComps: boolean
+    handheldAllowDiscounts: boolean
+    handheldAllowRefunds: boolean
+    handheldAllowCashPayments: boolean
+    handheldAllowTabClose: boolean
+    // Cellular behavior limits
+    cellularMaxOrderAmount: number      // default $200
+    cellularAllowVoids: boolean         // default false
+    cellularAllowComps: boolean         // default false
+    // Volume guards
+    maxOrdersPerHour: number       // 0 = unlimited
+    maxVoidsPerShift: number       // 0 = unlimited
+    maxCompsPerShift: number       // 0 = unlimited
+  }
 }
 ```
 
@@ -268,4 +301,4 @@ OrderType {
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-10*
