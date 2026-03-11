@@ -82,8 +82,7 @@ function digitsOnly(value: string): string {
 /* ------------------------------------------------------------------ */
 /* Component                                                           */
 /* ------------------------------------------------------------------ */
-export { SaveCardForm }
-export default function SaveCardForm({ onTokenized, onCancel, loading: externalLoading }: SaveCardFormProps) {
+export function SaveCardForm({ onTokenized, onCancel, loading: externalLoading }: SaveCardFormProps) {
   const [cardNumber, setCardNumber] = useState('')
   const [expiryMonth, setExpiryMonth] = useState('')
   const [expiryYear, setExpiryYear] = useState('')

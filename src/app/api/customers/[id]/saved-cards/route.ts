@@ -27,18 +27,9 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
     }
 
-    // Check if card-on-file is enabled
-    const location = await db.location.findUnique({
-      where: { id: locationId },
-      select: { settings: true },
-    })
-    const settings = parseSettings(location?.settings)
-
-    if (!settings.cardOnFile?.enabled) {
-      return NextResponse.json({ error: 'Card on file is not enabled' }, { status: 400 })
-    }
-
     // Fetch saved cards — NEVER return tokens
+    // No cardOnFile.enabled gate on GET — already-saved cards should always be listable
+    // (memberships, house accounts, etc. need to read cards regardless of the tab-level setting)
     const cards = await db.$queryRawUnsafe<Array<{
       id: string
       last4: string
