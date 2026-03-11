@@ -13,7 +13,9 @@ import { ComboSuggestionBanner } from './ComboSuggestionBanner'
 import { UpsellPromptBanner } from './UpsellPromptBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import { CustomerLookupModal } from '@/components/customers/CustomerLookupModal'
+import { CustomerProfileModal } from '@/components/customers/CustomerProfileModal'
 import { getSharedSocket } from '@/lib/shared-socket'
+import { useAuthStore } from '@/stores/auth-store'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
 export type { OrderPanelItemData }
@@ -297,11 +299,15 @@ export const OrderPanel = memo(function OrderPanel({
     !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
   )
 
+  // Employee role for manager-gated features
+  const employeeRole = useAuthStore(s => s.employee?.role?.name?.toLowerCase())
+
   // Shared ownership modal
   const [showShareOwnership, setShowShareOwnership] = useState(false)
 
   // Customer modal + linked customer state
   const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [showCustomerProfile, setShowCustomerProfile] = useState(false)
   const [linkedCustomer, setLinkedCustomer] = useState<{
     id: string
     firstName: string
@@ -1419,7 +1425,7 @@ export const OrderPanel = memo(function OrderPanel({
                     {/* Customer button */}
                     {linkedCustomer ? (
                       <button
-                        onClick={() => setShowCustomerModal(true)}
+                        onClick={() => setShowCustomerProfile(true)}
                         style={{
                           fontSize: '11px',
                           fontWeight: 600,
@@ -1993,6 +1999,27 @@ export const OrderPanel = memo(function OrderPanel({
         onSelectCustomer={handleSelectCustomer}
         loyaltyEnabled={loyaltyEnabled}
       />
+
+      {/* Customer Profile Modal (shown when clicking linked customer) */}
+      {linkedCustomer && (
+        <CustomerProfileModal
+          isOpen={showCustomerProfile}
+          onClose={() => setShowCustomerProfile(false)}
+          customerId={linkedCustomer.id}
+          locationId={locationId || ''}
+          employeeId={employeeId || ''}
+          isManager={employeeRole === 'manager' || employeeRole === 'admin' || employeeRole === 'owner'}
+          loyaltyEnabled={loyaltyEnabled}
+          onChangeCustomer={() => {
+            setShowCustomerProfile(false)
+            setShowCustomerModal(true)
+          }}
+          onRemoveCustomer={() => {
+            setShowCustomerProfile(false)
+            handleSelectCustomer(null)
+          }}
+        />
+      )}
     </div>
   )
 })
