@@ -36,12 +36,8 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Dark mode disabled — POS app uses light theme only.
+   Device dark-mode preference must not affect text/background colors. */
 
 body {
   background: var(--background);
