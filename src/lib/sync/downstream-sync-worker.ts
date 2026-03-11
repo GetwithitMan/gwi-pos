@@ -13,7 +13,7 @@
 
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
-import { getDownstreamModels, getBidirectionalModelNames, getConflictStrategy, DOWNSTREAM_INTERVAL_MS, type ConflictStrategy } from './sync-config'
+import { getDownstreamModels, getBidirectionalModelNames, getConflictStrategy, getBusinessKey, DOWNSTREAM_INTERVAL_MS, type ConflictStrategy } from './sync-config'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig } from '../fulfillment-router'
 import { syncDenyList } from '../cellular-auth'
 
@@ -241,6 +241,30 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
             maxSyncedAt = rowUpdatedAt
           }
           continue
+        }
+      }
+
+      // Business-key conflict resolution: if a cloud-owned downstream model has a
+      // businessKey declared, check if a local row exists with the same business key
+      // but a different id. This happens when items were created locally (pre-transition)
+      // and then re-created in Neon with a different CUID. Since Neon is authoritative
+      // for cloud-owned models, delete the local row so the Neon version can be inserted.
+      const bk = getBusinessKey(tableName)
+      if (bk && row.id) {
+        const bkWhere = bk.map((col, i) => `"${col}" = $${i + 2}`).join(' AND ')
+        const bkValues = bk.map((col) => serializeValue(row[col], false))
+        const conflicting = await masterClient.$queryRawUnsafe<{ id: string }[]>(
+          `SELECT id FROM "${tableName}" WHERE ${bkWhere} AND "id" != $1 AND "deletedAt" IS NULL LIMIT 1`,
+          row.id as string, ...bkValues
+        )
+        if (conflicting.length > 0) {
+          console.log(
+            `[DownstreamSync] ${tableName}: resolving business-key conflict — local id ${conflicting[0].id} replaced by Neon id ${row.id}`
+          )
+          await masterClient.$executeRawUnsafe(
+            `DELETE FROM "${tableName}" WHERE "id" = $1`,
+            conflicting[0].id
+          )
         }
       }
 

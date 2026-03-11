@@ -18,6 +18,13 @@ export interface SyncModelConfig {
   batchSize: number
   /** Conflict resolution strategy for bidirectional models (default: 'neon-wins') */
   conflictStrategy?: ConflictStrategy
+  /**
+   * Business key columns for downstream cloud-owned models.
+   * When a Neon row has a different id but matching business key to a local row,
+   * the local row is deleted before upserting (Neon is authoritative).
+   * This resolves ID divergence from the cloud-primary transition.
+   */
+  businessKey?: string[]
 }
 
 /**
@@ -78,12 +85,12 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   Role:                   { direction: 'downstream', owner: 'cloud', priority: 3, batchSize: 50 },
   EmployeeRole:           { direction: 'downstream', owner: 'cloud', priority: 4, batchSize: 50 },
   Employee:               { direction: 'downstream', owner: 'cloud', priority: 5, batchSize: 100 },
-  Category:               { direction: 'downstream', owner: 'cloud', priority: 6, batchSize: 100 },
-  MenuItem:               { direction: 'downstream', owner: 'cloud', priority: 7, batchSize: 100 },
+  Category:               { direction: 'downstream', owner: 'cloud', priority: 6, batchSize: 100, businessKey: ['locationId', 'name'] },
+  MenuItem:               { direction: 'downstream', owner: 'cloud', priority: 7, batchSize: 100, businessKey: ['categoryId', 'name'] },
   ModifierGroup:          { direction: 'downstream', owner: 'cloud', priority: 8, batchSize: 100 },
   Modifier:               { direction: 'downstream', owner: 'cloud', priority: 9, batchSize: 100 },
-  Table:                  { direction: 'downstream', owner: 'cloud', priority: 10, batchSize: 100 },
-  Section:                { direction: 'downstream', owner: 'cloud', priority: 11, batchSize: 50 },
+  Table:                  { direction: 'downstream', owner: 'cloud', priority: 10, batchSize: 100, businessKey: ['locationId', 'name'] },
+  Section:                { direction: 'downstream', owner: 'cloud', priority: 11, batchSize: 50, businessKey: ['locationId', 'name'] },
   OrderType:              { direction: 'downstream', owner: 'cloud', priority: 12, batchSize: 50 },
   Printer:                { direction: 'downstream', owner: 'cloud', priority: 13, batchSize: 50 },
   PrintRoute:             { direction: 'downstream', owner: 'cloud', priority: 14, batchSize: 50 },
@@ -183,6 +190,11 @@ export function getBidirectionalModelNames(): Set<string> {
 /** Get the conflict resolution strategy for a model (default: 'neon-wins') */
 export function getConflictStrategy(model: string): ConflictStrategy {
   return SYNC_MODELS[model]?.conflictStrategy ?? 'neon-wins'
+}
+
+/** Get the business key columns for a cloud-owned downstream model, if declared */
+export function getBusinessKey(model: string): string[] | undefined {
+  return SYNC_MODELS[model]?.businessKey
 }
 
 export const UPSTREAM_INTERVAL_MS = parseInt(
