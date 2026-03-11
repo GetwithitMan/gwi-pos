@@ -314,6 +314,8 @@ export const OrderPanel = memo(function OrderPanel({
   const [isTaxExempt, setIsTaxExempt] = useState(false)
   const [taxExemptToggling, setTaxExemptToggling] = useState(false)
   const customerFetchedForRef = useRef<string | null>(null)
+  const orderIdRef = useRef(orderId)
+  orderIdRef.current = orderId
 
   // Fetch customer data when order changes
   useEffect(() => {
@@ -392,7 +394,8 @@ export const OrderPanel = memo(function OrderPanel({
   // Handle customer selection from modal
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleSelectCustomer = useCallback((customer: any) => {
-    if (!orderId) return
+    const currentOrderId = orderIdRef.current
+    if (!currentOrderId) return
     const customerId = customer?.id ?? null
 
     // Optimistic local update
@@ -409,8 +412,8 @@ export const OrderPanel = memo(function OrderPanel({
       setLinkedCustomer(null)
     }
 
-    // Fire-and-forget API call
-    void fetch(`/api/orders/${orderId}/customer`, {
+    // Fire-and-forget API call — uses ref to always target the correct order
+    void fetch(`/api/orders/${currentOrderId}/customer`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ customerId }),
@@ -429,7 +432,7 @@ export const OrderPanel = memo(function OrderPanel({
         }
       })
       .catch(console.error)
-  }, [orderId])
+  }, [])
 
   // Tax exempt toggle handler
   const handleTaxExemptToggle = useCallback(() => {
@@ -1985,6 +1988,7 @@ export const OrderPanel = memo(function OrderPanel({
         isOpen={showCustomerModal}
         onClose={() => setShowCustomerModal(false)}
         locationId={locationId || ''}
+        employeeId={employeeId}
         currentCustomerId={linkedCustomer?.id ?? null}
         onSelectCustomer={handleSelectCustomer}
         loyaltyEnabled={loyaltyEnabled}

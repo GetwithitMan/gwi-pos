@@ -40,6 +40,7 @@ interface CustomerLookupModalProps {
   isOpen: boolean
   onClose: () => void
   locationId: string
+  employeeId?: string
   currentCustomerId?: string | null
   onSelectCustomer: (customer: Customer | null) => void
   loyaltyEnabled?: boolean
@@ -59,6 +60,7 @@ export function CustomerLookupModal({
   isOpen,
   onClose,
   locationId,
+  employeeId,
   currentCustomerId,
   onSelectCustomer,
   loyaltyEnabled,
@@ -105,16 +107,22 @@ export function CustomerLookupModal({
         search: searchTerm,
         limit: '10',
       })
+      if (employeeId) params.set('requestingEmployeeId', employeeId)
 
       const response = await fetch(`/api/customers?${params}`, { signal: searchAbortRef.current.signal })
       if (response.ok) {
         const raw = await response.json()
         const data = raw.data ?? raw
-        setCustomers(data.customers)
+        setCustomers(data.customers ?? [])
+      } else {
+        const errData = await response.json().catch(() => ({}))
+        console.error('Customer search failed:', response.status, errData.error)
+        setCustomers([])
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       console.error('Failed to search customers:', err)
+      setCustomers([])
     } finally {
       setIsLoading(false)
     }
@@ -139,9 +147,10 @@ export function CustomerLookupModal({
     try {
       const response = await fetch('/api/customers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(employeeId ? { 'x-employee-id': employeeId } : {}) },
         body: JSON.stringify({
           locationId,
+          requestingEmployeeId: employeeId || undefined,
           firstName: quickAddData.firstName.trim(),
           lastName: quickAddData.lastName.trim(),
           phone: quickAddData.phone.trim() || null,
