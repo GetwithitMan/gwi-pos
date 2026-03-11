@@ -874,8 +874,11 @@ model Customer {
   phone       String?
 
   // Preferences
-  notes String? // Allergies, preferences, etc.
-  tags  Json? // VIP, Regular, etc.
+  notes         String? // Allergies, preferences, etc.
+  allergies     String? // Dedicated field for allergy tracking
+  favoriteDrink String? // Customer's preferred drink
+  favoriteFood  String? // Customer's preferred food
+  tags          Json?   // VIP, Regular, etc.
 
   // Loyalty (Skill 52 foundation)
   loyaltyPoints Int       @default(0)

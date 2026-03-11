@@ -102,6 +102,55 @@ export const GET = withVenue(async function GET(
       take: 5,
     })
 
+    // House account summary (if linked)
+    const houseAccount = await db.houseAccount.findFirst({
+      where: { customerId: id, locationId },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        currentBalance: true,
+        creditLimit: true,
+        paymentTerms: true,
+      },
+    })
+
+    // Saved cards count (SavedCard table is raw SQL only — not in Prisma schema)
+    const savedCardsResult = await db.$queryRawUnsafe<Array<{ count: string }>>(
+      `SELECT COUNT(*) as count FROM "SavedCard"
+       WHERE "customerId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
+      id, locationId
+    )
+    const savedCardsCount = Number(savedCardsResult[0]?.count ?? 0)
+
+    // Fetch memberships with plan info (raw SQL — not in Prisma schema)
+    const memberships = await db.$queryRawUnsafe<any[]>(`
+      SELECT
+        m."id",
+        m."status",
+        m."billingStatus",
+        m."currentPeriodStart",
+        m."currentPeriodEnd",
+        m."nextBillingDate",
+        m."trialEndsAt",
+        m."priceAtSignup",
+        m."billingCycle",
+        m."startedAt",
+        m."cancelledAt",
+        m."pausedAt",
+        mp."id" as "planId",
+        mp."name" as "planName",
+        mp."price" as "planPrice",
+        mp."description" as "planDescription",
+        mp."benefits" as "planBenefits"
+      FROM "Membership" m
+      JOIN "MembershipPlan" mp ON mp."id" = m."planId"
+      WHERE m."customerId" = $1
+        AND m."locationId" = $2
+        AND m."deletedAt" IS NULL
+      ORDER BY m."createdAt" DESC
+    `, id, locationId)
+
     const tags = (customer.tags ?? []) as string[]
 
     return NextResponse.json({ data: {
@@ -113,6 +162,9 @@ export const GET = withVenue(async function GET(
       email: customer.email,
       phone: customer.phone,
       notes: customer.notes,
+      allergies: customer.allergies,
+      favoriteDrink: customer.favoriteDrink,
+      favoriteFood: customer.favoriteFood,
       tags,
       isBanned: tags.includes('banned'),
       loyaltyPoints: customer.loyaltyPoints,
@@ -144,6 +196,34 @@ export const GET = withVenue(async function GET(
         name: f.name,
         orderCount: f._count.menuItemId,
         totalQuantity: f._sum.quantity || 0,
+      })),
+      houseAccount: houseAccount ? {
+        id: houseAccount.id,
+        name: houseAccount.name,
+        status: houseAccount.status,
+        currentBalance: Number(houseAccount.currentBalance),
+        creditLimit: Number(houseAccount.creditLimit),
+        paymentTerms: houseAccount.paymentTerms,
+      } : null,
+      savedCardsCount,
+      memberships: memberships.map((m: any) => ({
+        id: m.id,
+        status: m.status,
+        billingStatus: m.billingStatus,
+        planId: m.planId,
+        planName: m.planName,
+        planPrice: Number(m.planPrice),
+        planDescription: m.planDescription,
+        planBenefits: m.planBenefits,
+        billingCycle: m.billingCycle,
+        priceAtSignup: m.priceAtSignup ? Number(m.priceAtSignup) : null,
+        currentPeriodStart: m.currentPeriodStart,
+        currentPeriodEnd: m.currentPeriodEnd,
+        nextBillingDate: m.nextBillingDate,
+        trialEndsAt: m.trialEndsAt,
+        startedAt: m.startedAt,
+        cancelledAt: m.cancelledAt,
+        pausedAt: m.pausedAt,
       })),
     } })
   } catch (error) {
@@ -186,6 +266,9 @@ export const PUT = withVenue(async function PUT(
       email,
       phone,
       notes,
+      allergies,
+      favoriteDrink,
+      favoriteFood,
       tags,
       marketingOptIn,
       birthday,
@@ -237,6 +320,9 @@ export const PUT = withVenue(async function PUT(
         ...(email !== undefined && { email: email || null }),
         ...(phone !== undefined && { phone: phone || null }),
         ...(notes !== undefined && { notes: notes || null }),
+        ...(allergies !== undefined && { allergies: allergies || null }),
+        ...(favoriteDrink !== undefined && { favoriteDrink: favoriteDrink || null }),
+        ...(favoriteFood !== undefined && { favoriteFood: favoriteFood || null }),
         ...(tags !== undefined && { tags }),
         ...(marketingOptIn !== undefined && { marketingOptIn }),
         ...(birthday !== undefined && { birthday: birthday ? new Date(birthday) : null }),
@@ -253,6 +339,9 @@ export const PUT = withVenue(async function PUT(
       email: updated.email,
       phone: updated.phone,
       notes: updated.notes,
+      allergies: updated.allergies,
+      favoriteDrink: updated.favoriteDrink,
+      favoriteFood: updated.favoriteFood,
       tags: updated.tags,
       loyaltyPoints: updated.loyaltyPoints,
       totalSpent: Number(updated.totalSpent),

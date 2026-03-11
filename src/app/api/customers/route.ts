@@ -24,17 +24,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
-    // Auth check — require customers.view permission
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_VIEW)
+    // Auth check — POS search (has search param) only needs pos.access;
+    // full admin customer list requires customers.view permission
+    const requiredPerm = search ? PERMISSIONS.POS_ACCESS : PERMISSIONS.CUSTOMERS_VIEW
+    const auth = await requirePermission(requestingEmployeeId, locationId, requiredPerm)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // Build search filter
+    // Build search filter (case-insensitive)
     const searchFilter = search ? {
       OR: [
-        { firstName: { contains: search } },
-        { lastName: { contains: search } },
-        { displayName: { contains: search } },
-        { email: { contains: search } },
+        { firstName: { contains: search, mode: 'insensitive' as const } },
+        { lastName: { contains: search, mode: 'insensitive' as const } },
+        { displayName: { contains: search, mode: 'insensitive' as const } },
+        { email: { contains: search, mode: 'insensitive' as const } },
         { phone: { contains: search } },
       ],
     } : {}
@@ -77,6 +79,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           email: c.email,
           phone: c.phone,
           notes: c.notes,
+          allergies: c.allergies,
+          favoriteDrink: c.favoriteDrink,
+          favoriteFood: c.favoriteFood,
           tags,
           isBanned: tags.includes('banned'),
           loyaltyPoints: c.loyaltyPoints,
@@ -114,6 +119,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       email,
       phone,
       notes,
+      allergies,
+      favoriteDrink,
+      favoriteFood,
       tags,
       marketingOptIn,
       birthday,
@@ -178,6 +186,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         email: email || null,
         phone: phone || null,
         notes: notes || null,
+        allergies: allergies || null,
+        favoriteDrink: favoriteDrink || null,
+        favoriteFood: favoriteFood || null,
         tags: tags || [],
         marketingOptIn: marketingOptIn || false,
         birthday: birthday ? new Date(birthday) : null,
@@ -194,6 +205,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       email: customer.email,
       phone: customer.phone,
       notes: customer.notes,
+      allergies: customer.allergies,
+      favoriteDrink: customer.favoriteDrink,
+      favoriteFood: customer.favoriteFood,
       tags: customer.tags,
       loyaltyPoints: customer.loyaltyPoints,
       totalSpent: Number(customer.totalSpent),

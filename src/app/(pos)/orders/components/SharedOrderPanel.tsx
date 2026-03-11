@@ -550,6 +550,13 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
             if (orderId) {
               setInitialPayMethod(undefined)
               setOrderToPayId(orderId)
+              fetch(`/api/orders/${orderId}/cards`)
+                .then(r => r.ok ? r.json() : { data: [] })
+                .then(d => {
+                  const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
+                  setPaymentTabCards(authorized)
+                })
+                .catch(() => setPaymentTabCards([]))
               setShowPaymentModal(true)
             }
           }}
