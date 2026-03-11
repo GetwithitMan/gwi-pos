@@ -2,19 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
-// GET — list active membership plans for a location
+// GET — list active membership plans for a location (no admin perm needed — read-only POS query)
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams
-    const locationId = sp.get('locationId')
-    const actor = await getActorFromRequest(request)
-    const employeeId = actor.employeeId ?? sp.get('requestingEmployeeId')
+    const locationId = sp.get('locationId') || await getLocationId()
 
     if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
-
-    const auth = await requirePermission(employeeId, locationId, 'admin.manage_membership_plans')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const plans: any[] = await db.$queryRawUnsafe(`
       SELECT * FROM "MembershipPlan"

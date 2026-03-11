@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { getLocationId } from '@/lib/location-cache'
 
-// GET - List house accounts
-// Auth: session-verified employee with CUSTOMERS_HOUSE_ACCOUNTS permission
-export const GET = withVenue(withAuth('CUSTOMERS_HOUSE_ACCOUNTS', async function GET(
-  request: NextRequest,
-  ctx: AuthenticatedContext
-) {
+// GET - List house accounts (no admin perm needed — read-only POS query)
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const status = searchParams.get('status')
-    const search = searchParams.get('search')
+    const sp = request.nextUrl.searchParams
+    const locationId = sp.get('locationId') || await getLocationId()
+    const status = sp.get('status')
+    const search = sp.get('search')
 
-    // Use verified locationId from session
-    const locationId = ctx.auth.locationId
+    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
 
     const where: Record<string, unknown> = { locationId }
 
@@ -62,14 +60,10 @@ export const GET = withVenue(withAuth('CUSTOMERS_HOUSE_ACCOUNTS', async function
       { status: 500 }
     )
   }
-}))
+})
 
 // POST - Create a new house account
-// Auth: session-verified employee with CUSTOMERS_HOUSE_ACCOUNTS permission
-export const POST = withVenue(withAuth('CUSTOMERS_HOUSE_ACCOUNTS', async function POST(
-  request: NextRequest,
-  ctx: AuthenticatedContext
-) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -84,10 +78,17 @@ export const POST = withVenue(withAuth('CUSTOMERS_HOUSE_ACCOUNTS', async functio
       taxExempt,
       taxId,
       customerId,
+      requestingEmployeeId: bodyEmployeeId,
     } = body
 
-    // Use verified locationId from session
-    const locationId = ctx.auth.locationId
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId ?? bodyEmployeeId
+    const locationId = body.locationId || actor.locationId || await getLocationId()
+
+    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_HOUSE_ACCOUNTS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!name) {
       return NextResponse.json(
@@ -124,7 +125,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_HOUSE_ACCOUNTS', async functio
         taxExempt: taxExempt || false,
         taxId,
         customerId,
-        status: 'active',
+        status: 'pending',
       },
       include: {
         customer: {
@@ -150,4 +151,4 @@ export const POST = withVenue(withAuth('CUSTOMERS_HOUSE_ACCOUNTS', async functio
       { status: 500 }
     )
   }
-}))
+})

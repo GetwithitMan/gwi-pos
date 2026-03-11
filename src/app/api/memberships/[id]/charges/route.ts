@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
+// GET — list charges for a membership (no admin perm needed — read-only POS query)
 export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -10,15 +11,11 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
     const sp = request.nextUrl.searchParams
-    const locationId = sp.get('locationId')
-    const employeeId = sp.get('requestingEmployeeId')
+    const locationId = sp.get('locationId') || await getLocationId()
     const limit = parseInt(sp.get('limit') || '50')
     const offset = parseInt(sp.get('offset') || '0')
 
     if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
-
-    const auth = await requirePermission(employeeId, locationId, 'admin.manage_memberships')
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const rows: any[] = await db.$queryRawUnsafe(`
       SELECT * FROM "MembershipCharge"

@@ -186,6 +186,7 @@ enum GiftCardStatus {
 }
 
 enum HouseAccountStatus {
+  pending
   active
   suspended
   closed
@@ -3854,7 +3855,7 @@ model HouseAccount {
   paymentTerms   Int     @default(30) // Days until due
 
   // Status
-  status          HouseAccountStatus @default(active)
+  status          HouseAccountStatus @default(pending)
   suspendedAt     DateTime?
   suspendedReason String?
 

@@ -504,6 +504,10 @@ export const POST = withVenue(withTiming(async function POST(
           ...(body.authCode !== undefined ? { authCode: body.authCode } : {}),
           ...(body.recordNo !== undefined ? { datacapRecordNo: body.recordNo } : {}),
           ...(body.datacapRecordNo !== undefined ? { datacapRecordNo: body.datacapRecordNo } : {}),
+          // House account / gift card fields
+          ...(body.houseAccountId !== undefined ? { houseAccountId: body.houseAccountId } : {}),
+          ...(body.giftCardId !== undefined ? { giftCardId: body.giftCardId } : {}),
+          ...(body.giftCardNumber !== undefined ? { giftCardNumber: body.giftCardNumber } : {}),
         }],
         ...(body.employeeId ? { employeeId: body.employeeId } : {}),
         ...(body.terminalId ? { terminalId: body.terminalId } : {}),
@@ -1383,6 +1387,13 @@ export const POST = withVenue(withTiming(async function POST(
           ) }
         }
 
+        if (freshAccount.status === 'pending') {
+          return { earlyReturn: NextResponse.json(
+            { error: 'House account not yet activated' },
+            { status: 400 }
+          ) }
+        }
+
         if (freshAccount.status !== 'active') {
           return { earlyReturn: NextResponse.json(
             { error: `House account is ${freshAccount.status}` },
@@ -1460,6 +1471,51 @@ export const POST = withVenue(withTiming(async function POST(
       allPendingPayments.push(paymentRecord)
       totalTips += payment.tipAmount || 0
       alreadyPaidInLoop += payment.amount
+    }
+
+    // Process house account payment line items (balance reduction)
+    // These are order items added via /api/orders/[id]/add-ha-payment that represent
+    // a customer paying down their house account balance. When the order is paid,
+    // we reduce the HA balance and create a transaction record.
+    const haPaymentItems = order.items?.filter(
+      (item: { specialNotes?: string | null; status?: string }) =>
+        item.specialNotes?.startsWith('ha_payment:') && item.status !== 'voided'
+    ) ?? []
+
+    for (const haItem of haPaymentItems) {
+      const haId = (haItem as any).specialNotes!.replace('ha_payment:', '')
+      const haAmount = Number((haItem as any).price) * ((haItem as any).quantity || 1)
+
+      // Lock and read current balance
+      await tx.$queryRawUnsafe(
+        `SELECT id FROM "HouseAccount" WHERE id = $1 FOR UPDATE`,
+        haId,
+      )
+      const haAccount = await tx.houseAccount.findUnique({ where: { id: haId } })
+      if (haAccount && haAccount.status === 'active') {
+        const currentBal = Number(haAccount.currentBalance)
+        const effectiveAmount = Math.min(haAmount, currentBal)
+        if (effectiveAmount > 0) {
+          await tx.houseAccount.update({
+            where: { id: haId },
+            data: {
+              currentBalance: { decrement: effectiveAmount },
+              transactions: {
+                create: {
+                  locationId: order.locationId,
+                  type: 'payment',
+                  amount: -effectiveAmount,
+                  balanceBefore: currentBal,
+                  balanceAfter: currentBal - effectiveAmount,
+                  orderId,
+                  employeeId: employeeId || null,
+                  notes: `Payment via Order #${order.orderNumber}`,
+                }
+              }
+            }
+          })
+        }
+      }
     }
 
     // Update order status and tip total

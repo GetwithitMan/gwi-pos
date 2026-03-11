@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -9,6 +9,16 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+
+interface CustomerSearchResult {
+  id: string
+  firstName: string
+  lastName: string
+  displayName?: string | null
+  name: string
+  email?: string | null
+  phone?: string | null
+}
 
 interface HouseAccount {
   id: string
@@ -25,6 +35,7 @@ interface HouseAccount {
   taxExempt: boolean
   taxId?: string | null
   createdAt: string
+  customerId?: string | null
   customer?: {
     id: string
     firstName: string
@@ -100,6 +111,8 @@ export default function HouseAccountsPage() {
   const [paymentMethod, setPaymentMethod] = useState('check')
   const [paymentReference, setPaymentReference] = useState('')
   const [paymentNotes, setPaymentNotes] = useState('')
+  const [paymentError, setPaymentError] = useState('')
+  const [paymentSaving, setPaymentSaving] = useState(false)
 
   // Form state
   const [formName, setFormName] = useState('')
@@ -112,6 +125,93 @@ export default function HouseAccountsPage() {
   const [formBillingCycle, setFormBillingCycle] = useState('monthly')
   const [formTaxExempt, setFormTaxExempt] = useState(false)
   const [formTaxId, setFormTaxId] = useState('')
+  const [formCustomerId, setFormCustomerId] = useState<string | null>(null)
+
+  // Customer search state
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('')
+  const [customerSearchResults, setCustomerSearchResults] = useState<CustomerSearchResult[]>([])
+  const [customerSearchOpen, setCustomerSearchOpen] = useState(false)
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerSearchResult | null>(null)
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
+  const customerSearchRef = useRef<HTMLDivElement>(null)
+  const customerSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Status toggle error
+  const [statusError, setStatusError] = useState('')
+
+  // Customer search with debounce
+  const searchCustomers = useCallback(async (query: string) => {
+    if (!query || query.length < 2 || !employee?.location?.id) {
+      setCustomerSearchResults([])
+      setCustomerSearchOpen(false)
+      return
+    }
+    setCustomerSearchLoading(true)
+    try {
+      const response = await fetch(
+        `/api/customers?locationId=${employee.location.id}&search=${encodeURIComponent(query)}&limit=10`
+      )
+      if (response.ok) {
+        const data = await response.json()
+        const results = data.data?.customers || []
+        setCustomerSearchResults(results)
+        setCustomerSearchOpen(results.length > 0)
+      }
+    } catch {
+      setCustomerSearchResults([])
+    } finally {
+      setCustomerSearchLoading(false)
+    }
+  }, [employee?.location?.id])
+
+  function handleCustomerSearchInput(value: string) {
+    setCustomerSearchQuery(value)
+    if (customerSearchTimeout.current) clearTimeout(customerSearchTimeout.current)
+    if (!value || value.length < 2) {
+      setCustomerSearchResults([])
+      setCustomerSearchOpen(false)
+      return
+    }
+    customerSearchTimeout.current = setTimeout(() => {
+      searchCustomers(value)
+    }, 300)
+  }
+
+  function handleSelectCustomer(customer: CustomerSearchResult) {
+    setSelectedCustomer(customer)
+    setFormCustomerId(customer.id)
+    setCustomerSearchQuery(customer.name || `${customer.firstName} ${customer.lastName}`)
+    setCustomerSearchOpen(false)
+    // Pre-fill contact fields from customer
+    if (!formContactName) {
+      setFormContactName(customer.name || `${customer.firstName} ${customer.lastName}`)
+    }
+    if (!formEmail && customer.email) {
+      setFormEmail(customer.email)
+    }
+    if (!formPhone && customer.phone) {
+      setFormPhone(customer.phone)
+    }
+  }
+
+  function handleClearCustomer() {
+    setSelectedCustomer(null)
+    setFormCustomerId(null)
+    setCustomerSearchQuery('')
+    setCustomerSearchResults([])
+    setCustomerSearchOpen(false)
+  }
+
+  // Close customer dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (customerSearchRef.current && !customerSearchRef.current.contains(e.target as Node)) {
+        setCustomerSearchOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   // Load on mount
   useEffect(() => {
@@ -139,11 +239,17 @@ export default function HouseAccountsPage() {
 
   async function loadAccountDetails(account: HouseAccount) {
     setSelectedAccount(account)
+    setStatusError('')
     try {
       const response = await fetch(`/api/house-accounts/${account.id}`)
       if (response.ok) {
         const data = await response.json()
-        setAccountTransactions(data.data.transactions || [])
+        const acct = data.data?.account || data.data
+        setAccountTransactions(acct?.transactions || [])
+        // Update selected account with fresh data from server
+        if (acct) {
+          setSelectedAccount(prev => prev ? { ...prev, ...acct, transactions: undefined } : prev)
+        }
       }
     } catch (error) {
       console.error('Failed to load account details:', error)
@@ -161,6 +267,18 @@ export default function HouseAccountsPage() {
     setFormBillingCycle(account.billingCycle)
     setFormTaxExempt(account.taxExempt)
     setFormTaxId(account.taxId || '')
+    // Populate customer link
+    if (account.customer) {
+      const cust = account.customer
+      const name = cust.displayName || `${cust.firstName} ${cust.lastName}`
+      setFormCustomerId(account.customerId || cust.id)
+      setSelectedCustomer({ id: cust.id, firstName: cust.firstName, lastName: cust.lastName, displayName: cust.displayName, name, email: null, phone: null })
+      setCustomerSearchQuery(name)
+    } else {
+      setFormCustomerId(null)
+      setSelectedCustomer(null)
+      setCustomerSearchQuery('')
+    }
   }
 
   function resetForm() {
@@ -174,6 +292,11 @@ export default function HouseAccountsPage() {
     setFormBillingCycle('monthly')
     setFormTaxExempt(false)
     setFormTaxId('')
+    setFormCustomerId(null)
+    setSelectedCustomer(null)
+    setCustomerSearchQuery('')
+    setCustomerSearchResults([])
+    setCustomerSearchOpen(false)
   }
 
   function resetPaymentForm() {
@@ -181,6 +304,7 @@ export default function HouseAccountsPage() {
     setPaymentMethod('check')
     setPaymentReference('')
     setPaymentNotes('')
+    setPaymentError('')
   }
 
   function handleOpenEditModal(account: HouseAccount) {
@@ -203,6 +327,7 @@ export default function HouseAccountsPage() {
       billingCycle: formBillingCycle,
       taxExempt: formTaxExempt,
       taxId: formTaxId || null,
+      customerId: formCustomerId || null,
     }
 
     // Include locationId only for create
@@ -223,16 +348,18 @@ export default function HouseAccountsPage() {
     e.preventDefault()
     if (!selectedAccount) return
 
+    setPaymentError('')
+    setPaymentSaving(true)
     try {
-      const response = await fetch(`/api/house-accounts/${selectedAccount.id}`, {
-        method: 'PUT',
+      const response = await fetch(`/api/house-accounts/${selectedAccount.id}/payments`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'payment',
           amount: parseFloat(paymentAmount),
           paymentMethod,
           referenceNumber: paymentReference || null,
           notes: paymentNotes || null,
+          employeeId: employee?.id || null,
         }),
       })
 
@@ -241,30 +368,44 @@ export default function HouseAccountsPage() {
         resetPaymentForm()
         loadAccounts()
         loadAccountDetails(selectedAccount)
+      } else {
+        const data = await response.json().catch(() => null)
+        setPaymentError(data?.error || `Payment failed (${response.status})`)
       }
     } catch (error) {
       console.error('Failed to process payment:', error)
+      setPaymentError('Network error — could not reach server')
+    } finally {
+      setPaymentSaving(false)
     }
   }
 
   async function handleToggleStatus(account: HouseAccount) {
-    const action = account.status === 'suspended' ? 'reactivate' : 'suspend'
+    setStatusError('')
+    const newStatus = account.status === 'suspended' ? 'active' : 'suspended'
     try {
       const response = await fetch(`/api/house-accounts/${account.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ status: newStatus }),
       })
 
       if (response.ok) {
         loadAccounts()
         if (selectedAccount?.id === account.id) {
           const data = await response.json()
-          setSelectedAccount(data)
+          setSelectedAccount(data?.data?.account ? {
+            ...account,
+            ...data.data.account,
+          } : { ...account, status: newStatus })
         }
+      } else {
+        const data = await response.json().catch(() => null)
+        setStatusError(data?.error || `Failed to ${newStatus === 'active' ? 'reactivate' : 'suspend'} account`)
       }
     } catch (error) {
       console.error('Failed to toggle status:', error)
+      setStatusError('Network error — could not reach server')
     }
   }
 
@@ -445,6 +586,13 @@ export default function HouseAccountsPage() {
                 </div>
               </div>
 
+              {/* Status Error */}
+              {statusError && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                  {statusError}
+                </div>
+              )}
+
               {/* Actions */}
               <div className="mt-4 pt-4 border-t flex flex-wrap gap-2">
                 {selectedAccount.status === 'active' && selectedAccount.currentBalance > 0 && (
@@ -530,6 +678,55 @@ export default function HouseAccountsPage() {
                   placeholder="Company or individual name"
                   required
                 />
+              </div>
+
+              <div ref={customerSearchRef} className="relative">
+                <label className="text-sm font-medium block mb-1">Link Customer</label>
+                {selectedCustomer ? (
+                  <div className="flex items-center gap-2 px-3 py-2 border rounded-lg bg-blue-50">
+                    <span className="flex-1 text-sm">
+                      {selectedCustomer.name || `${selectedCustomer.firstName} ${selectedCustomer.lastName}`}
+                      {selectedCustomer.email && <span className="text-gray-500 ml-1">({selectedCustomer.email})</span>}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleClearCustomer}
+                      className="text-gray-400 hover:text-red-500 text-lg leading-none"
+                      title="Remove linked customer"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={customerSearchQuery}
+                    onChange={(e) => handleCustomerSearchInput(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="Search by name, email, or phone..."
+                    autoComplete="off"
+                  />
+                )}
+                {customerSearchLoading && (
+                  <div className="absolute right-3 top-8 text-xs text-gray-400">Searching...</div>
+                )}
+                {customerSearchOpen && customerSearchResults.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {customerSearchResults.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm border-b last:border-b-0"
+                        onClick={() => handleSelectCustomer(c)}
+                      >
+                        <div className="font-medium">{c.name || `${c.firstName} ${c.lastName}`}</div>
+                        <div className="text-xs text-gray-500">
+                          {[c.email, c.phone].filter(Boolean).join(' · ') || 'No contact info'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -673,6 +870,11 @@ export default function HouseAccountsPage() {
               <br />
               Current Balance: <span className="font-medium text-red-600">{formatCurrency(selectedAccount.currentBalance)}</span>
             </div>
+            {paymentError && (
+              <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                {paymentError}
+              </div>
+            )}
             <form onSubmit={handlePayment} className="space-y-4">
               <div>
                 <label className="text-sm font-medium block mb-1">Payment Amount *</label>
@@ -741,8 +943,8 @@ export default function HouseAccountsPage() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" variant="primary" className="flex-1">
-                  Record Payment
+                <Button type="submit" variant="primary" className="flex-1" disabled={paymentSaving}>
+                  {paymentSaving ? 'Processing...' : 'Record Payment'}
                 </Button>
               </div>
             </form>

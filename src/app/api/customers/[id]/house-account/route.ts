@@ -48,7 +48,7 @@ export const POST = withVenue(async function POST(
         name: accountName,
         contactName: `${customer.firstName} ${customer.lastName}`,
         creditLimit: creditLimit || 0,
-        status: 'active',
+        status: 'pending',
       },
     })
 
