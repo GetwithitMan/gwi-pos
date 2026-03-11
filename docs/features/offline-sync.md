@@ -208,11 +208,16 @@ Android → NUC (local PG) → Neon Cloud
 - Stale heartbeat timeout: 120 seconds
 - Health check: 7 check types (ORDER_CREATION, PAYMENT_PROCESSING, PRINTER_CONNECTION, DATABASE_QUERY, API_RESPONSE, KDS_CONNECTION, NETWORK_CONNECTIVITY)
 
-### Sync Safety Invariants (added 2026-03-10)
+### Sync Safety Invariants (updated 2026-03-11)
 
-These rules were hardened via penetration testing:
+These rules were hardened via penetration testing and production debugging:
 
+- **HWM initialization**: When no persisted HWM exists, always use epoch (`1970-01-01`) — NEVER `MAX(updatedAt)` from local PG. The MAX approach creates "HWM gaps" where Neon rows with timestamps before the local max are permanently skipped. Epoch triggers a safe full re-sync (ON CONFLICT handles duplicates).
 - **HWM advancement**: Only successful rows advance `maxSyncedAt`. Failed rows retry next cycle.
+- **HWM persistence**: HWMs are stored in `_gwi_sync_state` table and survive process restarts.
+- **Business-key conflict resolution**: Cloud-owned downstream models can declare a `businessKey` in sync-config (e.g., `['categoryId', 'name']` for MenuItem). Before upserting, the sync worker checks if a local row exists with matching business key but different ID. If so, the local row is deleted (Neon is authoritative). This resolves ID divergence from the dual-DB transition.
+- **Business keys configured**: MenuItem (`categoryId, name`), Category (`locationId, name`), Table (`locationId, name`), Section (`locationId, name`), ModifierGroup (`locationId, name`), Modifier (`modifierGroupId, name`).
+- **Unique constraints**: MenuItem, ModifierGroup, and Modifier have partial unique indexes on their business keys (`WHERE deletedAt IS NULL`). Migrations 042 + 043 add these with automated dedup.
 - **Bidirectional sync marker**: All NUC mutations to Order/Payment/OrderItem MUST set `lastMutatedBy: 'local'`. Missing this causes silent sync data loss.
 - **FulfillmentEvent dedup**: `handleCloudFulfillment` checks for existing events by orderId before creating new ones. Prevents duplicate printing when send/route.ts already created events.
 - **PendingDeduction idempotency**: Uses `ON CONFLICT ("orderId") DO NOTHING` — no SELECT-before-INSERT pattern.
@@ -220,6 +225,7 @@ These rules were hardened via penetration testing:
 - **Socket batching**: Downstream sync emits at most one `dispatchOpenOrdersChanged` per location per cycle.
 - **Upstream resilience**: Per-row try/catch on `syncedAt` stamps. One failure doesn't block the batch.
 - **OutageQueueEntry.metadata**: JSONB field for retryCount tracking. Added in migration 022.
+- **CellularDevice guard**: `syncCellularDenyList()` checks table existence via `information_schema` (cached) before querying. Prevents log spam on NUCs without the HA/Cellular feature.
 
 ---
 
@@ -243,4 +249,4 @@ These rules were hardened via penetration testing:
 
 ---
 
-*Last updated: 2026-03-10*
+*Last updated: 2026-03-11*

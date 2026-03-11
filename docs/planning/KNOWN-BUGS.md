@@ -56,6 +56,25 @@ These will cause visible data loss or payment failure at a live venue.
 
 ---
 
+### BUG-H3 — Downstream Sync HWM Gap (Menu Items / Modifiers Not Syncing)
+**Status:** ✅ FIXED (commit pending)
+**Feature:** Offline Sync
+**Affected files:** `src/lib/sync/downstream-sync-worker.ts`, `src/lib/sync/sync-config.ts`
+
+**What happened:** Menu items and modifier groups added via the web back office were not syncing to NUCs. Items appeared duplicated on NUCs that already had them with different CUIDs.
+
+**Root cause (HWM gap):** When no persisted HWM existed, `initHighWaterMarks()` used `MAX(updatedAt)` from local PG. This skipped Neon rows with timestamps before the local max that had different IDs (dual-DB transition). Additionally, no unique constraint on ModifierGroup or Modifier business keys allowed unlimited duplication.
+
+**Fix:**
+1. `initHighWaterMarks()` now uses epoch fallback (full re-sync on first run)
+2. Business-key conflict resolution added for ModifierGroup + Modifier in `sync-config.ts`
+3. Migration 043: automated dedup + unique constraints for ModifierGroup/Modifier
+4. CellularDevice table existence check cached to eliminate log spam
+
+**Production fix:** Fruita Grill NUC manually deduped + HWM reset. Counts now match Neon: 314 items, 49 groups, 303 modifiers.
+
+---
+
 ### BUG-H1 — Pizza Builder Non-Functional
 **Status:** ✅ RESOLVED
 **Feature:** Pizza Builder

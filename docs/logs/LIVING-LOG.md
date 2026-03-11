@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-03-11 — Downstream Sync HWM Gap Fix, ModifierGroup/Modifier Dedup, CellularDevice Log Fix
+
+### Downstream Sync HWM (High-Water Mark) Gap Bug — Fixed
+- **Problem:** When a NUC started downstream sync for the first time (no persisted HWMs), `initHighWaterMarks()` used `MAX(updatedAt)` from local PG as the starting HWM. This skipped any Neon rows with `updatedAt` before the local max — causing items that existed in Neon but never synced to the NUC to be permanently invisible. Fruita Grill had 282/314 menu items and 136/137 modifier groups visible.
+- **Root cause:** `MAX(updatedAt)` fallback assumed all rows with timestamps before the max already existed locally — invalid when NUC and Neon had divergent data (different CUIDs for the same business entities from the dual-DB transition).
+- **Fix:** `initHighWaterMarks()` now uses epoch (`1970-01-01`) as fallback when no persisted HWM exists, triggering a full initial re-sync. Safe because ON CONFLICT upsert handles duplicates and batch size limits per-cycle load.
+
+### ModifierGroup + Modifier Dedup + Unique Constraints
+- **Problem:** Fruita Grill had 20 ModifierGroup name collisions (e.g., 39 copies of "Service", 9 copies of "Vodka Upgrade") on both Neon and NUC. Root cause identical to MenuItem duplication (migration 042): no unique business-key constraint + dual-DB ID divergence.
+- **Fix (Neon):** Manual dedup SQL — 88 duplicate groups removed, 222 conflicting modifiers deleted, unique indexes added (`ModifierGroup_locationId_name_active_key`, `Modifier_groupId_name_active_key`).
+- **Fix (NUC):** Manual dedup + HWM reset. After restart, full re-sync achieved matching counts: 314 items, 49 groups, 303 modifiers.
+- **Fix (code):** Migration 043 (`043-modifiergroup-modifier-unique-constraint.js`) — automated dedup + unique index creation for all venues. `sync-config.ts` updated with `businessKey` for ModifierGroup (`['locationId', 'name']`) and Modifier (`['modifierGroupId', 'name']`). Migration also resets sync HWMs for affected tables.
+
+### CellularDevice Log Spam Fix
+- **Problem:** Every downstream sync cycle logged `prisma:error: relation "CellularDevice" does not exist` on NUCs that don't have the CellularDevice table (created for HA/Cellular feature, not deployed to all venues).
+- **Fix:** `syncCellularDenyList()` now checks `information_schema.tables` for table existence (cached after first check). Skips silently when table doesn't exist.
+
+### Commits
+- gwi-pos: (pending commit)
+
+### Files Changed
+- `src/lib/sync/downstream-sync-worker.ts` — HWM epoch fallback + CellularDevice table existence cache
+- `src/lib/sync/sync-config.ts` — businessKey for ModifierGroup + Modifier
+- `scripts/migrations/043-modifiergroup-modifier-unique-constraint.js` — new dedup + unique constraint migration
+
+---
+
 ## 2026-03-11 — Pour Size Fix, Attach Card Fix, Grey Text, NUC Schema, Room Recovery
 
 ### Pour Size on First Bar Tab Item (5-layer bug)

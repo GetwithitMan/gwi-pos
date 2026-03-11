@@ -89,7 +89,15 @@ async function ensureSyncStateTable(): Promise<void> {
   }
 }
 
-/** Initialize high-water marks — prefer persisted DB state, fall back to MAX(updatedAt) */
+/** Initialize high-water marks — prefer persisted DB state, fall back to epoch.
+ *
+ * IMPORTANT: We use epoch (not MAX(updatedAt)) as the fallback for tables without
+ * a persisted HWM. Using MAX(updatedAt) from local PG skips any Neon rows that
+ * were never synced but have updatedAt < the local max — this is the root cause
+ * of the "HWM gap" bug where items exist on Neon but never appear on the NUC.
+ * Starting from epoch triggers a full re-sync which is safe: the ON CONFLICT
+ * upsert handles duplicates, and the batch size limits per-cycle load.
+ */
 async function initHighWaterMarks(): Promise<void> {
   await ensureSyncStateTable()
 
@@ -103,32 +111,19 @@ async function initHighWaterMarks(): Promise<void> {
       persistedHwms.set(row.table_name, new Date(row.high_water_mark))
     }
   } catch {
-    // Table may not exist yet or be empty — fall through to MAX(updatedAt)
+    // Table may not exist yet or be empty — all tables start from epoch
   }
 
   const models = getDownstreamModels()
   for (const [tableName] of models) {
-    // Use persisted HWM if available
     if (persistedHwms.has(tableName)) {
       highWaterMarks.set(tableName, persistedHwms.get(tableName)!)
-      continue
-    }
-
-    try {
-      const [row] = await masterClient.$queryRawUnsafe<{ max_updated: Date | null }[]>(
-        `SELECT MAX("updatedAt") as max_updated FROM "${tableName}"`
-      )
-      if (row?.max_updated) {
-        highWaterMarks.set(tableName, row.max_updated)
-      } else {
-        highWaterMarks.set(tableName, new Date('1970-01-01T00:00:00Z'))
-      }
-    } catch {
-      // Table might not have updatedAt or might not exist — use epoch
+    } else {
+      // No persisted HWM — start from epoch so we do a full initial sync
       highWaterMarks.set(tableName, new Date('1970-01-01T00:00:00Z'))
     }
   }
-  console.log(`[DownstreamSync] High-water marks initialized for ${highWaterMarks.size} tables`)
+  console.log(`[DownstreamSync] High-water marks initialized for ${highWaterMarks.size} tables (${persistedHwms.size} from DB, ${highWaterMarks.size - persistedHwms.size} from epoch)`)
 }
 
 /** Load column names for all downstream tables */
@@ -722,11 +717,27 @@ async function detectBidirectionalConflict(
 
 // ── Cellular Deny List Sync ──────────────────────────────────────────────────
 
+/** Whether the CellularDevice table exists on this NUC (cached after first check) */
+let cellularDeviceTableExists: boolean | null = null
+
 /**
  * Sync the cellular terminal deny list from the local CellularDevice table.
  * Devices with status 'revoked' or 'quarantined' get added to the in-memory deny list.
  */
 async function syncCellularDenyList(): Promise<void> {
+  // Check table existence once — avoids prisma:error log spam on NUCs without CellularDevice
+  if (cellularDeviceTableExists === null) {
+    try {
+      const result = await masterClient.$queryRawUnsafe<Array<{ exists: boolean }>>(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'CellularDevice') as exists`
+      )
+      cellularDeviceTableExists = result[0]?.exists ?? false
+    } catch {
+      cellularDeviceTableExists = false
+    }
+  }
+  if (!cellularDeviceTableExists) return
+
   try {
     const revoked = await masterClient.$queryRawUnsafe<Array<{
       terminalId: string
@@ -744,7 +755,7 @@ async function syncCellularDenyList(): Promise<void> {
       )
     }
   } catch {
-    // CellularDevice table may not exist yet — safe to skip
+    // Query failed — safe to skip
   }
 }
 
