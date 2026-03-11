@@ -167,7 +167,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Business day
     const locSettings = await getLocationSettings(locationId) as Record<string, unknown> | null
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-    const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+    const businessDay = getCurrentBusinessDay(dayStartTime)
+    const businessDayStart = businessDay.start
 
     // ── Sort + group events by orderId, then by sequence ────────────────
     const sorted = [...events].sort((a, b) => {
@@ -262,10 +263,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   continue
                 }
 
-                // Get next order number atomically
+                // Get next order number atomically (per business day)
                 const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-                  `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-                  locationId
+                  `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+                  locationId, businessDay.start, businessDay.end
                 )
                 const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 

@@ -684,11 +684,15 @@ export const DEFAULT_SEVEN_SHIFTS_SETTINGS: SevenShiftsSettings = {
 export interface EodSettings {
   autoBatchClose: boolean               // Auto-trigger Datacap batch close during EOD reset (default: true)
   batchCloseTime: string                // HH:MM 24h format — when automated nightly batch fires (default: "04:00")
+  autoCaptureTabs?: boolean             // Auto-capture open bar tabs during EOD reset (default: false)
+  autoGratuityPercent?: number          // Auto-gratuity % applied to auto-captured tabs (default: 20)
 }
 
 export const DEFAULT_EOD_SETTINGS: EodSettings = {
   autoBatchClose: true,
   batchCloseTime: '04:00',
+  autoCaptureTabs: false,
+  autoGratuityPercent: 20,
 }
 
 // ─── Speed-of-Service Goals Settings ─────────────────────────────────────────

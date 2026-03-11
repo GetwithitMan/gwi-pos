@@ -73,7 +73,8 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     // Compute business day for this order (uses cached location settings — FIX-005)
     const locSettings = await getLocationSettings(locationId) as Record<string, unknown> | null
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-    const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+    const businessDay = getCurrentBusinessDay(dayStartTime)
+    const businessDayStart = businessDay.start
 
     // Training mode: stamp isTraining on orders created by training employees
     const parsedLocSettings = locSettings ? parseSettings(locSettings) : null
@@ -136,10 +137,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             }
           }
 
-          // Lock latest order row to prevent duplicate order numbers (global unique constraint)
+          // Lock latest order row to prevent duplicate order numbers (per business day)
           const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-            `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-            locationId
+            `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+            locationId, businessDay.start, businessDay.end
           )
           const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
@@ -495,10 +496,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           }
         }
 
-        // Lock latest order row to prevent duplicate order numbers (global unique constraint)
+        // Lock latest order row to prevent duplicate order numbers (per business day)
         const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-          locationId
+          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
+          locationId, businessDay.start, businessDay.end
         )
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 

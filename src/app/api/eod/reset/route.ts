@@ -3,22 +3,15 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
-import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { parseSettings } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
-import { emitToLocation } from '@/lib/socket-server'
-import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
-import { getDatacapClient } from '@/lib/datacap/helpers'
-import { detectPotentialWalkouts } from '@/lib/walkout-detector'
+import { executeEodReset } from '@/lib/eod'
 
 /**
  * POST /api/eod/reset
  *
  * End of Day (EOD) reset for a location.
- * This should be called during the EOD closeout process to:
- * 1. Reset all table statuses to 'available'
- * 2. Clear any stale session data
+ * Delegates all logic to the shared executeEodReset() function.
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -36,62 +29,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_CLOSE_DAY)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // Collect stats for the reset
-    const stats = {
-      tablesReset: 0,
-      orphanedOrdersClosed: 0,
-      entertainmentReset: 0,
-    }
-
-    // Find tables with occupied status but no open orders (orphaned status)
-    const orphanedOccupiedTables = await db.table.findMany({
-      where: {
-        locationId,
-        status: 'occupied',
-        deletedAt: null,
-        orders: {
-          none: {
-            status: 'open',
-            deletedAt: null,
-          },
-        },
-      },
-      select: {
-        id: true,
-        name: true,
-      },
-    })
-
-    // Find open orders from BEFORE the current business day started — these are stale
+    // ── warnBeforeClose: warn if open orders exist during EOD reset ────────
     const location = await db.location.findFirst({
       where: { id: locationId },
       select: { settings: true },
     })
-    const locSettings = location?.settings as Record<string, unknown> | null
-    const parsedSettings = parseSettings(locSettings)
-    const dayStartTime = parsedSettings.businessDay.dayStartTime ?? '04:00'
-    const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
-
-    // Read from OrderSnapshot (event-sourced projection) — cents-based fields
-    const staleOpenOrders = await db.orderSnapshot.findMany({
-      where: {
-        locationId,
-        status: 'open',
-        OR: [{ businessDayDate: { lt: currentBusinessDayStart } }, { businessDayDate: null, createdAt: { lt: currentBusinessDayStart } }],
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        orderNumber: true,
-        totalCents: true,
-        createdAt: true,
-      },
-    })
-
-    // ── warnBeforeClose: warn if open orders exist during EOD reset ────────
-    // When warnBeforeClose is enabled and confirm is not passed, return a
-    // warning instead of proceeding. Client must re-send with confirm: true.
-    const warnBeforeClose = parsedSettings.businessDay.warnBeforeClose ?? true
+    const locSettings = parseSettings(location?.settings as Record<string, unknown> | null)
+    const warnBeforeClose = locSettings.businessDay.warnBeforeClose ?? true
     const confirm = body.confirm === true
 
     if (!dryRun && warnBeforeClose && !confirm) {
@@ -109,6 +53,44 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (dryRun) {
       // Return what WOULD be reset without actually doing it
+      const dayStartTime = locSettings.businessDay.dayStartTime ?? '04:00'
+      const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
+
+      const orphanedOccupiedTables = await db.table.findMany({
+        where: {
+          locationId,
+          status: 'occupied',
+          deletedAt: null,
+          orders: { none: { status: 'open', deletedAt: null } },
+        },
+        select: { id: true, name: true },
+      })
+
+      const staleOpenOrders = await db.orderSnapshot.findMany({
+        where: {
+          locationId,
+          status: 'open',
+          OR: [{ businessDayDate: { lt: currentBusinessDayStart } }, { businessDayDate: null, createdAt: { lt: currentBusinessDayStart } }],
+          deletedAt: null,
+        },
+        select: { id: true, orderNumber: true, totalCents: true, createdAt: true },
+      })
+
+      // Count open tabs that would be auto-captured
+      const eodSettings = locSettings.eod
+      let openTabCount = 0
+      if (eodSettings?.autoCaptureTabs) {
+        openTabCount = await db.order.count({
+          where: {
+            locationId,
+            orderType: 'bar_tab',
+            status: 'open',
+            deletedAt: null,
+            cards: { some: { status: 'authorized', deletedAt: null } },
+          },
+        })
+      }
+
       return NextResponse.json({ data: {
         dryRun: true,
         wouldReset: {
@@ -125,293 +107,48 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               createdAt: o.createdAt.toISOString(),
             })),
           },
+          openTabsToCapture: openTabCount,
+          autoCaptureTabs: eodSettings?.autoCaptureTabs ?? false,
+          autoGratuityPercent: eodSettings?.autoGratuityPercent ?? 20,
         },
         message: 'Dry run complete. No changes made.',
       } })
     }
 
-    const now = new Date()
+    // Execute the full EOD reset
+    const result = await executeEodReset({
+      locationId,
+      employeeId,
+      triggeredBy: 'manual',
+    })
 
-    // Execute the reset in a transaction
-    let cleanedEntertainmentIds: string[] = []
-    await db.$transaction(async (tx) => {
-      // 1. Reset all tables to 'available' status (except those with open orders)
-      const tablesWithOpenOrders = await tx.table.findMany({
-        where: {
-          locationId,
-          deletedAt: null,
-          orders: {
-            some: {
-              status: 'open',
-              deletedAt: null,
-            },
-          },
-        },
-        select: { id: true },
-      })
-
-      const tableIdsWithOrders = new Set(tablesWithOpenOrders.map(t => t.id))
-
-      const tablesToReset = await tx.table.findMany({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: { not: 'available' },
-          id: { notIn: Array.from(tableIdsWithOrders) },
-        },
-        select: { id: true },
-      })
-
-      if (tablesToReset.length > 0) {
-        await tx.table.updateMany({
-          where: {
-            id: { in: tablesToReset.map(t => t.id) },
-          },
-          data: {
-            status: 'available',
-          },
-        })
-        stats.tablesReset = tablesToReset.length
-      }
-
-      // 2. Log stale orders but don't auto-close (requires manual review)
-      // This is intentional - we don't want to lose revenue data
-      if (staleOpenOrders.length > 0) {
-        // Create audit log for each stale order
-        for (const order of staleOpenOrders) {
-          await tx.auditLog.create({
-            data: {
-              locationId,
-              employeeId: employeeId || null,
-              action: 'eod_stale_order_detected',
-              entityType: 'order',
-              entityId: order.id,
-              details: {
-                orderNumber: order.orderNumber,
-                total: order.totalCents / 100,
-                createdAt: order.createdAt.toISOString(),
-                message: 'Order open for more than 24 hours detected during EOD reset',
-              },
-            },
-          })
-        }
-        stats.orphanedOrdersClosed = staleOpenOrders.length
-
-        // Mark stale orders as rolled over
-        await tx.order.updateMany({
-          where: { id: { in: staleOpenOrders.map((o: any) => o.id) } },
-          data: {
-            rolledOverAt: now,
-            rolledOverFrom: `EOD reset${employeeId ? ` by employee ${employeeId}` : ''}`,
-          },
-        })
-      }
-
-      // 3. Reset any stale entertainment items still marked in_use
-      const staleEntertainment = await tx.menuItem.findMany({
-        where: {
-          locationId,
-          itemType: 'timed_rental',
-          entertainmentStatus: 'in_use',
-        },
-        select: { id: true, name: true },
-      })
-
-      if (staleEntertainment.length > 0) {
-        await tx.menuItem.updateMany({
-          where: {
-            id: { in: staleEntertainment.map(i => i.id) },
-          },
-          data: {
-            entertainmentStatus: 'available',
-            currentOrderId: null,
-            currentOrderItemId: null,
-          },
-        })
-
-        for (const item of staleEntertainment) {
-          await tx.floorPlanElement.updateMany({
-            where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
-            data: {
-              status: 'available',
-              currentOrderId: null,
-              sessionStartedAt: null,
-              sessionExpiresAt: null,
-            },
-          })
-        }
-
-        stats.entertainmentReset = staleEntertainment.length
-        cleanedEntertainmentIds = staleEntertainment.map(i => i.id)
-      }
-
-      // Expire all waiting/notified waitlist entries for this location
-      await tx.entertainmentWaitlist.updateMany({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: { in: ['waiting', 'notified'] },
-        },
-        data: { status: 'expired' },
-      })
-
-      // 4. Create master audit log for EOD reset
-      await tx.auditLog.create({
+    if (result.alreadyRanToday) {
+      return NextResponse.json({
         data: {
-          locationId,
-          employeeId: employeeId || null,
-          action: 'eod_reset_completed',
-          entityType: 'location',
-          entityId: locationId,
-          details: {
-            tablesReset: stats.tablesReset,
-            staleOrdersDetected: stats.orphanedOrdersClosed,
-            entertainmentReset: stats.entertainmentReset,
-            timestamp: new Date().toISOString(),
-          },
+          success: true,
+          alreadyRanToday: true,
+          stats: result,
+          warning: 'EOD already ran for this business day',
+          message: 'EOD reset already completed today',
         },
       })
-    })
-
-    // ── Datacap Batch Close (fire-and-forget) ──────────────────────────────
-    const eodSettings = parsedSettings.eod ?? DEFAULT_EOD_SETTINGS
-    if (eodSettings.autoBatchClose && parsedSettings.payments.processor === 'datacap') {
-      void (async () => {
-        try {
-          const datacapClient = await getDatacapClient(locationId)
-          // Find all active readers for this location
-          const readers = await db.paymentReader.findMany({
-            where: { locationId, deletedAt: null, isActive: true },
-            select: { id: true, name: true },
-          })
-          for (const reader of readers) {
-            try {
-              const result = await datacapClient.batchClose(reader.id)
-              await db.auditLog.create({
-                data: {
-                  locationId,
-                  employeeId: employeeId || null,
-                  action: 'eod_batch_close_success',
-                  entityType: 'payment_reader',
-                  entityId: reader.id,
-                  details: {
-                    readerName: reader.name,
-                    batchNo: result.batchNo ?? null,
-                    batchItemCount: result.batchItemCount ?? null,
-                    message: `Batch close completed for reader ${reader.name}`,
-                  },
-                },
-              })
-              console.log(`[EOD Reset] Batch close succeeded for reader ${reader.name} (${reader.id})`)
-            } catch (readerErr) {
-              await db.auditLog.create({
-                data: {
-                  locationId,
-                  employeeId: employeeId || null,
-                  action: 'eod_batch_close_failed',
-                  entityType: 'payment_reader',
-                  entityId: reader.id,
-                  details: {
-                    readerName: reader.name,
-                    error: readerErr instanceof Error ? readerErr.message : 'Unknown error',
-                    message: `Batch close failed for reader ${reader.name}`,
-                  },
-                },
-              })
-              console.error(`[EOD Reset] Batch close failed for reader ${reader.name}:`, readerErr)
-            }
-          }
-        } catch (err) {
-          console.error('[EOD Reset] Batch close init failed:', err)
-        }
-      })().catch(console.error)
     }
-
-    // ── Walkout Auto-Detection (fire-and-forget) ───────────────────────────
-    void detectPotentialWalkouts(locationId).catch(err => {
-      console.error('[EOD Reset] Walkout detection failed:', err)
-    })
-
-    // ── Orphaned Offline Payment Warning ─────────────────────────────────
-    // Check for stale open orders that may have had card payments captured
-    // by Android devices but never synced (PaymentReconciliationWorker exhaustion).
-    let orphanedPaymentSuspects = 0
-    try {
-      orphanedPaymentSuspects = await db.order.count({
-        where: {
-          locationId,
-          status: { in: ['open', 'sent', 'in_progress'] },
-          updatedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) },
-          deletedAt: null,
-        },
-      })
-      if (orphanedPaymentSuspects > 0) {
-        console.warn(
-          `[EOD] WARNING: ${orphanedPaymentSuspects} stale open order(s) found at location ${locationId}. ` +
-          `These may have orphaned offline card payments. Check Datacap batch report via GET /api/internal/payment-reconciliation?locationId=${locationId}`
-        )
-      }
-    } catch (err) {
-      console.error('[EOD Reset] Orphaned payment check failed:', err)
-    }
-
-    // Emit ORDER_METADATA_UPDATED for rolled-over orders (fire-and-forget)
-    if (staleOpenOrders.length > 0) {
-      void Promise.all(
-        staleOpenOrders.map(o =>
-          emitOrderEvent(locationId, o.id, 'ORDER_METADATA_UPDATED', {
-            rolledOverAt: now.toISOString(),
-            rolledOverFrom: `EOD reset${employeeId ? ` by employee ${employeeId}` : ''}`,
-          })
-        )
-      ).catch(console.error)
-    }
-
-    // Notify all terminals about rolled-over orders
-    if (staleOpenOrders.length > 0) {
-      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})
-    }
-
-    // Dispatch entertainment socket events + waitlist notifications
-    if (cleanedEntertainmentIds.length > 0) {
-      void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
-      for (const itemId of cleanedEntertainmentIds) {
-        void dispatchEntertainmentStatusChanged(locationId, {
-          itemId,
-          entertainmentStatus: 'available',
-          currentOrderId: null,
-          expiresAt: null,
-        }, { async: true }).catch(() => {})
-        void notifyNextWaitlistEntry(locationId, itemId).catch(() => {})
-      }
-    }
-
-    // Notify all terminals that EOD reset is complete (manager notification)
-    void emitToLocation(locationId, 'eod:reset-complete', {
-      cancelledDrafts: 0,
-      rolledOverOrders: stats.orphanedOrdersClosed,
-      tablesReset: stats.tablesReset,
-      entertainmentReset: stats.entertainmentReset,
-      businessDay: currentBusinessDayStart.toISOString().split('T')[0],
-    }).catch(console.error)
 
     return NextResponse.json({ data: {
       success: true,
       stats: {
-        tablesReset: stats.tablesReset,
-        staleOrdersDetected: stats.orphanedOrdersClosed,
-        entertainmentReset: stats.entertainmentReset,
-        batchCloseTriggered: eodSettings.autoBatchClose && parsedSettings.payments.processor === 'datacap',
+        tablesReset: result.tablesReset,
+        staleOrdersDetected: result.rolledOverOrders,
+        entertainmentReset: result.entertainmentReset,
+        tabsCaptured: result.tabsCaptured,
+        tabsCapturedAmount: result.tabsCapturedAmount,
+        tabsDeclined: result.tabsDeclined,
+        tabsRolledOver: result.tabsRolledOver,
+        batchCloseTriggered: result.batchCloseSuccess !== null,
+        batchCloseSuccess: result.batchCloseSuccess,
         walkoutDetectionTriggered: true,
       },
-      warnings: [
-        ...(staleOpenOrders.length > 0
-          ? [`${staleOpenOrders.length} stale order(s) detected. Please review manually.`]
-          : []),
-        ...(orphanedPaymentSuspects > 0
-          ? [`${orphanedPaymentSuspects} order(s) may have orphaned offline card payments. Check Datacap batch report.`]
-          : []),
-      ],
+      warnings: result.warnings,
       message: 'EOD reset completed successfully',
     } })
   } catch (error) {
@@ -465,7 +202,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       select: { settings: true },
     })
     const getSettings = getLocation?.settings as Record<string, unknown> | null
-    const getDayStartTime = (getSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+    const parsedSettings = parseSettings(getSettings)
+    const getDayStartTime = parsedSettings.businessDay.dayStartTime ?? '04:00'
     const getBusinessDayStart = getCurrentBusinessDay(getDayStartTime).start
 
     // Read from OrderSnapshot (event-sourced projection)
@@ -486,7 +224,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    const needsReset = occupiedTablesWithoutOrders > 0 || staleOrderCount > 0
+    // Count open tabs with authorized cards
+    let openTabCount = 0
+    const eodSettings = parsedSettings.eod
+    if (eodSettings?.autoCaptureTabs) {
+      openTabCount = await db.order.count({
+        where: {
+          locationId,
+          orderType: 'bar_tab',
+          status: 'open',
+          deletedAt: null,
+          cards: { some: { status: 'authorized', deletedAt: null } },
+        },
+      })
+    }
+
+    const needsReset = occupiedTablesWithoutOrders > 0 || staleOrderCount > 0 || openTabCount > 0
 
     return NextResponse.json({ data: {
       needsReset,
@@ -494,6 +247,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         occupiedTablesWithoutOrders,
         staleOrders: staleOrderCount,
         currentOpenOrders: openOrderCount,
+        openTabsToCapture: openTabCount,
+        autoCaptureTabs: eodSettings?.autoCaptureTabs ?? false,
       },
       recommendation: needsReset
         ? 'Run EOD reset to clean up orphaned data'
