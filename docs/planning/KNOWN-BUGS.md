@@ -4,7 +4,7 @@
 > Before working in any area, scan your section. Before closing a bug, update its status here.
 > When a bug is confirmed fixed, mark it ✅ FIXED with the commit hash.
 
-*Last updated: 2026-03-10*
+*Last updated: 2026-03-11*
 
 ---
 
@@ -306,3 +306,6 @@ These were requested but are not bugs — they're missing features. Track them i
 | **Tax rules page TypeError: Failed to fetch — service worker v1 intercepting /api/* and returning undefined** | 2026-03-03 | Skill 479 (public/sw.js v2, ServiceWorkerRegistration.tsx stale-cache detection) |
 | **useAdminCRUD infinite render loop — inline parseResponse ref unstable → toast flood** | 2026-03-03 | Skill 479 (useAdminCRUD.ts ref-stabilized extractItems) |
 | **useAuthenticationGuard Zustand hydration race — one-tick wait too fast** | 2026-03-03 | Skill 479 (useAuthenticationGuard.ts persist.onFinishHydration) |
+| **Grey/invisible text across admin UI (dark mode CSS root cause)** | 2026-03-11 | `ce291b73` (root cause: removed @media prefers-color-scheme: dark), `e6942d51` (223 files text-gray-900), `0829aad6` (global CSS + inputClass) |
+| **NUC schema out-of-sync on boot ("Migration didn't properly handle")** | 2026-03-11 | `0e425f2b` (pre-start.sh runs prisma db push before service start) |
+| **Android Room migration crash (wrong schema, no auto-recovery)** | 2026-03-11 | register `6f0ba91`, PAX `cb92728` (try/catch + delete + rebuild on migration failure) |

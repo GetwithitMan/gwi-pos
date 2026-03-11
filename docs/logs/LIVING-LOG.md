@@ -5,6 +5,41 @@
 
 ---
 
+## 2026-03-11 — Grey Text Root Cause + NUC Schema Auto-Sync + Android Room Recovery
+
+**Commits:**
+- gwi-pos `e6942d51` — fix: replace all grey text with black (text-gray-900) across admin UI (223 files)
+- gwi-pos `0829aad6` — fix: ensure form input text is black via global CSS and explicit text-gray-900 (globals.css + 11 inputClass fixes)
+- gwi-pos `0e425f2b` — fix: auto-sync database schema on every NUC boot via pre-start script (installer.run)
+- gwi-pos `ce291b73` — fix: remove dark mode CSS override — POS is light-theme only (ROOT CAUSE fix)
+- gwi-android-register `6f0ba91` — fix: auto-recover from Room migration failures instead of crashing
+- gwi-pax-a6650 `cb92728` — fix: auto-recover from Room migration failures instead of crashing
+- gwi-mission-control `3af66ec` — fix: sync installer with gwi-pos — auto schema sync on NUC boot
+
+### Grey/Invisible Text — Root Cause Found & Fixed
+- **Root cause:** `@media (prefers-color-scheme: dark)` in globals.css was setting `--foreground` to `#ededed` (light gray). All UI uses white backgrounds, so text rendered as light gray on white — nearly invisible.
+- **Fix 1 (`e6942d51`):** Replaced all `text-gray-300`, `text-gray-400`, `text-gray-500` with `text-gray-900` across 223 admin UI files.
+- **Fix 2 (`0829aad6`):** Global CSS rule for `input`, `select`, `textarea` to use `color: #111827` (gray-900). Plus 11 explicit `inputClass` fixes.
+- **Fix 3 (`ce291b73`):** Removed the `@media (prefers-color-scheme: dark)` block entirely. POS is light-theme only — no dark mode support needed.
+
+### NUC Schema Auto-Sync on Boot
+- **Problem:** NUC standalone builds don't include Prisma CLI in the deployment. When schema changes, the local PG database gets out of sync, causing "Migration didn't properly handle" errors on startup.
+- **Fix (`0e425f2b`):** Added `pre-start.sh` to installer that runs `prisma db push --accept-data-loss` before `thepasspos.service` starts on every boot/restart. Schema auto-syncs from the deployed Prisma schema.
+- **MC sync (`3af66ec`):** Dual-repo installer sync maintained — copied installer.run to gwi-mission-control.
+- **Finding:** Migration scripts only exist in `/opt/gwi-pos/app/scripts/`, not `/opt/gwi-pos/scripts/`. The MC "Push schema" button still works via POST `/api/internal/sync-schema` (5-layer incremental diff, not prisma db push).
+
+### Android Room Migration Auto-Recovery
+- **Problem:** Room's `fallbackToDestructiveMigration(true)` only handles MISSING migration paths, NOT migration SQL that produces wrong schema. When a migration runs but creates incorrect column types or misses columns, Room crashes with no recovery.
+- **Fix (register `6f0ba91`, PAX `cb92728`):** Explicit try/catch on database open during init. On any migration failure, deletes the Room database and rebuilds fresh. All data re-syncs from NUC via BootstrapWorker — no manual re-pair needed.
+
+### Files Changed
+**gwi-pos:** 223+ admin/component files (text color), `src/app/globals.css`, `public/installer.run`
+**gwi-android-register:** Room database init (auto-recovery)
+**gwi-pax-a6650:** Room database init (auto-recovery)
+**gwi-mission-control:** `scripts/installer.run` (synced)
+
+---
+
 ## 2026-03-10 — UI/UX Audit + Automated EOD Batch Close
 
 **Commits:** (uncommitted — multi-file changes across gwi-pos + gwi-mission-control)
