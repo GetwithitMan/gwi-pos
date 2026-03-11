@@ -141,8 +141,8 @@ export default function BergDispenseReportPage() {
     window.open(`/api/reports/berg-dispense?${params}`)
   }
 
-  const selectClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white'
-  const dateClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm'
+  const selectClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white'
+  const dateClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900'
 
   return (
     <div className="p-6 max-w-7xl mx-auto pb-16">

@@ -448,7 +448,7 @@ export default function BergSettingsPage() {
 
   if (loading) return <div className="p-6 text-gray-900">Loading...</div>
 
-  const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500'
+  const inputClass = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500'
 
   return (
     <div className="p-6 max-w-4xl mx-auto pb-32">

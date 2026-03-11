@@ -100,7 +100,7 @@ export default function BergComparisonReportPage() {
     return 'bg-red-50'
   }
 
-  const inputClass = 'border border-gray-300 rounded px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-blue-500'
+  const inputClass = 'border border-gray-300 rounded px-2 py-1 text-sm text-gray-900 w-20 focus:outline-none focus:ring-1 focus:ring-blue-500'
 
   return (
     <div className="p-6 max-w-6xl mx-auto pb-16">
