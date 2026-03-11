@@ -1,5 +1,5 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  specify custom .env file path with { path: '/custom/path/.env' }
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -603,6 +603,12 @@ CREATE TABLE "MenuItem" (
     "happyHourStart" TEXT,
     "happyHourEnd" TEXT,
     "happyHourDays" JSONB,
+    "overtimeEnabled" BOOLEAN DEFAULT false,
+    "overtimeMode" TEXT,
+    "overtimeMultiplier" DECIMAL(65,30),
+    "overtimePerMinuteRate" DECIMAL(65,30),
+    "overtimeFlatFee" DECIMAL(65,30),
+    "overtimeGraceMinutes" INTEGER DEFAULT 5,
     "entertainmentStatus" TEXT,
     "currentOrderId" TEXT,
     "currentOrderItemId" TEXT,
@@ -889,6 +895,14 @@ CREATE TABLE "EntertainmentWaitlist" (
     "seatedAt" TIMESTAMP(3),
     "expiresAt" TIMESTAMP(3),
     "notes" TEXT,
+    "depositAmount" DECIMAL(65,30),
+    "depositMethod" TEXT,
+    "depositRecordNo" TEXT,
+    "depositCardLast4" TEXT,
+    "depositCardBrand" TEXT,
+    "depositStatus" TEXT,
+    "depositCollectedBy" TEXT,
+    "depositRefundedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -3232,7 +3246,7 @@ CREATE TABLE "PizzaConfig" (
     "locationId" TEXT NOT NULL,
     "maxSections" INTEGER NOT NULL DEFAULT 8,
     "defaultSections" INTEGER NOT NULL DEFAULT 2,
-    "sectionOptions" JSONB NOT NULL DEFAULT '[1, 2, 4, 8]',
+    "sectionOptions" JSONB NOT NULL DEFAULT '[1, 2, 3, 4, 6, 8]',
     "pricingMode" TEXT NOT NULL DEFAULT 'fractional',
     "hybridPricing" JSONB,
     "freeToppingsEnabled" BOOLEAN NOT NULL DEFAULT false,
@@ -3247,6 +3261,8 @@ CREATE TABLE "PizzaConfig" (
     "allowModeSwitch" BOOLEAN NOT NULL DEFAULT true,
     "printerIds" JSONB,
     "printSettings" JSONB,
+    "allowCondimentSections" BOOLEAN NOT NULL DEFAULT false,
+    "condimentDivisionMax" INTEGER NOT NULL DEFAULT 1,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -3268,6 +3284,9 @@ CREATE TABLE "PizzaSize" (
     "toppingMultiplier" DECIMAL(65,30) NOT NULL DEFAULT 1.0,
     "freeToppings" INTEGER NOT NULL DEFAULT 0,
     "inventoryMultiplier" DECIMAL(65,30) NOT NULL DEFAULT 1.0,
+    "inventoryItemId" TEXT,
+    "usageQuantity" DECIMAL(65,30),
+    "usageUnit" TEXT,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isDefault" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -3411,6 +3430,8 @@ CREATE TABLE "OrderItemPizza" (
     "sauceAmount" TEXT NOT NULL DEFAULT 'regular',
     "cheeseId" TEXT,
     "cheeseAmount" TEXT NOT NULL DEFAULT 'regular',
+    "sauceSections" JSONB,
+    "cheeseSections" JSONB,
     "toppingsData" JSONB NOT NULL,
     "cookingInstructions" TEXT,
     "cutStyle" TEXT,
@@ -7769,6 +7790,9 @@ ALTER TABLE "PizzaConfig" ADD CONSTRAINT "PizzaConfig_locationId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "PizzaSize" ADD CONSTRAINT "PizzaSize_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PizzaSize" ADD CONSTRAINT "PizzaSize_inventoryItemId_fkey" FOREIGN KEY ("inventoryItemId") REFERENCES "InventoryItem"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PizzaCrust" ADD CONSTRAINT "PizzaCrust_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

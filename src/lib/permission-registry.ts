@@ -1335,6 +1335,46 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
 
   // =========================================================================
+  // MEMBERSHIPS — BUSINESS_SETUP
+  // =========================================================================
+  'admin.manage_membership_plans': {
+    label: 'Manage Membership Plans',
+    description: 'Create, edit, and delete membership plan templates.',
+    details: ['Controls plan pricing, billing cycles, trial periods, and benefits', 'Does not grant ability to enroll customers or process charges'],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'admin.manage_memberships': {
+    label: 'Manage Memberships',
+    description: 'Enroll customers, pause/resume/cancel subscriptions, and replace cards.',
+    details: ['Can create new memberships and modify existing ones', 'Can view charge history and audit events', 'Cannot manually retry failed charges (requires separate permission)'],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'admin.retry_membership_charge': {
+    label: 'Retry Membership Charge',
+    description: 'Manually retry a failed recurring membership charge.',
+    details: ['Triggers an immediate charge attempt against the customer card on file', 'Use with caution — retrying too aggressively can cause customer disputes'],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'admin.view_membership_reports': {
+    label: 'View Membership Reports',
+    description: 'Access membership analytics, MRR, churn, and decline reports.',
+    details: ['Read-only access to membership reporting dashboards', 'Includes revenue, aging, and decline analysis'],
+    tab: 'REPORTING',
+    applicableTo: ['ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+
+  // =========================================================================
   // ADMIN FLAGS — BUSINESS_SETUP
   // =========================================================================
   'admin': {

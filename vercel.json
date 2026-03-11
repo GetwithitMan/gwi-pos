@@ -9,6 +9,7 @@
     { "path": "/api/cron/berg-reprocess", "schedule": "* * * * *" },
     { "path": "/api/cron/entertainment-expiry", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/eod-batch-close", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/expire-payment-links", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/expire-payment-links", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/process-memberships", "schedule": "0 * * * *" }
   ]
 }

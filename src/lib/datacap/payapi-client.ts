@@ -22,6 +22,7 @@ export interface PayApiSaleRequest {
   tax?: string        // "1.25"
   cvv?: string        // from tokenization response
   trace?: string      // optional tracking value
+  recurringData?: string  // Datacap recurring billing chain data
 }
 
 export interface PayApiVoidRequest {
@@ -72,6 +73,7 @@ export interface PayApiResponse {
   returnCode: string
   responseOrigin: string
   trace?: string
+  recurringData?: string  // Datacap recurring billing chain data from response
 }
 
 // ─── Raw API Shape (PascalCase from Datacap) ─────────────────────────────────
@@ -91,6 +93,7 @@ interface RawPayApiResponse {
   Token?: string
   Tip?: string
   Trace?: string
+  RecurringData?: string
 }
 
 // ─── Error Class ──────────────────────────────────────────────────────────────
@@ -124,6 +127,7 @@ function mapResponse(raw: RawPayApiResponse): PayApiResponse {
     returnCode:     raw.ReturnCode     ?? '',
     responseOrigin: raw.ResponseOrigin ?? '',
     trace:          raw.Trace,
+    recurringData:  raw.RecurringData,
   }
 }
 
@@ -228,6 +232,11 @@ export class PayApiClient {
 
     const mapped = mapResponse(raw)
 
+    // Warn if RecurringData was sent but not returned (chain corruption risk)
+    if (body?.RecurringData && !mapped.recurringData) {
+      console.warn('[PayAPI] WARNING: RecurringData missing from response — chain corruption risk. Preserving old chain.')
+    }
+
     // HTTP 200 = approved/success
     if (res.ok) {
       return mapped
@@ -254,6 +263,7 @@ export class PayApiClient {
       Tax:       req.tax,
       CVV:       req.cvv,
       Trace:     req.trace,
+      RecurringData: req.recurringData,
     })
   }
 

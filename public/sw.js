@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gwi-pos-v2'
+const CACHE_NAME = 'gwi-pos-v3'
 const STATIC_ASSETS = ['/', '/login', '/orders']
 
 self.addEventListener('install', (event) => {
@@ -20,14 +20,21 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
 
-  // Never intercept API calls — they must always hit the network.
-  // Intercepting API calls with a cache fallback causes TypeError: Failed to fetch
-  // when the fallback returns undefined (API responses are never cached).
-  if (url.pathname.startsWith('/api/')) {
+  // Never intercept API calls, socket paths, or HMR — they must always hit the network
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/_next/webpack-hmr') ||
+    url.pathname.startsWith('/__nextjs')
+  ) {
     return
   }
 
-  // Network-first for dev, cache fallback for production
+  // Only cache GET requests (POST/PUT/DELETE are not cacheable)
+  if (event.request.method !== 'GET') {
+    return
+  }
+
+  // Network-first: try server, fall back to cache only if offline
   event.respondWith(
     fetch(event.request)
       .then(response => {

@@ -143,7 +143,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   const socketServer = new Server(httpServer, {
     path: process.env.SOCKET_PATH || '/api/socket',
     cors: {
-      origin: process.env.NODE_ENV === 'development'
+      origin: process.env.NODE_ENV !== 'production'
         ? '*'
         : (origin, callback) => {
             // No origin (same-origin / server-to-server) — allow
@@ -214,8 +214,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       }
 
       // Path 4: Development mode — allow unauthenticated
-      if (process.env.NODE_ENV === 'development') {
+      // Accept both NODE_ENV=development and non-production (custom server sets dev = NODE_ENV !== 'production')
+      if (process.env.NODE_ENV !== 'production') {
         socket.data.authenticated = false
+        // In dev, resolve locationId from DB so socket can join the location room
+        try {
+          const loc = await db.location.findFirst({ select: { id: true } })
+          if (loc) socket.data.locationId = loc.id
+        } catch { /* DB not ready yet — socket still connects */ }
         return next()
       }
 

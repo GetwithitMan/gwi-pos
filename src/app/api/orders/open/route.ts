@@ -65,7 +65,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
         deletedAt: null,
         NOT: [
-          { status: 'draft', itemCount: 0 },
+          { status: 'draft', itemCount: 0, orderType: { not: 'bar_tab' } },
           { status: { in: ['open', 'sent', 'in_progress'] }, itemCount: 0, total: { lte: 0 } },
         ],
         ...(employeeId ? { employeeId } : {}),
@@ -99,8 +99,9 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
           deletedAt: null,
           // Exclude empty shells: abandoned drafts and zombie orders (all items transferred away)
+          // But keep draft bar_tabs — opening a tab is intentional, not an abandoned draft
           NOT: [
-            { status: 'draft', itemCount: 0 },
+            { status: 'draft', itemCount: 0, orderType: { not: 'bar_tab' } },
             { status: { in: ['open', 'sent', 'in_progress'] }, itemCount: 0, total: { lte: 0 } },
           ],
           ...(employeeId ? { employeeId } : {}),
@@ -310,8 +311,9 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] },
         deletedAt: null,
         // Exclude empty shells: abandoned drafts and zombie orders (all items transferred away)
+        // But keep draft bar_tabs — opening a tab is intentional, not an abandoned draft
         NOT: [
-          { status: 'draft', itemCount: 0 },
+          { status: 'draft', itemCount: 0, orderType: { not: 'bar_tab' } },
           { status: { in: ['open', 'sent', 'in_progress'] }, itemCount: 0, total: { lte: 0 } },
         ],
         ...(employeeId ? { employeeId } : {}),

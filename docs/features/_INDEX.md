@@ -124,6 +124,12 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Cloud-Primary Sync** | Neon-canonical SOR, outage queue, conflict resolution, bridge worker | `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6 | Active | pos, mission-control | Offline Sync, Orders, Payments, Mission Control |
 | **Migration Architecture** | Unified migration runner, tracking table, 12 extracted migrations | `scripts/migrations/`, `scripts/nuc-pre-migrate.js` | Active | pos | Settings, Offline Sync |
 
+### Billing & Subscriptions
+
+| Feature | Doc | Status | Repos | Top Dependencies |
+|---------|-----|--------|-------|-----------------|
+| **Memberships** | [memberships.md](memberships.md) | Active | pos | Customers, SavedCards, Payments (Datacap PayAPI), Settings, Reports |
+
 ### Guest & Ordering Channels
 
 | Feature | Doc | Status | Repos | Top Dependencies |
@@ -280,10 +286,10 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 
 | Metric | Count |
 |--------|-------|
-| Feature docs (active/built) | 45 |
+| Feature docs (active/built) | 46 |
 | Feature docs (schema built) | 1 |
 | Feature docs (planned/roadmap) | 14 |
-| Feature docs total | 60 |
+| Feature docs total | 61 |
 | Flow docs | 12 |
 | API routes (gwi-pos) | 452 |
 | UI pages (gwi-pos) | 189+ |

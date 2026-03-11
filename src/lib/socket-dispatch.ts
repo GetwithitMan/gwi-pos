@@ -1616,3 +1616,31 @@ export async function dispatchQuickBarChanged(
     console.error('[SocketDispatch] Failed to dispatch quickbar:changed:', error)
   }
 }
+
+// ==================== Membership Events ====================
+
+export async function dispatchMembershipUpdate(
+  locationId: string,
+  payload: {
+    action: 'enrolled' | 'charged' | 'declined' | 'paused' | 'resumed' | 'cancelled' | 'card_updated' | 'expired'
+    membershipId: string
+    customerId?: string
+    details?: Record<string, unknown>
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'membership:updated', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch membership:updated:', error)
+      return false
+    }
+  }
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+  return doEmit()
+}

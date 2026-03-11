@@ -723,7 +723,7 @@ When one of these changes, the entire cluster often needs review:
 | **Output Devices** | Hardware + KDS + Printers | Routing and dispatch shared |
 | **Access Control** | Roles + Permissions + Employees | Permission changes need role + employee sync |
 | **Payment Integrity** | Payments + Store-and-Forward + Refund/Void + Pricing Programs + Remote Void Approval + Chargebacks | All affect how money is collected, voided, and reconciled |
-| **Guest Tenders** | Payments + Gift Cards + House Accounts + Tabs + Pay-at-Table | All are non-cash or alternative tender paths — each needs payment permission check |
+| **Guest Tenders** | Payments + Gift Cards + House Accounts + Tabs + Pay-at-Table + Memberships | All are non-cash or alternative tender paths — each needs payment permission check |
 | **Staff Lifecycle** | Employees + Time Clock + Shifts + Scheduling | Schedule → clock-in → shift → close → tips all connected |
 | **Venue Operations** | Floor Plan + Coursing + KDS + Entertainment | Physical space, kitchen flow, and order routing interlock |
 | **Promotions** | Discounts + Coupons + Happy Hour + Auto Discounts | All affect order totals — test together when changing pricing logic |
@@ -745,6 +745,17 @@ When one of these changes, the entire cluster often needs review:
 | **Critical Rules** | Token endpoint is app.7shifts.com (NOT api.7shifts.com). Every API call requires both Authorization + x-company-guid headers. Webhook HMAC key = `{timestamp}#{companyGuid}`. Single-venue fallback only when exactly one location has 7shifts enabled. Fire-and-forget is safe on NUC (persistent process) — not safe on serverless. |
 
 ---
+
+---
+
+### Memberships
+| | |
+|---|---|
+| **Depends On** | Customers (customer record for enrollment), SavedCards (card-on-file for recurring billing), Payments/Datacap (PayAPI card-not-present charges), Settings (membership config: enabled, gracePeriodDays, retryScheduleDays), Reports (membership analytics) |
+| **Depended On By** | Customers (customer detail page shows membership status) |
+| **Shared Models** | `Membership`, `MembershipPlan`, `MembershipCharge`, `MembershipEvent`, `SavedCard`, `Customer` |
+| **Shared Socket Events** | `membership:updated` (actions: enrolled, charged, declined, paused, resumed, cancelled, card_updated, expired) |
+| **Critical Rules** | RecurringData chain never crosses subscriptions — new chain on card replace. Atomic write path: charge + membership update + event in sequence. Typed idempotency keys (6 formats) prevent duplicate charges. Billing lease (5-min lock) prevents concurrent cron + manual charges. Hard declines → immediate `uncollectible` (no retry). |
 
 ---
 

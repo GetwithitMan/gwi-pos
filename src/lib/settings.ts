@@ -842,6 +842,7 @@ export interface LocationSettings {
   hostView?: HostViewSettings                         // Host management station — seating, waitlist, server rotation (optional for backward compat)
   delivery?: DeliverySettings                         // In-house delivery management (optional for backward compat)
   textToPay?: TextToPaySettings                       // Text-to-Pay / Payment Links via SMS/email (optional for backward compat)
+  memberships?: MembershipSettings                     // Recurring membership billing (optional for backward compat)
 }
 
 // ─── Text-to-Pay Settings ───────────────────────────────────────────────────
@@ -1650,6 +1651,28 @@ export const DEFAULT_SETTINGS: LocationSettings = {
   paidInOutCategories: ['Cash Advance', 'Vendor Payment', 'Refund', 'Restock', 'Tip Payout', 'Other'],
 }
 
+// ─── Membership Settings ──────────────────────────────────────────────────
+
+export interface MembershipSettings {
+  enabled: boolean
+  retryScheduleDays: number[]    // [0, 3, 7]
+  gracePeriodDays: number        // 14
+  sendDeclineEmails: boolean
+  sendUpcomingChargeEmails: boolean
+  sendRetryScheduledEmails: boolean
+  sendAdminDeclineAlerts: boolean
+}
+
+export const DEFAULT_MEMBERSHIP_SETTINGS: MembershipSettings = {
+  enabled: false,
+  retryScheduleDays: [0, 3, 7],
+  gracePeriodDays: 14,
+  sendDeclineEmails: true,
+  sendUpcomingChargeEmails: true,
+  sendRetryScheduledEmails: true,
+  sendAdminDeclineAlerts: true,
+}
+
 // Merge partial settings with defaults
 export function mergeWithDefaults(partial: Partial<LocationSettings> | null | undefined): LocationSettings {
   if (!partial) return { ...DEFAULT_SETTINGS }
@@ -1862,6 +1885,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     textToPay: partial.textToPay
       ? { ...DEFAULT_TEXT_TO_PAY, ...partial.textToPay }
+      : undefined,
+    memberships: partial.memberships
+      ? { ...DEFAULT_MEMBERSHIP_SETTINGS, ...partial.memberships }
       : undefined,
   }
 }
