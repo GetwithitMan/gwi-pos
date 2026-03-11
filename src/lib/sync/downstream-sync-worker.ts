@@ -50,14 +50,18 @@ let cycleRunning = false
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function serializeValue(val: unknown): unknown {
+function serializeValue(val: unknown, isPgArray = false): unknown {
   if (val === null || val === undefined) return null
   if (val instanceof Date) return val.toISOString()
   if (typeof val === 'bigint') return val.toString()
-  // Arrays → PG array literal format: {"a","b"} instead of JSON ["a","b"]
+  // PG ARRAY columns (e.g., TEXT[]) → PG array literal: {"a","b"}
+  // JSON/JSONB columns with array values stay as JSON: ["a","b"]
   if (Array.isArray(val)) {
-    if (val.length === 0) return '{}'
-    return `{${val.map((v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')}}`
+    if (isPgArray) {
+      if (val.length === 0) return '{}'
+      return `{${val.map((v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')}}`
+    }
+    return JSON.stringify(val)
   }
   if (typeof val === 'object') {
     // Decimal.js (Prisma Decimal) — has d (digits), s (sign), e (exponent)
@@ -240,7 +244,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
         }
       }
 
-      const values = upsertCols.map((col) => serializeValue(row[col]))
+      const values = upsertCols.map((col) => serializeValue(row[col], types?.get(col)?.endsWith('[]') ?? false))
       await masterClient.$executeRawUnsafe(sql, ...values)
 
       // Stamp syncedAt locally if the column exists
