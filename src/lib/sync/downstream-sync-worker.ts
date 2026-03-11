@@ -54,6 +54,11 @@ function serializeValue(val: unknown): unknown {
   if (val === null || val === undefined) return null
   if (val instanceof Date) return val.toISOString()
   if (typeof val === 'bigint') return val.toString()
+  // Arrays → PG array literal format: {"a","b"} instead of JSON ["a","b"]
+  if (Array.isArray(val)) {
+    if (val.length === 0) return '{}'
+    return `{${val.map((v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')}}`
+  }
   if (typeof val === 'object') {
     // Decimal.js (Prisma Decimal) — has d (digits), s (sign), e (exponent)
     const v = val as Record<string, unknown>
