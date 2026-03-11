@@ -358,6 +358,9 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         courseNumber: item.courseNumber || null,
         isHeld: item.isHeld || false,
         delayMinutes: item.delayMinutes || null,
+        // Pour size (liquor)
+        pourSize: item.pourSize || null,
+        pourMultiplier: item.pourMultiplier ?? null,
         // Timed rental / entertainment fields
         blockTimeMinutes: item.blockTimeMinutes || null,
         // Weight-based pricing fields

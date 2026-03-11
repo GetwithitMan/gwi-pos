@@ -56,6 +56,9 @@ export interface MappedOrderItem {
   pricingOptionId: string | null
   pricingOptionLabel: string | null
   itemType: string | null
+  // Pour size (liquor)
+  pourSize: string | null
+  pourMultiplier: number | null
   createdAt: Date
 }
 
@@ -200,6 +203,8 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
     pricingOptionId: item.pricingOptionId || null,
     pricingOptionLabel: item.pricingOptionLabel || null,
     itemType: item.menuItem?.itemType || item.itemType || null,
+    pourSize: item.pourSize || null,
+    pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
     createdAt: item.createdAt,
   }
 }

@@ -123,6 +123,9 @@ const orderItemSchema = z.object({
   pizzaConfig: pizzaConfigSchema,
   // Timed rental / entertainment fields
   blockTimeMinutes: z.number().int().positive().nullish(),
+  // Pour size (liquor)
+  pourSize: z.enum(['shot', 'double', 'tall', 'short']).nullish(),
+  pourMultiplier: z.number().positive().nullish(),
   // Weight-based pricing
   soldByWeight: z.boolean().optional(),
   weight: z.number().positive().optional(),       // NET weight (post-tare)
