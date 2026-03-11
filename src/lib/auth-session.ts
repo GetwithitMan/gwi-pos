@@ -13,10 +13,14 @@
  */
 
 import { cookies } from 'next/headers'
+import crypto from 'crypto'
 
 export const POS_SESSION_COOKIE = 'pos-session'
 const SESSION_EXPIRY_SECONDS = 8 * 60 * 60 // 8 hours
 const SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes
+
+/** Fallback secret generated once per process if env var is missing */
+let _fallbackSecret: string | null = null
 
 export interface PosSessionPayload {
   employeeId: string
@@ -31,10 +35,14 @@ export interface PosSessionPayload {
 
 function getSecret(): string {
   const secret = process.env.NEXTAUTH_SECRET || process.env.SESSION_SECRET
-  if (!secret) {
-    throw new Error('NEXTAUTH_SECRET or SESSION_SECRET environment variable must be set')
+  if (secret) return secret
+  // Auto-generate a per-process secret so NUCs without the env var don't crash.
+  // Sessions won't survive restarts, but the POS stays operational.
+  if (!_fallbackSecret) {
+    _fallbackSecret = crypto.randomBytes(32).toString('hex')
+    console.warn('[auth-session] SESSION_SECRET not set — using auto-generated secret (sessions will not survive restarts)')
   }
-  return secret
+  return _fallbackSecret
 }
 
 // ─── Base64url helpers (same as cloud-auth.ts) ──────────────────────────

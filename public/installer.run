@@ -604,6 +604,7 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "
   mkdir -p "$APP_BASE"
   INTERNAL_SECRET=$(openssl rand -hex 32)
   CELLULAR_SECRET=$(openssl rand -hex 32)
+  SESSION_SECRET=$(openssl rand -hex 32)
 
   # Build HA section for .env (server or backup)
   HA_ENV_SECTION=""
@@ -649,6 +650,7 @@ NEXT_PUBLIC_EVENT_PROVIDER=socket
 PORT=3005
 INTERNAL_API_SECRET=${INTERNAL_SECRET}
 CELLULAR_TOKEN_SECRET=${CELLULAR_SECRET}
+SESSION_SECRET=${SESSION_SECRET}
 SERVER_URL=${SERVER_URL}${HA_ENV_SECTION}
 ENVEOF
 
@@ -711,6 +713,12 @@ else
   if ! grep -q "^CELLULAR_TOKEN_SECRET=" "$ENV_FILE" 2>/dev/null; then
     echo "CELLULAR_TOKEN_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
     log "Added CELLULAR_TOKEN_SECRET to existing .env"
+  fi
+
+  # Ensure session secret is present (for POS httpOnly session cookies)
+  if ! grep -q "^SESSION_SECRET=" "$ENV_FILE" 2>/dev/null; then
+    echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
+    log "Added SESSION_SECRET to existing .env"
   fi
 
   # Ensure SERVER_URL is persisted (added in later installer versions)
