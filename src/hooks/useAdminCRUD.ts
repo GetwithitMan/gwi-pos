@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react'
 import { toast } from '@/stores/toast-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface UseAdminCRUDConfig<T> {
   apiBase: string
@@ -34,10 +35,11 @@ interface UseAdminCRUDReturn<T> {
 }
 
 export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDReturn<T> {
+  const authEmployee = useAuthStore(s => s.employee)
   const {
     apiBase,
     locationId,
-    requestingEmployeeId,
+    requestingEmployeeId: explicitEmployeeId,
     resourceName = 'item',
     getId = (item: T) => (item as Record<string, unknown>).id as string,
     parseResponse,
@@ -45,6 +47,9 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
     onDeleteSuccess,
     skipReloadOnSave = false,
   } = config
+
+  // Auto-resolve from auth store if not explicitly provided
+  const requestingEmployeeId = explicitEmployeeId ?? authEmployee?.id
 
   const [items, setItems] = useState<T[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -119,10 +124,15 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (requestingEmployeeId) headers['x-employee-id'] = requestingEmployeeId
 
+      // Inject requestingEmployeeId into the body so routes that read from body (not header) also get it
+      const bodyPayload = requestingEmployeeId
+        ? { ...payload, requestingEmployeeId }
+        : payload
+
       const res = await fetch(url, {
         method,
         headers,
-        body: JSON.stringify(payload),
+        body: JSON.stringify(bodyPayload),
       })
 
       if (!res.ok) {

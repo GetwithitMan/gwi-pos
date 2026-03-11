@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { getPayApiClient, PayApiError } from '@/lib/datacap/payapi-client'
 import { buildIdempotencyKey } from '@/lib/membership/idempotency'
@@ -13,7 +13,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams
     const locationId = sp.get('locationId')
-    const employeeId = sp.get('requestingEmployeeId')
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId ?? sp.get('requestingEmployeeId')
     const status = sp.get('status')
     const billingStatus = sp.get('billingStatus')
     const customerId = sp.get('customerId')
@@ -34,9 +35,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (customerId) { where += ` AND "m"."customerId" = $${idx}`; params.push(customerId); idx++ }
 
     const rows: any[] = await db.$queryRawUnsafe(`
-      SELECT "m".*, "p"."name" AS "planName", "p"."price" AS "planPrice"
+      SELECT "m".*, "p"."name" AS "planName", "p"."price" AS "planPrice",
+             "c"."firstName" AS "customerFirstName", "c"."lastName" AS "customerLastName",
+             "c"."email" AS "customerEmail", "c"."phone" AS "customerPhone",
+             "sc"."last4" AS "cardLast4", "sc"."cardBrand" AS "cardBrand"
       FROM "Membership" "m"
       LEFT JOIN "MembershipPlan" "p" ON "m"."planId" = "p"."id"
+      LEFT JOIN "Customer" "c" ON "m"."customerId" = "c"."id"
+      LEFT JOIN "SavedCard" "sc" ON "m"."savedCardId" = "sc"."id"
       WHERE ${where}
       ORDER BY "m"."createdAt" DESC
       LIMIT $${idx} OFFSET $${idx + 1}
@@ -59,11 +65,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, requestingEmployeeId, customerId, planId, savedCardId } = body
+    const { locationId, requestingEmployeeId: bodyEmployeeId, customerId, planId, savedCardId } = body
 
     if (!locationId || !customerId || !planId) {
       return NextResponse.json({ error: 'locationId, customerId, planId required' }, { status: 400 })
     }
+
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId ?? bodyEmployeeId
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_memberships')
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })

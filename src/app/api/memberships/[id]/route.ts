@@ -42,6 +42,36 @@ export const GET = withVenue(async function GET(
   }
 })
 
+// DELETE — soft-delete a membership
+export const DELETE = withVenue(async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const sp = request.nextUrl.searchParams
+    const locationId = sp.get('locationId')
+
+    if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+
+    const auth = await requirePermission(sp.get('requestingEmployeeId'), locationId, 'admin.manage_memberships')
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    const rows: any[] = await db.$queryRawUnsafe(`
+      UPDATE "Membership"
+      SET "deletedAt" = NOW(), "updatedAt" = NOW()
+      WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      RETURNING "id"
+    `, id, locationId)
+
+    if (rows.length === 0) return NextResponse.json({ error: 'Membership not found' }, { status: 404 })
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    console.error('[memberships/[id]] DELETE error:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+})
+
 // PUT — update mutable fields (statusReason, notes, etc.)
 export const PUT = withVenue(async function PUT(
   request: NextRequest,

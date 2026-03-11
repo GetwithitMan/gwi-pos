@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
@@ -10,7 +10,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId ?? searchParams.get('requestingEmployeeId')
     const search = searchParams.get('search')
     const tag = searchParams.get('tag')
     const limit = parseInt(searchParams.get('limit') || '50')
@@ -116,8 +117,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       tags,
       marketingOptIn,
       birthday,
-      requestingEmployeeId,
+      requestingEmployeeId: bodyEmployeeId,
     } = body
+
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId ?? bodyEmployeeId
 
     // Auth check — require customers.edit permission
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.CUSTOMERS_EDIT)

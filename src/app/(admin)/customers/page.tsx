@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 import { toast } from '@/stores/toast-store'
+import { SavedCardList } from '@/components/customers/SavedCardList'
 
 // Common customer tags
 const CUSTOMER_TAGS = ['VIP', 'Regular', 'First-Timer', 'Staff', 'Family', 'Business', 'Birthday Club']
@@ -908,6 +909,13 @@ export default function CustomersPage() {
                 </div>
               </div>
             )}
+
+            {/* Saved Cards */}
+            <SavedCardList
+              customerId={viewingCustomer.id}
+              locationId={employee?.location?.id || ''}
+              employeeId={employee?.id || ''}
+            />
 
             {/* Memberships */}
             <CustomerMemberships customerId={viewingCustomer.id} locationId={employee?.location?.id || ''} employeeId={employee?.id || ''} />

@@ -35,6 +35,17 @@ export async function requirePermission(
   locationId: string,
   permission: string
 ): Promise<AuthResult> {
+  // Session cookie fallback — if no employeeId was provided (browser admin pages),
+  // try to resolve it from the pos-session cookie before failing
+  if (!employeeId) {
+    try {
+      const session = await getSessionFromCookie()
+      if (session?.employeeId) {
+        employeeId = session.employeeId
+      }
+    } catch { /* no cookie or invalid — fall through to 401 */ }
+  }
+
   if (!employeeId) {
     return {
       authorized: false,
@@ -105,6 +116,16 @@ export async function requireAnyPermission(
   locationId: string,
   permissions: string[]
 ): Promise<AuthResult> {
+  // Session cookie fallback — same as requirePermission
+  if (!employeeId) {
+    try {
+      const session = await getSessionFromCookie()
+      if (session?.employeeId) {
+        employeeId = session.employeeId
+      }
+    } catch { /* no cookie or invalid */ }
+  }
+
   if (!employeeId) {
     return {
       authorized: false,

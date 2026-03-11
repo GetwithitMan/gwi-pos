@@ -8,7 +8,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams
     const locationId = sp.get('locationId')
-    const employeeId = sp.get('requestingEmployeeId')
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId ?? sp.get('requestingEmployeeId')
 
     if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
 
@@ -32,12 +33,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, requestingEmployeeId, name, description, price, billingCycle,
+    const { locationId, requestingEmployeeId: bodyEmployeeId, name, description, price, billingCycle,
             billingDayOfMonth, billingDayOfWeek, trialDays, setupFee, benefits,
             maxMembers, isActive, sortOrder, currency } = body
 
     if (!locationId) return NextResponse.json({ error: 'locationId required' }, { status: 400 })
     if (!name || price == null) return NextResponse.json({ error: 'name and price are required' }, { status: 400 })
+
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId ?? bodyEmployeeId
 
     const auth = await requirePermission(requestingEmployeeId, locationId, 'admin.manage_membership_plans')
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams
     const locationId = sp.get('locationId')
-    const employeeId = sp.get('requestingEmployeeId')
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId ?? sp.get('requestingEmployeeId')
     const type = sp.get('type') || 'summary'
     const period = sp.get('period') || 'monthly'
 
