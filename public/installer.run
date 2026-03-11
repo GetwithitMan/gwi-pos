@@ -1645,6 +1645,33 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
 
   header "Configuring Systemd Services"
 
+  # ── Pre-start script: auto-sync database schema on every boot ──
+  PRE_START="$APP_BASE/pre-start.sh"
+  cat > "$PRE_START" <<'PSEOF'
+#!/usr/bin/env bash
+# GWI POS Pre-Start — runs before thepasspos.service on every boot/restart.
+# Ensures the database schema matches the deployed Prisma schema.
+set -euo pipefail
+APP_DIR="/opt/gwi-pos/app"
+cd "$APP_DIR"
+
+echo "[pre-start] Syncing database schema..."
+if npx --yes prisma db push --accept-data-loss --skip-generate 2>&1; then
+  echo "[pre-start] Schema sync complete."
+else
+  echo "[pre-start] WARNING: prisma db push failed — continuing anyway."
+fi
+
+# Run custom migrations if the script exists
+if [[ -f scripts/nuc-pre-migrate.js ]]; then
+  echo "[pre-start] Running custom migrations..."
+  node scripts/nuc-pre-migrate.js 2>&1 || echo "[pre-start] WARNING: custom migrations had issues — continuing."
+fi
+PSEOF
+  chmod +x "$PRE_START"
+  chown "$POSUSER":"$POSUSER" "$PRE_START"
+  log "Pre-start schema sync script created."
+
   # thepasspos.service — POS backend/UI
   PG_AFTER=""
   PG_WANTS=""
@@ -1665,10 +1692,11 @@ User=$POSUSER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment=NODE_ENV=production
+ExecStartPre=$APP_BASE/pre-start.sh
 ExecStart=/usr/bin/node -r ./preload.js server.js
 Restart=always
 RestartSec=3
-TimeoutStartSec=120
+TimeoutStartSec=180
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=thepasspos
