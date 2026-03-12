@@ -327,8 +327,8 @@ export const POST = withVenue(async function POST(
         const componentSum = Number(breakdown.sizePrice ?? 0) + Number(breakdown.crustPrice ?? 0) +
           Number(breakdown.saucePrice ?? 0) + Number(breakdown.cheesePrice ?? 0) + Number(breakdown.toppingsPrice ?? 0)
 
-        // Sanity check: total must match components
-        if (Math.abs(componentSum - Number(item.pizzaConfig.totalPrice ?? 0)) > 0.01) {
+        // Sanity check: total must match components (0.05 tolerance for floating-point serialization)
+        if (Math.abs(componentSum - Number(item.pizzaConfig.totalPrice ?? 0)) > 0.05) {
           return apiError.badRequest(
             `Pizza price breakdown does not match total for item "${item.name || item.menuItemId}"`,
             ERROR_CODES.VALIDATION_ERROR
@@ -500,7 +500,11 @@ export const POST = withVenue(async function POST(
       }
 
       // Fix 1: Server-side modifier price validation — override client prices with DB prices
-      const allModifierIds = items
+      // EXCEPTION: Pizza items have computed modifier prices (coverage-based topping pricing,
+      // free topping quotas, fractional coverage). The pizzaConfig.priceBreakdown is the
+      // authoritative source for pizza pricing — do NOT override those modifier prices.
+      const nonPizzaItems = items.filter(item => !item.pizzaConfig)
+      const allModifierIds = nonPizzaItems
         .flatMap(item => (item.modifiers || []).map(m => m.modifierId))
         .filter(id => id && isValidModifierId(id))
       if (allModifierIds.length > 0) {
@@ -510,8 +514,8 @@ export const POST = withVenue(async function POST(
         })
         const modifierPriceMap = new Map(dbModifiers.map(m => [m.id, Number(m.price ?? 0)]))
 
-        // Override client-supplied prices with server-authoritative prices
-        for (const item of items) {
+        // Override client-supplied prices with server-authoritative prices (non-pizza items only)
+        for (const item of nonPizzaItems) {
           for (const mod of item.modifiers || []) {
             if (mod.modifierId && isValidModifierId(mod.modifierId) && modifierPriceMap.has(mod.modifierId)) {
               mod.price = modifierPriceMap.get(mod.modifierId)!
@@ -624,7 +628,7 @@ export const POST = withVenue(async function POST(
               pricingOptionLabel: item.pricingOptionLabel ?? null,
               lastMutatedBy: 'local',
               // Modifiers
-              modifiers: {
+              modifiers: item.modifiers?.length ? {
                 create: item.modifiers.map(mod => ({
                   locationId: existingOrder.locationId,
                   modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
@@ -636,7 +640,7 @@ export const POST = withVenue(async function POST(
                   spiritTier: mod.spiritTier || null,
                   linkedBottleProductId: mod.linkedBottleProductId || null,
                 })),
-              },
+              } : undefined,
               // Ingredient modifications
               ingredientModifications: item.ingredientModifications && item.ingredientModifications.length > 0
                 ? {
@@ -651,15 +655,57 @@ export const POST = withVenue(async function POST(
                     })),
                   }
                 : undefined,
-              // Pizza data
+              // Pizza data — resolve modifier IDs to Pizza* table IDs
+              // Android sends modifier IDs (e.g. "mod-mg-size-pizza-custom-medium")
+              // but OrderItemPizza FK requires PizzaSize/PizzaCrust/etc. table IDs
               pizzaData: item.pizzaConfig
-                ? {
+                ? await (async () => {
+                    const loc = existingOrder.locationId
+                    const normalize = (s: string) => s.toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim()
+                    const resolvePizzaId = async (
+                      clientId: string | undefined | null,
+                      table: 'pizzaSize' | 'pizzaCrust' | 'pizzaSauce' | 'pizzaCheese'
+                    ): Promise<string | null> => {
+                      if (!clientId) return null
+                      // Try direct match first (client sent a Pizza* table ID)
+                      const direct = await (tx[table] as any).findUnique({ where: { id: clientId }, select: { id: true } })
+                      if (direct) return direct.id
+                      // Fall back: resolve via Modifier name → Pizza* name match
+                      const mod = await tx.modifier.findUnique({ where: { id: clientId }, select: { name: true } })
+                      if (!mod?.name) return null
+                      // Get all records for this location and fuzzy-match
+                      const allRecords = await (tx[table] as any).findMany({
+                        where: { locationId: loc },
+                        select: { id: true, name: true },
+                      })
+                      const modNorm = normalize(mod.name)
+                      const modBase = modNorm.replace(/\s*\(.*\)$/, '').replace(/\s+(crust|sauce|cheese)$/, '')
+                      for (const rec of allRecords) {
+                        const recNorm = normalize(rec.name)
+                        // Exact normalized match
+                        if (modNorm === recNorm || modBase === recNorm) return rec.id
+                        // Pizza* name contained in modifier name
+                        if (modNorm.includes(recNorm) || modBase.includes(recNorm)) return rec.id
+                        // Modifier base contained in Pizza* name
+                        if (recNorm.includes(modBase) && modBase.length >= 3) return rec.id
+                      }
+                      return null
+                    }
+                    const resolvedSizeId = await resolvePizzaId(item.pizzaConfig.sizeId, 'pizzaSize')
+                    const resolvedCrustId = await resolvePizzaId(item.pizzaConfig.crustId, 'pizzaCrust')
+                    const resolvedSauceId = await resolvePizzaId(item.pizzaConfig.sauceId, 'pizzaSauce')
+                    const resolvedCheeseId = await resolvePizzaId(item.pizzaConfig.cheeseId, 'pizzaCheese')
+                    if (!resolvedSizeId || !resolvedCrustId) {
+                      console.warn(`[Pizza] Could not resolve size(${item.pizzaConfig.sizeId}→${resolvedSizeId}) or crust(${item.pizzaConfig.crustId}→${resolvedCrustId}) — skipping pizzaData`)
+                      return undefined
+                    }
+                    return {
                     create: {
-                      locationId: existingOrder.locationId,
-                      sizeId: item.pizzaConfig.sizeId,
-                      crustId: item.pizzaConfig.crustId,
-                      sauceId: item.pizzaConfig.sauceId || null,
-                      cheeseId: item.pizzaConfig.cheeseId || null,
+                      location: { connect: { id: loc } },
+                      size: { connect: { id: resolvedSizeId } },
+                      crust: { connect: { id: resolvedCrustId } },
+                      sauce: resolvedSauceId ? { connect: { id: resolvedSauceId } } : undefined,
+                      cheese: resolvedCheeseId ? { connect: { id: resolvedCheeseId } } : undefined,
                       sauceAmount: item.pizzaConfig.sauceAmount || 'regular',
                       cheeseAmount: item.pizzaConfig.cheeseAmount || 'regular',
                       // Store full config in toppingsData JSON for easy retrieval
@@ -678,6 +724,7 @@ export const POST = withVenue(async function POST(
                       toppingsPrice: item.pizzaConfig.priceBreakdown.toppingsPrice,
                     },
                   }
+                  })()
                 : undefined,
             },
             include: {
