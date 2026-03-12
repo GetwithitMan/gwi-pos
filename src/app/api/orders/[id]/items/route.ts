@@ -660,6 +660,7 @@ export const POST = withVenue(async function POST(
               // but OrderItemPizza FK requires PizzaSize/PizzaCrust/etc. table IDs
               pizzaData: item.pizzaConfig
                 ? await (async () => {
+                    const pc = item.pizzaConfig!
                     const loc = existingOrder.locationId
                     const normalize = (s: string) => s.toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim()
                     const resolvePizzaId = async (
@@ -691,12 +692,12 @@ export const POST = withVenue(async function POST(
                       }
                       return null
                     }
-                    const resolvedSizeId = await resolvePizzaId(item.pizzaConfig.sizeId, 'pizzaSize')
-                    const resolvedCrustId = await resolvePizzaId(item.pizzaConfig.crustId, 'pizzaCrust')
-                    const resolvedSauceId = await resolvePizzaId(item.pizzaConfig.sauceId, 'pizzaSauce')
-                    const resolvedCheeseId = await resolvePizzaId(item.pizzaConfig.cheeseId, 'pizzaCheese')
+                    const resolvedSizeId = await resolvePizzaId(pc.sizeId, 'pizzaSize')
+                    const resolvedCrustId = await resolvePizzaId(pc.crustId, 'pizzaCrust')
+                    const resolvedSauceId = await resolvePizzaId(pc.sauceId, 'pizzaSauce')
+                    const resolvedCheeseId = await resolvePizzaId(pc.cheeseId, 'pizzaCheese')
                     if (!resolvedSizeId || !resolvedCrustId) {
-                      console.warn(`[Pizza] Could not resolve size(${item.pizzaConfig.sizeId}→${resolvedSizeId}) or crust(${item.pizzaConfig.crustId}→${resolvedCrustId}) — skipping pizzaData`)
+                      console.warn(`[Pizza] Could not resolve size(${pc.sizeId}→${resolvedSizeId}) or crust(${pc.crustId}→${resolvedCrustId}) — skipping pizzaData`)
                       return undefined
                     }
                     return {
@@ -706,22 +707,22 @@ export const POST = withVenue(async function POST(
                       crust: { connect: { id: resolvedCrustId } },
                       sauce: resolvedSauceId ? { connect: { id: resolvedSauceId } } : undefined,
                       cheese: resolvedCheeseId ? { connect: { id: resolvedCheeseId } } : undefined,
-                      sauceAmount: item.pizzaConfig.sauceAmount || 'regular',
-                      cheeseAmount: item.pizzaConfig.cheeseAmount || 'regular',
+                      sauceAmount: pc.sauceAmount || 'regular',
+                      cheeseAmount: pc.cheeseAmount || 'regular',
                       // Store full config in toppingsData JSON for easy retrieval
                       toppingsData: {
-                        toppings: item.pizzaConfig.toppings,
-                        sauces: item.pizzaConfig.sauces,
-                        cheeses: item.pizzaConfig.cheeses,
+                        toppings: pc.toppings,
+                        sauces: pc.sauces,
+                        cheeses: pc.cheeses,
                       } as object,
-                      cookingInstructions: item.pizzaConfig.cookingInstructions || null,
-                      cutStyle: item.pizzaConfig.cutStyle || null,
-                      totalPrice: item.pizzaConfig.totalPrice,
-                      sizePrice: item.pizzaConfig.priceBreakdown.sizePrice,
-                      crustPrice: item.pizzaConfig.priceBreakdown.crustPrice,
-                      saucePrice: item.pizzaConfig.priceBreakdown.saucePrice,
-                      cheesePrice: item.pizzaConfig.priceBreakdown.cheesePrice,
-                      toppingsPrice: item.pizzaConfig.priceBreakdown.toppingsPrice,
+                      cookingInstructions: pc.cookingInstructions || null,
+                      cutStyle: pc.cutStyle || null,
+                      totalPrice: pc.totalPrice,
+                      sizePrice: pc.priceBreakdown.sizePrice,
+                      crustPrice: pc.priceBreakdown.crustPrice,
+                      saucePrice: pc.priceBreakdown.saucePrice,
+                      cheesePrice: pc.priceBreakdown.cheesePrice,
+                      toppingsPrice: pc.priceBreakdown.toppingsPrice,
                     },
                   }
                   })()
