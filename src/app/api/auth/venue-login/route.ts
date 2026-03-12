@@ -96,8 +96,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         if (venueRes.ok) {
           const venueData = await venueRes.json()
           const venues: Array<{ slug: string; name: string; domain: string }> = venueData.data?.venues ?? []
-          console.log(`[venue-login] MC returned ${venues.length} venues for ${normalizedEmail}, looking for slug=${venueSlug}`)
-
           if (venues.length > 1) {
             // Multi-venue owner — return venue picker data instead of a session
             const ownerToken = await signOwnerToken(normalizedEmail, venues.map(v => v.slug), secret)
@@ -113,28 +111,71 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           // Single venue or MC-only owner — check if they have access to this venue
           const hasAccess = venues.some(v => v.slug === venueSlug)
           if (hasAccess && !employee) {
-            // No local Employee record — issue admin session from MC data
+            // No local Employee record — auto-provision a real Employee so
+            // all API routes that require employeeId work correctly.
             const ownerName = venueData.data?.name || normalizedEmail.split('@')[0]
             const nameParts = ownerName.split(' ')
+
+            // Find or create a real employee for this MC owner
+            let ownerEmployee = await db.employee.findFirst({
+              where: { locationId: location.id, email: { equals: normalizedEmail, mode: 'insensitive' }, deletedAt: null },
+              include: { role: true },
+            })
+
+            if (!ownerEmployee) {
+              // Find admin role for this location
+              const allRoles = await db.role.findMany({
+                where: { locationId: location.id, deletedAt: null },
+                orderBy: { createdAt: 'asc' },
+              })
+              const adminRole = allRoles.find(r => {
+                const perms = (r.permissions as string[]) || []
+                return perms.includes('all') || perms.includes('admin') || perms.includes('super_admin')
+              }) || allRoles[0]
+
+              if (adminRole) {
+                const pin = String(Math.floor(100000 + Math.random() * 900000))
+                ownerEmployee = await db.employee.create({
+                  data: {
+                    locationId: location.id,
+                    firstName: nameParts[0] || ownerName,
+                    lastName: nameParts.slice(1).join(' ') || '',
+                    displayName: ownerName,
+                    email: normalizedEmail,
+                    roleId: adminRole.id,
+                    isActive: true,
+                    pin,
+                  },
+                  include: { role: true },
+                })
+                console.log(`[venue-login] Auto-provisioned employee ${ownerEmployee.id} for MC owner ${normalizedEmail} at location ${location.id}`)
+              }
+            }
+
+            // Use real employee ID if provisioned, fall back to prefixed ID
+            const employeeId = ownerEmployee?.id || `mc-owner-${normalizedEmail}`
+            const roleName = ownerEmployee?.role?.name || 'Owner Manager'
+            const roleId = ownerEmployee?.role?.id || 'mc-owner'
+
             const token = await signVenueToken(
               {
-                sub: `mc-owner-${normalizedEmail}`,
+                sub: employeeId,
                 email: normalizedEmail,
                 name: ownerName,
                 slug: venueSlug,
                 orgId: 'venue-local',
-                role: 'Owner Manager',
+                role: roleName,
                 posLocationId: location.id,
               },
               secret
             )
 
             const employeeData = {
-              id: `mc-owner-${normalizedEmail}`,
-              firstName: nameParts[0] || ownerName,
-              lastName: nameParts.slice(1).join(' ') || '',
-              displayName: ownerName,
-              role: { id: 'mc-owner', name: 'Owner Manager' },
+              id: employeeId,
+              firstName: ownerEmployee?.firstName || nameParts[0] || ownerName,
+              lastName: ownerEmployee?.lastName || nameParts.slice(1).join(' ') || '',
+              displayName: ownerEmployee?.displayName || ownerName,
+              role: { id: roleId, name: roleName },
               location: { id: location.id, name: location.name },
               permissions: ['admin'],
               isDevAccess: false,

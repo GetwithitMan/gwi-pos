@@ -343,6 +343,7 @@ export default function TerminalsPage() {
           scales={scales}
           roles={roles}
           locationId={locationId!}
+          employeeId={employee?.id}
           onClose={() => {
             setShowAddModal(false)
             setEditingTerminal(null)
@@ -896,6 +897,7 @@ function TerminalModal({
   scales,
   roles,
   locationId,
+  employeeId,
   onClose,
   onSave,
 }: {
@@ -904,6 +906,7 @@ function TerminalModal({
   scales: ScaleInfo[]
   roles: Role[]
   locationId: string
+  employeeId: string | undefined
   onClose: () => void
   onSave: () => void
 }) {
@@ -949,6 +952,7 @@ function TerminalModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           locationId,
+          employeeId,
           name: name.trim(),
           category,
           staticIp: staticIp.trim() || null,
