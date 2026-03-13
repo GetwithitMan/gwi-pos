@@ -33,6 +33,10 @@ interface UseOrderSocketsOptions {
     entertainmentStatus: string
     currentOrderId: string | null
   }) => void
+  onEntertainmentWaitlistChanged?: (data: {
+    itemId: string
+    waitlistCount: number
+  }) => void
   onOrderClosed?: (data: {
     orderId: string
     status: string
@@ -118,6 +122,11 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       callbacksRef.current.onEntertainmentStatusChanged?.(payload)
     }
 
+    const onEntertainmentWaitlistChanged = (data: unknown) => {
+      const payload = data as { itemId: string; waitlistCount: number }
+      callbacksRef.current.onEntertainmentWaitlistChanged?.(payload)
+    }
+
     const onOrderClosed = (data: unknown) => {
       const payload = data as {
         orderId: string
@@ -151,6 +160,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
     socket.on('orders:list-changed', onListChanged)
     socket.on('order:totals-updated', onTotalsUpdated)
     socket.on('entertainment:status-changed', onEntertainmentChanged)
+    socket.on('entertainment:waitlist-changed', onEntertainmentWaitlistChanged)
     socket.on('order:closed', onOrderClosed)
     socket.on('order:claimed', onOrderClaimed)
     socket.on('order:released', onOrderReleased)
@@ -168,6 +178,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       socket.off('orders:list-changed', onListChanged)
       socket.off('order:totals-updated', onTotalsUpdated)
       socket.off('entertainment:status-changed', onEntertainmentChanged)
+      socket.off('entertainment:waitlist-changed', onEntertainmentWaitlistChanged)
       socket.off('order:closed', onOrderClosed)
       socket.off('order:claimed', onOrderClaimed)
       socket.off('order:released', onOrderReleased)

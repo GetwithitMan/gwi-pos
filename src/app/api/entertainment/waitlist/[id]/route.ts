@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { EntertainmentWaitlistStatus } from '@prisma/client'
-import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
@@ -250,6 +250,7 @@ export const PATCH = withVenue(async function PATCH(
               name: true,
               visualType: true,
               status: true,
+              linkedMenuItemId: true,
             },
           },
           table: {
@@ -309,6 +310,22 @@ export const PATCH = withVenue(async function PATCH(
           message: messageMap[action],
         }, { async: true })
       }
+    }
+
+    // Dispatch waitlist count change to POS menu grids
+    if (updatedEntry.element?.linkedMenuItemId && isLeavingWaiting) {
+      // Count remaining waiting entries for this element
+      const remainingCount = await db.entertainmentWaitlist.count({
+        where: {
+          elementId: updatedEntry.elementId,
+          status: EntertainmentWaitlistStatus.waiting,
+          deletedAt: null,
+        },
+      })
+      dispatchEntertainmentWaitlistChanged(locationId, {
+        itemId: updatedEntry.element.linkedMenuItemId,
+        waitlistCount: remainingCount,
+      }, { async: true })
     }
 
     // Dispatch real-time update

@@ -15,6 +15,7 @@
  * ```
  */
 
+import crypto from 'crypto'
 import type { RoutingResult } from '@/types/routing'
 import type { WeightReading } from '@/lib/scale/scale-protocol'
 import { emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation } from '@/lib/socket-server'
@@ -654,6 +655,37 @@ export async function dispatchEntertainmentWaitlistNotify(
 }
 
 /**
+ * Dispatch entertainment waitlist count change
+ * Updates all POS terminals with the new waitlist count for a menu item.
+ * Called from waitlist add/remove/seat/cancel operations.
+ */
+export async function dispatchEntertainmentWaitlistChanged(
+  locationId: string,
+  payload: {
+    itemId: string
+    waitlistCount: number
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'entertainment:waitlist-changed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch waitlist changed:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
  * Dispatch order totals update (FIX-011)
  *
  * Called when order totals change (items added, tip updated, discount applied).
@@ -744,14 +776,70 @@ export async function dispatchOpenOrdersChanged(
  */
 export async function dispatchPaymentProcessed(
   locationId: string,
-  data: { orderId: string; paymentId?: string; status: string; sourceTerminalId?: string }
+  data: {
+    orderId: string;
+    paymentId?: string;
+    status: string;
+    sourceTerminalId?: string;
+    // Enriched fields — allow clients to construct PAYMENT_APPLIED locally without HTTP round-trip
+    method?: string;
+    amount?: number;
+    tipAmount?: number;
+    totalAmount?: number;
+    employeeId?: string | null;
+    isClosed?: boolean;
+    cardBrand?: string | null;
+    cardLast4?: string | null;
+    // Split context — set when paying a split child order
+    parentOrderId?: string | null;
+    allSiblingsPaid?: boolean;
+    // Parent auto-close — set when parent is auto-closed after all siblings paid
+    parentAutoClose?: boolean;
+  }
 ): Promise<boolean> {
   try {
     // QoS 1: critical financial event — acknowledged delivery with retry
-    await emitCriticalToLocation(locationId, 'payment:processed', data)
+    // _dedupKey allows clients to dedup if they receive the same event twice (e.g., QoS retry)
+    await emitCriticalToLocation(locationId, 'payment:processed', { ...data, _dedupKey: crypto.randomUUID() })
     return true
   } catch (error) {
     console.error('[SocketDispatch] Failed to dispatch payment:processed:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch split created event
+ *
+ * Called after a split transaction succeeds and child orders are created.
+ * Sends full split context so all devices can instantly render the split
+ * without an HTTP round-trip.
+ */
+export async function dispatchSplitCreated(
+  locationId: string,
+  data: {
+    parentOrderId: string;
+    parentStatus: string; // 'split'
+    splits: Array<{
+      id: string;
+      orderNumber: number;
+      splitIndex: number | null;
+      displayNumber: string;
+      total: number;
+      itemCount: number;
+      isPaid: boolean;
+    }>;
+    sourceTerminalId?: string;
+  }
+): Promise<boolean> {
+  try {
+    await emitCriticalToLocation(locationId, 'order:split-created', {
+      ...data,
+      _dedupKey: crypto.randomUUID(),
+    })
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch order:split-created:', error)
     return false
   }
 }
@@ -1233,7 +1321,8 @@ export async function dispatchOrderClosed(
   const doEmit = async () => {
     try {
       // QoS 1: critical financial event — acknowledged delivery with retry
-      await emitCriticalToLocation(locationId, 'order:closed', payload)
+      // _dedupKey allows clients to dedup if they receive the same event twice (e.g., QoS retry)
+      await emitCriticalToLocation(locationId, 'order:closed', { ...payload, _dedupKey: crypto.randomUUID() })
       return true
     } catch (error) {
       console.error('[SocketDispatch] Failed to dispatch order:closed:', error)

@@ -265,6 +265,13 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
           : item
       ))
     },
+    onEntertainmentWaitlistChanged: (data: { itemId: string; waitlistCount: number }) => {
+      setMenuItems(prev => prev.map(item =>
+        item.id === data.itemId
+          ? { ...item, waitlistCount: data.waitlistCount }
+          : item
+      ))
+    },
     onOrderClosed: () => {
       // Count management handled by onOpenOrdersChanged (trigger='paid'/'voided').
       // This callback is for panel dismissal and floor plan cleanup only.

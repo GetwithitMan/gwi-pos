@@ -10,6 +10,7 @@ import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
 import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useEntertainmentUiStore } from '@/stores/entertainment-ui-store'
 import { useOrderStore } from '@/stores/order-store'
 import type { OrderItem, MenuItem, PizzaOrderConfig, SelectedModifier } from '@/types'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
@@ -520,7 +521,14 @@ export function OrderPageModals(props: OrderPageModalsProps) {
       {/* Entertainment Session Start Modal */}
       {showEntertainmentStart && entertainmentItem && (
         <Suspense fallback={null}>
-          <Modal isOpen={showEntertainmentStart && !!entertainmentItem} onClose={() => { setShowEntertainmentStart(false); setEntertainmentItem(null) }} size="md">
+          <Modal isOpen={showEntertainmentStart && !!entertainmentItem} onClose={() => {
+            // Clear pending lock on cancel/dismiss
+            if (entertainmentItem?.id) {
+              useEntertainmentUiStore.getState().clearPending(entertainmentItem.id)
+            }
+            setShowEntertainmentStart(false)
+            setEntertainmentItem(null)
+          }} size="md">
             <EntertainmentSessionStart
               itemName={entertainmentItem.name}
               itemId={entertainmentItem.id}
@@ -541,6 +549,9 @@ export function OrderPageModals(props: OrderPageModalsProps) {
               onStartWithNewTab={onStartEntertainmentWithNewTab}
               onStartWithExistingTab={onStartEntertainmentWithExistingTab}
               onClose={() => {
+                if (entertainmentItem?.id) {
+                  useEntertainmentUiStore.getState().clearPending(entertainmentItem.id)
+                }
                 setShowEntertainmentStart(false)
                 setEntertainmentItem(null)
               }}

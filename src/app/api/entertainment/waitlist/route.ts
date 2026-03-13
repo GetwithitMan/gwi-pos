@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { EntertainmentWaitlistStatus } from '@prisma/client'
-import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 
@@ -151,11 +151,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Verify element exists if elementId provided
+    let linkedMenuItemId: string | null = null
     if (elementId) {
       const element = await db.floorPlanElement.findUnique({
         where: { id: elementId },
-        select: { id: true, locationId: true },
+        select: { id: true, locationId: true, linkedMenuItemId: true },
       })
+      linkedMenuItemId = element?.linkedMenuItemId || null
 
       if (!element) {
         return NextResponse.json(
@@ -231,6 +233,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       action: 'added',
       message: `${entry.customerName || 'Customer'} added to waitlist at position ${entry.position}`,
     }, { async: true })
+
+    // Dispatch waitlist count change to POS menu grids
+    if (linkedMenuItemId) {
+      dispatchEntertainmentWaitlistChanged(locationId, {
+        itemId: linkedMenuItemId,
+        waitlistCount: entry.position, // position = new count after adding
+      }, { async: true })
+    }
 
     // Dispatch real-time update
     dispatchFloorPlanUpdate(locationId, { async: true })

@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { useOrderStore } from '@/stores/order-store'
+import { useEntertainmentUiStore } from '@/stores/entertainment-ui-store'
 import { toast } from '@/stores/toast-store'
 import type { PizzaOrderConfig } from '@/types'
 
@@ -395,8 +396,17 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       return
     }
 
-    // 1. Timed rental → check in-use, then open rate picker
+    // 1. Timed rental → check pending lock + in-use, then open rate picker
     if (item.itemType === 'timed_rental') {
+      const { pendingStartIds, markPending } = useEntertainmentUiStore.getState()
+
+      // Layer 1: Optimistic pending lock — blocks re-taps before server roundtrip
+      if (pendingStartIds[item.id]) {
+        toast.info(`${item.name} — session is being started`)
+        return
+      }
+
+      // Layer 2: Status-based guard (from last socket/refresh)
       if (item.entertainmentStatus === 'in_use') {
         toast.warning(`${item.name} is currently in use`)
         return
@@ -405,6 +415,10 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
         toast.warning(`${item.name} is under maintenance`)
         return
       }
+
+      // Lock immediately — cleared on success, cancel, or error
+      markPending(item.id)
+
       if (onOpenTimedRental) {
         setPendingItem({ type: 'timed_rental', menuItem: item })
         onOpenTimedRental(item, (price: number, blockMinutes: number) => {
@@ -428,6 +442,9 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
           setPendingItem(null)
           if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10)
         })
+      } else {
+        // No handler available — release lock
+        useEntertainmentUiStore.getState().clearPending(item.id)
       }
       return
     }

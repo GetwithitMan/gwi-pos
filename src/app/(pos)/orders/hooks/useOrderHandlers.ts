@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
+import { useEntertainmentUiStore } from '@/stores/entertainment-ui-store'
 import { buildPizzaModifiers } from '@/lib/pizza-order-utils'
 import { formatCurrency } from '@/lib/utils'
 import { OfflineManager } from '@/lib/offline-manager'
@@ -1308,6 +1309,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
 
   const handleStartEntertainmentWithNewTab = useCallback(async (tabName: string, pkg?: PrepaidPackage) => {
     if (!entertainmentItem || !locationId) return
+    const itemId = entertainmentItem.id
     try {
       const orderRes = await fetch('/api/orders', {
         method: 'POST',
@@ -1342,21 +1344,26 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       const minutes = pkg?.minutes || entertainmentItem.ratePerMinute > 0 ? (pkg?.minutes || 60) : 60
       const ok = await startBlockTimeOrRollback(orderItemId, orderId, minutes)
       if (!ok) {
+        useEntertainmentUiStore.getState().clearPending(itemId)
         throttledLoadMenu()
         return
       }
 
+      // Success — clear pending lock (socket will update status to in_use)
+      useEntertainmentUiStore.getState().clearPending(itemId)
       setShowEntertainmentStart(false)
       setEntertainmentItem(null)
       throttledLoadMenu()
     } catch (err) {
       console.error('Failed to start entertainment session:', err)
       toast.error('Failed to start session')
+      useEntertainmentUiStore.getState().clearPending(itemId)
     }
   }, [entertainmentItem, locationId, employeeId, throttledLoadMenu, startBlockTimeOrRollback])
 
   const handleStartEntertainmentWithExistingTab = useCallback(async (orderId: string, pkg?: PrepaidPackage) => {
     if (!entertainmentItem || !locationId) return
+    const itemId = entertainmentItem.id
     try {
       const itemRes = await fetch(`/api/orders/${orderId}/items`, {
         method: 'POST',
@@ -1376,16 +1383,20 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       const minutes = pkg?.minutes || entertainmentItem.ratePerMinute > 0 ? (pkg?.minutes || 60) : 60
       const ok = await startBlockTimeOrRollback(orderItemId, orderId, minutes)
       if (!ok) {
+        useEntertainmentUiStore.getState().clearPending(itemId)
         throttledLoadMenu()
         return
       }
 
+      // Success — clear pending lock
+      useEntertainmentUiStore.getState().clearPending(itemId)
       setShowEntertainmentStart(false)
       setEntertainmentItem(null)
       throttledLoadMenu()
     } catch (err) {
       console.error('Failed to add entertainment to order:', err)
       toast.error('Failed to add to order')
+      useEntertainmentUiStore.getState().clearPending(itemId)
     }
   }, [entertainmentItem, locationId, throttledLoadMenu, startBlockTimeOrRollback])
 
@@ -1505,7 +1516,15 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     item: any,
     onComplete: (price: number, blockMinutes: number) => void
   ) => {
-    // Double-booking guard: block if item is already in use or under maintenance
+    const { pendingStartIds, markPending } = useEntertainmentUiStore.getState()
+
+    // Layer 1: Optimistic pending lock
+    if (pendingStartIds[item.id]) {
+      toast.info(`${item.name} — session is being started`)
+      return
+    }
+
+    // Layer 2: Status-based guard
     if (item.entertainmentStatus === 'in_use') {
       toast.warning(`${item.name} is currently in use`)
       return
@@ -1514,6 +1533,10 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       toast.warning(`${item.name} is under maintenance`)
       return
     }
+
+    // Lock (may already be locked by useOrderingEngine — safe to re-add)
+    markPending(item.id)
+
     setEntertainmentItem({
       id: item.id,
       name: item.name,
