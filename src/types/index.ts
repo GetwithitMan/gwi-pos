@@ -60,6 +60,10 @@ export interface MenuItem {
   entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
   currentOrderId?: string | null
   blockTimeMinutes?: number | null  // Default block time for entertainment items
+  ratePerMinute?: number | null
+  prepaidPackages?: any[] | null
+  happyHourEnabled?: boolean | null
+  happyHourPrice?: number | null
   // Pour size options for liquor items (can be old or new format)
   // Old format: { shot: 1.0, double: 2.0 }
   // New format: { shot: { label: "Shot", multiplier: 1.0, customPrice?: 11.00 }, double: { label: "Double", multiplier: 2.0 } }

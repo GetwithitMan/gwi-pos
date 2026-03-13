@@ -928,9 +928,18 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         toast.warning(`${item.name} is currently in use`)
         return
       }
-      setSelectedTimedItem(item)
-      setSelectedRateType('perHour')
-      setShowTimedRentalModal(true)
+      // Use EntertainmentSessionStart flow — handles tab selection + pricing + block-time
+      // Entertainment pricing lives in timedPricing JSON from menu API
+      const tp = item.timedPricing as any
+      setEntertainmentItem({
+        id: item.id,
+        name: item.name,
+        ratePerMinute: tp?.ratePerMinute ?? (item.price ? item.price / 60 : 0.25),
+        prepaidPackages: tp?.prepaidPackages ?? [],
+        happyHourEnabled: tp?.happyHour?.enabled ?? false,
+        happyHourPrice: tp?.happyHour?.price ?? null,
+      })
+      setShowEntertainmentStart(true)
       return
     }
 
