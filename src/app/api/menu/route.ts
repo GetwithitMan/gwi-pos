@@ -18,6 +18,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const { searchParams } = new URL(request.url)
     const categoryType = searchParams.get('categoryType') as CategoryType | null   // Optional: 'food', 'liquor', 'drinks', etc.
     const categoryShow = searchParams.get('categoryShow') as CategoryShow | null   // Optional: 'food', 'bar', 'entertainment'
+    const categoryId = searchParams.get('categoryId')                              // Optional: filter items to a single category
+    const slim = searchParams.get('slim') === 'true'                               // Optional: omit admin/cost fields for POS grid
 
     // Get the location ID (cached)
     const locationId = await getLocationId()
@@ -29,7 +31,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     }
 
     // Check server-side cache first
-    const cacheKey = buildMenuCacheKey(locationId, categoryType, categoryShow)
+    const cacheKey = buildMenuCacheKey(locationId, categoryType, categoryShow) + (categoryId ? `:cat=${categoryId}` : '') + (slim ? ':slim' : '')
     const cached = getMenuCache(cacheKey)
     if (cached) {
       timing.add('cache', 0, 'Hit')
@@ -59,6 +61,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           isActive: true,
           deletedAt: null,
           locationId,
+          ...(categoryId ? { categoryId } : {}),
           ...(categoryType ? { category: { categoryType } } : {}),
           ...(categoryShow ? { category: { categoryShow } } : {}),
         },
@@ -128,6 +131,28 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       getAllMenuItemsStockStatus(locationId),
     ])
     timing.end('db', 'Queries')
+
+    // Get waitlist counts for entertainment items
+    const entertainmentItemIds = items
+      .filter(item => item.itemType === 'timed_rental')
+      .map(item => item.id)
+
+    let waitlistCountMap = new Map<string, number>()
+    if (entertainmentItemIds.length > 0) {
+      const waitlistCounts = await db.$queryRaw<Array<{menuItemId: string, count: bigint}>>`
+        SELECT fpe."linkedMenuItemId" as "menuItemId", COUNT(ew.id)::bigint as count
+        FROM "FloorPlanElement" fpe
+        JOIN "EntertainmentWaitlist" ew ON ew."elementId" = fpe.id
+        WHERE fpe."linkedMenuItemId" = ANY(${entertainmentItemIds})
+          AND fpe."deletedAt" IS NULL
+          AND ew."deletedAt" IS NULL
+          AND ew.status = 'waiting'
+        GROUP BY fpe."linkedMenuItemId"
+      `
+      for (const row of waitlistCounts) {
+        waitlistCountMap.set(row.menuItemId, Number(row.count))
+      }
+    }
 
     timing.start('map')
 
@@ -223,103 +248,113 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         // Pizza detection: item type OR category type
         const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
 
-        return {
-        id: item.id,
-        categoryId: item.categoryId,
-        categoryType: item.category?.categoryType || 'food',
-        name: item.name,
-        price: Number(item.price),
-        priceCC: item.priceCC ? Number(item.priceCC) : null,
-        description: item.description,
-        isActive: item.isActive,
-        isAvailable: item.isAvailable,
-        itemType: item.itemType,
-        isPizza: isPizzaItem,
-        hasModifiers: item.ownedModifierGroups.length > 0 || isPizzaItem,
-        timedPricing: item.timedPricing,
-        minimumMinutes: item.minimumMinutes,
-        commissionType: item.commissionType,
-        commissionValue: item.commissionValue ? Number(item.commissionValue) : null,
-        availableFrom: item.availableFrom,
-        availableTo: item.availableTo,
-        availableDays: item.availableDays,
-        // Seasonal date-based availability
-        availableFromDate: item.availableFromDate?.toISOString() ?? null,
-        availableUntilDate: item.availableUntilDate?.toISOString() ?? null,
-        // Entertainment status for timed_rental items
-        entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
-        currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,
-        blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
-        showOnline: item.showOnline,
-        onlinePrice: item.onlinePrice !== null ? Number(item.onlinePrice) : null,
-        modifierGroupCount: item.ownedModifierGroups.length,
-        modifierGroups: item.ownedModifierGroups.map(mg => ({
-          id: mg.id,
-          name: mg.name,
-          showOnline: mg.showOnline,
-        })),
-        // Liquor Builder recipe data
-        isLiquorItem: item.isLiquorItem,
-        hasRecipe: item.hasRecipe,
-        recipeIngredientCount: item.recipeIngredientCount,
-        linkedBottleProductId: item.linkedBottleProductId,
-        linkedBottleProductName: item.linkedBottleProduct?.name || null,
-        linkedBottleTier: item.linkedBottleProduct?.tier || null,
-        linkedBottlePourCost: item.linkedBottleProduct?.pourCost ? Number(item.linkedBottleProduct.pourCost) : null,
-        linkedBottlePourSizeOz: item.linkedBottleProduct?.pourSizeOz ? Number(item.linkedBottleProduct.pourSizeOz) : null,
-        linkedBottleUnitCost: item.linkedBottleProduct?.unitCost ? Number(item.linkedBottleProduct.unitCost) : null,
-        linkedBottleSizeMl: item.linkedBottleProduct?.bottleSizeMl || null,
-        linkedBottleSpiritCategory: item.linkedBottleProduct?.spiritCategory?.name || null,
-        linkedPourSizeOz: item.linkedPourSizeOz ? Number(item.linkedPourSizeOz) : null,
-        totalPourCost: item.totalPourCost,
-        profitMargin: item.profitMargin,
-        // Pour size options
-        pourSizes: item.pourSizes as Record<string, number> | null,
-        defaultPourSize: item.defaultPourSize,
-        applyPourToModifiers: item.applyPourToModifiers,
-        // Spirit tier data for quick selection
-        spiritTiers: item.spiritTiers,
-        hasOtherModifiers: item.hasOtherModifiers,
-        // Printer routing
-        printerIds: item.printerIds,
-        backupPrinterIds: item.backupPrinterIds,
-        // Combo print mode
-        comboPrintMode: item.comboPrintMode,
-        // Weight-based selling
-        soldByWeight: item.soldByWeight,
-        weightUnit: item.weightUnit,
-        pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
-        // CFD featured
-        isFeaturedCfd: item.isFeaturedCfd,
-        // Pricing option groups (size/variant pricing)
-        pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
-          id: group.id,
-          name: group.name,
-          sortOrder: group.sortOrder,
-          isRequired: group.isRequired,
-          showAsQuickPick: group.showAsQuickPick,
-          options: group.options.map((opt: any) => ({
-            id: opt.id,
-            label: opt.label,
-            price: opt.price !== null ? Number(opt.price) : null,
-            priceCC: opt.priceCC !== null ? Number(opt.priceCC) : null,
-            sortOrder: opt.sortOrder,
-            isDefault: opt.isDefault,
-            showOnPos: opt.showOnPos ?? false,
-            color: opt.color,
+        // Core fields needed for POS grid and ordering
+        const core = {
+          id: item.id,
+          categoryId: item.categoryId,
+          categoryType: item.category?.categoryType || 'food',
+          name: item.name,
+          price: Number(item.price),
+          priceCC: item.priceCC ? Number(item.priceCC) : null,
+          isActive: item.isActive,
+          isAvailable: item.isAvailable,
+          itemType: item.itemType,
+          isPizza: isPizzaItem,
+          hasModifiers: item.ownedModifierGroups.length > 0 || isPizzaItem,
+          timedPricing: item.timedPricing,
+          minimumMinutes: item.minimumMinutes,
+          commissionType: item.commissionType,
+          commissionValue: item.commissionValue ? Number(item.commissionValue) : null,
+          availableFrom: item.availableFrom,
+          availableTo: item.availableTo,
+          availableDays: item.availableDays,
+          // Entertainment status for timed_rental items
+          entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
+          currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,
+          blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
+          waitlistCount: item.itemType === 'timed_rental' ? (waitlistCountMap.get(item.id) || 0) : undefined,
+          modifierGroupCount: item.ownedModifierGroups.length,
+          modifierGroups: item.ownedModifierGroups.map(mg => ({
+            id: mg.id,
+            name: mg.name,
+            showOnline: mg.showOnline,
           })),
-        })) || [],
-        hasPricingOptions: ((item as any).pricingOptionGroups?.length || 0) > 0,
-        // 86 status (ingredient out of stock)
-        is86d: item.is86d,
-        reasons86d: item.reasons86d,
-        // Prep stock status
-        stockStatus: item.stockStatus,
-        stockCount: item.stockCount,
-        stockIngredientName: item.stockIngredientName,
-        // Nutritional info (optional — columns may not exist yet)
-        calories: (item as any).calories ?? null,
-      }
+          isLiquorItem: item.isLiquorItem,
+          hasRecipe: item.hasRecipe,
+          linkedBottleProductId: item.linkedBottleProductId,
+          // Pour size options (needed for ordering)
+          pourSizes: item.pourSizes as Record<string, number> | null,
+          defaultPourSize: item.defaultPourSize,
+          applyPourToModifiers: item.applyPourToModifiers,
+          // Spirit tier data for quick selection
+          spiritTiers: item.spiritTiers,
+          hasOtherModifiers: item.hasOtherModifiers,
+          // Printer routing
+          printerIds: item.printerIds,
+          backupPrinterIds: item.backupPrinterIds,
+          // Combo print mode
+          comboPrintMode: item.comboPrintMode,
+          // Weight-based selling
+          soldByWeight: item.soldByWeight,
+          weightUnit: item.weightUnit,
+          pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
+          // Pricing option groups (size/variant pricing)
+          pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
+            id: group.id,
+            name: group.name,
+            sortOrder: group.sortOrder,
+            isRequired: group.isRequired,
+            showAsQuickPick: group.showAsQuickPick,
+            options: group.options.map((opt: any) => ({
+              id: opt.id,
+              label: opt.label,
+              price: opt.price !== null ? Number(opt.price) : null,
+              priceCC: opt.priceCC !== null ? Number(opt.priceCC) : null,
+              sortOrder: opt.sortOrder,
+              isDefault: opt.isDefault,
+              showOnPos: opt.showOnPos ?? false,
+              color: opt.color,
+            })),
+          })) || [],
+          hasPricingOptions: ((item as any).pricingOptionGroups?.length || 0) > 0,
+          // 86 status (ingredient out of stock) — always needed
+          is86d: item.is86d,
+          reasons86d: item.reasons86d,
+          // Prep stock status
+          stockStatus: item.stockStatus,
+          stockCount: item.stockCount,
+          stockIngredientName: item.stockIngredientName,
+        }
+
+        // In slim mode, return only what POS grid needs (omit admin/cost/online fields)
+        if (slim) return core
+
+        // Full response includes admin, cost, and online-ordering fields
+        return {
+          ...core,
+          description: item.description,
+          // Seasonal date-based availability
+          availableFromDate: item.availableFromDate?.toISOString() ?? null,
+          availableUntilDate: item.availableUntilDate?.toISOString() ?? null,
+          showOnline: item.showOnline,
+          onlinePrice: item.onlinePrice !== null ? Number(item.onlinePrice) : null,
+          // Liquor Builder recipe/cost data
+          recipeIngredientCount: item.recipeIngredientCount,
+          linkedBottleProductName: item.linkedBottleProduct?.name || null,
+          linkedBottleTier: item.linkedBottleProduct?.tier || null,
+          linkedBottlePourCost: item.linkedBottleProduct?.pourCost ? Number(item.linkedBottleProduct.pourCost) : null,
+          linkedBottlePourSizeOz: item.linkedBottleProduct?.pourSizeOz ? Number(item.linkedBottleProduct.pourSizeOz) : null,
+          linkedBottleUnitCost: item.linkedBottleProduct?.unitCost ? Number(item.linkedBottleProduct.unitCost) : null,
+          linkedBottleSizeMl: item.linkedBottleProduct?.bottleSizeMl || null,
+          linkedBottleSpiritCategory: item.linkedBottleProduct?.spiritCategory?.name || null,
+          linkedPourSizeOz: item.linkedPourSizeOz ? Number(item.linkedPourSizeOz) : null,
+          totalPourCost: item.totalPourCost,
+          profitMargin: item.profitMargin,
+          // CFD featured
+          isFeaturedCfd: item.isFeaturedCfd,
+          // Nutritional info (optional — columns may not exist yet)
+          calories: (item as any).calories ?? null,
+        }
       }),
     }
     timing.end('map', 'Response mapping')

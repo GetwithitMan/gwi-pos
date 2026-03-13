@@ -8,7 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-// GET - Get all floor plan entertainment elements with their status
+// GET - Get all timed rental menu items with optional floor plan element data
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -21,36 +21,36 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
-    // Get all floor plan elements (entertainment type)
-    const elements = await db.floorPlanElement.findMany({
+    // 1. Query MenuItems as PRIMARY source — all timed_rental items
+    const menuItems = await db.menuItem.findMany({
+      where: {
+        locationId,
+        deletedAt: null,
+        isActive: true,
+        itemType: 'timed_rental',
+      },
+      include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: [
+        { category: { sortOrder: 'asc' } },
+        { sortOrder: 'asc' },
+      ],
+    })
+
+    // 2. Query FloorPlanElements for timing + waitlist data (optional join)
+    const floorPlanElements = await db.floorPlanElement.findMany({
       where: {
         locationId,
         deletedAt: null,
         elementType: 'entertainment',
-        isVisible: true,
       },
       include: {
-        linkedMenuItem: {
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            blockTimeMinutes: true,
-            timedPricing: true,
-            minimumMinutes: true,
-            currentOrderItemId: true,
-            maxConcurrentUses: true,
-            currentUseCount: true,
-            description: true,
-          },
-        },
-        section: {
-          select: {
-            id: true,
-            name: true,
-            color: true,
-          },
-        },
         waitlistEntries: {
           where: {
             status: 'waiting',
@@ -69,65 +69,126 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
         },
       },
-      orderBy: [
-        { section: { sortOrder: 'asc' } },
-        { sortOrder: 'asc' },
-      ],
     })
 
-    // Batch-fetch all linked orders instead of N+1 individual queries
-    const orderIds = elements
-      .filter(el => el.status === 'in_use' && el.currentOrderId)
-      .map(el => el.currentOrderId!)
+    // 3. Build map: menuItemId → FloorPlanElement (for timing + waitlist)
+    const fpeByMenuItemId = new Map(
+      floorPlanElements
+        .filter(fpe => fpe.linkedMenuItemId)
+        .map(fpe => [fpe.linkedMenuItemId!, fpe])
+    )
 
-    const linkedOrders = orderIds.length > 0
-      ? await db.orderSnapshot.findMany({
-          where: { id: { in: orderIds } },
-          select: {
-            id: true,
-            tabName: true,
-            orderNumber: true,
-            displayNumber: true,
-            openedAt: true,
-          },
-        })
-      : []
+    // 4. Batch-fetch orders for in_use items
+    const orderIdSet = new Set<string>()
+    // From FloorPlanElements
+    for (const fpe of fpeByMenuItemId.values()) {
+      if (fpe.status === 'in_use' && fpe.currentOrderId) orderIdSet.add(fpe.currentOrderId)
+    }
+    // From MenuItems without FloorPlanElement
+    const orderItemIdsForFallback: string[] = []
+    for (const mi of menuItems) {
+      if (mi.entertainmentStatus === 'in_use' && !fpeByMenuItemId.has(mi.id)) {
+        if (mi.currentOrderId) orderIdSet.add(mi.currentOrderId)
+        if (mi.currentOrderItemId) orderItemIdsForFallback.push(mi.currentOrderItemId)
+      }
+    }
+    const orderIds = Array.from(orderIdSet)
+
+    // Batch-fetch orders and fallback order items in parallel
+    const [linkedOrders, fallbackOrderItems] = await Promise.all([
+      orderIds.length > 0
+        ? db.orderSnapshot.findMany({
+            where: { id: { in: orderIds } },
+            select: {
+              id: true,
+              tabName: true,
+              orderNumber: true,
+              displayNumber: true,
+              openedAt: true,
+            },
+          })
+        : Promise.resolve([]),
+      orderItemIdsForFallback.length > 0
+        ? db.orderItem.findMany({
+            where: { id: { in: orderItemIdsForFallback } },
+            select: {
+              id: true,
+              blockTimeStartedAt: true,
+              blockTimeExpiresAt: true,
+            },
+          })
+        : Promise.resolve([]),
+    ])
 
     const orderMap = new Map(linkedOrders.map(o => [o.id, o]))
+    const orderItemMap = new Map(fallbackOrderItems.map(oi => [oi.id, oi]))
 
     const now = new Date()
-    const elementsWithOrders = elements.map((element) => {
+
+    // 5. Map to the SAME response shape as before (backward-compatible for KDS)
+    const items = menuItems.map((menuItem) => {
+      const fpe = fpeByMenuItemId.get(menuItem.id)
+      const status = menuItem.entertainmentStatus || 'available'
+
       let currentOrder = null
       let timeInfo = null
 
-      if (element.status === 'in_use' && element.currentOrderId) {
-        const order = orderMap.get(element.currentOrderId)
-
-        if (order) {
-          currentOrder = {
-            orderId: order.id,
-            orderItemId: element.linkedMenuItem?.currentOrderItemId || null,
-            tabName: order.tabName || `Order #${order.displayNumber || order.orderNumber}`,
-            orderNumber: order.orderNumber,
-            displayNumber: order.displayNumber,
+      if (status === 'in_use') {
+        // Get order info from FloorPlanElement OR MenuItem.currentOrderId
+        const orderId = fpe?.currentOrderId || menuItem.currentOrderId
+        if (orderId) {
+          const order = orderMap.get(orderId)
+          if (order) {
+            currentOrder = {
+              orderId: order.id,
+              orderItemId: menuItem.currentOrderItemId || null,
+              tabName: order.tabName || `Order #${order.displayNumber || order.orderNumber}`,
+              orderNumber: order.orderNumber,
+              displayNumber: order.displayNumber,
+            }
           }
+        }
 
-          // Calculate time info
-          if (element.sessionExpiresAt) {
-            const expiresAt = new Date(element.sessionExpiresAt)
+        // Time info: prefer FloorPlanElement session times, fallback to OrderItem block times
+        if (fpe?.sessionExpiresAt) {
+          const expiresAt = new Date(fpe.sessionExpiresAt)
+          const remaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60))
+
+          timeInfo = {
+            type: 'block',
+            startedAt: fpe.sessionStartedAt?.toISOString(),
+            expiresAt: fpe.sessionExpiresAt.toISOString(),
+            minutesRemaining: remaining,
+            isExpired: remaining <= 0,
+            isExpiringSoon: remaining > 0 && remaining <= 10,
+          }
+        } else if (fpe?.sessionStartedAt) {
+          // Per-minute billing from FloorPlanElement
+          const startedAt = fpe.sessionStartedAt
+          const elapsed = Math.floor((now.getTime() - startedAt.getTime()) / 1000 / 60)
+
+          timeInfo = {
+            type: 'per_minute',
+            startedAt: startedAt.toISOString(),
+            minutesElapsed: elapsed,
+          }
+        } else if (!fpe && menuItem.currentOrderItemId) {
+          // Fallback: get timing from OrderItem for items without FloorPlanElement
+          const orderItem = orderItemMap.get(menuItem.currentOrderItemId)
+          if (orderItem?.blockTimeExpiresAt) {
+            const expiresAt = new Date(orderItem.blockTimeExpiresAt)
             const remaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60))
 
             timeInfo = {
               type: 'block',
-              startedAt: element.sessionStartedAt?.toISOString(),
-              expiresAt: element.sessionExpiresAt.toISOString(),
+              startedAt: orderItem.blockTimeStartedAt?.toISOString(),
+              expiresAt: orderItem.blockTimeExpiresAt.toISOString(),
               minutesRemaining: remaining,
               isExpired: remaining <= 0,
               isExpiringSoon: remaining > 0 && remaining <= 10,
             }
-          } else if (element.sessionStartedAt) {
-            // Per-minute billing - calculate elapsed
-            const startedAt = element.sessionStartedAt
+          } else if (orderItem?.blockTimeStartedAt) {
+            const startedAt = orderItem.blockTimeStartedAt
             const elapsed = Math.floor((now.getTime() - startedAt.getTime()) / 1000 / 60)
 
             timeInfo = {
@@ -139,26 +200,25 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         }
       }
 
-      // Timed pricing from linked menu item (Json column, already an object)
-      const timedPricing = element.linkedMenuItem?.timedPricing ?? null
+      // Timed pricing (Json column, already an object)
+      const timedPricing = menuItem.timedPricing ?? null
 
-      // Map to EntertainmentItem shape expected by KDS page
       return {
-        id: element.id,  // FloorPlanElement ID (for floor plan operations)
-        elementId: element.id,  // explicit alias for FloorPlanElement ID
-        menuItemId: element.linkedMenuItemId || element.linkedMenuItem?.id || null,  // for order operations
-        name: element.linkedMenuItem?.name || element.name || element.abbreviation || 'Unnamed',
-        displayName: element.name || element.abbreviation || element.linkedMenuItem?.name || 'Unnamed',
-        description: element.linkedMenuItem?.description || null,
-        category: element.section
-          ? { id: element.section.id, name: element.section.name }
+        id: menuItem.id,  // MenuItem ID (primary identifier)
+        elementId: fpe?.id || null,  // FloorPlanElement ID if exists
+        menuItemId: menuItem.id,  // for order operations
+        name: menuItem.name,
+        displayName: fpe?.name || menuItem.name,
+        description: menuItem.description || null,
+        category: menuItem.category
+          ? { id: menuItem.category.id, name: menuItem.category.name }
           : { id: 'uncategorized', name: 'Other' },
-        status: element.status || 'available',
+        status,
         currentOrder,
-        currentOrderItemId: element.linkedMenuItem?.currentOrderItemId || null,
+        currentOrderItemId: menuItem.currentOrderItemId || null,
         timeInfo,
-        waitlistCount: element.waitlistEntries.length,
-        waitlist: element.waitlistEntries.map((w) => ({
+        waitlistCount: fpe?.waitlistEntries.length || 0,
+        waitlist: (fpe?.waitlistEntries || []).map((w) => ({
           id: w.id,
           customerName: w.customerName,
           phoneNumber: w.phone,
@@ -169,26 +229,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           createdAt: w.requestedAt.toISOString(),
           requestedAt: w.requestedAt.toISOString(),
           waitMinutes: Math.floor((now.getTime() - w.requestedAt.getTime()) / 1000 / 60),
-          elementId: element.id,
+          elementId: fpe?.id || null,
         })),
-        price: element.linkedMenuItem ? Number(element.linkedMenuItem.price) : 0,
+        price: Number(menuItem.price),
         timedPricing: timedPricing as { per15Min?: number; per30Min?: number; perHour?: number; minimum?: number } | null,
-        blockTimeMinutes: element.linkedMenuItem?.blockTimeMinutes || null,
-        minimumMinutes: element.linkedMenuItem?.minimumMinutes || null,
-        maxConcurrentUses: element.linkedMenuItem?.maxConcurrentUses || 1,
-        currentUseCount: element.linkedMenuItem?.currentUseCount || 0,
+        blockTimeMinutes: menuItem.blockTimeMinutes || null,
+        minimumMinutes: menuItem.minimumMinutes || null,
+        maxConcurrentUses: menuItem.maxConcurrentUses || 1,
+        currentUseCount: menuItem.currentUseCount || 0,
       }
     })
 
     const response = NextResponse.json({ data: {
-      items: elementsWithOrders,
+      items,
       summary: {
-        total: elementsWithOrders.length,
-        available: elementsWithOrders.filter(i => i.status === 'available').length,
-        inUse: elementsWithOrders.filter(i => i.status === 'in_use').length,
-        reserved: elementsWithOrders.filter(i => i.status === 'reserved').length,
-        maintenance: elementsWithOrders.filter(i => i.status === 'maintenance').length,
-        totalWaitlist: elementsWithOrders.reduce((sum, i) => sum + i.waitlistCount, 0),
+        total: items.length,
+        available: items.filter(i => i.status === 'available').length,
+        inUse: items.filter(i => i.status === 'in_use').length,
+        reserved: items.filter(i => i.status === 'reserved').length,
+        maintenance: items.filter(i => i.status === 'maintenance').length,
+        totalWaitlist: items.reduce((sum, i) => sum + i.waitlistCount, 0),
       },
     } })
 

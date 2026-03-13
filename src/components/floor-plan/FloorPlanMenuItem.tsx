@@ -15,6 +15,7 @@ interface MenuItem {
   isPizza?: boolean
   itemType?: string
   entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
+  waitlistCount?: number
   blockTimeMinutes?: number | null
   modifierGroupCount?: number
   timedPricing?: {
@@ -122,6 +123,29 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
           count={item.stockCount}
           ingredientName={item.stockIngredientName}
         />
+      )}
+      {/* Entertainment status badge */}
+      {item.itemType === 'timed_rental' && !isItem86d && (
+        <div className="absolute top-1 right-1 flex items-center gap-1 z-10">
+          {item.entertainmentStatus === 'in_use' ? (
+            <span className="px-1.5 py-0.5 bg-amber-600 text-white text-[10px] font-bold rounded">
+              IN USE
+            </span>
+          ) : item.entertainmentStatus === 'maintenance' ? (
+            <span className="px-1.5 py-0.5 bg-gray-600 text-white text-[10px] font-bold rounded">
+              MAINT
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 bg-green-600 text-white text-[10px] font-bold rounded">
+              OPEN
+            </span>
+          )}
+          {(item.waitlistCount ?? 0) > 0 && (
+            <span className="px-1.5 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded">
+              {item.waitlistCount} waiting
+            </span>
+          )}
+        </div>
       )}
       {/* Striped overlay for 86'd items */}
       {isItem86d && (
