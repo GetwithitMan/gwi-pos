@@ -76,8 +76,8 @@ export interface MenuItem {
   recipeIngredientCount?: number
   totalPourCost?: number | null
   profitMargin?: number | null
-  // Pour size options (new format with labels)
-  pourSizes?: Record<string, number | { label: string; multiplier: number }> | null
+  // Pour size options (new format with labels, optional custom price override)
+  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null
   defaultPourSize?: string | null
   applyPourToModifiers?: boolean
   // Seasonal date-based availability

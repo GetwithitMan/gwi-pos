@@ -278,8 +278,9 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
   } = options
 
   const [isSendingOrder, setIsSendingOrder] = useState(false)
+  const paymentLockRef = useRef(false)
 
-  const currentOrder = useOrderStore(s => s.currentOrder)
+  // All currentOrder reads use useOrderStore.getState() inside callbacks — no reactive subscription needed
   const { startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity } = useOrderStore.getState()
 
   // Order type selection
@@ -506,43 +507,51 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     }
   }, [])
 
-  // Open payment
+  // Open payment — double-tap guard prevents opening the modal twice
   const handleOpenPayment = useCallback(async () => {
-    const order = useOrderStore.getState().currentOrder
-    if (order?.status === 'split') {
-      setSplitManageMode(true)
-      setShowSplitTicketManager(true)
-      return
-    }
+    if (paymentLockRef.current) return
+    paymentLockRef.current = true
 
-    const hasItems = order?.items.length && order.items.length > 0
-    const hasSplitTotal = order?.total && order.total > 0 && !hasItems
-    if (!hasItems && !hasSplitTotal) return
-
-    let orderId = savedOrderId
-    if (!orderId) {
-      setIsSendingOrder(true)
-      try {
-        orderId = await ensureOrderInDB(employeeId)
-        if (orderId) setSavedOrderId(orderId)
-      } finally {
-        setIsSendingOrder(false)
+    try {
+      const order = useOrderStore.getState().currentOrder
+      if (order?.status === 'split') {
+        setSplitManageMode(true)
+        setShowSplitTicketManager(true)
+        return
       }
-      if (!orderId) return
+
+      const hasItems = order?.items.length && order.items.length > 0
+      const hasSplitTotal = order?.total && order.total > 0 && !hasItems
+      if (!hasItems && !hasSplitTotal) return
+
+      let orderId = savedOrderId
+      if (!orderId) {
+        setIsSendingOrder(true)
+        try {
+          orderId = await ensureOrderInDB(employeeId)
+          if (orderId) setSavedOrderId(orderId)
+        } finally {
+          setIsSendingOrder(false)
+        }
+        if (!orderId) return
+      }
+
+      setOrderToPayId(orderId)
+      orderReadyPromiseRef.current = ensureOrderInDB(employeeId)
+
+      fetch(`/api/orders/${orderId}/cards`)
+        .then(r => r.ok ? r.json() : { data: [] })
+        .then(d => {
+          const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
+          setPaymentTabCards(authorized)
+        })
+        .catch(() => setPaymentTabCards([]))
+
+      setShowPaymentModal(true)
+    } finally {
+      // Release lock after a short delay to prevent rapid re-taps
+      setTimeout(() => { paymentLockRef.current = false }, 300)
     }
-
-    setOrderToPayId(orderId)
-    orderReadyPromiseRef.current = ensureOrderInDB(employeeId)
-
-    fetch(`/api/orders/${orderId}/cards`)
-      .then(r => r.ok ? r.json() : { data: [] })
-      .then(d => {
-        const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
-        setPaymentTabCards(authorized)
-      })
-      .catch(() => setPaymentTabCards([]))
-
-    setShowPaymentModal(true)
   }, [savedOrderId, employeeId, ensureOrderInDB])
 
   // Pay All Splits cleanup
@@ -1017,7 +1026,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
   }, [handleAddItem])
 
   // Add item with modifiers
-  const handleAddItemWithModifiers = useCallback((modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => {
+  const handleAddItemWithModifiers = useCallback((modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[], pourCustomPrice?: number | null) => {
     if (!selectedItem) return
 
     if (inlineModifierCallbackRef.current) {
@@ -1042,7 +1051,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       return
     }
 
-    const basePrice = pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price
+    const basePrice = pourCustomPrice != null ? pourCustomPrice : (pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price)
     const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
 
     const itemName = pourSize
@@ -1084,10 +1093,10 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
   }, [selectedItem])
 
   // Update item with modifiers (editing)
-  const handleUpdateItemWithModifiers = useCallback((modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => {
+  const handleUpdateItemWithModifiers = useCallback((modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[], pourCustomPrice?: number | null) => {
     if (!selectedItem || !editingOrderItem) return
 
-    const basePrice = pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price
+    const basePrice = pourCustomPrice != null ? pourCustomPrice : (pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price)
     const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
 
     const itemName = pourSize

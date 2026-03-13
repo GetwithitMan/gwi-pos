@@ -49,12 +49,20 @@ export const DEFAULT_POUR_SIZE_CONFIG = {
 
 export type PourSizeKey = keyof typeof DEFAULT_POUR_SIZE_CONFIG
 
-// Pour size data can be old format (number) or new format ({ label, multiplier })
-export type PourSizeValue = number | { label: string; multiplier: number }
+// Pour size data can be old format (number) or new format ({ label, multiplier, customPrice? })
+export type PourSizeValue = number | { label: string; multiplier: number; customPrice?: number | null }
 
 // Helper to get multiplier from pour size value (handles both formats)
 export function getPourSizeMultiplier(value: PourSizeValue): number {
   return typeof value === 'number' ? value : value.multiplier
+}
+
+// Helper to get custom price from pour size value (null if not set)
+export function getPourSizeCustomPrice(value: PourSizeValue): number | null {
+  if (typeof value === 'object' && value.customPrice != null) {
+    return value.customPrice
+  }
+  return null
 }
 
 // Helper to get label from pour size (handles both formats)
@@ -298,6 +306,11 @@ export function useModifierSelections(
   const pourMultiplier = selectedPourSize && item.pourSizes
     ? getPourSizeMultiplier(item.pourSizes[selectedPourSize] as PourSizeValue || 1.0)
     : 1.0
+
+  // Check for custom price override on the selected pour size
+  const pourCustomPrice = selectedPourSize && item.pourSizes
+    ? getPourSizeCustomPrice(item.pourSizes[selectedPourSize] as PourSizeValue)
+    : null
 
   // Helper to format modifier price
   const formatModPrice = (storedPrice: number, overridePrice?: number) => {
@@ -686,8 +699,8 @@ export function useModifierSelections(
     return result
   }
 
-  // Calculate total with pour multiplier
-  const basePrice = item.price * pourMultiplier
+  // Calculate total with pour multiplier (customPrice overrides the auto-calculated base)
+  const basePrice = pourCustomPrice != null ? pourCustomPrice : item.price * pourMultiplier
   const modifierTotal = (() => {
     let total = 0
     for (const [groupId, groupSels] of Object.entries(selections)) {
@@ -750,6 +763,7 @@ export function useModifierSelections(
     selectedPourSize,
     setSelectedPourSize,
     pourMultiplier,
+    pourCustomPrice,
     // Ingredients
     ingredients,
     ingredientMods,

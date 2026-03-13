@@ -8,6 +8,25 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+// Cache whether the scheduledFor column exists on the Order table.
+// Checked once per process lifetime to avoid repeated raw SQL errors in logs.
+let _scheduledForExists: boolean | null = null
+async function hasScheduledForColumn(): Promise<boolean> {
+  if (_scheduledForExists !== null) return _scheduledForExists
+  try {
+    const rows = await db.$queryRawUnsafe<{ exists: boolean }[]>(`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'Order' AND column_name = 'scheduledFor'
+      ) AS "exists"
+    `)
+    _scheduledForExists = rows[0]?.exists === true
+  } catch {
+    _scheduledForExists = false
+  }
+  return _scheduledForExists
+}
+
 // GET - List all open orders (any type)
 export const GET = withVenue(withTiming(async function GET(request: NextRequest) {
   try {
@@ -46,14 +65,17 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         return db.order.findMany(findManyArgs)
       }
       const op = mode === 'previous' ? 'lt' : 'gte'
-      const { where, ...rest } = findManyArgs
+      const { where, take: outerTake, ...rest } = findManyArgs
       const [primary, legacy] = await Promise.all([
-        db.order.findMany({ where: { ...where, businessDayDate: { [op]: businessDayStart } }, ...rest }),
-        db.order.findMany({ where: { ...where, businessDayDate: null, createdAt: { [op]: businessDayStart } }, ...rest }),
+        // Each sub-query gets the full take limit — we'll trim after merge
+        db.order.findMany({ where: { ...where, businessDayDate: { [op]: businessDayStart } }, ...(outerTake ? { take: outerTake } : {}), ...rest }),
+        db.order.findMany({ where: { ...where, businessDayDate: null, createdAt: { [op]: businessDayStart } }, ...(outerTake ? { take: outerTake } : {}), ...rest }),
       ])
       // Merge and re-sort (both sub-queries are individually sorted, merge maintains order)
-      return [...primary, ...legacy]
+      const merged = [...primary, ...legacy]
         .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      // Apply limit after merge (each sub-query may return up to `take` rows)
+      return outerTake ? merged.slice(0, outerTake) : merged
     }
 
     // Count-only mode: returns just the count, no data (for badge counts)
@@ -92,6 +114,10 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // Summary mode: lightweight response for sidebar/list views
     const summary = searchParams.get('summary') === 'true'
     if (summary) {
+      // Pagination: default 100, max 200
+      const limitParam = searchParams.get('limit')
+      const summaryLimit = Math.min(Math.max(parseInt(limitParam || '100', 10) || 100, 1), 200)
+
       timing.start('db')
       const summaryOrders = await batchBusinessDayQuery({
         where: {
@@ -189,19 +215,23 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           },
         },
         orderBy: { createdAt: 'desc' },
+        take: summaryLimit,
       })
 
       timing.end('db', 'Summary query')
 
-      // Fetch scheduledFor for these orders (raw column, not in Prisma schema)
+      // Fetch scheduledFor for these orders (raw column added by migration 027)
       const summaryOrderIds = summaryOrders.map(o => o.id)
-      const scheduledRows = summaryOrderIds.length > 0
-        ? await db.$queryRawUnsafe<{ id: string; scheduledFor: Date | null }[]>(
+      let scheduledMap = new Map<string, string | null>()
+      if (summaryOrderIds.length > 0 && await hasScheduledForColumn()) {
+        try {
+          const scheduledRows = await db.$queryRawUnsafe<{ id: string; scheduledFor: Date | null }[]>(
             `SELECT id, "scheduledFor" FROM "Order" WHERE id = ANY($1) AND "scheduledFor" IS NOT NULL`,
             summaryOrderIds
           )
-        : []
-      const scheduledMap = new Map(scheduledRows.map(r => [r.id, r.scheduledFor?.toISOString?.() || null]))
+          scheduledMap = new Map(scheduledRows.map(r => [r.id, r.scheduledFor?.toISOString?.() || null]))
+        } catch (_) { /* query failed — skip */ }
+      }
 
       return NextResponse.json({ data: {
         orders: summaryOrders.map(o => ({
@@ -300,6 +330,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           })),
         })),
         count: summaryOrders.length,
+        limit: summaryLimit,
         summary: true,
       } })
     }
@@ -321,6 +352,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),
         ...(minAge ? { openedAt: { lt: new Date(Date.now() - parseInt(minAge) * 60000) } } : {}),
       },
+      take: 200,
       include: {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
@@ -424,14 +456,17 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // not tab/order based. Waitlist entries link to FloorPlanElement via elementId.
     // Tab-linked waitlist functionality has been removed.
 
-    // Fetch scheduledFor for these orders (raw column, not in Prisma schema)
-    const scheduledFullRows = orderIds.length > 0
-      ? await db.$queryRawUnsafe<{ id: string; scheduledFor: Date | null }[]>(
+    // Fetch scheduledFor for these orders (raw column added by migration 027)
+    let scheduledFullMap = new Map<string, string | null>()
+    if (orderIds.length > 0 && await hasScheduledForColumn()) {
+      try {
+        const scheduledFullRows = await db.$queryRawUnsafe<{ id: string; scheduledFor: Date | null }[]>(
           `SELECT id, "scheduledFor" FROM "Order" WHERE id = ANY($1) AND "scheduledFor" IS NOT NULL`,
           orderIds
         )
-      : []
-    const scheduledFullMap = new Map(scheduledFullRows.map(r => [r.id, r.scheduledFor?.toISOString?.() || null]))
+        scheduledFullMap = new Map(scheduledFullRows.map(r => [r.id, r.scheduledFor?.toISOString?.() || null]))
+      } catch (_) { /* query failed — skip */ }
+    }
 
     return NextResponse.json({ data: {
       orders: orders.map(order => ({

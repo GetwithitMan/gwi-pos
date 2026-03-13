@@ -62,8 +62,8 @@ export interface MenuItem {
   blockTimeMinutes?: number | null  // Default block time for entertainment items
   // Pour size options for liquor items (can be old or new format)
   // Old format: { shot: 1.0, double: 2.0 }
-  // New format: { shot: { label: "Shot", multiplier: 1.0 }, double: { label: "Double", multiplier: 2.0 } }
-  pourSizes?: Record<string, number | { label: string; multiplier: number }> | null
+  // New format: { shot: { label: "Shot", multiplier: 1.0, customPrice?: 11.00 }, double: { label: "Double", multiplier: 2.0 } }
+  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null
   defaultPourSize?: string | null
   applyPourToModifiers?: boolean
   // Liquor item flag

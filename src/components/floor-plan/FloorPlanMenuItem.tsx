@@ -1,7 +1,6 @@
 'use client'
 
 import { memo } from 'react'
-import { motion } from 'framer-motion'
 import { StockBadge } from '@/components/menu/StockBadge'
 import type { PricingOptionGroup, PricingOption } from '@/types'
 
@@ -63,7 +62,7 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
   const hasQuickPicks = quickPickOptions.length > 0
 
   return (
-    <motion.button
+    <button
       onClick={() => {
         if (isItem86d) {
           const reason = item.reasons86d?.length
@@ -77,9 +76,7 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
         }
       }}
       onContextMenu={(e) => onContextMenu(e, item)}
-      whileHover={isItem86d ? {} : { scale: 1.02, y: -2 }}
-      whileTap={isItem86d ? {} : { scale: 0.98 }}
-      className={inQuickBar ? 'ring-2 ring-amber-400/50' : ''}
+      className={`floor-plan-menu-item ${inQuickBar ? 'ring-2 ring-amber-400/50' : ''} ${isItem86d ? '' : 'transition-transform duration-150 hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.98]'}`}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -97,22 +94,6 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
         transition: 'all 0.15s ease',
         position: 'relative',
         opacity: isItem86d ? 0.6 : 1,
-      }}
-      onMouseOver={(e) => {
-        if (!isItem86d) {
-          if (!customStyle?.bgColor) {
-            e.currentTarget.style.background = 'rgba(99, 102, 241, 0.18)'
-          }
-          e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.3)'
-          e.currentTarget.style.boxShadow = '0 8px 20px rgba(99, 102, 241, 0.2)'
-        }
-      }}
-      onMouseOut={(e) => {
-        e.currentTarget.style.background = bgColor
-        e.currentTarget.style.borderColor = isItem86d
-          ? 'rgba(239, 68, 68, 0.3)'
-          : 'rgba(255, 255, 255, 0.12)'
-        e.currentTarget.style.boxShadow = isItem86d ? '' : '0 4px 12px rgba(0, 0, 0, 0.3)'
       }}
     >
       {/* Quick bar indicator */}
@@ -166,15 +147,26 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
       </span>
       {/* Hide base price when quick picks are shown */}
       {!hasQuickPicks && (
-        <span
-          style={{
-            fontSize: '15px',
-            fontWeight: 600,
-            color: isItem86d ? '#6b7280' : '#22c55e',
-          }}
-        >
-          ${pricing.isDualPricingEnabled ? (item.price * (1 + pricing.cashDiscountRate / 100)).toFixed(2) : item.price.toFixed(2)}
-        </span>
+        pricing.isDualPricingEnabled ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <span style={{ fontSize: '14px', fontWeight: 600, color: isItem86d ? '#6b7280' : '#60a5fa' }}>
+              ${(item.price * (1 + pricing.cashDiscountRate / 100)).toFixed(2)}
+            </span>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: isItem86d ? '#6b7280' : '#4ade80' }}>
+              ${item.price.toFixed(2)}
+            </span>
+          </div>
+        ) : (
+          <span
+            style={{
+              fontSize: '15px',
+              fontWeight: 600,
+              color: isItem86d ? '#6b7280' : '#22c55e',
+            }}
+          >
+            ${item.price.toFixed(2)}
+          </span>
+        )
       )}
       {/* Quick pick pricing option buttons */}
       {hasQuickPicks && (
@@ -216,15 +208,20 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
                   color: 'white',
                   backgroundColor: isHex ? bgClass : undefined,
                   transition: 'filter 0.15s',
-                  minHeight: '32px',
+                  minHeight: pricing.isDualPricingEnabled && isVariant ? '40px' : '32px',
                   justifyContent: 'center',
                 }}
                 className={isHex ? 'hover:brightness-110' : `${bgClass} hover:brightness-110`}
               >
                 <span style={{ lineHeight: 1.2 }}>{option.label}</span>
-                {isVariant && (
+                {isVariant && pricing.isDualPricingEnabled ? (
+                  <>
+                    <span style={{ fontSize: '9px', lineHeight: 1.1, color: '#93c5fd' }}>${adjustedPrice.toFixed(2)}</span>
+                    <span style={{ fontSize: '8px', lineHeight: 1.1, color: '#86efac' }}>${displayPrice.toFixed(2)}</span>
+                  </>
+                ) : isVariant ? (
                   <span style={{ fontSize: '9px', opacity: 0.8 }}>${adjustedPrice.toFixed(2)}</span>
-                )}
+                ) : null}
               </div>
             )
           })}
@@ -254,6 +251,6 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
           + options
         </span>
       )}
-    </motion.button>
+    </button>
   )
 })

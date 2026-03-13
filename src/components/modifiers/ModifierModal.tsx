@@ -9,6 +9,7 @@ import './modifier-modal.css'
 import {
   useModifierSelections,
   getPourSizeMultiplier,
+  getPourSizeCustomPrice,
   getPourSizeLabel,
   type IngredientModification,
   type PourSizeValue,
@@ -31,7 +32,7 @@ interface ModifierModalProps {
     ingredientModifications?: IngredientModification[]
   } | null
   dualPricing: DualPricingSettings
-  onConfirm: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: IngredientModification[]) => void
+  onConfirm: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: IngredientModification[], pourCustomPrice?: number | null) => void
   onCancel: () => void
   initialNotes?: string
 }
@@ -50,6 +51,7 @@ export function ModifierModal({
     selectedPourSize,
     setSelectedPourSize,
     pourMultiplier,
+    pourCustomPrice,
     ingredients,
     ingredientMods,
     loadingIngredients,
@@ -169,9 +171,10 @@ export function ModifierModal({
         <div className="flex gap-2">
           {enabledSizes.map(([size, value]) => {
             const multiplier = getPourSizeMultiplier(value as PourSizeValue)
+            const custom = getPourSizeCustomPrice(value as PourSizeValue)
             const label = getPourSizeLabel(size, value as PourSizeValue)
             const isSel = selectedPourSize === size
-            const price = item.price * multiplier * cpm
+            const price = (custom != null ? custom : item.price * multiplier) * cpm
 
             return (
               <button
@@ -506,7 +509,8 @@ export function ModifierModal({
                 specialNotes.trim() || undefined,
                 selectedPourSize || undefined,
                 pourMultiplier !== 1 ? pourMultiplier : undefined,
-                getAllIngredientMods().length > 0 ? getAllIngredientMods() : undefined
+                getAllIngredientMods().length > 0 ? getAllIngredientMods() : undefined,
+                pourCustomPrice
               )}
             >
               {editingItem ? 'Update' : 'Add'}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, useMemo, useTransition, useDeferredValue } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, useTransition, useDeferredValue, memo } from 'react'
 import { motion } from 'framer-motion'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
@@ -72,7 +72,7 @@ interface MenuItem {
   categoryId: string
   hasModifiers?: boolean
   hasOtherModifiers?: boolean // Has non-spirit modifier groups
-  pourSizes?: Record<string, number | { label: string; multiplier: number }> | null // { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
+  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null // { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
   defaultPourSize?: string | null
   spiritTiers?: SpiritTiers | null // Spirit upgrade options by tier
   pricingOptionGroups?: import('@/types').PricingOptionGroup[]
@@ -131,6 +131,347 @@ type MenuSection = 'bar' | 'food' | 'entertainment'
 
 // FavoriteItem type alias for internal use (re-exported from FavoriteItem.tsx)
 type FavoriteItem = FavoriteItemData
+
+// Stable empty object for items with no customization (prevents new {} per render)
+const EMPTY_CUSTOMIZATION: ItemCustomization = {} as ItemCustomization
+
+// ============================================================================
+// MEMOIZED MENU ITEM BUTTON — prevents full grid re-render on unrelated state
+// ============================================================================
+interface MenuItemButtonProps {
+  item: MenuItem
+  customization: ItemCustomization
+  isFavorite: boolean
+  isEditingItems: boolean
+  isEditingThisItem: boolean
+  onTap: (item: MenuItem) => void
+  onEditToggle: (itemId: string | null) => void
+  onContextMenu: (item: MenuItem) => void
+  onDragStart: (itemId: string) => void
+  onDragOver: (itemId: string) => void
+  onDragEnd: () => void
+  sizeConfig: { height: number; text: string }
+  itemSettings: {
+    showPrices: boolean
+    showQuickPours: boolean
+    showDualPricing: boolean
+  }
+  dualPricing: { enabled: boolean; cashDiscountPercent: number; applyToCredit: boolean; applyToDebit: boolean; showSavingsMessage: boolean }
+  onPourSizeClick: (item: MenuItem, pourSize: string, pourPrice: number) => void
+  onSpiritTierClick: (item: MenuItem, tier: string) => void
+  hotModifiers: { id: string; name: string; price: number }[] | undefined
+  onHotModifierClick: (item: MenuItem, mod: { id: string; name: string; price: number }) => void
+  onPricingOptionClick: (item: MenuItem, option: { id: string; label: string; price: number | null; color: string | null }) => void
+}
+
+const MenuItemButton = memo(function MenuItemButton({
+  item,
+  customization,
+  isFavorite,
+  isEditingItems,
+  isEditingThisItem,
+  onTap,
+  onEditToggle,
+  onContextMenu,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  sizeConfig,
+  itemSettings,
+  dualPricing,
+  onPourSizeClick,
+  onSpiritTierClick,
+  hotModifiers,
+  onHotModifierClick,
+  onPricingOptionClick,
+}: MenuItemButtonProps) {
+  const isHighlighted = customization.highlight && customization.highlight !== 'none'
+
+  const handleClick = useCallback(() => {
+    if (isEditingItems) {
+      onEditToggle(isEditingThisItem ? null : item.id)
+    } else {
+      onTap(item)
+    }
+  }, [isEditingItems, isEditingThisItem, onEditToggle, onTap, item])
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!isEditingItems) onContextMenu(item)
+  }, [isEditingItems, onContextMenu, item])
+
+  const handleDragStart = useCallback(() => onDragStart(item.id), [onDragStart, item.id])
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    onDragOver(item.id)
+  }, [onDragOver, item.id])
+
+  const buttonStyle = useMemo(() => ({
+    backgroundColor: customization.backgroundColor || undefined,
+    color: customization.textColor || undefined,
+    boxShadow: customization.highlight === 'glow'
+      ? `0 0 20px ${customization.glowColor || customization.backgroundColor || '#6366f1'}, 0 0 40px ${customization.glowColor || customization.backgroundColor || '#6366f1'}50`
+      : customization.effect === 'neon' && customization.glowColor
+        ? `0 0 10px ${customization.glowColor}, 0 0 20px ${customization.glowColor}80, 0 0 30px ${customization.glowColor}40`
+        : undefined,
+    borderColor: customization.highlight === 'border' ? (customization.borderColor || '#fbbf24') : undefined,
+    minHeight: `${sizeConfig.height}px`,
+  }), [customization.backgroundColor, customization.textColor, customization.highlight, customization.glowColor, customization.effect, customization.borderColor, sizeConfig.height])
+
+  const nameStyle = useMemo(() => ({
+    color: customization.textColor || 'white',
+  }), [customization.textColor])
+
+  return (
+    <button
+      key={item.id}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
+      draggable={isEditingItems}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragEnd={onDragEnd}
+      className={`relative p-2 rounded-xl text-left transition-all flex flex-col justify-between min-h-0 ${
+        isEditingItems
+          ? isEditingThisItem
+            ? 'ring-2 ring-indigo-500 bg-indigo-900/30'
+            : 'bg-slate-700/50 hover:bg-slate-700 cursor-move'
+          : 'bg-slate-700/50 hover:bg-slate-700 active:scale-95'
+      } ${
+        customization.highlight === 'border' ? 'border-2' : 'border border-white/5'
+      } ${
+        customization.highlight === 'larger' ? 'scale-105 z-10' : ''
+      } ${
+        customization.effect === 'pulse' ? 'effect-pulse' : ''
+      } ${
+        customization.effect === 'shimmer' ? 'effect-shimmer' : ''
+      } ${
+        customization.effect === 'rainbow' ? 'effect-rainbow' : ''
+      } ${
+        customization.effect === 'neon' ? 'effect-neon' : ''
+      } ${
+        FONT_FAMILIES.find(f => f.value === customization.fontFamily)?.className || ''
+      }`}
+      style={buttonStyle}
+    >
+      <div
+        className={`leading-tight ${sizeConfig.text} ${
+          customization.fontStyle === 'bold' || customization.fontStyle === 'boldItalic' ? 'font-bold' : 'font-semibold'
+        } ${
+          customization.fontStyle === 'italic' || customization.fontStyle === 'boldItalic' ? 'italic' : ''
+        }`}
+        style={nameStyle}
+      >
+        {item.name}
+      </div>
+      {/* Price display - hide if quick pours are shown */}
+      {itemSettings.showPrices && !(itemSettings.showQuickPours && item.pourSizes && Object.keys(item.pourSizes).length > 0) && (() => {
+        const prices = getDualPrices(item.price, dualPricing)
+        return (
+          <div className="mt-1">
+            {itemSettings.showDualPricing && dualPricing.enabled ? (
+              <div className="flex flex-col">
+                <div
+                  className={`font-semibold ${sizeConfig.text}`}
+                  style={{ color: customization.textColor ? customization.textColor : '#60a5fa' }}
+                >
+                  {formatCurrency(prices.cardPrice)}
+                </div>
+                <div
+                  className={`font-semibold ${sizeConfig.text}`}
+                  style={{ color: customization.textColor ? customization.textColor : '#4ade80' }}
+                >
+                  {formatCurrency(prices.cashPrice)}
+                </div>
+              </div>
+            ) : (
+              <div
+                className={`font-semibold ${sizeConfig.text}`}
+                style={{ color: customization.textColor ? customization.textColor : '#4ade80' }}
+              >
+                {formatCurrency(dualPricing.enabled ? prices.cardPrice : prices.cashPrice)}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* Quick Pour Buttons - cohesive teal gradient */}
+      {itemSettings.showQuickPours && item.pourSizes && Object.keys(item.pourSizes).length > 0 && !isEditingItems && (
+        <div className="mt-auto pt-1 flex gap-0.5">
+          {Object.entries(item.pourSizes).map(([size, multiplier]) => {
+            const config = POUR_SIZE_CONFIG[size]
+            if (!config) return null
+            // Handle both formats: number (legacy) or { label, multiplier, customPrice? } (modern)
+            const mult = typeof multiplier === 'number' ? multiplier : (multiplier as any)?.multiplier ?? 1.0
+            const custom = typeof multiplier === 'object' ? (multiplier as any)?.customPrice : null
+            const pourPrice = custom != null ? custom : item.price * mult
+            const prices = getDualPrices(pourPrice, dualPricing)
+            const isDefault = item.defaultPourSize === size
+            return (
+              <div
+                key={size}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onPourSizeClick(item, size, pourPrice)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    onPourSizeClick(item, size, pourPrice)
+                  }
+                }}
+                className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer ${itemSettings.showDualPricing && dualPricing.enabled ? 'min-h-[44px]' : 'min-h-[36px]'} ${config.color} ${isDefault ? 'ring-1 ring-white/50' : ''} text-white hover:brightness-110`}
+              >
+                <span className="leading-tight">{config.label}</span>
+                {itemSettings.showDualPricing && dualPricing.enabled ? (
+                  <>
+                    <span className="text-[10px] leading-tight" style={{ color: '#93c5fd' }}>{formatCurrency(prices.cardPrice)}</span>
+                    <span className="text-[9px] leading-tight" style={{ color: '#86efac' }}>{formatCurrency(prices.cashPrice)}</span>
+                  </>
+                ) : (
+                  <span className="text-[10px] opacity-75">{formatCurrency(dualPricing.enabled ? prices.cardPrice : prices.cashPrice)}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Spirit Tier Buttons for cocktails - skip Well (default) */}
+      {item.spiritTiers && !isEditingItems && (
+        <div className="mt-auto pt-1 flex gap-0.5">
+          {(['call', 'premium', 'top_shelf'] as const).map((tier) => {
+            const config = SPIRIT_TIER_CONFIG[tier]
+            const tierOptions = item.spiritTiers?.[tier as keyof SpiritTiers]
+            if (!tierOptions || tierOptions.length === 0) return null
+            // Show the cheapest option's price as the tier price
+            const minPrice = Math.min(...tierOptions.map(o => o.price))
+            const prices = getDualPrices(item.price + minPrice, dualPricing)
+            const suffix = tierOptions.length > 1 ? '+' : ''
+            return (
+              <div
+                key={tier}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSpiritTierClick(item, tier)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    onSpiritTierClick(item, tier)
+                  }
+                }}
+                className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all ${itemSettings.showDualPricing && dualPricing.enabled ? 'min-h-[44px]' : 'min-h-[36px]'} ${config.color} ${config.hoverColor} text-white cursor-pointer`}
+              >
+                <span className="leading-tight">{config.label}</span>
+                {itemSettings.showDualPricing && dualPricing.enabled ? (
+                  <>
+                    <span className="text-[10px] leading-tight" style={{ color: '#93c5fd' }}>{formatCurrency(prices.cardPrice)}{suffix}</span>
+                    <span className="text-[9px] leading-tight" style={{ color: '#86efac' }}>{formatCurrency(prices.cashPrice)}{suffix}</span>
+                  </>
+                ) : (
+                  <span className="text-[10px] opacity-75">{formatCurrency(dualPricing.enabled ? prices.cardPrice : prices.cashPrice)}{suffix}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* W3-11: Hot modifier buttons for liquor items — warm amber/orange palette */}
+      {hotModifiers && hotModifiers.length > 0 && !isEditingItems && (
+        <div className="mt-auto pt-1 flex gap-0.5 flex-wrap">
+          {hotModifiers.map(mod => {
+            const config = HOT_MODIFIER_CONFIG[mod.name.toLowerCase().trim()]
+            if (!config) return null
+            return (
+              <div
+                key={mod.id}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onHotModifierClick(item, mod)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.stopPropagation()
+                    onHotModifierClick(item, mod)
+                  }
+                }}
+                className={`flex-1 min-w-[40px] flex items-center justify-center px-1 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${config.color} text-white hover:brightness-110`}
+              >
+                {config.label}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Pricing option quick pick buttons */}
+      {item.pricingOptionGroups && item.pricingOptionGroups.length > 0 && !isEditingItems && (() => {
+        const quickPickOptions = item.pricingOptionGroups!.flatMap(g => g.options.filter(o => o.showOnPos)).slice(0, 4)
+        if (quickPickOptions.length === 0) return null
+        return (
+          <div className="mt-auto pt-1 flex gap-0.5">
+            {quickPickOptions.map(option => {
+              const isVariant = option.price !== null
+              const displayPrice = isVariant ? option.price! : item.price
+              const prices = getDualPrices(displayPrice, dualPricing)
+              // Use explicit priceCC if available, otherwise computed card price
+              const shown = dualPricing.enabled
+                ? (isVariant && option.priceCC != null ? option.priceCC : prices.cardPrice)
+                : prices.cashPrice
+              const bgColor = option.color || '#6366f1'
+              const isHex = bgColor.startsWith('#') || bgColor.startsWith('rgb')
+              return (
+                <div
+                  key={option.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onPricingOptionClick(item, option)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.stopPropagation()
+                      onPricingOptionClick(item, option)
+                    }
+                  }}
+                  className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer min-h-[36px] text-white hover:brightness-110 ${isHex ? '' : bgColor}`}
+                  style={isHex ? { backgroundColor: bgColor } : undefined}
+                >
+                  <span className="leading-tight">{option.label}</span>
+                  {isVariant && itemSettings.showDualPricing && dualPricing.enabled ? (
+                    <>
+                      <span className="text-[10px] leading-tight" style={{ color: '#93c5fd' }}>{formatCurrency(isVariant && option.priceCC != null ? option.priceCC : prices.cardPrice)}</span>
+                      <span className="text-[9px] leading-tight" style={{ color: '#86efac' }}>{formatCurrency(prices.cashPrice)}</span>
+                    </>
+                  ) : isVariant ? (
+                    <span className="text-[10px] opacity-75">{formatCurrency(shown)}</span>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
+
+      {isFavorite && !isEditingItems && (
+        <span className="absolute top-1 right-1 text-amber-400 text-xs">⭐</span>
+      )}
+      {isEditingItems && (
+        <span className="absolute top-1 right-1 text-indigo-400 text-xs">✏️</span>
+      )}
+    </button>
+  )
+})
 
 // ============================================================================
 // COMPONENT
@@ -866,6 +1207,44 @@ export function BartenderView({
       })
     }
   }, [engine])
+
+  // Stable edit toggle for MenuItemButton
+  const handleEditToggle = useCallback((itemId: string | null) => {
+    setEditingItemId(itemId)
+  }, [])
+
+  // Stable callbacks for MenuItemButton (avoids inline closures in render)
+  const handlePourSizeClick = useCallback((item: MenuItem, _size: string, pourPrice: number) => {
+    const config = POUR_SIZE_CONFIG[_size]
+    if (!config) return
+    engine.addItemDirectly({
+      menuItemId: item.id,
+      name: `${item.name} (${config.label})`,
+      price: pourPrice,
+    })
+  }, [engine])
+
+  const handleHotModifierClick = useCallback((item: MenuItem, mod: { id: string; name: string; price: number }) => {
+    engine.addItemDirectly({
+      menuItemId: item.id,
+      name: item.name,
+      price: item.price,
+      modifiers: [{ id: mod.id, name: mod.name, price: mod.price }],
+    })
+  }, [engine])
+
+  // Stable subset of itemSettings for MenuItemButton (avoids object identity change)
+  const itemSettingsForButton = useMemo(() => ({
+    showPrices: itemSettings.showPrices,
+    showQuickPours: itemSettings.showQuickPours,
+    showDualPricing: itemSettings.showDualPricing,
+  }), [itemSettings.showPrices, itemSettings.showQuickPours, itemSettings.showDualPricing])
+
+  // Stable sizeConfig for MenuItemButton
+  const sizeConfigForButton = useMemo(() => ({
+    height: currentItemSizeConfig.height,
+    text: currentItemSizeConfig.text,
+  }), [currentItemSizeConfig.height, currentItemSizeConfig.text])
 
   // Ref guard: prevents double-tap from firing two concurrent send chains
   const sendInProgressRef = useRef(false)
@@ -1674,280 +2053,30 @@ export function BartenderView({
                     className={`flex-1 grid gap-2 min-h-0 transition-opacity ${isCategoryPending ? 'opacity-50' : ''} ${itemSettings.useScrolling || searchQuery.trim() ? 'overflow-y-auto content-start scrollbar-hide' : 'auto-rows-fr'}`}
                     style={{ gridTemplateColumns: `repeat(${effectiveItemsPerRow}, 1fr)` }}
                   >
-                    {finalDisplayedItems.map(item => {
-                      const customization = itemCustomizations[item.id] || {}
-                      const isHighlighted = customization.highlight && customization.highlight !== 'none'
-                      const isFavorite = favorites.some(f => f.menuItemId === item.id)
-
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => {
-                            if (isEditingItems) {
-                              setEditingItemId(editingItemId === item.id ? null : item.id)
-                            } else {
-                              handleMenuItemTap(item)
-                            }
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            if (!isEditingItems) addToFavorites(item)
-                          }}
-                          draggable={isEditingItems}
-                          onDragStart={() => handleItemDragStart(item.id)}
-                          onDragOver={(e) => {
-                            e.preventDefault()
-                            handleItemDragOver(item.id)
-                          }}
-                          onDragEnd={handleItemDragEnd}
-                          className={`relative p-2 rounded-xl text-left transition-all flex flex-col justify-between min-h-0 ${
-                            isEditingItems
-                              ? editingItemId === item.id
-                                ? 'ring-2 ring-indigo-500 bg-indigo-900/30'
-                                : 'bg-slate-700/50 hover:bg-slate-700 cursor-move'
-                              : 'bg-slate-700/50 hover:bg-slate-700 active:scale-95'
-                          } ${
-                            customization.highlight === 'border' ? 'border-2' : 'border border-white/5'
-                          } ${
-                            customization.highlight === 'larger' ? 'scale-105 z-10' : ''
-                          } ${
-                            customization.effect === 'pulse' ? 'effect-pulse' : ''
-                          } ${
-                            customization.effect === 'shimmer' ? 'effect-shimmer' : ''
-                          } ${
-                            customization.effect === 'rainbow' ? 'effect-rainbow' : ''
-                          } ${
-                            customization.effect === 'neon' ? 'effect-neon' : ''
-                          } ${
-                            FONT_FAMILIES.find(f => f.value === customization.fontFamily)?.className || ''
-                          }`}
-                          style={{
-                            backgroundColor: customization.backgroundColor || undefined,
-                            color: customization.textColor || undefined,
-                            boxShadow: customization.highlight === 'glow'
-                              ? `0 0 20px ${customization.glowColor || customization.backgroundColor || '#6366f1'}, 0 0 40px ${customization.glowColor || customization.backgroundColor || '#6366f1'}50`
-                              : customization.effect === 'neon' && customization.glowColor
-                                ? `0 0 10px ${customization.glowColor}, 0 0 20px ${customization.glowColor}80, 0 0 30px ${customization.glowColor}40`
-                                : undefined,
-                            borderColor: customization.highlight === 'border' ? (customization.borderColor || '#fbbf24') : undefined,
-                            minHeight: `${currentItemSizeConfig.height}px`,
-                          }}
-                        >
-                          <div
-                            className={`leading-tight ${currentItemSizeConfig.text} ${
-                              customization.fontStyle === 'bold' || customization.fontStyle === 'boldItalic' ? 'font-bold' : 'font-semibold'
-                            } ${
-                              customization.fontStyle === 'italic' || customization.fontStyle === 'boldItalic' ? 'italic' : ''
-                            }`}
-                            style={{ color: customization.textColor || 'white' }}
-                          >
-                            {item.name}
-                          </div>
-                          {/* Price display - hide if quick pours are shown */}
-                          {itemSettings.showPrices && !(itemSettings.showQuickPours && item.pourSizes && Object.keys(item.pourSizes).length > 0) && (() => {
-                            const prices = getDualPrices(item.price, dualPricing)
-                            return (
-                              <div className="mt-1">
-                                {itemSettings.showDualPricing && dualPricing.enabled ? (
-                                  <div className="flex flex-col">
-                                    <div
-                                      className={`font-semibold ${currentItemSizeConfig.text}`}
-                                      style={{ color: customization.textColor ? customization.textColor : '#60a5fa' }}
-                                    >
-                                      {formatCurrency(prices.cardPrice)}
-                                    </div>
-                                    <div
-                                      className={`font-semibold ${currentItemSizeConfig.text}`}
-                                      style={{ color: customization.textColor ? customization.textColor : '#4ade80' }}
-                                    >
-                                      {formatCurrency(prices.cashPrice)}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div
-                                    className={`font-semibold ${currentItemSizeConfig.text}`}
-                                    style={{ color: customization.textColor ? customization.textColor : '#4ade80' }}
-                                  >
-                                    {formatCurrency(dualPricing.enabled ? prices.cardPrice : prices.cashPrice)}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })()}
-
-                          {/* Quick Pour Buttons - cohesive teal gradient */}
-                          {itemSettings.showQuickPours && item.pourSizes && Object.keys(item.pourSizes).length > 0 && !isEditingItems && (
-                            <div className="mt-auto pt-1 flex gap-0.5">
-                              {Object.entries(item.pourSizes).map(([size, multiplier]) => {
-                                const config = POUR_SIZE_CONFIG[size]
-                                if (!config) return null
-                                const pourPrice = item.price * (multiplier as number)
-                                const prices = getDualPrices(pourPrice, dualPricing)
-                                const displayPrice = dualPricing.enabled ? prices.cardPrice : prices.cashPrice
-                                const isDefault = item.defaultPourSize === size
-                                return (
-                                  <div
-                                    key={size}
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      engine.addItemDirectly({
-                                        menuItemId: item.id,
-                                        name: `${item.name} (${config.label})`,
-                                        price: pourPrice,
-                                      })
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.stopPropagation()
-                                        engine.addItemDirectly({
-                                          menuItemId: item.id,
-                                          name: `${item.name} (${config.label})`,
-                                          price: pourPrice,
-                                        })
-                                      }
-                                    }}
-                                    className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer min-h-[36px] ${config.color} ${isDefault ? 'ring-1 ring-white/50' : ''} text-white hover:brightness-110`}
-                                  >
-                                    <span className="leading-tight">{config.label}</span>
-                                    <span className="text-[10px] opacity-75">{formatCurrency(displayPrice)}</span>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-
-                          {/* Spirit Tier Buttons for cocktails - skip Well (default) */}
-                          {item.spiritTiers && !isEditingItems && (
-                            <div className="mt-auto pt-1 flex gap-0.5">
-                              {(['call', 'premium', 'top_shelf'] as const).map((tier) => {
-                                const config = SPIRIT_TIER_CONFIG[tier]
-                                const tierOptions = item.spiritTiers?.[tier as keyof SpiritTiers]
-                                if (!tierOptions || tierOptions.length === 0) return null
-                                // Show the cheapest option's price as the tier price
-                                const minPrice = Math.min(...tierOptions.map(o => o.price))
-                                const prices = getDualPrices(item.price + minPrice, dualPricing)
-                                const displayPrice = dualPricing.enabled ? prices.cardPrice : prices.cashPrice
-                                return (
-                                  <div
-                                    key={tier}
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleSpiritTierClick(item, tier)
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.stopPropagation()
-                                        handleSpiritTierClick(item, tier)
-                                      }
-                                    }}
-                                    className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all min-h-[36px] ${config.color} ${config.hoverColor} text-white cursor-pointer`}
-                                  >
-                                    <span className="leading-tight">{config.label}</span>
-                                    <span className="text-[10px] opacity-75">{formatCurrency(displayPrice)}{tierOptions.length > 1 ? '+' : ''}</span>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-
-                          {/* W3-11: Hot modifier buttons for liquor items — warm amber/orange palette */}
-                          {hotModifierCache[item.id] && hotModifierCache[item.id].length > 0 && !isEditingItems && (
-                            <div className="mt-auto pt-1 flex gap-0.5 flex-wrap">
-                              {hotModifierCache[item.id].map(mod => {
-                                const config = HOT_MODIFIER_CONFIG[mod.name.toLowerCase().trim()]
-                                if (!config) return null
-                                return (
-                                  <div
-                                    key={mod.id}
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      engine.addItemDirectly({
-                                        menuItemId: item.id,
-                                        name: item.name,
-                                        price: item.price,
-                                        modifiers: [{ id: mod.id, name: mod.name, price: mod.price }],
-                                      })
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.stopPropagation()
-                                        engine.addItemDirectly({
-                                          menuItemId: item.id,
-                                          name: item.name,
-                                          price: item.price,
-                                          modifiers: [{ id: mod.id, name: mod.name, price: mod.price }],
-                                        })
-                                      }
-                                    }}
-                                    className={`flex-1 min-w-[40px] flex items-center justify-center px-1 py-1 rounded text-[11px] font-semibold transition-all cursor-pointer ${config.color} text-white hover:brightness-110`}
-                                  >
-                                    {config.label}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-
-                          {/* Pricing option quick pick buttons */}
-                          {item.pricingOptionGroups && item.pricingOptionGroups.length > 0 && !isEditingItems && (() => {
-                            const quickPickOptions = item.pricingOptionGroups!.flatMap(g => g.options.filter(o => o.showOnPos)).slice(0, 4)
-                            if (quickPickOptions.length === 0) return null
-                            return (
-                              <div className="mt-auto pt-1 flex gap-0.5">
-                                {quickPickOptions.map(option => {
-                                  const isVariant = option.price !== null
-                                  const displayPrice = isVariant ? option.price! : item.price
-                                  const prices = getDualPrices(displayPrice, dualPricing)
-                                  // Use explicit priceCC if available, otherwise computed card price
-                                  const shown = dualPricing.enabled
-                                    ? (isVariant && option.priceCC != null ? option.priceCC : prices.cardPrice)
-                                    : prices.cashPrice
-                                  const bgColor = option.color || '#6366f1'
-                                  const isHex = bgColor.startsWith('#') || bgColor.startsWith('rgb')
-                                  return (
-                                    <div
-                                      key={option.id}
-                                      role="button"
-                                      tabIndex={0}
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handlePricingOptionClick(item, option)
-                                      }}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                          e.stopPropagation()
-                                          handlePricingOptionClick(item, option)
-                                        }
-                                      }}
-                                      className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer min-h-[36px] text-white hover:brightness-110 ${isHex ? '' : bgColor}`}
-                                      style={isHex ? { backgroundColor: bgColor } : undefined}
-                                    >
-                                      <span className="leading-tight">{option.label}</span>
-                                      {isVariant && (
-                                        <span className="text-[10px] opacity-75">{formatCurrency(shown)}</span>
-                                      )}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )
-                          })()}
-
-                          {isFavorite && !isEditingItems && (
-                            <span className="absolute top-1 right-1 text-amber-400 text-xs">⭐</span>
-                          )}
-                          {isEditingItems && (
-                            <span className="absolute top-1 right-1 text-indigo-400 text-xs">✏️</span>
-                          )}
-                        </button>
-                      )
-                    })}
+                    {finalDisplayedItems.map(item => (
+                      <MenuItemButton
+                        key={item.id}
+                        item={item}
+                        customization={itemCustomizations[item.id] || EMPTY_CUSTOMIZATION}
+                        isFavorite={favorites.some(f => f.menuItemId === item.id)}
+                        isEditingItems={isEditingItems}
+                        isEditingThisItem={editingItemId === item.id}
+                        onTap={handleMenuItemTap}
+                        onEditToggle={handleEditToggle}
+                        onContextMenu={addToFavorites}
+                        onDragStart={handleItemDragStart}
+                        onDragOver={handleItemDragOver}
+                        onDragEnd={handleItemDragEnd}
+                        sizeConfig={sizeConfigForButton}
+                        itemSettings={itemSettingsForButton}
+                        dualPricing={dualPricing}
+                        onPourSizeClick={handlePourSizeClick}
+                        onSpiritTierClick={handleSpiritTierClick}
+                        hotModifiers={hotModifierCache[item.id]}
+                        onHotModifierClick={handleHotModifierClick}
+                        onPricingOptionClick={handlePricingOptionClick}
+                      />
+                    ))}
                   </div>
 
                   {/* Pagination & Items Button */}

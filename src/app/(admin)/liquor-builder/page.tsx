@@ -49,7 +49,7 @@ function LiquorBuilderContent() {
   const [savingDrink, setSavingDrink] = useState(false)
 
   // Pour size editing state
-  const [enabledPourSizes, setEnabledPourSizes] = useState<Record<string, { label: string; multiplier: number }>>({})
+  const [enabledPourSizes, setEnabledPourSizes] = useState<Record<string, { label: string; multiplier: number; customPrice?: number | null }>>({})
   const [defaultPourSize, setDefaultPourSize] = useState<string>('standard')
   const [applyPourToModifiers, setApplyPourToModifiers] = useState(false)
 
@@ -217,14 +217,14 @@ function LiquorBuilderContent() {
     short: { label: 'Short', multiplier: 0.75 },
   }
 
-  const normalizePourSizes = (data: Record<string, number | { label: string; multiplier: number }> | null): Record<string, { label: string; multiplier: number }> => {
+  const normalizePourSizes = (data: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null): Record<string, { label: string; multiplier: number; customPrice?: number | null }> => {
     if (!data) return {}
-    const result: Record<string, { label: string; multiplier: number }> = {}
+    const result: Record<string, { label: string; multiplier: number; customPrice?: number | null }> = {}
     for (const [key, value] of Object.entries(data)) {
       if (typeof value === 'number') {
         result[key] = { label: DEFAULT_POUR_SIZES[key]?.label || key, multiplier: value }
       } else {
-        result[key] = value
+        result[key] = { ...value }
       }
     }
     return result
@@ -249,6 +249,10 @@ function LiquorBuilderContent() {
 
   const updatePourSizeMultiplier = (size: string, multiplier: number) => {
     setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], multiplier } }))
+  }
+
+  const updatePourSizeCustomPrice = (size: string, customPrice: number | null) => {
+    setEnabledPourSizes(prev => ({ ...prev, [size]: { ...prev[size], customPrice } }))
   }
 
   // Load recipe ingredients for spirit upgrade auto-detection
@@ -1435,11 +1439,14 @@ function LiquorBuilderContent() {
                         <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">Pour Size Buttons</h3>
                         <span className="text-xs text-gray-600">Shot / Tall / Short / Double</span>
                       </div>
-                      <p className="text-xs text-gray-600 mb-3">Enable size variants for this item. Each multiplies the base price.</p>
+                      <p className="text-xs text-gray-600 mb-3">Enable size variants for this item. Each multiplies the base price, or set a custom price override.</p>
                       <div className="space-y-2 mb-3">
                         {Object.entries(DEFAULT_POUR_SIZES).map(([sizeKey, defaults]) => {
                           const isEnabled = enabledPourSizes[sizeKey] !== undefined
                           const current = enabledPourSizes[sizeKey]
+                          const basePrice = parseFloat(editingDrinkPrice) || 0
+                          const autoPrice = basePrice * (current?.multiplier ?? defaults.multiplier)
+                          const hasCustomPrice = current?.customPrice != null
                           return (
                             <div key={sizeKey} className={`p-2.5 border rounded-lg transition-colors ${isEnabled ? 'border-purple-400 bg-purple-50' : 'border-gray-200 bg-white'}`}>
                               <div className="flex items-center gap-2">
@@ -1472,7 +1479,30 @@ function LiquorBuilderContent() {
                                         }}
                                         className="w-14 px-1 py-1 text-sm border rounded text-center focus:outline-none focus:ring-1 focus:ring-purple-500"
                                       />
-                                      <span className="text-xs text-purple-600">×</span>
+                                      <span className="text-xs text-purple-600">x</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <span className="text-xs text-gray-500">$</span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        defaultValue={hasCustomPrice ? current!.customPrice! : ''}
+                                        key={`${sizeKey}-custom-${current?.customPrice ?? 'none'}`}
+                                        placeholder={autoPrice.toFixed(2)}
+                                        onBlur={e => {
+                                          const val = e.target.value.trim()
+                                          if (val === '') {
+                                            updatePourSizeCustomPrice(sizeKey, null)
+                                          } else {
+                                            const num = parseFloat(val)
+                                            if (!isNaN(num) && num >= 0) updatePourSizeCustomPrice(sizeKey, num)
+                                            else e.target.value = hasCustomPrice ? String(current!.customPrice!) : ''
+                                          }
+                                        }}
+                                        className={`w-20 px-1 py-1 text-sm border rounded text-right focus:outline-none focus:ring-1 focus:ring-purple-500 ${hasCustomPrice ? 'border-green-400 bg-green-50' : ''}`}
+                                        title={hasCustomPrice ? 'Custom price override (clear to use auto-calculated)' : `Auto-calculated: $${autoPrice.toFixed(2)}`}
+                                      />
                                     </div>
                                     {isEnabled && defaultPourSize === sizeKey && (
                                       <span className="text-[10px] bg-purple-600 text-white px-1.5 py-0.5 rounded shrink-0">Default</span>
@@ -1487,10 +1517,20 @@ function LiquorBuilderContent() {
                                 ) : (
                                   <div className="flex-1 flex items-center justify-between text-gray-600">
                                     <span className="text-sm">{defaults.label}</span>
-                                    <span className="text-xs">{defaults.multiplier}×</span>
+                                    <span className="text-xs">{defaults.multiplier}x</span>
                                   </div>
                                 )}
                               </div>
+                              {isEnabled && hasCustomPrice && (
+                                <div className="mt-1 ml-6 text-[11px] text-green-700">
+                                  Custom price: ${current!.customPrice!.toFixed(2)} (auto would be ${autoPrice.toFixed(2)})
+                                  {isDualPricingEnabled && (
+                                    <span className="text-indigo-500 ml-1">
+                                      | Card: ${calculateCardPrice(current!.customPrice!, cashDiscountPct).toFixed(2)}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )
                         })}
@@ -1509,11 +1549,11 @@ function LiquorBuilderContent() {
                       {Object.keys(enabledPourSizes).length > 0 && (
                         <>
                           <p className="text-xs text-gray-600 mt-1 ml-6">
-                            Price on POS: base price × multiplier (e.g. ${(parseFloat(editingDrinkPrice) || 0).toFixed(2)} × 1.5 = ${((parseFloat(editingDrinkPrice) || 0) * 1.5).toFixed(2)} for Tall)
+                            Price on POS: base price x multiplier (e.g. ${(parseFloat(editingDrinkPrice) || 0).toFixed(2)} x 1.5 = ${((parseFloat(editingDrinkPrice) || 0) * 1.5).toFixed(2)} for Tall), or set a custom price to override.
                           </p>
                           {isDualPricingEnabled && parseFloat(editingDrinkPrice) > 0 && (
                             <p className="text-xs text-indigo-400 mt-0.5 ml-6">
-                              Card: ${calculateCardPrice((parseFloat(editingDrinkPrice) || 0) * 1.5, cashDiscountPct).toFixed(2)} for Tall
+                              Card: ${calculateCardPrice((parseFloat(editingDrinkPrice) || 0) * 1.5, cashDiscountPct).toFixed(2)} for Tall (auto)
                             </p>
                           )}
                         </>

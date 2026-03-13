@@ -213,6 +213,39 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // ── Permission checks OUTSIDE the transaction (no FOR UPDATE needed) ──
+    // These calls hit the auth service / employee table, not the Order row.
+    // Running them before the lock reduces contention time.
+    const preCheckOrder = await db.order.findUnique({
+      where: { id: orderId },
+      select: { locationId: true, employeeId: true },
+    })
+    if (preCheckOrder && payEmployeeId) {
+      // Normalize payment methods from the raw body for permission resolution
+      const rawPaymentsForPerms = Array.isArray(body.payments)
+        ? body.payments
+        : [{ method: body.paymentMethodId || body.paymentMethod || body.method || 'cash' }]
+      const requiredPermsPreCheck = new Set<string>()
+      for (const p of rawPaymentsForPerms) {
+        if ((p as any).method === 'cash') {
+          requiredPermsPreCheck.add(PERMISSIONS.POS_CASH_PAYMENTS)
+        } else {
+          requiredPermsPreCheck.add(PERMISSIONS.POS_CARD_PAYMENTS)
+        }
+      }
+      const authPreCheck = await requireAnyPermission(payEmployeeId, preCheckOrder.locationId, [...requiredPermsPreCheck])
+      if (!authPreCheck.authorized) {
+        return NextResponse.json({ error: authPreCheck.error }, { status: authPreCheck.status })
+      }
+      // Guard: paying another employee's order requires pos.edit_others_orders
+      if (preCheckOrder.employeeId && preCheckOrder.employeeId !== payEmployeeId) {
+        const ownerAuthPreCheck = await requirePermission(payEmployeeId, preCheckOrder.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
+        if (!ownerAuthPreCheck.authorized) {
+          return NextResponse.json({ error: ownerAuthPreCheck.error }, { status: ownerAuthPreCheck.status })
+        }
+      }
+    }
+
     // ── PMS Pre-Charge: Extract Oracle OPERA HTTP call OUTSIDE the transaction ──
     // Room charges require a 1-5s HTTP call to Oracle OPERA. Doing this inside the
     // FOR UPDATE transaction lock blocks all other terminals. Instead, we:
@@ -466,7 +499,7 @@ export const POST = withVenue(withTiming(async function POST(
     if (order.status !== 'paid' && order.status !== 'closed') {
       const zeroAlreadyPaid = order.payments
         .filter(p => p.status === 'completed')
-        .reduce((sum, p) => sum + Number(p.totalAmount), 0)
+        .reduce((sum, p) => sum + Number(p.amount), 0)
       const zeroRemaining = Number(order.total ?? 0) - zeroAlreadyPaid
       if (zeroRemaining <= 0) {
         await ingestAndProject(tx as any, orderId, order.locationId, [
@@ -583,30 +616,8 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // C18: Server-side permission check — method-specific.
-    // Cash requires POS_CASH_PAYMENTS; all non-cash methods (card, gift_card,
-    // house_account, room_charge, loyalty_points) require POS_CARD_PAYMENTS.
-    const requiredPerms = new Set<string>()
-    for (const p of payments) {
-      if (p.method === 'cash') {
-        requiredPerms.add(PERMISSIONS.POS_CASH_PAYMENTS)
-      } else {
-        // credit, debit, gift_card, house_account, room_charge, loyalty_points
-        requiredPerms.add(PERMISSIONS.POS_CARD_PAYMENTS)
-      }
-    }
-    const auth = await requireAnyPermission(employeeId, order.locationId, [...requiredPerms])
-    if (!auth.authorized) {
-      return { earlyReturn: NextResponse.json({ error: auth.error }, { status: auth.status }) }
-    }
-
-    // Guard: paying another employee's order requires pos.edit_others_orders
-    if (employeeId && order.employeeId && order.employeeId !== employeeId) {
-      const ownerAuth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
-      if (!ownerAuth.authorized) {
-        return { earlyReturn: NextResponse.json({ error: ownerAuth.error }, { status: ownerAuth.status }) }
-      }
-    }
+    // C18: Permission checks moved OUTSIDE the FOR UPDATE transaction (above)
+    // to reduce lock contention. No duplicate check needed here.
 
     if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
       if (order.status === 'paid' || order.status === 'closed') {
@@ -794,10 +805,13 @@ export const POST = withVenue(withTiming(async function POST(
         ;(order as any).total = newTotal
     }
 
-    // Calculate how much is already paid
+    // Calculate how much of the ORDER BALANCE is already paid.
+    // Uses p.amount (pre-tip base), NOT p.totalAmount which includes tips.
+    // Tips don't count toward the order balance — using totalAmount would
+    // overcount and let orders close with underpaid balances.
     const alreadyPaid = order.payments
       .filter(p => p.status === 'completed')
-      .reduce((sum, p) => sum + Number(p.totalAmount), 0)
+      .reduce((sum, p) => sum + Number(p.amount), 0)
 
     const orderTotal = Number(order.total ?? 0)
     const remaining = orderTotal - alreadyPaid
@@ -845,9 +859,9 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    if (paymentTotal < validationRemaining - 0.01) {
+    if (paymentTotal < remaining - 0.01) {
       return { earlyReturn: NextResponse.json(
-        { error: `Payment amount ($${paymentTotal.toFixed(2)}) is less than remaining balance ($${validationRemaining.toFixed(2)})` },
+        { error: `Payment amount ($${paymentTotal.toFixed(2)}) is less than remaining balance ($${remaining.toFixed(2)})` },
         { status: 400 }
       ) }
     }
@@ -1081,6 +1095,24 @@ export const POST = withVenue(withTiming(async function POST(
           const expectedCardAmount = calculateCardPrice(Number(order.total ?? 0), dualPricing.cashDiscountPercent)
           if (Math.abs(payment.amount - expectedCardAmount) > 0.01) {
             console.warn(`[DualPricing] Card payment amount $${payment.amount} differs from expected $${expectedCardAmount} for order ${orderId}`)
+            // Route through audit log so it shows up in monitoring dashboards
+            void tx.auditLog.create({
+              data: {
+                locationId: order.locationId,
+                action: 'DUAL_PRICING_MISMATCH',
+                employeeId: employeeId || null,
+                entityType: 'order',
+                entityId: orderId,
+                details: JSON.stringify({
+                  orderNumber: order.orderNumber,
+                  submittedAmount: payment.amount,
+                  expectedCardAmount,
+                  orderTotal: Number(order.total ?? 0),
+                  cashDiscountPercent: dualPricing.cashDiscountPercent,
+                  delta: Math.round((payment.amount - expectedCardAmount) * 100) / 100,
+                }),
+              },
+            }).catch(() => {})
           }
         }
       }
@@ -1928,6 +1960,15 @@ export const POST = withVenue(withTiming(async function POST(
       void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
       invalidateSnapshotCache(order.locationId)
 
+      // Emit explicit parent closure event so ALL devices close the parent immediately
+      void dispatchPaymentProcessed(order.locationId, {
+        orderId: order.parentOrderId!,
+        status: 'closed',
+        isClosed: true,
+        parentAutoClose: true,
+        sourceTerminalId: terminalId || undefined,
+      }).catch(() => {})
+
       // Free the parent order's table (child split orders have no tableId)
       if (parentTableId) {
         void db.table.update({
@@ -2172,8 +2213,25 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Dispatch payment:processed for each created payment (fire-and-forget)
+    // Enriched payload lets Android clients construct PAYMENT_APPLIED locally without HTTP round-trip
     for (const p of ingestResult.bridgedPayments) {
-      void dispatchPaymentProcessed(order.locationId, { orderId, paymentId: p.id, status: 'completed', sourceTerminalId: terminalId || undefined }).catch(() => {})
+      void dispatchPaymentProcessed(order.locationId, {
+        orderId,
+        paymentId: p.id,
+        status: 'completed',
+        sourceTerminalId: terminalId || undefined,
+        method: p.paymentMethod,
+        amount: p.amount,
+        tipAmount: p.tipAmount || 0,
+        totalAmount: p.totalAmount,
+        employeeId: employeeId || null,
+        isClosed: orderIsPaid,
+        cardBrand: p.cardBrand || null,
+        cardLast4: p.cardLast4 || null,
+        // Split context: let clients know this is a split child and whether all siblings are done
+        parentOrderId: order.parentOrderId || null,
+        allSiblingsPaid: parentWasMarkedPaid,
+      }).catch(() => {})
     }
 
     // Release order claim after successful payment (fire-and-forget)

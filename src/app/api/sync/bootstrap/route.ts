@@ -5,6 +5,12 @@ import { buildSpiritTiersFromItem, normalizeModifier } from '@/lib/spirit-tiers'
 import { parseSettings } from '@/lib/settings'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 
+// ─── Sync bootstrap cache ─────────────────────────────────────────────────
+// Same pattern as session/bootstrap's menu cache. Caches the heavy menu+categories
+// query for 15s to prevent redundant DB hits when multiple Android devices boot simultaneously.
+const syncBootstrapCache = new Map<string, { data: any; expiry: number }>()
+const SYNC_BOOTSTRAP_TTL = 15_000 // 15 seconds
+
 // Allow up to 120s for bootstrap on Vercel (Neon queries can be slow on cold starts)
 export const maxDuration = 120
 
@@ -20,7 +26,27 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.info(`[bootstrap] cellular terminal=${auth.terminal.id} locationId=${locationId} venueSlug=${venueSlug}`)
   }
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, taxRules] = await Promise.all([
+  // Check sync bootstrap cache (15s TTL — prevents stampede when multiple devices boot)
+  const syncCacheKey = `sync-bootstrap-${locationId}`
+  const cachedBootstrap = syncBootstrapCache.get(syncCacheKey)
+  if (cachedBootstrap && Date.now() < cachedBootstrap.expiry) {
+    // Re-inject terminal-specific config into cached response
+    const cachedData = { ...cachedBootstrap.data }
+    cachedData.terminalConfig = {
+      terminalId: auth.terminal.id,
+      locationId: auth.terminal.locationId,
+      cfdTerminalId: auth.terminal.cfdTerminalId ?? null,
+      defaultMode: auth.terminal.defaultMode ?? null,
+      receiptPrinterId: auth.terminal.receiptPrinterId ?? null,
+      kitchenPrinterId: auth.terminal.kitchenPrinterId ?? null,
+      barPrinterId: auth.terminal.barPrinterId ?? null,
+      isTestMode: cachedData.terminalConfig?.isTestMode ?? false,
+    }
+    cachedData.syncVersion = Date.now()
+    return NextResponse.json({ data: cachedData })
+  }
+
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -85,10 +111,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     }),
     db.cfdSettings.findFirst({ where: { locationId, deletedAt: null } }),
-    db.taxRule.findMany({
-      where: { locationId, isActive: true, deletedAt: null, isInclusive: false },
-      select: { rate: true },
-    }),
   ])
 
   if (isCellular) {
@@ -158,10 +180,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   // parseSettings applies mergeWithDefaults — this corrects dualPricing.enabled from the stored
   // raw JSON (which may have legacy enabled:false) and derives it from cashDiscountPercent.
   const settings = parseSettings(location?.settings) as unknown as Record<string, unknown>
-  // Compute effective tax rate from non-inclusive TaxRule records (same logic as GET /api/settings).
-  // Rates are stored as decimals (e.g. 0.07 for 7%). Sum and send as decimal fraction to Android.
-  const effectiveTaxRate = taxRules.reduce((sum, r) => sum + Number(r.rate), 0)
-  const taxRate = effectiveTaxRate > 0 ? effectiveTaxRate : ((settings?.tax as Record<string, unknown>)?.defaultRate as number ?? 0) / 100
+  // Tax rate for Android: MUST match what calculateOrderTotals() uses on the server
+  // (settings.tax.defaultRate / 100) so that the Android reducer's locally-computed
+  // taxTotal agrees with server-computed taxTotal. Previous code used the TaxRule sum
+  // which could disagree with defaultRate, causing cash tax mismatches.
+  const taxRate = ((settings?.tax as Record<string, unknown>)?.defaultRate as number ?? 0) / 100
 
   // Convert Decimal fields to numbers for Android clients
   const mappedCategories = categories.map(cat => ({
@@ -197,8 +220,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })),
   }))
 
-  return NextResponse.json({
-    data: {
+  const responseData = {
       menu: { categories: mappedCategories, childModifierGroups },
       // PIN hash intentionally excluded — Android must use POST /api/auth/verify-pin instead of local bcrypt compare.
       // Coordinated removal: update Android before deploying this change to production.
@@ -241,6 +263,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         idlePromoEnabled: cfdSettings.idlePromoEnabled,
         idleWelcomeText: cfdSettings.idleWelcomeText,
       } : null,
-    },
-  })
+    }
+
+  // Cache the response for 15s (terminal-specific config re-injected on hit)
+  syncBootstrapCache.set(syncCacheKey, { data: responseData, expiry: Date.now() + SYNC_BOOTSTRAP_TTL })
+  // Evict stale entries
+  if (syncBootstrapCache.size > 20) {
+    const now = Date.now()
+    for (const [key, entry] of syncBootstrapCache) {
+      if (now >= entry.expiry) syncBootstrapCache.delete(key)
+    }
+  }
+
+  return NextResponse.json({ data: responseData })
 })

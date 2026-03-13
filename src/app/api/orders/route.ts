@@ -18,6 +18,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { isTrainingEmployee } from '@/lib/training-mode'
+import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -137,10 +138,14 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             }
           }
 
-          // Lock latest order row to prevent duplicate order numbers (per business day)
+          // Advisory lock on locationId hash to serialize order number generation
+          // This works even when there are zero rows (unlike FOR UPDATE which only locks existing rows)
+          const lockKey = Math.abs(locationId.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0))
+          await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock($1)`, lockKey)
+
           const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-            `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-            locationId, businessDay.start, businessDay.end
+            `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "businessDayDate" = $2::timestamp ORDER BY "orderNumber" DESC LIMIT 1`,
+            locationId, businessDayStart.toISOString()
           )
           const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
@@ -354,6 +359,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         quantity: item.quantity,
         itemTotal: fullItemTotal,
         commissionAmount: itemCommission,
+        addedByEmployeeId: employeeId, // Track who added each item
         specialNotes: item.specialNotes || null,
         seatNumber: item.seatNumber || null,
         courseNumber: item.courseNumber || null,
@@ -412,17 +418,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const cashDiscountPct = parsedSettings?.dualPricing?.cashDiscountPercent ?? 4.0
 
     // Derive tax-inclusive flags from TaxRule records (same logic as /api/settings GET)
-    // NOTE: TaxRule and category-to-categoryType mapping are not in any cache — these must remain direct DB queries.
-    // The menu cache stores presentation data (items + categories), not tax rules. The location cache only stores settings JSON.
+    // Uses 5-minute TTL cache to avoid hitting DB on every order creation
     const [taxRules, allCategories] = await Promise.all([
-      db.taxRule.findMany({
-        where: { locationId, isActive: true, isInclusive: true, deletedAt: null },
-        select: { appliesTo: true, categoryIds: true },
-      }),
-      db.category.findMany({
-        where: { locationId, deletedAt: null },
-        select: { id: true, categoryType: true },
-      }),
+      getCachedInclusiveTaxRules(locationId),
+      getCachedCategories(locationId),
     ])
     let taxInclusiveLiquor = false
     let taxInclusiveFood = false
@@ -464,8 +463,9 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     }
 
     // Use centralized calculation function (single source of truth)
+    // Use totals.subtotal instead of the accumulated `subtotal` to avoid floating-point drift
     const totals = calculateOrderTotals(items, locationSettings, 0, 0, parsedSettings?.priceRounding ?? undefined)
-    const { taxTotal, taxFromInclusive, taxFromExclusive, total } = totals
+    const { subtotal: roundedSubtotal, taxTotal, taxFromInclusive, taxFromExclusive, total } = totals
 
     // Create the order atomically: table lock (Bug 13) + order number lock (Bug 5) + create
     // Initialize seat management (Skill 121)
@@ -496,10 +496,14 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           }
         }
 
-        // Lock latest order row to prevent duplicate order numbers (per business day)
+        // Advisory lock on locationId hash to serialize order number generation
+        // This works even when there are zero rows (unlike FOR UPDATE which only locks existing rows)
+        const lockKey = Math.abs(locationId.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0))
+        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock($1)`, lockKey)
+
         const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
-          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "createdAt" >= $2 AND "createdAt" < $3 ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,
-          locationId, businessDay.start, businessDay.end
+          `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL AND "businessDayDate" = $2::timestamp ORDER BY "orderNumber" DESC LIMIT 1`,
+          locationId, businessDayStart.toISOString()
         )
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
@@ -518,7 +522,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             seatVersion: 0,                       // Skill 121: Concurrency version
             seatTimestamps: initialSeatTimestamps, // Skill 121: When each seat was created
             status: 'open',
-            subtotal,
+            subtotal: roundedSubtotal,
             discountTotal: 0,
             taxTotal,
             taxFromInclusive,
@@ -610,8 +614,8 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       })()
     }
 
-    // Audit log: order created
-    await db.auditLog.create({
+    // Audit log: order created (fire-and-forget — non-critical, don't block response)
+    void db.auditLog.create({
       data: {
         locationId,
         employeeId,
@@ -627,7 +631,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           ...(scheduledForDate ? { scheduledFor: scheduledForDate.toISOString() } : {}),
         },
       },
-    })
+    }).catch(console.error)
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     if (isInOutageMode()) {
@@ -656,6 +660,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           name: item.name,
           priceCents: Math.round(Number(item.price) * 100),
           quantity: item.quantity,
+          employeeId, // WHO added this item
           isHeld: item.isHeld || false,
           soldByWeight: item.soldByWeight || false,
         },
@@ -672,7 +677,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     // FIX-011: Dispatch real-time totals update (fire-and-forget)
     dispatchOrderTotalsUpdate(locationId, order.id, {
-      subtotal,
+      subtotal: roundedSubtotal,
       taxTotal,
       tipTotal: 0,
       discountTotal: 0,

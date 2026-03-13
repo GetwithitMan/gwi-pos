@@ -79,8 +79,8 @@ export interface OrderPageModalsProps {
   setEditingOrderItem: (v: any | null) => void
   dualPricing: any
   inlineModifierCallbackRef: React.MutableRefObject<((...args: any[]) => void) | null>
-  onAddItemWithModifiers: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: any[]) => void
-  onUpdateItemWithModifiers: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: any[]) => void
+  onAddItemWithModifiers: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: any[], pourCustomPrice?: number | null) => void
+  onUpdateItemWithModifiers: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: any[], pourCustomPrice?: number | null) => void
 
   // Pizza builder
   showPizzaModal: boolean
