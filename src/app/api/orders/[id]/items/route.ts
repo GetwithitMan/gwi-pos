@@ -15,6 +15,7 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
@@ -225,19 +226,21 @@ export const POST = withVenue(async function POST(
       if (orderMeta) {
         const pricableItems = items.filter(i => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
         if (pricableItems.length > 0) {
-          const menuItems = await db.menuItem.findMany({
-            where: { id: { in: pricableItems.map(i => i.menuItemId) } },
-            select: { id: true, price: true },
-          })
-          const menuItemMap = new Map(menuItems.map(m => [m.id, m]))
-
           const pricingOptionIds = pricableItems.filter(i => i.pricingOptionId).map(i => i.pricingOptionId!)
-          const pricingOptions = pricingOptionIds.length > 0
-            ? await db.pricingOption.findMany({
-                where: { id: { in: pricingOptionIds } },
-                select: { id: true, price: true },
-              })
-            : []
+          // Parallelize independent DB lookups
+          const [menuItems, pricingOptions] = await Promise.all([
+            db.menuItem.findMany({
+              where: { id: { in: pricableItems.map(i => i.menuItemId) } },
+              select: { id: true, price: true },
+            }),
+            pricingOptionIds.length > 0
+              ? db.pricingOption.findMany({
+                  where: { id: { in: pricingOptionIds } },
+                  select: { id: true, price: true },
+                })
+              : Promise.resolve([]),
+          ])
+          const menuItemMap = new Map(menuItems.map(m => [m.id, m]))
           const pricingOptionMap = new Map(pricingOptions.map(p => [p.id, p]))
 
           let hasOpenItem = false
@@ -268,6 +271,12 @@ export const POST = withVenue(async function POST(
 
     // Bug 13 fix: Validate quantity on each item (must be >= 1)
     for (const item of items) {
+      if (item.price < 0) {
+        return apiError.badRequest(
+          `Item price cannot be negative for "${item.name || item.menuItemId}"`,
+          ERROR_CODES.VALIDATION_ERROR
+        )
+      }
       if (!item.quantity || item.quantity < 1) {
         return apiError.badRequest(
           `Invalid quantity for item "${item.name || item.menuItemId}": must be at least 1`,
@@ -530,15 +539,10 @@ export const POST = withVenue(async function POST(
       const dualPricingEnabled = parsedSettings?.dualPricing?.enabled ?? false
       const cashDiscountPct = parsedSettings?.dualPricing?.cashDiscountPercent ?? 4.0
 
+      // Use cached tax rules + categories (5-min TTL) to avoid DB queries inside transaction
       const [taxRules, allCategories] = await Promise.all([
-        tx.taxRule.findMany({
-          where: { locationId: existingOrder.locationId, isActive: true, isInclusive: true, deletedAt: null },
-          select: { appliesTo: true, categoryIds: true },
-        }),
-        tx.category.findMany({
-          where: { locationId: existingOrder.locationId, deletedAt: null },
-          select: { id: true, categoryType: true },
-        }),
+        getCachedInclusiveTaxRules(existingOrder.locationId),
+        getCachedCategories(existingOrder.locationId),
       ])
       let taxInclusiveLiquor = false
       let taxInclusiveFood = false
@@ -595,7 +599,7 @@ export const POST = withVenue(async function POST(
               orderId,
               locationId: existingOrder.locationId,
               menuItemId: item.menuItemId,
-              name: item.name,
+              name: item.name || menuItem?.name || item.menuItemId,
               price: effectivePrice,
               cardPrice: dualPricingEnabled ? calculateCardPrice(effectivePrice, cashDiscountPct) : null,
               isTaxInclusive: itemTaxInclusive,
@@ -605,6 +609,7 @@ export const POST = withVenue(async function POST(
               pourMultiplier: item.pourMultiplier ?? null,
               itemTotal: fullItemTotal,
               commissionAmount: itemCommission,
+              addedByEmployeeId: requestingEmployeeId || null, // Track who added each item
               specialNotes: item.specialNotes || null,
               seatNumber: item.seatNumber || null,
               courseNumber: item.courseNumber || null,
@@ -748,9 +753,9 @@ export const POST = withVenue(async function POST(
       // Recalculate order totals from current database state
       // This ensures accuracy even if other items were added concurrently
       const allItems = await tx.orderItem.findMany({
-        where: { orderId },
+        where: { orderId, deletedAt: null },
         include: {
-          modifiers: true,
+          modifiers: { where: { deletedAt: null } },
           ingredientModifications: true,
         },
       })
@@ -933,6 +938,7 @@ export const POST = withVenue(async function POST(
         name: item.name,
         priceCents: Math.round(Number(item.price) * 100),
         quantity: item.quantity,
+        employeeId: requestingEmployeeId || null, // WHO added this item
         modifiersJson: item.modifiers?.length
           ? JSON.stringify(item.modifiers.map((m: any) => ({
               id: m.id, modifierId: m.modifierId, name: m.name,

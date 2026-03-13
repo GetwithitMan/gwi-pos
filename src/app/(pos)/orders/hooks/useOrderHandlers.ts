@@ -1255,7 +1255,28 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     setComboSelections({})
   }, [selectedComboItem, comboTemplate])
 
-  // Timed session handlers
+  // Shared helper: start block-time and handle errors (409 conflict = remove item from order)
+  const startBlockTimeOrRollback = useCallback(async (orderItemId: string, orderId: string, minutes: number): Promise<boolean> => {
+    const btRes = await fetch('/api/entertainment/block-time', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderItemId, locationId, minutes }),
+    })
+    if (!btRes.ok) {
+      const btData = await btRes.json().catch(() => ({ error: 'Unknown error' }))
+      // Remove the orphaned order item since timer didn't start
+      void fetch(`/api/orders/${orderId}/items/${orderItemId}`, { method: 'DELETE' }).catch(() => {})
+      if (btRes.status === 409) {
+        toast.error(`${entertainmentItem?.name || selectedTimedItem?.name || 'Item'} is already in use`)
+      } else {
+        toast.error(btData.error || 'Failed to start timer')
+      }
+      return false
+    }
+    return true
+  }, [locationId, entertainmentItem, selectedTimedItem])
+
+  // Timed session handlers — creates order item on server + starts block-time timer
   const handleStartTimedSession = useCallback(async (rateType?: 'per15Min' | 'per30Min' | 'perHour') => {
     if (!selectedTimedItem || !locationId) return
 
@@ -1272,40 +1293,60 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     else if (effectiveRateType === 'per30Min') blockMinutes = 30
     else if (effectiveRateType === 'perHour') blockMinutes = 60
 
-    if (inlineTimedRentalCallbackRef.current) {
-      inlineTimedRentalCallbackRef.current(rateAmount, blockMinutes)
-      inlineTimedRentalCallbackRef.current = null
+    setLoadingSession(true)
+    try {
+      // 1. Ensure order exists on the server
+      const orderId = savedOrderId || await ensureOrderInDB(employeeId)
+      if (!orderId) {
+        toast.error('Failed to create order')
+        return
+      }
+
+      // 2. Add entertainment item to server-side order
+      const itemRes = await fetch(`/api/orders/${orderId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [{
+            menuItemId: selectedTimedItem.id,
+            name: selectedTimedItem.name,
+            quantity: 1,
+            price: rateAmount,
+            blockTimeMinutes: blockMinutes,
+          }],
+        }),
+      })
+      const itemData = await itemRes.json()
+      const orderItemId = itemData.data?.items?.[0]?.id || itemData.data?.id
+      if (!orderItemId) throw new Error('Failed to add item to order')
+
+      // 3. Start block-time timer (marks item in_use, sets expiration)
+      const ok = await startBlockTimeOrRollback(orderItemId, orderId, blockMinutes)
+      if (!ok) {
+        useEntertainmentUiStore.getState().clearPending(selectedTimedItem.id)
+        throttledLoadMenu()
+        return
+      }
+
+      // Success
+      useEntertainmentUiStore.getState().clearPending(selectedTimedItem.id)
+      throttledLoadMenu()
+      toast.success(`${selectedTimedItem.name} started — ${blockMinutes} min`)
+    } catch (err) {
+      console.error('Failed to start timed session:', err)
+      toast.error('Failed to start timer')
+      if (selectedTimedItem) {
+        useEntertainmentUiStore.getState().clearPending(selectedTimedItem.id)
+      }
+    } finally {
+      setLoadingSession(false)
       setShowTimedRentalModal(false)
       setSelectedTimedItem(null)
-      return
+      inlineTimedRentalCallbackRef.current = null
     }
-
-    // Legacy per-minute session flow removed — block-time is the active system
-    setShowTimedRentalModal(false)
-    setSelectedTimedItem(null)
-  }, [selectedTimedItem, selectedRateType])
+  }, [selectedTimedItem, selectedRateType, locationId, savedOrderId, employeeId, ensureOrderInDB, startBlockTimeOrRollback, throttledLoadMenu])
 
   // Entertainment session start handlers
-  // Shared helper: start block-time and handle errors (409 conflict = remove item from order)
-  const startBlockTimeOrRollback = useCallback(async (orderItemId: string, orderId: string, minutes: number): Promise<boolean> => {
-    const btRes = await fetch('/api/entertainment/block-time', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderItemId, locationId, minutes }),
-    })
-    if (!btRes.ok) {
-      const btData = await btRes.json().catch(() => ({ error: 'Unknown error' }))
-      // Remove the orphaned order item since timer didn't start
-      void fetch(`/api/orders/${orderId}/items/${orderItemId}`, { method: 'DELETE' }).catch(() => {})
-      if (btRes.status === 409) {
-        toast.error(`${entertainmentItem?.name || 'Item'} is already in use`)
-      } else {
-        toast.error(btData.error || 'Failed to start timer')
-      }
-      return false
-    }
-    return true
-  }, [locationId, entertainmentItem])
 
   const handleStartEntertainmentWithNewTab = useCallback(async (tabName: string, pkg?: PrepaidPackage) => {
     if (!entertainmentItem || !locationId) return
@@ -1330,14 +1371,17 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          menuItemId: entertainmentItem.id,
-          quantity: 1,
-          price: pkg?.price || 0,
-          blockTimeMinutes: pkg?.minutes || 0,
+          items: [{
+            menuItemId: entertainmentItem.id,
+            name: entertainmentItem.name,
+            quantity: 1,
+            price: pkg?.price || 0,
+            blockTimeMinutes: pkg?.minutes || 0,
+          }],
         }),
       })
       const itemData = await itemRes.json()
-      const orderItemId = itemData.data?.id
+      const orderItemId = itemData.data?.items?.[0]?.id || itemData.data?.id
       if (!orderItemId) throw new Error('Failed to add item')
 
       // Always call block-time to mark item in_use (even for open play)
@@ -1369,14 +1413,17 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          menuItemId: entertainmentItem.id,
-          quantity: 1,
-          price: pkg?.price || 0,
-          blockTimeMinutes: pkg?.minutes || 0,
+          items: [{
+            menuItemId: entertainmentItem.id,
+            name: entertainmentItem.name,
+            quantity: 1,
+            price: pkg?.price || 0,
+            blockTimeMinutes: pkg?.minutes || 0,
+          }],
         }),
       })
       const itemData = await itemRes.json()
-      const orderItemId = itemData.data?.id
+      const orderItemId = itemData.data?.items?.[0]?.id || itemData.data?.id
       if (!orderItemId) throw new Error('Failed to add item')
 
       // Always call block-time to mark item in_use (even for open play)

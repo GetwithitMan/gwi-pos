@@ -429,7 +429,7 @@ export function TimedRentalsContent() {
 
       if (res.ok) {
         setShowBuilder(false)
-        router.push('/timed-rentals')
+        router.push('/settings/entertainment')
         loadData()
       } else {
         const error = await res.json()
@@ -471,7 +471,7 @@ export function TimedRentalsContent() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => router.push('/timed-rentals?item=new')}
+              onClick={() => router.push('/settings/entertainment?item=new')}
             >
               Create New Item
             </Button>
@@ -495,7 +495,7 @@ export function TimedRentalsContent() {
             ) : timedItems.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-900 mb-4">No entertainment items configured yet.</p>
-                <Button onClick={() => router.push('/timed-rentals?item=new')}>
+                <Button onClick={() => router.push('/settings/entertainment?item=new')}>
                   Create Your First Entertainment Item
                 </Button>
               </div>
@@ -504,7 +504,7 @@ export function TimedRentalsContent() {
                 {timedItems.map(item => (
                   <button
                     key={item.id}
-                    onClick={() => router.push(`/timed-rentals?item=${item.id}`)}
+                    onClick={() => router.push(`/settings/entertainment?item=${item.id}`)}
                     className="p-4 border rounded-lg text-left hover:border-blue-500 hover:bg-blue-50 transition-colors"
                   >
                     <div className="flex items-center gap-2 mb-2">
@@ -520,7 +520,12 @@ export function TimedRentalsContent() {
                       <div>
                         <div className="font-medium">{item.name}</div>
                         <div className="text-sm text-gray-900">
-                          {formatCurrency(item.timedPricing?.perHour || item.price)}/hr
+                          {(item.timedPricing as any)?.ratePerMinute
+                            ? `$${Number((item.timedPricing as any).ratePerMinute).toFixed(2)}/min ($${(Number((item.timedPricing as any).ratePerMinute) * 60).toFixed(2)}/hr)`
+                            : item.timedPricing?.perHour
+                              ? `${formatCurrency(item.timedPricing.perHour)}/hr`
+                              : `${formatCurrency(item.price)} flat`
+                          }
                         </div>
                         {isDualPricingEnabled && (item.timedPricing?.perHour || item.price) > 0 && (
                           <div className="text-xs text-gray-900">
@@ -598,7 +603,7 @@ export function TimedRentalsContent() {
         isOpen={showBuilder}
         onClose={() => {
           setShowBuilder(false)
-          router.push('/timed-rentals')
+          router.push('/settings/entertainment')
         }}
         title={itemIdFromUrl === 'new' ? 'Create Entertainment Item' : 'Edit Entertainment Item'}
         size="2xl"
@@ -993,7 +998,7 @@ export function TimedRentalsContent() {
                 variant="outline"
                 onClick={() => {
                   setShowBuilder(false)
-                  router.push('/timed-rentals')
+                  router.push('/settings/entertainment')
                 }}
                 className="flex-1"
               >
