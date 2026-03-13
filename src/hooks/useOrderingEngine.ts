@@ -54,6 +54,8 @@ export interface EngineMenuItem {
   modifierGroupCount?: number
   pricingOptionGroups?: EnginePricingOptionGroup[]
   hasPricingOptions?: boolean
+  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
+  waitlistCount?: number
 }
 
 /** Modifier shape returned by ModifierModal and stored on order items */
@@ -393,8 +395,16 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       return
     }
 
-    // 1. Timed rental → open rate picker
+    // 1. Timed rental → check in-use, then open rate picker
     if (item.itemType === 'timed_rental') {
+      if (item.entertainmentStatus === 'in_use') {
+        toast.warning(`${item.name} is currently in use`)
+        return
+      }
+      if (item.entertainmentStatus === 'maintenance') {
+        toast.warning(`${item.name} is under maintenance`)
+        return
+      }
       if (onOpenTimedRental) {
         setPendingItem({ type: 'timed_rental', menuItem: item })
         onOpenTimedRental(item, (price: number, blockMinutes: number) => {

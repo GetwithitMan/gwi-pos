@@ -1505,6 +1505,15 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     item: any,
     onComplete: (price: number, blockMinutes: number) => void
   ) => {
+    // Double-booking guard: block if item is already in use or under maintenance
+    if (item.entertainmentStatus === 'in_use') {
+      toast.warning(`${item.name} is currently in use`)
+      return
+    }
+    if (item.entertainmentStatus === 'maintenance') {
+      toast.warning(`${item.name} is under maintenance`)
+      return
+    }
     setEntertainmentItem({
       id: item.id,
       name: item.name,
