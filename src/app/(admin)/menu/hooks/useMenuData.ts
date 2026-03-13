@@ -76,14 +76,14 @@ export function useMenuData() {
       if (menuResponse.ok) {
         const data = await menuResponse.json()
         // Liquor categories are managed exclusively in the Liquor Builder — exclude them here
-        setCategories(data.data.categories.filter((c: any) => c.categoryType !== 'liquor'))
-        // Exclude liquor items (their category won't be selectable anyway, but filter defensively)
-        const liquorCategoryIds = new Set(
+        setCategories(data.data.categories.filter((c: any) => c.categoryType !== 'liquor' && c.categoryType !== 'entertainment'))
+        // Exclude liquor and entertainment items (managed in their own builders)
+        const excludedCategoryIds = new Set(
           data.data.categories
-            .filter((c: any) => c.categoryType === 'liquor')
+            .filter((c: any) => c.categoryType === 'liquor' || c.categoryType === 'entertainment')
             .map((c: any) => c.id)
         )
-        setItems([...data.data.items.filter((item: any) => !liquorCategoryIds.has(item.categoryId))])
+        setItems([...data.data.items.filter((item: any) => !excludedCategoryIds.has(item.categoryId))])
       }
 
       // Shared modifier groups are deprecated — modifiers are now item-owned
@@ -387,7 +387,7 @@ export function useMenuData() {
   // Stable click handler for items in the horizontal scroll — avoids creating closures per item
   const handleItemClick = useCallback((item: MenuItem) => {
     if (selectedCategoryData?.categoryType === 'entertainment') {
-      router.push(`/timed-rentals?item=${item.id}`)
+      router.push(`/settings/entertainment?item=${item.id}`)
     } else {
       setSelectedItemForEditor(item)
       setSelectedGroupId(null)
@@ -397,7 +397,7 @@ export function useMenuData() {
   // Handler for creating a new item
   const handleCreateItem = async () => {
     if (selectedCategoryData?.categoryType === 'entertainment') {
-      router.push('/timed-rentals')
+      router.push('/settings/entertainment')
     } else {
       // Create a new blank item and open it in ItemEditor
       try {

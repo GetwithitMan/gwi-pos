@@ -122,6 +122,7 @@ export const PERMISSIONS = {
   SETTINGS_MENU: 'settings.menu',
   SETTINGS_INVENTORY: 'settings.inventory',
   SETTINGS_FLOOR: 'settings.floor',
+  SETTINGS_ENTERTAINMENT: 'settings.entertainment',
   SETTINGS_CUSTOMERS: 'settings.customers',
   SETTINGS_TEAM: 'settings.team',
   SETTINGS_TIPS: 'settings.tips',

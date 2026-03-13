@@ -91,14 +91,12 @@ interface ItemBuilderForm {
 }
 
 export default function TimedRentalsPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-950" />}>
-      <TimedRentalsContent />
-    </Suspense>
-  )
+  const router = useRouter()
+  useEffect(() => { router.replace('/settings/entertainment') }, [router])
+  return <div className="min-h-screen bg-gray-950" />
 }
 
-function TimedRentalsContent() {
+export function TimedRentalsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const itemIdFromUrl = searchParams.get('item')

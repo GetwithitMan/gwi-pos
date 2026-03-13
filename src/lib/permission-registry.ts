@@ -1234,6 +1234,18 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     applicableTo: ['ADMIN'],
     risk: 'CRITICAL',
   },
+  'settings.entertainment': {
+    label: 'Entertainment Settings',
+    description: 'Lets this employee manage entertainment items, live status, waitlists, and PitBoss screens.',
+    details: [
+      'Controls entertainment item configuration and pricing',
+      'Access to live status dashboard and session management',
+      'Manage entertainment waitlist settings and PitBoss display screens',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'CRITICAL',
+  },
   'settings.customers': {
     label: 'Customer Settings',
     description: 'Lets this employee configure customer-facing features like gift cards and loyalty.',

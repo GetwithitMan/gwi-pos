@@ -59,6 +59,17 @@ const settingsSections: SettingsSection[] = [
     ],
   },
   {
+    title: 'Entertainment',
+    icon: '🎱',
+    permission: PERMISSIONS.SETTINGS_ENTERTAINMENT,
+    items: [
+      { name: 'Item Manager', href: '/settings/entertainment' },
+      { name: 'Live Status', href: '/settings/entertainment/live' },
+      { name: 'Waitlist', href: '/settings/entertainment/waitlist' },
+      { name: 'PitBoss Screens', href: '/settings/entertainment/screens' },
+    ],
+  },
+  {
     title: 'Online Ordering',
     icon: '🌐',
     permission: PERMISSIONS.SETTINGS_VENUE,
@@ -97,7 +108,6 @@ const settingsSections: SettingsSection[] = [
       { name: 'Floor Plan Editor', href: '/settings/floor-plan' },
       { name: 'Section Assignments', href: '/settings/sections' },
       { name: 'Reservations', href: '/settings/reservations' },
-      { name: 'Entertainment', href: '/settings/entertainment' },
       { name: 'Events', href: '/settings/events' },
     ],
   },
