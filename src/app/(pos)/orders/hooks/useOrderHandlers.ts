@@ -1285,6 +1285,27 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
   }, [selectedTimedItem, selectedRateType])
 
   // Entertainment session start handlers
+  // Shared helper: start block-time and handle errors (409 conflict = remove item from order)
+  const startBlockTimeOrRollback = useCallback(async (orderItemId: string, orderId: string, minutes: number): Promise<boolean> => {
+    const btRes = await fetch('/api/entertainment/block-time', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderItemId, locationId, minutes }),
+    })
+    if (!btRes.ok) {
+      const btData = await btRes.json().catch(() => ({ error: 'Unknown error' }))
+      // Remove the orphaned order item since timer didn't start
+      void fetch(`/api/orders/${orderId}/items/${orderItemId}`, { method: 'DELETE' }).catch(() => {})
+      if (btRes.status === 409) {
+        toast.error(`${entertainmentItem?.name || 'Item'} is already in use`)
+      } else {
+        toast.error(btData.error || 'Failed to start timer')
+      }
+      return false
+    }
+    return true
+  }, [locationId, entertainmentItem])
+
   const handleStartEntertainmentWithNewTab = useCallback(async (tabName: string, pkg?: PrepaidPackage) => {
     if (!entertainmentItem || !locationId) return
     try {
@@ -1314,17 +1335,15 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         }),
       })
       const itemData = await itemRes.json()
+      const orderItemId = itemData.data?.id
+      if (!orderItemId) throw new Error('Failed to add item')
 
-      if (pkg && itemData.data?.id) {
-        await fetch('/api/entertainment/block-time', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            orderItemId: itemData.data.id,
-            locationId,
-            minutes: pkg.minutes,
-          }),
-        })
+      // Always call block-time to mark item in_use (even for open play)
+      const minutes = pkg?.minutes || entertainmentItem.ratePerMinute > 0 ? (pkg?.minutes || 60) : 60
+      const ok = await startBlockTimeOrRollback(orderItemId, orderId, minutes)
+      if (!ok) {
+        throttledLoadMenu()
+        return
       }
 
       setShowEntertainmentStart(false)
@@ -1334,7 +1353,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       console.error('Failed to start entertainment session:', err)
       toast.error('Failed to start session')
     }
-  }, [entertainmentItem, locationId, employeeId, throttledLoadMenu])
+  }, [entertainmentItem, locationId, employeeId, throttledLoadMenu, startBlockTimeOrRollback])
 
   const handleStartEntertainmentWithExistingTab = useCallback(async (orderId: string, pkg?: PrepaidPackage) => {
     if (!entertainmentItem || !locationId) return
@@ -1350,17 +1369,17 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         }),
       })
       const itemData = await itemRes.json()
-      if (pkg && itemData.data?.id) {
-        await fetch('/api/entertainment/block-time', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            orderItemId: itemData.data.id,
-            locationId,
-            minutes: pkg.minutes,
-          }),
-        })
+      const orderItemId = itemData.data?.id
+      if (!orderItemId) throw new Error('Failed to add item')
+
+      // Always call block-time to mark item in_use (even for open play)
+      const minutes = pkg?.minutes || entertainmentItem.ratePerMinute > 0 ? (pkg?.minutes || 60) : 60
+      const ok = await startBlockTimeOrRollback(orderItemId, orderId, minutes)
+      if (!ok) {
+        throttledLoadMenu()
+        return
       }
+
       setShowEntertainmentStart(false)
       setEntertainmentItem(null)
       throttledLoadMenu()
@@ -1368,7 +1387,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       console.error('Failed to add entertainment to order:', err)
       toast.error('Failed to add to order')
     }
-  }, [entertainmentItem, locationId, throttledLoadMenu])
+  }, [entertainmentItem, locationId, throttledLoadMenu, startBlockTimeOrRollback])
 
   const handleStartEntertainmentWithCurrentOrder = useCallback(async (pkg?: PrepaidPackage) => {
     const orderId = savedOrderId
