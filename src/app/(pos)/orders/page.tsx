@@ -117,7 +117,7 @@ export default function OrdersPage() {
     editingPizzaItem, setEditingPizzaItem } = usePizzaBuilder()
 
   const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings,
-    taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification, sendBehavior } = useOrderSettings()
+    taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification, sendBehavior, barOperations } = useOrderSettings()
 
   const { settings: displaySettings, menuItemClass, gridColsClass, orderPanelClass,
     categorySize, categoryColorMode, categoryButtonBgColor, categoryButtonTextColor,
@@ -372,6 +372,7 @@ export default function OrdersPage() {
           if (res.ok) {
             const data = await res.json()
             if (data.data?.splitOrders && data.data.splitOrders.length > 0) {
+              // Already split — open manage mode (modal)
               setSplitManageMode(true)
               setShowSplitTicketManager(true)
               return
@@ -379,7 +380,12 @@ export default function OrdersPage() {
           }
         } catch { /* fall through */ }
       }
-      setShowSplitTicketManager(true)
+      // New split — navigate to full-page split experience
+      if (orderId) {
+        router.push(`/orders/split?orderId=${orderId}`)
+      } else {
+        setShowSplitTicketManager(true)
+      }
     },
   })
 
@@ -1003,6 +1009,8 @@ export default function OrdersPage() {
         inlineModifierCallbackRef={inlineModifierCallbackRef}
         onAddItemWithModifiers={handlers.handleAddItemWithModifiers}
         onUpdateItemWithModifiers={handlers.handleUpdateItemWithModifiers}
+        quickPreModifiers={barOperations.quickPreModifiers}
+        quickPreModifiersEnabled={barOperations.quickPreModifiersEnabled}
         showPizzaModal={showPizzaModal}
         setShowPizzaModal={setShowPizzaModal}
         selectedPizzaItem={selectedPizzaItem}

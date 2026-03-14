@@ -4,6 +4,7 @@ import { memo, useCallback } from 'react'
 import { StockBadge } from '@/components/menu/StockBadge'
 import { useLongPress } from '@/hooks/useLongPress'
 import type { PricingOptionGroup, PricingOption } from '@/types'
+import type { PricingAdjustment } from '@/lib/settings'
 
 interface MenuItem {
   id: string
@@ -40,6 +41,7 @@ export interface FloorPlanMenuItemProps {
   customStyle?: { bgColor?: string | null; textColor?: string | null } | null
   inQuickBar: boolean
   pricing: { isDualPricingEnabled: boolean; cashDiscountRate: number }
+  pricingAdjustment?: PricingAdjustment | null
 
   onTap: (item: any) => void
 
@@ -49,7 +51,7 @@ export interface FloorPlanMenuItemProps {
   onLongPress?: (item: MenuItem) => void
 }
 
-export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customStyle, inQuickBar, pricing, onTap, onContextMenu, onUnavailable, onQuickPickTap, onLongPress }: FloorPlanMenuItemProps) {
+export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customStyle, inQuickBar, pricing, pricingAdjustment, onTap, onContextMenu, onUnavailable, onQuickPickTap, onLongPress }: FloorPlanMenuItemProps) {
   const isItem86d = item.is86d || item.stockStatus === 'out'
   const bgColor = isItem86d
     ? 'rgba(100, 100, 100, 0.3)'
@@ -97,7 +99,11 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
         background: bgColor,
         backdropFilter: isItem86d ? undefined : 'blur(12px)',
         WebkitBackdropFilter: isItem86d ? undefined : 'blur(12px)',
-        border: `1px solid ${isItem86d ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.12)'}`,
+        border: isItem86d
+          ? '1px solid rgba(239, 68, 68, 0.3)'
+          : pricingAdjustment
+            ? `2px solid ${pricingAdjustment.color || '#10b981'}`
+            : '1px solid rgba(255, 255, 255, 0.12)',
         boxShadow: isItem86d ? undefined : '0 4px 12px rgba(0, 0, 0, 0.3)',
         borderRadius: '14px',
         cursor: isItem86d ? 'not-allowed' : 'pointer',
@@ -157,6 +163,18 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
           )}
         </div>
       )}
+      {/* Pricing rule badge */}
+      {pricingAdjustment?.showBadge && !isItem86d && (
+        <span
+          className="absolute top-1 right-1 px-1.5 py-0.5 text-white text-[9px] font-bold rounded z-10 truncate"
+          style={{
+            backgroundColor: pricingAdjustment.color || '#10b981',
+            maxWidth: '90px',
+          }}
+        >
+          {(pricingAdjustment.badgeText || pricingAdjustment.ruleName || '').slice(0, 20)}
+        </span>
+      )}
       {/* Striped overlay for 86'd items */}
       {isItem86d && (
         <div
@@ -181,7 +199,19 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
       </span>
       {/* Hide base price when quick picks are shown */}
       {!hasQuickPicks && (
-        pricing.isDualPricingEnabled ? (
+        pricingAdjustment && !isItem86d ? (
+          // Pricing rule active — show adjusted price, optionally with strikethrough original
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            {pricingAdjustment.showOriginalPrice && (
+              <span style={{ fontSize: '11px', fontWeight: 400, color: '#94a3b8', textDecoration: 'line-through' }}>
+                ${item.price.toFixed(2)}
+              </span>
+            )}
+            <span style={{ fontSize: '15px', fontWeight: 600, color: pricingAdjustment.color || '#10b981' }}>
+              ${pricingAdjustment.adjustedPrice.toFixed(2)}
+            </span>
+          </div>
+        ) : pricing.isDualPricingEnabled ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <span style={{ fontSize: '14px', fontWeight: 600, color: isItem86d ? '#6b7280' : '#60a5fa' }}>
               ${(item.price * (1 + pricing.cashDiscountRate / 100)).toFixed(2)}

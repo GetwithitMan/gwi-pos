@@ -100,6 +100,8 @@ export const GET = withVenue(async function GET(
           name: mod.linkedBottleProduct.name,
           pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
         } : null,
+        // Bar hot button
+        showAsHotButton: (mod as any).showAsHotButton ?? false,
       })),
       linkedItems: modifierGroup.menuItem ? [{ id: modifierGroup.menuItem.id, name: modifierGroup.menuItem.name }] : []
     } })
@@ -171,6 +173,7 @@ export const PUT = withVenue(async function PUT(
           isActive?: boolean
           showOnPOS?: boolean
           showOnline?: boolean
+          showAsHotButton?: boolean
           childModifierGroupId?: string | null
           commissionType?: string | null
           commissionValue?: number | null
@@ -307,6 +310,7 @@ export const PUT = withVenue(async function PUT(
         isActive: mod.isActive,
         showOnPOS: mod.showOnPOS,
         showOnline: mod.showOnline,
+        showAsHotButton: (mod as any).showAsHotButton ?? false,
         printerRouting: mod.printerRouting,
         printerIds: mod.printerIds,
         ingredientId: mod.ingredientId,

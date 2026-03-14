@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings, PricingProgram, AgeVerificationSettings } from '@/lib/settings'
-import { getPricingProgram, DEFAULT_AGE_VERIFICATION } from '@/lib/settings'
+import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings, PricingProgram, AgeVerificationSettings, BarOperationsSettings } from '@/lib/settings'
+import { getPricingProgram, DEFAULT_AGE_VERIFICATION, DEFAULT_BAR_OPERATIONS } from '@/lib/settings'
 import { useOrderStore } from '@/stores/order-store'
 import { setLocationTaxRate } from '@/lib/seat-utils'
 
@@ -85,6 +85,7 @@ interface SettingsCache {
   pricingProgram: PricingProgram
   ageVerification: AgeVerificationSettings
   sendBehavior: SendBehavior
+  barOperations: BarOperationsSettings
 }
 
 const DEFAULT_PRICING_PROGRAM: PricingProgram = { model: 'none', enabled: false }
@@ -120,6 +121,9 @@ export function useOrderSettings() {
   const [sendBehavior, setSendBehavior] = useState<SendBehavior>(
     cachedSettings?.sendBehavior ?? 'return_to_floor'
   )
+  const [barOperations, setBarOperations] = useState<BarOperationsSettings>(
+    cachedSettings?.barOperations ?? DEFAULT_BAR_OPERATIONS
+  )
   const [isLoading, setIsLoading] = useState(!cachedSettings)
 
   const applySettings = (settings: {
@@ -132,6 +136,7 @@ export function useOrderSettings() {
     pricingProgram?: PricingProgram
     ageVerification?: AgeVerificationSettings
     sendBehavior?: SendBehavior
+    barOperations?: BarOperationsSettings
   }) => {
     const effectiveDualPricing = settings.dualPricing || DEFAULT_DUAL_PRICING
     const derivedPricingProgram = settings.pricingProgram
@@ -150,6 +155,7 @@ export function useOrderSettings() {
       pricingProgram: derivedPricingProgram,
       ageVerification: settings.ageVerification ?? DEFAULT_AGE_VERIFICATION,
       sendBehavior: settings.sendBehavior ?? 'return_to_floor',
+      barOperations: settings.barOperations ? { ...DEFAULT_BAR_OPERATIONS, ...settings.barOperations } : DEFAULT_BAR_OPERATIONS,
     }
 
     if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
@@ -184,6 +190,7 @@ export function useOrderSettings() {
     setPricingProgram(result.pricingProgram)
     setAgeVerification(result.ageVerification)
     setSendBehavior(result.sendBehavior)
+    setBarOperations(result.barOperations)
   }
 
   const loadSettings = async () => {
@@ -203,6 +210,7 @@ export function useOrderSettings() {
         pricingProgram: cachedSettings.pricingProgram,
         ageVerification: cachedSettings.ageVerification,
         sendBehavior: cachedSettings.sendBehavior,
+        barOperations: cachedSettings.barOperations,
       })
       setIsLoading(false)
       return
@@ -226,6 +234,7 @@ export function useOrderSettings() {
           pricingProgram: result.pricingProgram,
           ageVerification: result.ageVerification,
           sendBehavior: result.sendBehavior,
+          barOperations: result.barOperations,
         })
       }
       setIsLoading(false)
@@ -278,6 +287,7 @@ export function useOrderSettings() {
     pricingProgram,
     ageVerification,
     sendBehavior,
+    barOperations,
     isLoading,
     reloadSettings: forceReload,
   }

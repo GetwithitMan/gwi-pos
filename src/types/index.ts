@@ -67,7 +67,8 @@ export interface MenuItem {
   // Pour size options for liquor items (can be old or new format)
   // Old format: { shot: 1.0, double: 2.0 }
   // New format: { shot: { label: "Shot", multiplier: 1.0, customPrice?: 11.00 }, double: { label: "Double", multiplier: 2.0 } }
-  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null
+  // Metadata key: _hideDefaultOnPos (boolean) — when true, the default pour size button is hidden on POS
+  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> & { _hideDefaultOnPos?: boolean } | null
   defaultPourSize?: string | null
   applyPourToModifiers?: boolean
   // Liquor item flag
@@ -83,6 +84,10 @@ export interface MenuItem {
   allergens?: string[]
   // Age verification
   isAgeRestricted?: boolean
+  // Force-open modifier modal on every tap
+  alwaysOpenModifiers?: boolean
+  // Tip-exempt — excluded from tip suggestion calculations
+  tipExempt?: boolean
 }
 
 /**
@@ -111,6 +116,8 @@ export interface Modifier {
   } | null
   is86d?: boolean
   isLabel?: boolean
+  // Bar hot button — shows as quick-access button in modifier modal
+  showAsHotButton?: boolean
 }
 
 /**

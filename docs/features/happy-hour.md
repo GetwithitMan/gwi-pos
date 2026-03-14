@@ -1,10 +1,10 @@
-# Feature: Happy Hour / Time-Based Pricing
+# Feature: Pricing Rules (Multi-Rule Pricing Engine)
 
-> **Before editing this feature:** Read `_CROSS-REF-MATRIX.md` → find Happy Hour → read every listed dependency doc.
+> **Before editing this feature:** Read `_CROSS-REF-MATRIX.md` → find Pricing Rules → read every listed dependency doc.
 
 ## Summary
 
-Happy Hour provides automatic time-based price discounts. Managers define one or more named schedules (days of week + start/end times), select a discount type (percent off or fixed amount off), and choose which items the discount applies to (all, specific categories, or specific items). When the current time falls inside an active schedule, `isHappyHourActive()` returns true and `getHappyHourPrice()` applies the discount at the point of POS rendering. All configuration lives in `LocationSettings.happyHour` (a JSON blob stored in `Location.settings`) — there is no dedicated happy hour database table. The feature also has legacy per-`MenuItem` fields (`happyHourEnabled`, `happyHourDiscount`, `happyHourStart`, `happyHourEnd`, `happyHourDays`) used solely by the Entertainment/Timed Rentals subsystem; the main POS uses the settings-driven path only.
+Pricing Rules replaces the legacy single happy-hour system with a multi-rule pricing engine. Managers define any number of named rules — each with its own schedule, adjustment type, scope, priority, and display preferences. When the current time falls inside an active rule's window, items matching that rule's scope receive automatic price adjustments at both POS rendering (menu item display) and order creation (server-side price application). All configuration lives in `LocationSettings.pricingRules` (a JSON array stored in `Location.settings`). The engine auto-migrates legacy `happyHour` settings on first read.
 
 ## Status
 `Active`
@@ -12,8 +12,8 @@ Happy Hour provides automatic time-based price discounts. Managers define one or
 ## Repos Involved
 | Repo | Role | Coverage |
 |------|------|----------|
-| `gwi-pos` | Settings storage, pricing engine, admin UI, POS integration | Full |
-| `gwi-android-register` | Reads bootstrap settings; happy hour pricing evaluated client-side via the same settings object | Partial |
+| `gwi-pos` | Settings storage, pricing engine, admin UI, POS integration, order wiring | Full |
+| `gwi-android-register` | Reads bootstrap settings; pricing rules evaluated client-side | Partial |
 | `gwi-cfd` | N/A | None |
 
 ---
@@ -23,8 +23,174 @@ Happy Hour provides automatic time-based price discounts. Managers define one or
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
 | Admin | `/settings/happy-hour` → `src/app/(admin)/settings/happy-hour/page.tsx` | Managers |
-| POS Web | Item price display on order screen (badge + struck-through original price) | All staff |
-| Entertainment | `EntertainmentSessionStart` uses per-item `happyHourEnabled` / `happyHourPrice` fields | All staff |
+| POS Web | HappyHourBanner (top of orders page) — active rule countdown | All staff |
+| POS Web | FloorPlanMenuItem — colored border, badge, adjusted price | All staff |
+
+---
+
+## Behavioral Contract
+
+### One Winner Per Item
+For any given item at any point in time, at most one pricing rule applies. Rules never stack.
+
+### Winner Selection
+1. **Priority** (descending) — highest priority number wins
+2. **Scope specificity** (tie-breaker) — `items` > `categories` > `all`
+3. **Lexical ID** (final tie-breaker) — smallest `id` string wins
+
+### Engine Idempotency
+`getBestPricingRuleForItem()` is a pure function. Given the same inputs (rules array, itemId, categoryId, originalPrice, timestamp), it always returns the same `PricingAdjustment`. Safe to call from render loops, memos, and server-side code.
+
+---
+
+## Time Semantics
+
+### Schedule Types
+| Type | Fields Used | Description |
+|------|------------|-------------|
+| `recurring` | `schedules[]` (dayOfWeek, startTime, endTime) | Weekly recurring windows |
+| `one-time` | `startDate`, `endDate`, `startTime`, `endTime` | Fixed date range |
+| `yearly-recurring` | `startDate` (MM-DD), `endDate` (MM-DD), `startTime`, `endTime` | Annual events |
+
+### Time Rules
+- **Start inclusive, end exclusive:** A rule active 16:00–18:00 applies at 16:00:00, not at 18:00:00
+- **Cross-midnight:** endTime < startTime means the rule spans midnight (e.g., 22:00–02:00)
+- **Multiple schedules:** Recurring rules support multiple schedule windows (e.g., lunch 11–13 + evening 16–18)
+
+---
+
+## Price Math
+
+### 5 Adjustment Types
+| Type | Formula | Example |
+|------|---------|---------|
+| `percent-off` | `price * (1 - value/100)` | 20% off $10 = $8.00 |
+| `percent-increase` | `price * (1 + value/100)` | 10% increase on $10 = $11.00 |
+| `fixed-off` | `price - value` | $2 off $10 = $8.00 |
+| `fixed-increase` | `price + value` | $1 increase on $10 = $11.00 |
+| `override-price` | `value` | Override to $5.00 |
+
+### Constraints
+- Adjusted price is clamped to >= $0.00 (`Math.max(0, ...)`)
+- Rounded to 2 decimal places (`Math.round(x * 100) / 100`)
+- **Modifiers are unaffected** — pricing rules only adjust the base item price
+- **Manual/open price items skip rules** — items with `pricingOptionId`, `soldByWeight`, `blockTimeMinutes`, or `pizzaConfig` bypass the engine
+
+---
+
+## Scope Rules
+
+| `appliesTo` | Matches |
+|-------------|---------|
+| `all` | Every menu item |
+| `categories` | Items whose `categoryId` is in `rule.categoryIds[]` |
+| `items` | Items whose `id` is in `rule.itemIds[]` |
+
+---
+
+## Data Model
+
+### PricingRule Interface
+```typescript
+interface PricingRule {
+  id: string                    // crypto.randomUUID()
+  name: string                  // 1-50 chars
+  description?: string          // optional notes, max 200 chars
+  enabled: boolean
+  color: string                 // hex "#XXXXXX"
+  type: 'recurring' | 'one-time' | 'yearly-recurring'
+  schedules: PricingRuleSchedule[]  // for recurring type
+  startDate?: string            // "YYYY-MM-DD" (one-time) or "MM-DD" (yearly)
+  endDate?: string
+  startTime?: string            // "HH:MM" for date-based rules
+  endTime?: string
+  adjustmentType: 'percent-off' | 'percent-increase' | 'fixed-off' | 'fixed-increase' | 'override-price'
+  adjustmentValue: number
+  appliesTo: 'all' | 'categories' | 'items'
+  categoryIds: string[]
+  itemIds: string[]
+  priority: number
+  showBadge: boolean
+  showOriginalPrice: boolean
+  badgeText?: string            // max 20 chars
+  autoDelete: boolean           // one-time events only
+  createdAt: string             // ISO date
+}
+```
+
+### PricingAdjustment Interface (Engine Output)
+```typescript
+interface PricingAdjustment {
+  version: 1
+  ruleId: string
+  ruleName: string
+  adjustmentType: PricingRule['adjustmentType']
+  adjustmentValue: number
+  originalPrice: number
+  adjustedPrice: number
+  color: string
+  showBadge: boolean
+  showOriginalPrice: boolean
+  badgeText?: string
+}
+```
+
+### OrderItem Column
+`pricingRuleApplied JSONB` — stores the full `PricingAdjustment` snapshot at time of order creation. Migration: `046-pricing-rule-metadata.js`. Indexed on `ruleId` for analytics.
+
+---
+
+## Banner Display Logic
+
+The `HappyHourBanner` component (kept as export name for backward compat) displays at the top of the POS:
+
+1. Fetches `pricingRules` from `/api/settings`
+2. Calls `getActivePricingRules()` to get currently active rules
+3. **Banner selection:**
+   - Prefer highest-priority active rule with `appliesTo: 'all'` (global banner)
+   - If none: show highest-priority scoped rule with scope hint (e.g., "- 3 categories")
+   - If only single-item-specific rules (`appliesTo: 'items'` with 1 item): suppress banner entirely
+4. Shows rule name, scope hint, "+N more" count, and countdown timer
+5. Uses `rule.color` as background; amber when <= 15 minutes remaining
+6. Refreshes every 60 seconds + immediately on `settings:updated` socket event
+
+---
+
+## POS Menu Item Visual Indicators
+
+When `pricingAdjustment` is provided to `FloorPlanMenuItem`:
+- **Colored border:** 2px solid in `pricingAdjustment.color` (fallback `#10b981`)
+- **Badge:** Small pill in top-right corner with `badgeText` (truncated 20 chars), colored background
+- **Price display:** Adjusted price in rule color; original price struck through if `showOriginalPrice`
+- Items with no active pricing rule render unchanged
+
+---
+
+## Migration from Legacy happyHour
+
+The `mergeWithDefaults()` function in `settings.ts` auto-migrates:
+- If `pricingRules` exists and is a non-empty array → use it (ignore legacy)
+- If `pricingRules` is empty/missing but `happyHour.enabled` is true with valid schedules → create a single migrated rule with `id: 'migrated-happy-hour'`
+- Legacy `happyHour` settings object is preserved for backward compatibility but not consulted when `pricingRules` is populated
+
+Legacy per-`MenuItem` happy hour fields (`happyHourEnabled`, `happyHourDiscount`, etc.) are only used by the Entertainment subsystem and are unaffected.
+
+---
+
+## Overlap Detection
+
+`checkPricingRuleOverlaps(rules)` analyzes all enabled rules for time + scope overlaps:
+- **Info:** Same time, different scope (no conflict)
+- **Warning:** Same time, overlapping scope (priority resolves it)
+- **Error:** Same time, same scope, same priority (ambiguous winner)
+
+The admin UI displays overlap warnings before save.
+
+---
+
+## autoDelete Behavior
+
+One-time rules with `autoDelete: true` are automatically removed after their end date passes. This cleanup happens during the next settings save or can be triggered by a scheduled job.
 
 ---
 
@@ -33,14 +199,16 @@ Happy Hour provides automatic time-based price discounts. Managers define one or
 ### gwi-pos
 | File / Directory | Purpose |
 |-----------------|---------|
-| `src/app/(admin)/settings/happy-hour/page.tsx` | Admin UI — master toggle, schedule builder, discount config |
-| `src/lib/settings.ts` | `HappyHourSettings` type, `HappyHourSchedule` type, `isHappyHourActive()`, `getHappyHourPrice()`, default values, `mergeWithDefaults()` handling for schedules |
-| `src/app/api/settings/route.ts` | GET/PUT `/api/settings` — persists happy hour config in `Location.settings` JSON |
-| `src/app/api/menu/items/[id]/route.ts` | Reads `happyHourEnabled` / `happyHourPrice` on MenuItem (entertainment path only) |
-| `src/app/(pos)/orders/hooks/useOrderHandlers.ts` | Reads `happyHourEnabled` / `happyHourPrice` when launching entertainment sessions |
-| `src/lib/entertainment-pricing.ts` | Entertainment-specific happy hour pricing (separate from main POS flow) |
-| `src/components/entertainment/EntertainmentSessionStart.tsx` | Passes `happyHourEnabled` / `happyHourPrice` into session start |
-| `src/app/(pos)/orders/types.ts` | `happyHourPrice` field on POS item type |
+| `src/lib/settings.ts` | `PricingRule`, `PricingAdjustment` types, engine functions (`isPricingRuleActive`, `getActivePricingRules`, `getBestPricingRuleForItem`, `getAdjustedPrice`, `getPricingRuleEndTime`, `checkPricingRuleOverlaps`, `validatePricingRule`), legacy migration in `mergeWithDefaults()` |
+| `src/app/(admin)/settings/happy-hour/page.tsx` | Admin UI — rule CRUD, schedule builder, scope picker, overlap warnings |
+| `src/components/pos/HappyHourBanner.tsx` | POS banner — active rule display with countdown |
+| `src/components/floor-plan/FloorPlanMenuItem.tsx` | Menu item pricing indicators (border, badge, price) |
+| `src/components/floor-plan/FloorPlanHome.tsx` | Computes `pricingAdjustmentMap` from active rules, passes to menu items |
+| `src/app/api/settings/route.ts` | GET/PUT — pricingRules full-array replacement in PUT handler |
+| `src/lib/domain/order-items/item-operations.ts` | `createOrderItem` applies `getBestPricingRuleForItem` for catalog-priced items |
+| `src/lib/domain/order-items/types.ts` | `MenuItemInfo.categoryId` added for pricing rule scope matching |
+| `src/app/api/orders/[id]/items/route.ts` | Passes `pricingRules` to `createOrderItem` |
+| `scripts/migrations/046-pricing-rule-metadata.js` | `pricingRuleApplied` JSONB column + ruleId index on OrderItem |
 
 ---
 
@@ -48,131 +216,34 @@ Happy Hour provides automatic time-based price discounts. Managers define one or
 
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| `GET` | `/api/settings` | Employee PIN | Fetch location settings (includes `happyHour` object) |
-| `PUT` | `/api/settings` | Manager (`SETTINGS_EDIT`) | Save updated happy hour config |
+| `GET` | `/api/settings` | Employee PIN | Fetch location settings (includes `pricingRules` array) |
+| `PUT` | `/api/settings` | Manager (`SETTINGS_EDIT`) | Save pricing rules (full-array replacement) |
 
-There is no dedicated `/api/happy-hour` route. All persistence goes through `/api/settings`.
-
----
-
-## Data Model
-
-Happy hour configuration is stored as a nested object inside `Location.settings` (a JSON column). There is no standalone Prisma model.
-
-```
-LocationSettings.happyHour: HappyHourSettings {
-  enabled         Boolean               // Master on/off switch
-  name            String                // Display name, e.g. "Happy Hour", "Early Bird"
-
-  schedules       HappyHourSchedule[]   // One or more active windows
-  //   HappyHourSchedule {
-  //     dayOfWeek   number[]            // 0–6, Sunday–Saturday
-  //     startTime   string              // "HH:MM" 24-hour
-  //     endTime     string              // "HH:MM" 24-hour
-  //   }
-
-  discountType    'percent' | 'fixed'   // How the discount is expressed
-  discountValue   number                // Percent (e.g. 20) or dollar amount (e.g. 2.00)
-
-  appliesTo       'all' | 'categories' | 'items'
-  categoryIds     string[]              // Used when appliesTo = 'categories'
-  itemIds         string[]              // Used when appliesTo = 'items'
-
-  showBadge         Boolean             // Show "Happy Hour" label on qualifying items
-  showOriginalPrice Boolean             // Strike through original price
-}
-```
-
-Legacy per-item fields on `MenuItem` (used only by Entertainment):
-```
-MenuItem {
-  happyHourEnabled  Boolean?    // Per-item override for entertainment items
-  happyHourDiscount Int?        // Percentage off (e.g. 50 = 50% off)
-  happyHourStart    String?     // "13:00"
-  happyHourEnd      String?     // "16:00"
-  happyHourDays     Json?       // ["monday", "tuesday", ...]
-}
-```
-
-Default settings (from `DEFAULT_SETTINGS`):
-- `enabled: false`
-- `name: 'Happy Hour'`
-- `schedules: [{ dayOfWeek: [1,2,3,4,5], startTime: '16:00', endTime: '18:00' }]`
-- `discountType: 'percent'`, `discountValue: 20`
-- `appliesTo: 'all'`
-- `showBadge: true`, `showOriginalPrice: true`
-
----
-
-## Business Logic
-
-### Schedule Activation Check (`isHappyHourActive`)
-1. If `enabled` is false, return immediately — no discount applied.
-2. Get current day of week (0–6) and current time as total minutes since midnight.
-3. Iterate each schedule in `settings.schedules`.
-4. For each schedule, check if `currentDay` is in `schedule.dayOfWeek`.
-5. Convert `startTime`/`endTime` to minutes.
-6. **Overnight schedule handling:** if `endMinutes < startMinutes`, schedule crosses midnight — match if `currentTime >= startMinutes` OR `currentTime <= endMinutes`.
-7. **Normal schedule:** match if `startMinutes <= currentTime <= endMinutes`.
-8. Return `true` if any schedule matches; otherwise `false`.
-
-### Price Calculation (`getHappyHourPrice`)
-1. If `!enabled` or `!isHappyHourActive()`, return original price unchanged with `isDiscounted: false`.
-2. Determine if item qualifies based on `appliesTo`:
-   - `'all'` → always qualifies.
-   - `'categories'` → qualifies if `categoryId` is in `settings.categoryIds`.
-   - `'items'` → qualifies if `itemId` is in `settings.itemIds`.
-3. If item does not qualify, return original price with `isDiscounted: false`.
-4. Apply discount:
-   - `'percent'`: `discountedPrice = originalPrice * (1 - discountValue / 100)`.
-   - `'fixed'`: `discountedPrice = Math.max(0, originalPrice - discountValue)`.
-5. Round to nearest cent: `Math.round(discountedPrice * 100) / 100`.
-6. Return `{ price: discountedPrice, isDiscounted: true }`.
-
-### Admin Configuration Flow
-1. Manager navigates to `/settings/happy-hour`.
-2. Toggle master `enabled` switch.
-3. Set display name (shown on POS badges and receipts).
-4. Add one or more schedules — select days by clicking day buttons (Sun–Sat), set start and end times.
-5. Choose discount type (percentage or fixed) and value.
-6. Choose scope: All Items, Specific Categories, or Specific Items.
-   - If categories or items: a notice directs manager to the Menu page to tag individual items/categories.
-7. Toggle badge visibility and original-price strikethrough.
-8. Click Save — PUT `/api/settings` persists the full `happyHour` object.
-9. POS and Android clients re-read settings on next bootstrap or settings reload.
-
-### Edge Cases
-- **Overnight schedules** (e.g., 10 PM – 2 AM) are supported; the midnight-crossing logic in `isHappyHourActive` handles them correctly.
-- **Multiple schedules** are supported (e.g., lunch happy hour 11–13 + evening 16–18). Any matching schedule activates pricing.
-- **categoryIds / itemIds inclusion** is configured on the Menu page, not inside this settings page; the settings page only controls the mode (`appliesTo`).
-- **Price floor:** fixed-amount discounts cannot reduce a price below $0.00 (`Math.max(0, ...)`).
-- **Entertainment items** use the legacy per-`MenuItem` fields and a separate pricing path (`entertainment-pricing.ts`), not the settings-driven path.
+No dedicated `/api/pricing-rules` route. All persistence goes through `/api/settings`.
 
 ---
 
 ## Cross-Feature Dependencies
 
-> See `_CROSS-REF-MATRIX.md` for full matrix.
-
 ### This feature MODIFIES these features:
 | Feature | How / Why |
 |---------|-----------|
-| Menu | Discounted prices displayed on POS item grid and item detail |
-| Orders | Item prices on new order items may be reduced by happy hour pricing |
-| Online Ordering | Happy hour badge and pricing visible to online customers if enabled |
-| Entertainment | Per-item `happyHourEnabled` fields affect entertainment session start pricing |
+| Menu | Adjusted prices displayed on POS item grid (FloorPlanMenuItem) |
+| Orders | Item prices on new order items adjusted by active rules; `pricingRuleApplied` stored on OrderItem |
+| Reports | OrderItem price reflects adjusted price; `pricingRuleApplied` JSONB available for rule-specific reporting |
 
 ### These features MODIFY this feature:
 | Feature | How / Why |
 |---------|-----------|
-| Settings | Entire config lives in `Location.settings` JSON; settings API saves/loads it |
+| Settings | Config lives in `Location.settings` JSON; settings API saves/loads |
 | Menu | Category/item IDs referenced by `categoryIds` / `itemIds` must exist |
 
 ### BEFORE CHANGING THIS FEATURE, VERIFY:
-- [ ] **Settings** — does your change affect how `mergeWithDefaults()` handles the `schedules` array? (It requires special handling to avoid overwriting with the default schedule.)
-- [ ] **Orders** — does a pricing change affect already-added order items or only new additions?
-- [ ] **Entertainment** — legacy MenuItem fields use a different code path; don't conflate the two.
-- [ ] **Android** — settings sync: does the Android bootstrap pick up updated happy hour settings?
+- [ ] **Settings** — does your change affect how `mergeWithDefaults()` handles the `pricingRules` array?
+- [ ] **Orders** — pricing rules apply at order item creation only, not retroactively
+- [ ] **Entertainment** — legacy MenuItem fields use a different code path; don't conflate
+- [ ] **Android** — settings sync: does the Android bootstrap pick up updated pricingRules?
+- [ ] **Dual Pricing** — `cardPrice` is recalculated from the adjusted price, not the original
 
 ---
 
@@ -180,25 +251,25 @@ Default settings (from `DEFAULT_SETTINGS`):
 
 | Action | Permission Key | Level |
 |--------|---------------|-------|
-| View happy hour settings | `SETTINGS_VIEW` | Standard |
-| Save happy hour settings | `SETTINGS_EDIT` | Manager |
+| View pricing rules settings | `SETTINGS_VIEW` | Standard |
+| Save pricing rules settings | `SETTINGS_EDIT` | Manager |
 
 ---
 
 ## Known Constraints
-- There is no dedicated `/api/happy-hour` route — all config lives in `/api/settings`.
-- The `schedules` array requires special merge logic in `mergeWithDefaults()` to avoid being overwritten by the default; a partial `happyHour` update with an empty or missing `schedules` array will fall back to the default schedule.
-- Legacy per-`MenuItem` happy hour fields (`happyHourEnabled`, `happyHourDiscount`, `happyHourStart`, `happyHourEnd`, `happyHourDays`) are only used by the Entertainment subsystem. They are not evaluated by `isHappyHourActive()` or `getHappyHourPrice()`.
-- Happy hour pricing is evaluated at render time using the current wall clock; it is not recorded on the `OrderItem` or `Order` record as a separate field. Reports reflect the discounted price as the actual item price.
-- No socket event is emitted when happy hour settings change; POS terminals re-read settings on next page load or manual refresh.
-- There is no override mechanism to exempt a specific item from an `appliesTo: 'all'` rule at the POS without switching to `appliesTo: 'items'` mode.
-- Minimum order value and maximum discount cap (present on `Coupon`) are not available for happy hour — the entire qualifying order is discounted uniformly.
+
+- **Concurrency:** Settings updates are last-write-wins with no merge. Two managers editing rules simultaneously → last save wins.
+- **No per-item exemption:** There is no override to exempt a specific item from an `appliesTo: 'all'` rule without switching to `appliesTo: 'items'` mode.
+- **No stacking:** Only one rule can apply per item. If multiple rules match, priority + tie-breakers determine the winner.
+- **Modifiers unaffected:** Pricing rules only adjust base item price; modifier prices are unchanged.
+- **Render-time evaluation:** POS display uses real-time evaluation. Order creation snapshots the adjustment at insert time via `pricingRuleApplied`.
+- **No minimum order value:** Unlike coupons, pricing rules have no minimum spend requirement.
+- **Legacy `happyHour` preserved:** The old settings object remains in `LocationSettings` for backward compatibility and is auto-migrated to a pricing rule on first read if applicable.
 
 ---
 
 ## Related Docs
 - **Feature doc:** `docs/features/discounts.md`
-- **Feature doc:** `docs/features/auto-discounts.md`
 - **Feature doc:** `docs/features/pricing-programs.md`
 - **Feature doc:** `docs/features/settings.md`
 - **Feature doc:** `docs/features/entertainment.md`
@@ -206,4 +277,4 @@ Default settings (from `DEFAULT_SETTINGS`):
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-14*

@@ -268,6 +268,10 @@ async function getMenuForBootstrap(locationId: string) {
         })),
       })) || [],
       hasPricingOptions: ((item as any).pricingOptionGroups?.length || 0) > 0,
+      // Force-open modifier modal
+      alwaysOpenModifiers: (item as any).alwaysOpenModifiers ?? false,
+      // Tip-exempt
+      tipExempt: (item as any).tipExempt ?? false,
     })),
   }
 

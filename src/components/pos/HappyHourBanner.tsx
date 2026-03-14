@@ -1,21 +1,26 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { isHappyHourActive, getHappyHourEndTime, DEFAULT_SETTINGS } from '@/lib/settings'
-import type { HappyHourSettings } from '@/lib/settings'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { getActivePricingRules, getPricingRuleEndTime, DEFAULT_SETTINGS } from '@/lib/settings'
+import type { PricingRule } from '@/lib/settings'
+import { useSocket } from '@/hooks/useSocket'
 
 /**
- * Compact banner shown at the top of the POS when happy hour is active.
- * Self-contained: fetches happy hour settings from /api/settings on mount.
- * Displays the happy hour name and a countdown to when it ends.
- * Updates every minute. Only renders when happy hour is currently active.
+ * Compact banner shown at the top of the POS when pricing rules are active.
+ * Self-contained: fetches settings from /api/settings on mount.
+ * Displays the highest-priority active rule and a countdown to when it ends.
+ * Refreshes every 60 seconds and immediately on settings:updated socket event.
  */
 export function HappyHourBanner() {
-  const [settings, setSettings] = useState<HappyHourSettings | null>(null)
-  const [active, setActive] = useState(false)
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
+  const [bannerRule, setBannerRule] = useState<PricingRule | null>(null)
+  const [activeCount, setActiveCount] = useState(0)
   const [remainingMinutes, setRemainingMinutes] = useState(0)
+  const [scopeHint, setScopeHint] = useState('')
+  const rulesRef = useRef<PricingRule[]>([])
+  const { socket } = useSocket()
 
-  // Fetch happy hour settings on mount
+  // Fetch settings on mount
   useEffect(() => {
     let cancelled = false
     fetch('/api/settings')
@@ -24,20 +29,57 @@ export function HappyHourBanner() {
         if (cancelled) return
         const data = raw.data ?? raw
         const s = data.settings || data
-        const hh: HappyHourSettings = s.happyHour || DEFAULT_SETTINGS.happyHour
-        setSettings(hh)
+        const rules: PricingRule[] = s.pricingRules ?? []
+        setPricingRules(rules)
+        rulesRef.current = rules
       })
       .catch(() => {})
     return () => { cancelled = true }
   }, [])
 
-  const update = useCallback(() => {
-    if (!settings) return
-    const isActive = isHappyHourActive(settings)
-    setActive(isActive)
+  const recompute = useCallback(() => {
+    const rules = rulesRef.current
+    if (!rules.length) {
+      setBannerRule(null)
+      setActiveCount(0)
+      return
+    }
+    const active = getActivePricingRules(rules)
+    setActiveCount(active.length)
+    if (active.length === 0) {
+      setBannerRule(null)
+      return
+    }
 
-    if (isActive) {
-      const endTime = getHappyHourEndTime(settings)
+    // Banner selection per contract:
+    // Prefer highest-priority active rule with appliesTo: 'all'
+    const globalRule = active.find(r => r.appliesTo === 'all')
+    if (globalRule) {
+      setBannerRule(globalRule)
+      setScopeHint('')
+    } else {
+      // Show highest-priority scoped rule
+      const topScoped = active[0]
+      // Suppress banner for single-item-specific rules
+      if (topScoped.appliesTo === 'items' && topScoped.itemIds.length <= 1) {
+        setBannerRule(null)
+        return
+      }
+      setBannerRule(topScoped)
+      // Generate scope hint
+      if (topScoped.appliesTo === 'categories') {
+        setScopeHint(` - ${topScoped.categoryIds.length} categories`)
+      } else if (topScoped.appliesTo === 'items') {
+        setScopeHint(` - ${topScoped.itemIds.length} items`)
+      } else {
+        setScopeHint('')
+      }
+    }
+
+    // Update countdown for the selected banner rule
+    const selectedRule = globalRule || active[0]
+    if (selectedRule) {
+      const endTime = getPricingRuleEndTime(selectedRule)
       if (endTime) {
         const diffMs = endTime.getTime() - Date.now()
         setRemainingMinutes(Math.max(0, Math.ceil(diffMs / 60000)))
@@ -45,22 +87,41 @@ export function HappyHourBanner() {
         setRemainingMinutes(0)
       }
     }
-  }, [settings])
+  }, [])
 
-  // Check active state immediately when settings load, then every 60s
+  // Recompute on rules change, then every 60s
   useEffect(() => {
-    update()
-    const interval = setInterval(update, 60000)
+    rulesRef.current = pricingRules
+    recompute()
+    const interval = setInterval(recompute, 60000)
     return () => clearInterval(interval)
-  }, [update])
+  }, [pricingRules, recompute])
 
-  if (!active || !settings) return null
+  // On settings:updated socket event, refetch and force immediate recompute
+  useEffect(() => {
+    if (!socket) return
+    const handler = (payload: any) => {
+      const s = payload?.settings
+      if (s?.pricingRules) {
+        setPricingRules(s.pricingRules)
+        rulesRef.current = s.pricingRules
+        recompute()
+      }
+    }
+    socket.on('settings:updated', handler)
+    return () => { socket.off('settings:updated', handler) }
+  }, [socket, recompute])
 
-  // Color transitions: green when > 15 min, amber when <= 15 min
-  const isClosing = remainingMinutes <= 15
-  const bgClass = isClosing
-    ? 'bg-amber-600/90'
-    : 'bg-emerald-600/90'
+  if (!bannerRule) return null
+
+  // Use rule color as background with opacity, fallback to emerald-600
+  const ruleColor = /^#[0-9a-fA-F]{6}$/.test(bannerRule.color) ? bannerRule.color : '#059669'
+
+  // Color transitions: amber when <= 15 min remaining
+  const isClosing = remainingMinutes > 0 && remainingMinutes <= 15
+  const bgStyle = isClosing
+    ? 'background-color: rgb(217 119 6 / 0.9)'
+    : `background-color: ${ruleColor}e6`
 
   const formatRemaining = () => {
     if (remainingMinutes <= 0) return 'ending now'
@@ -72,12 +133,18 @@ export function HappyHourBanner() {
     return `${remainingMinutes}m left`
   }
 
+  const moreText = activeCount > 1 ? ` +${activeCount - 1} more` : ''
+
   return (
-    <div className={`${bgClass} text-white text-center py-1.5 px-4 text-sm font-medium flex items-center justify-center gap-2 shrink-0`}>
+    <div
+      className="text-white text-center py-1.5 px-4 text-sm font-medium flex items-center justify-center gap-2 shrink-0"
+      style={{ backgroundColor: isClosing ? 'rgb(217 119 6 / 0.9)' : `${ruleColor}e6` }}
+    >
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
-      <span>{settings.name || 'Happy Hour'}</span>
+      <span>{bannerRule.name}{scopeHint}</span>
+      {moreText && <span className="opacity-75">{moreText}</span>}
       <span className="opacity-75">-</span>
       <span className="opacity-90">{formatRemaining()}</span>
     </div>

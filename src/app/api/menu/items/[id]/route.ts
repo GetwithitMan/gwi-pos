@@ -124,6 +124,10 @@ export const GET = withVenue(async function GET(
         allergens: item.allergens || [],
         // Age verification
         isAgeRestricted: item.isAgeRestricted ?? false,
+        // Force-open modifier modal
+        alwaysOpenModifiers: (item as any).alwaysOpenModifiers ?? false,
+        // Tip-exempt
+        tipExempt: (item as any).tipExempt ?? false,
         // Nutritional info (optional — fields may not exist on schema yet)
         calories: (item as any).calories ?? null,
         caloriesFromFat: (item as any).caloriesFromFat ?? null,
@@ -247,6 +251,10 @@ export const PUT = withVenue(async function PUT(
       allergens,
       // Age verification
       isAgeRestricted,
+      // Force-open modifier modal
+      alwaysOpenModifiers,
+      // Tip-exempt
+      tipExempt,
       // Category reassignment (drag-drop between categories)
       categoryId,
       // Nutritional info (optional — schema fields may not exist yet)
@@ -360,6 +368,10 @@ export const PUT = withVenue(async function PUT(
         ...(allergens !== undefined && { allergens: Array.isArray(allergens) ? allergens : [] }),
         // Age verification
         ...(isAgeRestricted !== undefined && { isAgeRestricted }),
+        // Force-open modifier modal
+        ...(alwaysOpenModifiers !== undefined && { alwaysOpenModifiers }),
+        // Tip-exempt
+        ...(tipExempt !== undefined && { tipExempt }),
         // Nutritional info — columns not yet in schema, skip to avoid Prisma validation error
       }
     })

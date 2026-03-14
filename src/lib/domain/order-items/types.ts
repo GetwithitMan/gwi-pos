@@ -141,6 +141,7 @@ export interface MenuItemInfo {
   isActive: boolean
   deletedAt: Date | null
   name: string
+  categoryId: string | null
   category: { categoryType: string | null } | null
 }
 

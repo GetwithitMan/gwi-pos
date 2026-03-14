@@ -45,6 +45,10 @@ interface ItemSettings {
   allergens: string[]
   // Age verification
   isAgeRestricted: boolean
+  // Modifier behavior
+  alwaysOpenModifiers: boolean
+  // Tip exempt
+  tipExempt: boolean
   // Nutritional info
   calories: number | null
   caloriesFromFat: number | null
@@ -149,6 +153,10 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
   const [allergens, setAllergens] = useState<string[]>([])
   // Age verification
   const [isAgeRestricted, setIsAgeRestricted] = useState(false)
+  // Force-open modifier modal
+  const [alwaysOpenModifiers, setAlwaysOpenModifiers] = useState(false)
+  // Tip-exempt
+  const [tipExempt, setTipExempt] = useState(false)
   // Nutritional info
   const [calories, setCalories] = useState('')
   const [caloriesFromFat, setCaloriesFromFat] = useState('')
@@ -207,6 +215,8 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
         setPricePerWeightUnit(it.pricePerWeightUnit != null ? String(it.pricePerWeightUnit) : '')
         setAllergens(Array.isArray(it.allergens) ? it.allergens : [])
         setIsAgeRestricted(it.isAgeRestricted ?? false)
+        setAlwaysOpenModifiers(it.alwaysOpenModifiers ?? false)
+        setTipExempt(it.tipExempt ?? false)
         // Nutritional info (optional chaining — fields may not exist on DB yet)
         setCalories((it as any).calories != null ? String((it as any).calories) : '')
         setCaloriesFromFat((it as any).caloriesFromFat != null ? String((it as any).caloriesFromFat) : '')
@@ -328,6 +338,10 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
         allergens,
         // Age verification
         isAgeRestricted,
+        // Force-open modifier modal
+        alwaysOpenModifiers,
+        // Tip-exempt
+        tipExempt,
         // Nutritional info
         calories: calories ? parseInt(calories) : null,
         caloriesFromFat: caloriesFromFat ? parseInt(caloriesFromFat) : null,
@@ -997,6 +1011,48 @@ export function ItemSettingsModal({ itemId, onClose, onSaved, ingredientsLibrary
                         <div>
                           <span className="text-sm font-medium text-gray-900">Age-Restricted (21+)</span>
                           <p className="text-[11px] text-gray-900">Requires ID verification before adding to order. Alcohol, tobacco, etc.</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Force-Open Modifiers */}
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-200">
+                      <span className="text-xs font-semibold text-indigo-800">MODIFIER BEHAVIOR</span>
+                    </div>
+                    <div className="p-3">
+                      <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
+                        <input
+                          type="checkbox"
+                          checked={alwaysOpenModifiers}
+                          onChange={(e) => setAlwaysOpenModifiers(e.target.checked)}
+                          className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-900">Always open modifier selection</span>
+                          <p className="text-[11px] text-gray-900">Opens the modifier menu on every tap, even when no modifiers are required</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Tip-Exempt */}
+                  <div className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-3 py-2 bg-amber-50 border-b border-amber-200">
+                      <span className="text-xs font-semibold text-amber-800">TIP CALCULATION</span>
+                    </div>
+                    <div className="p-3">
+                      <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
+                        <input
+                          type="checkbox"
+                          checked={tipExempt}
+                          onChange={(e) => setTipExempt(e.target.checked)}
+                          className="w-5 h-5 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-900">Exclude from tip suggestions</span>
+                          <p className="text-[11px] text-gray-900">Tips will not be calculated on this item&apos;s amount</p>
                         </div>
                       </label>
                     </div>

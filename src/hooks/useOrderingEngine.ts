@@ -57,6 +57,7 @@ export interface EngineMenuItem {
   hasPricingOptions?: boolean
   entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
   waitlistCount?: number
+  alwaysOpenModifiers?: boolean
 }
 
 /** Modifier shape returned by ModifierModal and stored on order items */
@@ -596,8 +597,27 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       }
     }
 
-    // 4. Item with modifiers → check defaults, possibly open modal
-    if (item.hasModifiers && onOpenModifiers) {
+    // 4. Item with modifiers (or alwaysOpenModifiers) → check defaults, possibly open modal
+    if ((item.hasModifiers || item.alwaysOpenModifiers) && onOpenModifiers) {
+      // alwaysOpenModifiers — skip auto-satisfy, always open the modal
+      if (item.alwaysOpenModifiers) {
+        const qtyForModifiers = quantityMultiplierRef.current
+        setPendingItem({ type: 'modifier', menuItem: item })
+        onOpenModifiers(item, (modifiers, ingredientMods) => {
+          addItemDirectly({
+            menuItemId: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: qtyForModifiers,
+            modifiers,
+            ingredientModifications: ingredientMods,
+            categoryType: item.categoryType,
+          })
+          setPendingItem(null)
+        })
+        return
+      }
+
       // Check modifier-defaults cache first (avoids fetch on rapid clicks)
       const cached = modifierDefaultsCacheRef.current.get(item.id)
       if (cached && Date.now() - cached.fetchedAt < MOD_CACHE_TTL) {

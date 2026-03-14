@@ -52,6 +52,13 @@ function LiquorBuilderContent() {
   const [enabledPourSizes, setEnabledPourSizes] = useState<Record<string, { label: string; multiplier: number; customPrice?: number | null }>>({})
   const [defaultPourSize, setDefaultPourSize] = useState<string>('standard')
   const [applyPourToModifiers, setApplyPourToModifiers] = useState(false)
+  const [hideDefaultOnPos, setHideDefaultOnPos] = useState(false)
+  // Custom pour size creation
+  const [showCustomPourForm, setShowCustomPourForm] = useState(false)
+  const [customPourKey, setCustomPourKey] = useState('')
+  const [customPourLabel, setCustomPourLabel] = useState('')
+  const [customPourMultiplier, setCustomPourMultiplier] = useState('1.0')
+  const [customPourPrice, setCustomPourPrice] = useState('')
 
   // Modifier group editor state (inline in Drinks tab)
   const [selectedModGroupId, setSelectedModGroupId] = useState<string | null>(null)
@@ -217,10 +224,13 @@ function LiquorBuilderContent() {
     short: { label: 'Short', multiplier: 0.75 },
   }
 
-  const normalizePourSizes = (data: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null): Record<string, { label: string; multiplier: number; customPrice?: number | null }> => {
+  const normalizePourSizes = (data: Record<string, number | boolean | { label: string; multiplier: number; customPrice?: number | null }> | null): Record<string, { label: string; multiplier: number; customPrice?: number | null }> => {
     if (!data) return {}
     const result: Record<string, { label: string; multiplier: number; customPrice?: number | null }> = {}
     for (const [key, value] of Object.entries(data)) {
+      // Skip metadata keys (prefixed with _)
+      if (key.startsWith('_')) continue
+      if (typeof value === 'boolean') continue
       if (typeof value === 'number') {
         result[key] = { label: DEFAULT_POUR_SIZES[key]?.label || key, multiplier: value }
       } else {
@@ -310,6 +320,8 @@ function LiquorBuilderContent() {
     setEnabledPourSizes(normalized)
     setDefaultPourSize(selectedDrink.defaultPourSize || 'standard')
     setApplyPourToModifiers(selectedDrink.applyPourToModifiers || false)
+    setHideDefaultOnPos(selectedDrink.pourSizes?._hideDefaultOnPos === true)
+    setShowCustomPourForm(false)
     setSelectedModGroupId(null)
     setShowGroupPicker(false)
     // Reset linked bottle picker
@@ -476,7 +488,11 @@ function LiquorBuilderContent() {
     setSavingDrink(true)
     try {
       const price = parseFloat(editingDrinkPrice) || 0
-      const pourSizesData = Object.keys(enabledPourSizes).length > 0 ? enabledPourSizes : null
+      const hasPourSizes = Object.keys(enabledPourSizes).length > 0
+      // Build pourSizes data with metadata
+      const pourSizesData = hasPourSizes
+        ? { ...enabledPourSizes, ...(hideDefaultOnPos ? { _hideDefaultOnPos: true as const } : {}) }
+        : null
       const res = await fetch(`/api/menu/items/${selectedDrink.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -484,13 +500,13 @@ function LiquorBuilderContent() {
           name: editingDrinkName.trim(),
           price,
           pourSizes: pourSizesData,
-          defaultPourSize: pourSizesData ? defaultPourSize : null,
+          defaultPourSize: hasPourSizes ? defaultPourSize : null,
           applyPourToModifiers,
         }),
       })
       if (res.ok) {
         await loadDrinks()
-        setSelectedDrink((prev: any) => prev ? { ...prev, name: editingDrinkName.trim(), price, pourSizes: pourSizesData, defaultPourSize: pourSizesData ? defaultPourSize : null } : prev)
+        setSelectedDrink((prev: any) => prev ? { ...prev, name: editingDrinkName.trim(), price, pourSizes: pourSizesData, defaultPourSize: hasPourSizes ? defaultPourSize : null } : prev)
         toast.success('Saved')
       } else {
         toast.error('Failed to save')
@@ -1570,6 +1586,194 @@ function LiquorBuilderContent() {
                           )
                         })}
                       </div>
+
+                      {/* Custom Pour Sizes (Task 2) */}
+                      {Object.entries(enabledPourSizes).filter(([key]) => !Object.keys(DEFAULT_POUR_SIZES).includes(key)).length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Custom Pour Sizes</div>
+                          <div className="space-y-2">
+                            {Object.entries(enabledPourSizes).filter(([key]) => !Object.keys(DEFAULT_POUR_SIZES).includes(key)).map(([sizeKey, current]) => {
+                              const basePrice = parseFloat(editingDrinkPrice) || 0
+                              const autoPrice = basePrice * (current?.multiplier ?? 1)
+                              const hasCustomPrice = current?.customPrice != null
+                              return (
+                                <div key={sizeKey} className="p-2.5 border rounded-lg border-orange-300 bg-orange-50">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={current?.label || sizeKey}
+                                      onChange={e => updatePourSizeLabel(sizeKey, e.target.value)}
+                                      className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                      placeholder="Button label"
+                                    />
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <input
+                                        type="number"
+                                        step="0.25"
+                                        min="0.25"
+                                        defaultValue={current?.multiplier ?? 1}
+                                        key={`custom-${sizeKey}-${current?.multiplier}`}
+                                        onBlur={e => {
+                                          const num = parseFloat(e.target.value)
+                                          if (!isNaN(num) && num > 0) updatePourSizeMultiplier(sizeKey, num)
+                                          else e.target.value = String(current?.multiplier || 1)
+                                        }}
+                                        className="w-14 px-1 py-1 text-sm border rounded text-center focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                      />
+                                      <span className="text-xs text-orange-600">x</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <span className="text-xs text-gray-500">$</span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        defaultValue={hasCustomPrice ? current!.customPrice! : ''}
+                                        key={`custom-${sizeKey}-cp-${current?.customPrice ?? 'none'}`}
+                                        placeholder={autoPrice.toFixed(2)}
+                                        onBlur={e => {
+                                          const val = e.target.value.trim()
+                                          if (val === '') updatePourSizeCustomPrice(sizeKey, null)
+                                          else {
+                                            const num = parseFloat(val)
+                                            if (!isNaN(num) && num >= 0) updatePourSizeCustomPrice(sizeKey, num)
+                                          }
+                                        }}
+                                        className={`w-20 px-1 py-1 text-sm border rounded text-right focus:outline-none focus:ring-1 focus:ring-orange-500 ${hasCustomPrice ? 'border-green-400 bg-green-50' : ''}`}
+                                      />
+                                    </div>
+                                    {defaultPourSize === sizeKey && (
+                                      <span className="text-[10px] bg-orange-600 text-white px-1.5 py-0.5 rounded shrink-0">Default</span>
+                                    )}
+                                    {defaultPourSize !== sizeKey && (
+                                      <button
+                                        onClick={() => setDefaultPourSize(sizeKey)}
+                                        className="text-[10px] text-orange-500 hover:text-orange-700 shrink-0"
+                                      >Set default</button>
+                                    )}
+                                    <button
+                                      onClick={() => {
+                                        const newSizes = { ...enabledPourSizes }
+                                        delete newSizes[sizeKey]
+                                        setEnabledPourSizes(newSizes)
+                                        if (defaultPourSize === sizeKey) setDefaultPourSize('standard')
+                                      }}
+                                      className="text-red-400 hover:text-red-600 text-lg leading-none shrink-0"
+                                      title="Remove custom pour size"
+                                    >
+                                      x
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Add Custom Pour Size button + form (Task 2) */}
+                      {!showCustomPourForm ? (
+                        <button
+                          onClick={() => { setShowCustomPourForm(true); setCustomPourKey(''); setCustomPourLabel(''); setCustomPourMultiplier('1.0'); setCustomPourPrice('') }}
+                          className="mt-2 text-xs text-orange-600 hover:text-orange-800 font-medium"
+                        >
+                          + Add Custom Pour Size
+                        </button>
+                      ) : (
+                        <div className="mt-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                          <div className="text-[10px] font-bold uppercase text-orange-600 tracking-wider mb-2">New Custom Pour Size</div>
+                          <div className="grid grid-cols-4 gap-2 mb-2">
+                            <div className="col-span-2">
+                              <label className="block text-[10px] text-gray-600 mb-0.5">Label</label>
+                              <input
+                                type="text"
+                                value={customPourLabel}
+                                onChange={e => {
+                                  setCustomPourLabel(e.target.value)
+                                  // Auto-generate key from label
+                                  setCustomPourKey(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''))
+                                }}
+                                placeholder="e.g. Triple, Pint, Goblet"
+                                className="w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-600 mb-0.5">Multiplier</label>
+                              <input
+                                type="number"
+                                step="0.25"
+                                min="0.25"
+                                value={customPourMultiplier}
+                                onChange={e => setCustomPourMultiplier(e.target.value)}
+                                className="w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-gray-600 mb-0.5">Price (opt)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={customPourPrice}
+                                onChange={e => setCustomPourPrice(e.target.value)}
+                                placeholder="auto"
+                                className="w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-orange-500"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                if (!customPourLabel.trim() || !customPourKey.trim()) return
+                                const mult = parseFloat(customPourMultiplier) || 1.0
+                                const price = customPourPrice ? parseFloat(customPourPrice) : null
+                                // Check for key collision
+                                if (enabledPourSizes[customPourKey] || DEFAULT_POUR_SIZES[customPourKey]) {
+                                  toast.error('A pour size with this name already exists')
+                                  return
+                                }
+                                setEnabledPourSizes(prev => ({
+                                  ...prev,
+                                  [customPourKey]: {
+                                    label: customPourLabel.trim(),
+                                    multiplier: mult,
+                                    ...(price != null ? { customPrice: price } : {}),
+                                  }
+                                }))
+                                setShowCustomPourForm(false)
+                                setCustomPourKey('')
+                                setCustomPourLabel('')
+                                setCustomPourMultiplier('1.0')
+                                setCustomPourPrice('')
+                              }}
+                              disabled={!customPourLabel.trim()}
+                              className="px-3 py-1.5 text-xs font-medium bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={() => setShowCustomPourForm(false)}
+                              className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Hide default pour on POS toggle (Task 1) */}
+                      {Object.keys(enabledPourSizes).length > 0 && (
+                        <label className="flex items-center gap-2 cursor-pointer mt-2">
+                          <input
+                            type="checkbox"
+                            checked={hideDefaultOnPos}
+                            onChange={e => setHideDefaultOnPos(e.target.checked)}
+                            className="w-4 h-4 text-purple-600"
+                          />
+                          <span className="text-xs text-gray-900">Hide default pour button on POS</span>
+                          <span className="text-[10px] text-gray-500">(tapping the item already uses the default)</span>
+                        </label>
+                      )}
                       {Object.keys(enabledPourSizes).length > 0 && (
                         <label className="flex items-center gap-2 cursor-pointer mt-2">
                           <input

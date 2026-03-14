@@ -28,6 +28,8 @@ const SharedOwnershipModal = lazy(() => import('@/components/tips/SharedOwnershi
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
+import { getActivePricingRules, getBestPricingRuleForItem } from '@/lib/settings'
+import type { PricingRule, PricingAdjustment } from '@/lib/settings'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { useSocket } from '@/hooks/useSocket'
 // useMenuSearch lifted to orders/page.tsx (UnifiedPOSHeader)
@@ -97,6 +99,7 @@ interface MenuItem {
   pricingOptionGroups?: import('@/types').PricingOptionGroup[]
   hasPricingOptions?: boolean
   calories?: number | null
+  alwaysOpenModifiers?: boolean
 }
 
 // InlineOrderItem: derived type from the inlineOrderItems memo below.
@@ -260,6 +263,10 @@ export function FloorPlanHome({
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])       // Filtered by category
   const [isCategoryPending, startCategoryTransition] = useTransition()
   const loadingMenuItems = false // Always false — loading handled by parent
+
+  // Pricing rules state — loaded from settings, recomputed every 60s and on settings:updated
+  const [pricingRules, setPricingRules] = useState<PricingRule[]>([])
+  const [activePricingRules, setActivePricingRules] = useState<PricingRule[]>([])
 
   // Sync from parent when props update (e.g., parent's loadMenu completes after mount)
   useEffect(() => {
@@ -825,6 +832,54 @@ export function FloorPlanHome({
 
   // Socket.io: primary update mechanism for all floor plan data
   const { socket, isConnected } = useSocket()
+
+  // Pricing rules: load from settings on mount, recompute every 60s
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(raw => {
+        if (cancelled) return
+        const data = raw.data ?? raw
+        const s = data.settings || data
+        const rules: PricingRule[] = s.pricingRules ?? []
+        setPricingRules(rules)
+        setActivePricingRules(getActivePricingRules(rules))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    setActivePricingRules(getActivePricingRules(pricingRules))
+    const interval = setInterval(() => {
+      setActivePricingRules(getActivePricingRules(pricingRules))
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [pricingRules])
+
+  // Recompute pricing rules on settings:updated socket event
+  useEffect(() => {
+    if (!socket) return
+    const handler = (payload: any) => {
+      const s = payload?.settings
+      if (s?.pricingRules) {
+        setPricingRules(s.pricingRules)
+      }
+    }
+    socket.on('settings:updated', handler)
+    return () => { socket.off('settings:updated', handler) }
+  }, [socket])
+
+  // Memoized pricing adjustment map: itemId -> PricingAdjustment | null
+  const pricingAdjustmentMap = useMemo(() => {
+    const map = new Map<string, PricingAdjustment | null>()
+    if (activePricingRules.length === 0) return map
+    for (const item of menuItems) {
+      map.set(item.id, getBestPricingRuleForItem(activePricingRules, item.id, item.categoryId, item.price))
+    }
+    return map
+  }, [activePricingRules, menuItems])
 
   // 1s heartbeat for UI timers only (flash/undo expiry) — NO data polling
   // FIX 4: Uses refs for callbacks to prevent interval restart on re-render
@@ -1500,8 +1555,8 @@ export function FloorPlanHome({
     const itemPrice = isVariant ? option.price! : item.price
     const pricingOptionLabel = isVariant ? undefined : option.label
 
-    if (item.hasModifiers) {
-      // Has modifiers — set pricing option then chain to modifier modal
+    if (item.hasModifiers || item.alwaysOpenModifiers) {
+      // Has modifiers (or force-open) — set pricing option then chain to modifier modal
       engine.handleMenuItemTap({
         ...item,
         name: itemName,
@@ -2411,6 +2466,7 @@ export function FloorPlanHome({
                           customStyle={menuItemColors[item.id]}
                           inQuickBar={isInQuickBar(item.id)}
                           pricing={pricing}
+                          pricingAdjustment={pricingAdjustmentMap.get(item.id)}
                           onTap={handleMenuItemTap}
                           onContextMenu={handleMenuItemContextMenu}
                           onUnavailable={(reason) => toast.warning(reason)}

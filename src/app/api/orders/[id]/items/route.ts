@@ -282,7 +282,7 @@ export const POST = withVenue(async function POST(
       const menuItemIds = items.map(item => item.menuItemId)
       const menuItemsWithCommission = await tx.menuItem.findMany({
         where: { id: { in: menuItemIds } },
-        select: { id: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, category: { select: { categoryType: true } } },
+        select: { id: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, categoryId: true, category: { select: { categoryType: true } } },
       })
       const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
 
@@ -312,6 +312,7 @@ export const POST = withVenue(async function POST(
       const parsedSettings = locSettings ? parseSettings(locSettings) : null
       const dualPricingEnabled = parsedSettings?.dualPricing?.enabled ?? false
       const cashDiscountPct = parsedSettings?.dualPricing?.cashDiscountPercent ?? 4.0
+      const pricingRules = parsedSettings?.pricingRules ?? []
 
       // Use cached tax rules + categories (5-min TTL) to avoid DB queries inside transaction
       const [taxRules, allCategories] = await Promise.all([
@@ -335,6 +336,7 @@ export const POST = withVenue(async function POST(
             requestingEmployeeId: requestingEmployeeId || null,
             hasSentItems,
             idempotencyKey: idempotencyKey || null,
+            pricingRules,
           })
         )
       )

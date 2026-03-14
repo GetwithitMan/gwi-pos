@@ -1,5 +1,30 @@
 # Entertainment Domain - Change Log
 
+## 2026-03-13 — Android Register BAR Tab Timer Fix + Server Sync Fixes
+
+### Android Register: Timed Rental on BAR Tab (`bd3b037`)
+- **Bug:** Tapping timed_rental item on BAR tab added it like a regular item — no timer started
+- **Root cause:** `startRental()` → `ensureOrder()` returns null on BAR tab → deferred to NewTab dialog but rental minutes lost
+- **Fix:** Added `pendingTimedRentalMinutes` state field. `createBarTab()` consumes it after order creation: fetches fresh order from server API, finds OrderItem by menuItemId, calls `startBlockTime`.
+- **Files:** `OrderViewModel.kt` (6 edit points)
+- **E2E:** L1400 → Dart Board → 30 min → Open Tab → Timer starts → PitBoss shows "IN USE"
+
+### Server: FloorPlanElement.sessionExpiresAt Sync on Extend
+- PATCH `/api/entertainment/block-time` now updates `FloorPlanElement.sessionExpiresAt` when extending time
+- Previously only updated `OrderItem.blockTimeExpiresAt` — PitBoss countdown showed stale time
+
+### Server: Waitlist DELETE Dispatch Fix
+- DELETE `/api/entertainment/waitlist/[id]` now dispatches `entertainmentWaitlistChanged` to PitBoss
+- Previously only dispatched `floorPlanUpdate`, missing the waitlist count badge update
+
+### Web POS: Timer Never Starting (`89f3e447`)
+- `handleStartTimedSession` never called block-time API — fixed
+- All 3 add-item paths sent wrong format `{menuItemId}` instead of `{items:[{...}]}` — fixed
+- Items API missing name fallback — added `menuItem.name`
+- Settings page router paths fixed (edit items works)
+
+---
+
 ## 2026-02-24 — Minimum Charge, Status Toggle & Per-Minute Settlement (`743e618`)
 
 ### minimumCharge Enforcement

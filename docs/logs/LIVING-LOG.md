@@ -5,6 +5,54 @@
 
 ---
 
+## 2026-03-13 — Entertainment Timer Fix (Android Register + Server), System Audit, CAS PDN Scale
+
+### Entertainment Timed Rental — Android Register BAR Tab Fix
+- **Problem:** Tapping a `timed_rental` item (e.g., Dart Board) on a BAR tab just added it like a regular item — no timer started, no block-time API call.
+- **Root cause chain (3 bugs):**
+  1. `startRental()` calls `ensureOrder()` which returns null on BAR tab (defers to NewTab dialog). `startRental` exited early without saving the pending rental minutes.
+  2. `createBarTab()` had no logic to resume the deferred timed rental after order creation.
+  3. Room cache had 0 items immediately after `createOrder()` — couldn't find the OrderItem to pass to `startBlockTime`.
+- **Fix (OrderViewModel.kt):**
+  - Added `pendingTimedRentalMinutes` state field to `OrderUiState`
+  - `startRental()` saves minutes when `ensureOrder()` returns null (BAR tab deferred path)
+  - `createBarTab()` consumes `pendingTimedRentalMinutes` after order creation — fetches fresh order from server API (`getOrder`) to get the server-assigned OrderItem ID, then calls `startBlockTime`
+  - All dismiss/error paths clear `pendingTimedRentalMinutes`
+- **E2E verified via ADB:** L1400 Register → Dart Board → TimedRentalSheet → 30 min → Open Tab → Timer starts → Samsung PitBoss shows "IN USE" with countdown
+
+### Entertainment Timer — Server Fixes (previous session, verified present)
+- **FloorPlanElement.sessionExpiresAt sync:** PATCH handler in `block-time/route.ts` now updates `FloorPlanElement.sessionExpiresAt` when extending time (was only updating OrderItem, causing PitBoss to show stale countdown)
+- **Waitlist DELETE dispatch:** `waitlist/[id]/route.ts` DELETE handler now dispatches `entertainmentWaitlistChanged` to notify PitBoss of count change
+
+### Web POS Timer Fix (commit `89f3e447`)
+- `handleStartTimedSession` in `useOrderHandlers.ts` never called block-time API after adding items — fixed
+- All 3 entertainment add-item paths sent bare `{menuItemId}` instead of `{items:[{...}]}` — fixed
+- Items API had no fallback for missing `name` field — added `menuItem.name` fallback
+- Settings page router paths fixed (edit items now works)
+
+### System Audit (commit `b0a1a426`)
+- 3-repo audit: register, PAX, NUC. Dead code sweep, 8 DB indices, N+1 fixes
+- Register OrderViewModel: 7055→5985 lines (5 extracted managers)
+- ModifierSheet perf fixes, bootstrap open orders, outbox idempotency
+
+### CAS PDN Scale Integration
+- USB-B → FTDI at 9600/7E1 on PAX L1400. Full-stack: scale → Android → NUC → KDS → receipt → inventory
+- 24 files across 3 repos. See memory `scale-debug.md` for details.
+
+### Commits
+- gwi-pos: `89f3e447` (entertainment timer), `b0a1a426` (system audit)
+- gwi-android-register: `bd3b037` (system audit + entertainment fix)
+
+### Files Changed
+- `gwi-pos/src/app/api/entertainment/block-time/route.ts` — FloorPlanElement.sessionExpiresAt sync on extend
+- `gwi-pos/src/app/api/entertainment/waitlist/[id]/route.ts` — DELETE dispatch fix
+- `gwi-pos/src/app/(pos)/orders/hooks/useOrderHandlers.ts` — 3 entertainment add-item fixes
+- `gwi-pos/src/app/api/orders/[id]/items/route.ts` — name fallback
+- `gwi-pos/src/app/(admin)/timed-rentals/page.tsx` — settings page router fix
+- `gwi-android-register/app/src/main/java/com/gwi/register/ui/pos/OrderViewModel.kt` — pendingTimedRentalMinutes + createBarTab block-time
+
+---
+
 ## 2026-03-12 — Auth Unification, Pizza Builder TS Fix, Fruita Grill NUC Deploy, Register APK Install
 
 ### Auth Unification — "Employee ID is Required" Permanent Fix

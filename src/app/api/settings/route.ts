@@ -258,6 +258,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       entertainment: settings.entertainment !== undefined
         ? { ...(currentSettings.entertainment ?? {}), ...settings.entertainment }
         : currentSettings.entertainment,
+      pricingRules: settings.pricingRules !== undefined
+        ? settings.pricingRules
+        : (currentSettings.pricingRules ?? []),
     })
 
     // P0.1: Preserve existing secrets — never overwrite with empty values.

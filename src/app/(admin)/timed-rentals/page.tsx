@@ -65,6 +65,16 @@ interface TimedItem {
 }
 
 type OvertimeMode = 'multiplier' | 'custom_rate' | 'flat_fee' | 'per_minute'
+type RateUnit = 'second' | 'minute' | 'hour'
+const RATE_UNIT_MULTIPLIERS: Record<RateUnit, number> = { second: 1/60, minute: 1, hour: 60 }
+const RATE_UNIT_LABELS: Record<RateUnit, string> = { second: 'sec', minute: 'min', hour: 'hr' }
+const BILLING_OPTIONS = [
+  { value: 1, label: '1 min' },
+  { value: 5, label: '5 min' },
+  { value: 15, label: '15 min' },
+  { value: 30, label: '30 min' },
+  { value: 60, label: '1 hour' },
+]
 
 interface PricingWindowForm {
   id: string
@@ -81,6 +91,8 @@ interface ItemBuilderForm {
   name: string
   visualType: EntertainmentVisualType
   ratePerMinute: number
+  rateUnit: RateUnit
+  billingGranularity: number // incrementMinutes: 1, 5, 15, 30, 60
   gracePeriodMinutes: number
   // Prepaid packages
   prepaidPackages: PrepaidPackage[]
@@ -125,6 +137,8 @@ export function TimedRentalsContent() {
     name: '',
     visualType: 'pool_table',
     ratePerMinute: DEFAULT_PRICING.ratePerMinute,
+    rateUnit: 'hour',
+    billingGranularity: 15,
     gracePeriodMinutes: DEFAULT_PRICING.graceMinutes,
     prepaidPackages: DEFAULT_PREPAID_PACKAGES,
     pricingWindows: [],
@@ -137,6 +151,16 @@ export function TimedRentalsContent() {
     status: 'available'
   })
   const [isSaving, setIsSaving] = useState(false)
+  const [rateInputStr, setRateInputStr] = useState('15')
+
+  // Sync rate display value when builder opens or unit changes
+  useEffect(() => {
+    if (!showBuilder) return
+    const rpm = typeof builderForm.ratePerMinute === 'number' ? builderForm.ratePerMinute : 0
+    const mul = RATE_UNIT_MULTIPLIERS[builderForm.rateUnit]
+    const display = rpm * mul
+    setRateInputStr(display > 0 ? parseFloat(display.toFixed(4)).toString() : '')
+  }, [showBuilder, builderForm.rateUnit])
 
   // Entertainment settings state
   const [allowExtendWithWaitlist, setAllowExtendWithWaitlist] = useState(true)
@@ -229,6 +253,8 @@ export function TimedRentalsContent() {
         name: '',
         visualType: 'pool_table',
         ratePerMinute: DEFAULT_PRICING.ratePerMinute,
+        rateUnit: 'hour',
+        billingGranularity: 15,
         gracePeriodMinutes: DEFAULT_PRICING.graceMinutes,
         prepaidPackages: DEFAULT_PREPAID_PACKAGES,
         pricingWindows: [],
@@ -245,8 +271,10 @@ export function TimedRentalsContent() {
       // Load existing item — fetch from individual item endpoint to get MenuItem-level columns
       const item = timedItems.find(i => i.id === itemIdFromUrl)
       if (item) {
-        const perHour = item.timedPricing?.perHour || item.price || 15
-        const ratePerMinute = perHour / 60
+        const ratePerMinute = (item.timedPricing as any)?.ratePerMinute
+          || ((item.timedPricing?.perHour || item.price || 15) / 60)
+        const savedRateUnit: RateUnit = (item.timedPricing as any)?.rateUnit || 'hour'
+        const savedBillingGranularity: number = (item.timedPricing as any)?.billingGranularity || 15
 
         // Load pricing windows from timedPricing JSON, or convert legacy happyHour
         let pricingWindows: PricingWindowForm[] = []
@@ -292,6 +320,8 @@ export function TimedRentalsContent() {
             name: item.name,
             visualType: item.visualType || 'pool_table',
             ratePerMinute,
+            rateUnit: savedRateUnit,
+            billingGranularity: savedBillingGranularity,
             gracePeriodMinutes: item.gracePeriodMinutes || DEFAULT_PRICING.graceMinutes,
             prepaidPackages: (item.timedPricing as any)?.prepaidPackages || DEFAULT_PREPAID_PACKAGES,
             pricingWindows,
@@ -490,8 +520,13 @@ export function TimedRentalsContent() {
         name: builderForm.name,
         itemType: 'timed_rental',
         price: builderForm.ratePerMinute * 60, // Base price = hourly rate
+        ratePerMinute: builderForm.ratePerMinute,
+        minimumCharge: 0,
+        incrementMinutes: builderForm.billingGranularity,
         timedPricing: {
           ratePerMinute: builderForm.ratePerMinute,
+          rateUnit: builderForm.rateUnit,
+          billingGranularity: builderForm.billingGranularity,
           prepaidPackages: builderForm.prepaidPackages,
           pricingWindows: builderForm.pricingWindows,
           // Keep legacy happyHour for backward compat (reading code may still check this)
@@ -627,12 +662,17 @@ export function TimedRentalsContent() {
                       <div>
                         <div className="font-medium">{item.name}</div>
                         <div className="text-sm text-gray-900">
-                          {(item.timedPricing as any)?.ratePerMinute
-                            ? `$${Number((item.timedPricing as any).ratePerMinute).toFixed(2)}/min ($${(Number((item.timedPricing as any).ratePerMinute) * 60).toFixed(2)}/hr)`
-                            : item.timedPricing?.perHour
-                              ? `${formatCurrency(item.timedPricing.perHour)}/hr`
-                              : `${formatCurrency(item.price)} flat`
-                          }
+                          {(() => {
+                            const rpm = Number((item.timedPricing as any)?.ratePerMinute || 0)
+                            if (rpm > 0) {
+                              const unit: RateUnit = (item.timedPricing as any)?.rateUnit || 'hour'
+                              const mul = RATE_UNIT_MULTIPLIERS[unit]
+                              const lbl = RATE_UNIT_LABELS[unit]
+                              return `$${(rpm * mul).toFixed(2)}/${lbl}`
+                            }
+                            if (item.timedPricing?.perHour) return `${formatCurrency(item.timedPricing.perHour)}/hr`
+                            return `${formatCurrency(item.price)} flat`
+                          })()}
                         </div>
                         {isDualPricingEnabled && (item.timedPricing?.perHour || item.price) > 0 && (
                           <div className="text-xs text-gray-900">
@@ -782,23 +822,68 @@ export function TimedRentalsContent() {
               <div className="border-t pt-3 mt-3">
                 <div className="text-sm font-medium text-gray-900 mb-2">Pricing</div>
 
-                {/* Rate + Grace inline */}
-                <div className="flex items-center gap-4 mb-2">
+                {/* Rate + Unit selector */}
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <div className="flex items-center gap-1">
                     <span className="text-gray-900">$</span>
                     <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      value={builderForm.ratePerMinute}
-                      onChange={e => setBuilderForm({...builderForm, ratePerMinute: parseFloat(e.target.value) || 0.25})}
-                      className="w-16 px-2 py-1 border rounded text-right text-sm"
+                      type="text"
+                      inputMode="decimal"
+                      value={rateInputStr}
+                      onChange={e => {
+                        const raw = e.target.value
+                        setRateInputStr(raw)
+                        if (raw === '' || raw === '.' || raw === '0.') return
+                        const v = parseFloat(raw)
+                        if (!isNaN(v)) {
+                          const divisor = RATE_UNIT_MULTIPLIERS[builderForm.rateUnit]
+                          setBuilderForm({...builderForm, ratePerMinute: v / divisor})
+                        }
+                      }}
+                      onBlur={() => {
+                        const v = parseFloat(rateInputStr)
+                        const mul = RATE_UNIT_MULTIPLIERS[builderForm.rateUnit]
+                        if (isNaN(v) || v <= 0) {
+                          setBuilderForm({...builderForm, ratePerMinute: 0.01})
+                          setRateInputStr((0.01 * mul).toString())
+                        } else {
+                          setBuilderForm({...builderForm, ratePerMinute: v / mul})
+                          setRateInputStr(v.toString())
+                        }
+                      }}
+                      className="w-24 px-2 py-1 border rounded text-right text-sm"
                     />
-                    <span className="text-gray-900 text-sm">/min</span>
-                    <span className="text-gray-900 text-sm ml-1">(${(builderForm.ratePerMinute * 60).toFixed(2)}/hr)</span>
-                    {isDualPricingEnabled && builderForm.ratePerMinute > 0 && (
-                      <span className="text-xs text-gray-900 ml-1">Card: ${calculateCardPrice(builderForm.ratePerMinute * 60, cashDiscountPct).toFixed(2)}/hr</span>
-                    )}
+                    <select
+                      value={builderForm.rateUnit}
+                      onChange={e => setBuilderForm({...builderForm, rateUnit: e.target.value as RateUnit})}
+                      className="px-2 py-1 border rounded text-sm bg-white"
+                    >
+                      <option value="second">/ second</option>
+                      <option value="minute">/ minute</option>
+                      <option value="hour">/ hour</option>
+                    </select>
+                  </div>
+                  {builderForm.rateUnit !== 'minute' && typeof builderForm.ratePerMinute === 'number' && (
+                    <span className="text-xs text-gray-500">(${builderForm.ratePerMinute.toFixed(4)}/min)</span>
+                  )}
+                  {isDualPricingEnabled && builderForm.ratePerMinute > 0 && (
+                    <span className="text-xs text-gray-500">Card: ${calculateCardPrice(builderForm.ratePerMinute * RATE_UNIT_MULTIPLIERS[builderForm.rateUnit], cashDiscountPct).toFixed(2)}/{RATE_UNIT_LABELS[builderForm.rateUnit]}</span>
+                  )}
+                </div>
+
+                {/* Billing granularity + Grace */}
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-900 text-sm">Bill every:</span>
+                    <select
+                      value={builderForm.billingGranularity}
+                      onChange={e => setBuilderForm({...builderForm, billingGranularity: parseInt(e.target.value)})}
+                      className="px-2 py-1 border rounded text-sm bg-white"
+                    >
+                      {BILLING_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="flex items-center gap-1 ml-auto">
                     <span className="text-gray-900 text-sm">Grace:</span>
@@ -882,31 +967,49 @@ export function TimedRentalsContent() {
                       <div className="flex items-center gap-4 mb-2 ml-6">
                         <div className="flex items-center gap-1">
                           <input
-                            type="number"
-                            step="5"
+                            type="text"
+                            inputMode="numeric"
                             value={window.percentAdjust}
-                            onChange={e => updateWindow({ percentAdjust: parseFloat(e.target.value) || 0 })}
-                            className="w-20 px-2 py-1 border rounded text-right text-sm"
+                            onChange={e => {
+                              const raw = e.target.value
+                              if (raw === '' || raw === '-') { updateWindow({ percentAdjust: raw as any }); return }
+                              const v = parseFloat(raw)
+                              if (!isNaN(v)) updateWindow({ percentAdjust: v })
+                            }}
+                            onBlur={() => {
+                              const v = parseFloat(String(window.percentAdjust))
+                              updateWindow({ percentAdjust: isNaN(v) ? 0 : v })
+                            }}
+                            className="w-24 px-2 py-1 border rounded text-right text-sm"
                           />
                           <span className="text-gray-900 text-sm">%</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-gray-900 text-sm">$</span>
                           <input
-                            type="number"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
                             value={window.dollarAdjust}
-                            onChange={e => updateWindow({ dollarAdjust: parseFloat(e.target.value) || 0 })}
-                            className="w-20 px-2 py-1 border rounded text-right text-sm"
+                            onChange={e => {
+                              const raw = e.target.value
+                              if (raw === '' || raw === '-' || raw === '.' || raw === '-.' || raw === '0.' || raw === '-0.') { updateWindow({ dollarAdjust: raw as any }); return }
+                              const v = parseFloat(raw)
+                              if (!isNaN(v)) updateWindow({ dollarAdjust: v })
+                            }}
+                            onBlur={() => {
+                              const v = parseFloat(String(window.dollarAdjust))
+                              updateWindow({ dollarAdjust: isNaN(v) ? 0 : v })
+                            }}
+                            className="w-24 px-2 py-1 border rounded text-right text-sm"
                           />
                           <span className="text-gray-900 text-sm">/min</span>
                         </div>
                         <span className={`text-xs font-medium ${isDiscount ? 'text-green-600' : effectiveRate > builderForm.ratePerMinute ? 'text-red-600' : 'text-gray-500'}`}>
-                          = ${(effectiveRate * 60).toFixed(2)}/hr
+                          = ${(effectiveRate * RATE_UNIT_MULTIPLIERS[builderForm.rateUnit]).toFixed(2)}/{RATE_UNIT_LABELS[builderForm.rateUnit]}
                           {isDiscount ? ' (discount)' : effectiveRate > builderForm.ratePerMinute ? ' (premium)' : ''}
                         </span>
                         {isDualPricingEnabled && effectiveRate > 0 && (
-                          <span className="text-xs text-gray-500">Card: ${calculateCardPrice(effectiveRate * 60, cashDiscountPct).toFixed(2)}/hr</span>
+                          <span className="text-xs text-gray-500">Card: ${calculateCardPrice(effectiveRate * RATE_UNIT_MULTIPLIERS[builderForm.rateUnit], cashDiscountPct).toFixed(2)}/{RATE_UNIT_LABELS[builderForm.rateUnit]}</span>
                         )}
                       </div>
 
@@ -1008,11 +1111,11 @@ export function TimedRentalsContent() {
                             min="1"
                             value={builderForm.overtimeMultiplier}
                             onChange={e => setBuilderForm({...builderForm, overtimeMultiplier: parseFloat(e.target.value) || 1.5})}
-                            className="w-16 px-2 py-1 border rounded text-right text-sm"
+                            className="w-24 px-2 py-1 border rounded text-right text-sm"
                           />
                           <span className="text-gray-900">x base rate</span>
                           <span className="text-gray-900 text-xs ml-1">
-                            (${(builderForm.ratePerMinute * builderForm.overtimeMultiplier).toFixed(2)}/min)
+                            (${(builderForm.ratePerMinute * builderForm.overtimeMultiplier * RATE_UNIT_MULTIPLIERS[builderForm.rateUnit]).toFixed(2)}/{RATE_UNIT_LABELS[builderForm.rateUnit]})
                           </span>
                         </div>
                       )}
@@ -1021,17 +1124,30 @@ export function TimedRentalsContent() {
                         <div className="flex items-center gap-1 text-sm">
                           <span className="text-gray-900">Rate: $</span>
                           <input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
+                            type="text"
+                            inputMode="decimal"
                             value={builderForm.overtimePerMinuteRate}
-                            onChange={e => setBuilderForm({...builderForm, overtimePerMinuteRate: parseFloat(e.target.value) || 0.50})}
-                            className="w-16 px-2 py-1 border rounded text-right text-sm"
+                            onChange={e => {
+                              const raw = e.target.value
+                              if (raw === '' || raw === '.' || raw === '0.') {
+                                setBuilderForm({...builderForm, overtimePerMinuteRate: raw as any})
+                              } else {
+                                const v = parseFloat(raw)
+                                if (!isNaN(v)) setBuilderForm({...builderForm, overtimePerMinuteRate: v})
+                              }
+                            }}
+                            onBlur={() => {
+                              const v = parseFloat(String(builderForm.overtimePerMinuteRate))
+                              setBuilderForm({...builderForm, overtimePerMinuteRate: isNaN(v) || v <= 0 ? 0.01 : v})
+                            }}
+                            className="w-24 px-2 py-1 border rounded text-right text-sm"
                           />
                           <span className="text-gray-900">/min</span>
-                          <span className="text-gray-900 text-xs ml-1">
-                            (${(builderForm.overtimePerMinuteRate * 60).toFixed(2)}/hr)
-                          </span>
+                          {builderForm.rateUnit !== 'minute' && (
+                            <span className="text-gray-900 text-xs ml-1">
+                              (${((parseFloat(String(builderForm.overtimePerMinuteRate)) || 0) * RATE_UNIT_MULTIPLIERS[builderForm.rateUnit]).toFixed(2)}/{RATE_UNIT_LABELS[builderForm.rateUnit]})
+                            </span>
+                          )}
                         </div>
                       )}
 
@@ -1039,17 +1155,30 @@ export function TimedRentalsContent() {
                         <div className="flex items-center gap-1 text-sm">
                           <span className="text-gray-900">Rate: $</span>
                           <input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
+                            type="text"
+                            inputMode="decimal"
                             value={builderForm.overtimePerMinuteRate}
-                            onChange={e => setBuilderForm({...builderForm, overtimePerMinuteRate: parseFloat(e.target.value) || 0.35})}
-                            className="w-16 px-2 py-1 border rounded text-right text-sm"
+                            onChange={e => {
+                              const raw = e.target.value
+                              if (raw === '' || raw === '.' || raw === '0.') {
+                                setBuilderForm({...builderForm, overtimePerMinuteRate: raw as any})
+                              } else {
+                                const v = parseFloat(raw)
+                                if (!isNaN(v)) setBuilderForm({...builderForm, overtimePerMinuteRate: v})
+                              }
+                            }}
+                            onBlur={() => {
+                              const v = parseFloat(String(builderForm.overtimePerMinuteRate))
+                              setBuilderForm({...builderForm, overtimePerMinuteRate: isNaN(v) || v <= 0 ? 0.01 : v})
+                            }}
+                            className="w-24 px-2 py-1 border rounded text-right text-sm"
                           />
                           <span className="text-gray-900">/min (exact)</span>
-                          <span className="text-gray-900 text-xs ml-1">
-                            (${(builderForm.overtimePerMinuteRate * 60).toFixed(2)}/hr)
-                          </span>
+                          {builderForm.rateUnit !== 'minute' && (
+                            <span className="text-gray-900 text-xs ml-1">
+                              (${((parseFloat(String(builderForm.overtimePerMinuteRate)) || 0) * RATE_UNIT_MULTIPLIERS[builderForm.rateUnit]).toFixed(2)}/{RATE_UNIT_LABELS[builderForm.rateUnit]})
+                            </span>
+                          )}
                         </div>
                       )}
 
@@ -1062,7 +1191,7 @@ export function TimedRentalsContent() {
                             min="1"
                             value={builderForm.overtimeFlatFee}
                             onChange={e => setBuilderForm({...builderForm, overtimeFlatFee: parseFloat(e.target.value) || 10})}
-                            className="w-16 px-2 py-1 border rounded text-right text-sm"
+                            className="w-24 px-2 py-1 border rounded text-right text-sm"
                           />
                           <span className="text-gray-900">one-time</span>
                         </div>

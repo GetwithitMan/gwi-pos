@@ -7,6 +7,8 @@
 
 import type { TxClient, AddItemInput, ItemPrepData } from './types'
 import { isValidModifierId, calculateItemCardPrice } from './item-calculations'
+import { getBestPricingRuleForItem } from '@/lib/settings'
+import type { PricingRule, PricingAdjustment } from '@/lib/settings'
 
 // ─── Create Order Item ──────────────────────────────────────────────────────
 
@@ -19,6 +21,7 @@ export interface CreateOrderItemParams {
   requestingEmployeeId: string | null
   hasSentItems: boolean
   idempotencyKey: string | null
+  pricingRules?: PricingRule[]
 }
 
 /**
@@ -40,8 +43,23 @@ export async function createOrderItem(
     requestingEmployeeId,
     hasSentItems,
     idempotencyKey,
+    pricingRules,
   } = params
   const { item, effectivePrice, fullItemTotal, itemCommission, menuItem, catType, itemTaxInclusive } = prepData
+
+  // Apply pricing rule (catalog-priced items only, skip manual/open price overrides)
+  let finalPrice = effectivePrice
+  let pricingRuleApplied: PricingAdjustment | null = null
+  const isManualPrice = item.pricingOptionId || item.soldByWeight || item.blockTimeMinutes || item.pizzaConfig
+  if (!isManualPrice && pricingRules?.length) {
+    const catId = menuItem?.categoryId || ''
+    pricingRuleApplied = getBestPricingRuleForItem(
+      pricingRules, item.menuItemId, catId, effectivePrice
+    )
+    if (pricingRuleApplied) {
+      finalPrice = pricingRuleApplied.adjustedPrice
+    }
+  }
 
   const createdItem = await tx.orderItem.create({
     data: {
@@ -49,8 +67,8 @@ export async function createOrderItem(
       locationId,
       menuItemId: item.menuItemId,
       name: item.name || menuItem?.name || item.menuItemId,
-      price: effectivePrice,
-      cardPrice: calculateItemCardPrice(effectivePrice, dualPricingEnabled, cashDiscountPct),
+      price: finalPrice,
+      cardPrice: calculateItemCardPrice(finalPrice, dualPricingEnabled, cashDiscountPct),
       isTaxInclusive: itemTaxInclusive,
       categoryType: catType,
       quantity: item.quantity,
@@ -75,6 +93,7 @@ export async function createOrderItem(
       tareWeight: item.tareWeight ?? null,
       pricingOptionId: item.pricingOptionId ?? null,
       pricingOptionLabel: item.pricingOptionLabel ?? null,
+      ...(pricingRuleApplied ? { pricingRuleApplied: pricingRuleApplied as object } : {}),
       lastMutatedBy: 'local',
       // Modifiers
       modifiers: item.modifiers?.length ? {

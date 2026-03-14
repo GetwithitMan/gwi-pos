@@ -109,6 +109,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               name: mod.linkedBottleProduct.name,
               pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
             } : null,
+            // Bar hot button
+            showAsHotButton: (mod as any).showAsHotButton ?? false,
           })),
           linkedItems: group.menuItem ? [{ id: group.menuItem.id, name: group.menuItem.name }] : []
         }
@@ -165,7 +167,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         isSpiritGroup: isSpiritGroup || false,
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         modifiers: modifiers?.length ? {
-          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number; showOnPOS?: boolean; showOnline?: boolean; printerRouting?: string; printerIds?: string[]; spiritTier?: string }, index: number) => ({
+          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number; showOnPOS?: boolean; showOnline?: boolean; printerRouting?: string; printerIds?: string[]; spiritTier?: string; showAsHotButton?: boolean }, index: number) => ({
             locationId,
             name: mod.name,
             price: mod.price || 0,
@@ -181,6 +183,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             printerRouting: mod.printerRouting ?? 'follow',
             printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
             spiritTier: mod.spiritTier || null,
+            showAsHotButton: (mod as any).showAsHotButton ?? false,
             sortOrder: index,
           }))
         } : undefined

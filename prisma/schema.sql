@@ -1,5 +1,5 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  write to custom object with { processEnv: myObject }
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  override existing env vars with { override: true }
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -636,6 +636,8 @@ CREATE TABLE "MenuItem" (
     "fulfillmentStationId" TEXT,
     "allergens" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "isAgeRestricted" BOOLEAN NOT NULL DEFAULT false,
+    "alwaysOpenModifiers" BOOLEAN NOT NULL DEFAULT false,
+    "tipExempt" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -705,6 +707,7 @@ CREATE TABLE "Modifier" (
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "showOnPOS" BOOLEAN NOT NULL DEFAULT true,
     "showOnline" BOOLEAN NOT NULL DEFAULT true,
+    "showAsHotButton" BOOLEAN NOT NULL DEFAULT false,
     "isLabel" BOOLEAN NOT NULL DEFAULT false,
     "printerRouting" "ModifierPrinterRouting" NOT NULL DEFAULT 'follow',
     "printerIds" JSONB,
@@ -1428,22 +1431,6 @@ CREATE TABLE "TipPool" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "TipPool_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "TipPoolEntry" (
-    "id" TEXT NOT NULL,
-    "locationId" TEXT NOT NULL,
-    "tipPoolId" TEXT NOT NULL,
-    "shiftDate" TIMESTAMP(3) NOT NULL,
-    "totalAmount" DECIMAL(65,30) NOT NULL,
-    "distributions" JSONB NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-    "syncedAt" TIMESTAMP(3),
-
-    CONSTRAINT "TipPoolEntry_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -3594,27 +3581,6 @@ CREATE TABLE "ShiftSwapRequest" (
 );
 
 -- CreateTable
-CREATE TABLE "AvailabilityEntry" (
-    "id" TEXT NOT NULL,
-    "locationId" TEXT NOT NULL,
-    "employeeId" TEXT NOT NULL,
-    "dayOfWeek" INTEGER NOT NULL,
-    "availableFrom" TEXT,
-    "availableTo" TEXT,
-    "isAvailable" BOOLEAN NOT NULL DEFAULT true,
-    "preference" TEXT NOT NULL DEFAULT 'available',
-    "effectiveFrom" TIMESTAMP(3),
-    "effectiveTo" TIMESTAMP(3),
-    "notes" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-    "syncedAt" TIMESTAMP(3),
-
-    CONSTRAINT "AvailabilityEntry_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "PayrollSettings" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
@@ -4642,6 +4608,9 @@ CREATE INDEX "Employee_locationId_isActive_idx" ON "Employee"("locationId", "isA
 CREATE INDEX "Employee_locationId_isActive_deletedAt_idx" ON "Employee"("locationId", "isActive", "deletedAt");
 
 -- CreateIndex
+CREATE INDEX "Employee_locationId_updatedAt_idx" ON "Employee"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Employee_locationId_pin_key" ON "Employee"("locationId", "pin");
 
 -- CreateIndex
@@ -4670,6 +4639,9 @@ CREATE INDEX "TimeClockEntry_locationId_employeeId_clockOut_idx" ON "TimeClockEn
 
 -- CreateIndex
 CREATE INDEX "TimeClockEntry_locationId_clockIn_idx" ON "TimeClockEntry"("locationId", "clockIn");
+
+-- CreateIndex
+CREATE INDEX "TimeClockEntry_employeeId_clockOut_idx" ON "TimeClockEntry"("employeeId", "clockOut");
 
 -- CreateIndex
 CREATE INDEX "Shift_employeeId_idx" ON "Shift"("employeeId");
@@ -4735,6 +4707,9 @@ CREATE INDEX "Category_locationId_isActive_deletedAt_idx" ON "Category"("locatio
 CREATE INDEX "Category_locationId_sortOrder_idx" ON "Category"("locationId", "sortOrder");
 
 -- CreateIndex
+CREATE INDEX "Category_locationId_updatedAt_idx" ON "Category"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Category_locationId_name_key" ON "Category"("locationId", "name");
 
 -- CreateIndex
@@ -4754,6 +4729,9 @@ CREATE INDEX "MenuItem_locationId_isActive_idx" ON "MenuItem"("locationId", "isA
 
 -- CreateIndex
 CREATE INDEX "MenuItem_locationId_categoryId_idx" ON "MenuItem"("locationId", "categoryId");
+
+-- CreateIndex
+CREATE INDEX "MenuItem_locationId_updatedAt_idx" ON "MenuItem"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MenuItem_locationId_sku_key" ON "MenuItem"("locationId", "sku");
@@ -4840,6 +4818,9 @@ CREATE INDEX "Table_locationId_isActive_deletedAt_idx" ON "Table"("locationId", 
 CREATE INDEX "Table_locationId_sectionId_idx" ON "Table"("locationId", "sectionId");
 
 -- CreateIndex
+CREATE INDEX "Table_locationId_updatedAt_idx" ON "Table"("locationId", "updatedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Table_locationId_name_key" ON "Table"("locationId", "name");
 
 -- CreateIndex
@@ -4874,6 +4855,9 @@ CREATE INDEX "OrderType_locationId_idx" ON "OrderType"("locationId");
 
 -- CreateIndex
 CREATE INDEX "OrderType_sortOrder_idx" ON "OrderType"("sortOrder");
+
+-- CreateIndex
+CREATE INDEX "OrderType_locationId_updatedAt_idx" ON "OrderType"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "OrderType_locationId_slug_key" ON "OrderType"("locationId", "slug");
@@ -5179,16 +5163,10 @@ CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
 CREATE INDEX "AuditLog_locationId_createdAt_idx" ON "AuditLog"("locationId", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "AuditLog_locationId_action_createdAt_idx" ON "AuditLog"("locationId", "action", "createdAt");
+
+-- CreateIndex
 CREATE INDEX "TipPool_locationId_idx" ON "TipPool"("locationId");
-
--- CreateIndex
-CREATE INDEX "TipPoolEntry_locationId_idx" ON "TipPoolEntry"("locationId");
-
--- CreateIndex
-CREATE INDEX "TipPoolEntry_tipPoolId_idx" ON "TipPoolEntry"("tipPoolId");
-
--- CreateIndex
-CREATE INDEX "TipPoolEntry_shiftDate_idx" ON "TipPoolEntry"("shiftDate");
 
 -- CreateIndex
 CREATE INDEX "TipOutRule_locationId_idx" ON "TipOutRule"("locationId");
@@ -5642,6 +5620,9 @@ CREATE INDEX "PricingOptionGroup_menuItemId_idx" ON "PricingOptionGroup"("menuIt
 
 -- CreateIndex
 CREATE INDEX "PricingOptionGroup_locationId_menuItemId_deletedAt_idx" ON "PricingOptionGroup"("locationId", "menuItemId", "deletedAt");
+
+-- CreateIndex
+CREATE INDEX "PricingOptionGroup_locationId_updatedAt_idx" ON "PricingOptionGroup"("locationId", "updatedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "PricingOptionGroup_menuItemId_name_key" ON "PricingOptionGroup"("menuItemId", "name");
@@ -6245,18 +6226,6 @@ CREATE INDEX "ShiftSwapRequest_requestedToEmployeeId_idx" ON "ShiftSwapRequest"(
 
 -- CreateIndex
 CREATE INDEX "ShiftSwapRequest_status_idx" ON "ShiftSwapRequest"("status");
-
--- CreateIndex
-CREATE INDEX "AvailabilityEntry_locationId_idx" ON "AvailabilityEntry"("locationId");
-
--- CreateIndex
-CREATE INDEX "AvailabilityEntry_employeeId_idx" ON "AvailabilityEntry"("employeeId");
-
--- CreateIndex
-CREATE INDEX "AvailabilityEntry_dayOfWeek_idx" ON "AvailabilityEntry"("dayOfWeek");
-
--- CreateIndex
-CREATE UNIQUE INDEX "AvailabilityEntry_employeeId_dayOfWeek_effectiveFrom_key" ON "AvailabilityEntry"("employeeId", "dayOfWeek", "effectiveFrom");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "PayrollSettings_locationId_key" ON "PayrollSettings"("locationId");
@@ -7117,12 +7086,6 @@ ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_employeeId_fkey" FOREIGN KEY ("e
 ALTER TABLE "TipPool" ADD CONSTRAINT "TipPool_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "TipPoolEntry" ADD CONSTRAINT "TipPoolEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "TipPoolEntry" ADD CONSTRAINT "TipPoolEntry_tipPoolId_fkey" FOREIGN KEY ("tipPoolId") REFERENCES "TipPool"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "TipOutRule" ADD CONSTRAINT "TipOutRule_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -7901,12 +7864,6 @@ ALTER TABLE "ShiftSwapRequest" ADD CONSTRAINT "ShiftSwapRequest_requestedToEmplo
 
 -- AddForeignKey
 ALTER TABLE "ShiftSwapRequest" ADD CONSTRAINT "ShiftSwapRequest_approvedByEmployeeId_fkey" FOREIGN KEY ("approvedByEmployeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "AvailabilityEntry" ADD CONSTRAINT "AvailabilityEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "AvailabilityEntry" ADD CONSTRAINT "AvailabilityEntry_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PayrollSettings" ADD CONSTRAINT "PayrollSettings_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

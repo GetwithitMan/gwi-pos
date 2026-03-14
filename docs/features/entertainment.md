@@ -12,7 +12,7 @@ Entertainment manages timed rental items like pool tables, dart boards, arcade m
 | Repo | Role | Coverage |
 |------|------|----------|
 | `gwi-pos` | API, admin builder, KDS dashboard, floor plan visuals | Full |
-| `gwi-android-register` | TODO: entertainment order sheet not yet opened | Partial |
+| `gwi-android-register` | TimedRentalSheet, startBlockTime API, BAR tab deferred flow | Full |
 | `gwi-cfd` | None | None |
 | `gwi-backoffice` | Entertainment revenue in reports | Partial |
 | `gwi-mission-control` | None | None |
@@ -242,9 +242,11 @@ TimedSession {
 ---
 
 ## Android-Specific Notes
-- Entertainment order sheet: **TODO** — not yet opened on Android
-- Android can view entertainment items on floor plan
-- Session management via Android is not yet fully wired
+- **TimedRentalSheet**: Duration picker (15 min, 30 min, 1 hr, 2 hr) shown when user taps a `timed_rental` item. Calls `startRental(minutes, priceCents)`.
+- **BAR tab deferred flow**: On BAR tab with no order, `ensureOrder()` returns null, deferring to NewTab dialog. `pendingTimedRentalMinutes` state field preserves the chosen duration. `createBarTab()` resumes: fetches fresh order from server API, finds the OrderItem by `menuItemId`, then calls `startBlockTime`.
+- **startBlockTime API**: `POST /api/entertainment/block-time` with `{ orderItemId, minutes, locationId }` — starts timer, updates FloorPlanElement, dispatches socket events to PitBoss.
+- **Key files**: `OrderViewModel.kt` (`startRental`, `createBarTab`, `showTimedRentalSheetForItem`), `TimedRentalSheet.kt`, `GwiApiService.kt` (`startBlockTime`, `getOrder`)
+- **E2E verified**: L1400 Register → Dart Board → 30 min → Open Tab → Timer starts → PitBoss shows "IN USE"
 
 ---
 
@@ -256,4 +258,4 @@ TimedSession {
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-13*

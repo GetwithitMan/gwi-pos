@@ -83,6 +83,8 @@ export interface OrderPageModalsProps {
   inlineModifierCallbackRef: React.MutableRefObject<((...args: any[]) => void) | null>
   onAddItemWithModifiers: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: any[], pourCustomPrice?: number | null) => void
   onUpdateItemWithModifiers: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: any[], pourCustomPrice?: number | null) => void
+  quickPreModifiers?: string[]
+  quickPreModifiersEnabled?: boolean
 
   // Pizza builder
   showPizzaModal: boolean
@@ -300,6 +302,8 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     inlineModifierCallbackRef,
     onAddItemWithModifiers,
     onUpdateItemWithModifiers,
+    quickPreModifiers,
+    quickPreModifiersEnabled,
     showPizzaModal,
     setShowPizzaModal,
     selectedPizzaItem,
@@ -479,6 +483,8 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             editingItem={editingOrderItem}
             dualPricing={dualPricing}
             initialNotes={editingOrderItem?.specialNotes}
+            quickPreModifiers={quickPreModifiers}
+            quickPreModifiersEnabled={quickPreModifiersEnabled}
             onConfirm={editingOrderItem && !inlineModifierCallbackRef.current ? onUpdateItemWithModifiers : onAddItemWithModifiers}
             onCancel={() => {
               setShowModifierModal(false)

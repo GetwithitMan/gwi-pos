@@ -113,6 +113,74 @@ function startDraftCleanupInterval() {
   startupTimer.unref()
 }
 
+// ============================================================================
+// Walkout Retry Sweep — retries pending walkout captures every 6 hours
+//
+// Queries WalkoutRetry rows with status='pending', nextRetryAt <= NOW(), and
+// retryCount < maxRetries. For each, calls the walkout-retry API endpoint to
+// attempt a Datacap pre-auth capture. NUC-only (requires POS_LOCATION_ID).
+// ============================================================================
+
+function startWalkoutRetryScheduler() {
+  const INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
+
+  async function sweepWalkoutRetries() {
+    const locationId = process.env.POS_LOCATION_ID
+    if (!locationId) return // Cloud/dev mode — skip
+
+    try {
+      // Fetch pending retries that are due
+      const listUrl = `http://localhost:${port}/api/datacap/walkout-retry?locationId=${locationId}&status=pending`
+      const listRes = await fetch(listUrl)
+      if (!listRes.ok) return
+
+      const listData = await listRes.json()
+      const retries: Array<{ id: string; nextRetryAt?: string; retryCount: number; maxRetries: number }> = listData.data || []
+
+      // Filter to only those that are due and under the retry limit
+      const now = new Date()
+      const due = retries.filter(r => {
+        if (r.retryCount >= r.maxRetries) return false
+        if (!r.nextRetryAt) return true
+        return new Date(r.nextRetryAt) <= now
+      })
+
+      if (due.length === 0) return
+
+      let succeeded = 0
+      let failed = 0
+
+      for (const retry of due) {
+        try {
+          const retryRes = await fetch(`http://localhost:${port}/api/datacap/walkout-retry`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walkoutRetryId: retry.id }),
+          })
+          const retryData = await retryRes.json()
+          if (retryData.data?.success) {
+            succeeded++
+          } else {
+            failed++
+          }
+        } catch {
+          failed++
+        }
+      }
+
+      console.log(`[WalkoutRetry] Sweep complete: ${due.length} attempted, ${succeeded} succeeded, ${failed} failed`)
+    } catch (err) {
+      console.error('[WalkoutRetry] Sweep failed:', err)
+    }
+  }
+
+  const timer = setInterval(sweepWalkoutRetries, INTERVAL_MS)
+  timer.unref()
+  // Run first sweep 5 minutes after boot (let Datacap client initialize)
+  const startupTimer = setTimeout(sweepWalkoutRetries, 5 * 60 * 1000)
+  startupTimer.unref()
+}
+
 async function main() {
   const app = next({ dev, hostname, port })
   const handle = app.getRequestHandler()
@@ -171,6 +239,7 @@ async function main() {
     startCloudEventWorker()
     startEodScheduler()
     startDraftCleanupInterval()
+    startWalkoutRetryScheduler()
     startOnlineOrderDispatchWorker(port)
     startHardwareCommandWorker()
     void scaleService.initialize().catch(console.error)

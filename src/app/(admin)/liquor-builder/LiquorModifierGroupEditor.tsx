@@ -17,6 +17,7 @@ interface LMGEMod {
   isDefault: boolean
   isActive: boolean
   showOnPOS: boolean
+  showAsHotButton: boolean
   ingredientId: string | null
 }
 
@@ -35,6 +36,7 @@ interface LMGEGroup {
     isDefault: boolean
     isActive: boolean
     showOnPOS?: boolean
+    showAsHotButton?: boolean
     ingredientId?: string | null
   }>
 }
@@ -60,6 +62,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
       isDefault: m.isDefault,
       isActive: m.isActive,
       showOnPOS: m.showOnPOS ?? true,
+      showAsHotButton: m.showAsHotButton ?? false,
       ingredientId: m.ingredientId || null,
     }))
   )
@@ -81,6 +84,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
         isDefault: m.isDefault,
         isActive: m.isActive,
         showOnPOS: m.showOnPOS ?? true,
+        showAsHotButton: m.showAsHotButton ?? false,
         ingredientId: m.ingredientId || null,
       }))
     )
@@ -100,7 +104,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
   }, [employee?.id, employee?.location?.id])
 
   const addMod = () => {
-    setMods([...mods, { name: '', price: 0, isDefault: false, isActive: true, showOnPOS: true, ingredientId: null }])
+    setMods([...mods, { name: '', price: 0, isDefault: false, isActive: true, showOnPOS: true, showAsHotButton: false, ingredientId: null }])
   }
 
   const updateMod = (i: number, field: keyof LMGEMod, value: any) => {
@@ -134,6 +138,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
               isDefault: m.isDefault,
               isActive: m.isActive,
               showOnPOS: m.showOnPOS,
+              showAsHotButton: m.showAsHotButton,
               ingredientId: m.ingredientId || null,
             })),
         }),
@@ -224,10 +229,11 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
 
         {/* Column headers */}
         <div className="grid grid-cols-12 gap-1 text-[10px] text-gray-900 px-1 mb-1">
-          <div className="col-span-4">Name</div>
+          <div className="col-span-3">Name</div>
           <div className="col-span-2 text-right">+Charge</div>
-          <div className="col-span-4">Inventory Link</div>
+          <div className="col-span-3">Inventory Link</div>
           <div className="col-span-1 text-center">On</div>
+          <div className="col-span-2 text-center">Hot Btn</div>
           <div className="col-span-1"></div>
         </div>
 
@@ -240,7 +246,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
               }`}
             >
               {/* Name */}
-              <div className="col-span-4">
+              <div className="col-span-3">
                 <input
                   type="text"
                   value={mod.name}
@@ -266,7 +272,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
               </div>
 
               {/* Ingredient picker for inventory deduction */}
-              <div className="col-span-4">
+              <div className="col-span-3">
                 <select
                   value={mod.ingredientId || ''}
                   onChange={e => updateMod(i, 'ingredientId', e.target.value || null)}
@@ -287,6 +293,17 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
                   onChange={e => updateMod(i, 'isActive', e.target.checked)}
                   className="w-4 h-4"
                   title="Active on POS"
+                />
+              </div>
+
+              {/* Hot button toggle */}
+              <div className="col-span-2 flex justify-center">
+                <input
+                  type="checkbox"
+                  checked={mod.showAsHotButton}
+                  onChange={e => updateMod(i, 'showAsHotButton', e.target.checked)}
+                  className="w-4 h-4 accent-amber-600"
+                  title="Show as hot button on POS (quick bar access)"
                 />
               </div>
 

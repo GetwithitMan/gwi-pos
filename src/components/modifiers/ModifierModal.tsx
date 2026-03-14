@@ -35,6 +35,10 @@ interface ModifierModalProps {
   onConfirm: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: IngredientModification[], pourCustomPrice?: number | null) => void
   onCancel: () => void
   initialNotes?: string
+  /** Customizable quick pre-modifier buttons shown at top of modifier modal */
+  quickPreModifiers?: string[]
+  /** Whether to show the quick pre-mod button bar (default: true if quickPreModifiers provided) */
+  quickPreModifiersEnabled?: boolean
 }
 
 export function ModifierModal({
@@ -46,6 +50,8 @@ export function ModifierModal({
   onConfirm,
   onCancel,
   initialNotes,
+  quickPreModifiers,
+  quickPreModifiersEnabled = true,
 }: ModifierModalProps) {
   const {
     selectedPourSize,
@@ -88,6 +94,12 @@ export function ModifierModal({
   const cpm = dualPricing?.enabled && dualPricing.cashDiscountPercent > 0
     ? 1 + dualPricing.cashDiscountPercent / 100
     : 1
+
+  // Quick pre-modifier: when set, the next modifier tapped gets this prefix
+  const [pendingQuickPreMod, setPendingQuickPreMod] = useState<string | null>(null)
+
+  // Show the quick pre-mod bar when we have buttons and modifiers exist
+  const showQuickPreModBar = quickPreModifiersEnabled && quickPreModifiers && quickPreModifiers.length > 0 && modifierGroups.length > 0
 
   // View mode: stepped (default) or grid (all at once)
   const [viewMode, setViewMode] = useState<ViewMode>('steps')
@@ -132,6 +144,55 @@ export function ModifierModal({
       }
     }
   }, [selections, activeGroupIndex, topLevelGroups, viewMode])
+
+  // Wrapped toggle that auto-applies the pending quick pre-mod
+  const handleToggleModifier = (group: Parameters<typeof toggleModifier>[0], modifier: Parameters<typeof toggleModifier>[1], preModifier?: string) => {
+    if (pendingQuickPreMod && !preModifier) {
+      // Map the quick pre-mod label to the internal token used by the pre-modifier system
+      const tokenMap: Record<string, string> = {
+        'No': 'no', 'Lite': 'lite', 'Extra': 'extra', 'On Side': 'side',
+      }
+      const token = tokenMap[pendingQuickPreMod] || pendingQuickPreMod.toLowerCase().replace(/\s+/g, '_')
+      toggleModifier(group, modifier, token)
+      setPendingQuickPreMod(null)
+    } else {
+      toggleModifier(group, modifier, preModifier)
+    }
+  }
+
+  // Render quick pre-modifier button bar
+  const renderQuickPreModBar = () => {
+    if (!showQuickPreModBar) return null
+
+    return (
+      <div className="bg-gradient-to-r from-amber-600/20 to-orange-600/20 rounded-lg p-2 mb-3 border border-amber-500/20">
+        <div className="text-amber-300 text-[10px] font-medium mb-1.5 uppercase tracking-wider">Quick Pre-Modifier</div>
+        <div className="flex gap-1.5 flex-wrap">
+          {quickPreModifiers!.map(label => {
+            const isActive = pendingQuickPreMod === label
+            return (
+              <button
+                key={label}
+                onClick={() => setPendingQuickPreMod(isActive ? null : label)}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                  isActive
+                    ? 'bg-amber-500 text-black shadow-lg ring-1 ring-amber-400'
+                    : 'bg-white/10 text-amber-200 hover:bg-white/20 border border-white/10'
+                }`}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        {pendingQuickPreMod && (
+          <div className="text-[10px] text-amber-400 mt-1.5 font-medium">
+            Tap a modifier to apply &quot;{pendingQuickPreMod}&quot; prefix
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // Count required groups that are incomplete
   const requiredIncomplete = topLevelGroups.filter(g => {
@@ -251,7 +312,7 @@ export function ModifierModal({
         <ModifierGroupSection
           group={group}
           selections={selections[group.id] || []}
-          onToggle={toggleModifier}
+          onToggle={handleToggleModifier}
           isSelected={isSelected}
           getSelectionCount={getSelectionCount}
           getSelectedPreModifier={getSelectedPreModifier}
@@ -277,7 +338,7 @@ export function ModifierModal({
             <ModifierGroupSection
               group={childGroup}
               selections={selections[childGroup.id] || []}
-              onToggle={toggleModifier}
+              onToggle={handleToggleModifier}
               isSelected={isSelected}
               getSelectionCount={getSelectionCount}
               getSelectedPreModifier={getSelectedPreModifier}
@@ -302,7 +363,7 @@ export function ModifierModal({
                 <ModifierGroupSection
                   group={grandChild}
                   selections={selections[grandChild.id] || []}
-                  onToggle={toggleModifier}
+                  onToggle={handleToggleModifier}
                   isSelected={isSelected}
                   getSelectionCount={getSelectionCount}
                   getSelectedPreModifier={getSelectedPreModifier}
@@ -380,6 +441,9 @@ export function ModifierModal({
               {/* Pour Size Buttons */}
               {renderPourSizeButtons()}
 
+              {/* Quick Pre-Modifier Bar */}
+              {renderQuickPreModBar()}
+
               {/* Ingredients Section */}
               {ingredients.length > 0 && (
                 <IngredientsSection
@@ -417,7 +481,7 @@ export function ModifierModal({
                           key={group.id}
                           group={group}
                           selections={selections[group.id] || []}
-                          onToggle={toggleModifier}
+                          onToggle={handleToggleModifier}
                           isSelected={isSelected}
                           getSelectionCount={getSelectionCount}
                           getSelectedPreModifier={getSelectedPreModifier}
@@ -448,7 +512,7 @@ export function ModifierModal({
                           <ModifierGroupSection
                             group={childGroup}
                             selections={selections[childGroup.id] || []}
-                            onToggle={toggleModifier}
+                            onToggle={handleToggleModifier}
                             isSelected={isSelected}
                             getSelectionCount={getSelectionCount}
                             getSelectedPreModifier={getSelectedPreModifier}

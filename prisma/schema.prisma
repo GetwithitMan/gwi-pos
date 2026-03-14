@@ -1646,6 +1646,12 @@ model MenuItem {
   // Age verification — flag for items requiring age check (alcohol, tobacco, etc.)
   isAgeRestricted Boolean @default(false)
 
+  // Force-open modifier modal on every tap, even when no required modifiers exist
+  alwaysOpenModifiers Boolean @default(false)
+
+  // Tip-exempt — item amount excluded from tip suggestion calculations
+  tipExempt Boolean @default(false)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -1843,6 +1849,9 @@ model Modifier {
   // Channel visibility (for online ordering overrides)
   showOnPOS  Boolean @default(true) // Visible to servers on POS
   showOnline Boolean @default(true) // Visible for online ordering
+
+  // Bar hot button — renders as quick-access button in modifier modal (Neat, Rocks, Up, etc.)
+  showAsHotButton Boolean @default(false)
 
   // Inventory tracking (Skill 115)
   isLabel Boolean @default(false) // True = grouping only, no inventory tracking

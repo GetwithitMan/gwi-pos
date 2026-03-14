@@ -917,6 +917,7 @@ export interface LocationSettings {
   textToPay?: TextToPaySettings                       // Text-to-Pay / Payment Links via SMS/email (optional for backward compat)
   memberships?: MembershipSettings                     // Recurring membership billing (optional for backward compat)
   entertainment?: EntertainmentSettings                 // Entertainment / timed rental policies (optional for backward compat)
+  barOperations?: BarOperationsSettings                 // Bar operations: quick pre-mods, last call, repeat order (optional for backward compat)
 }
 
 // ─── Text-to-Pay Settings ───────────────────────────────────────────────────
@@ -1758,6 +1759,29 @@ export const DEFAULT_MEMBERSHIP_SETTINGS: MembershipSettings = {
   sendAdminDeclineAlerts: true,
 }
 
+// ─── Bar Operations Settings ───────────────────────────────────────────────
+
+export interface BarOperationsSettings {
+  // Quick Pre-Modifier Buttons — customizable pre-mod buttons shown in the ModifierModal
+  quickPreModifiers: string[]           // Labels for quick pre-mod buttons (default: bar-focused set)
+  quickPreModifiersEnabled: boolean     // Show quick pre-mod bar in ModifierModal (default: true)
+
+  // Repeat Last Order
+  repeatLastOrderEnabled: boolean       // Show "Repeat Last" button on order panel (default: true)
+
+  // Last Call Batch Tab Close
+  lastCallEnabled: boolean              // Show "Last Call" batch close button (default: true)
+  lastCallAutoGratuityPercent: number   // Auto-gratuity % applied during Last Call batch close (default: 20, 0 = use location default)
+}
+
+export const DEFAULT_BAR_OPERATIONS: BarOperationsSettings = {
+  quickPreModifiers: ['No', 'Lite', 'Extra', 'On Side', 'Neat', 'Rocks', 'Up', 'Dirty', 'Dry', 'Wet', 'Twist', 'Splash', 'Muddle', 'Float'],
+  quickPreModifiersEnabled: true,
+  repeatLastOrderEnabled: true,
+  lastCallEnabled: true,
+  lastCallAutoGratuityPercent: 20,
+}
+
 // Merge partial settings with defaults
 export function mergeWithDefaults(partial: Partial<LocationSettings> | null | undefined): LocationSettings {
   if (!partial) return { ...DEFAULT_SETTINGS }
@@ -2015,6 +2039,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     entertainment: partial.entertainment
       ? { ...DEFAULT_ENTERTAINMENT_SETTINGS, ...partial.entertainment }
+      : undefined,
+    barOperations: partial.barOperations
+      ? { ...DEFAULT_BAR_OPERATIONS, ...partial.barOperations }
       : undefined,
   }
 }
