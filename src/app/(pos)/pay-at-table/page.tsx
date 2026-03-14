@@ -139,19 +139,26 @@ function PayAtTableContent() {
           return
         }
 
+        // Use the order's locationId as the authoritative source — the order
+        // always has a locationId, unlike the URL params which may be missing.
+        const orderData = data.data || data
+        if (orderData.locationId) {
+          setLocationId(orderData.locationId)
+        }
+
         setOrder({
-          id: data.id || orderId,
-          orderNumber: data.orderNumber,
-          items: (data.items || []).map((item: { name: string; quantity: number; price: number; modifiers?: Array<{ name: string }> }) => ({
+          id: orderData.id || orderId,
+          orderNumber: orderData.orderNumber,
+          items: (orderData.items || []).map((item: { name: string; quantity: number; price: number; modifiers?: Array<{ name: string }> }) => ({
             name: item.name,
             quantity: item.quantity,
             price: Number(item.price),
             modifiers: item.modifiers?.map((m: { name: string }) => m.name),
           })),
-          subtotal: Number(data.subtotal),
-          tax: Number(data.taxTotal),
-          total: Number(data.total),
-          tabName: data.tabName,
+          subtotal: Number(orderData.subtotal),
+          tax: Number(orderData.taxTotal),
+          total: Number(orderData.total),
+          tabName: orderData.tabName,
         })
         setState('summary')
       })

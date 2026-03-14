@@ -271,15 +271,19 @@ export function ModifierModal({
   const renderPourSizeButtons = () => {
     if (!item.pourSizes) return null
 
-    const enabledSizes = Object.entries(item.pourSizes).filter(([, value]) => {
+    const enabledSizes = Object.entries(item.pourSizes).filter(([key, value]) => {
+      if (key === '_hideDefaultOnPos') return false
       const mult = getPourSizeMultiplier(value as PourSizeValue)
       return mult > 0
     })
     if (enabledSizes.length === 0) return null
 
+    // Determine label based on item type — "Pour Size" for liquor, "Size" for food/other
+    const sizeLabel = item.isLiquorItem ? 'Pour Size' : 'Size'
+
     return (
       <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg p-3 mb-3">
-        <div className="text-white text-xs font-medium mb-2">Pour Size</div>
+        <div className="text-white text-xs font-medium mb-2">{sizeLabel}</div>
         <div className="flex gap-2">
           {enabledSizes.map(([size, value]) => {
             const multiplier = getPourSizeMultiplier(value as PourSizeValue)

@@ -1040,32 +1040,47 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     if (!selectedItem) return
 
     if (inlineModifierCallbackRef.current) {
-      const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
-      const simplifiedModifiers = modifiers.map(mod => ({
-        id: mod.id ?? '',
-        modifierId: mod.id,
-        name: mod.name,
-        price: applyToMods && pourMultiplier ? mod.price * pourMultiplier : mod.price,
-        depth: mod.depth ?? 0,
-        preModifier: mod.preModifier ?? null,
-        spiritTier: mod.spiritTier ?? null,
-        linkedBottleProductId: mod.linkedBottleProductId ?? null,
-        parentModifierId: mod.parentModifierId ?? null,
-      }))
-      inlineModifierCallbackRef.current(simplifiedModifiers, ingredientModifications)
-      inlineModifierCallbackRef.current = null
-      setShowModifierModal(false)
-      setSelectedItem(null)
-      setItemModifierGroups([])
-      setEditingOrderItem(null)
-      return
+      // If a pourSize was selected, bypass the inline callback and do the full add
+      // (inline callbacks can't carry pourSize/price adjustments back to the engine)
+      if (pourSize && pourMultiplier) {
+        inlineModifierCallbackRef.current = null
+        // Fall through to the full add below
+      } else {
+        const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
+        const simplifiedModifiers = modifiers.map(mod => ({
+          id: mod.id ?? '',
+          modifierId: mod.id,
+          name: mod.name,
+          price: applyToMods && pourMultiplier ? mod.price * pourMultiplier : mod.price,
+          depth: mod.depth ?? 0,
+          preModifier: mod.preModifier ?? null,
+          spiritTier: mod.spiritTier ?? null,
+          linkedBottleProductId: mod.linkedBottleProductId ?? null,
+          parentModifierId: mod.parentModifierId ?? null,
+        }))
+        inlineModifierCallbackRef.current(simplifiedModifiers, ingredientModifications)
+        inlineModifierCallbackRef.current = null
+        setShowModifierModal(false)
+        setSelectedItem(null)
+        setItemModifierGroups([])
+        setEditingOrderItem(null)
+        return
+      }
     }
 
     const basePrice = pourCustomPrice != null ? pourCustomPrice : (pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price)
     const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
 
+    // Get the display label for the pour size — use stored label if available, else capitalize key
+    let pourLabel = pourSize ? pourSize.charAt(0).toUpperCase() + pourSize.slice(1) : ''
+    if (pourSize && (selectedItem as any).pourSizes) {
+      const sizeData = (selectedItem as any).pourSizes[pourSize]
+      if (typeof sizeData === 'object' && sizeData?.label) {
+        pourLabel = sizeData.label
+      }
+    }
     const itemName = pourSize
-      ? `${selectedItem.name} (${pourSize.charAt(0).toUpperCase() + pourSize.slice(1)})`
+      ? `${selectedItem.name} (${pourLabel})`
       : selectedItem.name
 
     addItem({
@@ -1109,8 +1124,16 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     const basePrice = pourCustomPrice != null ? pourCustomPrice : (pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price)
     const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
 
+    // Get the display label for the pour size — use stored label if available, else capitalize key
+    let pourLabel = pourSize ? pourSize.charAt(0).toUpperCase() + pourSize.slice(1) : ''
+    if (pourSize && (selectedItem as any).pourSizes) {
+      const sizeData = (selectedItem as any).pourSizes[pourSize]
+      if (typeof sizeData === 'object' && sizeData?.label) {
+        pourLabel = sizeData.label
+      }
+    }
     const itemName = pourSize
-      ? `${selectedItem.name} (${pourSize.charAt(0).toUpperCase() + pourSize.slice(1)})`
+      ? `${selectedItem.name} (${pourLabel})`
       : selectedItem.name
 
     updateItem(editingOrderItem.id, {

@@ -248,10 +248,16 @@ export function useModifierSelections(
 ) {
   const discountPct = dualPricing.cashDiscountPercent || 4.0
 
-  // Pour size state
-  const [selectedPourSize, setSelectedPourSize] = useState<string | null>(
-    item.defaultPourSize || (item.pourSizes ? 'standard' : null)
-  )
+  // Pour size state — use defaultPourSize if set, fallback to 'standard' if it exists, else first size key
+  const [selectedPourSize, setSelectedPourSize] = useState<string | null>(() => {
+    if (item.defaultPourSize && item.pourSizes?.[item.defaultPourSize]) return item.defaultPourSize
+    if (item.pourSizes?.['standard']) return 'standard'
+    if (item.pourSizes) {
+      const firstKey = Object.keys(item.pourSizes).find(k => k !== '_hideDefaultOnPos')
+      return firstKey || null
+    }
+    return null
+  })
 
   // Ingredients state
   const [ingredients, setIngredients] = useState<MenuItemIngredient[]>([])

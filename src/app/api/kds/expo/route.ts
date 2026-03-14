@@ -100,7 +100,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Get prep stations for labeling
     const prepStations = await db.prepStation.findMany({
-      where: { locationId },
+      where: { locationId, deletedAt: null },
       select: { id: true, name: true, displayName: true },
     })
     const stationMap = new Map(

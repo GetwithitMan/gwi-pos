@@ -16,7 +16,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     const stations = await db.prepStation.findMany({
-      where: { locationId },
+      where: { locationId, deletedAt: null },
       include: {
         _count: {
           select: {
@@ -78,6 +78,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       where: {
         locationId,
         name: { equals: name },
+        deletedAt: null,
       },
     })
 
@@ -90,7 +91,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Get max sort order
     const maxSort = await db.prepStation.findFirst({
-      where: { locationId },
+      where: { locationId, deletedAt: null },
       orderBy: { sortOrder: 'desc' },
       select: { sortOrder: true },
     })

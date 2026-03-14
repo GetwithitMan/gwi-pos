@@ -100,6 +100,11 @@ interface MenuItem {
   hasPricingOptions?: boolean
   calories?: number | null
   alwaysOpenModifiers?: boolean
+  // Pour size options (liquor or food sizes)
+  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> & { _hideDefaultOnPos?: boolean } | null
+  defaultPourSize?: string | null
+  applyPourToModifiers?: boolean
+  isLiquorItem?: boolean
 }
 
 // InlineOrderItem: derived type from the inlineOrderItems memo below.

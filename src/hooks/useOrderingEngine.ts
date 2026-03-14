@@ -58,6 +58,10 @@ export interface EngineMenuItem {
   entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
   waitlistCount?: number
   alwaysOpenModifiers?: boolean
+  // Pour size options (liquor or food sizes) — items with pourSizes open the modifier modal
+  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null
+  defaultPourSize?: string | null
+  isLiquorItem?: boolean
 }
 
 /** Modifier shape returned by ModifierModal and stored on order items */
@@ -597,7 +601,27 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       }
     }
 
-    // 4. Item with modifiers (or alwaysOpenModifiers) → check defaults, possibly open modal
+    // 4. Item with pourSizes (food sizes or liquor pours) → always open modifier modal for size selection
+    const hasPourSizes = item.pourSizes && Object.keys(item.pourSizes).filter(k => k !== '_hideDefaultOnPos').length > 0
+    if (hasPourSizes && onOpenModifiers) {
+      const qtyForModifiers = quantityMultiplierRef.current
+      setPendingItem({ type: 'modifier', menuItem: item })
+      onOpenModifiers(item, (modifiers, ingredientMods) => {
+        addItemDirectly({
+          menuItemId: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: qtyForModifiers,
+          modifiers,
+          ingredientModifications: ingredientMods,
+          categoryType: item.categoryType,
+        })
+        setPendingItem(null)
+      })
+      return
+    }
+
+    // 5. Item with modifiers (or alwaysOpenModifiers) → check defaults, possibly open modal
     if ((item.hasModifiers || item.alwaysOpenModifiers) && onOpenModifiers) {
       // alwaysOpenModifiers — skip auto-satisfy, always open the modal
       if (item.alwaysOpenModifiers) {
@@ -698,7 +722,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       return
     }
 
-    // 5. Simple item → add directly (with quantity multiplier)
+    // 6. Simple item → add directly (with quantity multiplier)
     addItemDirectly({
       menuItemId: item.id,
       name: item.name,

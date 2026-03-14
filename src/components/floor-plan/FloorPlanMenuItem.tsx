@@ -34,6 +34,10 @@ interface MenuItem {
   pricingOptionGroups?: PricingOptionGroup[]
   hasPricingOptions?: boolean
   calories?: number | null
+  // Pour size options (liquor or food sizes)
+  pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> & { _hideDefaultOnPos?: boolean } | null
+  defaultPourSize?: string | null
+  isLiquorItem?: boolean
 }
 
 export interface FloorPlanMenuItemProps {
@@ -200,17 +204,34 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
       {/* Hide base price when quick picks are shown */}
       {!hasQuickPicks && (
         pricingAdjustment && !isItem86d ? (
-          // Pricing rule active — show adjusted price, optionally with strikethrough original
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {pricingAdjustment.showOriginalPrice && (
-              <span style={{ fontSize: '11px', fontWeight: 400, color: '#94a3b8', textDecoration: 'line-through' }}>
-                ${item.price.toFixed(2)}
+          // Pricing rule active — respect dual pricing display if enabled
+          pricing.isDualPricingEnabled ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {pricingAdjustment.showOriginalPrice && (
+                <span style={{ fontSize: '10px', fontWeight: 400, color: '#94a3b8', textDecoration: 'line-through' }}>
+                  ${(item.price * (1 + pricing.cashDiscountRate / 100)).toFixed(2)}
+                </span>
+              )}
+              <span style={{ fontSize: '14px', fontWeight: 600, color: '#60a5fa' }}>
+                ${(pricingAdjustment.adjustedPrice * (1 + pricing.cashDiscountRate / 100)).toFixed(2)}
               </span>
-            )}
-            <span style={{ fontSize: '15px', fontWeight: 600, color: pricingAdjustment.color || '#10b981' }}>
-              ${pricingAdjustment.adjustedPrice.toFixed(2)}
-            </span>
-          </div>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: '#4ade80' }}>
+                ${pricingAdjustment.adjustedPrice.toFixed(2)}
+              </span>
+            </div>
+          ) : (
+            // Standard pricing — show adjusted price in rule color
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {pricingAdjustment.showOriginalPrice && (
+                <span style={{ fontSize: '11px', fontWeight: 400, color: '#94a3b8', textDecoration: 'line-through' }}>
+                  ${item.price.toFixed(2)}
+                </span>
+              )}
+              <span style={{ fontSize: '15px', fontWeight: 600, color: pricingAdjustment.color || '#10b981' }}>
+                ${pricingAdjustment.adjustedPrice.toFixed(2)}
+              </span>
+            </div>
+          )
         ) : pricing.isDualPricingEnabled ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <span style={{ fontSize: '14px', fontWeight: 600, color: isItem86d ? '#6b7280' : '#60a5fa' }}>

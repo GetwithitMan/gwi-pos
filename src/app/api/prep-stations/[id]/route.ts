@@ -15,7 +15,7 @@ export const GET = withVenue(async function GET(
       include: { categories: { select: { id: true, name: true } } },
     })
 
-    if (!station) {
+    if (!station || station.deletedAt) {
       return NextResponse.json({ error: 'Prep station not found' }, { status: 404 })
     }
 
@@ -36,7 +36,7 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
 
     const existing = await db.prepStation.findUnique({ where: { id } })
-    if (!existing) {
+    if (!existing || existing.deletedAt) {
       return NextResponse.json({ error: 'Prep station not found' }, { status: 404 })
     }
 
@@ -71,7 +71,7 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
 
     const station = await db.prepStation.findUnique({ where: { id } })
-    if (!station) {
+    if (!station || station.deletedAt) {
       return NextResponse.json({ error: 'Prep station not found' }, { status: 404 })
     }
 

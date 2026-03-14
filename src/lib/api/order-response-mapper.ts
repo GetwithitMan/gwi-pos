@@ -215,6 +215,7 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
 /** Mapped order shape returned by the API */
 export interface MappedOrder {
   id: string
+  locationId: string
   orderNumber: number
   status: string
   orderType: string
@@ -249,6 +250,7 @@ export interface MappedOrder {
 export function mapOrderForResponse(order: any): MappedOrder {
   return {
     id: order.id,
+    locationId: order.locationId,
     orderNumber: order.orderNumber,
     status: order.status,
     orderType: order.orderType,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
@@ -38,12 +38,32 @@ export default function ReportsHubPage() {
   const employee = useAuthStore(s => s.employee)
   const [stats, setStats] = useState<TodayStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [lowStockCount, setLowStockCount] = useState<number>(0)
 
   const permissions = employee?.permissions || []
+
+  const loadLowStockCount = useCallback(async () => {
+    if (!employee?.location?.id) return
+    try {
+      const params = new URLSearchParams({
+        locationId: employee.location.id,
+        employeeId: employee.id,
+        belowReorderOnly: 'true',
+      })
+      const response = await fetch(`/api/reports/inventory/par?${params}`)
+      if (response.ok) {
+        const json = await response.json()
+        setLowStockCount(json.data.summary?.belowReorder || 0)
+      }
+    } catch {
+      // Silently fail — low stock alert is non-critical
+    }
+  }, [employee?.location?.id, employee?.id])
 
   useEffect(() => {
     if (employee?.location?.id) {
       loadTodayStats()
+      void loadLowStockCount()
     }
   }, [employee?.location?.id])
 
@@ -418,6 +438,17 @@ export default function ReportsHubPage() {
       title: 'Inventory & Liquor',
       reports: [
         {
+          name: 'PAR Inventory',
+          href: '/reports/inventory',
+          description: 'Stock vs PAR levels, reorder alerts, usage rates, variance analysis',
+          permission: PERMISSIONS.REPORTS_INVENTORY,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+          ),
+        },
+        {
           name: 'Food Cost Analysis',
           href: '/reports/food-cost',
           description: 'Food cost %, COGS by category and item, cost coverage',
@@ -484,6 +515,28 @@ export default function ReportsHubPage() {
       />
 
       <div className="max-w-7xl mx-auto">
+        {/* Low Stock Alert Banner */}
+        {lowStockCount > 0 && (
+          <Link href="/reports/inventory">
+            <div className="mb-6 flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-xl hover:bg-red-100 transition-colors cursor-pointer">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-red-800">
+                  Low Stock Alert: {lowStockCount} item{lowStockCount === 1 ? '' : 's'} below reorder point
+                </p>
+                <p className="text-xs text-red-600">Click to view PAR Inventory Report</p>
+              </div>
+              <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </Link>
+        )}
+
         {/* Today's Quick Stats */}
         <div className="mb-8">
           <h2 className="text-lg font-semibold mb-4">Today&apos;s Overview</h2>

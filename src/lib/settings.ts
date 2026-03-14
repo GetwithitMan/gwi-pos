@@ -2426,6 +2426,12 @@ export function getBestPricingRuleForItem(
   // badgeText falls back to ruleName truncated to 20 chars
   const badgeText = winner.badgeText || winner.name.slice(0, 20)
 
+  // Price increases: never show the original (lower) price — customers don't need
+  // to know there's a cheaper base price. Force showOriginalPrice off for increases.
+  const isIncrease = winner.adjustmentType === 'percent-increase'
+    || winner.adjustmentType === 'fixed-increase'
+    || (winner.adjustmentType === 'override-price' && adjustedPrice > originalPrice)
+
   return {
     version: 1,
     ruleId: winner.id,
@@ -2435,8 +2441,8 @@ export function getBestPricingRuleForItem(
     originalPrice,
     adjustedPrice,
     color: validColor,
-    showBadge: winner.showBadge,
-    showOriginalPrice: winner.showOriginalPrice,
+    showBadge: isIncrease ? false : winner.showBadge,
+    showOriginalPrice: isIncrease ? false : winner.showOriginalPrice,
     badgeText,
   }
 }

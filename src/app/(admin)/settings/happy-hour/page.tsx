@@ -586,236 +586,209 @@ function RuleModal({
     return map
   }, [filteredItems])
 
+  // Cross-midnight detection helper
+  const isCrossMidnight = (start: string, end: string) => {
+    if (!start || !end) return false
+    return parseTimeToMinutes(start) >= parseTimeToMinutes(end) && end !== start
+  }
+  function parseTimeToMinutes(t: string) {
+    const [h, m] = t.split(':').map(Number)
+    return h * 60 + m
+  }
+
+  // Check any schedule for cross-midnight
+  const hasCrossMidnight = draft.type === 'recurring'
+    ? draft.schedules.some(s => isCrossMidnight(s.startTime, s.endTime))
+    : !!(draft.startTime && draft.endTime && isCrossMidnight(draft.startTime, draft.endTime))
+
   return (
-    <Modal isOpen onClose={onClose} title={editingRule ? 'Edit Pricing Rule' : 'New Pricing Rule'} size="lg">
-      <div className="space-y-6">
-        {/* Name + Description + Color */}
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Name *</label>
-            <input
-              type="text"
-              value={draft.name}
-              onChange={e => update('name', e.target.value)}
-              maxLength={50}
-              className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50"
-              placeholder="e.g. Happy Hour, Taco Tuesday"
-            />
+    <Modal isOpen onClose={onClose} title={editingRule ? 'Edit Pricing Rule' : 'New Pricing Rule'} size="4xl">
+      <div className="flex gap-5">
+        {/* ─── Left Column: Rule config ─── */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* Row 1: Name + Color */}
+          <div className="flex gap-3 items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Name *</label>
+              <input type="text" value={draft.name} onChange={e => update('name', e.target.value)}
+                maxLength={50} className="w-full px-3 py-1.5 border rounded-lg text-sm bg-gray-50" placeholder="e.g. Happy Hour, Taco Tuesday" />
+            </div>
+            <div className="flex gap-1.5 pb-0.5">
+              {COLOR_PRESETS.map(c => (
+                <button key={c} type="button" onClick={() => update('color', c)}
+                  className={`w-6 h-6 rounded-full border-2 transition-all ${draft.color === c ? 'border-gray-800 scale-110' : 'border-transparent'}`}
+                  style={{ backgroundColor: c }} />
+              ))}
+            </div>
           </div>
+
+          {/* Description (compact) */}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-            <textarea
-              value={draft.description || ''}
-              onChange={e => update('description', e.target.value)}
-              maxLength={200}
-              rows={2}
-              className="w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 resize-none"
-              placeholder="Internal notes (not shown to customers)"
-            />
-            <span className="text-[10px] text-gray-400">{(draft.description || '').length}/200</span>
+            <input type="text" value={draft.description || ''} onChange={e => update('description', e.target.value)}
+              maxLength={200} className="w-full px-3 py-1.5 border rounded-lg text-sm bg-gray-50" placeholder="Internal notes (not shown to customers)" />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Color</label>
-            <div className="flex gap-2">
-              {COLOR_PRESETS.map(c => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => update('color', c)}
-                  className={`w-7 h-7 rounded-full border-2 transition-all ${draft.color === c ? 'border-gray-800 scale-110' : 'border-transparent'}`}
-                  style={{ backgroundColor: c }}
-                  title={c}
-                />
-              ))}
+
+          {/* Row 2: Type + Pricing side by side */}
+          <div className="flex gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+              <div className="flex gap-1">
+                {([['recurring', 'Weekly'], ['one-time', 'One-Time'], ['yearly-recurring', 'Yearly']] as const).map(([val, lbl]) => (
+                  <button key={val} type="button" onClick={() => setType(val)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${draft.type === val ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  >{lbl}</button>
+                ))}
+              </div>
             </div>
-          </div>
-        </div>
-
-        {/* Type */}
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
-          <div className="flex gap-1">
-            {([['recurring', 'Weekly'], ['one-time', 'One-Time'], ['yearly-recurring', 'Yearly']] as const).map(([val, lbl]) => (
-              <button
-                key={val}
-                type="button"
-                onClick={() => setType(val)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${draft.type === val ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              >
-                {lbl}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Schedule */}
-        <div className="space-y-3">
-          <label className="block text-xs font-medium text-gray-500">Schedule</label>
-          {draft.type === 'recurring' && (
-            <>
-              {draft.schedules.map((sched, idx) => (
-                <div key={idx} className="p-3 border rounded-lg bg-gray-50 space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-medium text-gray-500">Window {idx + 1}</span>
-                    {draft.schedules.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setDraft(prev => ({ ...prev, schedules: prev.schedules.filter((_, i) => i !== idx) }))}
-                        className="text-xs text-red-500 hover:text-red-700"
-                      >Remove</button>
-                    )}
-                  </div>
-                  <div className="flex gap-1 flex-wrap">
-                    {DAYS_SHORT.map((d, di) => {
-                      const dayVal = DAYS_INDEX[di]
-                      const active = sched.dayOfWeek.includes(dayVal)
-                      return (
-                        <button
-                          key={d}
-                          type="button"
-                          onClick={() => {
-                            const newDays = active ? sched.dayOfWeek.filter(x => x !== dayVal) : [...sched.dayOfWeek, dayVal].sort()
-                            setDraft(prev => ({
-                              ...prev,
-                              schedules: prev.schedules.map((s, i) => i === idx ? { ...s, dayOfWeek: newDays } : s),
-                            }))
-                          }}
-                          className={`px-2 py-1 rounded text-xs font-medium transition-colors ${active ? 'bg-gray-800 text-white' : 'bg-white border text-gray-500 hover:bg-gray-100'}`}
-                        >{d}</button>
-                      )
-                    })}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[10px] text-gray-400 mb-0.5">Start</label>
-                      <input
-                        type="time"
-                        value={sched.startTime}
-                        onChange={e => setDraft(prev => ({
-                          ...prev,
-                          schedules: prev.schedules.map((s, i) => i === idx ? { ...s, startTime: e.target.value } : s),
-                        }))}
-                        className="w-full px-2 py-1.5 border rounded text-sm bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-gray-400 mb-0.5">End</label>
-                      <input
-                        type="time"
-                        value={sched.endTime}
-                        onChange={e => setDraft(prev => ({
-                          ...prev,
-                          schedules: prev.schedules.map((s, i) => i === idx ? { ...s, endTime: e.target.value } : s),
-                        }))}
-                        className="w-full px-2 py-1.5 border rounded text-sm bg-white"
-                      />
-                    </div>
-                  </div>
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Pricing</label>
+              <div className="flex gap-1 flex-wrap">
+                {ADJUSTMENT_BUTTONS.map(({ type, label }) => (
+                  <button key={type} type="button" onClick={() => update('adjustmentType', type)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${draft.adjustmentType === type ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  >{label}</button>
+                ))}
+                <div className="relative">
+                  {(draft.adjustmentType === 'fixed-off' || draft.adjustmentType === 'fixed-increase' || draft.adjustmentType === 'override-price') && (
+                    <span className="absolute left-2 top-1.5 text-gray-400 text-sm">$</span>
+                  )}
+                  <input type="number" min="0" step={draft.adjustmentType.startsWith('percent') ? '1' : '0.01'}
+                    value={draft.adjustmentValue} onChange={e => update('adjustmentValue', parseFloat(e.target.value) || 0)}
+                    className={`w-20 px-2 py-1.5 border rounded-lg text-sm bg-gray-50 ${
+                      (draft.adjustmentType === 'fixed-off' || draft.adjustmentType === 'fixed-increase' || draft.adjustmentType === 'override-price') ? 'pl-6' : ''
+                    }`}
+                  />
+                  {draft.adjustmentType.startsWith('percent') && (
+                    <span className="absolute right-2 top-1.5 text-gray-400 text-sm">%</span>
+                  )}
                 </div>
-              ))}
-              <button
-                type="button"
-                onClick={() => setDraft(prev => ({
-                  ...prev,
-                  schedules: [...prev.schedules, { dayOfWeek: [1,2,3,4,5], startTime: '16:00', endTime: '18:00' }],
-                }))}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-              >+ Add Time Window</button>
-            </>
-          )}
-
-          {draft.type === 'one-time' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-0.5">Start Date</label>
-                <input type="date" value={draft.startDate || ''} onChange={e => update('startDate', e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-gray-50" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-0.5">End Date</label>
-                <input type="date" value={draft.endDate || ''} onChange={e => update('endDate', e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-gray-50" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-0.5">Start Time</label>
-                <input type="time" value={draft.startTime || ''} onChange={e => update('startTime', e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-gray-50" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-0.5">End Time</label>
-                <input type="time" value={draft.endTime || ''} onChange={e => update('endTime', e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-gray-50" />
               </div>
             </div>
-          )}
-
-          {draft.type === 'yearly-recurring' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-0.5">Start (MM-DD)</label>
-                <input type="text" placeholder="MM-DD" value={draft.startDate || ''} onChange={e => update('startDate', e.target.value)}
-                  maxLength={5} className="w-full px-2 py-1.5 border rounded text-sm bg-gray-50" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-0.5">End (MM-DD)</label>
-                <input type="text" placeholder="MM-DD" value={draft.endDate || ''} onChange={e => update('endDate', e.target.value)}
-                  maxLength={5} className="w-full px-2 py-1.5 border rounded text-sm bg-gray-50" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-0.5">Start Time</label>
-                <input type="time" value={draft.startTime || ''} onChange={e => update('startTime', e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-gray-50" />
-              </div>
-              <div>
-                <label className="block text-[10px] text-gray-400 mb-0.5">End Time</label>
-                <input type="time" value={draft.endTime || ''} onChange={e => update('endTime', e.target.value)}
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-gray-50" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Pricing */}
-        <div className="space-y-3">
-          <label className="block text-xs font-medium text-gray-500">Pricing</label>
-          <div className="flex gap-1 flex-wrap">
-            {ADJUSTMENT_BUTTONS.map(({ type, label }) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => update('adjustmentType', type)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${draft.adjustmentType === type ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              >{label}</button>
-            ))}
           </div>
-          <div className="relative max-w-[200px]">
-            {(draft.adjustmentType === 'fixed-off' || draft.adjustmentType === 'fixed-increase' || draft.adjustmentType === 'override-price') && (
-              <span className="absolute left-3 top-2 text-gray-400 text-sm">$</span>
-            )}
-            <input
-              type="number"
-              min="0"
-              step={draft.adjustmentType.startsWith('percent') ? '1' : '0.01'}
-              value={draft.adjustmentValue}
-              onChange={e => update('adjustmentValue', parseFloat(e.target.value) || 0)}
-              className={`w-full px-3 py-2 border rounded-lg text-sm bg-gray-50 ${
-                (draft.adjustmentType === 'fixed-off' || draft.adjustmentType === 'fixed-increase' || draft.adjustmentType === 'override-price') ? 'pl-7' : ''
-              }`}
-            />
-            {draft.adjustmentType.startsWith('percent') && (
-              <span className="absolute right-3 top-2 text-gray-400 text-sm">%</span>
-            )}
-          </div>
+
           {/* Free item hint */}
           {draft.adjustmentType === 'override-price' && draft.adjustmentValue === 0 && (
-            <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+            <p className="text-xs text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg">
               This makes the item free (tax still applies on $0 unless configured otherwise).
             </p>
           )}
+
+          {/* Schedule */}
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-gray-500">Schedule</label>
+            {draft.type === 'recurring' && (
+              <>
+                {draft.schedules.map((sched, idx) => (
+                  <div key={idx} className="p-2.5 border rounded-lg bg-gray-50 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-medium text-gray-400 uppercase">Window {idx + 1}</span>
+                      {draft.schedules.length > 1 && (
+                        <button type="button" onClick={() => setDraft(prev => ({ ...prev, schedules: prev.schedules.filter((_, i) => i !== idx) }))}
+                          className="text-[10px] text-red-500 hover:text-red-700">Remove</button>
+                      )}
+                    </div>
+                    <div className="flex gap-1 flex-wrap">
+                      {DAYS_SHORT.map((d, di) => {
+                        const dayVal = DAYS_INDEX[di]
+                        const active = sched.dayOfWeek.includes(dayVal)
+                        return (
+                          <button key={d} type="button" onClick={() => {
+                            const newDays = active ? sched.dayOfWeek.filter(x => x !== dayVal) : [...sched.dayOfWeek, dayVal].sort()
+                            setDraft(prev => ({ ...prev, schedules: prev.schedules.map((s, i) => i === idx ? { ...s, dayOfWeek: newDays } : s) }))
+                          }}
+                          className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${active ? 'bg-gray-800 text-white' : 'bg-white border text-gray-500 hover:bg-gray-100'}`}
+                          >{d}</button>
+                        )
+                      })}
+                    </div>
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <label className="block text-[10px] text-gray-400 mb-0.5">Start</label>
+                        <input type="time" value={sched.startTime} onChange={e => setDraft(prev => ({
+                          ...prev, schedules: prev.schedules.map((s, i) => i === idx ? { ...s, startTime: e.target.value } : s),
+                        }))} className="w-full px-2 py-1 border rounded text-sm bg-white" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-[10px] text-gray-400 mb-0.5">End</label>
+                        <input type="time" value={sched.endTime} onChange={e => setDraft(prev => ({
+                          ...prev, schedules: prev.schedules.map((s, i) => i === idx ? { ...s, endTime: e.target.value } : s),
+                        }))} className="w-full px-2 py-1 border rounded text-sm bg-white" />
+                      </div>
+                      {isCrossMidnight(sched.startTime, sched.endTime) && (
+                        <span className="text-[10px] text-amber-600 bg-amber-50 px-2 py-1 rounded font-medium whitespace-nowrap mb-0.5">crosses midnight</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setDraft(prev => ({
+                  ...prev, schedules: [...prev.schedules, { dayOfWeek: [1,2,3,4,5], startTime: '16:00', endTime: '18:00' }],
+                }))} className="text-xs text-blue-600 hover:text-blue-800 font-medium">+ Add Time Window</button>
+              </>
+            )}
+
+            {draft.type === 'one-time' && (
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">Start Date</label>
+                  <input type="date" value={draft.startDate || ''} onChange={e => update('startDate', e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm bg-gray-50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">End Date</label>
+                  <input type="date" value={draft.endDate || ''} onChange={e => update('endDate', e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm bg-gray-50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">Start Time</label>
+                  <input type="time" value={draft.startTime || ''} onChange={e => update('startTime', e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm bg-gray-50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">End Time</label>
+                  <input type="time" value={draft.endTime || ''} onChange={e => update('endTime', e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm bg-gray-50" />
+                </div>
+              </div>
+            )}
+
+            {draft.type === 'yearly-recurring' && (
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">Start (MM-DD)</label>
+                  <input type="text" placeholder="MM-DD" value={draft.startDate || ''} onChange={e => update('startDate', e.target.value)}
+                    maxLength={5} className="w-full px-2 py-1 border rounded text-sm bg-gray-50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">End (MM-DD)</label>
+                  <input type="text" placeholder="MM-DD" value={draft.endDate || ''} onChange={e => update('endDate', e.target.value)}
+                    maxLength={5} className="w-full px-2 py-1 border rounded text-sm bg-gray-50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">Start Time</label>
+                  <input type="time" value={draft.startTime || ''} onChange={e => update('startTime', e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm bg-gray-50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">End Time</label>
+                  <input type="time" value={draft.endTime || ''} onChange={e => update('endTime', e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm bg-gray-50" />
+                </div>
+              </div>
+            )}
+
+            {/* Cross-midnight indicator for date-based types */}
+            {draft.type !== 'recurring' && hasCrossMidnight && (
+              <p className="text-[10px] text-amber-600 bg-amber-50 px-2.5 py-1 rounded font-medium inline-block">
+                Crosses midnight — ends the following day
+              </p>
+            )}
+          </div>
+
           {/* Live preview */}
           {sampleItems.length > 0 && (
-            <div className="p-3 bg-blue-50 rounded-lg space-y-1">
-              <span className="text-[10px] font-medium text-blue-600 uppercase">Preview</span>
+            <div className="p-2.5 bg-blue-50 rounded-lg space-y-0.5">
+              <span className="text-[10px] font-medium text-blue-600 uppercase">Price Preview</span>
               {sampleItems.map(item => {
                 const adjusted = getAdjustedPrice(item.price, draft)
                 return (
@@ -830,49 +803,112 @@ function RuleModal({
               })}
             </div>
           )}
+
+          {/* Display options + lifecycle — compact row */}
+          {(() => {
+            const isIncrease = draft.adjustmentType === 'percent-increase' || draft.adjustmentType === 'fixed-increase'
+            return (
+              <div className="flex gap-4 flex-wrap items-center">
+                {isIncrease ? (
+                  <span className="text-xs text-gray-400 italic">Badge and strikethrough hidden for price increases — customers won&apos;t see the lower base price.</span>
+                ) : (
+                  <>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                      <input type="checkbox" checked={draft.showBadge} onChange={e => update('showBadge', e.target.checked)} className="accent-gray-800" />
+                      Show badge
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                      <input type="checkbox" checked={draft.showOriginalPrice} onChange={e => update('showOriginalPrice', e.target.checked)} className="accent-gray-800" />
+                      Strikethrough original
+                    </label>
+                    {draft.showBadge && (
+                      <input type="text" value={draft.badgeText || ''} onChange={e => update('badgeText', e.target.value)}
+                        maxLength={20} placeholder={`Badge: ${draft.name || 'Rule name'}`}
+                        className="px-2 py-1 border rounded text-sm bg-gray-50 w-44" />
+                    )}
+                  </>
+                )}
+                {draft.type === 'one-time' && (
+                  <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                    <input type="checkbox" checked={draft.autoDelete} onChange={e => update('autoDelete', e.target.checked)} className="accent-gray-800" />
+                    Auto-delete when expired
+                  </label>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Overlap Warnings */}
+          {overlaps.length > 0 && (
+            <div className="space-y-1">
+              {overlaps.map((o, i) => (
+                <div key={i} className={`text-xs px-2.5 py-1.5 rounded-lg ${
+                  o.severity === 'error' ? 'bg-red-50 text-red-700' :
+                  o.severity === 'warning' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
+                }`}>
+                  <span className={`inline-block px-1 py-0.5 rounded text-[9px] font-bold uppercase mr-1 ${
+                    o.severity === 'error' ? 'bg-red-200 text-red-800' :
+                    o.severity === 'warning' ? 'bg-amber-200 text-amber-800' : 'bg-blue-200 text-blue-800'
+                  }`}>{o.severity}</span>
+                  {o.description}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Validation Errors */}
+          {errors.length > 0 && (
+            <div className="space-y-0.5">
+              {errors.map((err, i) => <p key={i} className="text-xs text-red-600">{err}</p>)}
+            </div>
+          )}
+
+          {/* Advanced (inline) */}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setShowAdvanced(!showAdvanced)}
+              className="text-[10px] text-gray-400 hover:text-gray-600 font-medium"
+            >{showAdvanced ? '- Hide' : '+'} Advanced</button>
+            {showAdvanced && (
+              <>
+                <label className="text-[10px] text-gray-400">Priority</label>
+                <input type="number" value={draft.priority} onChange={e => update('priority', parseInt(e.target.value) || 0)}
+                  className="w-16 px-2 py-1 border rounded text-sm bg-gray-50" />
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Applies To */}
-        <div className="space-y-3">
+        {/* ─── Right Column: Scope picker (always visible) ─── */}
+        <div className="w-72 flex-shrink-0 border-l pl-5 space-y-3">
           <label className="block text-xs font-medium text-gray-500">Applies To</label>
-          <div className="flex gap-2">
+          <div className="flex gap-1">
             {(['all', 'categories', 'items'] as const).map(scope => (
-              <label key={scope} className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  name="scope"
-                  checked={draft.appliesTo === scope}
-                  onChange={() => update('appliesTo', scope)}
-                  className="accent-gray-800"
-                />
-                <span className="text-sm capitalize">{scope === 'all' ? 'All Items' : scope}</span>
-              </label>
+              <button key={scope} type="button" onClick={() => update('appliesTo', scope)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${draft.appliesTo === scope ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >{scope === 'all' ? 'All' : scope === 'categories' ? 'Categories' : 'Items'}</button>
             ))}
           </div>
 
+          {draft.appliesTo === 'all' && (
+            <p className="text-xs text-gray-400 py-4 text-center">Applies to every menu item.</p>
+          )}
+
           {draft.appliesTo === 'categories' && (
-            <div className="max-h-48 overflow-y-auto border rounded-lg p-2 space-y-1 bg-gray-50">
-              {categories.map(cat => {
+            <div className="max-h-[400px] overflow-y-auto border rounded-lg p-1.5 space-y-0.5 bg-gray-50">
+              {(Array.isArray(categories) ? categories : []).map(cat => {
                 const checked = draft.categoryIds.includes(cat.id)
                 return (
                   <label key={cat.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => update('categoryIds', checked
-                        ? draft.categoryIds.filter(id => id !== cat.id)
-                        : [...draft.categoryIds, cat.id]
-                      )}
-                      className="accent-gray-800"
-                    />
-                    <span className="text-sm flex-1">{cat.name}</span>
+                    <input type="checkbox" checked={checked}
+                      onChange={() => update('categoryIds', checked ? draft.categoryIds.filter(id => id !== cat.id) : [...draft.categoryIds, cat.id])}
+                      className="accent-gray-800" />
+                    <span className="text-sm flex-1 truncate">{cat.name}</span>
                     {cat._count?.menuItems != null && (
-                      <span className="text-[10px] text-gray-400">{cat._count.menuItems} items</span>
+                      <span className="text-[10px] text-gray-400">{cat._count.menuItems}</span>
                     )}
                   </label>
                 )
               })}
-              {/* Ghost IDs */}
               {draft.categoryIds.filter(id => !catIdSet.has(id)).map(id => (
                 <div key={id} className="flex items-center gap-2 px-2 py-1 text-xs text-red-400">
                   <input type="checkbox" checked onChange={() => update('categoryIds', draft.categoryIds.filter(x => x !== id))} className="accent-red-400" />
@@ -883,147 +919,214 @@ function RuleModal({
           )}
 
           {draft.appliesTo === 'items' && (
-            <>
-              <input
-                type="text"
-                placeholder="Search items..."
-                value={itemSearch}
-                onChange={e => setItemSearch(e.target.value)}
-                className="w-full px-3 py-1.5 border rounded-lg text-sm bg-gray-50"
-              />
-              <div className="max-h-56 overflow-y-auto border rounded-lg p-2 space-y-2 bg-gray-50">
-                {Array.from(itemsByCategory.entries()).map(([catName, items]) => (
-                  <div key={catName}>
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase px-2 mb-1">{catName}</div>
-                    {items.map(item => {
-                      const checked = draft.itemIds.includes(item.id)
-                      return (
-                        <label key={item.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-100 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => update('itemIds', checked
-                              ? draft.itemIds.filter(id => id !== item.id)
-                              : [...draft.itemIds, item.id]
-                            )}
-                            className="accent-gray-800"
-                          />
-                          <span className="text-sm flex-1">{item.name}</span>
-                          <span className="text-[10px] text-gray-400">{formatCurrency(item.price)}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
-                ))}
-                {/* Ghost IDs */}
-                {draft.itemIds.filter(id => !itemIdSet.has(id)).map(id => (
-                  <div key={id} className="flex items-center gap-2 px-2 py-1 text-xs text-red-400">
-                    <input type="checkbox" checked onChange={() => update('itemIds', draft.itemIds.filter(x => x !== id))} className="accent-red-400" />
-                    {id.slice(0, 8)}... <span className="text-red-500 font-medium">(deleted)</span>
-                  </div>
-                ))}
-              </div>
-            </>
+            <ItemScopePicker
+              menuItems={Array.isArray(menuItems) ? menuItems : []}
+              categories={Array.isArray(categories) ? categories : []}
+              selectedIds={draft.itemIds}
+              ghostIds={draft.itemIds.filter(id => !itemIdSet.has(id))}
+              onChange={(ids) => update('itemIds', ids)}
+            />
           )}
-        </div>
-
-        {/* Display */}
-        <div className="space-y-2">
-          <label className="block text-xs font-medium text-gray-500">Display</label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={draft.showBadge} onChange={e => update('showBadge', e.target.checked)} className="accent-gray-800" />
-            <span className="text-sm">Show badge on items</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={draft.showOriginalPrice} onChange={e => update('showOriginalPrice', e.target.checked)} className="accent-gray-800" />
-            <span className="text-sm">Show original price crossed out</span>
-          </label>
-          {draft.showBadge && (
-            <div>
-              <label className="block text-[10px] text-gray-400 mb-0.5">Badge Text (max 20 chars)</label>
-              <input
-                type="text"
-                value={draft.badgeText || ''}
-                onChange={e => update('badgeText', e.target.value)}
-                maxLength={20}
-                placeholder={draft.name || 'Rule name'}
-                className="w-full max-w-[200px] px-2 py-1.5 border rounded text-sm bg-gray-50"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Lifecycle (one-time only) */}
-        {draft.type === 'one-time' && (
-          <div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={draft.autoDelete} onChange={e => update('autoDelete', e.target.checked)} className="accent-gray-800" />
-              <span className="text-sm">Auto-delete after event ends</span>
-            </label>
-          </div>
-        )}
-
-        {/* Overlap Warnings */}
-        {overlaps.length > 0 && (
-          <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-gray-500">Overlap Warnings</label>
-            {overlaps.map((o, i) => (
-              <div key={i} className={`text-xs px-3 py-2 rounded-lg ${
-                o.severity === 'error' ? 'bg-red-50 text-red-700' :
-                o.severity === 'warning' ? 'bg-amber-50 text-amber-700' :
-                'bg-blue-50 text-blue-700'
-              }`}>
-                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mr-1.5 ${
-                  o.severity === 'error' ? 'bg-red-200 text-red-800' :
-                  o.severity === 'warning' ? 'bg-amber-200 text-amber-800' :
-                  'bg-blue-200 text-blue-800'
-                }`}>{o.severity}</span>
-                {o.description}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Validation Errors */}
-        {errors.length > 0 && (
-          <div className="space-y-1">
-            {errors.map((err, i) => (
-              <p key={i} className="text-xs text-red-600">{err}</p>
-            ))}
-          </div>
-        )}
-
-        {/* Advanced */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="text-xs text-gray-400 hover:text-gray-600 font-medium"
-          >
-            {showAdvanced ? '- Hide' : '+ Show'} Advanced
-          </button>
-          {showAdvanced && (
-            <div className="mt-2">
-              <label className="block text-[10px] text-gray-400 mb-0.5">Priority (higher = wins over lower)</label>
-              <input
-                type="number"
-                value={draft.priority}
-                onChange={e => update('priority', parseInt(e.target.value) || 0)}
-                className="w-24 px-2 py-1.5 border rounded text-sm bg-gray-50"
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-2 pt-2 border-t">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={onSave} disabled={errors.length > 0}>
-            {editingRule ? 'Update Rule' : 'Create Rule'}
-          </Button>
         </div>
       </div>
+
+      {/* Footer */}
+      <div className="flex justify-end gap-2 pt-3 mt-4 border-t">
+        <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+        <Button size="sm" onClick={onSave} disabled={errors.length > 0}>
+          {editingRule ? 'Update Rule' : 'Create Rule'}
+        </Button>
+      </div>
     </Modal>
+  )
+}
+
+// ─── Hierarchical Item Scope Picker ──────────────────────────────────────────
+
+function ItemScopePicker({
+  menuItems, categories, selectedIds, ghostIds, onChange,
+}: {
+  menuItems: MenuItem[]
+  categories: Category[]
+  selectedIds: string[]
+  ghostIds: string[]
+  onChange: (ids: string[]) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  // Build category map for lookup
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, Category>()
+    for (const c of categories) map.set(c.id, c)
+    return map
+  }, [categories])
+
+  // Group items by categoryId, filter by search
+  const grouped = useMemo(() => {
+    const q = search.toLowerCase()
+    const filtered = search
+      ? menuItems.filter(i => i.name.toLowerCase().includes(q) || (categoryMap.get(i.categoryId)?.name || '').toLowerCase().includes(q))
+      : menuItems
+
+    const map = new Map<string, { category: Category | null; items: MenuItem[] }>()
+    for (const item of filtered) {
+      const catId = item.categoryId || '_uncategorized'
+      if (!map.has(catId)) {
+        map.set(catId, { category: categoryMap.get(item.categoryId) || null, items: [] })
+      }
+      map.get(catId)!.items.push(item)
+    }
+    // Sort categories alphabetically, uncategorized last
+    return Array.from(map.entries()).sort(([aId, a], [bId, b]) => {
+      if (aId === '_uncategorized') return 1
+      if (bId === '_uncategorized') return -1
+      return (a.category?.name || '').localeCompare(b.category?.name || '')
+    })
+  }, [menuItems, categoryMap, search])
+
+  // Auto-expand categories that have search matches or selected items
+  useEffect(() => {
+    if (search) {
+      setExpanded(new Set(grouped.map(([catId]) => catId)))
+    }
+  }, [search, grouped])
+
+  const toggleExpand = (catId: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(catId)) next.delete(catId)
+      else next.add(catId)
+      return next
+    })
+  }
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+
+  const toggleItem = (itemId: string) => {
+    if (selectedSet.has(itemId)) {
+      onChange(selectedIds.filter(id => id !== itemId))
+    } else {
+      onChange([...selectedIds, itemId])
+    }
+  }
+
+  const toggleCategory = (items: MenuItem[]) => {
+    const catItemIds = items.map(i => i.id)
+    const allSelected = catItemIds.every(id => selectedSet.has(id))
+    if (allSelected) {
+      // Deselect all in this category
+      const removeSet = new Set(catItemIds)
+      onChange(selectedIds.filter(id => !removeSet.has(id)))
+    } else {
+      // Select all in this category
+      const newIds = new Set(selectedIds)
+      for (const id of catItemIds) newIds.add(id)
+      onChange(Array.from(newIds))
+    }
+  }
+
+  const selectedCount = selectedIds.length - ghostIds.length
+
+  return (
+    <div className="space-y-2">
+      <input
+        type="text"
+        placeholder="Search items or categories..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        className="w-full px-3 py-1.5 border rounded-lg text-sm bg-gray-50"
+      />
+      {selectedCount > 0 && (
+        <p className="text-[10px] text-gray-500">{selectedCount} item{selectedCount !== 1 ? 's' : ''} selected</p>
+      )}
+      <div className="max-h-64 overflow-y-auto border rounded-lg bg-gray-50">
+        {grouped.map(([catId, { category, items }]) => {
+          const isExpanded = expanded.has(catId)
+          const catItemIds = items.map(i => i.id)
+          const selectedInCat = catItemIds.filter(id => selectedSet.has(id)).length
+          const allSelected = selectedInCat === items.length && items.length > 0
+          const someSelected = selectedInCat > 0 && !allSelected
+
+          return (
+            <div key={catId} className="border-b last:border-b-0">
+              {/* Category header — click to expand/collapse */}
+              <div
+                className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-100 select-none"
+                onClick={() => toggleExpand(catId)}
+              >
+                {/* Expand/collapse chevron */}
+                <svg
+                  className={`w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                {/* Select-all checkbox for category */}
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={el => { if (el) el.indeterminate = someSelected }}
+                  onChange={(e) => { e.stopPropagation(); toggleCategory(items) }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="accent-gray-800 flex-shrink-0"
+                />
+                <span className="text-xs font-semibold text-gray-700 flex-1">
+                  {category?.name || 'Uncategorized'}
+                </span>
+                <span className="text-[10px] text-gray-400">
+                  {selectedInCat > 0 && <span className="text-gray-600 font-medium">{selectedInCat}/</span>}
+                  {items.length}
+                </span>
+              </div>
+              {/* Items list — collapsible */}
+              {isExpanded && (
+                <div className="pb-1">
+                  {items.map(item => {
+                    const checked = selectedSet.has(item.id)
+                    return (
+                      <label
+                        key={item.id}
+                        className="flex items-center gap-2 px-3 pl-10 py-1 hover:bg-gray-100 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleItem(item.id)}
+                          className="accent-gray-800 flex-shrink-0"
+                        />
+                        <span className="text-sm flex-1 truncate">{item.name}</span>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0">{formatCurrency(item.price)}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {grouped.length === 0 && search && (
+          <p className="text-xs text-gray-400 text-center py-4">No items match &quot;{search}&quot;</p>
+        )}
+        {/* Ghost IDs */}
+        {ghostIds.length > 0 && (
+          <div className="border-t px-3 py-2 space-y-1">
+            <span className="text-[10px] font-semibold text-red-400 uppercase">Deleted Items</span>
+            {ghostIds.map(id => (
+              <div key={id} className="flex items-center gap-2 text-xs text-red-400">
+                <input
+                  type="checkbox"
+                  checked
+                  onChange={() => onChange(selectedIds.filter(x => x !== id))}
+                  className="accent-red-400"
+                />
+                {id.slice(0, 8)}... <span className="text-red-500 font-medium">(deleted)</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
