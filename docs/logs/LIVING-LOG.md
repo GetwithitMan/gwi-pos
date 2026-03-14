@@ -5,6 +5,132 @@
 
 ---
 
+## 2026-03-14 — Android Happy Hour + Pricing Options Fix
+
+### Summary
+Fixed Android register not displaying happy hour pricing badges and pour size buttons.
+Fixed admin pricing option group creation failing due to soft-delete unique constraint collisions.
+Unified the duplicate "Size Buttons" and "Pricing Options" admin sections into one component.
+
+### Changes
+
+**Android Register (gwi-android-register):**
+- `DtoMappers.kt` — Fix pourSizes/timedPricing serialization: Moshi deserializes JSON as `LinkedHashTreeMap`, calling `.toString()` produces Kotlin format not valid JSON. Added `toJsonString()` helper using `org.json.JSONObject`/`JSONArray`.
+- `PricingRuleEngine.kt` — NEW: Full port of TypeScript pricing engine (339 lines). Handles recurring, one-time, yearly-recurring rules with cross-midnight support, scope matching, priority sorting, 5 adjustment types.
+- `BootstrapWorker.kt` — Extract pricingRules from locationSettings and store in SyncMeta.
+- `OrderViewModel.kt` — Load pricing rules from SyncMeta, compute per-item adjustments in `loadQuickPickData()`.
+- `MenuItemCard.kt` — Show adjusted price, strikethrough original, colored badge when pricing adjustment active.
+- `MenuGrid.kt` + `OrderMainContent.kt` — Thread `pricingAdjustmentsByItem` through to MenuItemCard.
+
+**GWI POS (gwi-pos):**
+- `pricing-options/route.ts` (POST) — Fix unique constraint violation: restore soft-deleted group instead of creating duplicate.
+- `pricing-options/[groupId]/options/route.ts` (POST) — Hard-delete conflicting soft-deleted options before create.
+- `pricing-options/[groupId]/options/[optionId]/route.ts` (PUT) — Hard-delete conflicting soft-deleted options before label rename.
+- `SizingOptionsInline.tsx` — Merged preset buttons (Small/Medium/Large/XL/Bowl/Cup/Half/Full/Slice/Whole) into this component. Presets create PricingOption records via API.
+- `ItemSettingsModal.tsx` — Removed duplicate "Food Size Buttons" section and all pourSizes state/save logic.
+
+### Verified
+- All 13 gin items showing green "Happy Hour" badge with 20% off prices on L1400 Android register
+- Bootstrap sync working (25 categories, 270 items)
+- Pricing option group creation/update working after soft-delete fix
+
+---
+
+## 2026-03-14 — Sprint 2-6: 31 Features Built (6 Commits, +13,969 lines)
+
+### Summary
+Massive feature sprint: 31 tasks completed across 6 commits, ~130 files touched.
+Full TODO list and comprehensive feature inventory written to desktop.
+
+### Commits
+- `f2f005ce` — Sprint 2+3 initial (38 files, +3,232 lines)
+- `106f7c93` — Sprint 2+3 complete (32 files, +1,012 lines)
+- `c7d8018c` — Sprint 4 (20 files, +2,524 lines)
+- `975bf56d` — Sprint 5 (36 files, +1,773 lines)
+- `cd7b31af` — Sprint 6 (45 files, +5,428 lines)
+
+### Features Built
+
+**Sprint 2+3:**
+- Walkout retry cron scheduler (6h automatic retry)
+- Force-open modifiers (`alwaysOpenModifiers` setting)
+- Quick pre-modifier hot buttons (Quick Add section, indigo styling)
+- Split order page overhaul (full page, custom amounts, save button)
+- Show/hide default pour size toggle
+- More pour size options (beyond 4 defaults)
+- Bar modifier hot buttons (yellow star indicator)
+- Tip-exempt items (full stack: calc + UI + CFD + receipts + public pay)
+- Repeat Last Order button (green button on order panel)
+- Last Call batch tab close (preview + batch process dialog)
+
+**Sprint 4:**
+- Food size hot buttons (S/M/L/XL/Bowl/Cup/Half/Full/Slice/Whole)
+- KDS clock in/out (PIN pad modal on KDS back door)
+- PAR inventory reports + low stock alerts + variance reports with CSV export
+- Pay-at-Table locationId fix (extracted from order response)
+- MC deleted server stations fix (deletedAt: null filter on 3 queries)
+
+**Sprint 5:**
+- Combo builder verified + 6 gaps fixed (wired to useOrderingEngine)
+- Customer recognition (card auto-linking, returning customer toast notification)
+- Copy ingredients between locations (enterprise transactional copy)
+- Slack webhook configured via admin UI (test connection button)
+- BridgeCheckpoint null ID upsert fix (gen_random_uuid()::text)
+
+**Sprint 6:**
+- Shift request/swap workflow (swap/cover/drop with manager approval)
+- Centralized venue log database + diagnostics page (VenueLog model)
+- Events/ticketing (walk-in, event-scoped check-in, light theme, locationId fix)
+- Tax-inclusive pricing server-side fix (bootstrap sends taxRules + inclusiveTaxRate)
+- customer-receipts.md feature doc (240 lines)
+- liquor.md API routes documented (updated to 329 lines)
+- print-routing.md feature doc (313 lines)
+
+### Key Files Changed
+- `src/lib/domain/order-items/item-operations.ts` — tipExempt on order item creation
+- `src/lib/payment.ts` — calculateTip/calculateTipPercent accept tipExemptAmount
+- `src/components/payment/PaymentModal.tsx` — tipExemptAmount prop
+- `src/components/cfd/CFDTipScreen.tsx` — tipBasis subtracts exempt amount
+- `src/lib/escpos/customer-receipt.ts` — tipExemptAmount in ReceiptTotals
+- `src/components/modifiers/ModifierModal.tsx` — Quick Add hot buttons + size label
+- `src/components/orders/OrderPanelActions.tsx` — Repeat Last button
+- `src/app/api/tabs/last-call/route.ts` (NEW) — GET preview + POST batch close
+- `src/components/tabs/LastCallDialog.tsx` (NEW) — 4-state modal
+- `src/hooks/useOrderingEngine.ts` — food sizes step 4 + combo handler
+- `src/app/(kds)/components/KDSClockModal.tsx` (NEW) — PIN clock in/out
+- `src/app/api/reports/inventory/par/route.ts` (NEW) — PAR status API
+- `src/app/api/reports/inventory/variance/route.ts` (NEW) — variance API
+- `src/app/(admin)/reports/inventory/page.tsx` (NEW) — 2-tab report page
+- `src/app/api/customers/route.ts` — phone normalization
+- `src/app/api/card-profiles/route.ts` — auto-links CardProfile to Customer
+- `src/app/api/inventory/copy-to-location/route.ts` (NEW) — transactional copy
+- `src/app/(admin)/ingredients/copy/page.tsx` (NEW) — admin copy UI
+- `src/lib/alert-service.ts` — resolveSlackWebhookUrl() from DB
+- `src/app/(admin)/settings/integrations/slack/page.tsx` — full settings page
+- `src/lib/bridge-checkpoint.ts` — gen_random_uuid()::text for id
+- `prisma/schema.prisma` — VenueLog model, ShiftRequestType enum
+- `src/lib/venue-logger.ts` (NEW) — logVenueEvent, batch, cleanup
+- `src/app/api/venue-logs/route.ts` (NEW), `stats/route.ts` (NEW)
+- `src/app/(admin)/diagnostics/page.tsx` (NEW) — log viewer
+- `src/app/api/shift-requests/route.ts` (NEW), `[id]/route.ts` (NEW)
+- `src/app/(admin)/scheduling/requests/page.tsx` (NEW)
+- `src/app/api/events/[id]/walk-in/route.ts` (NEW), `check-in/route.ts` (NEW)
+- `src/app/api/sync/bootstrap/route.ts` — TaxRule query + inclusive flags
+- `docs/features/customer-receipts.md` (NEW)
+- `docs/features/print-routing.md` (NEW)
+- `docs/features/liquor.md` — updated
+
+### Documentation
+- Full TODO list written to ~/Desktop/GWI-POS-TODO.txt
+- Comprehensive feature inventory (20 parts, all 7 apps) written to ~/Desktop/GWI-POS-FEATURES.txt
+- 5 agents audited: all web pages (316), all API routes (649), all 4 Android apps, Mission Control, backend-without-UI gaps
+
+### Blockers
+- Loyalty Program blocked by Datacap PAY API (#69) + card token persistence (#70)
+- Pre-launch checklist at ~8% (manual multi-day effort)
+
+---
+
 ## 2026-03-14 — Pricing Rules Overhaul
 
 ### Commits

@@ -30,6 +30,26 @@ interface SizingOptionsInlineProps {
   onCategoryCreated?: (category: IngredientCategory) => void
 }
 
+const SIZE_PRESETS = [
+  { label: 'Small' },
+  { label: 'Medium' },
+  { label: 'Large' },
+  { label: 'XL' },
+  { label: 'Bowl' },
+  { label: 'Cup' },
+  { label: 'Half' },
+  { label: 'Full' },
+  { label: 'Slice' },
+  { label: 'Whole' },
+]
+
+const QUICK_PICK_PRESETS = [
+  { label: 'Mild' },
+  { label: 'Medium' },
+  { label: 'Hot' },
+  { label: 'Extra Hot' },
+]
+
 export function SizingOptionsInline({
   itemId,
   onSizesActiveChange,
@@ -62,6 +82,9 @@ export function SizingOptionsInline({
 
   // Count how many options have showOnPos checked (for max 4 display cap)
   const showOnPosCount = activeGroup?.options.filter(o => o.showOnPos).length ?? 0
+
+  // Which option labels already exist in the active group
+  const existingLabels = new Set(activeGroup?.options.map(o => o.label) ?? [])
 
   // Notify parent about sizing state changes via effect
   const prevActiveRef = useRef(sizesActive)
@@ -102,6 +125,19 @@ export function SizingOptionsInline({
     }
   }
 
+  const handlePresetClick = (label: string) => {
+    if (!activeGroup) return
+    if (existingLabels.has(label)) {
+      // Find and delete the option with this label
+      const opt = activeGroup.options.find(o => o.label === label)
+      if (opt) deleteOption(activeGroup.id, opt.id)
+    } else {
+      addOption(activeGroup.id, label)
+    }
+  }
+
+  const presets = hasSizes ? SIZE_PRESETS : hasQuickPick ? QUICK_PICK_PRESETS : []
+
   return (
     <div className="border border-gray-200 rounded-xl p-3 space-y-3">
       {/* Toggle row: two mutually exclusive checkboxes */}
@@ -138,6 +174,32 @@ export function SizingOptionsInline({
             </p>
           )}
 
+          {/* Preset quick-add buttons */}
+          <div>
+            <div className="text-[11px] text-gray-600 font-medium mb-1.5">Presets</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {presets.map(preset => {
+                const isActive = existingLabels.has(preset.label)
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => handlePresetClick(preset.label)}
+                    disabled={saving}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-40 ${
+                      isActive
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Option rows */}
           {activeGroup.options.length > 0 ? (
             <div className="divide-y divide-gray-100">
               {activeGroup.options.map(opt => (
@@ -166,7 +228,7 @@ export function SizingOptionsInline({
             </div>
           ) : (
             <p className="text-xs text-gray-600 text-center py-1">
-              No {hasSizes ? 'sizes' : 'quick picks'} yet. Add one below.
+              No {hasSizes ? 'sizes' : 'quick picks'} yet. Tap a preset or add one below.
             </p>
           )}
 
@@ -179,7 +241,7 @@ export function SizingOptionsInline({
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            {hasSizes ? 'Add Size' : 'Add Quick Pick'}
+            {hasSizes ? 'Add Custom Size' : 'Add Custom Pick'}
           </button>
         </>
       )}

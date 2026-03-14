@@ -41,6 +41,13 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
+    // If label is changing, remove any soft-deleted option with the same label (unique constraint includes deleted)
+    if (label !== undefined) {
+      await db.pricingOption.deleteMany({
+        where: { groupId, label: label.trim(), deletedAt: { not: null }, id: { not: optionId } },
+      })
+    }
+
     // If isDefault=true, unset any existing default in this group first
     if (isDefault) {
       await db.pricingOption.updateMany({

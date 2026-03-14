@@ -42,6 +42,11 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Remove any soft-deleted option with the same label (unique constraint includes deleted)
+    await db.pricingOption.deleteMany({
+      where: { groupId, label: label.trim(), deletedAt: { not: null } },
+    })
+
     // If isDefault=true, unset any existing default in this group
     if (isDefault) {
       await db.pricingOption.updateMany({

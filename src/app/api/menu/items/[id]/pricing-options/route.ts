@@ -105,55 +105,107 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Check if a soft-deleted group with the same name exists (unique constraint includes deleted)
+    const existing = await db.pricingOptionGroup.findFirst({
+      where: { locationId, menuItemId, name: name.trim(), deletedAt: { not: null } },
+    })
+
     // Get max sort order for this menu item's groups
     const maxSort = await db.pricingOptionGroup.aggregate({
       where: { locationId, menuItemId, deletedAt: null },
       _max: { sortOrder: true },
     })
 
-    const group = await db.pricingOptionGroup.create({
-      data: {
-        locationId,
-        menuItemId,
-        name: name.trim(),
-        sortOrder: sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
-        isRequired: isRequired ?? false,
-        showAsQuickPick: showAsQuickPick ?? false,
-        options: options?.length
-          ? {
-              create: options.map(
-                (
-                  opt: {
-                    label: string
-                    price?: number | null
-                    priceCC?: number | null
-                    sortOrder?: number
-                    isDefault?: boolean
-                    showOnPos?: boolean
-                    color?: string | null
-                  },
-                  index: number
-                ) => ({
-                  locationId,
-                  label: opt.label,
-                  price: opt.price ?? null,
-                  priceCC: opt.priceCC ?? null,
-                  sortOrder: opt.sortOrder ?? index,
-                  isDefault: opt.isDefault ?? false,
-                  showOnPos: opt.showOnPos ?? false,
-                  color: opt.color ?? null,
-                })
-              ),
-            }
-          : undefined,
-      },
-      include: {
-        options: {
-          where: { deletedAt: null },
-          orderBy: { sortOrder: 'asc' },
+    let group
+    if (existing) {
+      // Restore the soft-deleted group instead of creating a duplicate
+      group = await db.pricingOptionGroup.update({
+        where: { id: existing.id },
+        data: {
+          deletedAt: null,
+          sortOrder: sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
+          isRequired: isRequired ?? false,
+          showAsQuickPick: showAsQuickPick ?? false,
+          options: options?.length
+            ? {
+                create: options.map(
+                  (
+                    opt: {
+                      label: string
+                      price?: number | null
+                      priceCC?: number | null
+                      sortOrder?: number
+                      isDefault?: boolean
+                      showOnPos?: boolean
+                      color?: string | null
+                    },
+                    index: number
+                  ) => ({
+                    locationId,
+                    label: opt.label,
+                    price: opt.price ?? null,
+                    priceCC: opt.priceCC ?? null,
+                    sortOrder: opt.sortOrder ?? index,
+                    isDefault: opt.isDefault ?? false,
+                    showOnPos: opt.showOnPos ?? false,
+                    color: opt.color ?? null,
+                  })
+                ),
+              }
+            : undefined,
         },
-      },
-    })
+        include: {
+          options: {
+            where: { deletedAt: null },
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      })
+    } else {
+      group = await db.pricingOptionGroup.create({
+        data: {
+          locationId,
+          menuItemId,
+          name: name.trim(),
+          sortOrder: sortOrder ?? (maxSort._max.sortOrder ?? 0) + 1,
+          isRequired: isRequired ?? false,
+          showAsQuickPick: showAsQuickPick ?? false,
+          options: options?.length
+            ? {
+                create: options.map(
+                  (
+                    opt: {
+                      label: string
+                      price?: number | null
+                      priceCC?: number | null
+                      sortOrder?: number
+                      isDefault?: boolean
+                      showOnPos?: boolean
+                      color?: string | null
+                    },
+                    index: number
+                  ) => ({
+                    locationId,
+                    label: opt.label,
+                    price: opt.price ?? null,
+                    priceCC: opt.priceCC ?? null,
+                    sortOrder: opt.sortOrder ?? index,
+                    isDefault: opt.isDefault ?? false,
+                    showOnPos: opt.showOnPos ?? false,
+                    color: opt.color ?? null,
+                  })
+                ),
+              }
+            : undefined,
+        },
+        include: {
+          options: {
+            where: { deletedAt: null },
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      })
+    }
 
     // Invalidate menu cache
     invalidateMenuCache(locationId)
