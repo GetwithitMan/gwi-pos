@@ -1846,16 +1846,16 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
         : DEFAULT_SETTINGS.happyHour.schedules,
     },
     pricingRules: (() => {
-      // If pricingRules exists and is a valid non-empty array, use it (ignore legacy happyHour)
-      if (Array.isArray(partial.pricingRules) && partial.pricingRules.length > 0) {
+      // If pricingRules is an array (even empty), use it — user explicitly set this, don't re-migrate
+      if (Array.isArray(partial.pricingRules)) {
         return partial.pricingRules
       }
       // If pricingRules exists but is not an array, treat as empty and warn
-      if (partial.pricingRules !== undefined && !Array.isArray(partial.pricingRules)) {
+      if (partial.pricingRules !== undefined) {
         console.warn('[PricingRules] pricingRules exists but is not an array, defaulting to []')
         return []
       }
-      // Migrate from legacy happyHour if enabled
+      // pricingRules is undefined (never set) — migrate from legacy happyHour if enabled
       const hh = partial.happyHour
       if (hh?.enabled && hh.schedules?.length && hh.discountType && hh.discountValue > 0) {
         try {
@@ -2210,6 +2210,7 @@ export function isPricingRuleActive(rule: PricingRule, now?: Date): boolean {
 }
 
 function isRecurringRuleActive(rule: PricingRule, now: Date): boolean {
+  if (!Array.isArray(rule.schedules)) return false
   const currentDay = now.getDay()
   const currentMinutes = now.getHours() * 60 + now.getMinutes()
 
@@ -2411,11 +2412,11 @@ export function getBestPricingRuleForItem(
   const active = getActivePricingRules(rules, now)
 
   // Filter to rules that match this item's scope
-  // Guard: empty/null IDs never match — prevents ghost scope bypass
+  // Guard: empty/null IDs and null arrays never match — prevents scope bypass
   const matching = active.filter(r => {
     if (r.appliesTo === 'all') return true
-    if (r.appliesTo === 'categories') return categoryId && r.categoryIds.includes(categoryId)
-    if (r.appliesTo === 'items') return itemId && r.itemIds.includes(itemId)
+    if (r.appliesTo === 'categories') return categoryId && Array.isArray(r.categoryIds) && r.categoryIds.includes(categoryId)
+    if (r.appliesTo === 'items') return itemId && Array.isArray(r.itemIds) && r.itemIds.includes(itemId)
     return false
   })
 
@@ -2463,6 +2464,7 @@ export function getPricingRuleEndTime(rule: PricingRule, now?: Date): Date | nul
   const currentMinutes = _now.getHours() * 60 + _now.getMinutes()
 
   if (rule.type === 'recurring') {
+    if (!Array.isArray(rule.schedules)) return null
     for (const schedule of rule.schedules) {
       const startMin = parseTimeToMinutes(schedule.startTime)
       const endMin = parseTimeToMinutes(schedule.endTime)
@@ -2616,12 +2618,14 @@ function hasScopeOverlap(a: PricingRule, b: PricingRule): boolean {
   // 'all' overlaps with everything
   if (a.appliesTo === 'all' || b.appliesTo === 'all') return true
 
-  // Both items — check intersection
+  // Both items — check intersection (guard against null/undefined arrays)
   if (a.appliesTo === 'items' && b.appliesTo === 'items') {
+    if (!Array.isArray(a.itemIds) || !Array.isArray(b.itemIds)) return false
     return a.itemIds.some(id => b.itemIds.includes(id))
   }
-  // Both categories — check intersection
+  // Both categories — check intersection (guard against null/undefined arrays)
   if (a.appliesTo === 'categories' && b.appliesTo === 'categories') {
+    if (!Array.isArray(a.categoryIds) || !Array.isArray(b.categoryIds)) return false
     return a.categoryIds.some(id => b.categoryIds.includes(id))
   }
   // Mixed items/categories — conservative: assume overlap (items could be in those categories)

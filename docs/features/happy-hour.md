@@ -263,8 +263,29 @@ No dedicated `/api/pricing-rules` route. All persistence goes through `/api/sett
 - **No stacking:** Only one rule can apply per item. If multiple rules match, priority + tie-breakers determine the winner.
 - **Modifiers unaffected:** Pricing rules only adjust base item price; modifier prices are unchanged.
 - **Render-time evaluation:** POS display uses real-time evaluation. Order creation snapshots the adjustment at insert time via `pricingRuleApplied`.
+- **Price locks at creation:** Once an item is added to an order at a rule-adjusted price, that price persists even if the rule expires or is disabled before payment.
 - **No minimum order value:** Unlike coupons, pricing rules have no minimum spend requirement.
-- **Legacy `happyHour` preserved:** The old settings object remains in `LocationSettings` for backward compatibility and is auto-migrated to a pricing rule on first read if applicable.
+- **Legacy `happyHour` preserved:** The old settings object remains in `LocationSettings` for backward compatibility. Auto-migrated to a pricing rule on first read if pricingRules is undefined (never set). Explicit empty array `[]` is respected (no re-migration).
+- **Price increases hidden from customers:** For `percent-increase`, `fixed-increase`, and `override-price` (where adjusted > original), the engine forces `showBadge: false`, `showOriginalPrice: false`, and suppresses CFD countdown. Customers never see the lower base price.
+- **Tips on adjusted prices:** Tip suggestions use the order subtotal which reflects rule-adjusted prices. The `tipGuide.basis: 'pre_discount'` setting only applies to manual OrderDiscounts, not pricing rule adjustments.
+
+## Security & Hardening
+
+- **Server-side validation:** Settings PUT route validates pricingRules array (max 500 rules, HTML tag stripping, `isFinite()` guards on numeric fields).
+- **Null guards:** Engine functions guard against null `schedules`, `categoryIds`, `itemIds` arrays (prevents TypeError if DB data is corrupted).
+- **Scope bypass prevention:** Empty/null categoryId and itemId never match scope rules. `Array.isArray()` checks on all array operations.
+- **XSS prevention:** Rule name, badgeText, and description are stripped of HTML tags on save. `validatePricingRule()` rejects names containing HTML.
+- **Price manipulation:** Existing `hasOpenPricedItems` check requires `MGR_OPEN_ITEMS` permission for client-sent price deviations. Pricing rule adjustment is server-side only.
+
+## CFD Integration
+
+- **Per-rule CFD countdown:** Each rule has a `showCfdCountdown` toggle. When enabled and the rule is a discount (not an increase), the CFD idle screen and order display show a countdown banner with the rule name, color, and remaining time.
+- **Component:** `src/components/cfd/CFDPricingCountdown.tsx` — fetches settings on mount, refreshes every 5 minutes, recomputes active rules every 60 seconds.
+
+## Split & Transfer Behavior
+
+- **Splits:** `pricingRuleApplied` JSONB is copied to split child order items. Price and itemTotal are also copied (already adjusted).
+- **Transfers:** Items move via `orderId` update only — all fields including `pricingRuleApplied` are preserved intact.
 
 ---
 
@@ -272,8 +293,9 @@ No dedicated `/api/pricing-rules` route. All persistence goes through `/api/sett
 - **Feature doc:** `docs/features/discounts.md`
 - **Feature doc:** `docs/features/pricing-programs.md`
 - **Feature doc:** `docs/features/settings.md`
-- **Feature doc:** `docs/features/entertainment.md`
+- **Feature doc:** `docs/features/entertainment.md` (separate pricing system — not Pricing Rules)
 - **Architecture guide:** `docs/guides/CODING-STANDARDS.md`
+- **Deprecated spec:** `docs/skills/SPEC-16-HAPPY-HOUR.md` (superseded by this feature)
 
 ---
 
