@@ -156,11 +156,11 @@ export async function recordCaptureSuccess(
       status: 'completed',
       lastMutatedBy: 'local',
       // Datacap processor metadata from capture response
-      acqRefData: (input.datacapResponse.acqRefData as string) || null,
-      processData: (input.datacapResponse.processData as string) || null,
-      aid: (input.datacapResponse.aid as string) || null,
+      acqRefData: input.datacapResponse.acqRefData || null,
+      processData: input.datacapResponse.processData || null,
+      aid: input.datacapResponse.aid || null,
       cvmResult: input.datacapResponse.cvm ? String(input.datacapResponse.cvm) : null,
-      level2Status: (input.datacapResponse.level2Status as string) || null,
+      level2Status: input.datacapResponse.level2Status || null,
       tokenFrequency: 'Recurring', // From pre-auth (tab capture)
     },
   })

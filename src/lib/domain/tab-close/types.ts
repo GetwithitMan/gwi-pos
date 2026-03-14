@@ -100,13 +100,13 @@ export interface CaptureSuccessInput {
   authCode: string | null
   cardType: string | null
   allCards: TabCloseCard[]
-  datacapResponse: Record<string, unknown>
+  datacapResponse: { acqRefData?: string; processData?: string; aid?: string; cvm?: string | number; level2Status?: string }
   now: Date
 }
 
 // ─── Auto-Gratuity ─────────────────────────────────────────────────────────
 
 export interface BottleServiceTier {
-  autoGratuityPercent: number | null
-  minimumSpend: number | null
+  autoGratuityPercent: unknown // Prisma Decimal — converted via Number() in resolveAutoGratuity
+  minimumSpend: unknown // Prisma Decimal
 }

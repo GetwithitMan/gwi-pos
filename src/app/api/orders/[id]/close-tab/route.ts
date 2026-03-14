@@ -35,10 +35,10 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 // is already 'paid' or tabStatus is 'closed', it returns early with the existing state.
 // This prevents double-capture when two terminals close the same tab simultaneously.
 //
-// PERFORMANCE: Two-phase locking
-// Phase 1: Short read-only fetch + validation (no FOR UPDATE lock)
+// PERFORMANCE: Three-phase locking
+// Phase 1: Short transaction with FOR UPDATE — validate + mark 'closing'
 // Phase 2: Datacap API calls OUTSIDE any transaction (500-3000ms)
-// Phase 3: Short write transaction with FOR UPDATE to record results
+// Phase 3: Short transaction with FOR UPDATE — record capture result
 // This prevents Datacap network latency from holding a row lock that blocks other terminals.
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -78,29 +78,37 @@ export const POST = withVenue(async function POST(
       return validateTabForClose(tx, { orderId, employeeId, tipMode, tipAmount, orderCardId, version })
     })
 
-    // If Phase 1 returned a validation failure, send the appropriate HTTP response
+    // If Phase 1 validation failed, return the appropriate error response
     if (!phase1Result.valid) {
-      if (phase1Result.status === 200 && phase1Result.extra) {
-        // Duplicate detection — wrap in { data: ... }
-        return NextResponse.json({ data: phase1Result.extra }, { status: 200 })
+      // For the duplicate/already-closed case, return the extra data as the response body
+      if (phase1Result.extra && phase1Result.extra.success != null) {
+        return NextResponse.json({ data: phase1Result.extra }, { status: phase1Result.status })
       }
-      const responseBody: Record<string, unknown> = { error: phase1Result.error, ...phase1Result.extra }
-      return NextResponse.json(responseBody, { status: phase1Result.status })
+      // For other failures with extra context (tabStatus, conflict, etc.)
+      if (phase1Result.extra) {
+        return NextResponse.json(
+          { error: phase1Result.error, ...phase1Result.extra },
+          { status: phase1Result.status }
+        )
+      }
+      return NextResponse.json({ error: phase1Result.error }, { status: phase1Result.status })
     }
 
-    const { order } = phase1Result
+    const { order, versionBeforeClose } = phase1Result
 
     // ═══════════════════════════════════════════════════════════════════════════
     // BETWEEN PHASES: Compute values that don't need a lock
     // ═══════════════════════════════════════════════════════════════════════════
     const locationId = order.locationId
 
-    // Load tip percentages from location settings
+    // Load location settings
     const settings = await getLocationSettings(locationId)
     const locSettings = parseSettings(settings)
+
+    // Parse tip percentages from location settings (pure)
     const tipSuggestions = parseTipSuggestions(locSettings)
 
-    // Calculate purchase amount (applies dual pricing card surcharge if enabled)
+    // Calculate purchase amount — applies dual pricing card surcharge if enabled (pure)
     const { purchaseAmount } = computePurchaseAmount(order, locSettings.dualPricing)
     const initialGratuity = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
 
@@ -113,7 +121,7 @@ export const POST = withVenue(async function POST(
     // the entire tab to OPEN when some cards are already released (prevents orphaned holds).
     // ═══════════════════════════════════════════════════════════════════════════
     if (purchaseAmount <= 0) {
-      // Release all authorized cards via voidSale (per card, sequential)
+      // Release all authorized cards via voidSale (per card, sequential — infrastructure)
       const releaseResults: ZeroTabReleaseResult[] = []
       for (const card of order.cards) {
         try {
@@ -132,7 +140,7 @@ export const POST = withVenue(async function POST(
         }
       }
 
-      // Short transaction to record the zero-tab result
+      // Short transaction to record the zero-tab result (orchestration)
       await db.$transaction(async (tx) => {
         await recordZeroTabResult(tx, orderId, releaseResults)
       })
@@ -149,25 +157,21 @@ export const POST = withVenue(async function POST(
         })
       }
 
-      const { httpStatus, data } = buildZeroTabResponse(releaseResults)
-      return NextResponse.json({ data }, { status: httpStatus })
+      // Build response from release results (pure)
+      const zeroTabResp = buildZeroTabResponse(releaseResults)
+      return NextResponse.json({ data: zeroTabResp.data }, { status: zeroTabResp.httpStatus })
     }
 
-    // Resolve auto-gratuity (bottle service tier + party-size)
+    // Resolve auto-gratuity (bottle service tier lookup stays in route — needs DB)
     let bottleServiceTier: BottleServiceTier | null = null
     if (order.isBottleService && order.bottleServiceTierId) {
-      const tier = await db.bottleServiceTier.findUnique({
+      bottleServiceTier = await db.bottleServiceTier.findUnique({
         where: { id: order.bottleServiceTierId },
         select: { autoGratuityPercent: true, minimumSpend: true },
       })
-      if (tier) {
-        bottleServiceTier = {
-          autoGratuityPercent: tier.autoGratuityPercent != null ? Number(tier.autoGratuityPercent) : null,
-          minimumSpend: tier.minimumSpend != null ? Number(tier.minimumSpend) : null,
-        }
-      }
     }
 
+    // Resolve auto-gratuity (pure)
     const autoGratResult = resolveAutoGratuity({
       isBottleService: order.isBottleService,
       bottleServiceTier,
@@ -186,7 +190,7 @@ export const POST = withVenue(async function POST(
       })
     }
 
-    // Resolve which card(s) to charge
+    // Resolve which card(s) to charge (pure)
     const cardResolution = resolveCardsToCharge(order.cards, orderCardId)
     if (!cardResolution.valid) {
       // Revert tabStatus from 'closing' so the tab can be retried
@@ -194,10 +198,10 @@ export const POST = withVenue(async function POST(
         where: { id: orderId },
         data: { tabStatus: 'open', version: { increment: 1 } },
       })
-      const cardBody: Record<string, unknown> = { error: cardResolution.error }
-      if (cardResolution.code) cardBody.code = cardResolution.code
-      if (cardResolution.cards) cardBody.cards = cardResolution.cards
-      return NextResponse.json(cardBody, { status: 400 })
+      const errorPayload: Record<string, unknown> = { error: cardResolution.error }
+      if (cardResolution.code) errorPayload.code = cardResolution.code
+      if (cardResolution.cards) errorPayload.cards = cardResolution.cards
+      return NextResponse.json(errorPayload, { status: 400 })
     }
     const cardsToTry = cardResolution.cards
 
@@ -332,7 +336,10 @@ export const POST = withVenue(async function POST(
     // Handle capture failure (all cards failed)
     if (!capturedCard || !captureResult) {
       const failResult = await db.$transaction(async (tx) => {
-        return recordCaptureFailure(tx, orderId, 'All cards failed to capture', locSettings.barTabs || {})
+        return recordCaptureFailure(tx, orderId, 'All cards failed to capture', {
+          maxCaptureRetries: locSettings.barTabs?.maxCaptureRetries,
+          autoFlagWalkoutAfterDeclines: locSettings.barTabs?.autoFlagWalkoutAfterDeclines,
+        })
       })
 
       // Notify all terminals
@@ -357,7 +364,10 @@ export const POST = withVenue(async function POST(
     if (!approved) {
       // Capture was declined — record in a short transaction
       const declineResult = await db.$transaction(async (tx) => {
-        return recordCaptureFailure(tx, orderId, error?.text || 'Capture declined', locSettings.barTabs || {})
+        return recordCaptureFailure(tx, orderId, error?.text || 'Capture declined', {
+          maxCaptureRetries: locSettings.barTabs?.maxCaptureRetries,
+          autoFlagWalkoutAfterDeclines: locSettings.barTabs?.autoFlagWalkoutAfterDeclines,
+        })
       })
 
       // Notify all terminals
@@ -407,13 +417,13 @@ export const POST = withVenue(async function POST(
         employeeId,
         sellingEmployeeId: order.employeeId,
         capturedCard,
-        allCards: order.cards,
         purchaseAmount,
         tipAmount: finalTipAmount,
         totalCaptured,
         authCode: response.authCode || null,
         cardType: capturedCard.cardType,
-        datacapResponse: response as unknown as Record<string, unknown>,
+        allCards: order.cards,
+        datacapResponse: response,
         now,
       })
     })
@@ -442,7 +452,7 @@ export const POST = withVenue(async function POST(
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // POST-TRANSACTION: Fire-and-forget side effects (unchanged from original)
+    // POST-TRANSACTION: Fire-and-forget side effects (infrastructure)
     // ═══════════════════════════════════════════════════════════════════════════
 
     // Release order claim after successful close (fire-and-forget)
