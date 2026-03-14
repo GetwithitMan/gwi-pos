@@ -9,9 +9,20 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { processNextDeduction } from '@/lib/deduction-processor'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
-import { roundToCents, calculateCardPrice } from '@/lib/pricing'
+import { roundToCents } from '@/lib/pricing'
+import {
+  validateTabForClose,
+  parseTipSuggestions,
+  computePurchaseAmount,
+  resolveCardsToCharge,
+  resolveAutoGratuity,
+  recordZeroTabResult,
+  buildZeroTabResponse,
+  recordCaptureFailure,
+  recordCaptureSuccess,
+} from '@/lib/domain/tab-close'
+import type { ZeroTabReleaseResult, BottleServiceTier } from '@/lib/domain/tab-close'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
@@ -64,141 +75,20 @@ export const POST = withVenue(async function POST(
     // as 'closing' to prevent concurrent close-tab attempts. Releases quickly.
     // ═══════════════════════════════════════════════════════════════════════════
     const phase1Result = await db.$transaction(async (tx) => {
-      // Acquire row lock — blocks concurrent close-tab requests for this order
-      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
-
-      // Get order with cards
-      const order = await tx.order.findFirst({
-        where: { id: orderId, deletedAt: null },
-        include: {
-          cards: {
-            where: { deletedAt: null, status: 'authorized' },
-            orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-          },
-          items: {
-            where: { deletedAt: null, status: 'active' },
-          },
-        },
-      })
-
-      if (!order) {
-        return { earlyReturn: NextResponse.json({ error: 'Order not found' }, { status: 404 }) }
-      }
-
-      // Status guard: block voided/cancelled orders from tab close
-      // (paid/closed is handled below as a successful duplicate detection)
-      if (order.status === 'voided' || order.status === 'cancelled') {
-        return {
-          earlyReturn: NextResponse.json(
-            { error: `Cannot close tab on order in '${order.status}' status` },
-            { status: 400 }
-          ),
-        }
-      }
-
-      // PAYMENT-SAFETY: Double-capture prevention — if order is already paid/closed,
-      // return success with existing state instead of attempting another capture.
-      if (order.status === 'paid' || order.status === 'closed') {
-        return {
-          earlyReturn: NextResponse.json({
-            data: {
-              success: true,
-              duplicate: true,
-              message: 'Tab already closed',
-              tabStatus: 'closed',
-            },
-          }),
-        }
-      }
-
-      // EDGE-7: Reject orders stuck in pending_auth — card authorization is incomplete
-      if (order.tabStatus === 'pending_auth') {
-        return {
-          earlyReturn: NextResponse.json({
-            error: 'Cannot close tab while card authorization is in progress. Please wait or retry opening the tab.',
-            tabStatus: 'pending_auth',
-          }, { status: 400 }),
-        }
-      }
-
-      // H6 FIX: Recover zombie "closing" state — if tab has been stuck in 'closing' for >60s,
-      // the previous close attempt likely hung (e.g., device tip timeout). Reset to 'open' and
-      // allow this retry instead of permanently blocking the tab.
-      if (order.tabStatus === 'closing') {
-        const lastUpdated = order.updatedAt ? new Date(order.updatedAt).getTime() : 0
-        const stuckThresholdMs = 60_000 // 60 seconds
-        const isZombie = Date.now() - lastUpdated > stuckThresholdMs
-
-        if (isZombie) {
-          console.warn('[Tab Close] Recovering zombie closing state', {
-            orderId,
-            lastUpdated: order.updatedAt,
-            stuckForMs: Date.now() - lastUpdated,
-          })
-          // Reset to open — fall through to normal close flow below
-          await tx.order.update({
-            where: { id: orderId },
-            data: {
-              tabStatus: 'open',
-              version: { increment: 1 },
-            },
-          })
-          // Re-read the order so downstream sees 'open' status
-          order.tabStatus = 'open'
-        } else {
-          return {
-            earlyReturn: NextResponse.json({
-              error: 'Tab is already being closed by another terminal',
-              tabStatus: 'closing',
-            }, { status: 409 }),
-          }
-        }
-      }
-
-      // Concurrency check: if client sent a version, verify it matches
-      if (version != null && order.version !== version) {
-        return {
-          earlyReturn: NextResponse.json({
-            error: 'Tab was modified on another terminal',
-            conflict: true,
-            currentVersion: order.version,
-          }, { status: 409 }),
-        }
-      }
-
-      if (order.cards.length === 0) {
-        return { earlyReturn: NextResponse.json({ error: 'No authorized cards on this tab' }, { status: 400 }) }
-      }
-
-      // AUDIT: Empty tab with pre-auth — will release card holds ($0 capture path)
-      if (order.items.length === 0 && order.cards.length > 0) {
-        console.warn('[AUDIT] EMPTY_TAB_CLOSE: Order has pre-auth cards but zero items — releasing holds', {
-          orderId,
-          cardCount: order.cards.length,
-          employeeId,
-        })
-      }
-
-      // Mark tab as 'closing' to prevent concurrent close-tab from another terminal.
-      // This is the idempotency gate — only one request gets past this point.
-      const versionBeforeClose = order.version
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          tabStatus: 'closing',
-          version: { increment: 1 },
-        },
-      })
-
-      return { order, versionBeforeClose }
+      return validateTabForClose(tx, { orderId, employeeId, tipMode, tipAmount, orderCardId, version })
     })
 
-    // If Phase 1 returned an early response, send it
-    if ('earlyReturn' in phase1Result) {
-      return phase1Result.earlyReturn as NextResponse
+    // If Phase 1 returned a validation failure, send the appropriate HTTP response
+    if (!phase1Result.valid) {
+      if (phase1Result.status === 200 && phase1Result.extra) {
+        // Duplicate detection — wrap in { data: ... }
+        return NextResponse.json({ data: phase1Result.extra }, { status: 200 })
+      }
+      const responseBody: Record<string, unknown> = { error: phase1Result.error, ...phase1Result.extra }
+      return NextResponse.json(responseBody, { status: phase1Result.status })
     }
 
-    const { order, versionBeforeClose } = phase1Result
+    const { order } = phase1Result
 
     // ═══════════════════════════════════════════════════════════════════════════
     // BETWEEN PHASES: Compute values that don't need a lock
@@ -208,23 +98,11 @@ export const POST = withVenue(async function POST(
     // Load tip percentages from location settings
     const settings = await getLocationSettings(locationId)
     const locSettings = parseSettings(settings)
-    const rawSuggestions = locSettings.tipBank?.tipGuide?.percentages ?? [15, 18, 20, 25]
-    const tipSuggestions = rawSuggestions
-      .map(Number)
-      .filter(pct => Number.isFinite(pct) && pct > 0 && pct <= 100)
-      .slice(0, 4)
-    if (tipSuggestions.length === 0) tipSuggestions.push(15, 18, 20, 25)
+    const tipSuggestions = parseTipSuggestions(locSettings)
 
-    // Calculate purchase amount from order total.
-    // Tab closes are always card payments (pre-auth capture), so if dual pricing is
-    // enabled we must capture the card price, not the stored cash price.
-    // Pricing model: stored order.total = cash price; card price = cash price × (1 + cashDiscountPercent/100)
-    const cashBaseAmount = Number(order.total) - Number(order.tipTotal)
-    const dualPricing = locSettings.dualPricing
-    const purchaseAmount = dualPricing?.enabled
-      ? calculateCardPrice(cashBaseAmount, dualPricing.cashDiscountPercent ?? 4.0)
-      : cashBaseAmount
-    let gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
+    // Calculate purchase amount (applies dual pricing card surcharge if enabled)
+    const { purchaseAmount } = computePurchaseAmount(order, locSettings.dualPricing)
+    const initialGratuity = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
 
     // ═══════════════════════════════════════════════════════════════════════════
     // BUG 5: Zero-tab handling — release pre-auth instead of $0 capture
@@ -236,7 +114,7 @@ export const POST = withVenue(async function POST(
     // ═══════════════════════════════════════════════════════════════════════════
     if (purchaseAmount <= 0) {
       // Release all authorized cards via voidSale (per card, sequential)
-      const releaseResults: Array<{ cardId: string; cardLast4: string; released: boolean; error?: string }> = []
+      const releaseResults: ZeroTabReleaseResult[] = []
       for (const card of order.cards) {
         try {
           await validateReader(card.readerId, locationId)
@@ -255,61 +133,13 @@ export const POST = withVenue(async function POST(
       }
 
       // Short transaction to record the zero-tab result
-      const allReleased = releaseResults.every(r => r.released)
-      const anyReleased = releaseResults.some(r => r.released)
-      const failedCards = releaseResults.filter(r => !r.released)
-
       await db.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
-        await enableSyncReplication(tx)
-
-        // C6 FIX: Update each card individually based on its release result
-        for (const result of releaseResults) {
-          if (result.released) {
-            await tx.orderCard.update({
-              where: { id: result.cardId },
-              data: { status: 'released' },
-            })
-          }
-          // Failed cards stay as 'authorized' — they can be retried or manually voided
-        }
-
-        if (allReleased) {
-          // All cards released — close the tab completely
-          await tx.order.update({
-            where: { id: orderId },
-            data: {
-              status: 'voided',
-              tabStatus: 'closed',
-              paidAt: new Date(),
-              closedAt: new Date(),
-              version: { increment: 1 },
-            },
-          })
-        } else if (anyReleased) {
-          // C6 FIX: Partial release — do NOT revert to 'open' because released cards are
-          // already gone. Move to 'open' so the tab can be retried, but the already-released
-          // cards won't be re-fetched (query filters status: 'authorized' only).
-          await tx.order.update({
-            where: { id: orderId },
-            data: {
-              tabStatus: 'open',
-              version: { increment: 1 },
-            },
-          })
-        } else {
-          // No cards released at all — safe to revert to open for full retry
-          await tx.order.update({
-            where: { id: orderId },
-            data: {
-              tabStatus: 'open',
-              version: { increment: 1 },
-            },
-          })
-        }
+        await recordZeroTabResult(tx, orderId, releaseResults)
       })
 
       // C6 FIX: Log warning for partial failures so ops can investigate
+      const failedCards = releaseResults.filter(r => !r.released)
+      const anyReleased = releaseResults.some(r => r.released)
       if (failedCards.length > 0 && anyReleased) {
         console.warn('[Tab Close] Partial $0 tab release — some cards could not be released', {
           orderId,
@@ -319,93 +149,57 @@ export const POST = withVenue(async function POST(
         })
       }
 
-      // C6 FIX: Return 207 Multi-Status for partial success so client knows exactly what happened
-      const httpStatus = allReleased ? 200 : (anyReleased ? 207 : 400)
-      return NextResponse.json({
-        data: {
-          success: allReleased,
-          partialSuccess: anyReleased && !allReleased,
-          zeroTab: true,
-          message: allReleased
-            ? 'Tab had no charges. Pre-auth released.'
-            : anyReleased
-              ? 'Tab had no charges. Some cards released, others failed — void remaining cards manually.'
-              : 'Tab had no charges. All card releases failed — void the tab manually.',
-          releaseResults,
-        },
-      }, { status: httpStatus })
+      const { httpStatus, data } = buildZeroTabResponse(releaseResults)
+      return NextResponse.json({ data }, { status: httpStatus })
     }
 
-    let isAutoGratuity = false
-
-    // Bottle service auto-gratuity: apply if no explicit tip was provided
-    if (
-      order.isBottleService &&
-      order.bottleServiceTierId &&
-      gratuityAmount == null &&
-      tipMode !== 'device'
-    ) {
+    // Resolve auto-gratuity (bottle service tier + party-size)
+    let bottleServiceTier: BottleServiceTier | null = null
+    if (order.isBottleService && order.bottleServiceTierId) {
       const tier = await db.bottleServiceTier.findUnique({
         where: { id: order.bottleServiceTierId },
         select: { autoGratuityPercent: true, minimumSpend: true },
       })
-
-      if (tier && tier.autoGratuityPercent != null) {
-        const autoGratPct = Number(tier.autoGratuityPercent)
-        const minSpend = Number(tier.minimumSpend) || 0
-
-        if (autoGratPct > 0 && (minSpend <= 0 || purchaseAmount >= minSpend)) {
-          gratuityAmount = Math.round(purchaseAmount * (autoGratPct / 100) * 100) / 100
-          isAutoGratuity = true
+      if (tier) {
+        bottleServiceTier = {
+          autoGratuityPercent: tier.autoGratuityPercent != null ? Number(tier.autoGratuityPercent) : null,
+          minimumSpend: tier.minimumSpend != null ? Number(tier.minimumSpend) : null,
         }
       }
     }
 
-    // Party-size auto-gratuity: apply if no explicit tip and bottle service didn't set one
-    if (
-      !order.isBottleService &&
-      gratuityAmount == null &&
-      tipMode !== 'device'
-    ) {
-      const autoGrat = locSettings.autoGratuity
-      if (
-        autoGrat?.enabled &&
-        autoGrat.percent > 0 &&
-        autoGrat.minimumPartySize > 0 &&
-        order.guestCount >= autoGrat.minimumPartySize
-      ) {
-        gratuityAmount = Math.round(purchaseAmount * (autoGrat.percent / 100) * 100) / 100
-        isAutoGratuity = true
-        console.info(`[Tab Close] Auto-gratuity applied (${autoGrat.percent}% for party of ${order.guestCount})`, {
-          orderId, guestCount: order.guestCount, gratuityAmount,
-        })
-      }
+    const autoGratResult = resolveAutoGratuity({
+      isBottleService: order.isBottleService,
+      bottleServiceTier,
+      guestCount: order.guestCount,
+      purchaseAmount,
+      tipMode,
+      existingGratuity: initialGratuity,
+      autoGratuitySettings: locSettings.autoGratuity,
+    })
+    let gratuityAmount = autoGratResult.gratuityAmount
+    const isAutoGratuity = autoGratResult.isAutoGratuity
+
+    if (isAutoGratuity && !order.isBottleService && locSettings.autoGratuity) {
+      console.info(`[Tab Close] Auto-gratuity applied (${locSettings.autoGratuity.percent}% for party of ${order.guestCount})`, {
+        orderId, guestCount: order.guestCount, gratuityAmount,
+      })
     }
 
-    // If a specific card was requested, filter to just that card
-    let cardsToTry = order.cards
-    if (orderCardId) {
-      cardsToTry = order.cards.filter(c => c.id === orderCardId)
-      if (cardsToTry.length === 0) {
-        // Revert tabStatus from 'closing' so the tab can be retried
-        await db.order.update({
-          where: { id: orderId },
-          data: { tabStatus: 'open', version: { increment: 1 } },
-        })
-        return NextResponse.json({ error: 'Specified card not found or not authorized' }, { status: 400 })
-      }
-    }
-
-    if (cardsToTry.length > 1 && !orderCardId) {
+    // Resolve which card(s) to charge
+    const cardResolution = resolveCardsToCharge(order.cards, orderCardId)
+    if (!cardResolution.valid) {
+      // Revert tabStatus from 'closing' so the tab can be retried
       await db.order.update({
         where: { id: orderId },
         data: { tabStatus: 'open', version: { increment: 1 } },
       })
-      return NextResponse.json(
-        { error: 'Multiple cards on tab. Please specify which card to charge.', code: 'CARD_SELECTION_REQUIRED', cards: order.cards.map(c => ({ id: c.id, last4: c.cardLast4, cardType: c.cardType })) },
-        { status: 400 }
-      )
+      const cardBody: Record<string, unknown> = { error: cardResolution.error }
+      if (cardResolution.code) cardBody.code = cardResolution.code
+      if (cardResolution.cards) cardBody.cards = cardResolution.cards
+      return NextResponse.json(cardBody, { status: 400 })
     }
+    const cardsToTry = cardResolution.cards
 
     // ═══════════════════════════════════════════════════════════════════════════
     // PHASE 2: External Datacap API calls (NO database lock held)
@@ -538,34 +332,7 @@ export const POST = withVenue(async function POST(
     // Handle capture failure (all cards failed)
     if (!capturedCard || !captureResult) {
       const failResult = await db.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
-
-        // Track the declined capture
-        await tx.order.update({
-          where: { id: orderId },
-          data: {
-            tabStatus: 'declined_capture',
-            captureDeclinedAt: new Date(),
-            captureRetryCount: { increment: 1 },
-            lastCaptureError: 'All cards failed to capture',
-          },
-        })
-
-        // Check if auto-walkout threshold reached
-        const updatedOrder = await tx.order.findUnique({
-          where: { id: orderId },
-          select: { captureRetryCount: true },
-        })
-        const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 5
-        const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? false
-        if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
-          await tx.order.update({
-            where: { id: orderId },
-            data: { isWalkout: true, walkoutAt: new Date() },
-          })
-        }
-
-        return { retryCount: updatedOrder?.captureRetryCount || 1, maxRetries }
+        return recordCaptureFailure(tx, orderId, 'All cards failed to capture', locSettings.barTabs || {})
       })
 
       // Notify all terminals
@@ -590,32 +357,7 @@ export const POST = withVenue(async function POST(
     if (!approved) {
       // Capture was declined — record in a short transaction
       const declineResult = await db.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
-
-        await tx.order.update({
-          where: { id: orderId },
-          data: {
-            tabStatus: 'declined_capture',
-            captureDeclinedAt: new Date(),
-            captureRetryCount: { increment: 1 },
-            lastCaptureError: error?.text || 'Capture declined',
-          },
-        })
-
-        const updatedOrder = await tx.order.findUnique({
-          where: { id: orderId },
-          select: { captureRetryCount: true },
-        })
-        const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 5
-        const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? false
-        if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
-          await tx.order.update({
-            where: { id: orderId },
-            data: { isWalkout: true, walkoutAt: new Date() },
-          })
-        }
-
-        return { retryCount: updatedOrder?.captureRetryCount || 1, maxRetries }
+        return recordCaptureFailure(tx, orderId, error?.text || 'Capture declined', locSettings.barTabs || {})
       })
 
       // Notify all terminals
@@ -659,103 +401,21 @@ export const POST = withVenue(async function POST(
     })
 
     const createdPaymentId = await db.$transaction(async (tx) => {
-      // Acquire row lock for the write phase
-      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
-
-      // PAYMENT-SAFETY: Synchronous replication for tab capture durability.
-      // Guarantees the standby has applied this transaction's WAL before commit returns.
-      // Prevents payment loss during HA failover (card captured but DB record lost).
-      await enableSyncReplication(tx)
-
-      // Re-verify order hasn't been closed by another path while we were calling Datacap.
-      // The 'closing' status we set in Phase 1 should still be there.
-      const currentOrder = await tx.order.findFirst({
-        where: { id: orderId, deletedAt: null },
-        select: { status: true, tabStatus: true },
+      return recordCaptureSuccess(tx, {
+        orderId,
+        locationId,
+        employeeId,
+        sellingEmployeeId: order.employeeId,
+        capturedCard,
+        allCards: order.cards,
+        purchaseAmount,
+        tipAmount: finalTipAmount,
+        totalCaptured,
+        authCode: response.authCode || null,
+        cardType: capturedCard.cardType,
+        datacapResponse: response as unknown as Record<string, unknown>,
+        now,
       })
-
-      if (!currentOrder) {
-        throw new Error('Order disappeared between Phase 1 and Phase 3')
-      }
-
-      // If order was already paid/closed (shouldn't happen due to 'closing' guard, but safety net)
-      if (currentOrder.status === 'paid' || currentOrder.status === 'closed') {
-        // Capture already recorded by another path — the Datacap charge happened but
-        // someone else closed the tab. Log for reconciliation (possible double-capture).
-        console.error('[PAYMENT-SAFETY] Order already closed when recording capture', {
-          orderId,
-          currentStatus: currentOrder.status,
-          capturedAmount: totalCaptured,
-          authCode: response.authCode,
-          recordNo: capturedCard.recordNo,
-        })
-        throw new Error('Order was already closed — capture recorded for reconciliation')
-      }
-
-      // Update OrderCard + Order status + Payment record atomically.
-      // PAYMENT-SAFETY: The order transitions to 'paid' ONLY inside this transaction,
-      // AFTER the Datacap capture response is confirmed as 'Approved'. Never optimistic.
-      // BUG #455 FIX: Create a Payment record so close-tab payments appear in reports/reconciliation.
-      // BUG #456 FIX: Use explicit conditional for tipTotal — 0 is a valid tip amount, not falsy.
-      await tx.orderCard.update({
-        where: { id: capturedCard.id },
-        data: {
-          status: 'captured',
-          capturedAmount: totalCaptured,
-          capturedAt: now,
-          tipAmount: finalTipAmount,
-          lastMutatedBy: 'local',
-        },
-      })
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          status: 'paid',
-          tabStatus: 'closed',
-          paidAt: now,
-          closedAt: now,
-          tipTotal: finalTipAmount,
-          total: totalCaptured,
-          version: { increment: 1 },
-          lastMutatedBy: 'local',
-        },
-      })
-      // BUG #455: Create Payment record for close-tab capture
-      // Use order.employeeId (the selling employee) for sale credit, not the
-      // request body's employeeId (the person who physically closed the tab).
-      const createdPayment = await tx.payment.create({
-        data: {
-          locationId,
-          orderId,
-          employeeId: order.employeeId || employeeId,
-          amount: purchaseAmount,
-          tipAmount: finalTipAmount,
-          totalAmount: totalCaptured,
-          paymentMethod: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
-          cardBrand: capturedCard.cardType || 'unknown',
-          cardLast4: capturedCard.cardLast4,
-          authCode: response.authCode || null,
-          datacapRecordNo: capturedCard.recordNo,
-          entryMethod: 'Chip', // Tab was opened with card present
-          status: 'completed',
-          lastMutatedBy: 'local',
-          // Datacap processor metadata from capture response
-          acqRefData: response.acqRefData || null,
-          processData: response.processData || null,
-          aid: response.aid || null,
-          cvmResult: response.cvm ? String(response.cvm) : null,
-          level2Status: response.level2Status || null,
-          tokenFrequency: 'Recurring', // From pre-auth (tab capture)
-        },
-      })
-      // Void any remaining authorized cards
-      for (const c of order.cards.filter((c) => c.id !== capturedCard!.id && c.status === 'authorized')) {
-        await tx.orderCard.update({
-          where: { id: c.id },
-          data: { status: 'voided' },
-        })
-      }
-      return createdPayment.id
     })
 
     // PAYMENT-SAFETY: Phase 3 DB write succeeded — mark the pending capture as completed.
