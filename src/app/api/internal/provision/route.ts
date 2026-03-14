@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { db, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
 import { PrismaClient, CashHandlingMode, CategoryType } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 import { hash } from 'bcryptjs'
 import { randomInt } from 'crypto'
 import { neon, Pool } from '@neondatabase/serverless'
@@ -107,9 +108,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // ── 3. Seed default data ───────────────────────────────────────────
-    const venueDb = new PrismaClient({
-      datasources: { db: { url: venueDbUrl } },
-    })
+    const venueAdapter = new PrismaPg({ connectionString: venueDbUrl })
+    const venueDb = new PrismaClient({ adapter: venueAdapter })
 
     let seedResult: { locationId: string; ownerPin: string }
     try {

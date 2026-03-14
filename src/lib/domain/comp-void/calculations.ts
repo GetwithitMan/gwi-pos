@@ -5,7 +5,8 @@
  * No DB, no side effects, no framework types.
  */
 
-import type { Decimal } from '@prisma/client/runtime/library'
+import type { Prisma } from '@prisma/client'
+type Decimal = Prisma.Decimal
 import { roundToCents } from '@/lib/pricing'
 
 /** Accepts Prisma Decimal, number, or string for price fields */

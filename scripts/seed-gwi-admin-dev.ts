@@ -14,6 +14,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
 const ORG_ID  = 'cmm7zv5y0000604js1umry0ch'
 const LOC_ID  = 'cmm802vg50001ceud43jxhtnl'
@@ -26,7 +27,7 @@ const NEON_URL  = process.env.NEON_DB_URL   ||
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function client(url: string) {
-  return new PrismaClient({ datasources: { db: { url } } })
+  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })
 }
 
 function log(msg: string) { console.log(`  ${msg}`) }

@@ -21,6 +21,7 @@
  */
 
 import { PrismaClient, Prisma } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -47,12 +48,12 @@ Usage: npx tsx scripts/copy-venue-data.ts \\
 // ── Prisma clients ────────────────────────────────────────────────────────────
 
 const source = new PrismaClient({
-  datasources: { db: { url: SOURCE_URL } },
+  adapter: new PrismaPg({ connectionString: SOURCE_URL }),
   log: VERBOSE ? ['query'] : [],
 })
 
 const target = new PrismaClient({
-  datasources: { db: { url: TARGET_URL } },
+  adapter: new PrismaPg({ connectionString: TARGET_URL }),
   log: VERBOSE ? ['query'] : [],
 })
 

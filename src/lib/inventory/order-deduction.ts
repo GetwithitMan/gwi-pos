@@ -4,7 +4,9 @@
  * Deducts inventory when an order is paid/closed.
  */
 
-import { Decimal } from '@prisma/client/runtime/library'
+import { Prisma } from '@prisma/client'
+type Decimal = Prisma.Decimal
+const Decimal = Prisma.Decimal
 import { db } from '@/lib/db'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'

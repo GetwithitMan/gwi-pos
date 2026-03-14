@@ -22,6 +22,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 import type { OrderEventType } from '../src/lib/order-events/types'
 
 
@@ -305,7 +306,7 @@ function synthesizeEvents(order: any): SyntheticEvent[] {
 // ── Main ──────────────────────────────────────────────────────────
 
 async function main() {
-  const prisma = new PrismaClient()
+  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) })
 
   try {
     // Find orders that DON'T already have events (idempotent)

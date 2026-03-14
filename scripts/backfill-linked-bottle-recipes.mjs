@@ -7,9 +7,11 @@
  * Run: node --env-file=.env.local scripts/backfill-linked-bottle-recipes.mjs
  */
 
+// NOTE: Must run via `npx tsx` (not bare `node`) — Prisma 7 generated client is TypeScript
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 const LOCATION_ID = 'loc-1'
 
 async function main() {

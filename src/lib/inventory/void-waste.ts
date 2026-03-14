@@ -6,7 +6,9 @@
  * and full-order inventory restoration when all payments are voided/refunded.
  */
 
-import { Decimal } from '@prisma/client/runtime/library'
+import { Prisma } from '@prisma/client'
+type Decimal = Prisma.Decimal
+const Decimal = Prisma.Decimal
 import { db } from '@/lib/db'
 import type { PrismaClient } from '@prisma/client'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'

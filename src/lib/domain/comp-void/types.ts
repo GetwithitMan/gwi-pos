@@ -5,7 +5,8 @@
  * Route-level DTOs (NextRequest/NextResponse) stay in the route.
  */
 
-import type { Decimal } from '@prisma/client/runtime/library'
+import type { Prisma } from '@prisma/client'
+type Decimal = Prisma.Decimal
 import type { db } from '@/lib/db'
 
 // ─── Transaction Client ─────────────────────────────────────────────────────

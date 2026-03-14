@@ -4,7 +4,9 @@
  * Tracks prepared ingredient usage for daily count items.
  */
 
-import { Decimal } from '@prisma/client/runtime/library'
+import { Prisma } from '@prisma/client'
+type Decimal = Prisma.Decimal
+const Decimal = Prisma.Decimal
 import { db } from '@/lib/db'
 import type { PrepStockDeductionResult } from './types'
 import { toNumber, getModifierMultiplier, isRemovalInstruction } from './helpers'

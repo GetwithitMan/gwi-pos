@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 import { headers } from 'next/headers'
 import { orderWriteGuardExtension } from './order-write-guard'
 import { getRequestPrisma } from './request-context'
@@ -28,12 +29,19 @@ const NO_SOFT_DELETE_MODELS = new Set([
 ])
 
 function createPrismaClient(url?: string) {
-  const baseUrl = url || process.env.DATABASE_URL || ''
-  const pooledUrl = appendPoolParams(baseUrl)
+  const connectionString = url || process.env.DATABASE_URL || ''
+  const poolSize = parseInt(process.env.DB_POOL_SIZE || process.env.DATABASE_CONNECTION_LIMIT || '25', 10)
+  const poolTimeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
+
+  const adapter = new PrismaPg({
+    connectionString,
+    max: poolSize,
+    connectionTimeoutMillis: poolTimeout * 1000,
+  })
 
   const client = new PrismaClient({
+    adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-    datasources: { db: { url: pooledUrl } },
     transactionOptions: {
       maxWait: 10000,
       timeout: 15000,
@@ -135,20 +143,6 @@ function createPrismaClient(url?: string) {
   const guarded = extended.$extends(orderWriteGuardExtension)
 
   return guarded as unknown as PrismaClient
-}
-
-/**
- * Append connection pool parameters to a PostgreSQL URL.
- * - connection_limit: Max connections per client (default 25 — at 5, system saturates at ~7 concurrent requests)
- * - pool_timeout: Seconds to wait for a connection before erroring (default 10)
- */
-function appendPoolParams(url: string): string {
-  if (!url) return url
-
-  const limit = parseInt(process.env.DB_POOL_SIZE || process.env.DATABASE_CONNECTION_LIMIT || '25', 10)
-  const timeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
-  const separator = url.includes('?') ? '&' : '?'
-  return `${url}${separator}connection_limit=${limit}&pool_timeout=${timeout}`
 }
 
 // ============================================================================

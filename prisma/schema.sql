@@ -1,5 +1,5 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 👥 sync secrets across teammates & machines: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -194,6 +194,9 @@ CREATE TYPE "ScheduledShiftStatus" AS ENUM ('scheduled', 'confirmed', 'no_show',
 
 -- CreateEnum
 CREATE TYPE "ShiftSwapRequestStatus" AS ENUM ('pending', 'accepted', 'approved', 'rejected', 'cancelled');
+
+-- CreateEnum
+CREATE TYPE "ShiftRequestType" AS ENUM ('swap', 'cover', 'drop');
 
 -- CreateEnum
 CREATE TYPE "TipGroupMembershipStatus" AS ENUM ('active', 'left', 'pending_approval');
@@ -1080,6 +1083,8 @@ CREATE TABLE "OrderItem" (
     "pricingOptionId" TEXT,
     "pricingOptionLabel" TEXT,
     "costAtSale" DECIMAL(65,30),
+    "tipExempt" BOOLEAN NOT NULL DEFAULT false,
+    "pricingRuleApplied" JSONB,
     "addedByEmployeeId" TEXT,
     "lastMutatedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -3565,7 +3570,10 @@ CREATE TABLE "ShiftSwapRequest" (
     "shiftId" TEXT NOT NULL,
     "requestedByEmployeeId" TEXT NOT NULL,
     "requestedToEmployeeId" TEXT,
+    "type" "ShiftRequestType" NOT NULL DEFAULT 'swap',
     "status" "ShiftSwapRequestStatus" NOT NULL DEFAULT 'pending',
+    "reason" TEXT,
+    "managerNote" TEXT,
     "respondedAt" TIMESTAMP(3),
     "approvedAt" TIMESTAMP(3),
     "approvedByEmployeeId" TEXT,
@@ -3882,6 +3890,24 @@ CREATE TABLE "ErrorLog" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "ErrorLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "VenueLog" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "level" TEXT NOT NULL DEFAULT 'info',
+    "source" TEXT NOT NULL DEFAULT 'server',
+    "category" TEXT NOT NULL DEFAULT 'system',
+    "message" TEXT NOT NULL,
+    "details" JSONB,
+    "employeeId" TEXT,
+    "deviceId" TEXT,
+    "stackTrace" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "VenueLog_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -6228,6 +6254,9 @@ CREATE INDEX "ShiftSwapRequest_requestedToEmployeeId_idx" ON "ShiftSwapRequest"(
 CREATE INDEX "ShiftSwapRequest_status_idx" ON "ShiftSwapRequest"("status");
 
 -- CreateIndex
+CREATE INDEX "ShiftSwapRequest_type_idx" ON "ShiftSwapRequest"("type");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "PayrollSettings_locationId_key" ON "PayrollSettings"("locationId");
 
 -- CreateIndex
@@ -6379,6 +6408,24 @@ CREATE INDEX "ErrorLog_locationId_status_createdAt_idx" ON "ErrorLog"("locationI
 
 -- CreateIndex
 CREATE INDEX "ErrorLog_locationId_category_createdAt_idx" ON "ErrorLog"("locationId", "category", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "VenueLog_locationId_createdAt_idx" ON "VenueLog"("locationId", "createdAt" DESC);
+
+-- CreateIndex
+CREATE INDEX "VenueLog_level_idx" ON "VenueLog"("level");
+
+-- CreateIndex
+CREATE INDEX "VenueLog_source_idx" ON "VenueLog"("source");
+
+-- CreateIndex
+CREATE INDEX "VenueLog_category_idx" ON "VenueLog"("category");
+
+-- CreateIndex
+CREATE INDEX "VenueLog_expiresAt_idx" ON "VenueLog"("expiresAt");
+
+-- CreateIndex
+CREATE INDEX "VenueLog_createdAt_idx" ON "VenueLog"("createdAt" DESC);
 
 -- CreateIndex
 CREATE INDEX "HealthCheck_locationId_idx" ON "HealthCheck"("locationId");

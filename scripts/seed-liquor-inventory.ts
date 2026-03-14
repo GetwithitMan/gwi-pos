@@ -4,8 +4,9 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) })
 
 // Spirit tier mapping based on price ranges
 function getTier(price: number): 'well' | 'call' | 'premium' | 'top_shelf' {

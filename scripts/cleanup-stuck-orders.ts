@@ -11,6 +11,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
 const PREFIX = '[cleanup-stuck-orders]'
 
@@ -26,7 +27,7 @@ if (locationId) console.log(`${PREFIX} Filtering to location: ${locationId}`)
 // ── Main ──────────────────────────────────────────────────────────
 
 async function main() {
-  const prisma = new PrismaClient()
+  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) })
 
   try {
     // ── Type 1: Empty zombie open orders ──────────────────────────

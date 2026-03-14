@@ -15,8 +15,9 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) })
 const LOC = 'loc-1'
 
 // ─── New brand bottles (added on top of the 4 tier bottles from seed-liquor.ts) ──

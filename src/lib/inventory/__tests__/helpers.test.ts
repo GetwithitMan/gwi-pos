@@ -16,7 +16,8 @@ import {
   explodePrepItem,
 } from '../helpers'
 import type { MultiplierSettings, PrepItemWithIngredients } from '../types'
-import { Decimal } from '@prisma/client/runtime/library'
+import { Prisma } from '@prisma/client'
+const Decimal = Prisma.Decimal
 
 // =============================================================================
 // getModifierMultiplier — GL-08 FIX: multiplier 0 fallback

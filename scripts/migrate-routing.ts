@@ -19,8 +19,9 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
-const db = new PrismaClient()
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) })
 
 // Default tag mappings based on category type
 const CATEGORY_TYPE_TO_TAGS: Record<string, string[]> = {

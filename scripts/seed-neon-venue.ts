@@ -15,6 +15,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
 const SOURCE_LOC = 'loc-1'
 const TARGET_LOC = 'cmm80xd200002ld04nd39guhn' // GWI-ADMIN-Demo in Neon
@@ -31,7 +32,7 @@ const NEON_VENUE_DIRECT_URL =
   'postgresql://neondb_owner:npg_oFx7hM6sTSwy@ep-withered-forest-ahcqgqj7.c-3.us-east-1.aws.neon.tech/gwi_pos_gwi_admin_demo?sslmode=require'
 
 function client(url: string) {
-  return new PrismaClient({ datasources: { db: { url } } })
+  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })
 }
 function log(msg: string) { console.log(`  ✓ ${msg}`) }
 

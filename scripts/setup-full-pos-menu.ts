@@ -13,8 +13,9 @@
  */
 
 import { PrismaClient, Prisma, ModifierPriceType } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
-const db = new PrismaClient()
+const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) })
 
 // ── Standard POS pricing by tier ─────────────────────────────────────────────
 const SPIRIT_PRICE: Record<string, number> = {

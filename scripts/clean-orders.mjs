@@ -19,9 +19,11 @@
  *   node scripts/clean-orders.mjs --confirm  # Actually deletes data
  */
 
+// NOTE: Must run via `npx tsx` (not bare `node`) — Prisma 7 generated client is TypeScript
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) })
 const isDryRun = !process.argv.includes('--confirm')
 
 async function main() {

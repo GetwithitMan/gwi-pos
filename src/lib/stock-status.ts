@@ -4,7 +4,9 @@
  */
 
 import { db } from '@/lib/db'
-import { Decimal } from '@prisma/client/runtime/library'
+import { Prisma } from '@prisma/client'
+type Decimal = Prisma.Decimal
+const Decimal = Prisma.Decimal
 
 export type StockStatus = 'ok' | 'low' | 'critical' | 'out'
 

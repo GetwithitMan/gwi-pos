@@ -10,28 +10,28 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
 
 const globalForNeon = globalThis as unknown as {
   neonPrisma: PrismaClient | undefined
-}
-
-function appendPoolParams(url: string): string {
-  if (!url) return url
-  const limit = parseInt(process.env.DB_POOL_SIZE || '10', 10) // Lower pool for sync client
-  const timeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
-  const separator = url.includes('?') ? '&' : '?'
-  return `${url}${separator}connection_limit=${limit}&pool_timeout=${timeout}`
 }
 
 function createNeonClient(): PrismaClient | null {
   const neonUrl = process.env.NEON_DATABASE_URL
   if (!neonUrl) return null
 
-  const pooledUrl = appendPoolParams(neonUrl)
+  const poolSize = parseInt(process.env.DB_POOL_SIZE || '10', 10) // Lower pool for sync client
+  const poolTimeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
+
+  const adapter = new PrismaPg({
+    connectionString: neonUrl,
+    max: poolSize,
+    connectionTimeoutMillis: poolTimeout * 1000,
+  })
 
   return new PrismaClient({
+    adapter,
     log: ['error'],
-    datasources: { db: { url: pooledUrl } },
     transactionOptions: {
       maxWait: 10000,
       timeout: 15000,

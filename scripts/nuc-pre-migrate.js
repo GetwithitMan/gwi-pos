@@ -13,7 +13,14 @@
  *
  * Requires: DATABASE_URL in environment (loaded from /opt/gwi-pos/.env by systemd)
  */
-const { PrismaClient } = require('@prisma/client')
+const { config } = require('dotenv')
+config({ path: '.env.local', override: true })
+config({ path: '.env' })
+
+// tsx/cjs/api registers TypeScript loader so we can require the generated Prisma 7 client
+require('tsx/cjs/api').register()
+const { PrismaClient } = require('../src/generated/prisma/client')
+const { PrismaPg } = require('@prisma/adapter-pg')
 const fs = require('fs')
 const path = require('path')
 
@@ -32,9 +39,9 @@ async function runPrePushMigrations() {
     : 'local PG'
   console.log(`${PREFIX} Target: ${targetHost}`)
 
-  const prisma = isNeon
-    ? new PrismaClient({ datasources: { db: { url: process.env.NEON_DATABASE_URL } } })
-    : new PrismaClient()
+  const dbUrl = isNeon ? process.env.NEON_DATABASE_URL : process.env.DATABASE_URL
+  const adapter = new PrismaPg({ connectionString: dbUrl })
+  const prisma = new PrismaClient({ adapter })
 
   try {
     console.log(`${PREFIX} Running pre-push migrations...`)
