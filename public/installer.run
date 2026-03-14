@@ -1094,7 +1094,7 @@ if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   # Unmask first — may have been masked by a prior server→terminal switch
   systemctl unmask postgresql 2>/dev/null || true
 
-  apt-get install -y postgresql postgresql-contrib
+  apt-get install -y postgresql-17 postgresql-contrib-17 || apt-get install -y postgresql postgresql-contrib
 
   # Ensure PostgreSQL is running
   systemctl enable postgresql
@@ -1283,7 +1283,7 @@ if [[ "$STATION_ROLE" == "backup" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   # Unmask first — may have been masked by a prior role switch
   systemctl unmask postgresql 2>/dev/null || true
 
-  apt-get install -y postgresql postgresql-contrib
+  apt-get install -y postgresql-17 postgresql-contrib-17 || apt-get install -y postgresql postgresql-contrib
 
   DB_USER="thepasspos"
   DB_NAME="thepasspos"
@@ -1662,6 +1662,9 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
 set -euo pipefail
 APP_DIR="/opt/gwi-pos/app"
 cd "$APP_DIR"
+
+echo "[pre-start] Cleaning stale Prisma cache..."
+rm -rf node_modules/.prisma 2>/dev/null || true
 
 echo "[pre-start] Regenerating Prisma client..."
 if npx --yes prisma generate 2>&1; then
